@@ -3,6 +3,13 @@ package com.example.cdplaya.data.backup
 import com.example.cdplaya.data.local.ListeningEndReason
 import com.example.cdplaya.data.local.ListeningQualificationReason
 import com.example.cdplaya.data.local.ListeningSource
+import com.example.cdplaya.data.local.ListeningTimestampEvidence
+import com.example.cdplaya.data.local.ListeningQualificationPolicy
+import com.example.cdplaya.data.local.ListeningCompletionClassification
+import com.example.cdplaya.data.local.ListeningEventPublicationState
+import com.example.cdplaya.data.local.ListeningImportBatchStatus
+import com.example.cdplaya.data.local.ImportedListeningSkippedState
+import com.example.cdplaya.data.local.ImportedListeningMatchDisposition
 
 object ListeningHistoryBackupValidator {
     fun validate(history: BackupListeningHistoryV2): BackupListeningHistoryV2 {
@@ -112,7 +119,7 @@ object ListeningHistoryBackupValidator {
             require(event.listenedMs >= 0L) {
                 "Listening-history event listening time is invalid."
             }
-            require(event.endedAt >= event.startedAt) {
+            require(event.startedAt == null || event.endedAt == null || event.endedAt >= event.startedAt) {
                 "Listening-history event timestamps are invalid."
             }
             require(event.trackDurationMs == null || event.trackDurationMs >= 0L) {
@@ -128,12 +135,83 @@ object ListeningHistoryBackupValidator {
                 "Listening-history source-event key is invalid."
             }
             parseEnum("source", event.source, ListeningSource::fromStorageValue)
+            val timestampEvidence = parseEnumValue("timestamp evidence", event.timestampEvidence, ListeningTimestampEvidence::fromStorageValue)
+            parseEnum("qualification policy", event.qualificationPolicy, ListeningQualificationPolicy::fromStorageValue)
+            parseEnum("completion classification", event.completionClassification, ListeningCompletionClassification::fromStorageValue)
+            val publication = parseEnumValue("publication state", event.publicationState, ListeningEventPublicationState::fromStorageValue)
+            require(publication != ListeningEventPublicationState.IMPORT_PENDING) {
+                "Pending listening events cannot appear in a completed backup."
+            }
+            require(timestampEvidence != ListeningTimestampEvidence.NATIVE_EXACT ||
+                (event.startedAt != null && event.endedAt != null && event.attributionAt == event.startedAt)) {
+                "Native exact timestamp evidence is inconsistent."
+            }
+            require(timestampEvidence != ListeningTimestampEvidence.SOURCE_END_ONLY ||
+                (event.startedAt == null && event.endedAt != null && event.attributionAt == event.endedAt)) {
+                "Source-end-only timestamp evidence is inconsistent."
+            }
             parseEnum(
                 "qualification reason",
                 event.qualificationReason,
                 ListeningQualificationReason::fromStorageValue
             )
-            parseEnum("end reason", event.endReason, ListeningEndReason::fromStorageValue)
+            event.endReason?.let { parseEnum("end reason", it, ListeningEndReason::fromStorageValue) }
+        }
+
+        val sources = history.importSources.associateByUnique(BackupListeningImportSource::backupSourceProfileId, "source profile ID")
+        require(history.importSources.map { it.stableUuid }.distinct().size == history.importSources.size) {
+            "Listening import source stable UUIDs must be unique."
+        }
+        val digests = history.importSources.mapNotNull { source ->
+            source.accountIdentityDigest?.let { source.sourceType to it }
+        }
+        require(digests.distinct().size == digests.size) { "Listening import source account digests must be unique per source type." }
+        history.importSources.forEach { source ->
+            require(source.backupSourceProfileId > 0 && source.stableUuid.isNotBlank() && source.displayLabel.isNotBlank())
+            require(source.updatedAt >= source.createdAt)
+            parseEnum("import source", source.sourceType, ListeningSource::fromStorageValue)
+        }
+        val batches = history.importBatches.associateByUnique(BackupListeningImportBatch::backupBatchId, "import batch ID")
+        require(history.importBatches.map { it.stableUuid }.distinct().size == history.importBatches.size) { "Listening import batch UUIDs must be unique." }
+        history.importBatches.forEach { batch ->
+            require(batch.sourceProfileBackupId in sources) { "Listening import batch references a missing source profile." }
+            require(parseEnumValue("import batch status", batch.status, ListeningImportBatchStatus::fromStorageValue) == ListeningImportBatchStatus.PUBLISHED) {
+                "Only published listening import batches may be backed up."
+            }
+            require(batch.completedAt != null && batch.completedAt >= batch.startedAt)
+            require(listOf(batch.parsedCount,batch.insertedCount,batch.duplicateCount,batch.ignoredCount,batch.invalidCount,
+                batch.exactMatchCount,batch.ambiguousMatchCount,batch.unmatchedCount,batch.qualifiedCount).all { it >= 0 })
+            parseEnum("batch qualification policy", batch.qualificationPolicy, ListeningQualificationPolicy::fromStorageValue)
+        }
+        val externalKeys = history.externalTrackIds.map { it.sourceType to it.externalId }
+        require(externalKeys.distinct().size == externalKeys.size) { "Listening external IDs must be unique per source." }
+        history.externalTrackIds.forEach { external ->
+            require(external.trackIdentityBackupId in identities && external.externalId.isNotBlank() && external.lastSeenAt >= external.createdAt)
+            parseEnum("external ID source", external.sourceType, ListeningSource::fromStorageValue)
+        }
+        val eventsByUuid = history.events.associateBy { it.eventUuid }
+        val evidenceKeys = history.importedEventEvidence.map { listOf(it.sourceProfileBackupId, it.fingerprintVersion, it.fingerprint, it.duplicateOrdinal) }
+        require(evidenceKeys.distinct().size == evidenceKeys.size) { "Imported event evidence fingerprint ordinals must be unique." }
+        require(history.importedEventEvidence.map { it.eventUuid }.distinct().size == history.importedEventEvidence.size) { "Imported events may have only one evidence row." }
+        history.importedEventEvidence.forEach { evidence ->
+            val event = eventsByUuid[evidence.eventUuid] ?: throw IllegalArgumentException("Imported evidence references a missing event.")
+            val source = sources[evidence.sourceProfileBackupId]
+                ?: throw IllegalArgumentException("Imported evidence references a missing source profile.")
+            require(source.sourceType == event.source) { "Imported evidence source profile is incompatible with its event." }
+            require(evidence.fingerprintVersion > 0 && evidence.fingerprint.isNotBlank() && evidence.duplicateOrdinal >= 0)
+            require(event.publicationState == "import_published" && event.source != "cdplaya") { "Imported evidence points to an incompatible native event." }
+            parseEnum("skipped state", evidence.skippedState, ImportedListeningSkippedState::fromStorageValue)
+            parseEnum("match disposition", evidence.matchDispositionAtImport, ImportedListeningMatchDisposition::fromStorageValue)
+        }
+        val linkKeys = history.batchEventObservations.map { it.batchBackupId to it.eventUuid }
+        require(linkKeys.distinct().size == linkKeys.size) { "Listening batch-event links must be unique." }
+        history.batchEventObservations.forEach { link ->
+            require(link.batchBackupId in batches && link.eventUuid in eventsByUuid) { "Listening batch-event link references a missing record." }
+        }
+        history.events.filter { it.source == "cdplaya" }.forEach { event ->
+            require(event.publicationState == "native" && event.eventUuid !in history.importedEventEvidence.map { it.eventUuid }.toSet()) {
+                "Native listening events cannot carry import state."
+            }
         }
 
         val expectedSummary = history.recordsSummary()
@@ -151,8 +229,8 @@ internal fun BackupListeningHistoryV2.recordsSummary() = BackupListeningHistoryS
     eventCount = events.size.toLong(),
     qualifiedEventCount = events.count { it.qualifiedAsPlay }.toLong(),
     nonQualifiedEventCount = events.count { !it.qualifiedAsPlay }.toLong(),
-    earliestDetailedEventAt = events.minOfOrNull { it.startedAt },
-    latestDetailedEventAt = events.maxOfOrNull { it.startedAt }
+    earliestDetailedEventAt = events.minOfOrNull { it.attributionAt },
+    latestDetailedEventAt = events.maxOfOrNull { it.attributionAt }
 )
 
 private inline fun <T, K> List<T>.associateByUnique(
@@ -174,4 +252,10 @@ private inline fun <T> parseEnum(
     } catch (_: IllegalStateException) {
         throw IllegalArgumentException("Listening-history $label value is unsupported.")
     }
+}
+
+private inline fun <T> parseEnumValue(label: String, value: String, parser: (String) -> T): T = try {
+    parser(value)
+} catch (_: IllegalStateException) {
+    throw IllegalArgumentException("Listening-history $label value is unsupported.")
 }

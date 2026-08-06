@@ -12,6 +12,12 @@ import com.example.cdplaya.data.local.ListeningTrackIdentityEntity
 import com.example.cdplaya.data.local.LocalTrackBindingDao
 import com.example.cdplaya.data.local.LocalTrackBindingEntity
 import com.example.cdplaya.data.local.toEntity
+import com.example.cdplaya.data.local.ListeningImportSourceEntity
+import com.example.cdplaya.data.local.ListeningImportBatchEntity
+import com.example.cdplaya.data.local.ListeningImportBatchStatus
+import com.example.cdplaya.data.local.ListeningTrackExternalIdEntity
+import com.example.cdplaya.data.local.ImportedListeningEventEvidenceEntity
+import com.example.cdplaya.data.local.ListeningImportBatchEventEntity
 
 class ListeningTrackIdentityRepository(
     private val identityDao: ListeningTrackIdentityDao,
@@ -122,4 +128,66 @@ class LegacyListeningBaselineRepository(
         baselineDao.getByTrackIdentityId(trackIdentityId)
 
     suspend fun count(): Long = baselineDao.count()
+}
+
+/** Source-neutral persistence foundation. Parsing and service-specific policy remain outside it. */
+class ListeningImportRepository(private val database: AppDatabase) {
+    suspend fun createSourceProfile(source: ListeningImportSourceEntity): Long =
+        database.listeningImportSourceDao().insert(source)
+
+    suspend fun getSourceProfile(stableUuid: String): ListeningImportSourceEntity? =
+        database.listeningImportSourceDao().getByStableUuid(stableUuid)
+
+    suspend fun createBatch(batch: ListeningImportBatchEntity): Long =
+        database.listeningImportBatchDao().insert(batch)
+
+    suspend fun insertExternalId(externalId: ListeningTrackExternalIdEntity): Long =
+        database.listeningTrackExternalIdDao().insert(externalId)
+
+    suspend fun findExternalId(source: com.example.cdplaya.data.local.ListeningSource, externalId: String) =
+        database.listeningTrackExternalIdDao().find(source, externalId)
+
+    suspend fun insertEvidence(evidence: ImportedListeningEventEvidenceEntity) =
+        database.importedListeningEventEvidenceDao().insert(evidence)
+
+    suspend fun findEvidence(
+        sourceProfileId: Long,
+        fingerprintVersion: Int,
+        fingerprint: String,
+        duplicateOrdinal: Int
+    ) = database.importedListeningEventEvidenceDao().find(
+        sourceProfileId, fingerprintVersion, fingerprint, duplicateOrdinal
+    )
+
+    suspend fun observeEvent(batchId: Long, eventId: Long) =
+        database.listeningImportBatchEventDao().insert(ListeningImportBatchEventEntity(batchId, eventId))
+
+    suspend fun publishBatch(
+        batchId: Long,
+        expectedPendingEventCount: Long,
+        expectedObservedEventCount: Long,
+        completedAt: Long
+    ): Int = database.withTransaction {
+        val batch = requireNotNull(database.listeningImportBatchDao().getById(batchId))
+        require(batch.status == ListeningImportBatchStatus.PENDING) { "Import batch is not pending." }
+        require(database.listeningImportBatchEventDao().countForBatch(batchId) == expectedObservedEventCount) {
+            "Import batch observation count changed before publication."
+        }
+        require(database.listeningEventDao().countPendingForBatch(batchId) == expectedPendingEventCount) {
+            "Import batch pending-event count changed before publication."
+        }
+        val published = database.listeningEventDao().publishForBatch(batchId)
+        check(published.toLong() == expectedPendingEventCount)
+        check(database.listeningImportBatchDao().publish(batchId, completedAt) == 1)
+        published
+    }
+
+    suspend fun cancelPendingBatch(batchId: Long, completedAt: Long): Int = database.withTransaction {
+        val batch = requireNotNull(database.listeningImportBatchDao().getById(batchId))
+        require(batch.status == ListeningImportBatchStatus.PENDING) { "Import batch is not pending." }
+        val deleted = database.listeningEventDao().deleteUnsharedPendingForBatch(batchId)
+        database.listeningImportBatchEventDao().deleteForBatch(batchId)
+        check(database.listeningImportBatchDao().cancel(batchId, completedAt) == 1)
+        deleted
+    }
 }

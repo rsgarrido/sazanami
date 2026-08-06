@@ -46,7 +46,7 @@ class ListeningHistoryBackupValidatorTest {
         )
         val history = decoded.canonicalListeningHistory!!
 
-        assertEquals(8, decoded.schemaVersion)
+        assertEquals(9, decoded.schemaVersion)
         assertEquals(2, history.identities.size)
         assertEquals(2, history.bindings.size)
         assertEquals(listOf(3, 4), history.baselines.map { it.historicalPlayCount })
@@ -108,11 +108,15 @@ class ListeningHistoryBackupValidatorTest {
                 }
             },
             "listened" to { it.replaceEvent(0) { e -> e.copy(listenedMs = -1) } },
-            "timestamps" to { it.replaceEvent(0) { e -> e.copy(endedAt = e.startedAt - 1) } },
+            "timestamps" to { it.replaceEvent(0) { e -> e.copy(endedAt = requireNotNull(e.startedAt) - 1) } },
             "source enum" to { it.replaceEvent(0) { e -> e.copy(source = "future") } },
             "qualification enum" to {
                 it.replaceEvent(0) { e -> e.copy(qualificationReason = "future") }
             },
+            "timestamp evidence" to { it.replaceEvent(0) { e -> e.copy(timestampEvidence = "future") } },
+            "qualification policy" to { it.replaceEvent(0) { e -> e.copy(qualificationPolicy = "future") } },
+            "completion classification" to { it.replaceEvent(0) { e -> e.copy(completionClassification = "future") } },
+            "pending publication" to { it.replaceEvent(1) { e -> e.copy(publicationState = "import_pending") } },
             "end enum" to { it.replaceEvent(0) { e -> e.copy(endReason = "future") } },
             "rule" to { it.replaceEvent(0) { e -> e.copy(qualificationRuleVersion = 0) } },
             "play count" to { it.replaceBaseline { b -> b.copy(historicalPlayCount = 0) } },
@@ -121,6 +125,40 @@ class ListeningHistoryBackupValidatorTest {
 
         mutations.forEach { (label, mutate) ->
             expectInvalid(label) { ListeningHistoryBackupValidator.validate(mutate(valid)) }
+        }
+    }
+
+    @Test
+    fun importLedgerValidation_rejectsDuplicateAndMissingDurableReferences() {
+        val base = validHistory()
+        val source = BackupListeningImportSource(1, "profile", "spotify_import", "Profile", "digest", 1, 2)
+        val batch = BackupListeningImportBatch(
+            1, "batch", 1, "published", 1, "spotify", 1, 1, 2, 200, 200,
+            1, 1, 0, 0, 0, 1, 0, 0, 0, null, "test"
+        )
+        val valid = base.copy(
+            importSources = listOf(source), importBatches = listOf(batch),
+            externalTrackIds = listOf(BackupListeningTrackExternalId(2, "spotify_import", "catalog", 1, 2)),
+            importedEventEvidence = listOf(BackupImportedListeningEventEvidence(
+                "uuid-2", 1, 1, "fingerprint", 0, null, null, "false", "exact")),
+            batchEventObservations = listOf(BackupListeningImportBatchEvent(1, "uuid-2"))
+        )
+        ListeningHistoryBackupValidator.validate(valid)
+
+        expectInvalid("duplicate profile") {
+            ListeningHistoryBackupValidator.validate(valid.copy(importSources = listOf(source, source.copy(backupSourceProfileId = 2))))
+        }
+        expectInvalid("missing batch profile") {
+            ListeningHistoryBackupValidator.validate(valid.copy(importBatches = listOf(batch.copy(sourceProfileBackupId = 99))))
+        }
+        expectInvalid("duplicate external") {
+            ListeningHistoryBackupValidator.validate(valid.copy(externalTrackIds = valid.externalTrackIds + valid.externalTrackIds.single()))
+        }
+        expectInvalid("missing evidence event") {
+            ListeningHistoryBackupValidator.validate(valid.copy(importedEventEvidence = listOf(valid.importedEventEvidence.single().copy(eventUuid = "missing"))))
+        }
+        expectInvalid("duplicate link") {
+            ListeningHistoryBackupValidator.validate(valid.copy(batchEventObservations = valid.batchEventObservations + valid.batchEventObservations.single()))
         }
     }
 

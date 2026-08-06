@@ -3,6 +3,10 @@ package com.example.cdplaya.data.listening
 import com.example.cdplaya.data.local.ListeningEndReason
 import com.example.cdplaya.data.local.ListeningQualificationReason
 import com.example.cdplaya.data.local.ListeningSource
+import com.example.cdplaya.data.local.ListeningTimestampEvidence
+import com.example.cdplaya.data.local.ListeningQualificationPolicy
+import com.example.cdplaya.data.local.ListeningCompletionClassification
+import com.example.cdplaya.data.local.ListeningEventPublicationState
 
 /**
  * Pure state machine for one native playback attempt at a time.
@@ -126,12 +130,19 @@ class ListeningSessionRecorder(
             playbackSessionId = session.request.playbackSessionId,
             startedAt = session.startedAt,
             endedAt = endedAt,
+            attributionAt = session.startedAt,
+            timestampEvidence = ListeningTimestampEvidence.NATIVE_EXACT,
             listenedMs = session.committedListenedMs,
             trackDurationMs = session.request.trackDurationMs,
             qualifiedAsPlay = session.qualificationReason != ListeningQualificationReason.NONE,
             qualificationReason = session.qualificationReason,
             qualificationRuleVersion = ListeningQualificationRuleV1.VERSION,
+            qualificationPolicy = ListeningQualificationPolicy.CDPLAYA,
             endReason = endReason,
+            completionClassification = if (endReason == ListeningEndReason.NATURAL_END) {
+                ListeningCompletionClassification.NATIVE_NATURAL
+            } else ListeningCompletionClassification.NONE,
+            publicationState = ListeningEventPublicationState.NATIVE,
             sourceEventKey = null,
             importBatchId = null,
             createdAt = endedAt

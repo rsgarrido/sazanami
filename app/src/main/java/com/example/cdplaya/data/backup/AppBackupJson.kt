@@ -19,7 +19,7 @@ import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.encodeToStream
 
 object AppBackupJson {
-    const val CURRENT_SCHEMA_VERSION = 8
+    const val CURRENT_SCHEMA_VERSION = 9
     private const val OLDEST_SUPPORTED_SCHEMA_VERSION = 1
 
     private val json = Json {
@@ -84,9 +84,12 @@ object AppBackupJson {
         if (migrated.schemaVersion == 7) {
             migrated = migrateV7ToV8(migrated)
         }
+        if (migrated.schemaVersion == 8) {
+            migrated = migrateV8ToV9(migrated)
+        }
         validateEqualizerBackup(migrated.preferences.equalizer)
         val history = requireNotNull(migrated.canonicalListeningHistory) {
-            "CDPlaya backup schema 8 requires canonical listening history."
+            "CDPlaya backup schema 9 requires canonical listening history."
         }
         ListeningHistoryBackupValidator.validate(history)
         SongRatingBackupValidator.validate(migrated.songRatings, history)
@@ -240,6 +243,46 @@ object AppBackupJson {
         schemaVersion = 8,
         songRatings = BackupSongRatings()
     )
+
+    private fun migrateV8ToV9(backup: AppBackup): AppBackup {
+        val history = requireNotNull(backup.canonicalListeningHistory) {
+            "CDPlaya backup schema 8 requires canonical listening history."
+        }
+        val importedSources = history.events.map { it.source }.filter { it != "cdplaya" }.distinct()
+        val sourceIds = importedSources.mapIndexed { index, source -> source to index.toLong() + 1L }.toMap()
+        val sources = importedSources.map { source ->
+            BackupListeningImportSource(
+                backupSourceProfileId = sourceIds.getValue(source),
+                stableUuid = "legacy-unscoped:$source", sourceType = source,
+                displayLabel = "Legacy unscoped $source", accountIdentityDigest = null,
+                createdAt = history.events.filter { it.source == source }.minOfOrNull { it.createdAt } ?: backup.createdAt,
+                updatedAt = history.events.filter { it.source == source }.maxOfOrNull { it.createdAt } ?: backup.createdAt
+            )
+        }
+        val legacyGroups = history.events.filter { it.source != "cdplaya" && it.importBatchId != null }
+            .groupBy { it.source to requireNotNull(it.importBatchId) }
+        val batches = legacyGroups.entries.mapIndexed { index, (key, events) ->
+            BackupListeningImportBatch(
+                backupBatchId = index.toLong() + 1L, stableUuid = "legacy-batch:${key.first}:${key.second}",
+                sourceProfileBackupId = sourceIds.getValue(key.first), status = "published", parserVersion = 0,
+                qualificationPolicy = events.first().qualificationPolicy, qualificationRuleVersion = events.maxOf { it.qualificationRuleVersion },
+                startedAt = events.minOf { it.attributionAt }, completedAt = events.maxOf { it.attributionAt },
+                sourceRangeStart = events.minOf { it.attributionAt }, sourceRangeEnd = events.maxOf { it.attributionAt },
+                parsedCount = events.size.toLong(), insertedCount = events.size.toLong(), duplicateCount = 0,
+                ignoredCount = 0, invalidCount = 0, exactMatchCount = 0, ambiguousMatchCount = 0,
+                unmatchedCount = events.size.toLong(), qualifiedCount = events.count { it.qualifiedAsPlay }.toLong(),
+                failureCategory = null, createdAppVersion = "backup-v8-legacy"
+            )
+        }
+        val batchByStable = batches.associateBy { it.stableUuid }
+        val links = legacyGroups.flatMap { (key, events) ->
+            val batch = batchByStable.getValue("legacy-batch:${key.first}:${key.second}")
+            events.map { BackupListeningImportBatchEvent(batch.backupBatchId, it.eventUuid) }
+        }
+        return backup.copy(schemaVersion = 9, canonicalListeningHistory = history.copy(
+            importSources = sources, importBatches = batches, batchEventObservations = links
+        ).let { it.copy(summary = it.recordsSummary()) })
+    }
 
     private fun validateEqualizerBackup(
         equalizer: BackupEqualizerPreferences

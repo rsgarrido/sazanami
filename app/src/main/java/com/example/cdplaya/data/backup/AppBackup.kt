@@ -141,6 +141,11 @@ data class BackupListeningHistoryV2(
     val bindings: List<BackupLocalTrackBinding> = emptyList(),
     val baselines: List<BackupLegacyListeningBaseline> = emptyList(),
     val events: List<BackupListeningEvent> = emptyList(),
+    val importSources: List<BackupListeningImportSource> = emptyList(),
+    val importBatches: List<BackupListeningImportBatch> = emptyList(),
+    val externalTrackIds: List<BackupListeningTrackExternalId> = emptyList(),
+    val importedEventEvidence: List<BackupImportedListeningEventEvidence> = emptyList(),
+    val batchEventObservations: List<BackupListeningImportBatchEvent> = emptyList(),
     val summary: BackupListeningHistorySummary = BackupListeningHistorySummary()
 ) {
     companion object {
@@ -204,18 +209,57 @@ data class BackupListeningEvent(
     val trackIdentityBackupId: Long,
     val localTrackBindingBackupId: Long?,
     val playbackSessionId: String?,
-    val startedAt: Long,
-    val endedAt: Long,
+    val startedAt: Long?,
+    val endedAt: Long?,
     val listenedMs: Long,
     val trackDurationMs: Long?,
     val qualifiedAsPlay: Boolean,
     val qualificationReason: String,
     val qualificationRuleVersion: Int,
-    val endReason: String,
+    val endReason: String?,
     val sourceEventKey: String?,
     val importBatchId: Long?,
-    val createdAt: Long
+    val createdAt: Long,
+    val attributionAt: Long = startedAt ?: endedAt ?: 0L,
+    val timestampEvidence: String = "native_exact",
+    val qualificationPolicy: String = when (source) {
+        "cdplaya" -> "cdplaya"
+        "spotify_import" -> "spotify"
+        "lastfm_import" -> "lastfm"
+        else -> "other_import"
+    },
+    val completionClassification: String = if (source == "cdplaya" && endReason == "natural_end") "native_natural" else "none",
+    val publicationState: String = if (source == "cdplaya") "native" else "import_published"
 )
+
+@Serializable data class BackupListeningImportSource(
+    val backupSourceProfileId: Long, val stableUuid: String, val sourceType: String,
+    val displayLabel: String, val accountIdentityDigest: String?, val createdAt: Long, val updatedAt: Long
+)
+
+@Serializable data class BackupListeningImportBatch(
+    val backupBatchId: Long, val stableUuid: String, val sourceProfileBackupId: Long,
+    val status: String, val parserVersion: Int, val qualificationPolicy: String,
+    val qualificationRuleVersion: Int, val startedAt: Long, val completedAt: Long?,
+    val sourceRangeStart: Long?, val sourceRangeEnd: Long?, val parsedCount: Long,
+    val insertedCount: Long, val duplicateCount: Long, val ignoredCount: Long,
+    val invalidCount: Long, val exactMatchCount: Long, val ambiguousMatchCount: Long,
+    val unmatchedCount: Long, val qualifiedCount: Long, val failureCategory: String?,
+    val createdAppVersion: String
+)
+
+@Serializable data class BackupListeningTrackExternalId(
+    val trackIdentityBackupId: Long, val sourceType: String, val externalId: String,
+    val createdAt: Long, val lastSeenAt: Long
+)
+
+@Serializable data class BackupImportedListeningEventEvidence(
+    val eventUuid: String, val sourceProfileBackupId: Long, val fingerprintVersion: Int,
+    val fingerprint: String, val duplicateOrdinal: Int, val normalizedReasonStart: String?,
+    val normalizedReasonEnd: String?, val skippedState: String, val matchDispositionAtImport: String
+)
+
+@Serializable data class BackupListeningImportBatchEvent(val batchBackupId: Long, val eventUuid: String)
 
 @Serializable
 data class BackupListeningHistorySummary(

@@ -47,7 +47,7 @@ class ListeningHistoryBackupAtomicityTest {
             original.copy(events = original.events.map { it.copy(trackIdentityBackupId = 999) }),
             original.copy(events = original.events + original.events.first()),
             original.copy(events = original.events.map { it.copy(listenedMs = -1) }),
-            original.copy(events = original.events.map { it.copy(endedAt = it.startedAt - 1) }),
+            original.copy(events = original.events.map { it.copy(endedAt = requireNotNull(it.startedAt) - 1) }),
             original.copy(events = original.events.map { it.copy(source = "unsupported") }),
             original.copy(summary = original.summary.copy(eventCount = 99))
         )

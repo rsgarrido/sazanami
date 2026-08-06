@@ -22,7 +22,11 @@ class ListeningHistoryMigrationTest {
         createVersionEightDatabase(databaseName)
 
         val database = Room.databaseBuilder(context, AppDatabase::class.java, databaseName)
-            .addMigrations(DatabaseProvider.MIGRATION_8_9)
+            .addMigrations(
+                DatabaseProvider.MIGRATION_8_9,
+                DatabaseProvider.MIGRATION_9_10,
+                DatabaseProvider.MIGRATION_10_11
+            )
             .build()
         try {
             val sqlite = database.openHelper.writableDatabase

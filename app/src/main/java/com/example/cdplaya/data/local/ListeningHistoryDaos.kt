@@ -9,6 +9,7 @@ import androidx.room.Query
 interface ListeningTrackIdentityDao {
     @Insert
     suspend fun insert(identity: ListeningTrackIdentityEntity): Long
+    @Insert suspend fun insert(identities: List<ListeningTrackIdentityEntity>): List<Long>
 
     @Query("SELECT * FROM listening_track_identities WHERE id = :id")
     suspend fun getById(id: Long): ListeningTrackIdentityEntity?
@@ -66,12 +67,22 @@ interface ListeningEventDao {
 
     @Query(
         "SELECT * FROM listening_events " +
-            "ORDER BY startedAt ASC, id ASC LIMIT :limit OFFSET :offset"
+            "WHERE publicationState != 'import_pending' " +
+            "ORDER BY attributionAt ASC, id ASC LIMIT :limit OFFSET :offset"
     )
     suspend fun getBackupPage(limit: Int, offset: Int): List<ListeningEventEntity>
 
     @Query("DELETE FROM listening_events")
     suspend fun deleteAll()
+
+    @Query("SELECT COUNT(*) FROM listening_events WHERE publicationState = 'import_pending' AND id IN (SELECT eventId FROM listening_import_batch_events WHERE batchId = :batchId)")
+    suspend fun countPendingForBatch(batchId: Long): Long
+
+    @Query("UPDATE listening_events SET publicationState = 'import_published' WHERE publicationState = 'import_pending' AND id IN (SELECT eventId FROM listening_import_batch_events WHERE batchId = :batchId)")
+    suspend fun publishForBatch(batchId: Long): Int
+
+    @Query("DELETE FROM listening_events WHERE publicationState = 'import_pending' AND id IN (SELECT eventId FROM listening_import_batch_events WHERE batchId = :batchId) AND NOT EXISTS (SELECT 1 FROM listening_import_batch_events other WHERE other.eventId = listening_events.id AND other.batchId != :batchId)")
+    suspend fun deleteUnsharedPendingForBatch(batchId: Long): Int
 }
 
 @Dao
@@ -96,4 +107,53 @@ interface LegacyListeningBaselineDao {
 
     @Query("DELETE FROM legacy_listening_baselines")
     suspend fun deleteAll()
+}
+
+@Dao
+interface ListeningImportSourceDao {
+    @Insert suspend fun insert(source: ListeningImportSourceEntity): Long
+    @Query("SELECT * FROM listening_import_sources WHERE id = :id") suspend fun getById(id: Long): ListeningImportSourceEntity?
+    @Query("SELECT * FROM listening_import_sources WHERE stableUuid = :stableUuid LIMIT 1") suspend fun getByStableUuid(stableUuid: String): ListeningImportSourceEntity?
+    @Query("SELECT * FROM listening_import_sources ORDER BY id") suspend fun getAllForBackup(): List<ListeningImportSourceEntity>
+    @Query("DELETE FROM listening_import_sources") suspend fun deleteAll()
+}
+
+@Dao
+interface ListeningImportBatchDao {
+    @Insert suspend fun insert(batch: ListeningImportBatchEntity): Long
+    @Insert suspend fun insert(batches: List<ListeningImportBatchEntity>): List<Long>
+    @Query("SELECT * FROM listening_import_batches WHERE id = :id") suspend fun getById(id: Long): ListeningImportBatchEntity?
+    @Query("SELECT * FROM listening_import_batches WHERE status = 'published' ORDER BY id") suspend fun getPublishedForBackup(): List<ListeningImportBatchEntity>
+    @Query("UPDATE listening_import_batches SET status = 'published', completedAt = :completedAt WHERE id = :id AND status = 'pending'") suspend fun publish(id: Long, completedAt: Long): Int
+    @Query("UPDATE listening_import_batches SET status = 'cancelled', completedAt = :completedAt WHERE id = :id AND status = 'pending'") suspend fun cancel(id: Long, completedAt: Long): Int
+    @Query("DELETE FROM listening_import_batches") suspend fun deleteAll()
+}
+
+@Dao
+interface ListeningTrackExternalIdDao {
+    @Insert suspend fun insert(entity: ListeningTrackExternalIdEntity): Long
+    @Insert suspend fun insert(entities: List<ListeningTrackExternalIdEntity>): List<Long>
+    @Query("SELECT * FROM listening_track_external_ids WHERE sourceType = :sourceType AND externalId = :externalId LIMIT 1") suspend fun find(sourceType: ListeningSource, externalId: String): ListeningTrackExternalIdEntity?
+    @Query("SELECT * FROM listening_track_external_ids ORDER BY id") suspend fun getAllForBackup(): List<ListeningTrackExternalIdEntity>
+    @Query("DELETE FROM listening_track_external_ids") suspend fun deleteAll()
+}
+
+@Dao
+interface ImportedListeningEventEvidenceDao {
+    @Insert suspend fun insert(entity: ImportedListeningEventEvidenceEntity)
+    @Insert suspend fun insert(entities: List<ImportedListeningEventEvidenceEntity>)
+    @Query("SELECT * FROM imported_listening_event_evidence WHERE sourceProfileId = :sourceProfileId AND fingerprintVersion = :fingerprintVersion AND fingerprint = :fingerprint AND duplicateOrdinal = :duplicateOrdinal LIMIT 1")
+    suspend fun find(sourceProfileId: Long, fingerprintVersion: Int, fingerprint: String, duplicateOrdinal: Int): ImportedListeningEventEvidenceEntity?
+    @Query("SELECT evidence.* FROM imported_listening_event_evidence evidence JOIN listening_events event ON event.id = evidence.eventId WHERE event.publicationState != 'import_pending' ORDER BY evidence.eventId") suspend fun getAllForBackup(): List<ImportedListeningEventEvidenceEntity>
+    @Query("DELETE FROM imported_listening_event_evidence") suspend fun deleteAll()
+}
+
+@Dao
+interface ListeningImportBatchEventDao {
+    @Insert suspend fun insert(entity: ListeningImportBatchEventEntity)
+    @Insert suspend fun insert(entities: List<ListeningImportBatchEventEntity>)
+    @Query("SELECT COUNT(*) FROM listening_import_batch_events WHERE batchId = :batchId") suspend fun countForBatch(batchId: Long): Long
+    @Query("SELECT * FROM listening_import_batch_events WHERE batchId IN (SELECT id FROM listening_import_batches WHERE status = 'published') ORDER BY batchId, eventId") suspend fun getPublishedForBackup(): List<ListeningImportBatchEventEntity>
+    @Query("DELETE FROM listening_import_batch_events WHERE batchId = :batchId") suspend fun deleteForBatch(batchId: Long)
+    @Query("DELETE FROM listening_import_batch_events") suspend fun deleteAll()
 }

@@ -393,10 +393,11 @@ private fun RecentListeningEventRow.toDomain() = RecentListeningEvent(
     source = ListeningSource.fromStorageValue(source),
     startedAt = startedAt,
     endedAt = endedAt,
+    attributionAt = attributionAt,
     listenedMs = listenedMs,
     qualifiedAsPlay = qualifiedAsPlay,
     qualificationReason = ListeningQualificationReason.fromStorageValue(qualificationReason),
-    endReason = ListeningEndReason.fromStorageValue(endReason),
+    endReason = endReason?.let(ListeningEndReason::fromStorageValue),
     playbackSessionId = playbackSessionId
 )
 

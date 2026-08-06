@@ -24,8 +24,8 @@ object ListeningStatsQueries {
         return SimpleSQLiteQuery(
             """
                 SELECT
-                    MIN(startedAt) AS earliestStartedAt,
-                    MAX(startedAt) AS latestStartedAt
+                    MIN(attributionAt) AS earliestStartedAt,
+                    MAX(attributionAt) AS latestStartedAt
                 FROM listening_events
                 WHERE ${filtered.whereClause}
             """.trimIndent(),
@@ -81,12 +81,13 @@ object ListeningStatsQueries {
                 COALESCE(SUM(e.listenedMs), 0) AS listenedMs,
                 COALESCE(SUM(CASE WHEN e.qualifiedAsPlay = 1 THEN 1 ELSE 0 END), 0) AS qualifiedPlayCount,
                 COUNT(e.id) AS totalAttemptCount,
-                COALESCE(SUM(CASE WHEN e.endReason = 'natural_end' THEN 1 ELSE 0 END), 0) AS naturalCompletionCount
+                COALESCE(SUM(CASE WHEN e.completionClassification IN ('native_natural', 'source_documented_natural') THEN 1 ELSE 0 END), 0) AS naturalCompletionCount
             FROM buckets b
             LEFT JOIN listening_events e
-              ON e.startedAt >= b.startInclusive
-             AND e.startedAt < b.endExclusive
+              ON e.attributionAt >= b.startInclusive
+             AND e.attributionAt < b.endExclusive
              AND e.source IN ($sourcePlaceholders)
+             AND e.publicationState != 'import_pending'
             GROUP BY b.bucketIndex, b.startInclusive, b.endExclusive
             ORDER BY b.bucketIndex ASC
         """.trimIndent()
@@ -102,12 +103,12 @@ object ListeningStatsQueries {
                     COUNT(*) AS detailedEventCount,
                     COALESCE(SUM(listenedMs), 0) AS detailedListeningMs,
                     COALESCE(SUM(CASE WHEN qualifiedAsPlay = 1 THEN 1 ELSE 0 END), 0) AS detailedQualifiedPlayCount,
-                    COALESCE(SUM(CASE WHEN endReason = 'natural_end' THEN 1 ELSE 0 END), 0) AS naturalCompletionCount,
+                    COALESCE(SUM(CASE WHEN completionClassification IN ('native_natural', 'source_documented_natural') THEN 1 ELSE 0 END), 0) AS naturalCompletionCount,
                     COALESCE(SUM(CASE WHEN qualifiedAsPlay = 0 THEN 1 ELSE 0 END), 0) AS nonQualifiedAttemptCount,
-                    MIN(startedAt) AS firstDetailedEventAt,
-                    MAX(startedAt) AS latestDetailedEventAt,
-                    MIN(CASE WHEN qualifiedAsPlay = 1 THEN startedAt END) AS firstQualifiedAt,
-                    MAX(CASE WHEN qualifiedAsPlay = 1 THEN startedAt END) AS latestQualifiedAt
+                    MIN(attributionAt) AS firstDetailedEventAt,
+                    MAX(attributionAt) AS latestDetailedEventAt,
+                    MIN(CASE WHEN qualifiedAsPlay = 1 THEN attributionAt END) AS firstQualifiedAt,
+                    MAX(CASE WHEN qualifiedAsPlay = 1 THEN attributionAt END) AS latestQualifiedAt
                 FROM listening_events
                 WHERE ${filtered.whereClause}
             ), baseline AS (
@@ -242,6 +243,7 @@ object ListeningStatsQueries {
                 e.source,
                 e.startedAt,
                 e.endedAt,
+                e.attributionAt,
                 e.listenedMs,
                 e.qualifiedAsPlay,
                 e.qualificationReason,
@@ -250,7 +252,7 @@ object ListeningStatsQueries {
             FROM listening_events e
             JOIN listening_track_identities i ON i.id = e.trackIdentityId
             WHERE ${filtered.whereClause}
-            ORDER BY e.startedAt DESC, e.id DESC
+            ORDER BY e.attributionAt DESC, e.id DESC
             LIMIT $limit
         """.trimIndent()
         return SimpleSQLiteQuery(sql, filtered.args.toTypedArray())
@@ -313,11 +315,11 @@ object ListeningStatsQueries {
                     COUNT(*) AS detailedEventCount,
                     COALESCE(SUM(e.listenedMs), 0) AS detailedListeningMs,
                     COALESCE(SUM(CASE WHEN e.qualifiedAsPlay = 1 THEN 1 ELSE 0 END), 0) AS detailedQualifiedPlayCount,
-                    COALESCE(SUM(CASE WHEN e.endReason = 'natural_end' THEN 1 ELSE 0 END), 0) AS naturalCompletionCount,
+                    COALESCE(SUM(CASE WHEN e.completionClassification IN ('native_natural', 'source_documented_natural') THEN 1 ELSE 0 END), 0) AS naturalCompletionCount,
                     COALESCE(SUM(CASE WHEN e.qualifiedAsPlay = 0 THEN 1 ELSE 0 END), 0) AS nonQualifiedAttemptCount,
-                    MIN(CASE WHEN e.qualifiedAsPlay = 1 THEN e.startedAt END) AS firstQualifiedAt,
-                    MAX(CASE WHEN e.qualifiedAsPlay = 1 THEN e.startedAt END) AS latestQualifiedAt,
-                    MAX(e.startedAt) AS latestDetailedEventAt
+                    MIN(CASE WHEN e.qualifiedAsPlay = 1 THEN e.attributionAt END) AS firstQualifiedAt,
+                    MAX(CASE WHEN e.qualifiedAsPlay = 1 THEN e.attributionAt END) AS latestQualifiedAt,
+                    MAX(e.attributionAt) AS latestDetailedEventAt
                 FROM listening_events e
                 WHERE ${filtered.whereClause}
                 GROUP BY e.trackIdentityId
@@ -359,13 +361,14 @@ object ListeningStatsQueries {
         val args = mutableListOf<Any>()
         val placeholders = spec.sourceStorageValues.joinToString(",") { "?" }
         clauses += "${prefix}source IN ($placeholders)"
+        clauses += "${prefix}publicationState != 'import_pending'"
         args.addAll(spec.sourceStorageValues)
         spec.startInclusive?.let {
-            clauses += "${prefix}startedAt >= ?"
+            clauses += "${prefix}attributionAt >= ?"
             args += it
         }
         spec.endExclusive?.let {
-            clauses += "${prefix}startedAt < ?"
+            clauses += "${prefix}attributionAt < ?"
             args += it
         }
         return SqlAndArgs(clauses.joinToString(" AND "), args)

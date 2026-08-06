@@ -109,23 +109,23 @@ class ListeningAnalyticsLargeHistoryTest {
     @Test
     fun existingCompositeIndexesCoverSourceDateAndQualifiedDatePlans() {
         val sourcePlan = queryPlan(
-            "SELECT id FROM listening_events WHERE source = 'cdplaya' AND startedAt >= 100 AND startedAt < 200"
+            "SELECT id FROM listening_events WHERE source = 'cdplaya' AND publicationState != 'import_pending' AND attributionAt >= 100 AND attributionAt < 200"
         )
         val qualifiedPlan = queryPlan(
-            "SELECT id FROM listening_events WHERE qualifiedAsPlay = 1 AND startedAt >= 100 AND startedAt < 200"
+            "SELECT id FROM listening_events WHERE qualifiedAsPlay = 1 AND publicationState != 'import_pending' AND attributionAt >= 100 AND attributionAt < 200"
         )
         val trackPlan = queryPlan(
-            "SELECT id FROM listening_events WHERE trackIdentityId = 1 AND startedAt >= 100 AND startedAt < 200"
+            "SELECT id FROM listening_events WHERE trackIdentityId = 1 AND attributionAt >= 100 AND attributionAt < 200"
         )
         val bucketJoinPlan = queryPlan(
             "WITH buckets(startInclusive, endExclusive) AS (VALUES (100, 200)) " +
                 "SELECT COUNT(e.id) FROM buckets b LEFT JOIN listening_events e " +
-                "ON e.source = 'cdplaya' AND e.startedAt >= b.startInclusive AND e.startedAt < b.endExclusive"
+                "ON e.source = 'cdplaya' AND e.publicationState != 'import_pending' AND e.attributionAt >= b.startInclusive AND e.attributionAt < b.endExclusive"
         )
-        assertTrue(sourcePlan.contains("index_listening_events_source_startedAt"))
-        assertTrue(qualifiedPlan.contains("index_listening_events_qualifiedAsPlay_startedAt"))
-        assertTrue(trackPlan.contains("index_listening_events_trackIdentityId_startedAt"))
-        assertTrue(bucketJoinPlan.contains("index_listening_events_source_startedAt"))
+        assertTrue(sourcePlan.contains("index_listening_events_source_publicationState_attributionAt"))
+        assertTrue(qualifiedPlan.contains("index_listening_events_qualifiedAsPlay_publicationState_attributionAt"))
+        assertTrue(trackPlan.contains("index_listening_events_trackIdentityId_attributionAt"))
+        assertTrue(bucketJoinPlan.contains("index_listening_events_source_publicationState_attributionAt"))
     }
 
     @Test

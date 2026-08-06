@@ -423,7 +423,7 @@ class ListeningStatsRepositoryTest {
         val plan = database.query(
             SimpleSQLiteQuery(
                 "EXPLAIN QUERY PLAN SELECT id FROM listening_events " +
-                    "WHERE source = 'cdplaya' AND startedAt >= 100 AND startedAt < 200"
+                    "WHERE source = 'cdplaya' AND publicationState != 'import_pending' AND attributionAt >= 100 AND attributionAt < 200"
             )
         ).use { cursor ->
             buildList {
@@ -431,7 +431,7 @@ class ListeningStatsRepositoryTest {
                 while (cursor.moveToNext()) add(cursor.getString(detailColumn))
             }
         }
-        assertTrue(plan.joinToString().contains("index_listening_events_source_startedAt"))
+        assertTrue(plan.joinToString().contains("index_listening_events_source_publicationState_attributionAt"))
     }
 
     private suspend fun insertFixture(): Fixture {
