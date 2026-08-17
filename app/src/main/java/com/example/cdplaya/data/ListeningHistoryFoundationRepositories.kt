@@ -18,6 +18,11 @@ import com.example.cdplaya.data.local.ListeningImportBatchStatus
 import com.example.cdplaya.data.local.ListeningTrackExternalIdEntity
 import com.example.cdplaya.data.local.ImportedListeningEventEvidenceEntity
 import com.example.cdplaya.data.local.ListeningImportBatchEventEntity
+import com.example.cdplaya.data.local.ListeningSource
+import com.example.cdplaya.data.local.requireCompatibleWith
+import com.example.cdplaya.data.local.requireSupportedExternalSource
+import com.example.cdplaya.data.local.requireSupportedImportSource
+import com.example.cdplaya.data.local.requireSupportedSemantics
 
 class ListeningTrackIdentityRepository(
     private val identityDao: ListeningTrackIdentityDao,
@@ -38,11 +43,17 @@ class ListeningTrackIdentityRepository(
 class ListeningEventRepository(
     private val eventDao: ListeningEventDao
 ) {
-    suspend fun insert(event: ListeningEventEntity): Long = eventDao.insert(event)
+    suspend fun insert(event: ListeningEventEntity): Long {
+        event.requireSupportedSemantics()
+        return eventDao.insert(event)
+    }
 
     /** Returns false when a uniqueness constraint proves this finalized attempt was already stored. */
-    suspend fun insertFinalizedDraft(draft: FinalizedListeningEventDraft): Boolean =
-        eventDao.insertIgnoringConflict(draft.toEntity()) != -1L
+    suspend fun insertFinalizedDraft(draft: FinalizedListeningEventDraft): Boolean {
+        val event = draft.toEntity()
+        event.requireSupportedSemantics()
+        return eventDao.insertIgnoringConflict(event) != -1L
+    }
 
     suspend fun getByUuid(eventUuid: String): ListeningEventEntity? =
         eventDao.getByUuid(eventUuid)
@@ -132,23 +143,55 @@ class LegacyListeningBaselineRepository(
 
 /** Source-neutral persistence foundation. Parsing and service-specific policy remain outside it. */
 class ListeningImportRepository(private val database: AppDatabase) {
-    suspend fun createSourceProfile(source: ListeningImportSourceEntity): Long =
-        database.listeningImportSourceDao().insert(source)
+    suspend fun createSourceProfile(source: ListeningImportSourceEntity): Long {
+        source.requireSupportedImportSource()
+        return database.listeningImportSourceDao().insert(source)
+    }
 
     suspend fun getSourceProfile(stableUuid: String): ListeningImportSourceEntity? =
         database.listeningImportSourceDao().getByStableUuid(stableUuid)
 
-    suspend fun createBatch(batch: ListeningImportBatchEntity): Long =
+    suspend fun createBatch(batch: ListeningImportBatchEntity): Long = database.withTransaction {
+        val source = requireNotNull(database.listeningImportSourceDao().getById(batch.sourceProfileId)) {
+            "Import batch source profile does not exist."
+        }
+        batch.requireCompatibleWith(source)
         database.listeningImportBatchDao().insert(batch)
+    }
 
-    suspend fun insertExternalId(externalId: ListeningTrackExternalIdEntity): Long =
-        database.listeningTrackExternalIdDao().insert(externalId)
+    suspend fun insertEvent(event: ListeningEventEntity): Long {
+        require(event.source != ListeningSource.CDPLAYA) { "Import repository accepts imported events only." }
+        event.requireSupportedSemantics()
+        return database.listeningEventDao().insert(event)
+    }
+
+    suspend fun insertExternalId(externalId: ListeningTrackExternalIdEntity): Long {
+        externalId.requireSupportedExternalSource()
+        return database.listeningTrackExternalIdDao().insert(externalId)
+    }
 
     suspend fun findExternalId(source: com.example.cdplaya.data.local.ListeningSource, externalId: String) =
         database.listeningTrackExternalIdDao().find(source, externalId)
 
-    suspend fun insertEvidence(evidence: ImportedListeningEventEvidenceEntity) =
+    suspend fun insertEvidence(evidence: ImportedListeningEventEvidenceEntity) = database.withTransaction {
+        val source = requireNotNull(database.listeningImportSourceDao().getById(evidence.sourceProfileId)) {
+            "Imported evidence source profile does not exist."
+        }
+        val event = requireNotNull(database.listeningEventDao().getById(evidence.eventId)) {
+            "Imported evidence event does not exist."
+        }
+        source.requireSupportedImportSource()
+        event.requireSupportedSemantics()
+        require(event.source == source.sourceType) {
+            "Imported evidence source profile is incompatible with its event."
+        }
+        require(database.listeningImportBatchEventDao().countOtherSourceProfilesForEvent(
+            evidence.eventId, evidence.sourceProfileId
+        ) == 0L) {
+            "Imported evidence source profile is incompatible with an observing batch."
+        }
         database.importedListeningEventEvidenceDao().insert(evidence)
+    }
 
     suspend fun findEvidence(
         sourceProfileId: Long,
@@ -159,8 +202,32 @@ class ListeningImportRepository(private val database: AppDatabase) {
         sourceProfileId, fingerprintVersion, fingerprint, duplicateOrdinal
     )
 
-    suspend fun observeEvent(batchId: Long, eventId: Long) =
+    suspend fun observeEvent(batchId: Long, eventId: Long) = database.withTransaction {
+        val batch = requireNotNull(database.listeningImportBatchDao().getById(batchId)) {
+            "Import batch does not exist."
+        }
+        val source = requireNotNull(database.listeningImportSourceDao().getById(batch.sourceProfileId)) {
+            "Import batch source profile does not exist."
+        }
+        val event = requireNotNull(database.listeningEventDao().getById(eventId)) {
+            "Observed listening event does not exist."
+        }
+        batch.requireCompatibleWith(source)
+        event.requireSupportedSemantics()
+        require(event.source == source.sourceType) {
+            "Import batch cannot observe an event from another source."
+        }
+        require(database.listeningImportBatchEventDao().countOtherSourceProfilesForEvent(
+            eventId, source.id
+        ) == 0L) {
+            "Import batch cannot observe an event owned by another source profile."
+        }
+        val evidence = database.importedListeningEventEvidenceDao().getByEventId(eventId)
+        require(evidence == null || evidence.sourceProfileId == source.id) {
+            "Import batch cannot observe evidence from another source profile."
+        }
         database.listeningImportBatchEventDao().insert(ListeningImportBatchEventEntity(batchId, eventId))
+    }
 
     suspend fun publishBatch(
         batchId: Long,
@@ -170,11 +237,25 @@ class ListeningImportRepository(private val database: AppDatabase) {
     ): Int = database.withTransaction {
         val batch = requireNotNull(database.listeningImportBatchDao().getById(batchId))
         require(batch.status == ListeningImportBatchStatus.PENDING) { "Import batch is not pending." }
+        val source = requireNotNull(database.listeningImportSourceDao().getById(batch.sourceProfileId)) {
+            "Import batch source profile does not exist."
+        }
+        batch.requireCompatibleWith(source)
         require(database.listeningImportBatchEventDao().countForBatch(batchId) == expectedObservedEventCount) {
             "Import batch observation count changed before publication."
         }
         require(database.listeningEventDao().countPendingForBatch(batchId) == expectedPendingEventCount) {
             "Import batch pending-event count changed before publication."
+        }
+        require(database.listeningImportBatchEventDao().countIncompatibleEventsForBatch(batchId) == 0L) {
+            "Import batch contains an event incompatible with its source profile."
+        }
+        require(database.listeningImportBatchEventDao().countIncompatibleEvidenceForBatch(batchId) == 0L) {
+            "Import batch contains evidence from another source profile."
+        }
+        require(database.listeningImportBatchEventDao()
+            .countEventsObservedByOtherSourceProfilesForBatch(batchId) == 0L) {
+            "Import batch contains an event observed by another source profile."
         }
         val published = database.listeningEventDao().publishForBatch(batchId)
         check(published.toLong() == expectedPendingEventCount)

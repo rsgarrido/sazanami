@@ -57,6 +57,49 @@ class ListeningImportBackupRoundTripTest {
         assertEquals("source_end_only", restored.events.single().timestampEvidence)
     }
 
+    @Test fun backup9_excludesPendingEventsEvidenceBatchesAndObservations() = runBlocking {
+        val identityId = database.listeningTrackIdentityDao().insert(identity("mixed-state"))
+        val sourceId = database.listeningImportSourceDao().insert(source("mixed-profile"))
+        val publishedBatch = database.listeningImportBatchDao().insert(batch(sourceId, "published"))
+        val pendingBatch = database.listeningImportBatchDao().insert(
+            batch(sourceId, "pending").copy(
+                status = ListeningImportBatchStatus.PENDING,
+                completedAt = null
+            )
+        )
+        val publishedEvent = database.listeningEventDao().insert(event(identityId, "published-event"))
+        val pendingEvent = database.listeningEventDao().insert(
+            event(identityId, "pending-event").copy(
+                publicationState = ListeningEventPublicationState.IMPORT_PENDING
+            )
+        )
+        database.importedListeningEventEvidenceDao().insert(
+            listOf(
+                ImportedListeningEventEvidenceEntity(publishedEvent, sourceId, 1, "published", 0,
+                    null, null, ImportedListeningSkippedState.FALSE, ImportedListeningMatchDisposition.EXACT),
+                ImportedListeningEventEvidenceEntity(pendingEvent, sourceId, 1, "pending", 0,
+                    null, null, ImportedListeningSkippedState.FALSE, ImportedListeningMatchDisposition.EXACT)
+            )
+        )
+        database.listeningImportBatchEventDao().insert(
+            listOf(
+                ListeningImportBatchEventEntity(publishedBatch, publishedEvent),
+                ListeningImportBatchEventEntity(pendingBatch, publishedEvent),
+                ListeningImportBatchEventEntity(pendingBatch, pendingEvent)
+            )
+        )
+
+        val backup = repository.export()
+
+        assertEquals(listOf("published-event"), backup.events.map { it.eventUuid })
+        assertEquals(listOf("published"), backup.importBatches.map { it.stableUuid })
+        assertEquals(listOf("published"), backup.importedEventEvidence.map { it.fingerprint })
+        assertEquals(
+            listOf("published-event"),
+            backup.batchEventObservations.map { it.eventUuid }
+        )
+    }
+
     private fun identity(title: String) = ListeningTrackIdentityEntity(
         titleSnapshot=title, artistSnapshot="Artist", albumSnapshot="Album", albumArtistSnapshot=null,
         durationMsSnapshot=1_000, normalizedTitle=title, normalizedArtist="artist", normalizedAlbum="album",

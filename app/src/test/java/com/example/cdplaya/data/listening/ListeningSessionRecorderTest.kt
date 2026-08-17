@@ -187,6 +187,21 @@ class ListeningSessionRecorderTest {
     }
 
     @Test
+    fun completionClassificationTracksNaturalEndIndependentlyFromQualification() {
+        recorder.startSession(start(sessionId = "natural", durationMs = 60_000L))
+        val natural = finalized(recorder.finalizeSession("natural", ListeningEndReason.NATURAL_END))
+        assertEquals(ListeningCompletionClassification.NATIVE_NATURAL, natural.completionClassification)
+        assertTrue(natural.qualifiedAsPlay)
+
+        recorder.startSession(start(sessionId = "stopped", durationMs = 2_000L))
+        recorder.onPlaybackStarted("stopped")
+        monotonicClock.advance(1_000L)
+        val stopped = finalized(recorder.finalizeSession("stopped", ListeningEndReason.STOPPED))
+        assertEquals(ListeningCompletionClassification.NONE, stopped.completionClassification)
+        assertTrue(stopped.qualifiedAsPlay)
+    }
+
+    @Test
     fun thresholdQualificationIsStickyThroughPauseSeekStopAndError() {
         recorder.startSession(start(sessionId = "stop", durationMs = 2_000L))
         recorder.onPlaybackStarted("stop")

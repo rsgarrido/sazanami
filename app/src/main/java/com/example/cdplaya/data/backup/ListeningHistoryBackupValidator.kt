@@ -10,6 +10,7 @@ import com.example.cdplaya.data.local.ListeningEventPublicationState
 import com.example.cdplaya.data.local.ListeningImportBatchStatus
 import com.example.cdplaya.data.local.ImportedListeningSkippedState
 import com.example.cdplaya.data.local.ImportedListeningMatchDisposition
+import com.example.cdplaya.data.local.requiredQualificationPolicy
 
 object ListeningHistoryBackupValidator {
     fun validate(history: BackupListeningHistoryV2): BackupListeningHistoryV2 {
@@ -134,10 +135,10 @@ object ListeningHistoryBackupValidator {
             require(event.sourceEventKey == null || event.sourceEventKey.isNotBlank()) {
                 "Listening-history source-event key is invalid."
             }
-            parseEnum("source", event.source, ListeningSource::fromStorageValue)
+            val source = parseEnumValue("source", event.source, ListeningSource::fromStorageValue)
             val timestampEvidence = parseEnumValue("timestamp evidence", event.timestampEvidence, ListeningTimestampEvidence::fromStorageValue)
-            parseEnum("qualification policy", event.qualificationPolicy, ListeningQualificationPolicy::fromStorageValue)
-            parseEnum("completion classification", event.completionClassification, ListeningCompletionClassification::fromStorageValue)
+            val qualificationPolicy = parseEnumValue("qualification policy", event.qualificationPolicy, ListeningQualificationPolicy::fromStorageValue)
+            val completion = parseEnumValue("completion classification", event.completionClassification, ListeningCompletionClassification::fromStorageValue)
             val publication = parseEnumValue("publication state", event.publicationState, ListeningEventPublicationState::fromStorageValue)
             require(publication != ListeningEventPublicationState.IMPORT_PENDING) {
                 "Pending listening events cannot appear in a completed backup."
@@ -155,7 +156,32 @@ object ListeningHistoryBackupValidator {
                 event.qualificationReason,
                 ListeningQualificationReason::fromStorageValue
             )
-            event.endReason?.let { parseEnum("end reason", it, ListeningEndReason::fromStorageValue) }
+            val endReason = event.endReason?.let {
+                parseEnumValue("end reason", it, ListeningEndReason::fromStorageValue)
+            }
+            require(qualificationPolicy == source.requiredQualificationPolicy()) {
+                "Listening-history event qualification policy is incompatible with its source."
+            }
+            if (source == ListeningSource.CDPLAYA) {
+                require(publication == ListeningEventPublicationState.NATIVE &&
+                    timestampEvidence == ListeningTimestampEvidence.NATIVE_EXACT &&
+                    event.startedAt != null && event.endedAt != null &&
+                    event.attributionAt == event.startedAt) {
+                    "Native listening-history event semantics are inconsistent."
+                }
+                require(completion != ListeningCompletionClassification.SOURCE_DOCUMENTED_NATURAL &&
+                    (completion == ListeningCompletionClassification.NATIVE_NATURAL) ==
+                    (endReason == ListeningEndReason.NATURAL_END)) {
+                    "Native listening-history completion is inconsistent with its end reason."
+                }
+            } else {
+                require(publication == ListeningEventPublicationState.IMPORT_PUBLISHED) {
+                    "Completed imported listening history must be published."
+                }
+                require(completion != ListeningCompletionClassification.NATIVE_NATURAL) {
+                    "Imported listening history cannot claim native completion."
+                }
+            }
         }
 
         val sources = history.importSources.associateByUnique(BackupListeningImportSource::backupSourceProfileId, "source profile ID")
@@ -169,7 +195,9 @@ object ListeningHistoryBackupValidator {
         history.importSources.forEach { source ->
             require(source.backupSourceProfileId > 0 && source.stableUuid.isNotBlank() && source.displayLabel.isNotBlank())
             require(source.updatedAt >= source.createdAt)
-            parseEnum("import source", source.sourceType, ListeningSource::fromStorageValue)
+            require(parseEnumValue("import source", source.sourceType, ListeningSource::fromStorageValue) != ListeningSource.CDPLAYA) {
+                "CDPlaya cannot be used as an import source profile."
+            }
         }
         val batches = history.importBatches.associateByUnique(BackupListeningImportBatch::backupBatchId, "import batch ID")
         require(history.importBatches.map { it.stableUuid }.distinct().size == history.importBatches.size) { "Listening import batch UUIDs must be unique." }
@@ -181,13 +209,20 @@ object ListeningHistoryBackupValidator {
             require(batch.completedAt != null && batch.completedAt >= batch.startedAt)
             require(listOf(batch.parsedCount,batch.insertedCount,batch.duplicateCount,batch.ignoredCount,batch.invalidCount,
                 batch.exactMatchCount,batch.ambiguousMatchCount,batch.unmatchedCount,batch.qualifiedCount).all { it >= 0 })
-            parseEnum("batch qualification policy", batch.qualificationPolicy, ListeningQualificationPolicy::fromStorageValue)
+            val source = sources.getValue(batch.sourceProfileBackupId)
+            val sourceType = ListeningSource.fromStorageValue(source.sourceType)
+            val policy = parseEnumValue("batch qualification policy", batch.qualificationPolicy, ListeningQualificationPolicy::fromStorageValue)
+            require(policy == sourceType.requiredQualificationPolicy()) {
+                "Listening import batch qualification policy is incompatible with its source profile."
+            }
         }
         val externalKeys = history.externalTrackIds.map { it.sourceType to it.externalId }
         require(externalKeys.distinct().size == externalKeys.size) { "Listening external IDs must be unique per source." }
         history.externalTrackIds.forEach { external ->
             require(external.trackIdentityBackupId in identities && external.externalId.isNotBlank() && external.lastSeenAt >= external.createdAt)
-            parseEnum("external ID source", external.sourceType, ListeningSource::fromStorageValue)
+            require(parseEnumValue("external ID source", external.sourceType, ListeningSource::fromStorageValue) != ListeningSource.CDPLAYA) {
+                "CDPlaya cannot be used as an external catalog source."
+            }
         }
         val eventsByUuid = history.events.associateBy { it.eventUuid }
         val evidenceKeys = history.importedEventEvidence.map { listOf(it.sourceProfileBackupId, it.fingerprintVersion, it.fingerprint, it.duplicateOrdinal) }
@@ -204,9 +239,33 @@ object ListeningHistoryBackupValidator {
             parseEnum("match disposition", evidence.matchDispositionAtImport, ImportedListeningMatchDisposition::fromStorageValue)
         }
         val linkKeys = history.batchEventObservations.map { it.batchBackupId to it.eventUuid }
+        val evidenceByEventUuid = history.importedEventEvidence.associateBy { it.eventUuid }
         require(linkKeys.distinct().size == linkKeys.size) { "Listening batch-event links must be unique." }
+        require(history.batchEventObservations.all { it.batchBackupId in batches && it.eventUuid in eventsByUuid }) {
+            "Listening batch-event link references a missing record."
+        }
+        val observationProfilesByEvent = history.batchEventObservations.groupBy { it.eventUuid }
+            .mapValues { (_, links) ->
+                links.map { link ->
+                    sources.getValue(batches.getValue(link.batchBackupId).sourceProfileBackupId)
+                        .backupSourceProfileId
+                }.toSet()
+            }
+        require(observationProfilesByEvent.values.all { it.size == 1 }) {
+            "Listening event observations must belong to one import source profile."
+        }
         history.batchEventObservations.forEach { link ->
             require(link.batchBackupId in batches && link.eventUuid in eventsByUuid) { "Listening batch-event link references a missing record." }
+            val batch = batches.getValue(link.batchBackupId)
+            val source = sources.getValue(batch.sourceProfileBackupId)
+            val event = eventsByUuid.getValue(link.eventUuid)
+            require(source.sourceType == event.source && event.source != ListeningSource.CDPLAYA.storageValue) {
+                "Listening batch-event link crosses import sources."
+            }
+            require(evidenceByEventUuid[event.eventUuid]?.sourceProfileBackupId == null ||
+                evidenceByEventUuid.getValue(event.eventUuid).sourceProfileBackupId == batch.sourceProfileBackupId) {
+                "Listening batch-event link crosses import source profiles."
+            }
         }
         history.events.filter { it.source == "cdplaya" }.forEach { event ->
             require(event.publicationState == "native" && event.eventUuid !in history.importedEventEvidence.map { it.eventUuid }.toSet()) {

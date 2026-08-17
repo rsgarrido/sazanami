@@ -59,6 +59,9 @@ interface ListeningEventDao {
     @Query("SELECT * FROM listening_events WHERE eventUuid = :eventUuid LIMIT 1")
     suspend fun getByUuid(eventUuid: String): ListeningEventEntity?
 
+    @Query("SELECT * FROM listening_events WHERE id = :id")
+    suspend fun getById(id: Long): ListeningEventEntity?
+
     @Query("SELECT * FROM listening_events WHERE playbackSessionId = :playbackSessionId LIMIT 1")
     suspend fun getByPlaybackSessionId(playbackSessionId: String): ListeningEventEntity?
 
@@ -144,6 +147,8 @@ interface ImportedListeningEventEvidenceDao {
     @Insert suspend fun insert(entities: List<ImportedListeningEventEvidenceEntity>)
     @Query("SELECT * FROM imported_listening_event_evidence WHERE sourceProfileId = :sourceProfileId AND fingerprintVersion = :fingerprintVersion AND fingerprint = :fingerprint AND duplicateOrdinal = :duplicateOrdinal LIMIT 1")
     suspend fun find(sourceProfileId: Long, fingerprintVersion: Int, fingerprint: String, duplicateOrdinal: Int): ImportedListeningEventEvidenceEntity?
+    @Query("SELECT * FROM imported_listening_event_evidence WHERE eventId = :eventId")
+    suspend fun getByEventId(eventId: Long): ImportedListeningEventEvidenceEntity?
     @Query("SELECT evidence.* FROM imported_listening_event_evidence evidence JOIN listening_events event ON event.id = evidence.eventId WHERE event.publicationState != 'import_pending' ORDER BY evidence.eventId") suspend fun getAllForBackup(): List<ImportedListeningEventEvidenceEntity>
     @Query("DELETE FROM imported_listening_event_evidence") suspend fun deleteAll()
 }
@@ -153,6 +158,41 @@ interface ListeningImportBatchEventDao {
     @Insert suspend fun insert(entity: ListeningImportBatchEventEntity)
     @Insert suspend fun insert(entities: List<ListeningImportBatchEventEntity>)
     @Query("SELECT COUNT(*) FROM listening_import_batch_events WHERE batchId = :batchId") suspend fun countForBatch(batchId: Long): Long
+    @Query("""
+        SELECT COUNT(*) FROM listening_import_batch_events link
+        JOIN listening_import_batches batch ON batch.id = link.batchId
+        JOIN listening_import_sources source ON source.id = batch.sourceProfileId
+        JOIN listening_events event ON event.id = link.eventId
+        WHERE link.batchId = :batchId AND (
+            event.source != source.sourceType OR event.source = 'cdplaya' OR
+            event.qualificationPolicy != batch.qualificationPolicy OR event.publicationState = 'native'
+        )
+    """)
+    suspend fun countIncompatibleEventsForBatch(batchId: Long): Long
+    @Query("""
+        SELECT COUNT(*) FROM listening_import_batch_events link
+        JOIN listening_import_batches batch ON batch.id = link.batchId
+        JOIN imported_listening_event_evidence evidence ON evidence.eventId = link.eventId
+        WHERE link.batchId = :batchId AND evidence.sourceProfileId != batch.sourceProfileId
+    """)
+    suspend fun countIncompatibleEvidenceForBatch(batchId: Long): Long
+    @Query("""
+        SELECT COUNT(*) FROM listening_import_batch_events link
+        JOIN listening_import_batches batch ON batch.id = link.batchId
+        WHERE link.eventId = :eventId AND batch.sourceProfileId != :sourceProfileId
+    """)
+    suspend fun countOtherSourceProfilesForEvent(eventId: Long, sourceProfileId: Long): Long
+    @Query("""
+        SELECT COUNT(DISTINCT link.eventId) FROM listening_import_batch_events link
+        JOIN listening_import_batches batch ON batch.id = link.batchId
+        WHERE link.batchId = :batchId AND EXISTS (
+            SELECT 1 FROM listening_import_batch_events other
+            JOIN listening_import_batches otherBatch ON otherBatch.id = other.batchId
+            WHERE other.eventId = link.eventId AND other.batchId != link.batchId
+                AND otherBatch.sourceProfileId != batch.sourceProfileId
+        )
+    """)
+    suspend fun countEventsObservedByOtherSourceProfilesForBatch(batchId: Long): Long
     @Query("SELECT * FROM listening_import_batch_events WHERE batchId IN (SELECT id FROM listening_import_batches WHERE status = 'published') ORDER BY batchId, eventId") suspend fun getPublishedForBackup(): List<ListeningImportBatchEventEntity>
     @Query("DELETE FROM listening_import_batch_events WHERE batchId = :batchId") suspend fun deleteForBatch(batchId: Long)
     @Query("DELETE FROM listening_import_batch_events") suspend fun deleteAll()

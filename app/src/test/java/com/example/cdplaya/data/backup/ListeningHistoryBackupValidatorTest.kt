@@ -85,6 +85,44 @@ class ListeningHistoryBackupValidatorTest {
     }
 
     @Test
+    fun version8NativeHistoryAndRatingMigrateDirectlyWithoutImportProvenance() {
+        val full = validHistory()
+        val nativeEvent = full.events.first()
+        val history = full.copy(
+            identities = full.identities.filter { it.backupIdentityId == nativeEvent.trackIdentityBackupId },
+            bindings = full.bindings.filter { it.backupBindingId == nativeEvent.localTrackBindingBackupId },
+            baselines = emptyList(),
+            events = listOf(nativeEvent),
+            importSources = emptyList(), importBatches = emptyList(), externalTrackIds = emptyList(),
+            importedEventEvidence = emptyList(), batchEventObservations = emptyList()
+        ).let { it.copy(summary = it.recordsSummary()) }
+        val decoded = AppBackupJson.decodeBackup(
+            AppBackupJson.encodeBackup(
+                AppBackup(
+                    schemaVersion = 8,
+                    createdAt = 999,
+                    canonicalListeningHistory = history,
+                    songRatings = BackupSongRatings(
+                        entries = listOf(BackupSongRating(nativeEvent.trackIdentityBackupId, 4, 123, 456))
+                    )
+                )
+            )
+        )
+        val migrated = requireNotNull(decoded.canonicalListeningHistory)
+
+        assertEquals(9, decoded.schemaVersion)
+        assertEquals(nativeEvent, migrated.events.single())
+        assertEquals(4, decoded.songRatings.entries.single().rating)
+        assertEquals(123L, decoded.songRatings.entries.single().ratedAt)
+        assertEquals(456L, decoded.songRatings.entries.single().updatedAt)
+        assertTrue(migrated.importSources.isEmpty())
+        assertTrue(migrated.importBatches.isEmpty())
+        assertTrue(migrated.externalTrackIds.isEmpty())
+        assertTrue(migrated.importedEventEvidence.isEmpty())
+        assertTrue(migrated.batchEventObservations.isEmpty())
+    }
+
+    @Test
     fun validator_rejectsEveryRequiredStructuralFailure() {
         val valid = validHistory()
         val mutations = listOf<Pair<String, (BackupListeningHistoryV2) -> BackupListeningHistoryV2>>(
@@ -159,6 +197,65 @@ class ListeningHistoryBackupValidatorTest {
         }
         expectInvalid("duplicate link") {
             ListeningHistoryBackupValidator.validate(valid.copy(batchEventObservations = valid.batchEventObservations + valid.batchEventObservations.single()))
+        }
+        expectInvalid("native import profile") {
+            ListeningHistoryBackupValidator.validate(valid.copy(importSources = listOf(source.copy(sourceType = "cdplaya"))))
+        }
+        expectInvalid("native external ID") {
+            ListeningHistoryBackupValidator.validate(valid.copy(externalTrackIds = listOf(valid.externalTrackIds.single().copy(sourceType = "cdplaya"))))
+        }
+        expectInvalid("batch policy ownership") {
+            ListeningHistoryBackupValidator.validate(valid.copy(importBatches = listOf(batch.copy(qualificationPolicy = "lastfm"))))
+        }
+        expectInvalid("batch event source ownership") {
+            ListeningHistoryBackupValidator.validate(valid.copy(batchEventObservations = listOf(
+                BackupListeningImportBatchEvent(1, "uuid-3")
+            )))
+        }
+        expectInvalid("batch evidence profile ownership") {
+            ListeningHistoryBackupValidator.validate(valid.copy(
+                importSources = listOf(
+                    source,
+                    source.copy(backupSourceProfileId = 2, stableUuid = "other-profile", accountIdentityDigest = null)
+                ),
+                importedEventEvidence = listOf(valid.importedEventEvidence.single().copy(sourceProfileBackupId = 2))
+            ))
+        }
+        expectInvalid("event observed by multiple profiles") {
+            val otherSource = source.copy(
+                backupSourceProfileId = 2, stableUuid = "other-profile", accountIdentityDigest = null
+            )
+            val otherBatch = batch.copy(
+                backupBatchId = 2, stableUuid = "other-batch", sourceProfileBackupId = 2
+            )
+            ListeningHistoryBackupValidator.validate(valid.copy(
+                importSources = listOf(source, otherSource),
+                importBatches = listOf(batch, otherBatch),
+                batchEventObservations = listOf(
+                    BackupListeningImportBatchEvent(1, "uuid-2"),
+                    BackupListeningImportBatchEvent(2, "uuid-2")
+                )
+            ))
+        }
+    }
+
+    @Test
+    fun backup9SemanticValidationRejectsNativeAndImportedOwnershipMismatches() {
+        val valid = validHistory()
+        val mutations = listOf<Pair<String, (BackupListeningHistoryV2) -> BackupListeningHistoryV2>>(
+            "native publication" to { it.replaceEvent(0) { event -> event.copy(publicationState = "import_published") } },
+            "native timestamp evidence" to { it.replaceEvent(0) { event -> event.copy(timestampEvidence = "source_end_only") } },
+            "native attribution" to { it.replaceEvent(0) { event -> event.copy(attributionAt = event.endedAt!!) } },
+            "native policy" to { it.replaceEvent(0) { event -> event.copy(qualificationPolicy = "spotify") } },
+            "native source completion" to { it.replaceEvent(0) { event -> event.copy(completionClassification = "source_documented_natural") } },
+            "native missing completion" to { it.replaceEvent(0) { event -> event.copy(completionClassification = "none") } },
+            "import native publication" to { it.replaceEvent(1) { event -> event.copy(publicationState = "native") } },
+            "import policy" to { it.replaceEvent(1) { event -> event.copy(qualificationPolicy = "lastfm") } },
+            "import native completion" to { it.replaceEvent(1) { event -> event.copy(completionClassification = "native_natural") } }
+        )
+
+        mutations.forEach { (label, mutate) ->
+            expectInvalid(label) { ListeningHistoryBackupValidator.validate(mutate(valid)) }
         }
     }
 

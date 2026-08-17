@@ -39,6 +39,7 @@ class ListeningImportFoundationMigrationTest {
                         (1,'native','cdplaya',1,NULL,'session',100,200,100,1000,1,'natural_end',1,'natural_end',NULL,NULL,200),
                         (2,'legacy-import','spotify_import',2,NULL,NULL,300,400,100,1000,0,'none',1,'unknown','legacy-key',44,400)
                     """.trimIndent())
+                    db.execSQL("INSERT INTO song_ratings(trackIdentityId,rating,ratedAt,updatedAt) VALUES (2,4,123,456)")
                 }
                 override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
             }).build()
@@ -57,6 +58,10 @@ class ListeningImportFoundationMigrationTest {
             assertEquals(1L, sqlite.longQuery("SELECT COUNT(*) FROM listening_import_batch_events"))
             assertEquals(0L, sqlite.longQuery("SELECT COUNT(*) FROM imported_listening_event_evidence"))
             assertEquals(1L, sqlite.longQuery("SELECT COUNT(*) FROM listening_import_sources WHERE accountIdentityDigest IS NULL"))
+            assertEquals(1L, sqlite.longQuery("SELECT COUNT(*) FROM song_ratings WHERE trackIdentityId=2"))
+            assertEquals(4L, sqlite.longQuery("SELECT rating FROM song_ratings WHERE trackIdentityId=2"))
+            assertEquals(123L, sqlite.longQuery("SELECT ratedAt FROM song_ratings WHERE trackIdentityId=2"))
+            assertEquals(456L, sqlite.longQuery("SELECT updatedAt FROM song_ratings WHERE trackIdentityId=2"))
         } finally {
             database.close()
             context.deleteDatabase(name)
