@@ -115,6 +115,8 @@ interface LegacyListeningBaselineDao {
 @Dao
 interface ListeningImportSourceDao {
     @Insert suspend fun insert(source: ListeningImportSourceEntity): Long
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnoringConflict(source: ListeningImportSourceEntity): Long
     @Query("SELECT * FROM listening_import_sources WHERE id = :id") suspend fun getById(id: Long): ListeningImportSourceEntity?
     @Query("SELECT * FROM listening_import_sources WHERE stableUuid = :stableUuid LIMIT 1") suspend fun getByStableUuid(stableUuid: String): ListeningImportSourceEntity?
     @Query("SELECT * FROM listening_import_sources ORDER BY id") suspend fun getAllForBackup(): List<ListeningImportSourceEntity>
@@ -147,11 +149,29 @@ interface ImportedListeningEventEvidenceDao {
     @Insert suspend fun insert(entities: List<ImportedListeningEventEvidenceEntity>)
     @Query("SELECT * FROM imported_listening_event_evidence WHERE sourceProfileId = :sourceProfileId AND fingerprintVersion = :fingerprintVersion AND fingerprint = :fingerprint AND duplicateOrdinal = :duplicateOrdinal LIMIT 1")
     suspend fun find(sourceProfileId: Long, fingerprintVersion: Int, fingerprint: String, duplicateOrdinal: Int): ImportedListeningEventEvidenceEntity?
+    @Query("""
+        SELECT fingerprintVersion, fingerprint, duplicateOrdinal
+        FROM imported_listening_event_evidence
+        WHERE sourceProfileId = :sourceProfileId
+          AND fingerprintVersion = :fingerprintVersion
+          AND fingerprint IN (:fingerprints)
+    """)
+    suspend fun findOccurrenceKeys(
+        sourceProfileId: Long,
+        fingerprintVersion: Int,
+        fingerprints: List<String>
+    ): List<ImportedListeningOccurrenceKeyRow>
     @Query("SELECT * FROM imported_listening_event_evidence WHERE eventId = :eventId")
     suspend fun getByEventId(eventId: Long): ImportedListeningEventEvidenceEntity?
     @Query("SELECT evidence.* FROM imported_listening_event_evidence evidence JOIN listening_events event ON event.id = evidence.eventId WHERE event.publicationState != 'import_pending' ORDER BY evidence.eventId") suspend fun getAllForBackup(): List<ImportedListeningEventEvidenceEntity>
     @Query("DELETE FROM imported_listening_event_evidence") suspend fun deleteAll()
 }
+
+data class ImportedListeningOccurrenceKeyRow(
+    val fingerprintVersion: Int,
+    val fingerprint: String,
+    val duplicateOrdinal: Int
+)
 
 @Dao
 interface ListeningImportBatchEventDao {

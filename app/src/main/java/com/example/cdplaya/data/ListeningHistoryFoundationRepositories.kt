@@ -1,6 +1,11 @@
 package com.example.cdplaya.data
 
 import androidx.room.withTransaction
+import com.example.cdplaya.data.importing.ImportOccurrenceDecision
+import com.example.cdplaya.data.importing.ImportOccurrenceKey
+import com.example.cdplaya.data.importing.ListeningImportDedupePlan
+import com.example.cdplaya.data.importing.ListeningImportDedupePlanner
+import com.example.cdplaya.data.importing.ListeningImportSelectionPlan
 import com.example.cdplaya.data.listening.FinalizedListeningEventDraft
 import com.example.cdplaya.data.local.AppDatabase
 import com.example.cdplaya.data.local.LegacyListeningBaselineDao
@@ -151,6 +156,30 @@ class ListeningImportRepository(private val database: AppDatabase) {
     suspend fun getSourceProfile(stableUuid: String): ListeningImportSourceEntity? =
         database.listeningImportSourceDao().getByStableUuid(stableUuid)
 
+    /** Race-safe source-profile reuse by caller-owned stable UUID. */
+    suspend fun getOrCreateSourceProfile(
+        source: ListeningImportSourceEntity
+    ): ListeningImportSourceEntity {
+        source.requireSupportedImportSource()
+        require(source.id == 0L) { "A new source-profile template cannot already have a database ID." }
+        require(source.stableUuid.isNotBlank()) { "Source profile stable UUID cannot be blank." }
+        return database.withTransaction {
+            val dao = database.listeningImportSourceDao()
+            dao.getByStableUuid(source.stableUuid)?.also {
+                require(it.sourceType == source.sourceType) {
+                    "The source profile stable UUID belongs to another provider."
+                }
+                return@withTransaction it
+            }
+            dao.insertIgnoringConflict(source)
+            requireNotNull(dao.getByStableUuid(source.stableUuid)).also {
+                require(it.sourceType == source.sourceType) {
+                    "The source profile stable UUID belongs to another provider."
+                }
+            }
+        }
+    }
+
     suspend fun createBatch(batch: ListeningImportBatchEntity): Long = database.withTransaction {
         val source = requireNotNull(database.listeningImportSourceDao().getById(batch.sourceProfileId)) {
             "Import batch source profile does not exist."
@@ -201,6 +230,56 @@ class ListeningImportRepository(private val database: AppDatabase) {
     ) = database.importedListeningEventEvidenceDao().find(
         sourceProfileId, fingerprintVersion, fingerprint, duplicateOrdinal
     )
+
+    /**
+     * Looks up a bounded key set using one indexed IN query per fingerprint version. Callers must
+     * keep [keys] within SQLite's bind-variable limit; [planDedupe] uses batches of 500.
+     */
+    suspend fun findExistingOccurrenceKeys(
+        sourceProfileId: Long,
+        keys: List<ImportOccurrenceKey>
+    ): Set<ImportOccurrenceKey> {
+        require(keys.size <= ListeningImportDedupePlanner.MAX_LOOKUP_BATCH_SIZE)
+        val source = requireNotNull(database.listeningImportSourceDao().getById(sourceProfileId)) {
+            "Import source profile does not exist."
+        }
+        source.requireSupportedImportSource()
+        return queryExistingOccurrenceKeys(sourceProfileId, keys)
+    }
+
+    suspend fun planDedupe(
+        sourceProfileId: Long,
+        selection: ListeningImportSelectionPlan,
+        onDecision: suspend (ImportOccurrenceDecision) -> Unit = {}
+    ): ListeningImportDedupePlan {
+        val source = requireNotNull(database.listeningImportSourceDao().getById(sourceProfileId)) {
+            "Import source profile does not exist."
+        }
+        source.requireSupportedImportSource()
+        return ListeningImportDedupePlanner().plan(
+            sourceProfileId = sourceProfileId,
+            selection = selection,
+            findExisting = { profileId, keys -> queryExistingOccurrenceKeys(profileId, keys) },
+            onDecision = onDecision
+        )
+    }
+
+    private suspend fun queryExistingOccurrenceKeys(
+        sourceProfileId: Long,
+        keys: List<ImportOccurrenceKey>
+    ): Set<ImportOccurrenceKey> {
+        if (keys.isEmpty()) return emptySet()
+        val requested = keys.toHashSet()
+        return keys.groupBy(ImportOccurrenceKey::fingerprintVersion).flatMap { (version, versionKeys) ->
+            database.importedListeningEventEvidenceDao().findOccurrenceKeys(
+                sourceProfileId = sourceProfileId,
+                fingerprintVersion = version,
+                fingerprints = versionKeys.map(ImportOccurrenceKey::fingerprint).distinct()
+            ).map { row ->
+                ImportOccurrenceKey(row.fingerprintVersion, row.fingerprint, row.duplicateOrdinal)
+            }
+        }.filterTo(mutableSetOf()) { it in requested }
+    }
 
     suspend fun observeEvent(batchId: Long, eventId: Long) = database.withTransaction {
         val batch = requireNotNull(database.listeningImportBatchDao().getById(batchId)) {

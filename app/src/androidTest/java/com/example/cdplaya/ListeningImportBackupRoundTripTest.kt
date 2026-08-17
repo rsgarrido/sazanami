@@ -4,6 +4,9 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.cdplaya.data.backup.ListeningHistoryBackupRepository
+import com.example.cdplaya.data.ListeningImportRepository
+import com.example.cdplaya.data.importing.ListeningImportFingerprint
+import com.example.cdplaya.data.importing.ListeningImportSelectionPlanner
 import com.example.cdplaya.data.local.*
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -98,6 +101,32 @@ class ListeningImportBackupRoundTripTest {
             listOf("published-event"),
             backup.batchEventObservations.map { it.eventUuid }
         )
+    }
+
+    @Test fun backup9_restoredFingerprintOrdinalIsAlreadyImported() = runBlocking {
+        val identityId = database.listeningTrackIdentityDao().insert(identity("dedupe"))
+        val sourceId = database.listeningImportSourceDao().insert(source("dedupe-profile"))
+        val batchId = database.listeningImportBatchDao().insert(batch(sourceId, "dedupe-batch"))
+        val eventId = database.listeningEventDao().insert(event(identityId, "dedupe-event"))
+        val fingerprint = "d".repeat(64)
+        database.importedListeningEventEvidenceDao().insert(
+            ImportedListeningEventEvidenceEntity(
+                eventId, sourceId, 1, fingerprint, 0, null, "trackdone",
+                ImportedListeningSkippedState.FALSE, ImportedListeningMatchDisposition.EXACT
+            )
+        )
+        database.listeningImportBatchEventDao().insert(ListeningImportBatchEventEntity(batchId, eventId))
+        val backup = repository.export()
+
+        repository.restore(backup)
+
+        val restoredProfile = database.listeningImportSourceDao().getByStableUuid("dedupe-profile")!!
+        val selection = ListeningImportSelectionPlanner().plan(
+            listOf(sequenceOf(ListeningImportFingerprint(1, fingerprint)))
+        )
+        val dedupe = ListeningImportRepository(database).planDedupe(restoredProfile.id, selection)
+        assertEquals(0, dedupe.newOccurrences)
+        assertEquals(1, dedupe.alreadyImportedOccurrences)
     }
 
     private fun identity(title: String) = ListeningTrackIdentityEntity(
