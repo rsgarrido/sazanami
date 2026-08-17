@@ -1,0 +1,9 @@
+[
+  {"ts":"2024-08-01T00:00:00Z","ms_played":0,"master_metadata_track_name":"Zero","master_metadata_album_artist_name":"Threshold Lab","spotify_track_uri":"spotify:track:QualEdge000000000000001","skipped":null},
+  {"ts":"2024-08-01T00:00:01Z","ms_played":1,"master_metadata_track_name":"One","master_metadata_album_artist_name":"Threshold Lab","spotify_track_uri":"spotify:track:QualEdge000000000000002","skipped":false},
+  {"ts":"2024-08-01T00:00:02Z","ms_played":29999,"master_metadata_track_name":"Below","master_metadata_album_artist_name":"Threshold Lab","spotify_track_uri":"spotify:track:QualEdge000000000000003","reason_end":"fwdbtn"},
+  {"ts":"2024-08-01T00:00:03Z","ms_played":30000,"master_metadata_track_name":"Exact","master_metadata_album_artist_name":"Threshold Lab","spotify_track_uri":"spotify:track:QualEdge000000000000004","skipped":true},
+  {"ts":"2024-08-01T00:00:04Z","ms_played":30001,"master_metadata_track_name":"Above","master_metadata_album_artist_name":"Threshold Lab","spotify_track_uri":"spotify:track:QualEdge000000000000005","skipped":false},
+  {"ts":"2024-08-01T00:00:05Z","ms_played":1200,"master_metadata_track_name":"Short Natural","master_metadata_album_artist_name":"Threshold Lab","spotify_track_uri":"spotify:track:QualEdge000000000000006","reason_end":"trackdone"},
+  {"ts":"2024-08-01T00:00:06Z","ms_played":31000,"master_metadata_track_name":"Future Token","master_metadata_album_artist_name":"Threshold Lab","spotify_track_uri":"spotify:track:QualEdge000000000000007","reason_start":"mysteryStart","reason_end":"future_reason_token"}
+]

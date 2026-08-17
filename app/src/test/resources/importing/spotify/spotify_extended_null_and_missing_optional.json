@@ -1,0 +1,5 @@
+[
+  {"ts":"2024-04-01T01:00:00Z","ms_played":1000,"master_metadata_track_name":"Nullable Night","master_metadata_album_artist_name":"Schema Dreams","master_metadata_album_album_name":null,"spotify_track_uri":"spotify:track:NullOpt000000000000001","reason_start":null,"reason_end":null,"skipped":null},
+  {"ts":"2024-04-01T01:01:00Z","ms_played":2000,"master_metadata_track_name":"Metadata Compass","master_metadata_album_artist_name":"Schema Dreams"},
+  {"ts":"2024-04-01T01:02:00Z","ms_played":3000,"master_metadata_track_name":"Missing Album","master_metadata_album_artist_name":"Schema Dreams","spotify_track_uri":"spotify:track:NullOpt000000000000003"}
+]

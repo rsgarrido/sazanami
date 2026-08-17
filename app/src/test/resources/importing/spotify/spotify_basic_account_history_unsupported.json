@@ -1,0 +1,4 @@
+[
+  {"endTime":"2024-12-01 12:00","artistName":"Basic Artist","trackName":"Basic Track","msPlayed":12345},
+  {"endTime":"2024-12-01 12:05","artistName":"Basic Artist","trackName":"Another Basic Track","msPlayed":23456}
+]

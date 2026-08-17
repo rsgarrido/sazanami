@@ -102,6 +102,10 @@ tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
         .systemProperty("equalizer.longRun")
         .orElse("false")
         .get()
+    val spotifyStress500k = providers
+        .systemProperty("spotify.stress500k")
+        .orElse("false")
+        .get()
     systemProperty(
         "equalizer.performance",
         performanceEnabled
@@ -110,6 +114,7 @@ tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
         "equalizer.longRun",
         longRunEnabled
     )
+    systemProperty("spotify.stress500k", spotifyStress500k)
     testLogging {
         showStandardStreams =
             performanceEnabled.toBoolean() ||
