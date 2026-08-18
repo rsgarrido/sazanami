@@ -5,6 +5,11 @@ import com.example.cdplaya.data.local.ListeningEventEntity
 import com.example.cdplaya.data.local.ListeningHistoryTypeConverters
 import com.example.cdplaya.data.local.ListeningQualificationReason
 import com.example.cdplaya.data.local.ListeningSource
+import com.example.cdplaya.data.local.ListeningTimestampEvidence
+import com.example.cdplaya.data.local.ListeningQualificationPolicy
+import com.example.cdplaya.data.local.ListeningCompletionClassification
+import com.example.cdplaya.data.local.ListeningEventPublicationState
+import com.example.cdplaya.data.local.requireSupportedSemantics
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -52,6 +57,40 @@ class ListeningHistoryFoundationModelsTest {
     fun finalizedEventCannotEndBeforeItStarts() {
         assertThrows(IllegalArgumentException::class.java) {
             event(listenedMs = 1L, durationMs = 180_000L, startedAt = 2_000L, endedAt = 1_999L)
+        }
+    }
+
+    @Test
+    fun supportedEventSemanticsRejectCrossOwnedNativeAndImportedStates() {
+        val native = event(listenedMs = 1, durationMs = 1_000)
+        native.requireSupportedSemantics()
+        listOf(
+            native.copy(qualificationPolicy = ListeningQualificationPolicy.SPOTIFY),
+            native.copy(publicationState = ListeningEventPublicationState.IMPORT_PUBLISHED),
+            native.copy(completionClassification = ListeningCompletionClassification.SOURCE_DOCUMENTED_NATURAL)
+        ).forEach { invalid ->
+            assertThrows(IllegalArgumentException::class.java) { invalid.requireSupportedSemantics() }
+        }
+
+        val imported = native.copy(
+            source = ListeningSource.SPOTIFY_IMPORT,
+            playbackSessionId = null,
+            startedAt = null,
+            endedAt = 2_000,
+            attributionAt = 2_000,
+            timestampEvidence = ListeningTimestampEvidence.SOURCE_END_ONLY,
+            qualificationPolicy = ListeningQualificationPolicy.SPOTIFY,
+            endReason = null,
+            completionClassification = ListeningCompletionClassification.NONE,
+            publicationState = ListeningEventPublicationState.IMPORT_PENDING
+        )
+        imported.requireSupportedSemantics()
+        listOf(
+            imported.copy(qualificationPolicy = ListeningQualificationPolicy.CDPLAYA),
+            imported.copy(publicationState = ListeningEventPublicationState.NATIVE),
+            imported.copy(completionClassification = ListeningCompletionClassification.NATIVE_NATURAL)
+        ).forEach { invalid ->
+            assertThrows(IllegalArgumentException::class.java) { invalid.requireSupportedSemantics() }
         }
     }
 

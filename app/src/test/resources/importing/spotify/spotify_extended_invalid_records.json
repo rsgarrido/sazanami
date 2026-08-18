@@ -1,0 +1,9 @@
+[
+  {"ms_played":1000,"master_metadata_track_name":"No Time","master_metadata_album_artist_name":"Invalid Lab","spotify_track_uri":"spotify:track:Invalid000000000000001"},
+  {"ts":"yesterday-ish","ms_played":1000,"master_metadata_track_name":"Bad Time","master_metadata_album_artist_name":"Invalid Lab","spotify_track_uri":"spotify:track:Invalid000000000000002"},
+  {"ts":"2024-11-01T00:00:00Z","master_metadata_track_name":"No Duration","master_metadata_album_artist_name":"Invalid Lab","spotify_track_uri":"spotify:track:Invalid000000000000003"},
+  {"ts":"2024-11-01T00:01:00Z","ms_played":-1,"master_metadata_track_name":"Negative","master_metadata_album_artist_name":"Invalid Lab","spotify_track_uri":"spotify:track:Invalid000000000000004"},
+  {"ts":"2024-11-01T00:02:00Z","ms_played":1,"master_metadata_track_name":"Bad URI","master_metadata_album_artist_name":"Invalid Lab","spotify_track_uri":"spotify:track:"},
+  {"ts":"2024-11-01T00:03:00Z","ms_played":1,"master_metadata_track_name":"No Artist","spotify_track_uri":"spotify:track:Invalid000000000000006"},
+  {"ts":"2024-11-01T00:04:00Z","ms_played":1,"master_metadata_track_name":"Two Types","master_metadata_album_artist_name":"Invalid Lab","spotify_track_uri":"spotify:track:Invalid000000000000007","spotify_episode_uri":"spotify:episode:Invalid000000000000008"}
+]

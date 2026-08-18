@@ -11,7 +11,9 @@ class MigrationContractTest {
     fun ratingsMilestoneKeepsRoomAndBackupVersionContracts() {
         assertEquals(9, DatabaseProvider.MIGRATION_9_10.startVersion)
         assertEquals(10, DatabaseProvider.MIGRATION_9_10.endVersion)
-        assertEquals(8, AppBackupJson.CURRENT_SCHEMA_VERSION)
+        assertEquals(10, DatabaseProvider.MIGRATION_10_11.startVersion)
+        assertEquals(11, DatabaseProvider.MIGRATION_10_11.endVersion)
+        assertEquals(9, AppBackupJson.CURRENT_SCHEMA_VERSION)
         assertEquals(1, BackupSongRatings.CURRENT_FORMAT_VERSION)
     }
 }

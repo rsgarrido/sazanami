@@ -30,7 +30,8 @@ object DatabaseProvider {
                     MIGRATION_6_7,
                     MIGRATION_7_8,
                     MIGRATION_8_9,
-                    MIGRATION_9_10
+                    MIGRATION_9_10,
+                    MIGRATION_10_11
                 )
                 .build()
                 .also { database ->
@@ -488,6 +489,144 @@ object DatabaseProvider {
             db.execSQL(
                 "CREATE INDEX IF NOT EXISTS `index_song_ratings_rating` ON `song_ratings` (`rating`)"
             )
+        }
+    }
+
+    val MIGRATION_10_11 = object : Migration(10, 11) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS `listening_import_sources` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `stableUuid` TEXT NOT NULL, `sourceType` TEXT NOT NULL,
+                    `displayLabel` TEXT NOT NULL, `accountIdentityDigest` TEXT,
+                    `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL
+                )
+            """.trimIndent())
+            db.execSQL("CREATE UNIQUE INDEX `index_listening_import_sources_stableUuid` ON `listening_import_sources` (`stableUuid`)")
+            db.execSQL("CREATE INDEX `index_listening_import_sources_sourceType` ON `listening_import_sources` (`sourceType`)")
+            db.execSQL("CREATE UNIQUE INDEX `index_listening_import_sources_sourceType_accountIdentityDigest` ON `listening_import_sources` (`sourceType`, `accountIdentityDigest`)")
+            db.execSQL("CREATE INDEX `index_listening_import_sources_displayLabel_id` ON `listening_import_sources` (`displayLabel`, `id`)")
+
+            db.execSQL("""
+                INSERT INTO listening_import_sources(stableUuid, sourceType, displayLabel, accountIdentityDigest, createdAt, updatedAt)
+                SELECT 'legacy-unscoped:' || source, source, 'Legacy unscoped ' || source, NULL,
+                       COALESCE(MIN(createdAt), 0), COALESCE(MAX(createdAt), 0)
+                FROM listening_events WHERE source != 'cdplaya' GROUP BY source
+            """.trimIndent())
+
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS `listening_import_batches` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `stableUuid` TEXT NOT NULL,
+                    `sourceProfileId` INTEGER NOT NULL, `status` TEXT NOT NULL,
+                    `parserVersion` INTEGER NOT NULL, `qualificationPolicy` TEXT NOT NULL,
+                    `qualificationRuleVersion` INTEGER NOT NULL, `startedAt` INTEGER NOT NULL,
+                    `completedAt` INTEGER, `sourceRangeStart` INTEGER, `sourceRangeEnd` INTEGER,
+                    `parsedCount` INTEGER NOT NULL, `insertedCount` INTEGER NOT NULL,
+                    `duplicateCount` INTEGER NOT NULL, `ignoredCount` INTEGER NOT NULL,
+                    `invalidCount` INTEGER NOT NULL, `exactMatchCount` INTEGER NOT NULL,
+                    `ambiguousMatchCount` INTEGER NOT NULL, `unmatchedCount` INTEGER NOT NULL,
+                    `qualifiedCount` INTEGER NOT NULL, `failureCategory` TEXT,
+                    `createdAppVersion` TEXT NOT NULL,
+                    FOREIGN KEY(`sourceProfileId`) REFERENCES `listening_import_sources`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION
+                )
+            """.trimIndent())
+            db.execSQL("CREATE UNIQUE INDEX `index_listening_import_batches_stableUuid` ON `listening_import_batches` (`stableUuid`)")
+            db.execSQL("CREATE INDEX `index_listening_import_batches_sourceProfileId` ON `listening_import_batches` (`sourceProfileId`)")
+            db.execSQL("CREATE INDEX `index_listening_import_batches_status` ON `listening_import_batches` (`status`)")
+            db.execSQL("CREATE INDEX `index_listening_import_batches_startedAt` ON `listening_import_batches` (`startedAt`)")
+            db.execSQL("""
+                INSERT INTO listening_import_batches(
+                    stableUuid, sourceProfileId, status, parserVersion, qualificationPolicy,
+                    qualificationRuleVersion, startedAt, completedAt, sourceRangeStart, sourceRangeEnd,
+                    parsedCount, insertedCount, duplicateCount, ignoredCount, invalidCount,
+                    exactMatchCount, ambiguousMatchCount, unmatchedCount, qualifiedCount,
+                    failureCategory, createdAppVersion)
+                SELECT 'legacy-batch:' || e.source || ':' || e.importBatchId, s.id, 'published', 0,
+                       CASE e.source WHEN 'spotify_import' THEN 'spotify' WHEN 'lastfm_import' THEN 'lastfm' ELSE 'other_import' END,
+                       MAX(e.qualificationRuleVersion), MIN(e.startedAt), MAX(e.endedAt), MIN(e.startedAt), MAX(e.endedAt),
+                       COUNT(*), COUNT(*), 0, 0, 0, 0, 0, COUNT(*),
+                       SUM(CASE WHEN e.qualifiedAsPlay = 1 THEN 1 ELSE 0 END), NULL, 'room10-legacy'
+                FROM listening_events e JOIN listening_import_sources s ON s.sourceType = e.source
+                WHERE e.source != 'cdplaya' AND e.importBatchId IS NOT NULL
+                GROUP BY e.source, e.importBatchId
+            """.trimIndent())
+
+            db.execSQL("""
+                CREATE TABLE `listening_events_new` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `eventUuid` TEXT NOT NULL,
+                    `source` TEXT NOT NULL, `trackIdentityId` INTEGER NOT NULL,
+                    `localTrackBindingId` INTEGER, `playbackSessionId` TEXT,
+                    `startedAt` INTEGER, `endedAt` INTEGER, `attributionAt` INTEGER NOT NULL,
+                    `timestampEvidence` TEXT NOT NULL, `listenedMs` INTEGER NOT NULL,
+                    `trackDurationMs` INTEGER, `qualifiedAsPlay` INTEGER NOT NULL,
+                    `qualificationReason` TEXT NOT NULL, `qualificationRuleVersion` INTEGER NOT NULL,
+                    `qualificationPolicy` TEXT NOT NULL, `endReason` TEXT,
+                    `completionClassification` TEXT NOT NULL, `publicationState` TEXT NOT NULL,
+                    `sourceEventKey` TEXT, `importBatchId` INTEGER, `createdAt` INTEGER NOT NULL,
+                    FOREIGN KEY(`trackIdentityId`) REFERENCES `listening_track_identities`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION,
+                    FOREIGN KEY(`localTrackBindingId`) REFERENCES `local_track_bindings`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                )
+            """.trimIndent())
+            db.execSQL("""
+                INSERT INTO listening_events_new(
+                    id,eventUuid,source,trackIdentityId,localTrackBindingId,playbackSessionId,
+                    startedAt,endedAt,attributionAt,timestampEvidence,listenedMs,trackDurationMs,
+                    qualifiedAsPlay,qualificationReason,qualificationRuleVersion,qualificationPolicy,
+                    endReason,completionClassification,publicationState,sourceEventKey,importBatchId,createdAt)
+                SELECT id,eventUuid,source,trackIdentityId,localTrackBindingId,playbackSessionId,
+                    startedAt,endedAt,startedAt,'native_exact',listenedMs,trackDurationMs,
+                    qualifiedAsPlay,qualificationReason,qualificationRuleVersion,
+                    CASE source WHEN 'cdplaya' THEN 'cdplaya' WHEN 'spotify_import' THEN 'spotify' WHEN 'lastfm_import' THEN 'lastfm' ELSE 'other_import' END,
+                    endReason,
+                    CASE WHEN source = 'cdplaya' AND endReason = 'natural_end' THEN 'native_natural' ELSE 'none' END,
+                    CASE WHEN source = 'cdplaya' THEN 'native' ELSE 'import_published' END,
+                    sourceEventKey,importBatchId,createdAt FROM listening_events
+            """.trimIndent())
+            db.execSQL("DROP TABLE listening_events")
+            db.execSQL("ALTER TABLE listening_events_new RENAME TO listening_events")
+            db.execSQL("CREATE UNIQUE INDEX `index_listening_events_eventUuid` ON `listening_events` (`eventUuid`)")
+            db.execSQL("CREATE UNIQUE INDEX `index_listening_events_playbackSessionId` ON `listening_events` (`playbackSessionId`)")
+            db.execSQL("CREATE UNIQUE INDEX `index_listening_events_source_sourceEventKey` ON `listening_events` (`source`, `sourceEventKey`)")
+            db.execSQL("CREATE INDEX `index_listening_events_trackIdentityId_attributionAt` ON `listening_events` (`trackIdentityId`, `attributionAt`)")
+            db.execSQL("CREATE INDEX `index_listening_events_localTrackBindingId` ON `listening_events` (`localTrackBindingId`)")
+            db.execSQL("CREATE INDEX `index_listening_events_qualifiedAsPlay_publicationState_attributionAt` ON `listening_events` (`qualifiedAsPlay`, `publicationState`, `attributionAt`)")
+            db.execSQL("CREATE INDEX `index_listening_events_source_publicationState_attributionAt` ON `listening_events` (`source`, `publicationState`, `attributionAt`)")
+            db.execSQL("CREATE INDEX `index_listening_events_publicationState_attributionAt` ON `listening_events` (`publicationState`, `attributionAt`)")
+
+            db.execSQL("""
+                CREATE TABLE `listening_track_external_ids` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `trackIdentityId` INTEGER NOT NULL,
+                    `sourceType` TEXT NOT NULL, `externalId` TEXT NOT NULL, `createdAt` INTEGER NOT NULL,
+                    `lastSeenAt` INTEGER NOT NULL,
+                    FOREIGN KEY(`trackIdentityId`) REFERENCES `listening_track_identities`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)
+            """.trimIndent())
+            db.execSQL("CREATE INDEX `index_listening_track_external_ids_trackIdentityId` ON `listening_track_external_ids` (`trackIdentityId`)")
+            db.execSQL("CREATE UNIQUE INDEX `index_listening_track_external_ids_sourceType_externalId` ON `listening_track_external_ids` (`sourceType`, `externalId`)")
+            db.execSQL("""
+                CREATE TABLE `imported_listening_event_evidence` (
+                    `eventId` INTEGER NOT NULL, `sourceProfileId` INTEGER NOT NULL,
+                    `fingerprintVersion` INTEGER NOT NULL, `fingerprint` TEXT NOT NULL,
+                    `duplicateOrdinal` INTEGER NOT NULL, `normalizedReasonStart` TEXT,
+                    `normalizedReasonEnd` TEXT, `skippedState` TEXT NOT NULL,
+                    `matchDispositionAtImport` TEXT NOT NULL, PRIMARY KEY(`eventId`),
+                    FOREIGN KEY(`eventId`) REFERENCES `listening_events`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                    FOREIGN KEY(`sourceProfileId`) REFERENCES `listening_import_sources`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION)
+            """.trimIndent())
+            db.execSQL("CREATE INDEX `index_imported_listening_event_evidence_sourceProfileId` ON `imported_listening_event_evidence` (`sourceProfileId`)")
+            db.execSQL("CREATE UNIQUE INDEX `index_imported_listening_event_evidence_sourceProfileId_fingerprintVersion_fingerprint_duplicateOrdinal` ON `imported_listening_event_evidence` (`sourceProfileId`,`fingerprintVersion`,`fingerprint`,`duplicateOrdinal`)")
+            db.execSQL("""
+                CREATE TABLE `listening_import_batch_events` (`batchId` INTEGER NOT NULL, `eventId` INTEGER NOT NULL,
+                    PRIMARY KEY(`batchId`,`eventId`),
+                    FOREIGN KEY(`batchId`) REFERENCES `listening_import_batches`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                    FOREIGN KEY(`eventId`) REFERENCES `listening_events`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)
+            """.trimIndent())
+            db.execSQL("CREATE INDEX `index_listening_import_batch_events_eventId` ON `listening_import_batch_events` (`eventId`)")
+            db.execSQL("""
+                INSERT INTO listening_import_batch_events(batchId,eventId)
+                SELECT b.id,e.id FROM listening_events e JOIN listening_import_batches b
+                  ON b.stableUuid = 'legacy-batch:' || e.source || ':' || e.importBatchId
+                WHERE e.importBatchId IS NOT NULL
+            """.trimIndent())
         }
     }
 

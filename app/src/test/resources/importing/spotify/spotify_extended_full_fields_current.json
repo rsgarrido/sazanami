@@ -1,0 +1,3 @@
+[
+  {"ts":"2024-02-03T04:05:06Z","platform":"android","ms_played":201234,"conn_country":"ZZ","ip_addr":"192.0.2.44","user_agent_decrypted":"FictionalTestAgent/1.0","master_metadata_track_name":"Glass Geography","master_metadata_album_artist_name":"Atlas Arcade","master_metadata_album_album_name":"Cities That Never Were","spotify_track_uri":"spotify:track:FullFields0000000000001","episode_name":null,"episode_show_name":null,"spotify_episode_uri":null,"audiobook_title":null,"audiobook_uri":null,"audiobook_chapter_uri":null,"audiobook_chapter_title":null,"reason_start":"clickrow","reason_end":"trackdone","shuffle":true,"skipped":false,"offline":false,"offline_timestamp":0,"incognito_mode":false}
+]

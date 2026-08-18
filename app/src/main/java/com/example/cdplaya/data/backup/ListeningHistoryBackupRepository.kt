@@ -10,6 +10,18 @@ import com.example.cdplaya.data.local.ListeningSource
 import com.example.cdplaya.data.local.ListeningTrackIdentityEntity
 import com.example.cdplaya.data.local.LocalTrackBindingEntity
 import com.example.cdplaya.data.local.SongRatingEntity
+import com.example.cdplaya.data.local.ListeningTimestampEvidence
+import com.example.cdplaya.data.local.ListeningQualificationPolicy
+import com.example.cdplaya.data.local.ListeningCompletionClassification
+import com.example.cdplaya.data.local.ListeningEventPublicationState
+import com.example.cdplaya.data.local.ListeningImportBatchStatus
+import com.example.cdplaya.data.local.ImportedListeningSkippedState
+import com.example.cdplaya.data.local.ImportedListeningMatchDisposition
+import com.example.cdplaya.data.local.ListeningImportSourceEntity
+import com.example.cdplaya.data.local.ListeningImportBatchEntity
+import com.example.cdplaya.data.local.ListeningTrackExternalIdEntity
+import com.example.cdplaya.data.local.ImportedListeningEventEvidenceEntity
+import com.example.cdplaya.data.local.ListeningImportBatchEventEntity
 
 data class CanonicalHistoryAndRatingsBackup(
     val history: BackupListeningHistoryV2,
@@ -40,7 +52,27 @@ class ListeningHistoryBackupRepository(
     }
 
     suspend fun export(): BackupListeningHistoryV2 = database.withTransaction {
-        val identities = database.listeningTrackIdentityDao().getAll().map { entity ->
+        val eventEntities = buildList {
+            var offset = 0
+            do {
+                val page = database.listeningEventDao().getBackupPage(EVENT_PAGE_SIZE, offset)
+                addAll(page)
+                offset += page.size
+            } while (page.size == EVENT_PAGE_SIZE)
+        }
+        val bindingEntities = database.localTrackBindingDao().getAllForBackup()
+        val baselineEntities = database.legacyListeningBaselineDao().getAllForBackup()
+        val ratedIdentityIds = database.songRatingDao().getAllForBackup()
+            .mapTo(HashSet()) { it.trackIdentityId }
+        val retainedIdentityIds = buildSet {
+            eventEntities.mapTo(this) { it.trackIdentityId }
+            bindingEntities.mapTo(this) { it.trackIdentityId }
+            baselineEntities.mapTo(this) { it.trackIdentityId }
+            addAll(ratedIdentityIds)
+        }
+        val identities = database.listeningTrackIdentityDao().getAll()
+            .filter { it.id in retainedIdentityIds }
+            .map { entity ->
             BackupListeningTrackIdentity(
                 backupIdentityId = entity.id,
                 titleSnapshot = entity.titleSnapshot,
@@ -57,7 +89,7 @@ class ListeningHistoryBackupRepository(
                 updatedAt = entity.updatedAt
             )
         }
-        val bindings = database.localTrackBindingDao().getAllForBackup().map { entity ->
+        val bindings = bindingEntities.map { entity ->
             BackupLocalTrackBinding(
                 backupBindingId = entity.id,
                 trackIdentityBackupId = entity.trackIdentityId,
@@ -79,7 +111,7 @@ class ListeningHistoryBackupRepository(
                 missingSince = entity.missingSince
             )
         }
-        val baselines = database.legacyListeningBaselineDao().getAllForBackup().map { entity ->
+        val baselines = baselineEntities.map { entity ->
             BackupLegacyListeningBaseline(
                 trackIdentityBackupId = entity.trackIdentityId,
                 historicalPlayCount = entity.historicalPlayCount,
@@ -89,19 +121,57 @@ class ListeningHistoryBackupRepository(
                 migratedAt = entity.migratedAt
             )
         }
-        val events = buildList {
-            var offset = 0
-            do {
-                val page = database.listeningEventDao().getBackupPage(EVENT_PAGE_SIZE, offset)
-                page.mapTo(this) { entity -> entity.toBackup() }
-                offset += page.size
-            } while (page.size == EVENT_PAGE_SIZE)
+        val events = eventEntities.map(ListeningEventEntity::toBackup)
+        val eventIds = eventEntities.mapTo(HashSet()) { it.id }
+        val eventUuidsById = eventEntities.associate { it.id to it.eventUuid }
+        val batchEntities = database.listeningImportBatchDao().getPublishedForBackup()
+        val evidenceEntities = database.importedListeningEventEvidenceDao().getAllForBackup()
+        val retainedSourceIds = buildSet {
+            batchEntities.mapTo(this) { it.sourceProfileId }
+            evidenceEntities.mapTo(this) { it.sourceProfileId }
+        }
+        val importSources = database.listeningImportSourceDao().getAllForBackup()
+            .filter { it.id in retainedSourceIds }
+            .map { entity ->
+            BackupListeningImportSource(entity.id, entity.stableUuid, entity.sourceType.storageValue,
+                entity.displayLabel, entity.accountIdentityDigest, entity.createdAt, entity.updatedAt)
+        }
+        val importBatches = batchEntities.map { entity ->
+            BackupListeningImportBatch(entity.id, entity.stableUuid, entity.sourceProfileId,
+                entity.status.storageValue, entity.parserVersion, entity.qualificationPolicy.storageValue,
+                entity.qualificationRuleVersion, entity.startedAt, entity.completedAt,
+                entity.sourceRangeStart, entity.sourceRangeEnd, entity.parsedCount, entity.insertedCount,
+                entity.duplicateCount, entity.ignoredCount, entity.invalidCount, entity.exactMatchCount,
+                entity.ambiguousMatchCount, entity.unmatchedCount, entity.qualifiedCount,
+                entity.failureCategory, entity.createdAppVersion)
+        }
+        val externalTrackIds = database.listeningTrackExternalIdDao().getAllForBackup()
+            .filter { it.trackIdentityId in retainedIdentityIds }
+            .map { entity ->
+            BackupListeningTrackExternalId(entity.trackIdentityId, entity.sourceType.storageValue,
+                entity.externalId, entity.createdAt, entity.lastSeenAt)
+        }
+        val evidence = evidenceEntities.map { entity ->
+            BackupImportedListeningEventEvidence(requireNotNull(eventUuidsById[entity.eventId]),
+                entity.sourceProfileId, entity.fingerprintVersion, entity.fingerprint,
+                entity.duplicateOrdinal, entity.normalizedReasonStart, entity.normalizedReasonEnd,
+                entity.skippedState.storageValue, entity.matchDispositionAtImport.storageValue)
+        }
+        val observations = database.listeningImportBatchEventDao().getPublishedForBackup()
+            .filter { it.eventId in eventIds }
+            .map { entity ->
+            BackupListeningImportBatchEvent(entity.batchId, requireNotNull(eventUuidsById[entity.eventId]))
         }
         BackupListeningHistoryV2(
             identities = identities,
             bindings = bindings,
             baselines = baselines,
-            events = events
+            events = events,
+            importSources = importSources,
+            importBatches = importBatches,
+            externalTrackIds = externalTrackIds,
+            importedEventEvidence = evidence,
+            batchEventObservations = observations
         ).let { history -> history.copy(summary = history.recordsSummary()) }
     }
 
@@ -115,6 +185,11 @@ class ListeningHistoryBackupRepository(
     suspend fun restoreValidatedWithinTransaction(
         history: BackupListeningHistoryV2
     ): Map<Long, Long> {
+        database.listeningImportBatchEventDao().deleteAll()
+        database.importedListeningEventEvidenceDao().deleteAll()
+        database.listeningImportBatchDao().deleteAll()
+        database.listeningTrackExternalIdDao().deleteAll()
+        database.listeningImportSourceDao().deleteAll()
         database.listeningEventDao().deleteAll()
         database.legacyListeningBaselineDao().deleteAll()
         database.localTrackBindingDao().deleteAll()
@@ -139,6 +214,35 @@ class ListeningHistoryBackupRepository(
                 )
             )
             identityIds[backup.backupIdentityId] = restoredId
+        }
+
+        val sourceProfileIds = HashMap<Long, Long>(history.importSources.size)
+        history.importSources.forEach { backup ->
+            sourceProfileIds[backup.backupSourceProfileId] = database.listeningImportSourceDao().insert(
+                ListeningImportSourceEntity(stableUuid = backup.stableUuid,
+                    sourceType = ListeningSource.fromStorageValue(backup.sourceType),
+                    displayLabel = backup.displayLabel, accountIdentityDigest = backup.accountIdentityDigest,
+                    createdAt = backup.createdAt, updatedAt = backup.updatedAt)
+            )
+        }
+
+        val batchIds = HashMap<Long, Long>(history.importBatches.size)
+        history.importBatches.forEach { backup ->
+            batchIds[backup.backupBatchId] = database.listeningImportBatchDao().insert(
+                ListeningImportBatchEntity(stableUuid = backup.stableUuid,
+                    sourceProfileId = sourceProfileIds.getValue(backup.sourceProfileBackupId),
+                    status = ListeningImportBatchStatus.fromStorageValue(backup.status),
+                    parserVersion = backup.parserVersion,
+                    qualificationPolicy = ListeningQualificationPolicy.fromStorageValue(backup.qualificationPolicy),
+                    qualificationRuleVersion = backup.qualificationRuleVersion, startedAt = backup.startedAt,
+                    completedAt = backup.completedAt, sourceRangeStart = backup.sourceRangeStart,
+                    sourceRangeEnd = backup.sourceRangeEnd, parsedCount = backup.parsedCount,
+                    insertedCount = backup.insertedCount, duplicateCount = backup.duplicateCount,
+                    ignoredCount = backup.ignoredCount, invalidCount = backup.invalidCount,
+                    exactMatchCount = backup.exactMatchCount, ambiguousMatchCount = backup.ambiguousMatchCount,
+                    unmatchedCount = backup.unmatchedCount, qualifiedCount = backup.qualifiedCount,
+                    failureCategory = backup.failureCategory, createdAppVersion = backup.createdAppVersion)
+            )
         }
 
         val bindingIds = HashMap<Long, Long>(history.bindings.size)
@@ -179,8 +283,16 @@ class ListeningHistoryBackupRepository(
                 )
             })
         }
+        history.externalTrackIds.chunked(RESTORE_BATCH_SIZE).forEach { batch ->
+            batch.forEach { backup -> database.listeningTrackExternalIdDao().insert(
+                ListeningTrackExternalIdEntity(trackIdentityId = identityIds.getValue(backup.trackIdentityBackupId),
+                    sourceType = ListeningSource.fromStorageValue(backup.sourceType), externalId = backup.externalId,
+                    createdAt = backup.createdAt, lastSeenAt = backup.lastSeenAt)
+            ) }
+        }
+        val eventIds = HashMap<String, Long>(history.events.size)
         history.events.chunked(RESTORE_BATCH_SIZE).forEach { batch ->
-            database.listeningEventDao().insert(batch.map { backup ->
+            val entities = batch.map { backup ->
                 ListeningEventEntity(
                     eventUuid = backup.eventUuid,
                     source = ListeningSource.fromStorageValue(backup.source),
@@ -189,6 +301,8 @@ class ListeningHistoryBackupRepository(
                     playbackSessionId = backup.playbackSessionId,
                     startedAt = backup.startedAt,
                     endedAt = backup.endedAt,
+                    attributionAt = backup.attributionAt,
+                    timestampEvidence = ListeningTimestampEvidence.fromStorageValue(backup.timestampEvidence),
                     listenedMs = backup.listenedMs,
                     trackDurationMs = backup.trackDurationMs,
                     qualifiedAsPlay = backup.qualifiedAsPlay,
@@ -196,11 +310,32 @@ class ListeningHistoryBackupRepository(
                         backup.qualificationReason
                     ),
                     qualificationRuleVersion = backup.qualificationRuleVersion,
-                    endReason = ListeningEndReason.fromStorageValue(backup.endReason),
+                    qualificationPolicy = ListeningQualificationPolicy.fromStorageValue(backup.qualificationPolicy),
+                    endReason = backup.endReason?.let(ListeningEndReason::fromStorageValue),
+                    completionClassification = ListeningCompletionClassification.fromStorageValue(backup.completionClassification),
+                    publicationState = ListeningEventPublicationState.fromStorageValue(backup.publicationState),
                     sourceEventKey = backup.sourceEventKey,
                     importBatchId = backup.importBatchId,
                     createdAt = backup.createdAt
                 )
+            }
+            val restoredIds = database.listeningEventDao().insert(entities)
+            batch.zip(restoredIds).forEach { (backup, id) -> eventIds[backup.eventUuid] = id }
+        }
+        history.importedEventEvidence.chunked(RESTORE_BATCH_SIZE).forEach { batch ->
+            batch.forEach { backup -> database.importedListeningEventEvidenceDao().insert(
+                ImportedListeningEventEvidenceEntity(eventId = eventIds.getValue(backup.eventUuid),
+                    sourceProfileId = sourceProfileIds.getValue(backup.sourceProfileBackupId),
+                    fingerprintVersion = backup.fingerprintVersion, fingerprint = backup.fingerprint,
+                    duplicateOrdinal = backup.duplicateOrdinal, normalizedReasonStart = backup.normalizedReasonStart,
+                    normalizedReasonEnd = backup.normalizedReasonEnd,
+                    skippedState = ImportedListeningSkippedState.fromStorageValue(backup.skippedState),
+                    matchDispositionAtImport = ImportedListeningMatchDisposition.fromStorageValue(backup.matchDispositionAtImport))
+            ) }
+        }
+        history.batchEventObservations.chunked(RESTORE_BATCH_SIZE).forEach { batch ->
+            database.listeningImportBatchEventDao().insert(batch.map { backup ->
+                ListeningImportBatchEventEntity(batchIds.getValue(backup.batchBackupId), eventIds.getValue(backup.eventUuid))
             })
         }
         return identityIds
@@ -237,12 +372,17 @@ private fun ListeningEventEntity.toBackup() = BackupListeningEvent(
     playbackSessionId = playbackSessionId,
     startedAt = startedAt,
     endedAt = endedAt,
+    attributionAt = attributionAt,
+    timestampEvidence = timestampEvidence.storageValue,
     listenedMs = listenedMs,
     trackDurationMs = trackDurationMs,
     qualifiedAsPlay = qualifiedAsPlay,
     qualificationReason = qualificationReason.storageValue,
     qualificationRuleVersion = qualificationRuleVersion,
-    endReason = endReason.storageValue,
+    qualificationPolicy = qualificationPolicy.storageValue,
+    endReason = endReason?.storageValue,
+    completionClassification = completionClassification.storageValue,
+    publicationState = publicationState.storageValue,
     sourceEventKey = sourceEventKey,
     importBatchId = importBatchId,
     createdAt = createdAt

@@ -9,6 +9,9 @@ import com.example.cdplaya.controller.LibraryController
 import com.example.cdplaya.controller.SongRatingUiController
 import com.example.cdplaya.controller.ListeningAnalyticsController
 import com.example.cdplaya.controller.SleepTimerController
+import com.example.cdplaya.controller.DefaultSpotifyListeningHistoryImportOperations
+import com.example.cdplaya.controller.ListeningHistoryImportFile
+import com.example.cdplaya.controller.SpotifyListeningHistoryImportController
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.EditableSongTags
 import com.example.cdplaya.data.Playlist
@@ -24,6 +27,7 @@ import com.example.cdplaya.data.ListeningStatsRepository
 import com.example.cdplaya.data.SongRatingRepository
 import com.example.cdplaya.data.ListeningTrendMetric
 import com.example.cdplaya.data.ListeningRankingCategory
+import com.example.cdplaya.data.ListeningImportRepository
 import com.example.cdplaya.data.preferences.AppPreferencesRepository
 import com.example.cdplaya.data.backup.AppBackup
 import com.example.cdplaya.data.backup.BackupExportResult
@@ -32,6 +36,11 @@ import com.example.cdplaya.data.backup.BackupRestoreResult
 import com.example.cdplaya.data.backup.BackupRestoreSummary
 import com.example.cdplaya.data.local.AppDatabase
 import com.example.cdplaya.data.local.DatabaseProvider
+import com.example.cdplaya.data.importing.spotify.SpotifyExtendedStreamingParser
+import com.example.cdplaya.data.importing.spotify.SpotifyImportSourceProfileService
+import com.example.cdplaya.data.importing.spotify.SpotifyListeningHistoryImportExecutor
+import com.example.cdplaya.data.importing.spotify.SpotifyListeningHistoryImportPreviewer
+import com.example.cdplaya.BuildConfig
 import com.example.cdplaya.lyrics.LocalLyricsServices
 import com.example.cdplaya.lyrics.LyricsPlaybackController
 import com.example.cdplaya.lyrics.LyricsPositionSource
@@ -85,6 +94,39 @@ class MusicViewModel(
 
     private val appPreferencesRepository = AppPreferencesRepository.getInstance(appContext)
     private val tagEditorRepository = TagEditorRepository()
+    private val listeningImportRepository = ListeningImportRepository(appDatabase)
+    private val spotifyImportSourceProfiles = SpotifyImportSourceProfileService(listeningImportRepository)
+    private val spotifyImportParser = SpotifyExtendedStreamingParser()
+    private val spotifyImportController = SpotifyListeningHistoryImportController(
+        operations = DefaultSpotifyListeningHistoryImportOperations(
+            repository = listeningImportRepository,
+            previewer = SpotifyListeningHistoryImportPreviewer(
+                repository = listeningImportRepository,
+                sourceProfiles = spotifyImportSourceProfiles,
+                parser = spotifyImportParser
+            ),
+            executor = SpotifyListeningHistoryImportExecutor(
+                repository = listeningImportRepository,
+                sourceProfiles = spotifyImportSourceProfiles,
+                parser = spotifyImportParser,
+                createdAppVersion = BuildConfig.VERSION_NAME
+            )
+        ),
+        scope = viewModelScope
+    )
+    val spotifyImportUiState = spotifyImportController.state
+
+    fun enterSpotifyImport() = spotifyImportController.enterWorkflow()
+    fun selectSpotifyImportFiles(files: List<ListeningHistoryImportFile>) =
+        spotifyImportController.selectFiles(files)
+    fun analyzeSpotifyImport() = spotifyImportController.analyze()
+    fun cancelSpotifyImportAnalysis() = spotifyImportController.cancelAnalysis()
+    fun executeSpotifyImport() = spotifyImportController.importHistory()
+    fun cancelSpotifyImport() = spotifyImportController.cancelImport()
+    fun retrySpotifyImport() = spotifyImportController.retry()
+    fun changeSpotifyImportFiles() = spotifyImportController.returnToSelectedFiles()
+    fun cleanStaleSpotifyImport() = spotifyImportController.cleanStaleImport()
+    fun resetSpotifyImport() = spotifyImportController.reset()
     private val listeningAnalyticsController = ListeningAnalyticsController(
         repository = ListeningStatsRepository(appDatabase),
         rangeResolver = ListeningAnalyticsRangeResolver(

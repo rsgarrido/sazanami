@@ -122,12 +122,13 @@ data class RecentListeningEvent(
     val artist: String,
     val album: String,
     val source: ListeningSource,
-    val startedAt: Long,
-    val endedAt: Long,
+    val startedAt: Long?,
+    val endedAt: Long?,
+    val attributionAt: Long,
     val listenedMs: Long,
     val qualifiedAsPlay: Boolean,
     val qualificationReason: ListeningQualificationReason,
-    val endReason: ListeningEndReason,
+    val endReason: ListeningEndReason?,
     val playbackSessionId: String?
 )
 

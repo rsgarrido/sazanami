@@ -12,6 +12,7 @@ import com.example.cdplaya.ui.playlist.rememberPlaylistExportActions
 import com.example.cdplaya.ui.playlist.rememberPlaylistImportActions
 import com.example.cdplaya.ui.settings.rememberBackupExportActions
 import com.example.cdplaya.ui.settings.rememberBackupRestoreActions
+import com.example.cdplaya.ui.settings.SpotifyImportUiActions
 import com.example.cdplaya.ui.equalizer.EqualizerUiActions
 import com.example.cdplaya.ui.equalizer.rememberEqualizerProfilePlatformActions
 import com.example.cdplaya.mediaaccess.MediaAccessState
@@ -49,6 +50,8 @@ internal fun MusicRoute(
     musicViewModel.listeningAnalyticsUiState.collectAsStateWithLifecycle()
     val songRatingUiState by
     musicViewModel.songRatingUiState.collectAsStateWithLifecycle()
+    val spotifyImportUiState by
+    musicViewModel.spotifyImportUiState.collectAsStateWithLifecycle()
     if (!playerAppearanceUiState.isLoaded || !libraryAppearanceUiState.isLoaded) return
     val playlistExportActions = rememberPlaylistExportActions(
         snackbarHostState = snackbarHostState,
@@ -398,6 +401,21 @@ internal fun MusicRoute(
             musicViewModel::selectListeningAnalyticsTrendMetric,
         onListeningAnalyticsRankingCategorySelected =
             musicViewModel::selectListeningAnalyticsRankingCategory,
+        spotifyImportUiState = spotifyImportUiState,
+        spotifyImportActions = SpotifyImportUiActions(
+            onEnter = musicViewModel::enterSpotifyImport,
+            onFilesSelected = musicViewModel::selectSpotifyImportFiles,
+            onAnalyze = musicViewModel::analyzeSpotifyImport,
+            onCancelAnalysis = musicViewModel::cancelSpotifyImportAnalysis,
+            onImport = musicViewModel::executeSpotifyImport,
+            onCancelImport = musicViewModel::cancelSpotifyImport,
+            onRetry = musicViewModel::retrySpotifyImport,
+            onChangeFiles = musicViewModel::changeSpotifyImportFiles,
+            onCleanStaleImport = musicViewModel::cleanStaleSpotifyImport,
+            onImportMore = musicViewModel::resetSpotifyImport,
+            onDone = musicViewModel::resetSpotifyImport,
+            onBack = {}
+        )
     )
     songRatingUiState.dialog?.let { dialog ->
         SongRatingDialog(

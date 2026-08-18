@@ -1,0 +1,12 @@
+[
+  {"ts":"2024-09-01T00:00:00Z","ms_played":70000,"master_metadata_track_name":"Twin Name","master_metadata_album_artist_name":"Artist Alpha","master_metadata_album_album_name":"Blue Index","spotify_track_uri":"spotify:track:Identity000000000000001"},
+  {"ts":"2024-09-01T00:01:00Z","ms_played":70000,"master_metadata_track_name":"Twin Name","master_metadata_album_artist_name":"Artist Beta","master_metadata_album_album_name":"Blue Index","spotify_track_uri":"spotify:track:Identity000000000000002"},
+  {"ts":"2024-09-01T00:02:00Z","ms_played":70000,"master_metadata_track_name":"Album Shift","master_metadata_album_artist_name":"Artist Alpha","master_metadata_album_album_name":"Edition One","spotify_track_uri":"spotify:track:Identity000000000000003"},
+  {"ts":"2024-09-01T00:03:00Z","ms_played":70000,"master_metadata_track_name":"Album Shift","master_metadata_album_artist_name":"Artist Alpha","master_metadata_album_album_name":"Edition Two","spotify_track_uri":"spotify:track:Identity000000000000004"},
+  {"ts":"2024-09-01T00:04:00Z","ms_played":70000,"master_metadata_track_name":"Bright Wire (2024 Remaster)","master_metadata_album_artist_name":"Accent Avenue","spotify_track_uri":"spotify:track:Identity000000000000005"},
+  {"ts":"2024-09-01T00:05:00Z","ms_played":70000,"master_metadata_track_name":"Bright Wire - Live","master_metadata_album_artist_name":"Accent Avenue","spotify_track_uri":"spotify:track:Identity000000000000006"},
+  {"ts":"2024-09-01T00:06:00Z","ms_played":70000,"master_metadata_track_name":"Café Signals","master_metadata_album_artist_name":"Zoë Circuit feat. Niño","spotify_track_uri":"spotify:track:Identity000000000000007"},
+  {"ts":"2024-09-01T00:07:00Z","ms_played":70000,"master_metadata_track_name":"Café Signals","master_metadata_album_artist_name":"Zoë Circuit feat. Niño","spotify_track_uri":"spotify:track:Identity000000000000008"},
+  {"ts":"2024-09-01T00:08:00Z","ms_played":70000,"master_metadata_track_name":"No Album","master_metadata_album_artist_name":"Vanishing Point","spotify_track_uri":"spotify:track:Identity000000000000009"},
+  {"ts":"2024-09-01T00:09:00Z","ms_played":70000,"master_metadata_track_name":"Unavailable Memory","master_metadata_album_artist_name":"Deleted Fiction","master_metadata_album_album_name":"","spotify_track_uri":null}
+]

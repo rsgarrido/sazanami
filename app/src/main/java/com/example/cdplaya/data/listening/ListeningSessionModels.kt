@@ -3,6 +3,10 @@ package com.example.cdplaya.data.listening
 import com.example.cdplaya.data.local.ListeningEndReason
 import com.example.cdplaya.data.local.ListeningQualificationReason
 import com.example.cdplaya.data.local.ListeningSource
+import com.example.cdplaya.data.local.ListeningTimestampEvidence
+import com.example.cdplaya.data.local.ListeningQualificationPolicy
+import com.example.cdplaya.data.local.ListeningCompletionClassification
+import com.example.cdplaya.data.local.ListeningEventPublicationState
 
 data class ListeningSessionStart(
     val playbackSessionId: String,
@@ -72,12 +76,17 @@ data class FinalizedListeningEventDraft(
     val playbackSessionId: String,
     val startedAt: Long,
     val endedAt: Long,
+    val attributionAt: Long,
+    val timestampEvidence: ListeningTimestampEvidence,
     val listenedMs: Long,
     val trackDurationMs: Long?,
     val qualifiedAsPlay: Boolean,
     val qualificationReason: ListeningQualificationReason,
     val qualificationRuleVersion: Int,
+    val qualificationPolicy: ListeningQualificationPolicy,
     val endReason: ListeningEndReason,
+    val completionClassification: ListeningCompletionClassification,
+    val publicationState: ListeningEventPublicationState,
     val sourceEventKey: String? = null,
     val importBatchId: Long? = null,
     val createdAt: Long
@@ -87,6 +96,10 @@ data class FinalizedListeningEventDraft(
         require(source == ListeningSource.CDPLAYA) { "Native recorder drafts must use CDPLAYA" }
         require(listenedMs >= 0L) { "Listening time cannot be negative" }
         require(endedAt >= startedAt) { "A finalized listening event must not end before it starts" }
+        require(attributionAt == startedAt) { "Native attribution must use the exact start" }
+        require(timestampEvidence == ListeningTimestampEvidence.NATIVE_EXACT)
+        require(qualificationPolicy == ListeningQualificationPolicy.CDPLAYA)
+        require(publicationState == ListeningEventPublicationState.NATIVE)
         require(sourceEventKey == null) { "Native recorder drafts cannot have an import event key" }
         require(importBatchId == null) { "Native recorder drafts cannot have an import batch" }
     }

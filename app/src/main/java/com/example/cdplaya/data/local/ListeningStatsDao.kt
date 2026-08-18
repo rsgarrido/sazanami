@@ -82,12 +82,13 @@ data class RecentListeningEventRow(
     val artistSnapshot: String,
     val albumSnapshot: String,
     val source: String,
-    val startedAt: Long,
-    val endedAt: Long,
+    val startedAt: Long?,
+    val endedAt: Long?,
+    val attributionAt: Long,
     val listenedMs: Long,
     val qualifiedAsPlay: Boolean,
     val qualificationReason: String,
-    val endReason: String,
+    val endReason: String?,
     val playbackSessionId: String?
 )
 

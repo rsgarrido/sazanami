@@ -1,0 +1,8 @@
+[
+  {"ts":"2024-10-01T00:00:00Z","ms_played":120000,"episode_name":"Episode Zero","episode_show_name":"Fictional Frequency","spotify_episode_uri":"spotify:episode:Podcast000000000000001"},
+  {"ts":"2024-10-01T00:01:00Z","ms_played":180000,"audiobook_title":"The Imaginary Staircase","audiobook_uri":"spotify:audiobook:AudioBook0000000000001","audiobook_chapter_uri":"spotify:chapter:AudioChap00000000000001","audiobook_chapter_title":"Chapter One"},
+  {"ts":"2024-10-01T00:02:00Z","ms_played":15000,"reason_start":"unknown","reason_end":"unexpected-exit"},
+  {"ts":"2024-10-01T00:03:00Z","ms_played":45000,"master_metadata_track_name":"Metadata Song","master_metadata_album_artist_name":"No URI Ensemble"},
+  {"ts":"2024-10-01T00:04:00Z","ms_played":90000,"video_title":"Synthetic Studio Clip","spotify_video_uri":"spotify:video:Video00000000000000001"},
+  {"ts":"2024-10-01T00:05:00Z","ms_played":60000,"master_metadata_track_name":"Collision","master_metadata_album_artist_name":"Ambiguous Cast","spotify_track_uri":"spotify:track:Conflict00000000000001","episode_name":"Also Episode","spotify_episode_uri":"spotify:episode:Conflict00000000000002"}
+]

@@ -398,5 +398,5 @@ private fun Long.toDisplayCount(): Int = coerceAtMost(Int.MAX_VALUE.toLong()).to
 
 private fun AppBackup.requiredCanonicalListeningHistory(): BackupListeningHistoryV2 =
     requireNotNull(canonicalListeningHistory) {
-        "CDPlaya backup schema 8 requires canonical listening history."
+        "CDPlaya backup schema 9 requires canonical listening history."
     }

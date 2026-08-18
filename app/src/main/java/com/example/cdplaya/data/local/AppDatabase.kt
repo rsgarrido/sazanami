@@ -16,9 +16,14 @@ import androidx.room.TypeConverters
         LocalTrackBindingEntity::class,
         ListeningEventEntity::class,
         LegacyListeningBaselineEntity::class,
-        SongRatingEntity::class
+        SongRatingEntity::class,
+        ListeningImportSourceEntity::class,
+        ListeningImportBatchEntity::class,
+        ListeningTrackExternalIdEntity::class,
+        ImportedListeningEventEvidenceEntity::class,
+        ListeningImportBatchEventEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = true
 )
 @TypeConverters(ListeningHistoryTypeConverters::class)
@@ -33,4 +38,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun listeningStatsDao(): ListeningStatsDao
     abstract fun legacyListeningBaselineDao(): LegacyListeningBaselineDao
     abstract fun songRatingDao(): SongRatingDao
+    abstract fun listeningImportSourceDao(): ListeningImportSourceDao
+    abstract fun listeningImportBatchDao(): ListeningImportBatchDao
+    abstract fun listeningTrackExternalIdDao(): ListeningTrackExternalIdDao
+    abstract fun importedListeningEventEvidenceDao(): ImportedListeningEventEvidenceDao
+    abstract fun listeningImportBatchEventDao(): ListeningImportBatchEventDao
 }

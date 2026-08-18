@@ -7,12 +7,19 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.example.cdplaya.data.ListeningDateRange
 import com.example.cdplaya.data.ListeningStatsFilter
 import com.example.cdplaya.data.ListeningStatsRepository
+import com.example.cdplaya.data.AnalyticsBucketBoundary
+import com.example.cdplaya.data.AnalyticsBucketGranularity
 import com.example.cdplaya.data.local.AppDatabase
 import com.example.cdplaya.data.local.LegacyListeningBaselineEntity
 import com.example.cdplaya.data.local.ListeningEndReason
 import com.example.cdplaya.data.local.ListeningEventEntity
 import com.example.cdplaya.data.local.ListeningQualificationReason
 import com.example.cdplaya.data.local.ListeningSource
+import com.example.cdplaya.data.local.ListeningTimestampEvidence
+import com.example.cdplaya.data.local.ListeningQualificationPolicy
+import com.example.cdplaya.data.local.ListeningCompletionClassification
+import com.example.cdplaya.data.local.ListeningEventPublicationState
+import com.example.cdplaya.data.local.ListeningStatsQueries
 import com.example.cdplaya.data.local.ListeningTrackIdentityEntity
 import com.example.cdplaya.data.local.LocalTrackBindingEntity
 import kotlinx.coroutines.CoroutineStart
@@ -24,6 +31,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import java.time.ZonedDateTime
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -216,6 +224,50 @@ class ListeningStatsRepositoryTest {
             listOf(fixture.both, fixture.baselineOnly, fixture.compilation, fixture.detailedOnly, fixture.duplicateMetadata),
             most.map { it.track.trackIdentityId }
         )
+    }
+
+    @Test
+    fun pendingImportedEventIsExcludedFromOverviewTrendTopAndHistoryProjections() = runBlocking {
+        val pendingTrack = identity("Pending", "Imported", "Hidden", "Imported")
+        val overviewBefore = repository.getAllTimeOverview()
+        val topBefore = repository.getTopTracksByQualifiedPlays(20)
+        val recentBefore = repository.getRecentlyPlayed(20)
+        val mostBefore = repository.getMostPlayed(20)
+        val detailedBefore = repository.getRecentDetailedEvents(20)
+
+        database.listeningEventDao().insert(
+            ListeningEventEntity(
+                eventUuid = "pending-hidden", source = ListeningSource.SPOTIFY_IMPORT,
+                trackIdentityId = pendingTrack, localTrackBindingId = null, playbackSessionId = null,
+                startedAt = null, endedAt = 50_000, attributionAt = 50_000,
+                timestampEvidence = ListeningTimestampEvidence.SOURCE_END_ONLY,
+                listenedMs = 30_000, trackDurationMs = 60_000, qualifiedAsPlay = true,
+                qualificationReason = ListeningQualificationReason.TIME_THRESHOLD,
+                qualificationRuleVersion = 1, qualificationPolicy = ListeningQualificationPolicy.SPOTIFY,
+                endReason = null, completionClassification = ListeningCompletionClassification.NONE,
+                publicationState = ListeningEventPublicationState.IMPORT_PENDING,
+                sourceEventKey = "pending-source", importBatchId = null, createdAt = 50_001
+            )
+        )
+
+        assertEquals(overviewBefore, repository.getAllTimeOverview())
+        assertEquals(topBefore, repository.getTopTracksByQualifiedPlays(20))
+        assertEquals(recentBefore, repository.getRecentlyPlayed(20))
+        assertEquals(mostBefore, repository.getMostPlayed(20))
+        assertEquals(detailedBefore, repository.getRecentDetailedEvents(20))
+        val bounded = repository.getDetailedOverview(ListeningDateRange(49_000, 51_000))
+        assertEquals(0L, bounded.detailedEventCount)
+        assertNull(bounded.firstDetailedEventAt)
+        assertNull(bounded.latestDetailedEventAt)
+        val trend = database.listeningStatsDao().getTrendBuckets(
+            ListeningStatsQueries.trend(
+                listOf(AnalyticsBucketBoundary(
+                    0, 49_000, 51_000, ZonedDateTime.now(), AnalyticsBucketGranularity.DAY
+                )),
+                listOf(ListeningSource.SPOTIFY_IMPORT.storageValue)
+            )
+        )
+        assertEquals(0L, trend.single().totalAttemptCount)
     }
 
     @Test
@@ -423,7 +475,7 @@ class ListeningStatsRepositoryTest {
         val plan = database.query(
             SimpleSQLiteQuery(
                 "EXPLAIN QUERY PLAN SELECT id FROM listening_events " +
-                    "WHERE source = 'cdplaya' AND startedAt >= 100 AND startedAt < 200"
+                    "WHERE source = 'cdplaya' AND publicationState != 'import_pending' AND attributionAt >= 100 AND attributionAt < 200"
             )
         ).use { cursor ->
             buildList {
@@ -431,7 +483,7 @@ class ListeningStatsRepositoryTest {
                 while (cursor.moveToNext()) add(cursor.getString(detailColumn))
             }
         }
-        assertTrue(plan.joinToString().contains("index_listening_events_source_startedAt"))
+        assertTrue(plan.joinToString().contains("index_listening_events_source_publicationState_attributionAt"))
     }
 
     private suspend fun insertFixture(): Fixture {

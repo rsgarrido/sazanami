@@ -41,10 +41,10 @@ class SongRatingBackupValidatorTest {
                     createdAt = 1L,
                     canonicalListeningHistory = BackupListeningHistoryV2()
                 )
-            ).replace("\"schemaVersion\":8", "\"schemaVersion\":7")
+            ).replace("\"schemaVersion\":9", "\"schemaVersion\":7")
         )
 
-        assertEquals(8, decoded.schemaVersion)
+        assertEquals(9, decoded.schemaVersion)
         assertEquals(emptyList<BackupSongRating>(), decoded.songRatings.entries)
     }
 
@@ -64,7 +64,7 @@ class SongRatingBackupValidatorTest {
             )
         )
 
-        assertEquals(8, decoded.schemaVersion)
+        assertEquals(9, decoded.schemaVersion)
         assertEquals(ratings, decoded.songRatings)
     }
 
@@ -81,7 +81,7 @@ class SongRatingBackupValidatorTest {
             """.trimIndent()
         )
 
-        assertEquals(8, decoded.schemaVersion)
+        assertEquals(9, decoded.schemaVersion)
         assertEquals(1, decoded.canonicalListeningHistory?.baselines?.size)
         assertEquals(emptyList<BackupSongRating>(), decoded.songRatings.entries)
     }

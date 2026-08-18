@@ -5,7 +5,9 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.example.cdplaya.data.FolderSelectionMode
 import com.example.cdplaya.data.PlayerTheme
 import com.example.cdplaya.player.audio.AudioOffloadPreference
@@ -78,10 +80,65 @@ class EqualizerSettingsNavigationTest {
 
         composeRule.onNodeWithText("Bass Lift")
             .assertExists()
-        composeRule.onNodeWithText("Equalizer")
+        composeRule.onNodeWithContentDescription("Open equalizer settings")
+            .performScrollTo()
             .performClick()
         composeRule.runOnIdle {
             assertTrue(opened)
         }
+    }
+
+    @Test
+    fun listeningHistorySectionOpensFunctionalImportDestination() {
+        var opened = false
+        composeRule.setContent {
+            MaterialTheme {
+                SettingsScreen(
+                    totalSongCount = 1,
+                    availableFolderCount = 1,
+                    folderSelectionMode = FolderSelectionMode.ALL,
+                    selectedFolderCount = 0,
+                    excludedFolderCount = 0,
+                    isLibraryRefreshing = false,
+                    lastLibraryRefreshSummary = null,
+                    libraryErrorMessage = null,
+                    onBackClick = {},
+                    onLibraryFoldersClick = {},
+                    onScanLibraryClick = {},
+                    onExportBackupClick = {},
+                    onRestoreBackupClick = {},
+                    onListeningHistoryImportClick = { opened = true },
+                    onDiagnosticsClick = {},
+                    equalizerSummary = "Off",
+                    onEqualizerClick = {},
+                    isSleepTimerActive = false,
+                    sleepTimerDisplayText = "",
+                    onSleepTimerClick = {},
+                    selectedPlayerTheme = PlayerTheme.DEFAULT,
+                    selectedPlayerThemeTokens = PlayerThemeTokens(
+                        shellColor = Color.Black,
+                        accentColor = Color.Blue,
+                        displayBackgroundColor = Color.Black,
+                        displayTextColor = Color.White
+                    ),
+                    onPlayerThemeSelected = {},
+                    onUpdatePlayerThemeTokenOverride = { _, _, _ -> },
+                    onResetPlayerThemeTokenOverrides = {},
+                    selectedModernArtworkTransitionStyle = ModernArtworkTransitionStyle.SLIDE,
+                    onModernArtworkTransitionStyleSelected = {},
+                    selectedModernSeekbarStyle = ModernSeekbarStyle.CLASSIC_BAR,
+                    onModernSeekbarStyleSelected = {},
+                    selectedReplayGainMode = ReplayGainMode.OFF,
+                    onReplayGainModeSelected = {},
+                    selectedAudioOffloadPreference = AudioOffloadPreference.DISABLED,
+                    onAudioOffloadPreferenceSelected = {}
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Import listening history")
+            .performScrollTo()
+            .performClick()
+        composeRule.runOnIdle { assertTrue(opened) }
     }
 }

@@ -12,7 +12,7 @@ class AppBackupJsonTest {
     fun encodeBackup_includesCurrentSchemaVersion() {
         val encoded = AppBackupJson.encodeBackup(emptyBackup())
 
-        assertTrue(encoded.contains("\"schemaVersion\":8"))
+        assertTrue(encoded.contains("\"schemaVersion\":9"))
     }
 
     @Test
@@ -80,7 +80,7 @@ class AppBackupJsonTest {
             """.trimIndent()
         )
 
-        assertEquals(8, decoded.schemaVersion)
+        assertEquals(9, decoded.schemaVersion)
         assertEquals("slide", decoded.preferences.modernArtworkTransitionStyle)
         assertEquals("classic_bar", decoded.preferences.modernSeekbarStyle)
         assertEquals(emptyMap<String, BackupPlayerThemeTokenOverrides>(), decoded.preferences.playerThemeTokenOverrides)
@@ -159,7 +159,7 @@ class AppBackupJsonTest {
             """.trimIndent()
         )
 
-        assertEquals(8, decoded.schemaVersion)
+        assertEquals(9, decoded.schemaVersion)
         assertEquals("old-key", decoded.favorites.single().reference?.legacyStableKey)
     }
 
@@ -167,11 +167,11 @@ class AppBackupJsonTest {
     fun decodeBackup_rejectsUnsupportedSchemaVersion() {
         val exception = expectIllegalArgumentException {
             AppBackupJson.decodeBackup(
-                AppBackupJson.encodeBackup(emptyBackup().copy(schemaVersion = 9))
+                AppBackupJson.encodeBackup(emptyBackup().copy(schemaVersion = 10))
             )
         }
 
-        assertTrue(exception.message.orEmpty().contains("Unsupported CDPlaya backup schema version 9"))
+        assertTrue(exception.message.orEmpty().contains("Unsupported CDPlaya backup schema version 10"))
     }
 
     @Test
@@ -254,7 +254,7 @@ class AppBackupJsonTest {
             """.trimIndent()
         )
 
-        assertEquals(8, decoded.schemaVersion)
+        assertEquals(9, decoded.schemaVersion)
         assertFalse(decoded.preferences.equalizer.limiterEnabled)
         assertEquals(
             -1.0,

@@ -1,0 +1,5 @@
+[
+  {"ts":"2024-05-01T00:00:00Z","ms_played":60000,"master_metadata_track_name":"Echo Copy","master_metadata_album_artist_name":"The Replicas","master_metadata_album_album_name":"Twice Seen","spotify_track_uri":"spotify:track:Duplicate0000000000001","skipped":false},
+  {"ts":"2024-05-01T00:00:00Z","ms_played":60000,"master_metadata_track_name":"Echo Copy","master_metadata_album_artist_name":"The Replicas","master_metadata_album_album_name":"Twice Seen","spotify_track_uri":"spotify:track:Duplicate0000000000001","skipped":false},
+  {"ts":"2024-05-01T00:02:00Z","ms_played":60000,"master_metadata_track_name":"Echo Copy","master_metadata_album_artist_name":"The Replicas","master_metadata_album_album_name":"Twice Seen","spotify_track_uri":"spotify:track:Duplicate0000000000001","skipped":false}
+]

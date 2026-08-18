@@ -3,6 +3,10 @@ package com.example.cdplaya.data.listening
 import com.example.cdplaya.data.local.ListeningEndReason
 import com.example.cdplaya.data.local.ListeningQualificationReason
 import com.example.cdplaya.data.local.ListeningSource
+import com.example.cdplaya.data.local.ListeningTimestampEvidence
+import com.example.cdplaya.data.local.ListeningQualificationPolicy
+import com.example.cdplaya.data.local.ListeningCompletionClassification
+import com.example.cdplaya.data.local.ListeningEventPublicationState
 import com.example.cdplaya.data.local.toEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -183,6 +187,21 @@ class ListeningSessionRecorderTest {
     }
 
     @Test
+    fun completionClassificationTracksNaturalEndIndependentlyFromQualification() {
+        recorder.startSession(start(sessionId = "natural", durationMs = 60_000L))
+        val natural = finalized(recorder.finalizeSession("natural", ListeningEndReason.NATURAL_END))
+        assertEquals(ListeningCompletionClassification.NATIVE_NATURAL, natural.completionClassification)
+        assertTrue(natural.qualifiedAsPlay)
+
+        recorder.startSession(start(sessionId = "stopped", durationMs = 2_000L))
+        recorder.onPlaybackStarted("stopped")
+        monotonicClock.advance(1_000L)
+        val stopped = finalized(recorder.finalizeSession("stopped", ListeningEndReason.STOPPED))
+        assertEquals(ListeningCompletionClassification.NONE, stopped.completionClassification)
+        assertTrue(stopped.qualifiedAsPlay)
+    }
+
+    @Test
     fun thresholdQualificationIsStickyThroughPauseSeekStopAndError() {
         recorder.startSession(start(sessionId = "stop", durationMs = 2_000L))
         recorder.onPlaybackStarted("stop")
@@ -350,12 +369,17 @@ class ListeningSessionRecorderTest {
         assertEquals("final-fields", draft.playbackSessionId)
         assertEquals(50_000L, draft.startedAt)
         assertEquals(60_000L, draft.endedAt)
+        assertEquals(50_000L, draft.attributionAt)
+        assertEquals(ListeningTimestampEvidence.NATIVE_EXACT, draft.timestampEvidence)
         assertEquals(3_500L, draft.listenedMs)
         assertEquals(7_000L, draft.trackDurationMs)
         assertTrue(draft.qualifiedAsPlay)
         assertEquals(ListeningQualificationReason.TIME_THRESHOLD, draft.qualificationReason)
         assertEquals(1, draft.qualificationRuleVersion)
+        assertEquals(ListeningQualificationPolicy.CDPLAYA, draft.qualificationPolicy)
         assertEquals(ListeningEndReason.TRANSITION, draft.endReason)
+        assertEquals(ListeningCompletionClassification.NONE, draft.completionClassification)
+        assertEquals(ListeningEventPublicationState.NATIVE, draft.publicationState)
         assertNull(draft.sourceEventKey)
         assertNull(draft.importBatchId)
         assertEquals(60_000L, draft.createdAt)

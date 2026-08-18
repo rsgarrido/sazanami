@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -61,6 +62,7 @@ fun SettingsScreen(
     onScanLibraryClick: () -> Unit,
     onExportBackupClick: () -> Unit,
     onRestoreBackupClick: () -> Unit,
+    onListeningHistoryImportClick: () -> Unit = {},
     onDiagnosticsClick: () -> Unit,
     equalizerSummary: String,
     onEqualizerClick: () -> Unit,
@@ -297,13 +299,29 @@ fun SettingsScreen(
         SettingsSectionSpacer()
 
         SettingsSection(
+            title = "Listening history",
+            description = "Bring previous listening activity into CDPlaya.",
+            icon = Icons.Filled.History
+        ) {
+            SettingsRow(
+                title = "Import listening history",
+                summary = "Import your previous listening history from supported services.",
+                icon = AppShellIcons.Restore,
+                onClick = onListeningHistoryImportClick,
+                navigationContentDescription = "Open listening history import"
+            )
+        }
+
+        SettingsSectionSpacer()
+
+        SettingsSection(
             title = "Data & support",
             description = "Protect app data and inspect playback or device information.",
             icon = AppShellIcons.Diagnostics
         ) {
             SettingsRow(
                 title = "Export Backup",
-                summary = "Save favorites, playlists, history, and preferences as JSON.",
+                summary = "Save favorites, playlists, listening history, ratings, and preferences as JSON.",
                 icon = AppShellIcons.Export,
                 onClick = onExportBackupClick,
                 navigationContentDescription = "Export backup"

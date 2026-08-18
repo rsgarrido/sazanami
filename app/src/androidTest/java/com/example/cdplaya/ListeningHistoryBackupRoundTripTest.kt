@@ -11,6 +11,8 @@ import com.example.cdplaya.data.local.LegacyListeningBaselineEntity
 import com.example.cdplaya.data.local.ListeningEndReason
 import com.example.cdplaya.data.local.ListeningEventEntity
 import com.example.cdplaya.data.local.ListeningQualificationReason
+import com.example.cdplaya.data.local.ListeningQualificationPolicy
+import com.example.cdplaya.data.local.ListeningEventPublicationState
 import com.example.cdplaya.data.local.ListeningSource
 import com.example.cdplaya.data.local.ListeningTrackIdentityEntity
 import com.example.cdplaya.data.local.LocalTrackBindingEntity
@@ -225,7 +227,17 @@ class ListeningHistoryBackupRoundTripTest {
             else ListeningQualificationReason.TIME_THRESHOLD
         } else ListeningQualificationReason.NONE,
         qualificationRuleVersion = 1,
+        qualificationPolicy = when (source) {
+            ListeningSource.CDPLAYA -> ListeningQualificationPolicy.CDPLAYA
+            ListeningSource.SPOTIFY_IMPORT -> ListeningQualificationPolicy.SPOTIFY
+            ListeningSource.LASTFM_IMPORT -> ListeningQualificationPolicy.LASTFM
+        },
         endReason = endReason,
+        publicationState = if (source == ListeningSource.CDPLAYA) {
+            ListeningEventPublicationState.NATIVE
+        } else {
+            ListeningEventPublicationState.IMPORT_PUBLISHED
+        },
         sourceEventKey = sourceKey,
         importBatchId = if (source == ListeningSource.CDPLAYA) null else 44,
         createdAt = startedAt + 20
