@@ -102,6 +102,35 @@ class SpotifyExtendedStreamingParser(
         }
     }
 
+    /** Suspends between emitted records so import execution can apply bounded backpressure. */
+    suspend fun parseSuspending(
+        openStream: () -> InputStream,
+        onItem: suspend (SpotifyParseItem) -> SpotifyParseControl
+    ): SpotifyFileParseResult {
+        val input = try {
+            openStream()
+        } catch (_: IOException) {
+            return unreadable()
+        } catch (_: SecurityException) {
+            return unreadable()
+        }
+        var callbackCount = 0L
+        return try {
+            try {
+                parseOwnedSuspending(input) { item ->
+                    callbackCount++
+                    onItem(item)
+                }
+            } finally {
+                input.close()
+            }
+        } catch (_: IOException) {
+            unreadable(callbackCount)
+        } catch (_: SerializationException) {
+            malformed(callbackCount)
+        }
+    }
+
     @OptIn(ExperimentalSerializationApi::class)
     private fun parseOwned(
         input: InputStream,
@@ -158,6 +187,62 @@ class SpotifyExtendedStreamingParser(
             if (!emit(iterator.next())) {
                 return SpotifyFileParseResult.Stopped(detected, emitted)
             }
+        }
+        return SpotifyFileParseResult.Completed(detected, emitted)
+    }
+
+    @OptIn(ExperimentalSerializationApi::class)
+    private suspend fun parseOwnedSuspending(
+        input: InputStream,
+        onItem: suspend (SpotifyParseItem) -> SpotifyParseControl
+    ): SpotifyFileParseResult {
+        val prepared = prepareUtf8(input)
+        if (prepared.firstByte == null) return malformed()
+        if (prepared.firstByte != '['.code) {
+            json.decodeFromStream<JsonElement>(prepared.stream)
+            return unknown()
+        }
+
+        val iterator = json.decodeToSequence<JsonElement>(
+            prepared.stream,
+            DecodeSequenceMode.ARRAY_WRAPPED
+        ).iterator()
+        val probe = ArrayList<JsonElement>(FORMAT_PROBE_RECORD_LIMIT)
+        var detected: ImportFileFormat? = null
+        while (iterator.hasNext() && probe.size < FORMAT_PROBE_RECORD_LIMIT) {
+            val element = iterator.next()
+            probe += element
+            val elementFormat = (element as? JsonObject)?.let(SpotifyFormatDetector::detect)
+            if (elementFormat != null) {
+                detected = elementFormat
+                break
+            }
+        }
+
+        if (detected == ImportFileFormat.SPOTIFY_BASIC_ACCOUNT_HISTORY_UNSUPPORTED) {
+            return SpotifyFileParseResult.Failed(
+                format = detected,
+                reason = ImportFileFailureReason.UNSUPPORTED_FORMAT,
+                safeMessage = "Spotify Account Data history is not supported; select Extended Streaming History.",
+                recordsEmitted = 0L
+            )
+        }
+        if (detected == null) {
+            while (iterator.hasNext()) iterator.next()
+            return unknown()
+        }
+
+        var emitted = 0L
+        suspend fun emit(element: JsonElement): Boolean {
+            val item = decodeItem(emitted, element)
+            emitted++
+            return onItem(item) == SpotifyParseControl.CONTINUE
+        }
+        for (element in probe) {
+            if (!emit(element)) return SpotifyFileParseResult.Stopped(detected, emitted)
+        }
+        while (iterator.hasNext()) {
+            if (!emit(iterator.next())) return SpotifyFileParseResult.Stopped(detected, emitted)
         }
         return SpotifyFileParseResult.Completed(detected, emitted)
     }

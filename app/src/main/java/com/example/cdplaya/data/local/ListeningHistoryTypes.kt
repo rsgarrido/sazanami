@@ -102,7 +102,12 @@ enum class ImportedListeningSkippedState(val storageValue: String) {
 }
 
 enum class ImportedListeningMatchDisposition(val storageValue: String) {
-    EXACT("exact"), AMBIGUOUS("ambiguous"), UNMATCHED("unmatched");
+    /** Legacy value retained for backup/restore compatibility. */
+    EXACT("exact"),
+    EXACT_EXTERNAL_ID("exact_external_id"),
+    CREATED_HISTORICAL_IDENTITY("created_historical_identity"),
+    AMBIGUOUS("ambiguous"),
+    UNMATCHED("unmatched");
     companion object {
         fun fromStorageValue(value: String) = entries.firstOrNull { it.storageValue == value }
             ?: error("Unknown imported match disposition: $value")

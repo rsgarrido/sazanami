@@ -74,6 +74,7 @@ class ListeningImportSelectionPlanner {
 /** Incremental entry point for parsers that deliver one normalized record at a time. */
 class ListeningImportSelectionBuilder {
     private var maximumCounts = LinkedHashMap<FingerprintKey, Int>()
+    private var ownerFileIndices = LinkedHashMap<FingerprintKey, Int>()
     private var currentFileCounts: LinkedHashMap<FingerprintKey, Int>? = null
     private var inputOccurrences = 0L
     private var fileCount = 0
@@ -96,9 +97,13 @@ class ListeningImportSelectionBuilder {
         val fileCounts = checkNotNull(currentFileCounts) { "No source file is active." }
         if (fileCount == 0) {
             maximumCounts = fileCounts
+            fileCounts.keys.forEach { ownerFileIndices[it] = fileCount }
         } else {
             fileCounts.forEach { (key, count) ->
-                if (count > (maximumCounts[key] ?: 0)) maximumCounts[key] = count
+                if (count > (maximumCounts[key] ?: 0)) {
+                    maximumCounts[key] = count
+                    ownerFileIndices[key] = fileCount
+                }
             }
         }
         currentFileCounts = null
@@ -113,6 +118,7 @@ class ListeningImportSelectionBuilder {
         built = true
         return ListeningImportSelectionPlan(
             desiredCounts = maximumCounts,
+            ownerFileIndices = ownerFileIndices,
             summary = ListeningImportSelectionSummary(
                 importableMusicOccurrencesAcrossFiles = inputOccurrences,
                 selectedMusicOccurrences = selected,
@@ -125,8 +131,13 @@ class ListeningImportSelectionBuilder {
 
 class ListeningImportSelectionPlan internal constructor(
     private val desiredCounts: Map<FingerprintKey, Int>,
+    private val ownerFileIndices: Map<FingerprintKey, Int>,
     val summary: ListeningImportSelectionSummary
 ) {
+    /** The first selected file having the maximum multiplicity owns this fingerprint's occurrences. */
+    fun isOccurrenceOwner(fileIndex: Int, fingerprint: ListeningImportFingerprint): Boolean =
+        ownerFileIndices[FingerprintKey(fingerprint.fingerprintVersion, fingerprint.fingerprint)] == fileIndex
+
     fun occurrenceKeyChunks(maxKeys: Int): Sequence<List<ImportOccurrenceKey>> {
         require(maxKeys > 0)
         return sequence {
