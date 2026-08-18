@@ -26,6 +26,50 @@ class SpotifyImportDedupePipelineScaleTest {
         verify(500_000)
     }
 
+    @Test fun threeLargeOverlappingFilesUseMaximumMultiplicityWhenEnabled() = runBlocking {
+        assumeTrue(System.getProperty("spotify.importStress100k") == "true")
+        val files = listOf(0, 20_000, 40_000).map { startIndex ->
+            Files.createTempFile("cdplaya-session6-overlap-$startIndex-", ".json").also { file ->
+                Files.newOutputStream(file).use { output ->
+                    SyntheticSpotifyHistoryGenerator.write(
+                        output,
+                        SyntheticSpotifyHistoryGenerator.Configuration(
+                            recordCount = 100_000,
+                            startIndex = startIndex
+                        )
+                    )
+                }
+            }
+        }
+        try {
+            val builder = ListeningImportSelectionBuilder()
+            val elapsed = measureTimeMillis {
+                files.forEach { file ->
+                    builder.beginFile()
+                    val result = parser.parse({ Files.newInputStream(file) }) { item ->
+                        if (item is SpotifyParseItem.ValidMusic) {
+                            builder.accept(SpotifyListeningImportFingerprint.create(item.record))
+                        }
+                        SpotifyParseControl.CONTINUE
+                    }
+                    check(result is SpotifyFileParseResult.Completed)
+                    builder.endFile()
+                }
+            }
+            val selection = builder.build()
+            assertEquals(300_000L, selection.summary.importableMusicOccurrencesAcrossFiles)
+            assertEquals(140_000L, selection.summary.selectedMusicOccurrences)
+            assertEquals(160_000L, selection.summary.overlappingOccurrencesSuppressed)
+            assertEquals(140_000, selection.summary.distinctFingerprints)
+            println(
+                "session6Overlap raw=300000 selected=140000 suppressed=160000 " +
+                    "distinct=140000 elapsedMs=$elapsed"
+            )
+        } finally {
+            files.forEach(Files::deleteIfExists)
+        }
+    }
+
     private fun verify(count: Int) = runBlocking {
         val file = Files.createTempFile("cdplaya-session2-$count-", ".json")
         try {

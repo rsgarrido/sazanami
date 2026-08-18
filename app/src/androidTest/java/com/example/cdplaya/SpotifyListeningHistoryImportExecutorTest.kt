@@ -21,6 +21,7 @@ import com.example.cdplaya.data.importing.spotify.SpotifyExtendedStreamingParser
 import com.example.cdplaya.data.importing.spotify.SpotifyImportPolicy
 import com.example.cdplaya.data.importing.spotify.SpotifyImportSourceProfileService
 import com.example.cdplaya.data.importing.spotify.SpotifyListeningHistoryImportExecutor
+import com.example.cdplaya.data.importing.spotify.SpotifyListeningHistoryImportPreviewer
 import com.example.cdplaya.data.importing.spotify.SpotifyListeningImportFingerprint
 import com.example.cdplaya.data.local.AppDatabase
 import com.example.cdplaya.data.local.ListeningImportBatchEntity
@@ -37,6 +38,9 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -253,6 +257,32 @@ class SpotifyListeningHistoryImportExecutorTest {
         assertTrue(database.listeningTrackExternalIdDao().getAllForBackup().isEmpty())
     }
 
+    @Test fun cancellationImmediatelyBeforePublicationLeavesNoPartialHistory() = runBlocking {
+        val input = source(json(*(0 until 6).map { index ->
+            entry("2024-04-02T00:0${index}:00Z", 31_000, "Late $index", "Artist", "", "late$index")
+        }.toTypedArray()))
+        var cancelled = false
+        try {
+            newExecutor(chunkSize = 2).execute(listOf(input)) { progress ->
+                if (progress.phase == ListeningImportExecutionPhase.PUBLISHING) {
+                    throw CancellationException("test before publication")
+                }
+            }
+        } catch (_: CancellationException) {
+            cancelled = true
+        }
+
+        assertTrue(cancelled)
+        assertEquals(0L, database.listeningEventDao().count())
+        assertTrue(database.listeningTrackIdentityDao().getAll().isEmpty())
+        assertTrue(database.listeningTrackExternalIdDao().getAllForBackup().isEmpty())
+        assertEquals(
+            0L,
+            ListeningStatsRepository(database)
+                .getAllTimeOverview(includeLegacyBaseline = false).detailedEventCount
+        )
+    }
+
     @Test fun failedChunkRollsBackIdentityExternalIdEventEvidenceAndObservation() = runBlocking {
         val failingRepository = ListeningImportRepository(
             database,
@@ -312,6 +342,63 @@ class SpotifyListeningHistoryImportExecutorTest {
         assertEquals(2L, database.listeningEventDao().count())
         assertEquals(1, database.listeningTrackIdentityDao().getAll().size)
         assertEquals(1, database.listeningTrackExternalIdDao().getAllForBackup().size)
+    }
+
+    @Test fun concurrentSameProfileAttemptsSerializeAndPublishEachOccurrenceOnce() = runBlocking {
+        val input = source(json(*(0 until 100).map { index ->
+            entry(
+                "2024-08-01T00:${(index / 60).toString().padStart(2, '0')}:" +
+                    "${(index % 60).toString().padStart(2, '0')}Z",
+                31_000,
+                "Concurrent $index",
+                "Artist",
+                "Album",
+                "concurrent$index"
+            )
+        }.toTypedArray()))
+
+        val results = coroutineScope {
+            val first = async(Dispatchers.Default) { newExecutor().execute(listOf(input)) }
+            val second = async(Dispatchers.Default) { newExecutor().execute(listOf(input)) }
+            listOf(first.await(), second.await())
+        }
+
+        assertEquals(listOf(0L, 100L), results.map { it.newPublished }.sorted())
+        assertEquals(listOf(0L, 100L), results.map { it.alreadyImported }.sorted())
+        assertEquals(100L, database.listeningEventDao().count())
+        assertEquals(100, database.listeningTrackIdentityDao().getAll().size)
+        assertEquals(100, database.listeningTrackExternalIdDao().getAllForBackup().size)
+        val profile = SpotifyImportSourceProfileService(repository) { 2_000_000_000_000 }
+            .getOrCreateDefault()
+        assertTrue(repository.getPendingBatchIdsForSourceProfile(profile.id).isEmpty())
+    }
+
+    @Test fun stalePreviewIsRecheckedAuthoritativelyAtExecutionTime() = runBlocking {
+        val input = source(json(*(0 until 100).map { index ->
+            entry(
+                "2024-09-01T00:${(index / 60).toString().padStart(2, '0')}:" +
+                    "${(index % 60).toString().padStart(2, '0')}Z",
+                31_000,
+                "Stale $index",
+                "Artist",
+                "Album",
+                "stale$index"
+            )
+        }.toTypedArray()))
+        val profiles = SpotifyImportSourceProfileService(repository) { 2_000_000_000_000 }
+        val parser = SpotifyExtendedStreamingParser(
+            Clock.fixed(Instant.parse("2030-01-01T00:00:00Z"), ZoneOffset.UTC)
+        )
+        val preview = SpotifyListeningHistoryImportPreviewer(repository, profiles, parser)
+            .preview(listOf(input))
+        assertEquals(100L, preview.dedupe.newOccurrences)
+
+        assertEquals(100L, newExecutor().execute(listOf(input)).newPublished)
+        val staleExecution = newExecutor().execute(listOf(input))
+
+        assertEquals(0L, staleExecution.newPublished)
+        assertEquals(100L, staleExecution.alreadyImported)
+        assertEquals(100L, database.listeningEventDao().count())
     }
 
     private fun newExecutor(chunkSize: Int = 500): SpotifyListeningHistoryImportExecutor {

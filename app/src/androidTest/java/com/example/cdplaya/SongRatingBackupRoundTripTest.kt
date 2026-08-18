@@ -95,7 +95,7 @@ class SongRatingBackupRoundTripTest {
         assertEquals(7, target.legacyListeningBaselineDao().getByTrackIdentityId(
             restoredIdentities.getValue(30L).id
         )?.historicalPlayCount)
-        assertNull(target.songRatingDao().getByTrackIdentityId(restoredIdentities.getValue(60L).id))
+        assertTrue(60L !in restoredIdentities)
         val topTracks = ListeningStatsRepository(target).getTopTracksByQualifiedPlays(10)
         val ratingsByIdentity = SongRatingRepository(target).observeRatingSnapshot()
             .first().byTrackIdentityId

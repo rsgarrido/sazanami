@@ -542,6 +542,7 @@ class ListeningImportRepository(
         candidateIdentityIds.chunked(ListeningImportDedupePlanner.MAX_LOOKUP_BATCH_SIZE).forEach {
             database.listeningTrackIdentityDao().deleteUnreferenced(it)
         }
+        database.listeningTrackIdentityDao().deleteAllUnreferenced()
         check(database.listeningImportBatchDao().cancel(batchId, completedAt) == 1)
         deleted
     }
@@ -560,6 +561,7 @@ class ListeningImportRepository(
         candidateIdentityIds.chunked(ListeningImportDedupePlanner.MAX_LOOKUP_BATCH_SIZE).forEach {
             database.listeningTrackIdentityDao().deleteUnreferenced(it)
         }
+        database.listeningTrackIdentityDao().deleteAllUnreferenced()
         check(database.listeningImportBatchDao().fail(batchId, completedAt, failureCategory) == 1)
         deleted
     }

@@ -106,6 +106,24 @@ class ListeningImportDedupeLookupTest {
         assertTrue(details, details.contains("fingerprintVersion=?"))
     }
 
+    @Test fun externalIdBatchLookupUsesExistingCompositeUniqueIndex() {
+        val cursor = database.openHelper.readableDatabase.query(
+            """EXPLAIN QUERY PLAN
+                SELECT * FROM listening_track_external_ids
+                WHERE sourceType = ? AND externalId IN (?, ?)""",
+            arrayOf<Any>(ListeningSource.SPOTIFY_IMPORT.storageValue, "a", "b")
+        )
+        val details = buildList {
+            cursor.use {
+                val detailColumn = it.getColumnIndexOrThrow("detail")
+                while (it.moveToNext()) add(it.getString(detailColumn))
+            }
+        }.joinToString(" ")
+        assertTrue(details, details.contains("index_listening_track_external_ids_sourceType_externalId"))
+        assertTrue(details, details.contains("sourceType=?"))
+        assertTrue(details, details.contains("externalId=?"))
+    }
+
     private suspend fun seedEvidence(
         identityId: Long,
         profileId: Long,

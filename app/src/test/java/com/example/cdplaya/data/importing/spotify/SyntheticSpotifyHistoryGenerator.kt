@@ -8,12 +8,14 @@ import java.util.Locale
 internal object SyntheticSpotifyHistoryGenerator {
     data class Configuration(
         val recordCount: Int,
+        val startIndex: Int = 0,
         val startAt: Instant = Instant.parse("2015-01-01T00:00:00Z"),
         val podcastEvery: Int = 0,
         val invalidEvery: Int = 0
     ) {
         init {
             require(recordCount >= 0)
+            require(startIndex >= 0)
             require(podcastEvery >= 0)
             require(invalidEvery >= 0)
         }
@@ -23,8 +25,9 @@ internal object SyntheticSpotifyHistoryGenerator {
     fun write(output: OutputStream, configuration: Configuration) {
         val writer = OutputStreamWriter(output, Charsets.UTF_8)
         writer.write("[\n")
-        repeat(configuration.recordCount) { index ->
-            if (index > 0) writer.write(",\n")
+        repeat(configuration.recordCount) { offset ->
+            if (offset > 0) writer.write(",\n")
+            val index = Math.addExact(configuration.startIndex, offset)
             val timestamp = configuration.startAt.plusSeconds(index.toLong())
             val invalid = configuration.invalidEvery > 0 && index % configuration.invalidEvery == 0
             val podcast = !invalid && configuration.podcastEvery > 0 &&

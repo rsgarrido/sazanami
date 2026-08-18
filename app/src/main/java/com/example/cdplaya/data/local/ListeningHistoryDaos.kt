@@ -29,6 +29,20 @@ interface ListeningTrackIdentityDao {
           AND NOT EXISTS (SELECT 1 FROM song_ratings WHERE trackIdentityId = listening_track_identities.id)
     """)
     suspend fun deleteUnreferenced(ids: List<Long>): Int
+
+    /**
+     * Recovery fallback for a process that died after deleting pending events but before removing
+     * their identities. External IDs intentionally do not keep an otherwise unused identity alive;
+     * their foreign key cascades when the identity is deleted.
+     */
+    @Query("""
+        DELETE FROM listening_track_identities
+        WHERE NOT EXISTS (SELECT 1 FROM local_track_bindings WHERE trackIdentityId = listening_track_identities.id)
+          AND NOT EXISTS (SELECT 1 FROM listening_events WHERE trackIdentityId = listening_track_identities.id)
+          AND NOT EXISTS (SELECT 1 FROM legacy_listening_baselines WHERE trackIdentityId = listening_track_identities.id)
+          AND NOT EXISTS (SELECT 1 FROM song_ratings WHERE trackIdentityId = listening_track_identities.id)
+    """)
+    suspend fun deleteAllUnreferenced(): Int
 }
 
 @Dao

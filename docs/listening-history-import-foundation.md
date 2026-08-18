@@ -100,7 +100,10 @@ observed analytics table.
 
 Cancellation deletes only unshared pending events, removes that batch's links, and marks the batch
 cancelled. A published event shared by another batch is neither hidden nor deleted. Batch deletion
-does not cascade to canonical identities.
+does not cascade to canonical identities. Recovery also removes identities left globally
+unreferenced by a prior partial cleanup; local bindings, listening events, legacy baselines, and
+ratings each protect an identity, while pending-only external mappings cascade with an otherwise
+unreferenced identity.
 
 ## Backup 9
 
@@ -127,10 +130,10 @@ is fabricated. Versions 1–7 continue through their existing migration chain be
 ## Identity retention
 
 Removing one batch must not delete a canonical identity while it is retained by a rating, current
-local binding, native event, another published imported event, external ID, legacy baseline, or any
-other durable supported relationship. Import batches therefore have no cascading path to canonical
-identities. A future managed garbage-collection operation must check every durable relationship;
-batch deletion and identity GC are intentionally deferred.
+local binding, native event, another published imported event, or legacy baseline. Import batches
+therefore have no cascading path to canonical identities. An external ID is catalog evidence for
+an identity, not independent user history; it cascades only when an identity has no durable
+supported relationship left.
 
 ## Spotify Extended Streaming History v1 behavior
 
@@ -154,3 +157,65 @@ reconciliation is conservative: there is no fuzzy matching or merge UI, and URI-
 not guaranteed to reuse an identity across distinct occurrences or exports. Active file selections
 and imports cannot resume after process death; the next entry cleans unfinished pending work before
 allowing a new import.
+
+## Session 6 scale and recovery validation
+
+All device measurements below were collected on the connected Samsung S22 Ultra (`SM-S908U1`).
+No S9+ scale run was performed. Inputs were deterministic synthetic Spotify JSON generated into the
+test app cache and removed after each test; no large export fixture or database is committed.
+
+The unchanged production executor baseline imported 10,000 events reusing 100 Spotify track IDs in
+6.135 seconds through 20 transactions of 500 occurrences. The final 100,000-event high-reuse test
+used 100 track IDs and 100,000 distinct fingerprints. It published exactly 100,000 events through
+200 transactions in 58.573 seconds: 12.509 seconds analysis, 44.539 seconds persistence, and 1.525
+seconds publication. The complete All Time snapshot, including trend and Top Tracks/Artists/Albums,
+took 0.750 seconds. Backup 9 export took 10.679 seconds and contained exactly 100,000 visible events,
+100,000 evidence rows, and 100,000 observations. The database occupied approximately 91.9 MB.
+
+Re-importing the same 100,000-record export added zero events and observed all 100,000 existing
+occurrences in 31.996 seconds. A deterministic 120,000-record later export then observed the same
+100,000 and added exactly 20,000 events in 52.116 seconds. The many-to-many batch ledger therefore
+grew as designed without duplicating events, identities, external mappings, or evidence.
+
+A separate 100,000-event high-cardinality import created exactly 100,000 identities and 100,000
+external mappings, with zero pending rows. It completed in 103.543 seconds (12.793 seconds analysis,
+89.173 seconds persistence, 1.576 seconds publication); overview and ranking queries took 1.750
+seconds and the database occupied approximately 132.4 MB.
+
+Production preview/planning completed for 500,000 distinct fingerprints in 71.266 seconds. Sampled
+managed-heap use peaked at approximately 154.8 MB with a 268.4 MB test-process heap limit. The
+selection algorithm remains O(distinct fingerprints); no constant-memory claim is made and no spill
+fallback was added. A 300,000-record, three-file overlap test (100,000 records per file) selected
+exactly 140,000 union occurrences and suppressed 160,000 overlaps in 2.593 seconds, preserving
+max-per-file multiplicity.
+
+The optional 500,000-event high-reuse Room import also completed. It published 500,000 events using
+100 identities and 1,000 transactions in 352.161 seconds: 60.728 seconds analysis, 259.061 seconds
+persistence, and 32.371 seconds atomic publication. The post-import overview query took 0.399
+seconds and the database occupied approximately 470.2 MB. This validates that shape on the S22
+Ultra only; it is a stress ceiling, not a guarantee for every device or every 500,000-identity
+dataset.
+
+Cancellation injected after 40 committed chunks (20,000 pending events from a 100,000-record input)
+removed all pending events, evidence, observations, pending-only external mappings, and pending-only
+identities in 0.627 seconds. A caught persistence failure injected at the same boundary exercised
+the failed-batch path against another 100,000-record input; it removed all 20,000 pending events and
+their dependent state in 0.635 seconds while retaining a safe failed-batch record. A process-death
+simulation created three stale batches containing 20,000, 10,000, and 5,000 pending events, plus a
+shared published event and rating. One hundred
+pending rows were deleted first to simulate an interrupted prior cleanup. The original recovery
+left 100 orphan identities/mappings; Session 6 added the schema-neutral unreferenced-identity sweep
+described above. After that hardening, cleanup completed in 1.936 seconds, preserved published
+history and its rating, and a second cleanup was a 6 ms no-op. Cleanup failure remains a blocked,
+retryable controller state without exposing exception text.
+
+Backup creation pages database event reads in groups of 1,000 but the final Backup 9 model and its
+converted event list are retained in memory for serialization, so backup memory remains O(visible
+history). The successful 100,000-event export found no release-blocking memory issue; 500,000-event
+backup was not attempted. Restore remains chunked at 500 rows and was covered by the existing
+Backup 9 round-trip suite rather than repeated at 100,000 events in this session.
+
+Known v1 boundaries remain unchanged: URI-less occurrences can fragment into separate historical
+identities; interrupted imports are cleaned rather than resumed; no background import service is
+provided; and the `trackdone` plus `skipped=false` natural-completion interpretation still awaits
+confirmation against a current real Spotify `Read Me First` document.

@@ -160,6 +160,28 @@ class ListeningImportInvariantTest {
         assertNull(database.importedListeningEventEvidenceDao().getByEventId(eventId))
     }
 
+    @Test fun cleanupAfterPriorEventDeletionRemovesOrphanMappingButPreservesRatedIdentity() = runBlocking {
+        val orphanIdentity = database.listeningTrackIdentityDao().insert(
+            identity().copy(metadataKey = "partial-orphan")
+        )
+        repository.insertExternalId(external(orphanIdentity, ListeningSource.SPOTIFY_IMPORT, "orphan"))
+        val ratedIdentity = database.listeningTrackIdentityDao().insert(
+            identity().copy(metadataKey = "rated-survivor")
+        )
+        database.songRatingDao().upsert(SongRatingEntity(ratedIdentity, 5, 1, 1))
+        val sourceId = repository.createSourceProfile(source(ListeningSource.SPOTIFY_IMPORT, "spotify"))
+        val batchId = repository.createBatch(batch(sourceId, "partially-cleaned"))
+
+        // The pending event/evidence/observation that originally referenced orphanIdentity was
+        // already removed before process death, leaving only its external mapping behind.
+        assertEquals(0, repository.cancelPendingBatch(batchId, 10))
+
+        assertNull(database.listeningTrackIdentityDao().getById(orphanIdentity))
+        assertNull(repository.findExternalId(ListeningSource.SPOTIFY_IMPORT, "orphan"))
+        assertNotNull(database.listeningTrackIdentityDao().getById(ratedIdentity))
+        assertEquals(5, database.songRatingDao().getByTrackIdentityId(ratedIdentity)?.rating)
+    }
+
     private suspend fun assertRejected(block: suspend () -> Unit) {
         assertTrue(runCatching { block() }.isFailure)
     }

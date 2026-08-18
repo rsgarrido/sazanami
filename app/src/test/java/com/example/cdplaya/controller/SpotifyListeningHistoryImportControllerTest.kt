@@ -174,6 +174,25 @@ class SpotifyListeningHistoryImportControllerTest {
     }
 
     @Test
+    fun staleCleanupFailureRemainsBlockedAndRetryableWithoutExposingFailureDetails() {
+        operations.pendingBatches = 2
+        operations.cleanupFailure = IllegalStateException("private database detail")
+        controller.enterWorkflow()
+        controller.cleanStaleImport()
+
+        val failed = controller.state.value as SpotifyImportUiState.StaleImportRecovery
+        assertEquals(2, failed.pendingBatchCount)
+        assertTrue(failed.cleanupFailed)
+        controller.selectFiles(listOf(file("blocked")))
+        assertEquals(failed, controller.state.value)
+
+        operations.cleanupFailure = null
+        controller.cleanStaleImport()
+        assertEquals(SpotifyImportUiState.Landing, controller.state.value)
+        assertEquals(2, operations.cleanupCalls)
+    }
+
+    @Test
     fun secondAnalyzeActionIsIgnoredWhileFirstIsActive() {
         operations.suspendAnalyze = true
         controller.selectFiles(listOf(file("one")))
@@ -197,6 +216,7 @@ class SpotifyListeningHistoryImportControllerTest {
         var executeCalls = 0
         var suspendAnalyze = false
         var suspendExecute = false
+        var cleanupFailure: Throwable? = null
         var analyzeFailure: Throwable? = null
         var executeFailure: Throwable? = null
         var preview = preview(new = 7, existing = 0)
@@ -208,6 +228,7 @@ class SpotifyListeningHistoryImportControllerTest {
 
         override suspend fun cleanUnfinishedBatches() {
             cleanupCalls++
+            cleanupFailure?.let { throw it }
             pendingBatches = 0
         }
 
