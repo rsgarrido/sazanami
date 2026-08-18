@@ -156,7 +156,7 @@ internal fun backupRestoreConfirmationText(): String {
         This will replace your current CDPlaya app data:
         - Favorites
         - Playlists
-        - Listening history
+        - Listening history and ratings
         - Library folder selection
         - Player theme and ReplayGain setting
 

@@ -12,9 +12,13 @@ import com.example.cdplaya.data.ListeningStatsRepository
 import com.example.cdplaya.data.local.AppDatabase
 import com.example.cdplaya.data.local.LegacyListeningBaselineEntity
 import com.example.cdplaya.data.local.ListeningEndReason
+import com.example.cdplaya.data.local.ListeningCompletionClassification
 import com.example.cdplaya.data.local.ListeningEventEntity
+import com.example.cdplaya.data.local.ListeningEventPublicationState
+import com.example.cdplaya.data.local.ListeningQualificationPolicy
 import com.example.cdplaya.data.local.ListeningQualificationReason
 import com.example.cdplaya.data.local.ListeningSource
+import com.example.cdplaya.data.local.ListeningTimestampEvidence
 import com.example.cdplaya.data.local.ListeningTrackIdentityEntity
 import java.time.Clock
 import java.time.Instant
@@ -150,6 +154,147 @@ class ListeningAnalyticsTrendQueryTest {
     }
 
     @Test
+    fun mixedNativeAndImportedHistoryCoversEveryPresetHistoricalBoundsRankingsAndCompletion() =
+        runBlocking {
+            val archiveOne = insertIdentity("Archive One", "Archive Artist", "Archive Album")
+            val archiveTwo = insertIdentity("Archive Two", "Archive Artist", "Archive Album")
+            val recentImport = insertIdentity("Recent Import", "Current Artist", "Current Album")
+            val native = insertIdentity("Native Today", "Local Artist", "Local Album")
+            database.listeningEventDao().insert(
+                listOf(
+                    importedEvent(
+                        "spotify-2023",
+                        archiveOne,
+                        epoch("2023-12-31T23:59:00Z"),
+                        31_000L,
+                        qualified = true,
+                        completion = ListeningCompletionClassification.SOURCE_DOCUMENTED_NATURAL
+                    ),
+                    importedEvent(
+                        "spotify-2024",
+                        archiveTwo,
+                        epoch("2024-06-15T12:00:00Z"),
+                        5_000L,
+                        qualified = false
+                    ),
+                    importedEvent(
+                        "spotify-last-30",
+                        recentImport,
+                        epoch("2025-12-15T12:00:00Z"),
+                        31_000L,
+                        qualified = true
+                    ),
+                    importedEvent(
+                        "spotify-last-7",
+                        recentImport,
+                        epoch("2025-12-30T12:00:00Z"),
+                        31_000L,
+                        qualified = true
+                    ),
+                    event(
+                        "native-today",
+                        native,
+                        epoch("2026-01-02T10:00:00Z"),
+                        1_000L,
+                        qualified = true,
+                        endReason = ListeningEndReason.NATURAL_END
+                    ),
+                    importedEvent(
+                        "spotify-pending",
+                        archiveOne,
+                        epoch("2026-01-02T11:00:00Z"),
+                        99_000L,
+                        qualified = true,
+                        completion = ListeningCompletionClassification.SOURCE_DOCUMENTED_NATURAL,
+                        publication = ListeningEventPublicationState.IMPORT_PENDING
+                    )
+                )
+            )
+
+            val expectedAttempts = mapOf(
+                AnalyticsRangePreset.TODAY to 1L,
+                AnalyticsRangePreset.LAST_7_DAYS to 2L,
+                AnalyticsRangePreset.LAST_30_DAYS to 3L,
+                AnalyticsRangePreset.THIS_MONTH to 1L,
+                AnalyticsRangePreset.THIS_YEAR to 1L,
+                AnalyticsRangePreset.ALL_TIME to 5L
+            )
+            expectedAttempts.forEach { (preset, expected) ->
+                val snapshot = repository.getAnalyticsSnapshot(
+                    resolver.resolve(AnalyticsRangeSelection.Preset(preset))
+                )
+                assertEquals(preset.name, expected, snapshot.overview.detailedEventCount)
+                assertEquals(preset.name, expected, snapshot.trend.sumOf { it.totalAttemptCount })
+            }
+
+            val allTime = repository.getAnalyticsSnapshot(
+                resolver.resolve(AnalyticsRangeSelection.Preset(AnalyticsRangePreset.ALL_TIME))
+            )
+            assertEquals(4L, allTime.overview.qualifiedDetailedPlayCount)
+            assertEquals(1L, allTime.overview.nonQualifiedAttemptCount)
+            assertEquals(2L, allTime.overview.naturalCompletionCount)
+            assertEquals(99_000L, allTime.overview.listeningTime.confirmedDetailedListeningMs)
+            assertEquals(epoch("2023-12-31T23:59:00Z"), allTime.coverage.earliestDetailedEventAt)
+            assertEquals(epoch("2026-01-02T10:00:00Z"), allTime.coverage.latestDetailedEventAt)
+            assertEquals(5L, allTime.trend.sumOf { it.totalAttemptCount })
+            assertEquals(LocalDate.parse("2023-12-01"), allTime.trend.first().localStartDate())
+            assertEquals(LocalDate.parse("2026-01-01"), allTime.trend.last().localStartDate())
+            assertEquals(1L, allTime.trend.single {
+                it.localStartDate() == LocalDate.parse("2023-12-01")
+            }.qualifiedPlayCount)
+            assertEquals(1L, allTime.trend.single {
+                it.localStartDate() == LocalDate.parse("2024-06-01")
+            }.totalAttemptCount)
+
+            assertEquals(recentImport, allTime.topTracks.first().trackIdentityId)
+            assertTrue(allTime.topTracks.none { it.trackIdentityId == archiveTwo })
+            val archiveAlbum = allTime.topAlbums.single { it.album == "Archive Album" }
+            assertEquals(1L, archiveAlbum.playCounts.totalPlayCount)
+            assertEquals(2L, archiveAlbum.trackCount)
+            assertEquals(36_000L, archiveAlbum.confirmedDetailedListeningMs)
+            val archiveArtist = allTime.topArtists.single { it.artist == "Archive Artist" }
+            assertEquals(1L, archiveArtist.playCounts.totalPlayCount)
+            assertEquals(2L, archiveArtist.distinctTrackCount)
+        }
+
+    @Test
+    fun importedUtcEndTimestampUsesTheExistingLocalMidnightBucketBoundary() = runBlocking {
+        val losAngeles = ZoneId.of("America/Los_Angeles")
+        val localResolver = ListeningAnalyticsRangeResolver(
+            Clock.fixed(Instant.parse("2026-01-01T12:00:00Z"), ZoneId.of("UTC")),
+            AnalyticsZoneIdProvider { losAngeles }
+        )
+        val imported = insertIdentity("Midnight Import", "Boundary Artist", "Boundary Album")
+        database.listeningEventDao().insert(
+            listOf(
+                importedEvent(
+                    "before-local-midnight",
+                    imported,
+                    epoch("2026-01-01T07:59:59.999Z"),
+                    1_000L,
+                    qualified = true
+                ),
+                importedEvent(
+                    "at-local-midnight",
+                    imported,
+                    epoch("2026-01-01T08:00:00Z"),
+                    2_000L,
+                    qualified = true
+                )
+            )
+        )
+
+        val today = repository.getAnalyticsSnapshot(
+            localResolver.resolve(AnalyticsRangeSelection.Preset(AnalyticsRangePreset.TODAY))
+        )
+
+        assertEquals(1L, today.overview.detailedEventCount)
+        assertEquals(2_000L, today.overview.listeningTime.confirmedDetailedListeningMs)
+        assertEquals(epoch("2026-01-01T08:00:00Z"), today.coverage.earliestDetailedEventAt)
+        assertEquals(1L, today.trend.sumOf { it.totalAttemptCount })
+    }
+
+    @Test
     fun snapshotAppliesExplicitRankingLimitsAndKeepsIdentityRowsSeparate() = runBlocking {
         repeat(12) { index ->
             val id = insertIdentity("Same Title", "Artist $index", "Album $index")
@@ -271,5 +416,44 @@ class ListeningAnalyticsTrendQueryTest {
         createdAt = startedAt + listenedMs
     )
 
+    private fun importedEvent(
+        uuid: String,
+        trackId: Long,
+        attributionAt: Long,
+        listenedMs: Long,
+        qualified: Boolean,
+        completion: ListeningCompletionClassification = ListeningCompletionClassification.NONE,
+        publication: ListeningEventPublicationState = ListeningEventPublicationState.IMPORT_PUBLISHED
+    ) = ListeningEventEntity(
+        eventUuid = uuid,
+        source = ListeningSource.SPOTIFY_IMPORT,
+        trackIdentityId = trackId,
+        localTrackBindingId = null,
+        playbackSessionId = null,
+        startedAt = null,
+        endedAt = attributionAt,
+        attributionAt = attributionAt,
+        timestampEvidence = ListeningTimestampEvidence.SOURCE_END_ONLY,
+        listenedMs = listenedMs,
+        trackDurationMs = null,
+        qualifiedAsPlay = qualified,
+        qualificationReason = if (qualified) {
+            ListeningQualificationReason.TIME_THRESHOLD
+        } else {
+            ListeningQualificationReason.NONE
+        },
+        qualificationRuleVersion = 1,
+        qualificationPolicy = ListeningQualificationPolicy.SPOTIFY,
+        endReason = null,
+        completionClassification = completion,
+        publicationState = publication,
+        sourceEventKey = null,
+        importBatchId = null,
+        createdAt = attributionAt + 1L
+    )
+
     private fun epoch(value: String): Long = Instant.parse(value).toEpochMilli()
+
+    private fun com.example.cdplaya.data.ListeningTrendBucket.localStartDate(): LocalDate =
+        Instant.ofEpochMilli(startInclusive).atZone(zone).toLocalDate()
 }

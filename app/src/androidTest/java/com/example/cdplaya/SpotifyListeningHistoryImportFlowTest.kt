@@ -53,6 +53,7 @@ class SpotifyListeningHistoryImportFlowTest {
     private lateinit var database: AppDatabase
     private lateinit var repository: ListeningImportRepository
     private lateinit var controller: SpotifyListeningHistoryImportController
+    private lateinit var operations: DefaultSpotifyListeningHistoryImportOperations
     private lateinit var executor: SpotifyListeningHistoryImportExecutor
     private lateinit var scope: CoroutineScope
     private val batchSequence = AtomicInteger()
@@ -77,7 +78,7 @@ class SpotifyListeningHistoryImportFlowTest {
             createdAppVersion = "test",
             chunkSize = 2
         )
-        val operations = DefaultSpotifyListeningHistoryImportOperations(
+        operations = DefaultSpotifyListeningHistoryImportOperations(
             repository = repository,
             previewer = SpotifyListeningHistoryImportPreviewer(repository, sourceProfiles, parser),
             executor = executor,
@@ -119,6 +120,32 @@ class SpotifyListeningHistoryImportFlowTest {
         assertEquals(2L, repeat.preview.dedupe.alreadyImportedOccurrences)
         controller.importHistory()
         assertTrue(controller.state.value is SpotifyImportUiState.Preview)
+    }
+
+    @Test
+    fun completedImportSurvivesRepositoryAndControllerRecreationWithoutStaleRecovery() = runBlocking {
+        controller.selectFiles(listOf(asset("spotify_extended_reexport_initial.json")))
+        controller.analyze()
+        awaitState<SpotifyImportUiState.Preview>()
+        controller.importHistory()
+        awaitState<SpotifyImportUiState.Success>()
+
+        val recreatedStats = ListeningStatsRepository(database)
+        assertEquals(
+            2L,
+            recreatedStats.getAllTimeOverview(includeLegacyBaseline = false).detailedEventCount
+        )
+        controller = SpotifyListeningHistoryImportController(
+            operations = operations,
+            scope = scope,
+            workDispatcher = Dispatchers.Unconfined
+        )
+        controller.enterWorkflow()
+
+        awaitState<SpotifyImportUiState.Landing>()
+        val topTracks = recreatedStats.getTopTracksByQualifiedPlays(10)
+        assertEquals(2, topTracks.size)
+        assertTrue(topTracks.all { it.binding == null })
     }
 
     @Test

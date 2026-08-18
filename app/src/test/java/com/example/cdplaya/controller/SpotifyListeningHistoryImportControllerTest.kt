@@ -91,6 +91,25 @@ class SpotifyListeningHistoryImportControllerTest {
     }
 
     @Test
+    fun reopeningAfterSuccessChecksPersistenceAndDoesNotShowStaleRecovery() {
+        controller.selectFiles(listOf(file("one")))
+        controller.analyze()
+        controller.importHistory()
+        assertTrue(controller.state.value is SpotifyImportUiState.Success)
+
+        val reopened = SpotifyListeningHistoryImportController(
+            operations = operations,
+            scope = scope,
+            workDispatcher = Dispatchers.Unconfined
+        )
+        reopened.enterWorkflow()
+
+        assertEquals(SpotifyImportUiState.Landing, reopened.state.value)
+        assertEquals(1, operations.executeCalls)
+        assertEquals(1, operations.recoveryChecks)
+    }
+
+    @Test
     fun importCancellationWaitsForOperationCancellationBeforeCancelledState() {
         operations.suspendExecute = true
         controller.selectFiles(listOf(file("one")))
@@ -99,6 +118,26 @@ class SpotifyListeningHistoryImportControllerTest {
         assertTrue(controller.state.value is SpotifyImportUiState.Importing)
         controller.cancelImport()
         assertTrue(controller.state.value is SpotifyImportUiState.Cancelled)
+    }
+
+    @Test
+    fun reopeningAfterCompletedCancellationDoesNotShowStaleRecovery() {
+        operations.suspendExecute = true
+        controller.selectFiles(listOf(file("one")))
+        controller.analyze()
+        controller.importHistory()
+        controller.cancelImport()
+        assertTrue(controller.state.value is SpotifyImportUiState.Cancelled)
+
+        val reopened = SpotifyListeningHistoryImportController(
+            operations = operations,
+            scope = scope,
+            workDispatcher = Dispatchers.Unconfined
+        )
+        reopened.enterWorkflow()
+
+        assertEquals(SpotifyImportUiState.Landing, reopened.state.value)
+        assertEquals(1, operations.recoveryChecks)
     }
 
     @Test

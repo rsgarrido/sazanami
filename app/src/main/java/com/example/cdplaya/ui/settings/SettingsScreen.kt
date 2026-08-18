@@ -321,7 +321,7 @@ fun SettingsScreen(
         ) {
             SettingsRow(
                 title = "Export Backup",
-                summary = "Save favorites, playlists, history, and preferences as JSON.",
+                summary = "Save favorites, playlists, listening history, ratings, and preferences as JSON.",
                 icon = AppShellIcons.Export,
                 onClick = onExportBackupClick,
                 navigationContentDescription = "Export backup"

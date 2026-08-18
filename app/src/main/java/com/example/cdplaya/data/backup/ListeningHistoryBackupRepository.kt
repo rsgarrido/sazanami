@@ -52,7 +52,27 @@ class ListeningHistoryBackupRepository(
     }
 
     suspend fun export(): BackupListeningHistoryV2 = database.withTransaction {
-        val identities = database.listeningTrackIdentityDao().getAll().map { entity ->
+        val eventEntities = buildList {
+            var offset = 0
+            do {
+                val page = database.listeningEventDao().getBackupPage(EVENT_PAGE_SIZE, offset)
+                addAll(page)
+                offset += page.size
+            } while (page.size == EVENT_PAGE_SIZE)
+        }
+        val bindingEntities = database.localTrackBindingDao().getAllForBackup()
+        val baselineEntities = database.legacyListeningBaselineDao().getAllForBackup()
+        val ratedIdentityIds = database.songRatingDao().getAllForBackup()
+            .mapTo(HashSet()) { it.trackIdentityId }
+        val retainedIdentityIds = buildSet {
+            eventEntities.mapTo(this) { it.trackIdentityId }
+            bindingEntities.mapTo(this) { it.trackIdentityId }
+            baselineEntities.mapTo(this) { it.trackIdentityId }
+            addAll(ratedIdentityIds)
+        }
+        val identities = database.listeningTrackIdentityDao().getAll()
+            .filter { it.id in retainedIdentityIds }
+            .map { entity ->
             BackupListeningTrackIdentity(
                 backupIdentityId = entity.id,
                 titleSnapshot = entity.titleSnapshot,
@@ -69,7 +89,7 @@ class ListeningHistoryBackupRepository(
                 updatedAt = entity.updatedAt
             )
         }
-        val bindings = database.localTrackBindingDao().getAllForBackup().map { entity ->
+        val bindings = bindingEntities.map { entity ->
             BackupLocalTrackBinding(
                 backupBindingId = entity.id,
                 trackIdentityBackupId = entity.trackIdentityId,
@@ -91,7 +111,7 @@ class ListeningHistoryBackupRepository(
                 missingSince = entity.missingSince
             )
         }
-        val baselines = database.legacyListeningBaselineDao().getAllForBackup().map { entity ->
+        val baselines = baselineEntities.map { entity ->
             BackupLegacyListeningBaseline(
                 trackIdentityBackupId = entity.trackIdentityId,
                 historicalPlayCount = entity.historicalPlayCount,
@@ -101,21 +121,22 @@ class ListeningHistoryBackupRepository(
                 migratedAt = entity.migratedAt
             )
         }
-        val eventEntities = buildList {
-            var offset = 0
-            do {
-                val page = database.listeningEventDao().getBackupPage(EVENT_PAGE_SIZE, offset)
-                addAll(page)
-                offset += page.size
-            } while (page.size == EVENT_PAGE_SIZE)
-        }
         val events = eventEntities.map(ListeningEventEntity::toBackup)
+        val eventIds = eventEntities.mapTo(HashSet()) { it.id }
         val eventUuidsById = eventEntities.associate { it.id to it.eventUuid }
-        val importSources = database.listeningImportSourceDao().getAllForBackup().map { entity ->
+        val batchEntities = database.listeningImportBatchDao().getPublishedForBackup()
+        val evidenceEntities = database.importedListeningEventEvidenceDao().getAllForBackup()
+        val retainedSourceIds = buildSet {
+            batchEntities.mapTo(this) { it.sourceProfileId }
+            evidenceEntities.mapTo(this) { it.sourceProfileId }
+        }
+        val importSources = database.listeningImportSourceDao().getAllForBackup()
+            .filter { it.id in retainedSourceIds }
+            .map { entity ->
             BackupListeningImportSource(entity.id, entity.stableUuid, entity.sourceType.storageValue,
                 entity.displayLabel, entity.accountIdentityDigest, entity.createdAt, entity.updatedAt)
         }
-        val importBatches = database.listeningImportBatchDao().getPublishedForBackup().map { entity ->
+        val importBatches = batchEntities.map { entity ->
             BackupListeningImportBatch(entity.id, entity.stableUuid, entity.sourceProfileId,
                 entity.status.storageValue, entity.parserVersion, entity.qualificationPolicy.storageValue,
                 entity.qualificationRuleVersion, entity.startedAt, entity.completedAt,
@@ -124,17 +145,21 @@ class ListeningHistoryBackupRepository(
                 entity.ambiguousMatchCount, entity.unmatchedCount, entity.qualifiedCount,
                 entity.failureCategory, entity.createdAppVersion)
         }
-        val externalTrackIds = database.listeningTrackExternalIdDao().getAllForBackup().map { entity ->
+        val externalTrackIds = database.listeningTrackExternalIdDao().getAllForBackup()
+            .filter { it.trackIdentityId in retainedIdentityIds }
+            .map { entity ->
             BackupListeningTrackExternalId(entity.trackIdentityId, entity.sourceType.storageValue,
                 entity.externalId, entity.createdAt, entity.lastSeenAt)
         }
-        val evidence = database.importedListeningEventEvidenceDao().getAllForBackup().map { entity ->
+        val evidence = evidenceEntities.map { entity ->
             BackupImportedListeningEventEvidence(requireNotNull(eventUuidsById[entity.eventId]),
                 entity.sourceProfileId, entity.fingerprintVersion, entity.fingerprint,
                 entity.duplicateOrdinal, entity.normalizedReasonStart, entity.normalizedReasonEnd,
                 entity.skippedState.storageValue, entity.matchDispositionAtImport.storageValue)
         }
-        val observations = database.listeningImportBatchEventDao().getPublishedForBackup().map { entity ->
+        val observations = database.listeningImportBatchEventDao().getPublishedForBackup()
+            .filter { it.eventId in eventIds }
+            .map { entity ->
             BackupListeningImportBatchEvent(entity.batchId, requireNotNull(eventUuidsById[entity.eventId]))
         }
         BackupListeningHistoryV2(

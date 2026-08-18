@@ -145,6 +145,45 @@ class SpotifyListeningHistoryImportExecutorTest {
         assertEquals(2, database.listeningTrackExternalIdDao().getAllForBackup().size)
     }
 
+    @Test fun productionImportBackupRestoreThenLaterReexportPreservesDedupeIdentityAndRating() =
+        runBlocking {
+            val initial = executor.execute(listOf(asset("spotify_extended_reexport_initial.json")))
+            assertEquals(2L, initial.newPublished)
+            val ratedMapping = database.listeningTrackExternalIdDao().getAllForBackup().first()
+            database.songRatingDao().upsert(
+                SongRatingEntity(ratedMapping.trackIdentityId, 4, 100L, 120L)
+            )
+
+            val backupRepository = ListeningHistoryBackupRepository(database)
+            val backup = backupRepository.exportWithRatings()
+            database.withTransaction {
+                val identityIds = backupRepository.restoreValidatedWithinTransaction(backup.history)
+                backupRepository.restoreRatingsValidatedWithinTransaction(backup.ratings, identityIds)
+            }
+
+            val sameAfterRestore = executor.execute(
+                listOf(asset("spotify_extended_reexport_initial.json"))
+            )
+            assertEquals(0L, sameAfterRestore.newPublished)
+            assertEquals(2L, sameAfterRestore.alreadyImported)
+
+            val laterAfterRestore = executor.execute(
+                listOf(asset("spotify_extended_reexport_later.json"))
+            )
+            assertEquals(1L, laterAfterRestore.newPublished)
+            assertEquals(2L, laterAfterRestore.alreadyImported)
+            assertEquals(3L, database.listeningEventDao().count())
+
+            val restoredRatedIdentity = database.listeningTrackExternalIdDao()
+                .find(ListeningSource.SPOTIFY_IMPORT, ratedMapping.externalId)!!
+                .trackIdentityId
+            assertEquals(
+                4,
+                database.songRatingDao().getByTrackIdentityId(restoredRatedIdentity)?.rating
+            )
+            assertEquals(3, database.listeningTrackIdentityDao().getAll().size)
+        }
+
     @Test fun overlapUsesMaximumPerFile_andLaterExportAddsOnlyNewOrdinals() = runBlocking {
         val a = source(json(
             entry("2024-03-01T00:00:00Z", 31_000, "X", "A", "", "x"),

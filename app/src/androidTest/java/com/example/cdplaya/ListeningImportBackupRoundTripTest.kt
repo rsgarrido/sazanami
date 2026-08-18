@@ -91,11 +91,48 @@ class ListeningImportBackupRoundTripTest {
                 ListeningImportBatchEventEntity(pendingBatch, pendingEvent)
             )
         )
+        val pendingOnlyIdentity = database.listeningTrackIdentityDao().insert(identity("pending-only"))
+        val pendingOnlySource = database.listeningImportSourceDao().insert(
+            source("pending-only-profile").copy(accountIdentityDigest = "sha256:pending-only")
+        )
+        val pendingOnlyBatch = database.listeningImportBatchDao().insert(
+            batch(pendingOnlySource, "pending-only-batch").copy(
+                status = ListeningImportBatchStatus.PENDING,
+                completedAt = null
+            )
+        )
+        database.listeningTrackExternalIdDao().insert(
+            ListeningTrackExternalIdEntity(
+                trackIdentityId = pendingOnlyIdentity,
+                sourceType = ListeningSource.SPOTIFY_IMPORT,
+                externalId = "pending-only-catalog-id",
+                createdAt = 1,
+                lastSeenAt = 2
+            )
+        )
+        val pendingOnlyEvent = database.listeningEventDao().insert(
+            event(pendingOnlyIdentity, "pending-only-event").copy(
+                publicationState = ListeningEventPublicationState.IMPORT_PENDING
+            )
+        )
+        database.importedListeningEventEvidenceDao().insert(
+            ImportedListeningEventEvidenceEntity(
+                pendingOnlyEvent, pendingOnlySource, 1, "pending-only", 0,
+                null, null, ImportedListeningSkippedState.UNKNOWN,
+                ImportedListeningMatchDisposition.CREATED_HISTORICAL_IDENTITY
+            )
+        )
+        database.listeningImportBatchEventDao().insert(
+            ListeningImportBatchEventEntity(pendingOnlyBatch, pendingOnlyEvent)
+        )
 
         val backup = repository.export()
 
+        assertEquals(listOf("mixed-state"), backup.identities.map { it.titleSnapshot })
         assertEquals(listOf("published-event"), backup.events.map { it.eventUuid })
+        assertEquals(listOf("mixed-profile"), backup.importSources.map { it.stableUuid })
         assertEquals(listOf("published"), backup.importBatches.map { it.stableUuid })
+        assertEquals(emptyList<String>(), backup.externalTrackIds.map { it.externalId })
         assertEquals(listOf("published"), backup.importedEventEvidence.map { it.fingerprint })
         assertEquals(
             listOf("published-event"),

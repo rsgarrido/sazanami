@@ -9,6 +9,26 @@ import org.mockito.Mockito.mock
 
 class ListeningHistoryProjectionResolverTest {
     @Test
+    fun importedHistoricalIdentityWithoutLocalBindingIsNotMadePlayable() {
+        val importedOnly = track(
+            id = 99,
+            bindings = emptyList(),
+            legacy = 0L,
+            detailed = 3L
+        )
+
+        val librarySong = song(99)
+        val result = ListeningHistoryProjectionResolver.resolve(
+            projections(importedOnly),
+            SongReferenceIndex.build(listOf(librarySong)),
+            setOf(librarySong.membershipKey())
+        )
+
+        assertTrue(result.recentlyPlayed.isEmpty())
+        assertTrue(result.mostPlayed.isEmpty())
+    }
+
+    @Test
     fun exactBindingsPreserveEachProjectionOrderWhenMissingRowsAreOmitted() {
         val first = song(1, title = "Twin")
         val second = song(2, title = "Twin")

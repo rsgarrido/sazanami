@@ -108,7 +108,8 @@ Backup schema 9 includes canonical identities, local bindings, baselines, visibl
 ratings, source profiles, published batches, external IDs, published event evidence, and published
 batch observations. Event attribution, timestamp evidence, qualification policy/version,
 completion classification, publication state, and legacy source keys are serialized. Pending
-events and non-published batches are excluded.
+events and non-published batches are excluded. Identities, external mappings, and source profiles
+that exist only because of unfinished pending work are also excluded.
 
 Restore validation runs before replacement mutation. It rejects duplicate profile/batch UUIDs,
 duplicate non-null profile digests per source, missing profile/identity/event/batch references,
@@ -130,3 +131,26 @@ local binding, native event, another published imported event, external ID, lega
 other durable supported relationship. Import batches therefore have no cascading path to canonical
 identities. A future managed garbage-collection operation must check every durable relationship;
 batch deletion and identity GC are intentionally deferred.
+
+## Spotify Extended Streaming History v1 behavior
+
+CDPlaya supports one or multiple Spotify Extended Streaming History JSON files. Selection and
+parsing are local to the device. Repeating an export, selecting overlapping exports, or importing a
+later re-export uses the persisted fingerprint/ordinal evidence so that existing occurrences remain
+single events and only genuinely new occurrences are published. Published imported events join the
+same Statistics overview, date ranges, All Time bounds, trends, Top Tracks, Top Artists, Top Albums,
+listening-time totals, qualification counts, and completion counts as native detailed history.
+Backup 9 exports and restores that published history, its identity ratings, provider mappings, and
+deduplication evidence.
+
+An imported historical identity is valid without a local track binding. It can appear in Statistics
+from its metadata snapshot, but it is omitted from playable Recently Played and Most Played library
+surfaces until an actual local binding exists. CDPlaya never fabricates a playable `Song` from
+Spotify metadata.
+
+The simpler Spotify Account Data streaming-history format is not supported. Podcasts and
+audiobooks are not imported as music history. Last.fm and Stats.fm are not providers in v1. Identity
+reconciliation is conservative: there is no fuzzy matching or merge UI, and URI-less records are
+not guaranteed to reuse an identity across distinct occurrences or exports. Active file selections
+and imports cannot resume after process death; the next entry cleans unfinished pending work before
+allowing a new import.
