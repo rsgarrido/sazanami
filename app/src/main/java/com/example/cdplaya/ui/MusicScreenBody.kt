@@ -64,6 +64,9 @@ import com.example.cdplaya.ui.player.modern.ModernArtworkTransitionStyle
 import com.example.cdplaya.ui.player.modern.ModernSeekbarStyle
 import com.example.cdplaya.ui.settings.SettingsScreen
 import com.example.cdplaya.ui.settings.DiagnosticsScreen
+import com.example.cdplaya.ui.settings.ListeningHistoryImportScreen
+import com.example.cdplaya.ui.settings.SpotifyImportUiActions
+import com.example.cdplaya.controller.SpotifyImportUiState
 import com.example.cdplaya.ui.state.PlaybackProgress
 import com.example.cdplaya.ui.state.PlaybackProgressUiState
 import com.example.cdplaya.ui.state.LibraryAppearanceUiState
@@ -128,6 +131,9 @@ internal fun MusicScreenBody(
     isDiagnosticsScreenVisible: Boolean,
     isEqualizerScreenVisible: Boolean,
     isStatisticsScreenVisible: Boolean,
+    isListeningHistoryImportVisible: Boolean,
+    spotifyImportUiState: SpotifyImportUiState,
+    spotifyImportActions: SpotifyImportUiActions,
     listeningAnalyticsUiState: ListeningAnalyticsUiState,
     queueSnackbarActions: QueueSnackbarActions,
     onSettingsClick: () -> Unit,
@@ -142,6 +148,7 @@ internal fun MusicScreenBody(
     onFolderBackClick: () -> Unit,
     onSettingsBackClick: () -> Unit,
     onDiagnosticsClick: () -> Unit,
+    onListeningHistoryImportClick: () -> Unit,
     onDiagnosticsBackClick: () -> Unit,
     onEqualizerClick: () -> Unit,
     onEqualizerBackClick: () -> Unit,
@@ -254,6 +261,17 @@ internal fun MusicScreenBody(
             )
         }
 
+        isListeningHistoryImportVisible -> {
+            ListeningHistoryImportScreen(
+                state = spotifyImportUiState,
+                actions = spotifyImportActions,
+                modifier = modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+            )
+        }
+
         isDiagnosticsScreenVisible -> {
             PlaybackProgress(playbackProgressUiState) { progress ->
                 DiagnosticsScreen(
@@ -309,6 +327,7 @@ internal fun MusicScreenBody(
                 onScanLibraryClick = onScanLibraryClick,
                 onExportBackupClick = onExportBackupClick,
                 onRestoreBackupClick = onRestoreBackupClick,
+                onListeningHistoryImportClick = onListeningHistoryImportClick,
                 onDiagnosticsClick = onDiagnosticsClick,
                 equalizerSummary = equalizerScreenState.settingsSummary,
                 onEqualizerClick = onEqualizerClick,

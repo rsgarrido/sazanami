@@ -93,6 +93,8 @@ import com.example.cdplaya.ui.queue.rememberQueueSnackbarActions
 import com.example.cdplaya.ui.tageditor.DiscardTagChangesDialog
 import com.example.cdplaya.ui.tageditor.TagEditorScreen
 import com.example.cdplaya.ui.tageditor.rememberTagEditorActions
+import com.example.cdplaya.controller.SpotifyImportUiState
+import com.example.cdplaya.ui.settings.SpotifyImportUiActions
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import com.example.cdplaya.mediaaccess.MediaAccessState
@@ -215,7 +217,9 @@ internal fun MusicScreen(
     onListeningAnalyticsCustomRangeSelected: (LocalDate, LocalDate) -> Unit,
     onRetryListeningAnalytics: () -> Unit,
     onListeningAnalyticsTrendMetricSelected: (ListeningTrendMetric) -> Unit,
-    onListeningAnalyticsRankingCategorySelected: (ListeningRankingCategory) -> Unit
+    onListeningAnalyticsRankingCategorySelected: (ListeningRankingCategory) -> Unit,
+    spotifyImportUiState: SpotifyImportUiState,
+    spotifyImportActions: SpotifyImportUiActions
 ) {
     val navigationState = rememberMusicNavigationState()
     var mainDestination by navigationState.mainDestination
@@ -246,6 +250,7 @@ internal fun MusicScreen(
     var isDiagnosticsScreenVisible by overlayState.isDiagnosticsScreenVisible
     var isEqualizerScreenVisible by overlayState.isEqualizerScreenVisible
     var isStatisticsScreenVisible by overlayState.isStatisticsScreenVisible
+    var isListeningHistoryImportVisible by overlayState.isListeningHistoryImportVisible
     var isExpandedUpNextSheetVisible by overlayState.isExpandedUpNextSheetVisible
     var isCreatePlaylistDialogVisible by overlayState.isCreatePlaylistDialogVisible
     var isSleepTimerDialogVisible by overlayState.isSleepTimerDialogVisible
@@ -415,6 +420,7 @@ internal fun MusicScreen(
                 isDiagnosticsScreenVisible ||
                 isEqualizerScreenVisible ||
                 isStatisticsScreenVisible ||
+                isListeningHistoryImportVisible ||
                 isSettingsScreenVisible ||
                 selectedArtistName != null ||
                 selectedAlbumFolderPath != null ||
@@ -457,6 +463,11 @@ internal fun MusicScreen(
 
             isStatisticsScreenVisible -> {
                 isStatisticsScreenVisible = false
+            }
+
+            isListeningHistoryImportVisible -> {
+                isListeningHistoryImportVisible = false
+                isSettingsScreenVisible = true
             }
 
             isSettingsScreenVisible -> {
@@ -625,6 +636,7 @@ internal fun MusicScreen(
                     !isDiagnosticsScreenVisible &&
                     !isEqualizerScreenVisible &&
                     !isStatisticsScreenVisible &&
+                    !isListeningHistoryImportVisible &&
                     !isSettingsScreenVisible &&
                     selectedSongForTagEdit == null
             val shouldShowBottomNavigation = !isPlayerExpanded &&
@@ -632,6 +644,7 @@ internal fun MusicScreen(
                     !isDiagnosticsScreenVisible &&
                     !isEqualizerScreenVisible &&
                     !isStatisticsScreenVisible &&
+                    !isListeningHistoryImportVisible &&
                     !isSettingsScreenVisible &&
                     selectedSongForTagEdit == null
             LaunchedEffect(shouldShowBottomMiniPlayer) {
@@ -747,6 +760,19 @@ internal fun MusicScreen(
                     isEqualizerScreenVisible =
                         isEqualizerScreenVisible,
                     isStatisticsScreenVisible = isStatisticsScreenVisible,
+                    isListeningHistoryImportVisible = isListeningHistoryImportVisible,
+                    spotifyImportUiState = spotifyImportUiState,
+                    spotifyImportActions = spotifyImportActions.copy(
+                        onDone = {
+                            spotifyImportActions.onDone()
+                            isListeningHistoryImportVisible = false
+                            isSettingsScreenVisible = true
+                        },
+                        onBack = {
+                            isListeningHistoryImportVisible = false
+                            isSettingsScreenVisible = true
+                        }
+                    ),
                     listeningAnalyticsUiState = listeningAnalyticsUiState,
                     onStatisticsClick = { isStatisticsScreenVisible = true },
                     onStatisticsBackClick = { isStatisticsScreenVisible = false },
@@ -781,6 +807,11 @@ internal fun MusicScreen(
                     onDiagnosticsClick = {
                         isSettingsScreenVisible = false
                         isDiagnosticsScreenVisible = true
+                    },
+                    onListeningHistoryImportClick = {
+                        spotifyImportActions.onEnter()
+                        isSettingsScreenVisible = false
+                        isListeningHistoryImportVisible = true
                     },
                     onDiagnosticsBackClick = {
                         isDiagnosticsScreenVisible = false

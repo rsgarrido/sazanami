@@ -166,6 +166,12 @@ class ListeningImportRepository(
     suspend fun getSourceProfile(stableUuid: String): ListeningImportSourceEntity? =
         database.listeningImportSourceDao().getByStableUuid(stableUuid)
 
+    /** Internal recovery surface for unfinished batches; IDs never leave the controller layer. */
+    suspend fun getPendingBatchIdsForSourceProfile(sourceProfileId: Long): List<Long> {
+        require(sourceProfileId > 0)
+        return database.listeningImportBatchDao().getPendingIdsForSourceProfile(sourceProfileId)
+    }
+
     /** Race-safe source-profile reuse by caller-owned stable UUID. */
     suspend fun getOrCreateSourceProfile(
         source: ListeningImportSourceEntity

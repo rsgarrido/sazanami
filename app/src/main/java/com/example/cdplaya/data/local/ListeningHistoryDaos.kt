@@ -145,6 +145,8 @@ interface ListeningImportBatchDao {
     @Insert suspend fun insert(batches: List<ListeningImportBatchEntity>): List<Long>
     @Query("SELECT * FROM listening_import_batches WHERE id = :id") suspend fun getById(id: Long): ListeningImportBatchEntity?
     @Query("SELECT * FROM listening_import_batches WHERE status = 'published' ORDER BY id") suspend fun getPublishedForBackup(): List<ListeningImportBatchEntity>
+    @Query("SELECT id FROM listening_import_batches WHERE sourceProfileId = :sourceProfileId AND status = 'pending' ORDER BY startedAt ASC, id ASC")
+    suspend fun getPendingIdsForSourceProfile(sourceProfileId: Long): List<Long>
     @Query("UPDATE listening_import_batches SET status = 'published', completedAt = :completedAt WHERE id = :id AND status = 'pending'") suspend fun publish(id: Long, completedAt: Long): Int
     @Query("UPDATE listening_import_batches SET status = 'cancelled', completedAt = :completedAt WHERE id = :id AND status = 'pending'") suspend fun cancel(id: Long, completedAt: Long): Int
     @Query("UPDATE listening_import_batches SET status = 'failed', completedAt = :completedAt, failureCategory = :failureCategory WHERE id = :id AND status = 'pending'")

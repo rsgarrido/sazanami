@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -61,6 +62,7 @@ fun SettingsScreen(
     onScanLibraryClick: () -> Unit,
     onExportBackupClick: () -> Unit,
     onRestoreBackupClick: () -> Unit,
+    onListeningHistoryImportClick: () -> Unit = {},
     onDiagnosticsClick: () -> Unit,
     equalizerSummary: String,
     onEqualizerClick: () -> Unit,
@@ -292,6 +294,22 @@ fun SettingsScreen(
                     navigationContentDescription = "Customize theme colors"
                 )
             }
+        }
+
+        SettingsSectionSpacer()
+
+        SettingsSection(
+            title = "Listening history",
+            description = "Bring previous listening activity into CDPlaya.",
+            icon = Icons.Filled.History
+        ) {
+            SettingsRow(
+                title = "Import listening history",
+                summary = "Import your previous listening history from supported services.",
+                icon = AppShellIcons.Restore,
+                onClick = onListeningHistoryImportClick,
+                navigationContentDescription = "Open listening history import"
+            )
         }
 
         SettingsSectionSpacer()
