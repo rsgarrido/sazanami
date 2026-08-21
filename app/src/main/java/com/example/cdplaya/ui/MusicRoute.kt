@@ -13,6 +13,7 @@ import com.example.cdplaya.ui.playlist.rememberPlaylistImportActions
 import com.example.cdplaya.ui.settings.rememberBackupExportActions
 import com.example.cdplaya.ui.settings.rememberBackupRestoreActions
 import com.example.cdplaya.ui.settings.SpotifyImportUiActions
+import com.example.cdplaya.ui.settings.ListeningHistoryReconciliationUiActions
 import com.example.cdplaya.ui.equalizer.EqualizerUiActions
 import com.example.cdplaya.ui.equalizer.rememberEqualizerProfilePlatformActions
 import com.example.cdplaya.mediaaccess.MediaAccessState
@@ -52,6 +53,8 @@ internal fun MusicRoute(
     musicViewModel.songRatingUiState.collectAsStateWithLifecycle()
     val spotifyImportUiState by
     musicViewModel.spotifyImportUiState.collectAsStateWithLifecycle()
+    val reconciliationUiState by
+    musicViewModel.listeningHistoryReconciliationUiState.collectAsStateWithLifecycle()
     if (!playerAppearanceUiState.isLoaded || !libraryAppearanceUiState.isLoaded) return
     val playlistExportActions = rememberPlaylistExportActions(
         snackbarHostState = snackbarHostState,
@@ -402,6 +405,24 @@ internal fun MusicRoute(
         onListeningAnalyticsRankingCategorySelected =
             musicViewModel::selectListeningAnalyticsRankingCategory,
         spotifyImportUiState = spotifyImportUiState,
+        reconciliationUiState = reconciliationUiState,
+        reconciliationActions = ListeningHistoryReconciliationUiActions(
+            onEnter = musicViewModel::enterListeningHistoryReconciliation,
+            onBack = {},
+            onRetry = musicViewModel::retryListeningHistoryReconciliation,
+            onTabSelected = musicViewModel::selectReconciliationTab,
+            onToggleExpanded = musicViewModel::toggleReconciliationItem,
+            onToggleLinkedGroup = musicViewModel::toggleLinkedReconciliationGroup,
+            onSkip = musicViewModel::skipReconciliationItem,
+            onCandidateSelected = musicViewModel::chooseReconciliationTarget,
+            onSearchRequested = musicViewModel::openReconciliationSearch,
+            onSearchQueryChanged = musicViewModel::updateReconciliationSearch,
+            onSearchDismissed = musicViewModel::closeReconciliationSearch,
+            onUnlinkRequested = musicViewModel::requestReconciliationUnlink,
+            onConfirmationCancelled = musicViewModel::cancelReconciliationConfirmation,
+            onConfirmed = musicViewModel::confirmReconciliationChange,
+            onMessageDismissed = musicViewModel::clearReconciliationMessage
+        ),
         spotifyImportActions = SpotifyImportUiActions(
             onEnter = musicViewModel::enterSpotifyImport,
             onFilesSelected = musicViewModel::selectSpotifyImportFiles,

@@ -175,6 +175,50 @@ object ListeningStatsQueries {
         return SimpleSQLiteQuery(sql, cte.args.toTypedArray())
     }
 
+    /**
+     * Provider-neutral metrics keyed only by currently playable canonical local identities.
+     * Driving from playable identities preserves zero rows for never/not-recently-played rules.
+     * Reconciliation sources cannot surface separately because they have no local binding.
+     */
+    fun canonicalMetrics(
+        spec: ListeningStatsQuerySpec,
+        trackIdentityId: Long? = null
+    ): SupportSQLiteQuery {
+        require(trackIdentityId == null || trackIdentityId > 0L)
+        val cte = trackStatsCte(spec, includePreferredBinding = false)
+        val identityPredicate = trackIdentityId?.let { "AND playable.trackIdentityId = ?" }.orEmpty()
+        val args = buildList<Any> {
+            addAll(cte.args)
+            trackIdentityId?.let(::add)
+        }
+        val sql = """
+            ${cte.sql}
+            SELECT
+                playable.trackIdentityId,
+                COALESCE(track_stats.legacyPlayCount, 0) AS legacyPlayCount,
+                COALESCE(track_stats.detailedQualifiedPlayCount, 0) AS detailedQualifiedPlayCount,
+                COALESCE(track_stats.detailedEventCount, 0) AS detailedEventCount,
+                COALESCE(track_stats.detailedListeningMs, 0) AS detailedListeningMs,
+                COALESCE(track_stats.naturalCompletionCount, 0) AS naturalCompletionCount,
+                COALESCE(track_stats.nonQualifiedAttemptCount, 0) AS nonQualifiedAttemptCount,
+                track_stats.firstKnownPlayAt,
+                track_stats.latestKnownPlayAt,
+                track_stats.latestDetailedEventAt,
+                ratings.rating AS effectiveRating
+            FROM (
+                SELECT DISTINCT trackIdentityId
+                FROM local_track_bindings
+                WHERE missingSince IS NULL
+            ) playable
+            LEFT JOIN track_stats ON track_stats.trackIdentityId = playable.trackIdentityId
+            LEFT JOIN song_ratings ratings ON ratings.trackIdentityId = playable.trackIdentityId
+            WHERE 1 = 1
+            $identityPredicate
+            ORDER BY playable.trackIdentityId ASC
+        """.trimIndent()
+        return SimpleSQLiteQuery(sql, args.toTypedArray())
+    }
+
     fun albums(spec: ListeningStatsQuerySpec, limit: Int): SupportSQLiteQuery {
         require(limit > 0)
         val cte = trackStatsCte(spec, includePreferredBinding = false)
@@ -263,9 +307,27 @@ object ListeningStatsQueries {
         includePreferredBinding: Boolean
     ): SqlAndArgs {
         val filtered = filteredEvents(spec, alias = "e")
+        val legacyCte = if (spec.includeLegacyBaseline) {
+            """,
+            resolved_baseline AS (
+                SELECT
+                    COALESCE(r.targetIdentityId, b.trackIdentityId) AS resolvedIdentityId,
+                    COALESCE(SUM(b.historicalPlayCount), 0) AS historicalPlayCount,
+                    MIN(b.firstKnownPlayedAt) AS firstKnownPlayedAt,
+                    MAX(b.lastKnownPlayedAt) AS lastKnownPlayedAt
+                FROM legacy_listening_baselines b
+                LEFT JOIN listening_identity_reconciliations r
+                  ON r.sourceIdentityId = b.trackIdentityId
+                GROUP BY COALESCE(r.targetIdentityId, b.trackIdentityId)
+            )"""
+        } else ""
         val legacyCount = if (spec.includeLegacyBaseline) "COALESCE(b.historicalPlayCount, 0)" else "0"
         val legacyFirst = if (spec.includeLegacyBaseline) "b.firstKnownPlayedAt" else "NULL"
         val legacyLatest = if (spec.includeLegacyBaseline) "b.lastKnownPlayedAt" else "NULL"
+        val legacyJoin = if (spec.includeLegacyBaseline) {
+            "LEFT JOIN resolved_baseline b ON b.resolvedIdentityId = i.id"
+        } else ""
+        val legacyPresence = if (spec.includeLegacyBaseline) "b.resolvedIdentityId IS NOT NULL" else "0 = 1"
         val bindingCte = if (includePreferredBinding) {
             """,
             preferred_binding AS (
@@ -309,9 +371,9 @@ object ListeningStatsQueries {
             "LEFT JOIN preferred_binding pb ON pb.trackIdentityId = i.id"
         } else ""
         val sql = """
-            WITH detailed AS (
+            WITH resolved_detailed AS (
                 SELECT
-                    e.trackIdentityId,
+                    COALESCE(r.targetIdentityId, e.trackIdentityId) AS resolvedIdentityId,
                     COUNT(*) AS detailedEventCount,
                     COALESCE(SUM(e.listenedMs), 0) AS detailedListeningMs,
                     COALESCE(SUM(CASE WHEN e.qualifiedAsPlay = 1 THEN 1 ELSE 0 END), 0) AS detailedQualifiedPlayCount,
@@ -321,9 +383,11 @@ object ListeningStatsQueries {
                     MAX(CASE WHEN e.qualifiedAsPlay = 1 THEN e.attributionAt END) AS latestQualifiedAt,
                     MAX(e.attributionAt) AS latestDetailedEventAt
                 FROM listening_events e
+                LEFT JOIN listening_identity_reconciliations r
+                  ON r.sourceIdentityId = e.trackIdentityId
                 WHERE ${filtered.whereClause}
-                GROUP BY e.trackIdentityId
-            )$bindingCte,
+                GROUP BY COALESCE(r.targetIdentityId, e.trackIdentityId)
+            )$legacyCte$bindingCte,
             track_stats AS (
                 SELECT
                     i.id AS trackIdentityId,
@@ -335,6 +399,7 @@ object ListeningStatsQueries {
                     i.normalizedArtist,
                     i.normalizedAlbum,
                     $bindingColumns
+                    ratings.rating AS effectiveRating,
                     $legacyCount AS legacyPlayCount,
                     COALESCE(d.detailedQualifiedPlayCount, 0) AS detailedQualifiedPlayCount,
                     COALESCE(d.detailedListeningMs, 0) AS detailedListeningMs,
@@ -345,11 +410,12 @@ object ListeningStatsQueries {
                     ${combinedTime(legacyLatest, "d.latestQualifiedAt", earliest = false)} AS latestKnownPlayAt,
                     d.latestDetailedEventAt
                 FROM listening_track_identities i
-                LEFT JOIN detailed d ON d.trackIdentityId = i.id
-                LEFT JOIN legacy_listening_baselines b ON b.trackIdentityId = i.id
+                LEFT JOIN resolved_detailed d ON d.resolvedIdentityId = i.id
+                $legacyJoin
+                LEFT JOIN song_ratings ratings ON ratings.trackIdentityId = i.id
                 $bindingJoin
-                WHERE d.trackIdentityId IS NOT NULL
-                   OR (${if (spec.includeLegacyBaseline) 1 else 0} = 1 AND b.trackIdentityId IS NOT NULL)
+                WHERE d.resolvedIdentityId IS NOT NULL
+                   OR $legacyPresence
             )
         """.trimIndent()
         return SqlAndArgs(sql, filtered.args)

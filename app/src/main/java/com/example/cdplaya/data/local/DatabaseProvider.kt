@@ -31,7 +31,8 @@ object DatabaseProvider {
                     MIGRATION_7_8,
                     MIGRATION_8_9,
                     MIGRATION_9_10,
-                    MIGRATION_10_11
+                    MIGRATION_10_11,
+                    MIGRATION_11_12
                 )
                 .build()
                 .also { database ->
@@ -627,6 +628,27 @@ object DatabaseProvider {
                   ON b.stableUuid = 'legacy-batch:' || e.source || ':' || e.importBatchId
                 WHERE e.importBatchId IS NOT NULL
             """.trimIndent())
+        }
+    }
+
+    val MIGRATION_11_12 = object : Migration(11, 12) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `listening_identity_reconciliations` (
+                    `sourceIdentityId` INTEGER NOT NULL,
+                    `targetIdentityId` INTEGER NOT NULL,
+                    `reconciledAt` INTEGER NOT NULL,
+                    PRIMARY KEY(`sourceIdentityId`),
+                    FOREIGN KEY(`sourceIdentityId`) REFERENCES `listening_track_identities`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT,
+                    FOREIGN KEY(`targetIdentityId`) REFERENCES `listening_track_identities`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_listening_identity_reconciliations_targetIdentityId` " +
+                    "ON `listening_identity_reconciliations` (`targetIdentityId`)"
+            )
         }
     }
 

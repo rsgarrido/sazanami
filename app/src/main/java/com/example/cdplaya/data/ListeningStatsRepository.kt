@@ -3,6 +3,7 @@ package com.example.cdplaya.data
 import androidx.room.withTransaction
 import com.example.cdplaya.data.local.AlbumListeningStatsRow
 import com.example.cdplaya.data.local.ArtistListeningStatsRow
+import com.example.cdplaya.data.local.CanonicalListeningMetricsRow
 import com.example.cdplaya.data.local.ListeningEndReason
 import com.example.cdplaya.data.local.ListeningOverviewRow
 import com.example.cdplaya.data.local.ListeningQualificationReason
@@ -33,6 +34,8 @@ class ListeningStatsRepository(
             "legacy_listening_baselines",
             "listening_track_identities",
             "local_track_bindings",
+            "listening_identity_reconciliations",
+            "song_ratings",
             emitInitialState = true
         )
             .conflate()
@@ -44,6 +47,8 @@ class ListeningStatsRepository(
             "legacy_listening_baselines",
             "listening_track_identities",
             "local_track_bindings",
+            "listening_identity_reconciliations",
+            "song_ratings",
             emitInitialState = true
         )
             .conflate()
@@ -207,6 +212,39 @@ class ListeningStatsRepository(
         ).map(RecentListeningEventRow::toDomain)
     }
 
+    /** One SQL query for every currently playable local canonical identity; no alias N+1 work. */
+    suspend fun getCanonicalListeningMetricsForPlayableTracks(
+        filter: ListeningStatsFilter = ListeningStatsFilter()
+    ): Map<Long, CanonicalListeningMetrics> = dao.getCanonicalMetrics(
+        ListeningStatsQueries.canonicalMetrics(filter.toSpec())
+    ).associate { row -> row.trackIdentityId to row.toDomain() }
+
+    suspend fun getCanonicalListeningMetricsForPlayableTrack(
+        trackIdentityId: Long,
+        filter: ListeningStatsFilter = ListeningStatsFilter()
+    ): CanonicalListeningMetrics? {
+        require(trackIdentityId > 0L)
+        return dao.getCanonicalMetrics(
+            ListeningStatsQueries.canonicalMetrics(filter.toSpec(), trackIdentityId)
+        ).singleOrNull()?.toDomain()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeCanonicalListeningMetricsForPlayableTracks(
+        filter: ListeningStatsFilter = ListeningStatsFilter()
+    ): Flow<Map<Long, CanonicalListeningMetrics>> =
+        database.invalidationTracker.createFlow(
+            "listening_events",
+            "legacy_listening_baselines",
+            "listening_track_identities",
+            "local_track_bindings",
+            "listening_identity_reconciliations",
+            "song_ratings",
+            emitInitialState = true
+        )
+            .conflate()
+            .mapLatest { getCanonicalListeningMetricsForPlayableTracks(filter) }
+
     private suspend fun loadProductionHistory(): ProductionListeningHistoryProjections {
         val filter = ListeningStatsFilter()
         val spec = filter.toSpec()
@@ -335,7 +373,24 @@ private fun TrackListeningStatsRow.toDomain(
         nonQualifiedAttemptCount = nonQualifiedAttemptCount,
         firstKnownPlayAt = firstKnownPlayAt,
         latestKnownPlayAt = latestKnownPlayAt,
-        latestDetailedEventAt = latestDetailedEventAt
+        latestDetailedEventAt = latestDetailedEventAt,
+        effectiveRating = effectiveRating
+    )
+}
+
+private fun CanonicalListeningMetricsRow.toDomain(): CanonicalListeningMetrics {
+    val total = safeAdd(legacyPlayCount, detailedQualifiedPlayCount)
+    return CanonicalListeningMetrics(
+        trackIdentityId = trackIdentityId,
+        playCounts = ListeningPlayCountBreakdown(total, legacyPlayCount, detailedQualifiedPlayCount),
+        detailedAttemptCount = detailedEventCount,
+        confirmedDetailedListeningMs = detailedListeningMs,
+        naturalCompletionCount = naturalCompletionCount,
+        nonQualifiedAttemptCount = nonQualifiedAttemptCount,
+        firstPlayedAt = firstKnownPlayAt,
+        lastPlayedAt = latestKnownPlayAt,
+        latestDetailedEventAt = latestDetailedEventAt,
+        effectiveRating = effectiveRating
     )
 }
 

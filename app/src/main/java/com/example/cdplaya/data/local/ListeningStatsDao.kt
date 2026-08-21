@@ -48,7 +48,22 @@ data class TrackListeningStatsRow(
     val nonQualifiedAttemptCount: Long,
     val firstKnownPlayAt: Long?,
     val latestKnownPlayAt: Long?,
-    val latestDetailedEventAt: Long?
+    val latestDetailedEventAt: Long?,
+    val effectiveRating: Int?
+)
+
+data class CanonicalListeningMetricsRow(
+    val trackIdentityId: Long,
+    val legacyPlayCount: Long,
+    val detailedQualifiedPlayCount: Long,
+    val detailedEventCount: Long,
+    val detailedListeningMs: Long,
+    val naturalCompletionCount: Long,
+    val nonQualifiedAttemptCount: Long,
+    val firstKnownPlayAt: Long?,
+    val latestKnownPlayAt: Long?,
+    val latestDetailedEventAt: Long?,
+    val effectiveRating: Int?
 )
 
 data class AlbumListeningStatsRow(
@@ -114,6 +129,9 @@ interface ListeningStatsDao {
 
     @RawQuery
     suspend fun getTrackStats(query: SupportSQLiteQuery): List<TrackListeningStatsRow>
+
+    @RawQuery
+    suspend fun getCanonicalMetrics(query: SupportSQLiteQuery): List<CanonicalListeningMetricsRow>
 
     @RawQuery
     suspend fun getAlbumStats(query: SupportSQLiteQuery): List<AlbumListeningStatsRow>

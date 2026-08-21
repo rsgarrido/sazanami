@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 
 @Dao
 interface ListeningTrackIdentityDao {
@@ -27,6 +28,8 @@ interface ListeningTrackIdentityDao {
           AND NOT EXISTS (SELECT 1 FROM listening_events WHERE trackIdentityId = listening_track_identities.id)
           AND NOT EXISTS (SELECT 1 FROM legacy_listening_baselines WHERE trackIdentityId = listening_track_identities.id)
           AND NOT EXISTS (SELECT 1 FROM song_ratings WHERE trackIdentityId = listening_track_identities.id)
+          AND NOT EXISTS (SELECT 1 FROM listening_identity_reconciliations WHERE sourceIdentityId = listening_track_identities.id)
+          AND NOT EXISTS (SELECT 1 FROM listening_identity_reconciliations WHERE targetIdentityId = listening_track_identities.id)
     """)
     suspend fun deleteUnreferenced(ids: List<Long>): Int
 
@@ -41,14 +44,49 @@ interface ListeningTrackIdentityDao {
           AND NOT EXISTS (SELECT 1 FROM listening_events WHERE trackIdentityId = listening_track_identities.id)
           AND NOT EXISTS (SELECT 1 FROM legacy_listening_baselines WHERE trackIdentityId = listening_track_identities.id)
           AND NOT EXISTS (SELECT 1 FROM song_ratings WHERE trackIdentityId = listening_track_identities.id)
+          AND NOT EXISTS (SELECT 1 FROM listening_identity_reconciliations WHERE sourceIdentityId = listening_track_identities.id)
+          AND NOT EXISTS (SELECT 1 FROM listening_identity_reconciliations WHERE targetIdentityId = listening_track_identities.id)
     """)
     suspend fun deleteAllUnreferenced(): Int
+}
+
+@Dao
+interface ListeningIdentityReconciliationDao {
+    @Query("SELECT * FROM listening_identity_reconciliations WHERE sourceIdentityId = :sourceIdentityId")
+    suspend fun findBySource(sourceIdentityId: Long): ListeningIdentityReconciliationEntity?
+
+    @Query("SELECT * FROM listening_identity_reconciliations WHERE targetIdentityId = :targetIdentityId ORDER BY sourceIdentityId")
+    suspend fun findSourcesForTarget(targetIdentityId: Long): List<ListeningIdentityReconciliationEntity>
+
+    @Query("SELECT * FROM listening_identity_reconciliations ORDER BY sourceIdentityId")
+    suspend fun getAll(): List<ListeningIdentityReconciliationEntity>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM listening_identity_reconciliations WHERE sourceIdentityId = :identityId)")
+    suspend fun isSource(identityId: Long): Boolean
+
+    @Query("SELECT EXISTS(SELECT 1 FROM listening_identity_reconciliations WHERE targetIdentityId = :identityId)")
+    suspend fun isTarget(identityId: Long): Boolean
+
+    @Insert
+    suspend fun insert(entity: ListeningIdentityReconciliationEntity)
+
+    @Insert
+    suspend fun insert(entities: List<ListeningIdentityReconciliationEntity>)
+
+    @Query("DELETE FROM listening_identity_reconciliations WHERE sourceIdentityId = :sourceIdentityId")
+    suspend fun deleteBySource(sourceIdentityId: Long): Int
+
+    @Query("DELETE FROM listening_identity_reconciliations")
+    suspend fun deleteAll()
 }
 
 @Dao
 interface LocalTrackBindingDao {
     @Insert
     suspend fun insert(binding: LocalTrackBindingEntity): Long
+
+    @Update
+    suspend fun update(binding: LocalTrackBindingEntity)
 
     @Query("SELECT * FROM local_track_bindings WHERE id = :id")
     suspend fun getById(id: Long): LocalTrackBindingEntity?
@@ -58,6 +96,9 @@ interface LocalTrackBindingDao {
 
     @Query("SELECT * FROM local_track_bindings WHERE trackIdentityId = :trackIdentityId ORDER BY id")
     suspend fun getForTrackIdentity(trackIdentityId: Long): List<LocalTrackBindingEntity>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM local_track_bindings WHERE trackIdentityId = :trackIdentityId)")
+    suspend fun existsForTrackIdentity(trackIdentityId: Long): Boolean
 
     @Query("DELETE FROM local_track_bindings WHERE id = :id")
     suspend fun deleteById(id: Long)
@@ -94,6 +135,12 @@ interface ListeningEventDao {
 
     @Query("SELECT COUNT(*) FROM listening_events")
     suspend fun count(): Long
+
+    @Query("SELECT COUNT(*) FROM listening_events WHERE trackIdentityId = :trackIdentityId")
+    suspend fun countForTrackIdentity(trackIdentityId: Long): Long
+
+    @Query("SELECT EXISTS(SELECT 1 FROM listening_events WHERE trackIdentityId = :trackIdentityId AND source != 'cdplaya' AND publicationState = 'import_published')")
+    suspend fun hasPublishedImportedHistory(trackIdentityId: Long): Boolean
 
     @Query(
         "SELECT * FROM listening_events " +

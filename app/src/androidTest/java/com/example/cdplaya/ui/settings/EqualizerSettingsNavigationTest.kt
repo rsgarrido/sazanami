@@ -91,6 +91,7 @@ class EqualizerSettingsNavigationTest {
     @Test
     fun listeningHistorySectionOpensFunctionalImportDestination() {
         var opened = false
+        var matchingOpened = false
         composeRule.setContent {
             MaterialTheme {
                 SettingsScreen(
@@ -108,6 +109,7 @@ class EqualizerSettingsNavigationTest {
                     onExportBackupClick = {},
                     onRestoreBackupClick = {},
                     onListeningHistoryImportClick = { opened = true },
+                    onListeningHistoryReconciliationClick = { matchingOpened = true },
                     onDiagnosticsClick = {},
                     equalizerSummary = "Off",
                     onEqualizerClick = {},
@@ -140,5 +142,9 @@ class EqualizerSettingsNavigationTest {
             .performScrollTo()
             .performClick()
         composeRule.runOnIdle { assertTrue(opened) }
+        composeRule.onNodeWithText("Match imported tracks")
+            .performScrollTo()
+            .performClick()
+        composeRule.runOnIdle { assertTrue(matchingOpened) }
     }
 }

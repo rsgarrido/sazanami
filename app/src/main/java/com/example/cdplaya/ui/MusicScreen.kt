@@ -95,6 +95,8 @@ import com.example.cdplaya.ui.tageditor.TagEditorScreen
 import com.example.cdplaya.ui.tageditor.rememberTagEditorActions
 import com.example.cdplaya.controller.SpotifyImportUiState
 import com.example.cdplaya.ui.settings.SpotifyImportUiActions
+import com.example.cdplaya.ui.settings.ListeningHistoryReconciliationUiActions
+import com.example.cdplaya.controller.ListeningHistoryReconciliationUiState
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import com.example.cdplaya.mediaaccess.MediaAccessState
@@ -219,6 +221,8 @@ internal fun MusicScreen(
     onListeningAnalyticsTrendMetricSelected: (ListeningTrendMetric) -> Unit,
     onListeningAnalyticsRankingCategorySelected: (ListeningRankingCategory) -> Unit,
     spotifyImportUiState: SpotifyImportUiState,
+    reconciliationUiState: ListeningHistoryReconciliationUiState,
+    reconciliationActions: ListeningHistoryReconciliationUiActions,
     spotifyImportActions: SpotifyImportUiActions
 ) {
     val navigationState = rememberMusicNavigationState()
@@ -251,6 +255,8 @@ internal fun MusicScreen(
     var isEqualizerScreenVisible by overlayState.isEqualizerScreenVisible
     var isStatisticsScreenVisible by overlayState.isStatisticsScreenVisible
     var isListeningHistoryImportVisible by overlayState.isListeningHistoryImportVisible
+    var isListeningHistoryReconciliationVisible by
+        overlayState.isListeningHistoryReconciliationVisible
     var isExpandedUpNextSheetVisible by overlayState.isExpandedUpNextSheetVisible
     var isCreatePlaylistDialogVisible by overlayState.isCreatePlaylistDialogVisible
     var isSleepTimerDialogVisible by overlayState.isSleepTimerDialogVisible
@@ -421,6 +427,7 @@ internal fun MusicScreen(
                 isEqualizerScreenVisible ||
                 isStatisticsScreenVisible ||
                 isListeningHistoryImportVisible ||
+                isListeningHistoryReconciliationVisible ||
                 isSettingsScreenVisible ||
                 selectedArtistName != null ||
                 selectedAlbumFolderPath != null ||
@@ -467,6 +474,11 @@ internal fun MusicScreen(
 
             isListeningHistoryImportVisible -> {
                 isListeningHistoryImportVisible = false
+                isSettingsScreenVisible = true
+            }
+
+            isListeningHistoryReconciliationVisible -> {
+                isListeningHistoryReconciliationVisible = false
                 isSettingsScreenVisible = true
             }
 
@@ -637,16 +649,21 @@ internal fun MusicScreen(
                     !isEqualizerScreenVisible &&
                     !isStatisticsScreenVisible &&
                     !isListeningHistoryImportVisible &&
+                    !isListeningHistoryReconciliationVisible &&
                     !isSettingsScreenVisible &&
                     selectedSongForTagEdit == null
-            val shouldShowBottomNavigation = !isPlayerExpanded &&
-                    !isFolderScreenVisible &&
-                    !isDiagnosticsScreenVisible &&
-                    !isEqualizerScreenVisible &&
-                    !isStatisticsScreenVisible &&
-                    !isListeningHistoryImportVisible &&
-                    !isSettingsScreenVisible &&
-                    selectedSongForTagEdit == null
+            val shouldShowBottomNavigation = shouldShowPrimaryBottomNavigation(
+                isPlayerExpanded = isPlayerExpanded,
+                isFolderScreenVisible = isFolderScreenVisible,
+                isDiagnosticsScreenVisible = isDiagnosticsScreenVisible,
+                isEqualizerScreenVisible = isEqualizerScreenVisible,
+                isStatisticsScreenVisible = isStatisticsScreenVisible,
+                isListeningHistoryImportVisible = isListeningHistoryImportVisible,
+                isListeningHistoryReconciliationVisible =
+                    isListeningHistoryReconciliationVisible,
+                isSettingsScreenVisible = isSettingsScreenVisible,
+                isTagEditorVisible = selectedSongForTagEdit != null
+            )
             LaunchedEffect(shouldShowBottomMiniPlayer) {
                 if (!shouldShowBottomMiniPlayer) {
                     playerEndpointBounds.markMiniStale()
@@ -761,7 +778,16 @@ internal fun MusicScreen(
                         isEqualizerScreenVisible,
                     isStatisticsScreenVisible = isStatisticsScreenVisible,
                     isListeningHistoryImportVisible = isListeningHistoryImportVisible,
+                    isListeningHistoryReconciliationVisible =
+                        isListeningHistoryReconciliationVisible,
                     spotifyImportUiState = spotifyImportUiState,
+                    reconciliationUiState = reconciliationUiState,
+                    reconciliationActions = reconciliationActions.copy(
+                        onBack = {
+                            isListeningHistoryReconciliationVisible = false
+                            isSettingsScreenVisible = true
+                        }
+                    ),
                     spotifyImportActions = spotifyImportActions.copy(
                         onDone = {
                             spotifyImportActions.onDone()
@@ -812,6 +838,11 @@ internal fun MusicScreen(
                         spotifyImportActions.onEnter()
                         isSettingsScreenVisible = false
                         isListeningHistoryImportVisible = true
+                    },
+                    onListeningHistoryReconciliationClick = {
+                        reconciliationActions.onEnter()
+                        isSettingsScreenVisible = false
+                        isListeningHistoryReconciliationVisible = true
                     },
                     onDiagnosticsBackClick = {
                         isDiagnosticsScreenVisible = false
@@ -1164,3 +1195,23 @@ internal fun MusicScreen(
         }
     }
 }
+
+internal fun shouldShowPrimaryBottomNavigation(
+    isPlayerExpanded: Boolean,
+    isFolderScreenVisible: Boolean,
+    isDiagnosticsScreenVisible: Boolean,
+    isEqualizerScreenVisible: Boolean,
+    isStatisticsScreenVisible: Boolean,
+    isListeningHistoryImportVisible: Boolean,
+    isListeningHistoryReconciliationVisible: Boolean,
+    isSettingsScreenVisible: Boolean,
+    isTagEditorVisible: Boolean
+): Boolean = !isPlayerExpanded &&
+    !isFolderScreenVisible &&
+    !isDiagnosticsScreenVisible &&
+    !isEqualizerScreenVisible &&
+    !isStatisticsScreenVisible &&
+    !isListeningHistoryImportVisible &&
+    !isListeningHistoryReconciliationVisible &&
+    !isSettingsScreenVisible &&
+    !isTagEditorVisible

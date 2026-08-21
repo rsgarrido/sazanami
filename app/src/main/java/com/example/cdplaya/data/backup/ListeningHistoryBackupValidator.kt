@@ -273,6 +273,47 @@ object ListeningHistoryBackupValidator {
             }
         }
 
+        val reconciliationSources = history.reconciliations.map {
+            it.sourceIdentityBackupId
+        }
+        require(reconciliationSources.distinct().size == reconciliationSources.size) {
+            "Listening identity reconciliation sources must be unique."
+        }
+        val reconciliationTargets = history.reconciliations.mapTo(HashSet()) {
+            it.targetIdentityBackupId
+        }
+        require(reconciliationSources.none { it in reconciliationTargets }) {
+            "Listening identity reconciliations cannot contain chains or mixed roles."
+        }
+        val boundIdentityIds = history.bindings.mapTo(HashSet()) { it.trackIdentityBackupId }
+        val importedHistoryIdentityIds = history.events.asSequence()
+            .filter { it.source != ListeningSource.CDPLAYA.storageValue }
+            .filter { it.publicationState == ListeningEventPublicationState.IMPORT_PUBLISHED.storageValue }
+            .mapTo(HashSet()) { it.trackIdentityBackupId }
+        history.reconciliations.forEach { reconciliation ->
+            require(reconciliation.sourceIdentityBackupId in identities) {
+                "Listening identity reconciliation references a missing source identity."
+            }
+            require(reconciliation.targetIdentityBackupId in identities) {
+                "Listening identity reconciliation references a missing target identity."
+            }
+            require(reconciliation.sourceIdentityBackupId != reconciliation.targetIdentityBackupId) {
+                "Listening identity reconciliation cannot link an identity to itself."
+            }
+            require(reconciliation.sourceIdentityBackupId !in boundIdentityIds) {
+                "Listening identity reconciliation source cannot have a local binding."
+            }
+            require(reconciliation.sourceIdentityBackupId in importedHistoryIdentityIds) {
+                "Listening identity reconciliation source has no published imported history."
+            }
+            require(reconciliation.targetIdentityBackupId in boundIdentityIds) {
+                "Listening identity reconciliation target has no local binding evidence."
+            }
+            require(reconciliation.reconciledAt >= 0L) {
+                "Listening identity reconciliation timestamp is invalid."
+            }
+        }
+
         val expectedSummary = history.recordsSummary()
         require(history.summary == expectedSummary) {
             "Listening-history backup summary does not match its records."

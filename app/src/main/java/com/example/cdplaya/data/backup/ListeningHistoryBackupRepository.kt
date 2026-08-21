@@ -22,6 +22,7 @@ import com.example.cdplaya.data.local.ListeningImportBatchEntity
 import com.example.cdplaya.data.local.ListeningTrackExternalIdEntity
 import com.example.cdplaya.data.local.ImportedListeningEventEvidenceEntity
 import com.example.cdplaya.data.local.ListeningImportBatchEventEntity
+import com.example.cdplaya.data.local.ListeningIdentityReconciliationEntity
 
 data class CanonicalHistoryAndRatingsBackup(
     val history: BackupListeningHistoryV2,
@@ -62,6 +63,7 @@ class ListeningHistoryBackupRepository(
         }
         val bindingEntities = database.localTrackBindingDao().getAllForBackup()
         val baselineEntities = database.legacyListeningBaselineDao().getAllForBackup()
+        val reconciliationEntities = database.listeningIdentityReconciliationDao().getAll()
         val ratedIdentityIds = database.songRatingDao().getAllForBackup()
             .mapTo(HashSet()) { it.trackIdentityId }
         val retainedIdentityIds = buildSet {
@@ -69,6 +71,10 @@ class ListeningHistoryBackupRepository(
             bindingEntities.mapTo(this) { it.trackIdentityId }
             baselineEntities.mapTo(this) { it.trackIdentityId }
             addAll(ratedIdentityIds)
+            reconciliationEntities.forEach { reconciliation ->
+                add(reconciliation.sourceIdentityId)
+                add(reconciliation.targetIdentityId)
+            }
         }
         val identities = database.listeningTrackIdentityDao().getAll()
             .filter { it.id in retainedIdentityIds }
@@ -162,6 +168,13 @@ class ListeningHistoryBackupRepository(
             .map { entity ->
             BackupListeningImportBatchEvent(entity.batchId, requireNotNull(eventUuidsById[entity.eventId]))
         }
+        val reconciliations = reconciliationEntities.map { entity ->
+            BackupListeningIdentityReconciliation(
+                sourceIdentityBackupId = entity.sourceIdentityId,
+                targetIdentityBackupId = entity.targetIdentityId,
+                reconciledAt = entity.reconciledAt
+            )
+        }
         BackupListeningHistoryV2(
             identities = identities,
             bindings = bindings,
@@ -171,7 +184,8 @@ class ListeningHistoryBackupRepository(
             importBatches = importBatches,
             externalTrackIds = externalTrackIds,
             importedEventEvidence = evidence,
-            batchEventObservations = observations
+            batchEventObservations = observations,
+            reconciliations = reconciliations
         ).let { history -> history.copy(summary = history.recordsSummary()) }
     }
 
@@ -185,6 +199,7 @@ class ListeningHistoryBackupRepository(
     suspend fun restoreValidatedWithinTransaction(
         history: BackupListeningHistoryV2
     ): Map<Long, Long> {
+        database.listeningIdentityReconciliationDao().deleteAll()
         database.listeningImportBatchEventDao().deleteAll()
         database.importedListeningEventEvidenceDao().deleteAll()
         database.listeningImportBatchDao().deleteAll()
@@ -336,6 +351,15 @@ class ListeningHistoryBackupRepository(
         history.batchEventObservations.chunked(RESTORE_BATCH_SIZE).forEach { batch ->
             database.listeningImportBatchEventDao().insert(batch.map { backup ->
                 ListeningImportBatchEventEntity(batchIds.getValue(backup.batchBackupId), eventIds.getValue(backup.eventUuid))
+            })
+        }
+        history.reconciliations.chunked(RESTORE_BATCH_SIZE).forEach { batch ->
+            database.listeningIdentityReconciliationDao().insert(batch.map { backup ->
+                ListeningIdentityReconciliationEntity(
+                    sourceIdentityId = identityIds.getValue(backup.sourceIdentityBackupId),
+                    targetIdentityId = identityIds.getValue(backup.targetIdentityBackupId),
+                    reconciledAt = backup.reconciledAt
+                )
             })
         }
         return identityIds

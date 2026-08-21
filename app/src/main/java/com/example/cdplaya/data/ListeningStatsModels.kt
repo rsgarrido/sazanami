@@ -90,7 +90,22 @@ data class TrackListeningStats(
     val nonQualifiedAttemptCount: Long,
     val firstKnownPlayAt: Long?,
     val latestKnownPlayAt: Long?,
-    val latestDetailedEventAt: Long?
+    val latestDetailedEventAt: Long?,
+    val effectiveRating: Int? = null
+)
+
+/** Canonical, provider-neutral history for one currently playable local identity. */
+data class CanonicalListeningMetrics(
+    val trackIdentityId: Long,
+    val playCounts: ListeningPlayCountBreakdown,
+    val detailedAttemptCount: Long,
+    val confirmedDetailedListeningMs: Long,
+    val naturalCompletionCount: Long,
+    val nonQualifiedAttemptCount: Long,
+    val firstPlayedAt: Long?,
+    val lastPlayedAt: Long?,
+    val latestDetailedEventAt: Long?,
+    val effectiveRating: Int?
 )
 
 data class AlbumListeningStats(

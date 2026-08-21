@@ -10,6 +10,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -52,6 +53,30 @@ class ListeningNativeTrackResolverTest {
         assertNotEquals(first.localTrackBindingId, second.localTrackBindingId)
         assertEquals(2, database.listeningTrackIdentityDao().getAll().size)
     }
+
+    @Test
+    fun exactCurrentReferenceReactivatesAndRefreshesItsBindingWithoutChangingIdentity() =
+        runBlocking {
+            val first = resolver.resolveOrCreate("local:first", reference(mediaStoreId = 1L))
+            database.openHelper.writableDatabase.execSQL(
+                "UPDATE local_track_bindings SET missingSince = 99, displayName = 'stale.flac' " +
+                    "WHERE id = ?",
+                arrayOf(first.localTrackBindingId)
+            )
+
+            val second = resolver.resolveOrCreate(
+                "local:first",
+                reference(mediaStoreId = 1L).copy(displayName = "current.flac"),
+                refreshExistingBinding = true
+            )
+
+            assertEquals(first, second)
+            val binding = database.localTrackBindingDao().getById(first.localTrackBindingId!!)!!
+            assertEquals("current.flac", binding.displayName)
+            assertEquals(123L, binding.lastSeenAt)
+            assertNull(binding.missingSince)
+            assertEquals(1, database.listeningTrackIdentityDao().getAll().size)
+        }
 
     private fun reference(mediaStoreId: Long) = SongReference(
         mediaStoreId = mediaStoreId,

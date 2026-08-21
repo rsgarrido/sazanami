@@ -66,7 +66,10 @@ import com.example.cdplaya.ui.settings.SettingsScreen
 import com.example.cdplaya.ui.settings.DiagnosticsScreen
 import com.example.cdplaya.ui.settings.ListeningHistoryImportScreen
 import com.example.cdplaya.ui.settings.SpotifyImportUiActions
+import com.example.cdplaya.ui.settings.ListeningHistoryReconciliationScreen
+import com.example.cdplaya.ui.settings.ListeningHistoryReconciliationUiActions
 import com.example.cdplaya.controller.SpotifyImportUiState
+import com.example.cdplaya.controller.ListeningHistoryReconciliationUiState
 import com.example.cdplaya.ui.state.PlaybackProgress
 import com.example.cdplaya.ui.state.PlaybackProgressUiState
 import com.example.cdplaya.ui.state.LibraryAppearanceUiState
@@ -132,7 +135,10 @@ internal fun MusicScreenBody(
     isEqualizerScreenVisible: Boolean,
     isStatisticsScreenVisible: Boolean,
     isListeningHistoryImportVisible: Boolean,
+    isListeningHistoryReconciliationVisible: Boolean,
     spotifyImportUiState: SpotifyImportUiState,
+    reconciliationUiState: ListeningHistoryReconciliationUiState,
+    reconciliationActions: ListeningHistoryReconciliationUiActions,
     spotifyImportActions: SpotifyImportUiActions,
     listeningAnalyticsUiState: ListeningAnalyticsUiState,
     queueSnackbarActions: QueueSnackbarActions,
@@ -149,6 +155,7 @@ internal fun MusicScreenBody(
     onSettingsBackClick: () -> Unit,
     onDiagnosticsClick: () -> Unit,
     onListeningHistoryImportClick: () -> Unit,
+    onListeningHistoryReconciliationClick: () -> Unit,
     onDiagnosticsBackClick: () -> Unit,
     onEqualizerClick: () -> Unit,
     onEqualizerBackClick: () -> Unit,
@@ -272,6 +279,17 @@ internal fun MusicScreenBody(
             )
         }
 
+        isListeningHistoryReconciliationVisible -> {
+            ListeningHistoryReconciliationScreen(
+                state = reconciliationUiState,
+                actions = reconciliationActions,
+                modifier = modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+            )
+        }
+
         isDiagnosticsScreenVisible -> {
             PlaybackProgress(playbackProgressUiState) { progress ->
                 DiagnosticsScreen(
@@ -328,6 +346,8 @@ internal fun MusicScreenBody(
                 onExportBackupClick = onExportBackupClick,
                 onRestoreBackupClick = onRestoreBackupClick,
                 onListeningHistoryImportClick = onListeningHistoryImportClick,
+                onListeningHistoryReconciliationClick =
+                    onListeningHistoryReconciliationClick,
                 onDiagnosticsClick = onDiagnosticsClick,
                 equalizerSummary = equalizerScreenState.settingsSummary,
                 onEqualizerClick = onEqualizerClick,
