@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.cdplaya.data.ListeningIdentityReconciliationLinkResult
 import com.example.cdplaya.data.ListeningIdentityReconciliationRepository
+import com.example.cdplaya.data.ListeningStatsRepository
 import com.example.cdplaya.data.backup.AppBackup
 import com.example.cdplaya.data.backup.AppBackupJson
 import com.example.cdplaya.data.backup.ListeningHistoryBackupRepository
@@ -124,6 +125,14 @@ class ListeningIdentityReconciliationBackupRoundTripTest {
         }.toSet())
         assertEquals(3L, restored.history.summary.identityCount)
         assertEquals(3L, restored.history.summary.eventCount)
+
+        val canonicalTopTrack = ListeningStatsRepository(database)
+            .getTopTracksByQualifiedPlays(10)
+            .single()
+        assertEquals(restoredTarget, canonicalTopTrack.trackIdentityId)
+        assertEquals("Local target", canonicalTopTrack.title)
+        assertEquals(2L, canonicalTopTrack.playCounts.totalPlayCount)
+        assertEquals(5, canonicalTopTrack.effectiveRating)
     }
 
     @Test
