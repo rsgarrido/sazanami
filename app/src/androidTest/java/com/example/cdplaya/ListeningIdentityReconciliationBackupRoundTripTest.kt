@@ -4,6 +4,8 @@ import androidx.room.Room
 import androidx.room.withTransaction
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.example.cdplaya.controller.DefaultListeningHistoryReconciliationOperations
+import com.example.cdplaya.controller.groupLinkedReconciliations
 import com.example.cdplaya.data.ListeningIdentityReconciliationLinkResult
 import com.example.cdplaya.data.ListeningIdentityReconciliationRepository
 import com.example.cdplaya.data.ListeningStatsRepository
@@ -133,6 +135,144 @@ class ListeningIdentityReconciliationBackupRoundTripTest {
         assertEquals("Local target", canonicalTopTrack.title)
         assertEquals(2L, canonicalTopTrack.playCounts.totalPlayCount)
         assertEquals(5, canonicalTopTrack.effectiveRating)
+    }
+
+    @Test
+    fun realisticBackup10RoundTripPreservesMissingUnmatchedFragmentsAndLinkedGrouping() = runBlocking {
+        val localOne = identity("Local one")
+        val historicalA1 = identity("Historical A1")
+        val historicalA2 = identity("Historical A2")
+        val localTwo = identity("Local two missing")
+        val historicalB1 = identity("Historical B1")
+        val unmatched = identity("Unmatched U1")
+        val fragmentOne = identity("Fragment F1")
+        val fragmentTwo = identity("Fragment F2")
+        val localOneBinding = database.localTrackBindingDao().insert(localBinding(localOne, null))
+        database.localTrackBindingDao().insert(localBinding(localTwo, 999L))
+        nativeEvent(localOne, localOneBinding)
+        val profile = database.listeningImportSourceDao().insert(
+            ListeningImportSourceEntity(
+                stableUuid = "realistic-profile",
+                sourceType = ListeningSource.SPOTIFY_IMPORT,
+                displayLabel = "Fictional account",
+                accountIdentityDigest = "fictional-digest",
+                createdAt = 1L,
+                updatedAt = 2L
+            )
+        )
+        val historicalIds = listOf(
+            historicalA1,
+            historicalA2,
+            historicalB1,
+            unmatched,
+            fragmentOne,
+            fragmentTwo
+        )
+        historicalIds.forEachIndexed { index, identityId ->
+            val eventId = importedEvent(identityId, "realistic-$index")
+            evidence(eventId, profile, "realistic-fingerprint-$index", index)
+        }
+        database.listeningTrackExternalIdDao().insert(
+            listOf(
+                ListeningTrackExternalIdEntity(
+                    0L, historicalA1, ListeningSource.SPOTIFY_IMPORT, "spotify:a1", 10L, 11L
+                ),
+                ListeningTrackExternalIdEntity(
+                    0L, historicalA2, ListeningSource.SPOTIFY_IMPORT, "spotify:a2", 12L, 13L
+                ),
+                ListeningTrackExternalIdEntity(
+                    0L, historicalB1, ListeningSource.SPOTIFY_IMPORT, "spotify:b1", 14L, 15L
+                ),
+                ListeningTrackExternalIdEntity(
+                    0L, unmatched, ListeningSource.SPOTIFY_IMPORT, "spotify:u1", 16L, 17L
+                )
+            )
+        )
+        database.songRatingDao().insert(
+            listOf(
+                SongRatingEntity(localOne, 5, 20L, 21L),
+                SongRatingEntity(historicalA1, 2, 22L, 23L),
+                SongRatingEntity(localTwo, 4, 24L, 25L),
+                SongRatingEntity(historicalB1, 1, 26L, 27L)
+            )
+        )
+        val repository = ListeningIdentityReconciliationRepository(database)
+        listOf(historicalA1, historicalA2).forEachIndexed { index, source ->
+            assertTrue(repository.link(source, localOne, 100L + index) is
+                ListeningIdentityReconciliationLinkResult.Linked)
+        }
+        listOf(historicalB1, fragmentOne, fragmentTwo).forEachIndexed { index, source ->
+            assertTrue(repository.link(source, localTwo, 200L + index) is
+                ListeningIdentityReconciliationLinkResult.Linked)
+        }
+
+        val backupRepository = ListeningHistoryBackupRepository(database)
+        val backup = backupRepository.exportWithRatings()
+        database.withTransaction {
+            val remapped = backupRepository.restoreValidatedWithinTransaction(
+                ListeningHistoryBackupValidator.validate(backup.history)
+            )
+            backupRepository.restoreRatingsValidatedWithinTransaction(
+                SongRatingBackupValidator.validate(backup.ratings, backup.history),
+                remapped
+            )
+        }
+
+        val restored = backupRepository.exportWithRatings()
+        val idsByTitle = restored.history.identities.associate { it.titleSnapshot to it.backupIdentityId }
+        val restoredLocalOne = idsByTitle.getValue("Local one")
+        val restoredLocalTwo = idsByTitle.getValue("Local two missing")
+        val restoredUnmatched = idsByTitle.getValue("Unmatched U1")
+        assertEquals(8L, restored.history.summary.identityCount)
+        assertEquals(7L, restored.history.summary.eventCount)
+        assertEquals(5, restored.history.reconciliations.size)
+        assertEquals(
+            2,
+            restored.history.reconciliations.count { it.targetIdentityBackupId == restoredLocalOne }
+        )
+        assertEquals(
+            3,
+            restored.history.reconciliations.count { it.targetIdentityBackupId == restoredLocalTwo }
+        )
+        assertTrue(restored.history.reconciliations.none { it.sourceIdentityBackupId == restoredUnmatched })
+        assertEquals(
+            999L,
+            restored.history.bindings.single {
+                it.trackIdentityBackupId == restoredLocalTwo
+            }.missingSince
+        )
+        assertEquals(
+            setOf("spotify:a1", "spotify:a2", "spotify:b1", "spotify:u1"),
+            restored.history.externalTrackIds.map { it.externalId }.toSet()
+        )
+        assertEquals(
+            (0..5).map { "realistic-fingerprint-$it" to it }.toSet(),
+            restored.history.importedEventEvidence
+                .map { it.fingerprint to it.duplicateOrdinal }.toSet()
+        )
+        assertEquals(5, restored.ratings.entries.single {
+            it.trackIdentityBackupId == restoredLocalOne
+        }.rating)
+        assertEquals(2, restored.ratings.entries.single {
+            it.trackIdentityBackupId == idsByTitle.getValue("Historical A1")
+        }.rating)
+
+        val top = ListeningStatsRepository(database).getTopTracksByQualifiedPlays(10)
+        assertEquals(3L, top.single { it.trackIdentityId == restoredLocalTwo }.playCounts.totalPlayCount)
+        assertEquals(2L, top.single { it.trackIdentityId == restoredLocalOne }.playCounts.totalPlayCount)
+        assertEquals(1L, top.single { it.trackIdentityId == restoredUnmatched }.playCounts.totalPlayCount)
+        assertEquals(5, top.single { it.trackIdentityId == restoredLocalOne }.effectiveRating)
+        assertEquals(4, top.single { it.trackIdentityId == restoredLocalTwo }.effectiveRating)
+
+        val linkedSnapshot = DefaultListeningHistoryReconciliationOperations(
+            database = database,
+            currentSongs = { emptyList() }
+        ).load()
+        val groups = groupLinkedReconciliations(linkedSnapshot.linkedItems)
+        assertEquals(2, groups.size)
+        assertEquals(setOf(2, 3), groups.map { it.historicalIdentityCount }.toSet())
+        assertEquals(5, groups.sumOf { it.historicalIdentityCount })
+        assertTrue(linkedSnapshot.reviewItems.any { it.source.identityId == restoredUnmatched })
     }
 
     @Test

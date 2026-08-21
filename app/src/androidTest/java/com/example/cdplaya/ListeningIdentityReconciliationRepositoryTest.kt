@@ -126,6 +126,40 @@ class ListeningIdentityReconciliationRepositoryTest {
     }
 
     @Test
+    fun ratingInspectionCoversNoneTargetSourceEqualAndConflictWithoutCopies() = runBlocking {
+        val source = historical("Rated source")
+        val target = local("Rated target", null)
+
+        assertEquals(
+            ListeningIdentityReconciliationRatingState.NO_RATINGS,
+            repository.inspectRatings(source, target).state
+        )
+        database.songRatingDao().upsert(SongRatingEntity(target, 5, 1L, 1L))
+        assertEquals(
+            ListeningIdentityReconciliationRatingState.TARGET_ONLY,
+            repository.inspectRatings(source, target).state
+        )
+        database.songRatingDao().deleteByTrackIdentityId(target)
+        database.songRatingDao().upsert(SongRatingEntity(source, 3, 2L, 2L))
+        assertEquals(
+            ListeningIdentityReconciliationRatingState.SOURCE_ONLY,
+            repository.inspectRatings(source, target).state
+        )
+        database.songRatingDao().upsert(SongRatingEntity(target, 3, 3L, 3L))
+        assertEquals(
+            ListeningIdentityReconciliationRatingState.SAME_RATING,
+            repository.inspectRatings(source, target).state
+        )
+        database.songRatingDao().upsert(SongRatingEntity(target, 5, 4L, 4L))
+        assertEquals(
+            ListeningIdentityReconciliationRatingState.CONFLICTING_RATINGS,
+            repository.inspectRatings(source, target).state
+        )
+        assertEquals(3, database.songRatingDao().getByTrackIdentityId(source)?.rating)
+        assertEquals(5, database.songRatingDao().getByTrackIdentityId(target)?.rating)
+    }
+
+    @Test
     fun linkAndUnlink_areLosslessForRatingsMetadataAndProviderProvenance() = runBlocking {
         val source = historical("It’s Me")
         val target = local("It's Me", null)

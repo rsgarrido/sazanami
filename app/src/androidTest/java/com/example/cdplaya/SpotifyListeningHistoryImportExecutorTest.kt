@@ -4,6 +4,9 @@ import androidx.room.Room
 import androidx.room.withTransaction
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.example.cdplaya.controller.DefaultSpotifyListeningHistoryImportOperations
+import com.example.cdplaya.data.ListeningIdentityReconciliationLinkResult
+import com.example.cdplaya.data.ListeningIdentityReconciliationRepository
 import com.example.cdplaya.data.ListeningImportRepository
 import com.example.cdplaya.data.ListeningStatsRepository
 import com.example.cdplaya.data.backup.ListeningHistoryBackupRepository
@@ -188,6 +191,109 @@ class SpotifyListeningHistoryImportExecutorTest {
             assertEquals(3, database.listeningTrackIdentityDao().getAll().size)
         }
 
+    @Test fun reconciledStableIdentitySurvivesSameAndLaterImportsAcrossBackupRestore() = runBlocking {
+        val stableId = "Stable0000000000000001"
+        val repeated = entry(
+            "2024-09-01T00:00:00Z", 31_000, "Historical Parcel", "Export Club", "Archive", stableId
+        )
+        val initialJson = json(
+            repeated,
+            repeated,
+            entry("2024-09-01T00:01:00Z", 32_000, "Historical Parcel", "Export Club", "Archive", stableId),
+            entry("2024-09-01T00:02:00Z", 33_000, "Historical Parcel", "Export Club", "Archive", stableId),
+            entry("2024-09-01T00:03:00Z", 34_000, "Historical Parcel", "Export Club", "Archive", stableId)
+        )
+        val laterJson = json(
+            repeated,
+            repeated,
+            repeated,
+            entry("2024-09-01T00:01:00Z", 32_000, "Historical Parcel", "Export Club", "Archive", stableId),
+            entry("2024-09-01T00:02:00Z", 33_000, "Historical Parcel", "Export Club", "Archive", stableId),
+            entry("2024-09-01T00:03:00Z", 34_000, "Historical Parcel", "Export Club", "Archive", stableId),
+            entry("2024-09-02T00:00:00Z", 35_000, "Historical Parcel", "Export Club", "Archive", stableId),
+            entry("2024-09-03T00:00:00Z", 36_000, "Historical Parcel", "Export Club", "Archive", stableId)
+        )
+
+        assertEquals(5L, executor.execute(listOf(source(initialJson))).newPublished)
+        val historicalId = database.listeningTrackExternalIdDao()
+            .find(ListeningSource.SPOTIFY_IMPORT, stableId)!!.trackIdentityId
+        val targetId = database.listeningTrackIdentityDao().insert(identity("Canonical Parcel"))
+        database.localTrackBindingDao().insert(binding(targetId))
+        database.songRatingDao().upsert(SongRatingEntity(historicalId, 3, 10L, 11L))
+        database.songRatingDao().upsert(SongRatingEntity(targetId, 5, 12L, 13L))
+        assertTrue(
+            ListeningIdentityReconciliationRepository(database).link(historicalId, targetId, 20L) is
+                ListeningIdentityReconciliationLinkResult.Linked
+        )
+
+        val evidenceBefore = ListeningHistoryBackupRepository(database).export()
+            .importedEventEvidence.map { it.fingerprint to it.duplicateOrdinal }.toSet()
+        assertEquals(5, evidenceBefore.size)
+        assertTrue(evidenceBefore.any { it.second == 1 })
+        val sameBeforeBackup = executor.execute(listOf(source(initialJson)))
+        assertEquals(0L, sameBeforeBackup.newPublished)
+        assertEquals(5L, sameBeforeBackup.alreadyImported)
+        val initialTop = ListeningStatsRepository(database).getTopTracksByQualifiedPlays(10).single()
+        assertEquals(targetId, initialTop.trackIdentityId)
+        assertEquals(5L, initialTop.playCounts.detailedPlayCount)
+        assertEquals(161_000L, initialTop.confirmedDetailedListeningMs)
+
+        val backupRepository = ListeningHistoryBackupRepository(database)
+        val backup = backupRepository.exportWithRatings()
+        database.withTransaction {
+            val remapped = backupRepository.restoreValidatedWithinTransaction(backup.history)
+            backupRepository.restoreRatingsValidatedWithinTransaction(backup.ratings, remapped)
+        }
+        val restoredHistoricalId = database.listeningTrackExternalIdDao()
+            .find(ListeningSource.SPOTIFY_IMPORT, stableId)!!.trackIdentityId
+        val restoredTargetId = database.localTrackBindingDao().getByReferenceKey("local-reference")!!
+            .trackIdentityId
+        val restoredReconciliation = ListeningIdentityReconciliationRepository(database)
+            .findTargetForSource(restoredHistoricalId)
+        assertEquals(restoredTargetId, restoredReconciliation?.targetIdentityId)
+        assertEquals(3, database.songRatingDao().getByTrackIdentityId(restoredHistoricalId)?.rating)
+        assertEquals(5, database.songRatingDao().getByTrackIdentityId(restoredTargetId)?.rating)
+        assertEquals(
+            evidenceBefore,
+            backupRepository.export().importedEventEvidence
+                .map { it.fingerprint to it.duplicateOrdinal }.toSet()
+        )
+
+        val sameAfterRestore = executor.execute(listOf(source(initialJson)))
+        assertEquals(0L, sameAfterRestore.newPublished)
+        assertEquals(5L, sameAfterRestore.alreadyImported)
+        val later = executor.execute(listOf(source(laterJson)))
+        assertEquals(3L, later.newPublished)
+        assertEquals(5L, later.alreadyImported)
+        assertEquals(8L, database.listeningEventDao().count())
+        assertEquals(
+            8L,
+            database.openHelper.writableDatabase.query(
+                "SELECT COUNT(*) FROM listening_events WHERE trackIdentityId = ?",
+                arrayOf(restoredHistoricalId)
+            ).use { cursor -> cursor.moveToFirst(); cursor.getLong(0) }
+        )
+        assertEquals(
+            restoredHistoricalId,
+            database.listeningTrackExternalIdDao()
+                .find(ListeningSource.SPOTIFY_IMPORT, stableId)?.trackIdentityId
+        )
+        val afterLater = backupRepository.export().importedEventEvidence
+        assertEquals(8, afterLater.size)
+        assertTrue(afterLater.groupBy { it.fingerprint }.values.any { evidence ->
+            evidence.map { it.duplicateOrdinal }.sorted() == listOf(0, 1, 2)
+        })
+        val finalTop = ListeningStatsRepository(database).getTopTracksByQualifiedPlays(10).single()
+        assertEquals(restoredTargetId, finalTop.trackIdentityId)
+        assertEquals(8L, finalTop.playCounts.detailedPlayCount)
+        assertEquals(263_000L, finalTop.confirmedDetailedListeningMs)
+        assertEquals(
+            8L,
+            ListeningStatsRepository(database)
+                .getAllTimeOverview(includeLegacyBaseline = false).qualifiedDetailedPlayCount
+        )
+    }
+
     @Test fun overlapUsesMaximumPerFile_andLaterExportAddsOnlyNewOrdinals() = runBlocking {
         val a = source(json(
             entry("2024-03-01T00:00:00Z", 31_000, "X", "A", "", "x"),
@@ -325,6 +431,87 @@ class SpotifyListeningHistoryImportExecutorTest {
         assertEquals(1, database.listeningTrackIdentityDao().getAll().size)
         assertEquals(listOf("shared"), database.listeningTrackExternalIdDao().getAllForBackup()
             .map { it.externalId })
+    }
+
+    @Test fun cancellationFailureAndStaleRecoveryPreservePublishedReconciliation() = runBlocking {
+        val published = source(json(
+            entry("2024-06-15T00:00:00Z", 31_000, "Published", "Artist", "Album", "published")
+        ))
+        assertEquals(1L, executor.execute(listOf(published)).newPublished)
+        val historicalId = database.listeningTrackExternalIdDao()
+            .find(ListeningSource.SPOTIFY_IMPORT, "published")!!.trackIdentityId
+        val targetId = database.listeningTrackIdentityDao().insert(identity("Local published"))
+        database.localTrackBindingDao().insert(binding(targetId))
+        val reconciliation = ListeningIdentityReconciliationRepository(database)
+        assertTrue(reconciliation.link(historicalId, targetId, 1L) is
+            ListeningIdentityReconciliationLinkResult.Linked)
+
+        val cancelledInput = source(json(*(0 until 3).map { index ->
+            entry(
+                "2024-06-16T00:0${index}:00Z",
+                31_000,
+                "Cancelled $index",
+                "Artist",
+                "Album",
+                "cancelled$index"
+            )
+        }.toTypedArray()))
+        assertTrue(runCatching {
+            newExecutor(chunkSize = 2).execute(listOf(cancelledInput)) { progress ->
+                if (progress.phase == ListeningImportExecutionPhase.IMPORTING &&
+                    progress.chunksCompleted == 1
+                ) throw CancellationException("cancel")
+            }
+        }.exceptionOrNull() is CancellationException)
+
+        val failedInput = source(json(*(0 until 3).map { index ->
+            entry(
+                "2024-06-17T00:0${index}:00Z",
+                31_000,
+                "Failed $index",
+                "Artist",
+                "Album",
+                "failed$index"
+            )
+        }.toTypedArray()))
+        assertTrue(runCatching {
+            newExecutor(chunkSize = 2).execute(listOf(failedInput)) { progress ->
+                if (progress.phase == ListeningImportExecutionPhase.IMPORTING &&
+                    progress.chunksCompleted == 1
+                ) error("controlled failure")
+            }
+        }.isFailure)
+
+        val profiles = SpotifyImportSourceProfileService(repository) { 2_000_000_000_000 }
+        val profile = profiles.getOrCreateDefault()
+        val staleBatch = repository.createBatch(batch(profile.id, "stale-reconciliation"))
+        assertEquals(
+            1,
+            repository.persistSpotifyChunk(
+                staleBatch,
+                listOf(prepared("stale", "2024-06-18T00:00:00Z", 0))
+            ).newPending
+        )
+        DefaultSpotifyListeningHistoryImportOperations(
+            repository = repository,
+            previewer = SpotifyListeningHistoryImportPreviewer(
+                repository,
+                profiles,
+                SpotifyExtendedStreamingParser(
+                    Clock.fixed(Instant.parse("2030-01-01T00:00:00Z"), ZoneOffset.UTC)
+                )
+            ),
+            executor = newExecutor(),
+            nowMillis = { 2_000_000_000_001 }
+        ).cleanUnfinishedBatches()
+
+        assertEquals(1L, database.listeningEventDao().count())
+        assertEquals(2, database.listeningTrackIdentityDao().getAll().size)
+        assertEquals(listOf("published"), database.listeningTrackExternalIdDao()
+            .getAllForBackup().map { it.externalId })
+        assertEquals(targetId, reconciliation.findTargetForSource(historicalId)?.targetIdentityId)
+        assertEquals(1, database.localTrackBindingDao().getAllForBackup().size)
+        assertTrue(repository.getPendingBatchIdsForSourceProfile(profile.id).isEmpty())
     }
 
     @Test fun sourceProfilesHaveSeparateDedupeButShareGlobalExactSpotifyIdentity() = runBlocking {

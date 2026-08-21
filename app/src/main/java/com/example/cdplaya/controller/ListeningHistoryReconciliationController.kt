@@ -1,5 +1,6 @@
 package com.example.cdplaya.controller
 
+import androidx.room.withTransaction
 import com.example.cdplaya.data.HistoricalReconciliationItem
 import com.example.cdplaya.data.HistoricalReconciliationSource
 import com.example.cdplaya.data.ListeningIdentityReconciliationCandidateService
@@ -146,13 +147,10 @@ class DefaultListeningHistoryReconciliationOperations(
     private val nativeTrackResolver: ListeningNativeTrackResolver =
         ListeningNativeTrackResolver(database)
 ) : ListeningHistoryReconciliationOperations {
-    private var songsByReferenceKey: Map<String, Song> = emptyMap()
-
     override suspend fun load(): ReconciliationReviewSnapshot {
         val dao = database.listeningIdentityReconciliationCandidateDao()
         val currentSongList = currentSongs()
             .distinctBy(Song::membershipKey)
-        songsByReferenceKey = currentSongList.associateBy(Song::membershipKey)
         val bindingsByReferenceKey = database.localTrackBindingDao().getAllForBackup()
             .associateBy(LocalTrackBindingEntity::referenceKey)
         val targets = currentSongList
@@ -189,20 +187,51 @@ class DefaultListeningHistoryReconciliationOperations(
         sourceIdentityIds: List<Long>,
         target: LocalReconciliationTarget
     ): ListeningIdentityReconciliationLinkResult {
-        val song = songsByReferenceKey[target.referenceKey]
+        // Re-read the authoritative library at confirmation time. The review snapshot can be stale
+        // after a rescan, removal, or membership-key change.
+        val song = currentSongs()
+            .distinctBy(Song::membershipKey)
+            .associateBy(Song::membershipKey)[target.referenceKey]
             ?: return ListeningIdentityReconciliationLinkResult.Rejected(
                 ListeningIdentityReconciliationFailure.TARGET_NOT_FOUND
             )
-        val resolved = nativeTrackResolver.resolveOrCreate(
-            target.referenceKey,
-            song.toSongReference(),
-            refreshExistingBinding = true
-        )
-        return repository.linkMany(sourceIdentityIds, resolved.trackIdentityId)
+        return try {
+            database.withTransaction {
+                val displayedBinding = target.identityId.takeIf { it > 0L }?.let {
+                    database.localTrackBindingDao().getByReferenceKey(target.referenceKey)
+                }
+                if (target.identityId > 0L &&
+                    (displayedBinding?.trackIdentityId != target.identityId ||
+                        displayedBinding.missingSince != null)
+                ) {
+                    throw ReconciliationLinkRollback(
+                        ListeningIdentityReconciliationLinkResult.Rejected(
+                            ListeningIdentityReconciliationFailure.TARGET_HAS_NO_LOCAL_BINDING
+                        )
+                    )
+                }
+                val resolved = nativeTrackResolver.resolveOrCreate(
+                    target.referenceKey,
+                    song.toSongReference(),
+                    refreshExistingBinding = true
+                )
+                when (val result = repository.linkMany(sourceIdentityIds, resolved.trackIdentityId)) {
+                    is ListeningIdentityReconciliationLinkResult.Linked -> result
+                    is ListeningIdentityReconciliationLinkResult.Rejected ->
+                        throw ReconciliationLinkRollback(result)
+                }
+            }
+        } catch (rejected: ReconciliationLinkRollback) {
+            rejected.result
+        }
     }
 
     override suspend fun unlink(sourceIdentityId: Long) = repository.unlink(sourceIdentityId)
 }
+
+private class ReconciliationLinkRollback(
+    val result: ListeningIdentityReconciliationLinkResult.Rejected
+) : RuntimeException()
 
 class ListeningHistoryReconciliationController(
     private val operations: ListeningHistoryReconciliationOperations,

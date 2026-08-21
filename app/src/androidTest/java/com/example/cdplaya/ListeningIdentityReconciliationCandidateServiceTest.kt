@@ -5,8 +5,10 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.cdplaya.data.ListeningIdentityReconciliationCandidateService
+import com.example.cdplaya.data.ListeningIdentityReconciliationFailure
 import com.example.cdplaya.data.ListeningIdentityReconciliationLinkResult
 import com.example.cdplaya.data.ListeningIdentityReconciliationRepository
+import com.example.cdplaya.data.ListeningStatsRepository
 import com.example.cdplaya.data.ReconciliationCandidateCategory
 import com.example.cdplaya.data.ReconciliationCandidateDisposition
 import com.example.cdplaya.data.Song
@@ -201,6 +203,126 @@ class ListeningIdentityReconciliationCandidateServiceTest {
         }
 
     @Test
+    fun confirmationRechecksCurrentLibraryAndDoesNotCreateBindingForDisappearedTarget() =
+        runBlocking {
+            val source = identity("Historical", "Artist", "Album")
+            importedEvent(source, 1)
+            val current = song(303, "Local", "Artist", "Album", "Local.flac")
+            var songs = listOf(current)
+            val operations = DefaultListeningHistoryReconciliationOperations(
+                database = database,
+                currentSongs = { songs }
+            )
+            val target = operations.load().localTargets.single()
+            assertTrue(target.identityId < 0L)
+
+            songs = emptyList()
+            val result = operations.linkMany(listOf(source), target)
+
+            assertEquals(
+                ListeningIdentityReconciliationFailure.TARGET_NOT_FOUND,
+                (result as ListeningIdentityReconciliationLinkResult.Rejected).reason
+            )
+            assertTrue(database.localTrackBindingDao().getAllForBackup().isEmpty())
+            assertTrue(reconciliation.listLinks().isEmpty())
+        }
+
+    @Test
+    fun rejectedTransientLinkRollsBackBindingAndIdentityCreation() = runBlocking {
+        val ineligibleSource = identity("No imported history", "Artist", "Album")
+        val current = song(404, "Unbound", "Artist", "Album", "Unbound.flac")
+        val operations = DefaultListeningHistoryReconciliationOperations(
+            database = database,
+            currentSongs = { listOf(current) }
+        )
+        val target = operations.load().localTargets.single()
+        val identitiesBefore = database.listeningTrackIdentityDao().getAll()
+
+        val result = operations.linkMany(listOf(ineligibleSource), target)
+
+        assertEquals(
+            ListeningIdentityReconciliationFailure.SOURCE_HAS_NO_IMPORTED_HISTORY,
+            (result as ListeningIdentityReconciliationLinkResult.Rejected).reason
+        )
+        assertEquals(identitiesBefore, database.listeningTrackIdentityDao().getAll())
+        assertTrue(database.localTrackBindingDao().getAllForBackup().isEmpty())
+        assertTrue(reconciliation.listLinks().isEmpty())
+    }
+
+    @Test
+    fun boundTargetInvalidatedBeforeConfirmationIsNotReactivatedOrLinked() = runBlocking {
+        val source = identity("Historical", "Artist", "Album")
+        importedEvent(source, 1)
+        val current = song(505, "Bound", "Artist", "Album", "Bound.flac")
+        val targetIdentity = identity("Old Bound", "Old Artist", "Old Album")
+        val bindingId = database.localTrackBindingDao().insert(
+            LocalTrackBindingEntity(
+                trackIdentityId = targetIdentity,
+                referenceKey = current.membershipKey(),
+                mediaStoreId = current.id,
+                volumeName = current.volumeName,
+                contentUri = current.uri.toString(),
+                relativePath = current.relativePath,
+                displayName = current.displayName,
+                absolutePath = null,
+                fileSizeBytes = current.fileSizeBytes,
+                dateModifiedEpochSeconds = current.dateModifiedEpochSeconds,
+                durationMsSnapshot = current.duration,
+                legacyStableKey = null,
+                portableKey = null,
+                portableKeyVersion = 1,
+                firstSeenAt = 1,
+                lastSeenAt = 2,
+                missingSince = null
+            )
+        )
+        val operations = DefaultListeningHistoryReconciliationOperations(
+            database = database,
+            currentSongs = { listOf(current) }
+        )
+        val target = operations.load().localTargets.single()
+        val binding = database.localTrackBindingDao().getByReferenceKey(current.membershipKey())!!
+        database.localTrackBindingDao().update(binding.copy(missingSince = 99L))
+
+        val result = operations.linkMany(listOf(source), target)
+
+        assertEquals(
+            ListeningIdentityReconciliationFailure.TARGET_HAS_NO_LOCAL_BINDING,
+            (result as ListeningIdentityReconciliationLinkResult.Rejected).reason
+        )
+        assertEquals(
+            99L,
+            database.localTrackBindingDao().getAllForBackup().single { it.id == bindingId }.missingSince
+        )
+        assertTrue(reconciliation.listLinks().isEmpty())
+    }
+
+    @Test
+    fun repeatedConfirmationNeverCreatesADuplicateBinding() = runBlocking {
+        val source = identity("Historical", "Artist", "Album")
+        importedEvent(source, 1)
+        val current = song(606, "Unbound", "Artist", "Album", "Unbound.flac")
+        val operations = DefaultListeningHistoryReconciliationOperations(
+            database = database,
+            currentSongs = { listOf(current) }
+        )
+        val target = operations.load().localTargets.single()
+
+        assertTrue(
+            operations.linkMany(listOf(source), target) is
+                ListeningIdentityReconciliationLinkResult.Linked
+        )
+        val retry = operations.linkMany(listOf(source), target)
+
+        assertEquals(
+            ListeningIdentityReconciliationFailure.SOURCE_ALREADY_RECONCILED,
+            (retry as ListeningIdentityReconciliationLinkResult.Rejected).reason
+        )
+        assertEquals(1, database.localTrackBindingDao().getAllForBackup().size)
+        assertEquals(1, reconciliation.listLinks().size)
+    }
+
+    @Test
     fun confirmedLinkRemovesSourceAndUnlinkMakesItDiscoverableAgain() = runBlocking {
         val source = identity("It's Me", "Artist", "Album")
         importedEvent(source, 1)
@@ -272,6 +394,29 @@ class ListeningIdentityReconciliationCandidateServiceTest {
         assertEquals(eventCountBefore, database.listeningEventDao().count())
         assertEquals(identitiesBefore, database.listeningTrackIdentityDao().getAll())
         assertEquals(tableCountsBefore, protectedTableCounts())
+    }
+
+    @Test
+    fun newUriLessFragmentDoesNotInheritExistingMetadataLinks() = runBlocking {
+        val target = local("Fragmented Song", "Artist", "Album")
+        val linkedFragments = (1..3).map { index ->
+            identity("Fragmented Song", "Artist", "Album").also { importedEvent(it, index) }
+        }
+        assertTrue(
+            reconciliation.linkMany(linkedFragments, target) is
+                ListeningIdentityReconciliationLinkResult.Linked
+        )
+
+        val newFragment = identity("Fragmented Song", "Artist", "Album")
+        importedEvent(newFragment, 4)
+        val discovery = service.discoverCandidates()
+
+        assertEquals(listOf(newFragment), discovery.items.map { it.source.identityId })
+        assertEquals(target, discovery.items.single().candidates.single().target.identityId)
+        assertEquals(3, reconciliation.listLinks().size)
+        val rows = ListeningStatsRepository(database).getTopTracksByQualifiedPlays(10)
+        assertEquals(3L, rows.single { it.trackIdentityId == target }.playCounts.totalPlayCount)
+        assertEquals(1L, rows.single { it.trackIdentityId == newFragment }.playCounts.totalPlayCount)
     }
 
     @Test

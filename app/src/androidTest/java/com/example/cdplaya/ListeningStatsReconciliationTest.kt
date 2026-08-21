@@ -7,6 +7,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.example.cdplaya.data.ListeningDateRange
 import com.example.cdplaya.data.AnalyticsBucketBoundary
 import com.example.cdplaya.data.AnalyticsBucketGranularity
+import com.example.cdplaya.data.ListeningIdentityReconciliationFailure
 import com.example.cdplaya.data.ListeningIdentityReconciliationLinkResult
 import com.example.cdplaya.data.ListeningIdentityReconciliationRepository
 import com.example.cdplaya.data.ListeningStatsFilter
@@ -297,6 +298,48 @@ class ListeningStatsReconciliationTest {
         assertEquals(20L, split.single { it.trackIdentityId == sourceA }.playCounts.totalPlayCount)
         assertEquals(30L, split.single { it.trackIdentityId == sourceB }.playCounts.totalPlayCount)
         assertEquals(globalBefore, stats.getAllTimeOverview())
+    }
+
+    @Test
+    fun relinkRequiresExplicitUnlinkAndMovesOnlyCanonicalGrouping() = runBlocking {
+        val source = identity("Historical", "Provider Artist", "Provider Album", "Provider Artist")
+        val firstTarget = identity("First local", "Local Artist", "First Album", "Local Artist")
+        val secondTarget = identity("Second local", "Local Artist", "Second Album", "Local Artist")
+        binding(firstTarget, "local:first")
+        binding(secondTarget, "local:second")
+        events(source, "historical", 5, 1_000L, ListeningSource.SPOTIFY_IMPORT)
+        events(firstTarget, "first", 1, 2_000L, ListeningSource.CDPLAYA)
+        events(secondTarget, "second", 2, 3_000L, ListeningSource.CDPLAYA)
+        val globalBefore = stats.getAllTimeOverview()
+
+        assertTrue(reconciliation.link(source, firstTarget) is
+            ListeningIdentityReconciliationLinkResult.Linked)
+        assertEquals(
+            ListeningIdentityReconciliationFailure.SOURCE_ALREADY_RECONCILED,
+            (reconciliation.link(source, secondTarget) as
+                ListeningIdentityReconciliationLinkResult.Rejected).reason
+        )
+        assertEquals(
+            6L,
+            stats.getTopTracksByQualifiedPlays(10)
+                .single { it.trackIdentityId == firstTarget }.playCounts.totalPlayCount
+        )
+
+        assertTrue(reconciliation.unlink(source))
+        assertTrue(reconciliation.link(source, secondTarget) is
+            ListeningIdentityReconciliationLinkResult.Linked)
+        val relinked = stats.getTopTracksByQualifiedPlays(10)
+        assertEquals(1L, relinked.single { it.trackIdentityId == firstTarget }.playCounts.totalPlayCount)
+        assertEquals(7L, relinked.single { it.trackIdentityId == secondTarget }.playCounts.totalPlayCount)
+        assertFalse(relinked.any { it.trackIdentityId == source })
+        assertEquals(globalBefore, stats.getAllTimeOverview())
+        assertEquals(
+            5L,
+            database.openHelper.writableDatabase.query(
+                "SELECT COUNT(*) FROM listening_events WHERE trackIdentityId = ?",
+                arrayOf(source)
+            ).use { cursor -> cursor.moveToFirst(); cursor.getLong(0) }
+        )
     }
 
     @Test

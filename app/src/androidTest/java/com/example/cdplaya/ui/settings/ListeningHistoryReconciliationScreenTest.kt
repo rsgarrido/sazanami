@@ -2,22 +2,29 @@ package com.example.cdplaya.ui.settings
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.dp
 import com.example.cdplaya.controller.LinkedHistoricalReconciliation
 import com.example.cdplaya.controller.ListeningHistoryReconciliationUiState
 import com.example.cdplaya.controller.ReconciliationConfirmation
 import com.example.cdplaya.controller.ReconciliationReviewContent
 import com.example.cdplaya.controller.ReconciliationReviewTab
+import com.example.cdplaya.controller.ReconciliationSearchState
 import com.example.cdplaya.data.HistoricalReconciliationItem
 import com.example.cdplaya.data.HistoricalReconciliationMetrics
 import com.example.cdplaya.data.HistoricalReconciliationSource
 import com.example.cdplaya.data.ListeningIdentityReconciliationCandidate
 import com.example.cdplaya.data.ListeningIdentityReconciliationRatings
+import com.example.cdplaya.data.ListeningIdentityReconciliationRatingState
 import com.example.cdplaya.data.LocalReconciliationTarget
 import com.example.cdplaya.data.ReconciliationCandidateCategory
 import com.example.cdplaya.data.ReconciliationCandidateDisposition
@@ -178,6 +185,87 @@ class ListeningHistoryReconciliationScreenTest {
         composeRule.onNodeWithContentDescription(
             "Warning: This may be a different version of the song."
         ).assertExists()
+    }
+
+    @Test fun narrowWidthLongUnicodeExpandedLinkedGroupRemainsAccessible() {
+        val longAlbum = "非常に長い架空のアルバムタイトル Narrow Screen Archival Edition"
+        val canonical = target(80, "復讐の歌 — Extended Title", longAlbum)
+        val linked = LinkedHistoricalReconciliation(
+            source(81, "歴史的なインポート曲 — Remastered 2015"),
+            canonical,
+            1
+        )
+        val content = ReconciliationReviewContent(
+            reviewItems = emptyList(),
+            linkedItems = listOf(linked),
+            activeTab = ReconciliationReviewTab.LINKED,
+            expandedLinkedTargetId = canonical.identityId
+        )
+        composeRule.setContent {
+            MaterialTheme {
+                Box(Modifier.width(320.dp).height(640.dp)) {
+                    ListeningHistoryReconciliationScreen(
+                        ListeningHistoryReconciliationUiState.Content(content),
+                        actions()
+                    )
+                }
+            }
+        }
+
+        composeRule.onAllNodesWithText("復讐の歌 — Extended Title").assertCountEquals(2)
+        composeRule.onAllNodesWithText(longAlbum, substring = true).assertCountEquals(2)
+        composeRule.onNodeWithText("歴史的なインポート曲 — Remastered 2015").assertExists()
+        composeRule.onNodeWithContentDescription(
+            "Unlink 歴史的なインポート曲 — Remastered 2015 from 復讐の歌 — Extended Title"
+        ).assertExists()
+    }
+
+    @Test fun narrowWidthSearchAndRatingWarningDialogsRemainAccessible() {
+        val historical = source(90, "Imported Song With A Very Long Historical Name")
+        val local = target(91, "ローカル曲 — Long Search Result", "長いアルバム名 Search Edition")
+        val state = mutableStateOf(
+            ReconciliationReviewContent(
+                reviewItems = listOf(item(historical, local)),
+                linkedItems = emptyList(),
+                search = ReconciliationSearchState(
+                    sourceIds = listOf(historical.identityId),
+                    query = "ローカル",
+                    results = listOf(local)
+                )
+            )
+        )
+        composeRule.setContent {
+            MaterialTheme {
+                Box(Modifier.width(320.dp).height(640.dp)) {
+                    ListeningHistoryReconciliationScreen(
+                        ListeningHistoryReconciliationUiState.Content(state.value),
+                        actions()
+                    )
+                }
+            }
+        }
+        composeRule.onNodeWithText("Choose from library").assertExists()
+        composeRule.onNodeWithText("ローカル曲 — Long Search Result").assertExists()
+
+        composeRule.runOnIdle {
+            state.value = state.value.copy(
+                search = null,
+                confirmation = ReconciliationConfirmation.Link(
+                    sources = listOf(historical),
+                    target = local,
+                    ratings = listOf(
+                        ListeningIdentityReconciliationRatings(
+                            sourceRating = 2,
+                            targetRating = 5,
+                            state = ListeningIdentityReconciliationRatingState.CONFLICTING_RATINGS
+                        )
+                    )
+                )
+            )
+        }
+        composeRule.onNodeWithText("Link imported history?").assertExists()
+        composeRule.onNodeWithText("different ratings", substring = true).assertExists()
+        composeRule.onNodeWithText("5-star rating", substring = true).assertExists()
     }
 
     private fun setContent(

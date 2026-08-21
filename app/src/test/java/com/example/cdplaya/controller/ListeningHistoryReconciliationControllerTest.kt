@@ -21,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
+import kotlin.system.measureTimeMillis
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -144,6 +145,83 @@ class ListeningHistoryReconciliationControllerTest {
         assertEquals(listOf(1L, 2L), groups.single().items.map { it.source.identityId })
     }
 
+    @Test fun tenThousandTargetSearchFiltersBeforeTheHundredResultCapDeterministically() {
+        val largeOperations = FakeOperations()
+        largeOperations.snapshot = snapshot().copy(
+            localTargets = (0 until 10_000).map { index ->
+                target(
+                    id = 10_000L + index,
+                    title = if (index >= 9_850) {
+                        "Needle ${index.toString().padStart(5, '0')}"
+                    } else {
+                        "Library ${index.toString().padStart(5, '0')}"
+                    }
+                )
+            }
+        )
+        val largeController = ListeningHistoryReconciliationController(
+            largeOperations,
+            scope,
+            Dispatchers.Unconfined,
+            maxSearchResults = 100
+        )
+
+        val elapsed = measureTimeMillis {
+            largeController.enter()
+            largeController.openSearch(listOf(1))
+            largeController.updateSearchQuery("needle")
+        }
+        val results = (largeController.state.value as ListeningHistoryReconciliationUiState.Content)
+            .value.search!!.results
+
+        assertEquals(100, results.size)
+        assertEquals(100, results.map { it.identityId }.distinct().size)
+        assertEquals("Needle 09850", results.first().title)
+        assertEquals("Needle 09949", results.last().title)
+        println("reconciliation current-library search localTargets=10000 matches=150 cap=100 ms=$elapsed")
+    }
+
+    @Test fun fiveHundredLinkedTargetsGroupAliasesAndExpandOnlyOneTarget() {
+        val linked = (0 until 500).flatMap { targetIndex ->
+            val canonical = target(
+                id = 10_000L + targetIndex,
+                title = "Target ${targetIndex.toString().padStart(4, '0')}"
+            )
+            (0 until 3).map { aliasIndex ->
+                LinkedHistoricalReconciliation(
+                    source(
+                        id = 100_000L + targetIndex * 3L + aliasIndex,
+                        title = "Alias $targetIndex-$aliasIndex"
+                    ),
+                    canonical,
+                    targetIndex.toLong()
+                )
+            }
+        }
+        val elapsed = measureTimeMillis {
+            val groups = groupLinkedReconciliations(linked)
+            assertEquals(500, groups.size)
+            assertTrue(groups.all { it.historicalIdentityCount == 3 })
+            assertEquals(3_000L, groups.sumOf { it.historicalPlayCount })
+        }
+        val largeOperations = FakeOperations().apply {
+            snapshot = ReconciliationReviewSnapshot(emptyList(), linked, emptyList())
+        }
+        val largeController = ListeningHistoryReconciliationController(
+            largeOperations,
+            scope,
+            Dispatchers.Unconfined
+        )
+        largeController.enter()
+        largeController.toggleLinkedGroup(10_010L)
+        largeController.toggleLinkedGroup(10_011L)
+        val content = (largeController.state.value as ListeningHistoryReconciliationUiState.Content).value
+
+        assertEquals(10_011L, content.expandedLinkedTargetId)
+        assertEquals(1_500, content.linkedCount)
+        println("reconciliation linked grouping targets=500 aliases=1500 ms=$elapsed")
+    }
+
     @Test fun selectingTargetRequiresConfirmationAndCancelDoesNotLink() {
         operations.snapshot = snapshot()
         controller.enter()
@@ -226,6 +304,7 @@ class ListeningHistoryReconciliationControllerTest {
     @Test fun ratingWarningsCoverNoRatingTargetOnlySourceOnlyAndConflict() {
         assertNull(ratingWarning(listOf(ratings(null, null))))
         assertNull(ratingWarning(listOf(ratings(null, 5))))
+        assertNull(ratingWarning(listOf(ratings(4, 4))))
         assertTrue(ratingWarning(listOf(ratings(3, null)))!!.contains("local song is unrated"))
         assertTrue(ratingWarning(listOf(ratings(2, 5)))!!.contains("5-star rating"))
     }

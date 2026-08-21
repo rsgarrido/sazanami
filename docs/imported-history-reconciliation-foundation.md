@@ -26,15 +26,15 @@ Reconciliation never moves or rewrites listening events, provider external IDs, 
 fingerprints/evidence, duplicate ordinals, ratings, metadata snapshots, qualification facts,
 completion facts, or timestamps. Spotify external IDs and dedupe evidence remain owned by the
 historical identity. Source and target ratings remain independent and survive link/unlink even when
-they conflict; Session 1 does not choose or persist an effective canonical rating.
+they conflict. Canonical presentation uses the target's rating without copying it to or deleting it
+from the historical source.
 
 Backup 10 validates identity existence, non-self links, source uniqueness, disjoint source/target
 roles, historical source evidence, local target binding evidence, and non-negative timestamps before
 atomic replacement. A missing-marked binding remains valid local evidence. Backup 9 migrates to
 canonical format 2 with an empty reconciliation list; no identity relationship is inferred.
 
-Session 1 intentionally changes no analytics presentation. Current Statistics may continue to show
-source and target separately.
+Statistics canonicalizes confirmed sources to their targets before grouping, ranking, and limiting.
 
 ## Candidate discovery
 
@@ -52,12 +52,16 @@ last listen, and stable external-ID presence. Pending imported events and native
 an identity reviewable and do not contribute to these metrics. The reconciliation table, rather
 than metadata resemblance, is authoritative for excluding already linked sources.
 
-An eligible target must have a currently active (`missingSince IS NULL`) persisted local binding and
-must not be a reconciliation source. Historical-only and unavailable identities are not offered as
-new targets. One deterministic active binding is projected per identity. The compact projection
-contains identity and binding IDs, durable reference key, title, artist, album, album artist,
-duration, display name, derived extension, and normalized safe relative-folder text. It never
-returns an absolute filesystem path or duplicates a complete `Song` object.
+The review UI treats the current `LibraryUiState.songs` collection as the authoritative target
+catalog. It includes playable songs that have no listening binding yet and overlays any durable
+binding identity while retaining current tags for presentation and matching. Candidate discovery
+is read-only: a transient target creates no binding until explicit confirmation. Confirmation
+rechecks current library membership and performs binding creation/reactivation plus link creation in
+one transaction, so a stale or rejected target cannot leave a partial binding. Historical-only and
+unavailable identities are not offered as new targets. The compact projection contains identity and
+binding IDs, durable reference key, title, artist, album, album artist, duration, display name,
+derived extension, and normalized safe relative-folder text; candidate UI models do not retain
+duplicate complete `Song` objects.
 
 ## Search normalization and evidence
 
@@ -126,18 +130,59 @@ and version-base keys. Work is O(historical identities + local targets + visited
 not an imported-by-local nested comparison. Synthetic JVM tests cover 1,000 historical sources
 against 5,000 local targets, thousands of unrelated targets, and large common-title buckets.
 
-The existing library search UI's `filterSongsForSearch` can filter the current in-memory `Song`
-list by title, artist, and album for a later manual “Choose another” surface. Session 2 does not
-couple that Compose/UI helper to the domain service or alter global search.
+Manual target search filters the complete current in-memory library by title, artist, and album,
+sorts deterministically, and only then applies its 100-result cap. It is the authoritative fallback
+when deterministic candidate discovery cannot express a semantic or localized-title relationship.
 
-## Session boundaries
+## Final v1 behavior
 
-No candidate result creates a reconciliation link. The candidate service has no dependency on the
-mutating reconciliation repository and performs only SELECT operations. It does not change events,
-ratings, external IDs, fingerprints/evidence, metadata snapshots, local bindings, or confirmed
-links.
+Reconciliation is optional. Unmatched imported identities remain legitimate historical rows and
+continue contributing to global Statistics; a user does not need to review an entire provider
+archive before it becomes useful. Candidate discovery never creates a link, and every suggestion
+still requires explicit confirmation.
 
-- No metadata-derived automatic linking.
-- No canonical Statistics aggregation yet.
-- No reconciliation UI yet.
-- No Smart Playlists work yet.
+Statistics canonicalizes identity before grouping, ranking, and applying Top-N limits. Top Tracks,
+Top Artists, Top Albums, custom historical ranges, and provider-neutral per-playable-track metrics
+therefore aggregate all confirmed historical aliases under their local target without multiplying
+events. Link, unlink, and explicit relink change grouping only: overview totals, listening time,
+attempts, completions, trends, timestamps, and source provenance remain factual and unchanged.
+Recently Played and Most Played use the same canonical history but only return a real currently
+resolvable local song. They do not synthesize fake playable songs for imported-only or unavailable
+targets.
+
+Stable Spotify identity and URI-less history intentionally behave differently:
+
+- A stable Spotify external ID remains owned by its historical identity. Re-importing the same
+  export uses unchanged fingerprint v1 evidence and duplicate ordinals, so it inserts no events.
+  A later export reuses that same historical identity; genuinely new events automatically flow
+  through its existing reconciliation. The identity needs to be reconciled only once.
+- URI-less occurrences may create separate historical fragments. Existing linked fragments remain
+  independent sources that can share one canonical target. A future fragment is not auto-linked by
+  metadata and may require its own explicit reconciliation.
+
+Backup 10 preserves identities, local bindings (including `missingSince`), native and imported
+events, source profiles, external IDs, fingerprint evidence, duplicate ordinals, ratings, and
+reconciliation links. Validation occurs before atomic replacement. Backup 9 restores without
+inventing links and can be reconciled normally afterward.
+
+A confirmed link survives local file disappearance, folder exclusion, or temporary storage
+unavailability. Canonical Statistics remain grouped, while playable projections omit the missing
+target. When the same durable local song is resolved again, its binding reactivates and playable
+projections return without relinking. Cleanup, import cancellation/failure, and stale-pending-batch
+recovery protect both sides of every persisted reconciliation.
+
+The canonical per-playable-track metrics API is the provider-neutral bridge intended for a future
+Smart Playlist milestone; v1 does not implement Smart Playlist rules or UI.
+
+## Intentional v1 limitations
+
+- Future URI-less occurrences can create new fragments that require additional confirmation.
+- Translation, transliteration, romanization, and localized-title equivalence are not inferred.
+- Featured-artist and unusual metadata forms may not produce a suggestion.
+- Strong suggestions require individual confirmation; there is no Match All, auto-link, or batch
+  approval workflow.
+- Candidate discovery uses deterministic normalization and current local-library metadata, not a
+  Spotify API, network lookup, or external catalog.
+- Temporarily unavailable local targets remain linked but non-playable until normal library
+  resolution succeeds.
+- Last.fm import/reconciliation and Smart Playlists remain deferred.
