@@ -1,5 +1,8 @@
 # Listening history import foundation (Room 11 / backup 9)
 
+Imported-history reconciliation now extends this completed import foundation with Room 12 and
+Backup 10. See [Imported history reconciliation persistence foundation](imported-history-reconciliation-foundation.md).
+
 This document defines the source-neutral persistence contract introduced in Listening History
 Import v1, Session 1. It deliberately does not define a file format, Spotify JSON fields, a picker,
 preview UI, background worker, reconciliation UI, or a service-specific qualification rule.

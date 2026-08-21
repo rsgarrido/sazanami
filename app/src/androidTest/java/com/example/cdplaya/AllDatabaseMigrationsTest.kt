@@ -19,7 +19,7 @@ class AllDatabaseMigrationsTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val migrations = allMigrations()
 
-        for (startVersion in 1..10) {
+        for (startVersion in 1..11) {
             val databaseName = "all-migrations-$startVersion-${System.nanoTime()}.db"
             val configuration = SupportSQLiteOpenHelper.Configuration.builder(context)
                 .name(databaseName)
@@ -67,6 +67,7 @@ class AllDatabaseMigrationsTest {
         DatabaseProvider.MIGRATION_7_8,
         DatabaseProvider.MIGRATION_8_9,
         DatabaseProvider.MIGRATION_9_10,
-        DatabaseProvider.MIGRATION_10_11
+        DatabaseProvider.MIGRATION_10_11,
+        DatabaseProvider.MIGRATION_11_12
     )
 }

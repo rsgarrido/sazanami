@@ -14,6 +14,7 @@ import androidx.room.TypeConverters
         CachedSongEntity::class,
         ListeningTrackIdentityEntity::class,
         LocalTrackBindingEntity::class,
+        ListeningIdentityReconciliationEntity::class,
         ListeningEventEntity::class,
         LegacyListeningBaselineEntity::class,
         SongRatingEntity::class,
@@ -23,7 +24,7 @@ import androidx.room.TypeConverters
         ImportedListeningEventEvidenceEntity::class,
         ListeningImportBatchEventEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = true
 )
 @TypeConverters(ListeningHistoryTypeConverters::class)
@@ -34,6 +35,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun cachedSongDao(): CachedSongDao
     abstract fun listeningTrackIdentityDao(): ListeningTrackIdentityDao
     abstract fun localTrackBindingDao(): LocalTrackBindingDao
+    abstract fun listeningIdentityReconciliationDao(): ListeningIdentityReconciliationDao
     abstract fun listeningEventDao(): ListeningEventDao
     abstract fun listeningStatsDao(): ListeningStatsDao
     abstract fun legacyListeningBaselineDao(): LegacyListeningBaselineDao

@@ -46,7 +46,10 @@ class ListeningImportFoundationMigrationTest {
         FrameworkSQLiteOpenHelperFactory().create(configuration).use { it.writableDatabase }
 
         val database = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(DatabaseProvider.MIGRATION_10_11).build()
+            .addMigrations(
+                DatabaseProvider.MIGRATION_10_11,
+                DatabaseProvider.MIGRATION_11_12
+            ).build()
         try {
             val sqlite = database.openHelper.writableDatabase
             assertEquals(2L, sqlite.longQuery("SELECT COUNT(*) FROM listening_events"))

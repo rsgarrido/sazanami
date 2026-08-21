@@ -86,7 +86,11 @@ class SongRatingMigrationTest {
         FrameworkSQLiteOpenHelperFactory().create(configuration).use { it.writableDatabase }
 
         val database = Room.databaseBuilder(context, AppDatabase::class.java, databaseName)
-            .addMigrations(DatabaseProvider.MIGRATION_9_10, DatabaseProvider.MIGRATION_10_11)
+            .addMigrations(
+                DatabaseProvider.MIGRATION_9_10,
+                DatabaseProvider.MIGRATION_10_11,
+                DatabaseProvider.MIGRATION_11_12
+            )
             .build()
         try {
             val sqlite = database.openHelper.writableDatabase

@@ -12,7 +12,7 @@ class AppBackupJsonTest {
     fun encodeBackup_includesCurrentSchemaVersion() {
         val encoded = AppBackupJson.encodeBackup(emptyBackup())
 
-        assertTrue(encoded.contains("\"schemaVersion\":9"))
+        assertTrue(encoded.contains("\"schemaVersion\":10"))
     }
 
     @Test
@@ -80,7 +80,7 @@ class AppBackupJsonTest {
             """.trimIndent()
         )
 
-        assertEquals(9, decoded.schemaVersion)
+        assertEquals(10, decoded.schemaVersion)
         assertEquals("slide", decoded.preferences.modernArtworkTransitionStyle)
         assertEquals("classic_bar", decoded.preferences.modernSeekbarStyle)
         assertEquals(emptyMap<String, BackupPlayerThemeTokenOverrides>(), decoded.preferences.playerThemeTokenOverrides)
@@ -159,7 +159,7 @@ class AppBackupJsonTest {
             """.trimIndent()
         )
 
-        assertEquals(9, decoded.schemaVersion)
+        assertEquals(10, decoded.schemaVersion)
         assertEquals("old-key", decoded.favorites.single().reference?.legacyStableKey)
     }
 
@@ -167,11 +167,11 @@ class AppBackupJsonTest {
     fun decodeBackup_rejectsUnsupportedSchemaVersion() {
         val exception = expectIllegalArgumentException {
             AppBackupJson.decodeBackup(
-                AppBackupJson.encodeBackup(emptyBackup().copy(schemaVersion = 10))
+                AppBackupJson.encodeBackup(emptyBackup().copy(schemaVersion = 11))
             )
         }
 
-        assertTrue(exception.message.orEmpty().contains("Unsupported CDPlaya backup schema version 10"))
+        assertTrue(exception.message.orEmpty().contains("Unsupported CDPlaya backup schema version 11"))
     }
 
     @Test
@@ -188,6 +188,43 @@ class AppBackupJsonTest {
         val backup = emptyBackup()
 
         assertEquals(backup, AppBackupJson.decodeBackup(AppBackupJson.encodeBackup(backup)))
+    }
+
+    @Test
+    fun backup9MigratesToBackup10WithFormat2AndNoInferredReconciliations() {
+        val backup9 = emptyBackup().copy(
+            schemaVersion = 9,
+            canonicalListeningHistory = BackupListeningHistoryV2(formatVersion = 1)
+        )
+
+        val decoded = AppBackupJson.decodeBackup(AppBackupJson.encodeBackup(backup9))
+
+        assertEquals(10, decoded.schemaVersion)
+        assertEquals(2, decoded.canonicalListeningHistory?.formatVersion)
+        assertTrue(decoded.canonicalListeningHistory?.reconciliations.orEmpty().isEmpty())
+    }
+
+    @Test
+    fun backup10SerializesReconciliationThroughBackupIdentityIdsOnly() {
+        val encoded = AppBackupJson.encodeBackup(
+            emptyBackup().copy(
+                canonicalListeningHistory = BackupListeningHistoryV2(
+                    reconciliations = listOf(
+                        BackupListeningIdentityReconciliation(
+                            sourceIdentityBackupId = 7L,
+                            targetIdentityBackupId = 9L,
+                            reconciledAt = 123L
+                        )
+                    )
+                )
+            )
+        )
+
+        assertTrue(encoded.contains("\"sourceIdentityBackupId\":7"))
+        assertTrue(encoded.contains("\"targetIdentityBackupId\":9"))
+        assertTrue(encoded.contains("\"reconciledAt\":123"))
+        assertFalse(encoded.contains("\"sourceIdentityId\""))
+        assertFalse(encoded.contains("\"targetIdentityId\""))
     }
 
     @Test
@@ -254,7 +291,7 @@ class AppBackupJsonTest {
             """.trimIndent()
         )
 
-        assertEquals(9, decoded.schemaVersion)
+        assertEquals(10, decoded.schemaVersion)
         assertFalse(decoded.preferences.equalizer.limiterEnabled)
         assertEquals(
             -1.0,

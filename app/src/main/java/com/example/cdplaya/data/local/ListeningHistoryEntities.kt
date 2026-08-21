@@ -70,6 +70,31 @@ data class LocalTrackBindingEntity(
 )
 
 @Entity(
+    tableName = "listening_identity_reconciliations",
+    foreignKeys = [
+        ForeignKey(
+            entity = ListeningTrackIdentityEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["sourceIdentityId"],
+            onDelete = ForeignKey.RESTRICT
+        ),
+        ForeignKey(
+            entity = ListeningTrackIdentityEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["targetIdentityId"],
+            onDelete = ForeignKey.RESTRICT
+        )
+    ],
+    indices = [Index(value = ["targetIdentityId"])]
+)
+data class ListeningIdentityReconciliationEntity(
+    @PrimaryKey
+    val sourceIdentityId: Long,
+    val targetIdentityId: Long,
+    val reconciledAt: Long
+)
+
+@Entity(
     tableName = "listening_events",
     foreignKeys = [
         ForeignKey(

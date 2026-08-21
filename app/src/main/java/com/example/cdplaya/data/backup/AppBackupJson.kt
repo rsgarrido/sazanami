@@ -19,7 +19,7 @@ import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.encodeToStream
 
 object AppBackupJson {
-    const val CURRENT_SCHEMA_VERSION = 9
+    const val CURRENT_SCHEMA_VERSION = 10
     private const val OLDEST_SUPPORTED_SCHEMA_VERSION = 1
 
     private val json = Json {
@@ -87,9 +87,12 @@ object AppBackupJson {
         if (migrated.schemaVersion == 8) {
             migrated = migrateV8ToV9(migrated)
         }
+        if (migrated.schemaVersion == 9) {
+            migrated = migrateV9ToV10(migrated)
+        }
         validateEqualizerBackup(migrated.preferences.equalizer)
         val history = requireNotNull(migrated.canonicalListeningHistory) {
-            "CDPlaya backup schema 9 requires canonical listening history."
+            "CDPlaya backup schema 10 requires canonical listening history."
         }
         ListeningHistoryBackupValidator.validate(history)
         SongRatingBackupValidator.validate(migrated.songRatings, history)
@@ -282,6 +285,19 @@ object AppBackupJson {
         return backup.copy(schemaVersion = 9, canonicalListeningHistory = history.copy(
             importSources = sources, importBatches = batches, batchEventObservations = links
         ).let { it.copy(summary = it.recordsSummary()) })
+    }
+
+    private fun migrateV9ToV10(backup: AppBackup): AppBackup {
+        val history = requireNotNull(backup.canonicalListeningHistory) {
+            "CDPlaya backup schema 9 requires canonical listening history."
+        }
+        return backup.copy(
+            schemaVersion = 10,
+            canonicalListeningHistory = history.copy(
+                formatVersion = BackupListeningHistoryV2.CURRENT_FORMAT_VERSION,
+                reconciliations = emptyList()
+            )
+        )
     }
 
     private fun validateEqualizerBackup(

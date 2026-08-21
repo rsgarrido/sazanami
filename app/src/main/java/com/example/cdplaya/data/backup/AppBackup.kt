@@ -146,10 +146,11 @@ data class BackupListeningHistoryV2(
     val externalTrackIds: List<BackupListeningTrackExternalId> = emptyList(),
     val importedEventEvidence: List<BackupImportedListeningEventEvidence> = emptyList(),
     val batchEventObservations: List<BackupListeningImportBatchEvent> = emptyList(),
+    val reconciliations: List<BackupListeningIdentityReconciliation> = emptyList(),
     val summary: BackupListeningHistorySummary = BackupListeningHistorySummary()
 ) {
     companion object {
-        const val CURRENT_FORMAT_VERSION = 1
+        const val CURRENT_FORMAT_VERSION = 2
     }
 }
 
@@ -260,6 +261,13 @@ data class BackupListeningEvent(
 )
 
 @Serializable data class BackupListeningImportBatchEvent(val batchBackupId: Long, val eventUuid: String)
+
+@Serializable
+data class BackupListeningIdentityReconciliation(
+    val sourceIdentityBackupId: Long,
+    val targetIdentityBackupId: Long,
+    val reconciledAt: Long
+)
 
 @Serializable
 data class BackupListeningHistorySummary(

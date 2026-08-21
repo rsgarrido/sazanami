@@ -46,7 +46,7 @@ class ListeningHistoryBackupValidatorTest {
         )
         val history = decoded.canonicalListeningHistory!!
 
-        assertEquals(9, decoded.schemaVersion)
+        assertEquals(10, decoded.schemaVersion)
         assertEquals(2, history.identities.size)
         assertEquals(2, history.bindings.size)
         assertEquals(listOf(3, 4), history.baselines.map { it.historicalPlayCount })
@@ -110,7 +110,7 @@ class ListeningHistoryBackupValidatorTest {
         )
         val migrated = requireNotNull(decoded.canonicalListeningHistory)
 
-        assertEquals(9, decoded.schemaVersion)
+        assertEquals(10, decoded.schemaVersion)
         assertEquals(nativeEvent, migrated.events.single())
         assertEquals(4, decoded.songRatings.entries.single().rating)
         assertEquals(123L, decoded.songRatings.entries.single().ratedAt)
@@ -126,7 +126,7 @@ class ListeningHistoryBackupValidatorTest {
     fun validator_rejectsEveryRequiredStructuralFailure() {
         val valid = validHistory()
         val mutations = listOf<Pair<String, (BackupListeningHistoryV2) -> BackupListeningHistoryV2>>(
-            "format" to { it.copy(formatVersion = 2) },
+            "format" to { it.copy(formatVersion = 1) },
             "identity" to { it.copy(identities = it.identities + it.identities.first()) },
             "binding id" to { it.copy(bindings = it.bindings + it.bindings.first()) },
             "binding identity" to { it.replaceBinding(0) { b -> b.copy(trackIdentityBackupId = 99) } },
