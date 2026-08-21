@@ -12,6 +12,11 @@ import com.example.cdplaya.controller.SleepTimerController
 import com.example.cdplaya.controller.DefaultSpotifyListeningHistoryImportOperations
 import com.example.cdplaya.controller.ListeningHistoryImportFile
 import com.example.cdplaya.controller.SpotifyListeningHistoryImportController
+import com.example.cdplaya.controller.DefaultListeningHistoryReconciliationOperations
+import com.example.cdplaya.controller.ListeningHistoryReconciliationController
+import com.example.cdplaya.controller.LinkedHistoricalReconciliation
+import com.example.cdplaya.controller.ReconciliationReviewTab
+import com.example.cdplaya.data.LocalReconciliationTarget
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.EditableSongTags
 import com.example.cdplaya.data.Playlist
@@ -115,6 +120,33 @@ class MusicViewModel(
         scope = viewModelScope
     )
     val spotifyImportUiState = spotifyImportController.state
+
+    val listeningHistoryReconciliationUiState
+        get() = listeningHistoryReconciliationController.state
+
+    fun enterListeningHistoryReconciliation() = listeningHistoryReconciliationController.enter()
+    fun retryListeningHistoryReconciliation() = listeningHistoryReconciliationController.retry()
+    fun selectReconciliationTab(tab: ReconciliationReviewTab) =
+        listeningHistoryReconciliationController.selectTab(tab)
+    fun toggleReconciliationItem(sourceId: Long) =
+        listeningHistoryReconciliationController.toggleExpanded(sourceId)
+    fun toggleLinkedReconciliationGroup(targetIdentityId: Long) =
+        listeningHistoryReconciliationController.toggleLinkedGroup(targetIdentityId)
+    fun skipReconciliationItem(sourceId: Long) =
+        listeningHistoryReconciliationController.skip(sourceId)
+    fun chooseReconciliationTarget(sourceIds: List<Long>, target: LocalReconciliationTarget) =
+        listeningHistoryReconciliationController.chooseTarget(sourceIds, target)
+    fun openReconciliationSearch(sourceIds: List<Long>) =
+        listeningHistoryReconciliationController.openSearch(sourceIds)
+    fun updateReconciliationSearch(query: String) =
+        listeningHistoryReconciliationController.updateSearchQuery(query)
+    fun closeReconciliationSearch() = listeningHistoryReconciliationController.closeSearch()
+    fun requestReconciliationUnlink(item: LinkedHistoricalReconciliation) =
+        listeningHistoryReconciliationController.requestUnlink(item)
+    fun cancelReconciliationConfirmation() =
+        listeningHistoryReconciliationController.cancelConfirmation()
+    fun confirmReconciliationChange() = listeningHistoryReconciliationController.confirm()
+    fun clearReconciliationMessage() = listeningHistoryReconciliationController.clearMessage()
 
     fun enterSpotifyImport() = spotifyImportController.enterWorkflow()
     fun selectSpotifyImportFiles(files: List<ListeningHistoryImportFile>) =
@@ -342,6 +374,15 @@ class MusicViewModel(
             _mediaAccessFailures.tryEmit(Unit)
         }
     )
+
+    private val listeningHistoryReconciliationController =
+        ListeningHistoryReconciliationController(
+            operations = DefaultListeningHistoryReconciliationOperations(
+                database = appDatabase,
+                currentSongs = { libraryController.uiState.value.songs }
+            ),
+            scope = viewModelScope
+        )
 
     val libraryUiState = libraryController.uiState
     val playbackUiState = playbackController.uiState

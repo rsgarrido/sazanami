@@ -115,6 +115,15 @@ class ListeningIdentityReconciliationCandidateService(
         }
         return matcher.discover(sources.map { it.toDomain() }, targets.map { it.toDomain() })
     }
+
+    suspend fun discoverCandidates(
+        currentLocalTargets: List<LocalReconciliationTarget>
+    ): ReconciliationCandidateDiscovery {
+        val sources = database.withTransaction {
+            database.listeningIdentityReconciliationCandidateDao().getReviewableHistoricalSources()
+        }
+        return matcher.discover(sources.map { it.toDomain() }, currentLocalTargets)
+    }
 }
 
 class ReconciliationCandidateMatcher(
@@ -163,7 +172,7 @@ class ReconciliationCandidateMatcher(
         }
         if (stage.targets.isEmpty()) return noCandidate(source, stage.hasMore)
 
-        val sorted = stage.targets.distinctBy(LocalReconciliationTarget::identityId)
+        val sorted = stage.targets.distinctBy(LocalReconciliationTarget::referenceKey)
             .sortedWith(targetComparator)
         val hasMore = stage.hasMore || sorted.size > maxCandidates
         val bounded = sorted.take(maxCandidates)
@@ -247,7 +256,7 @@ class ReconciliationCandidateMatcher(
     }
 
     private inner class CandidateIndex(targets: List<LocalReconciliationTarget>) {
-        private val orderedTargets = targets.distinctBy(LocalReconciliationTarget::identityId)
+        private val orderedTargets = targets.distinctBy(LocalReconciliationTarget::referenceKey)
             .sortedWith(targetComparator)
         private val conservativeTriple = orderedTargets.groupBy { it.triple(::candidateConservativeNormalize) }
         private val conservativePair = orderedTargets.groupBy { it.pair(::candidateConservativeNormalize) }
@@ -440,7 +449,7 @@ private val targetComparator = compareBy<LocalReconciliationTarget>(
     { candidateConservativeNormalize(it.title) },
     { candidateConservativeNormalize(it.artist) },
     { candidateConservativeNormalize(it.album) },
-    LocalReconciliationTarget::identityId
+    LocalReconciliationTarget::referenceKey
 )
 
 private val reviewQueueComparator = compareBy<HistoricalReconciliationItem> {
@@ -462,7 +471,7 @@ private val reviewQueueComparator = compareBy<HistoricalReconciliationItem> {
     .thenBy { candidateConservativeNormalize(it.source.title) }
     .thenBy { it.source.identityId }
 
-private fun HistoricalReconciliationSourceRow.toDomain() = HistoricalReconciliationSource(
+internal fun HistoricalReconciliationSourceRow.toDomain() = HistoricalReconciliationSource(
     identityId = identityId,
     title = titleSnapshot,
     artist = artistSnapshot,
@@ -483,7 +492,7 @@ private fun HistoricalReconciliationSourceRow.toDomain() = HistoricalReconciliat
     )
 )
 
-private fun LocalReconciliationTargetRow.toDomain(): LocalReconciliationTarget {
+internal fun LocalReconciliationTargetRow.toDomain(): LocalReconciliationTarget {
     val extension = displayName?.substringAfterLast('.', missingDelimiterValue = "")
         ?.trim()?.lowercase(Locale.ROOT)?.takeIf(String::isNotEmpty)
     return LocalReconciliationTarget(

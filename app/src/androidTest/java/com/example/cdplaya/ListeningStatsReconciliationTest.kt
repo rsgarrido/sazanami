@@ -258,6 +258,7 @@ class ListeningStatsReconciliationTest {
         events(target, "target", 10, 1_000L, ListeningSource.CDPLAYA)
         events(sourceA, "a", 20, 2_000L, ListeningSource.SPOTIFY_IMPORT)
         events(sourceB, "b", 30, 3_000L, ListeningSource.SPOTIFY_IMPORT)
+        val globalBefore = stats.getAllTimeOverview()
 
         val linkedEmission = async(start = CoroutineStart.UNDISPATCHED) {
             withTimeout(5_000L) {
@@ -270,6 +271,11 @@ class ListeningStatsReconciliationTest {
         assertTrue(reconciliation.link(sourceA, target) is ListeningIdentityReconciliationLinkResult.Linked)
         assertTrue(reconciliation.link(sourceB, target) is ListeningIdentityReconciliationLinkResult.Linked)
         assertEquals(60L, linkedEmission.await().mostPlayed.first().track.playCounts.totalPlayCount)
+        val linkedTopTracks = stats.getTopTracksByQualifiedPlays(10)
+        assertEquals(1, linkedTopTracks.size)
+        assertEquals(target, linkedTopTracks.single().trackIdentityId)
+        assertEquals(60L, linkedTopTracks.single().playCounts.totalPlayCount)
+        assertEquals(globalBefore, stats.getAllTimeOverview())
 
         val partialEmission = async(start = CoroutineStart.UNDISPATCHED) {
             withTimeout(5_000L) {
@@ -283,12 +289,14 @@ class ListeningStatsReconciliationTest {
         val partiallyUnlinked = stats.getTopTracksByQualifiedPlays(10)
         assertEquals(20L, partiallyUnlinked.single { it.trackIdentityId == sourceA }.playCounts.totalPlayCount)
         assertEquals(40L, partiallyUnlinked.single { it.trackIdentityId == target }.playCounts.totalPlayCount)
+        assertEquals(globalBefore, stats.getAllTimeOverview())
 
         assertTrue(reconciliation.unlink(sourceB))
         val split = stats.getTopTracksByQualifiedPlays(10)
         assertEquals(10L, split.single { it.trackIdentityId == target }.playCounts.totalPlayCount)
         assertEquals(20L, split.single { it.trackIdentityId == sourceA }.playCounts.totalPlayCount)
         assertEquals(30L, split.single { it.trackIdentityId == sourceB }.playCounts.totalPlayCount)
+        assertEquals(globalBefore, stats.getAllTimeOverview())
     }
 
     @Test

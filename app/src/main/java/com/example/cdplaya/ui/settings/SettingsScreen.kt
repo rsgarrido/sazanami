@@ -63,6 +63,7 @@ fun SettingsScreen(
     onExportBackupClick: () -> Unit,
     onRestoreBackupClick: () -> Unit,
     onListeningHistoryImportClick: () -> Unit = {},
+    onListeningHistoryReconciliationClick: () -> Unit = {},
     onDiagnosticsClick: () -> Unit,
     equalizerSummary: String,
     onEqualizerClick: () -> Unit,
@@ -310,6 +311,14 @@ fun SettingsScreen(
                 onClick = onListeningHistoryImportClick,
                 navigationContentDescription = "Open listening history import"
             )
+            SettingsDivider()
+            SettingsRow(
+                title = "Match imported tracks",
+                summary = "Connect imported listening history to songs in your library.",
+                icon = AppShellIcons.Search,
+                onClick = onListeningHistoryReconciliationClick,
+                navigationContentDescription = "Open imported track matching"
+            )
         }
 
         SettingsSectionSpacer()
@@ -321,7 +330,7 @@ fun SettingsScreen(
         ) {
             SettingsRow(
                 title = "Export Backup",
-                summary = "Save favorites, playlists, listening history, ratings, and preferences as JSON.",
+                summary = "Save favorites, playlists, listening history and track links, ratings, and preferences as JSON.",
                 icon = AppShellIcons.Export,
                 onClick = onExportBackupClick,
                 navigationContentDescription = "Export backup"

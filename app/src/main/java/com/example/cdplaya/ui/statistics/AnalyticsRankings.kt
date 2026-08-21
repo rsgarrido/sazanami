@@ -100,13 +100,18 @@ internal fun TrackRankingRow(
     RankingRow(
         rank = rank,
         primary = stats.title,
-        secondary = stringResource(R.string.statistics_rankings_track_metadata, stats.artist, stats.album),
+        secondary = formatStatisticsTrackMetadata(stats.artist, stats.album),
         playCount = stats.playCounts.totalPlayCount,
         recordedMs = stats.confirmedDetailedListeningMs,
         rating = rating,
         modifier = modifier
     )
 }
+
+internal fun formatStatisticsTrackMetadata(artist: String, album: String): String =
+    listOf(artist.trim(), album.trim())
+        .filter(String::isNotBlank)
+        .joinToString(" · ")
 
 @Composable
 internal fun ArtistRankingRow(

@@ -18,4 +18,21 @@ class ListeningHistoryImportSettingsNavigationTest {
             )
         )
     }
+
+    @Test
+    fun matchingUsesDedicatedDestinationWithoutReplacingImportOrSettings() {
+        assertNotEquals(
+            MusicPrimaryDestination.SETTINGS,
+            MusicPrimaryDestination.LISTENING_HISTORY_RECONCILIATION
+        )
+        assertNotEquals(
+            MusicPrimaryDestination.LISTENING_HISTORY_IMPORT,
+            MusicPrimaryDestination.LISTENING_HISTORY_RECONCILIATION
+        )
+        assertTrue(
+            MusicPrimaryDestination.entries.contains(
+                MusicPrimaryDestination.LISTENING_HISTORY_RECONCILIATION
+            )
+        )
+    }
 }

@@ -88,12 +88,39 @@ class ListeningNativeTrackResolver(
     private val database: AppDatabase,
     private val nowMillis: () -> Long = System::currentTimeMillis
 ) {
-    suspend fun resolveOrCreate(referenceKey: String, reference: SongReference): NativeListeningTrack {
+    suspend fun resolveOrCreate(
+        referenceKey: String,
+        reference: SongReference,
+        refreshExistingBinding: Boolean = false
+    ): NativeListeningTrack {
         require(referenceKey.isNotBlank()) { "Reference key cannot be blank" }
         return database.withTransaction {
             val bindingDao = database.localTrackBindingDao()
             val existing = bindingDao.getByReferenceKey(referenceKey)
             if (existing != null) {
+                if (!refreshExistingBinding) {
+                    return@withTransaction NativeListeningTrack(existing.trackIdentityId, existing.id)
+                }
+                val safeReference = reference.normalizedForPersistence()
+                val now = nowMillis()
+                bindingDao.update(
+                    existing.copy(
+                        mediaStoreId = safeReference.mediaStoreId,
+                        volumeName = safeReference.volumeName.takeIf { it.isNotBlank() },
+                        contentUri = safeReference.contentUri.takeIf { it.isNotBlank() },
+                        relativePath = safeReference.relativePath.takeIf { it.isNotBlank() },
+                        displayName = safeReference.displayName.takeIf { it.isNotBlank() },
+                        fileSizeBytes = safeReference.fileSizeBytes.takeIf { it > 0L },
+                        dateModifiedEpochSeconds = safeReference.dateModifiedEpochSeconds
+                            .takeIf { it > 0L },
+                        durationMsSnapshot = safeReference.duration.takeIf { it > 0L },
+                        legacyStableKey = safeReference.legacyStableKey.takeIf { it.isNotBlank() },
+                        portableKey = safeReference.portableKey.takeIf { it.isNotBlank() },
+                        portableKeyVersion = safeReference.portableKeyVersion,
+                        lastSeenAt = now,
+                        missingSince = null
+                    )
+                )
                 return@withTransaction NativeListeningTrack(existing.trackIdentityId, existing.id)
             }
 

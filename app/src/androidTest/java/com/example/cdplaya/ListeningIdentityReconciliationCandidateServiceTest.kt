@@ -1,5 +1,6 @@
 package com.example.cdplaya
 
+import android.net.Uri
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -8,6 +9,9 @@ import com.example.cdplaya.data.ListeningIdentityReconciliationLinkResult
 import com.example.cdplaya.data.ListeningIdentityReconciliationRepository
 import com.example.cdplaya.data.ReconciliationCandidateCategory
 import com.example.cdplaya.data.ReconciliationCandidateDisposition
+import com.example.cdplaya.data.Song
+import com.example.cdplaya.data.membershipKey
+import com.example.cdplaya.controller.DefaultListeningHistoryReconciliationOperations
 import com.example.cdplaya.data.local.AppDatabase
 import com.example.cdplaya.data.local.ListeningCompletionClassification
 import com.example.cdplaya.data.local.ListeningEventEntity
@@ -113,6 +117,87 @@ class ListeningIdentityReconciliationCandidateServiceTest {
             assertEquals("Active.flac", row.displayName)
             assertEquals("Music/Fictional/", row.relativePath)
             assertEquals(180_000L, row.durationMs)
+        }
+
+    @Test
+    fun reconciliationOperationsUseCurrentSongMetadataAndIncludeEntirePlayableCatalogReadOnly() =
+        runBlocking {
+            val source = identity("Six Feet Deep", "The Warning", "Keep Me Fed")
+            importedEvent(source, 1)
+            val current = song(
+                id = 101,
+                title = "Six Feet Deep",
+                artist = "The Warning",
+                album = "Keep Me Fed",
+                displayName = "01 Six Feet Deep.flac"
+            )
+            val staleIdentity = identity("01 Six Feet Deep", "<unknown>", "Keep Me Fed")
+            database.localTrackBindingDao().insert(
+                LocalTrackBindingEntity(
+                    trackIdentityId = staleIdentity,
+                    referenceKey = current.membershipKey(),
+                    mediaStoreId = current.id,
+                    volumeName = current.volumeName,
+                    contentUri = current.uri.toString(),
+                    relativePath = current.relativePath,
+                    displayName = current.displayName,
+                    absolutePath = null,
+                    fileSizeBytes = current.fileSizeBytes,
+                    dateModifiedEpochSeconds = current.dateModifiedEpochSeconds,
+                    durationMsSnapshot = current.duration,
+                    legacyStableKey = null,
+                    portableKey = null,
+                    portableKeyVersion = 1,
+                    firstSeenAt = 1,
+                    lastSeenAt = 1,
+                    missingSince = null
+                )
+            )
+            val neverPlayed = song(
+                id = 202,
+                title = "Escapism",
+                artist = "The Warning",
+                album = "Keep Me Fed",
+                displayName = "02 Escapism.flac"
+            )
+            val unavailableIdentity = identity("Unavailable Snapshot", "Old Artist", "Old Album")
+            binding(unavailableIdentity, missingSince = 99L, suffix = "unavailable")
+            val identitiesBefore = database.listeningTrackIdentityDao().getAll()
+            val bindingsBefore = database.localTrackBindingDao().getAllForBackup()
+
+            val operations = DefaultListeningHistoryReconciliationOperations(
+                database = database,
+                currentSongs = { listOf(current, neverPlayed) }
+            )
+            val snapshot = operations.load()
+
+            assertEquals(2, snapshot.localTargets.size)
+            val authoritative = snapshot.localTargets.single {
+                it.referenceKey == current.membershipKey()
+            }
+            assertEquals(staleIdentity, authoritative.identityId)
+            assertEquals("Six Feet Deep", authoritative.title)
+            assertEquals("The Warning", authoritative.artist)
+            assertEquals("Keep Me Fed", authoritative.album)
+            assertEquals("01 Six Feet Deep.flac", authoritative.displayName)
+            assertTrue(snapshot.localTargets.any {
+                it.referenceKey == neverPlayed.membershipKey() && it.identityId < 0L
+            })
+            assertEquals("Six Feet Deep", snapshot.reviewItems.single()
+                .candidates.single().target.title)
+            assertEquals(identitiesBefore, database.listeningTrackIdentityDao().getAll())
+            assertEquals(bindingsBefore, database.localTrackBindingDao().getAllForBackup())
+
+            val unboundTarget = snapshot.localTargets.single {
+                it.referenceKey == neverPlayed.membershipKey()
+            }
+            assertTrue(
+                operations.linkMany(listOf(source), unboundTarget) is
+                    ListeningIdentityReconciliationLinkResult.Linked
+            )
+            assertTrue(
+                database.localTrackBindingDao().getByReferenceKey(neverPlayed.membershipKey()) != null
+            )
         }
 
     @Test
@@ -225,6 +310,31 @@ class ListeningIdentityReconciliationCandidateServiceTest {
                 updatedAt = 1
             )
         )
+
+    private fun song(
+        id: Long,
+        title: String,
+        artist: String,
+        album: String,
+        displayName: String
+    ) = Song(
+        id = id,
+        title = title,
+        artist = artist,
+        album = album,
+        trackNumber = 1,
+        duration = 180_000,
+        uri = Uri.parse("content://media/external/audio/media/$id"),
+        filePath = "/storage/emulated/0/Music/The Warning/$displayName",
+        folderPath = "/storage/emulated/0/Music/The Warning",
+        albumArtUri = null,
+        albumArtist = artist,
+        volumeName = "external",
+        displayName = displayName,
+        relativePath = "Music/The Warning/",
+        fileSizeBytes = 1_000,
+        dateModifiedEpochSeconds = 2
+    )
 
     private suspend fun local(title: String, artist: String, album: String): Long {
         val id = identity(title, artist, album)

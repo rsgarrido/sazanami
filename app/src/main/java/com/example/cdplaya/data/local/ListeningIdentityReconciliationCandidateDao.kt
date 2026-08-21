@@ -59,6 +59,36 @@ interface ListeningIdentityReconciliationCandidateDao {
                   SELECT 1 FROM local_track_bindings binding
                   WHERE binding.trackIdentityId = identity.id
               )
+        GROUP BY identity.id
+        ORDER BY identity.id
+        """
+    )
+    suspend fun getAllHistoricalSources(): List<HistoricalReconciliationSourceRow>
+
+    @Query(
+        """
+        SELECT identity.id AS identityId,
+               identity.titleSnapshot AS titleSnapshot,
+               identity.artistSnapshot AS artistSnapshot,
+               identity.albumSnapshot AS albumSnapshot,
+               identity.albumArtistSnapshot AS albumArtistSnapshot,
+               GROUP_CONCAT(DISTINCT event.source) AS providerStorageValues,
+               COUNT(event.id) AS importedEventCount,
+               SUM(CASE WHEN event.qualifiedAsPlay = 1 THEN 1 ELSE 0 END) AS qualifiedPlayCount,
+               COALESCE(SUM(event.listenedMs), 0) AS recordedListeningMs,
+               SUM(CASE WHEN event.completionClassification != 'none' THEN 1 ELSE 0 END) AS completedCount,
+               MIN(event.attributionAt) AS firstListenedAt,
+               MAX(event.attributionAt) AS lastListenedAt,
+               (SELECT COUNT(*) FROM listening_track_external_ids externalId
+                WHERE externalId.trackIdentityId = identity.id) AS externalIdCount
+        FROM listening_track_identities identity
+        JOIN listening_events event ON event.trackIdentityId = identity.id
+            AND event.source != 'cdplaya'
+            AND event.publicationState = 'import_published'
+        WHERE NOT EXISTS (
+                  SELECT 1 FROM local_track_bindings binding
+                  WHERE binding.trackIdentityId = identity.id
+              )
           AND NOT EXISTS (
                   SELECT 1 FROM listening_identity_reconciliations reconciliation
                   WHERE reconciliation.sourceIdentityId = identity.id
@@ -97,4 +127,27 @@ interface ListeningIdentityReconciliationCandidateDao {
         """
     )
     suspend fun getEligibleLocalTargets(): List<LocalReconciliationTargetRow>
+
+    @Query(
+        """
+        SELECT identity.id AS identityId,
+               binding.id AS localBindingId,
+               binding.referenceKey AS referenceKey,
+               identity.titleSnapshot AS title,
+               identity.artistSnapshot AS artist,
+               identity.albumSnapshot AS album,
+               identity.albumArtistSnapshot AS albumArtist,
+               COALESCE(binding.durationMsSnapshot, identity.durationMsSnapshot) AS durationMs,
+               binding.displayName AS displayName,
+               binding.relativePath AS relativePath
+        FROM listening_track_identities identity
+        JOIN local_track_bindings binding ON binding.trackIdentityId = identity.id
+        WHERE binding.id = (
+                  SELECT MIN(anyBinding.id) FROM local_track_bindings anyBinding
+                  WHERE anyBinding.trackIdentityId = identity.id
+              )
+        ORDER BY identity.id
+        """
+    )
+    suspend fun getAllLocalTargets(): List<LocalReconciliationTargetRow>
 }

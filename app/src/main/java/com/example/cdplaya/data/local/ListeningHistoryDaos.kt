@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 
 @Dao
 interface ListeningTrackIdentityDao {
@@ -83,6 +84,9 @@ interface ListeningIdentityReconciliationDao {
 interface LocalTrackBindingDao {
     @Insert
     suspend fun insert(binding: LocalTrackBindingEntity): Long
+
+    @Update
+    suspend fun update(binding: LocalTrackBindingEntity)
 
     @Query("SELECT * FROM local_track_bindings WHERE id = :id")
     suspend fun getById(id: Long): LocalTrackBindingEntity?

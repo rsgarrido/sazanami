@@ -14,7 +14,7 @@ class BackupRestoreActionsTest {
         listOf(
             "Favorites",
             "Playlists",
-            "Listening history and ratings",
+            "Listening history, imported-track links, and ratings",
             "Library folder selection",
             "Player theme and ReplayGain setting",
             "Your music files will not be changed."
