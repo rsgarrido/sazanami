@@ -36,6 +36,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun listeningTrackIdentityDao(): ListeningTrackIdentityDao
     abstract fun localTrackBindingDao(): LocalTrackBindingDao
     abstract fun listeningIdentityReconciliationDao(): ListeningIdentityReconciliationDao
+    abstract fun listeningIdentityReconciliationCandidateDao(): ListeningIdentityReconciliationCandidateDao
     abstract fun listeningEventDao(): ListeningEventDao
     abstract fun listeningStatsDao(): ListeningStatsDao
     abstract fun legacyListeningBaselineDao(): LegacyListeningBaselineDao
