@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import com.example.cdplaya.R
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.membershipKey
+import com.example.cdplaya.player.PlaybackShuffleMode
 import com.example.cdplaya.ui.filterSongsByAlbumSearch
 import com.example.cdplaya.ui.filterSongsByArtistSearch
 import com.example.cdplaya.ui.filterSongsForSearch
@@ -229,7 +230,7 @@ fun ArtistsTabContent(
     onArtistSelected: (String) -> Unit,
     onAlbumSelected: (String) -> Unit,
     onBackFromArtist: () -> Unit,
-    onPlaySongsClick: (List<Song>, Boolean) -> Unit,
+    onPlaySongsClick: (List<Song>, PlaybackShuffleMode) -> Unit,
     onPlayNextClick: (Song) -> Unit,
     onSongClick: (Song, List<Song>) -> Unit,
     onAddToQueueClick: (Song) -> Unit,
@@ -261,10 +262,10 @@ fun ArtistsTabContent(
             )
         } else {
             val onArtistPlay: (String, List<Song>) -> Unit = { _, artistSongs ->
-                onPlaySongsClick(artistSongs, false)
+                onPlaySongsClick(artistSongs, PlaybackShuffleMode.OFF)
             }
             val onArtistShuffle: (String, List<Song>) -> Unit = { _, artistSongs ->
-                onPlaySongsClick(artistSongs, true)
+                onPlaySongsClick(artistSongs, PlaybackShuffleMode.SONGS)
             }
             val onArtistPlayNext: (String, List<Song>) -> Unit =
                 { artistName, artistSongs ->
@@ -326,16 +327,16 @@ fun ArtistsTabContent(
             onBackClick = onBackFromArtist,
             onAlbumClick = onAlbumSelected,
             onPlayAllClick = {
-                onPlaySongsClick(artistSongs, false)
+                onPlaySongsClick(artistSongs, PlaybackShuffleMode.OFF)
             },
             onPlayAlbumClick = { albumSongs ->
-                onPlaySongsClick(albumSongs, false)
+                onPlaySongsClick(albumSongs, PlaybackShuffleMode.OFF)
             },
             onShuffleAlbumClick = { albumSongs ->
-                onPlaySongsClick(albumSongs, true)
+                onPlaySongsClick(albumSongs, PlaybackShuffleMode.SONGS)
             },
             onShuffleSongsClick = {
-                onPlaySongsClick(artistSongs, true)
+                onPlaySongsClick(artistSongs, PlaybackShuffleMode.SONGS)
             },
             onShuffleAlbumsClick = {
                 onPlaySongsClick(
@@ -343,7 +344,7 @@ fun ArtistsTabContent(
                         artistSongs = artistSongs,
                         shuffleSongsWithinAlbums = false
                     ),
-                    false
+                    PlaybackShuffleMode.ALBUMS
                 )
             },
             onShuffleAlbumsAndSongsClick = {
@@ -352,7 +353,7 @@ fun ArtistsTabContent(
                         artistSongs = artistSongs,
                         shuffleSongsWithinAlbums = true
                     ),
-                    false
+                    PlaybackShuffleMode.ALBUMS_AND_SONGS
                 )
             },
             onPlayNextSongsClick = onPlayNextSongsClick,
@@ -376,7 +377,7 @@ fun AlbumsTabContent(
     recentlyAddedSongIds: Set<Long>,
     onAlbumSelected: (String) -> Unit,
     onBackFromAlbum: () -> Unit,
-    onPlaySongsClick: (List<Song>, Boolean) -> Unit,
+    onPlaySongsClick: (List<Song>, PlaybackShuffleMode) -> Unit,
     onPlayNextClick: (Song) -> Unit,
     onSongClick: (Song, List<Song>) -> Unit,
     onAddToQueueClick: (Song) -> Unit,
@@ -408,10 +409,10 @@ fun AlbumsTabContent(
             )
         } else {
             val onAlbumPlay: (String, List<Song>) -> Unit = { _, albumSongs ->
-                onPlaySongsClick(albumSongs, false)
+                onPlaySongsClick(albumSongs, PlaybackShuffleMode.OFF)
             }
             val onAlbumShuffle: (String, List<Song>) -> Unit = { _, albumSongs ->
-                onPlaySongsClick(albumSongs, true)
+                onPlaySongsClick(albumSongs, PlaybackShuffleMode.SONGS)
             }
             val onAlbumPlayNext: (String, List<Song>) -> Unit =
                 { albumTitle, albumSongs ->
@@ -489,10 +490,10 @@ fun AlbumsTabContent(
                 favoriteMembershipKeys = favoriteMembershipKeys,
                 onBackClick = onBackFromAlbum,
                 onPlayAllClick = {
-                    onPlaySongsClick(albumSongs, false)
+                    onPlaySongsClick(albumSongs, PlaybackShuffleMode.OFF)
                 },
                 onShuffleAllClick = {
-                    onPlaySongsClick(albumSongs, true)
+                    onPlaySongsClick(albumSongs, PlaybackShuffleMode.SONGS)
                 },
                 onSongClick = onSongClick,
                 onPlayNextClick = onPlayNextClick,

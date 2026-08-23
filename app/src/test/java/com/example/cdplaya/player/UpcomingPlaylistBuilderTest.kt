@@ -21,7 +21,7 @@ class UpcomingPlaylistBuilderTest {
             playbackSourceSongs = listOf(songA, songB, songC, songD),
             queuedSongsAfterCurrent = emptyList(),
             currentUpcomingSongs = listOf(songC, songB, songD),
-            isShuffleEnabled = true,
+            shuffleMode = PlaybackShuffleMode.SONGS,
             repeatMode = RepeatMode.ALL,
             preserveExistingShuffleOrder = true
         )
@@ -42,7 +42,7 @@ class UpcomingPlaylistBuilderTest {
             playbackSourceSongs = listOf(songA, songB, songC, songD),
             queuedSongsAfterCurrent = emptyList(),
             currentUpcomingSongs = listOf(songC, songB, songD),
-            isShuffleEnabled = true,
+            shuffleMode = PlaybackShuffleMode.SONGS,
             repeatMode = RepeatMode.ALL,
             preserveExistingShuffleOrder = true
         )
@@ -60,7 +60,7 @@ class UpcomingPlaylistBuilderTest {
             playbackSourceSongs = songs.take(4),
             queuedSongsAfterCurrent = listOf(songs[4], songs[0]),
             currentUpcomingSongs = emptyList(),
-            isShuffleEnabled = false,
+            shuffleMode = PlaybackShuffleMode.OFF,
             repeatMode = RepeatMode.OFF,
             preserveExistingShuffleOrder = false
         )
@@ -74,10 +74,10 @@ class UpcomingPlaylistBuilderTest {
         val songs = (1L..4L).map(::song)
 
         val repeatOff = builder.buildUpcomingPlaylistAfterCurrent(
-            songs[2], songs, emptyList(), emptyList(), false, RepeatMode.OFF, false
+            songs[2], songs, emptyList(), emptyList(), PlaybackShuffleMode.OFF, RepeatMode.OFF, false
         )
         val repeatAll = builder.buildUpcomingPlaylistAfterCurrent(
-            songs[2], songs, emptyList(), emptyList(), false, RepeatMode.ALL, false
+            songs[2], songs, emptyList(), emptyList(), PlaybackShuffleMode.OFF, RepeatMode.ALL, false
         )
 
         assertEquals(listOf(songs[3], songs[0], songs[1]), repeatOff)
@@ -91,7 +91,7 @@ class UpcomingPlaylistBuilderTest {
         val existing = listOf(song(2), song(3))
 
         val upcoming = builder.buildUpcomingPlaylistAfterCurrent(
-            current, listOf(song(1)), emptyList(), existing, false, RepeatMode.OFF, true
+            current, listOf(song(1)), emptyList(), existing, PlaybackShuffleMode.OFF, RepeatMode.OFF, true
         )
 
         assertEquals(existing, upcoming)
@@ -107,12 +107,30 @@ class UpcomingPlaylistBuilderTest {
             playbackSourceSongs = listOf(song(1), song(2), song(2), song(3)),
             queuedSongsAfterCurrent = listOf(queued, queued),
             currentUpcomingSongs = emptyList(),
-            isShuffleEnabled = false,
+            shuffleMode = PlaybackShuffleMode.OFF,
             repeatMode = RepeatMode.OFF,
             preserveExistingShuffleOrder = false
         )
 
         assertEquals(listOf(2L, 2L, 3L), upcoming.map { it.id })
+    }
+
+    @Test
+    fun albumShuffleModesPreserveProvidedGroupedOrder() {
+        val builder = UpcomingPlaylistBuilder { songs -> songs.reversed() }
+        val songs = (1L..4L).map(::song)
+
+        val upcoming = builder.buildUpcomingPlaylistAfterCurrent(
+            startSong = songs[0],
+            playbackSourceSongs = songs,
+            queuedSongsAfterCurrent = emptyList(),
+            currentUpcomingSongs = emptyList(),
+            shuffleMode = PlaybackShuffleMode.ALBUMS,
+            repeatMode = RepeatMode.OFF,
+            preserveExistingShuffleOrder = false
+        )
+
+        assertEquals(listOf(songs[1], songs[2], songs[3]), upcoming)
     }
 
     private fun song(id: Long): Song {

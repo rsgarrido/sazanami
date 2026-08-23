@@ -39,6 +39,7 @@ import com.example.cdplaya.player.RepeatMode
 import com.example.cdplaya.player.audio.AudioOffloadPreference
 import com.example.cdplaya.player.audio.AudioOutputUiState
 import com.example.cdplaya.player.replaygain.ReplayGainMode
+import com.example.cdplaya.player.PlaybackShuffleMode
 import com.example.cdplaya.ui.library.LibrarySortOption
 import com.example.cdplaya.ui.library.LibraryTab
 import com.example.cdplaya.ui.navigation.MainDestination
@@ -131,7 +132,7 @@ internal fun MusicScreen(
     onUndoAddToQueueClick: (Song) -> Unit,
     modifier: Modifier = Modifier,
     onSongClick: (Song, List<Song>) -> Unit,
-    onPlaySongsClick: (List<Song>, Boolean) -> Unit,
+    onPlaySongsClick: (List<Song>, PlaybackShuffleMode) -> Unit,
     onPlayPauseClick: () -> Unit,
     onPreviousClick: () -> Unit,
     onNextClick: () -> Unit,
@@ -899,9 +900,9 @@ internal fun MusicScreen(
                         recordPlaybackLaunchContext()
                         onSongClick(song, playbackContext)
                     },
-                    onPlaySongsClick = { playbackContext, shuffle ->
+                    onPlaySongsClick = { playbackContext, shuffleMode ->
                         recordPlaybackLaunchContext()
-                        onPlaySongsClick(playbackContext, shuffle)
+                        onPlaySongsClick(playbackContext, shuffleMode)
                     },
                     onPlayPauseClick = onPlayPauseClick,
                     onPreviousClick = onPreviousClick,

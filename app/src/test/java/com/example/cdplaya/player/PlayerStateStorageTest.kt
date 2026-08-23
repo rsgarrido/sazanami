@@ -21,12 +21,13 @@ class PlayerStateStorageTest {
         val harness = SharedPreferencesHarness()
         val storage = PlayerStateStorage(harness.preferences)
 
-        storage.saveState(7L, 12_345, true, RepeatMode.ALL,
+        storage.saveState(7L, 12_345, PlaybackShuffleMode.ALBUMS, RepeatMode.ALL,
             listOf(1L, 2L), listOf(5L, 4L), listOf(8L, 8L, 9L), listOf(7L, 3L, 2L))
 
         assertEquals(7L, storage.getCurrentSongId())
         assertEquals(12_345, storage.getCurrentPosition())
         assertTrue(storage.isShuffleEnabled())
+        assertEquals(PlaybackShuffleMode.ALBUMS, storage.getShuffleMode())
         assertEquals(RepeatMode.ALL, storage.getRepeatMode())
         assertEquals(listOf(1L, 2L), storage.getPreviousSongIds())
         assertEquals(listOf(5L, 4L), storage.getNextSongIds())
@@ -41,6 +42,7 @@ class PlayerStateStorageTest {
         assertNull(storage.getCurrentSongId())
         assertEquals(0, storage.getCurrentPosition())
         assertFalse(storage.isShuffleEnabled())
+        assertEquals(PlaybackShuffleMode.OFF, storage.getShuffleMode())
         assertEquals(RepeatMode.OFF, storage.getRepeatMode())
         assertEquals(emptyList<Long>(), storage.getQueueSongIds())
     }
@@ -51,6 +53,7 @@ class PlayerStateStorageTest {
             values["current_song_id"] = "wrong"
             values["current_position"] = "wrong"
             values["shuffle_enabled"] = 1
+            values["shuffle_mode"] = "INVALID"
             values["repeat_mode"] = "INVALID"
             values["queue"] = "1,nope,-2,3,,4x"
             values["previous_history"] = 99
@@ -60,9 +63,21 @@ class PlayerStateStorageTest {
         assertNull(storage.getCurrentSongId())
         assertEquals(0, storage.getCurrentPosition())
         assertFalse(storage.isShuffleEnabled())
+        assertEquals(PlaybackShuffleMode.OFF, storage.getShuffleMode())
         assertEquals(RepeatMode.OFF, storage.getRepeatMode())
         assertEquals(listOf(1L, 3L), storage.getQueueSongIds())
         assertEquals(emptyList<Long>(), storage.getPreviousSongIds())
+    }
+
+    @Test
+    fun legacyShuffleBooleanMigratesToSongShuffleMode() {
+        val harness = SharedPreferencesHarness().apply {
+            values["shuffle_enabled"] = true
+        }
+        val storage = PlayerStateStorage(harness.preferences)
+
+        assertEquals(PlaybackShuffleMode.SONGS, storage.getShuffleMode())
+        assertTrue(storage.isShuffleEnabled())
     }
 
     private class SharedPreferencesHarness {

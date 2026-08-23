@@ -14,6 +14,7 @@ import com.example.cdplaya.R
 import com.example.cdplaya.data.Playlist
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.Song
+import com.example.cdplaya.player.PlaybackShuffleMode
 import com.example.cdplaya.ui.playlist.PlaylistsTabContent
 import com.example.cdplaya.ui.queue.QueueScreen
 
@@ -41,7 +42,7 @@ fun MusicLibraryContent(
     upcomingSongs: List<Song>,
     isShuffleEnabled: Boolean,
     onSongClick: (Song, List<Song>) -> Unit,
-    onPlaySongsClick: (List<Song>, Boolean) -> Unit,
+    onPlaySongsClick: (List<Song>, PlaybackShuffleMode) -> Unit,
     onPlayNextClick: (Song) -> Unit,
     onAddToQueueClick: (Song) -> Unit,
     onPlayNextSongsClick: (String, List<Song>) -> Unit,

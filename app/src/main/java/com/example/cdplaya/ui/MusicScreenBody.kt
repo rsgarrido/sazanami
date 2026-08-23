@@ -42,6 +42,7 @@ import com.example.cdplaya.player.RepeatMode
 import com.example.cdplaya.player.audio.AudioOffloadPreference
 import com.example.cdplaya.player.audio.AudioOutputUiState
 import com.example.cdplaya.player.replaygain.ReplayGainMode
+import com.example.cdplaya.player.PlaybackShuffleMode
 import com.example.cdplaya.ui.equalizer.EqualizerScreen
 import com.example.cdplaya.ui.equalizer.EqualizerScreenState
 import com.example.cdplaya.ui.equalizer.EqualizerUiActions
@@ -174,7 +175,7 @@ internal fun MusicScreenBody(
     onExpandPlayerClick: () -> Unit,
     onMiniPlayerUpNextClick: () -> Unit,
     onSongClick: (Song, List<Song>) -> Unit,
-    onPlaySongsClick: (List<Song>, Boolean) -> Unit,
+    onPlaySongsClick: (List<Song>, PlaybackShuffleMode) -> Unit,
     onPlayPauseClick: () -> Unit,
     onPreviousClick: () -> Unit,
     onNextClick: () -> Unit,

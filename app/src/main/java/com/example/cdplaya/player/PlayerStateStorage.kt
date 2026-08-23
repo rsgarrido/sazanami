@@ -21,7 +21,7 @@ class PlayerStateStorage internal constructor(
     fun saveState(
         currentSongId: Long?,
         currentPosition: Int,
-        isShuffleEnabled: Boolean,
+        shuffleMode: PlaybackShuffleMode,
         repeatMode: RepeatMode,
         previousSongIds: List<Long>,
         nextSongIds: List<Long>,
@@ -31,7 +31,8 @@ class PlayerStateStorage internal constructor(
         preferences.edit()
             .putLong(KEY_CURRENT_SONG_ID, currentSongId ?: NO_SONG_ID)
             .putInt(KEY_CURRENT_POSITION, currentPosition.coerceAtLeast(0))
-            .putBoolean(KEY_SHUFFLE_ENABLED, isShuffleEnabled)
+            .putBoolean(KEY_SHUFFLE_ENABLED, shuffleMode.isEnabled)
+            .putString(KEY_SHUFFLE_MODE, shuffleMode.name)
             .putString(KEY_REPEAT_MODE, repeatMode.name)
             .putString(KEY_PREVIOUS_HISTORY, previousSongIds.joinToString(","))
             .putString(KEY_NEXT_HISTORY, nextSongIds.joinToString(","))
@@ -62,7 +63,28 @@ class PlayerStateStorage internal constructor(
         }.getOrDefault(0).coerceAtLeast(0)
     }
 
-    fun isShuffleEnabled(): Boolean {
+    fun getShuffleMode(): PlaybackShuffleMode {
+        val savedMode = runCatching {
+            preferences.getString(KEY_SHUFFLE_MODE, null)
+        }.getOrNull()
+
+        if (!savedMode.isNullOrBlank()) {
+            return runCatching {
+                PlaybackShuffleMode.valueOf(savedMode)
+            }.getOrDefault(PlaybackShuffleMode.OFF)
+        }
+
+        // Backward compatibility for player state written before shuffle modes existed.
+        return if (isLegacyShuffleEnabled()) {
+            PlaybackShuffleMode.SONGS
+        } else {
+            PlaybackShuffleMode.OFF
+        }
+    }
+
+    fun isShuffleEnabled(): Boolean = getShuffleMode().isEnabled
+
+    private fun isLegacyShuffleEnabled(): Boolean {
         return runCatching {
             preferences.getBoolean(KEY_SHUFFLE_ENABLED, false)
         }.getOrDefault(false)
@@ -113,6 +135,7 @@ class PlayerStateStorage internal constructor(
         private const val KEY_CURRENT_SONG_ID = "current_song_id"
         private const val KEY_CURRENT_POSITION = "current_position"
         private const val KEY_SHUFFLE_ENABLED = "shuffle_enabled"
+        private const val KEY_SHUFFLE_MODE = "shuffle_mode"
         private const val KEY_REPEAT_MODE = "repeat_mode"
         private const val KEY_PREVIOUS_HISTORY = "previous_history"
         private const val KEY_NEXT_HISTORY = "next_history"

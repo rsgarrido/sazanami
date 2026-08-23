@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -46,6 +47,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -87,6 +90,8 @@ fun ArtistDetailScreen(
         )
     }
     val homePinUi = LocalHomePinUi.current
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val gridState = rememberLazyGridState()
     val showCompactTitle by remember {
         derivedStateOf {
@@ -190,6 +195,8 @@ fun ArtistDetailScreen(
                                 enabled = artistSongs.isNotEmpty(),
                                 trailingIcon = Icons.Filled.KeyboardArrowDown,
                                 onClick = {
+                                    focusManager.clearFocus(force = true)
+                                    keyboardController?.hide()
                                     shuffleMenuExpanded = true
                                 }
                             )
@@ -197,32 +204,48 @@ fun ArtistDetailScreen(
                                 expanded = shuffleMenuExpanded,
                                 onDismissRequest = {
                                     shuffleMenuExpanded = false
-                                }
+                                },
+                                modifier = Modifier.widthIn(min = 300.dp)
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text("Shuffle songs") },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = Icons.Filled.Shuffle,
-                                            contentDescription = null
+                                    text = {
+                                        ShuffleModeMenuText(
+                                            title = "Shuffle songs",
+                                            subtitle = "Play all tracks in random order"
                                         )
                                     },
                                     onClick = {
                                         shuffleMenuExpanded = false
+                                        focusManager.clearFocus(force = true)
+                                        keyboardController?.hide()
                                         onShuffleSongsClick()
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("Shuffle albums") },
+                                    text = {
+                                        ShuffleModeMenuText(
+                                            title = "Shuffle albums",
+                                            subtitle = "Play full albums in a random order"
+                                        )
+                                    },
                                     onClick = {
                                         shuffleMenuExpanded = false
+                                        focusManager.clearFocus(force = true)
+                                        keyboardController?.hide()
                                         onShuffleAlbumsClick()
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("Shuffle albums + songs") },
+                                    text = {
+                                        ShuffleModeMenuText(
+                                            title = "Shuffle albums + songs",
+                                            subtitle = "Randomize albums and tracks within them"
+                                        )
+                                    },
                                     onClick = {
                                         shuffleMenuExpanded = false
+                                        focusManager.clearFocus(force = true)
+                                        keyboardController?.hide()
                                         onShuffleAlbumsAndSongsClick()
                                     }
                                 )
@@ -289,6 +312,27 @@ fun ArtistDetailScreen(
             onDismissRequest = {
                 actionSheetTarget = null
             }
+        )
+    }
+}
+
+@Composable
+private fun ShuffleModeMenuText(
+    title: String,
+    subtitle: String
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
