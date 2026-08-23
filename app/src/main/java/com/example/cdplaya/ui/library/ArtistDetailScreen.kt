@@ -47,13 +47,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.PopupProperties
 import coil.compose.AsyncImage
 import com.example.cdplaya.R
 import com.example.cdplaya.data.Song
@@ -90,8 +89,6 @@ fun ArtistDetailScreen(
         )
     }
     val homePinUi = LocalHomePinUi.current
-    val focusManager = LocalFocusManager.current
-    val keyboardController = LocalSoftwareKeyboardController.current
     val gridState = rememberLazyGridState()
     val showCompactTitle by remember {
         derivedStateOf {
@@ -195,8 +192,6 @@ fun ArtistDetailScreen(
                                 enabled = artistSongs.isNotEmpty(),
                                 trailingIcon = Icons.Filled.KeyboardArrowDown,
                                 onClick = {
-                                    focusManager.clearFocus(force = true)
-                                    keyboardController?.hide()
                                     shuffleMenuExpanded = true
                                 }
                             )
@@ -205,7 +200,12 @@ fun ArtistDetailScreen(
                                 onDismissRequest = {
                                     shuffleMenuExpanded = false
                                 },
-                                modifier = Modifier.widthIn(min = 300.dp)
+                                modifier = Modifier.widthIn(min = 300.dp),
+                                properties = PopupProperties(
+                                    focusable = false,
+                                    dismissOnBackPress = true,
+                                    dismissOnClickOutside = true
+                                )
                             ) {
                                 DropdownMenuItem(
                                     text = {
@@ -216,8 +216,6 @@ fun ArtistDetailScreen(
                                     },
                                     onClick = {
                                         shuffleMenuExpanded = false
-                                        focusManager.clearFocus(force = true)
-                                        keyboardController?.hide()
                                         onShuffleSongsClick()
                                     }
                                 )
@@ -230,8 +228,6 @@ fun ArtistDetailScreen(
                                     },
                                     onClick = {
                                         shuffleMenuExpanded = false
-                                        focusManager.clearFocus(force = true)
-                                        keyboardController?.hide()
                                         onShuffleAlbumsClick()
                                     }
                                 )
@@ -244,8 +240,6 @@ fun ArtistDetailScreen(
                                     },
                                     onClick = {
                                         shuffleMenuExpanded = false
-                                        focusManager.clearFocus(force = true)
-                                        keyboardController?.hide()
                                         onShuffleAlbumsAndSongsClick()
                                     }
                                 )
