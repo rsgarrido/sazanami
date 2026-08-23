@@ -37,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,8 +46,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -78,9 +81,34 @@ fun ArtistDetailScreen(
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
-    val albums = remember(artistSongs) {
+    val context = LocalContext.current
+    val rawAlbums = remember(artistSongs) {
         buildLibraryAlbumGroups(artistSongs)
-            .sortedBy { album -> album.title.lowercase() }
+    }
+    val metadataRepository = remember(context) {
+        AlbumPresentationMetadataRepository(context)
+    }
+    val releaseYearMetadataKey = remember(rawAlbums) {
+        rawAlbums.joinToString(separator = "||") { album ->
+            albumPresentationMetadataKey(album)
+        }
+    }
+    var releaseYears by remember(releaseYearMetadataKey) {
+        mutableStateOf<Map<String, Int?>>(emptyMap())
+    }
+
+    LaunchedEffect(releaseYearMetadataKey) {
+        releaseYears = metadataRepository.getReleaseYears(rawAlbums)
+    }
+
+    val albums = remember(rawAlbums, releaseYears) {
+        rawAlbums.sortedWith(
+            compareByDescending<LibraryAlbumGroup> { album ->
+                releaseYears[album.key] ?: Int.MIN_VALUE
+            }.thenBy { album ->
+                album.title.lowercase()
+            }
+        )
     }
     val artistGroup = remember(artistName, artistSongs) {
         LibraryArtistGroup(
@@ -268,17 +296,31 @@ fun ArtistDetailScreen(
                     album.songs.size,
                     album.songs.size
                 )
+                val releaseYear = releaseYears[album.key]
+                val albumSubtitle = buildList {
+                    releaseYear?.let { year ->
+                        add(year.toString())
+                    }
+                    add(albumSongCount)
+                }.joinToString(separator = " • ")
+                val actionSheetSubtitle = buildList {
+                    add(album.artistText)
+                    releaseYear?.let { year ->
+                        add(year.toString())
+                    }
+                    add(albumSongCount)
+                }.joinToString(separator = " • ")
 
                 ArtistAlbumCard(
                     album = album,
-                    subtitle = albumSongCount,
+                    subtitle = albumSubtitle,
                     onClick = {
                         onAlbumClick(album.key)
                     },
                     onShowActions = {
                         actionSheetTarget = albumActionSheetTarget(
                             albumTitle = album.title,
-                            subtitle = "${album.artistText} • $albumSongCount",
+                            subtitle = actionSheetSubtitle,
                             artworkUri = firstSong?.albumArtUri,
                             albumSongs = album.songs,
                             onPlayClick = { _, songs ->
@@ -400,11 +442,13 @@ internal fun LibraryDetailTopBar(
     showTitle: Boolean,
     onBackClick: () -> Unit,
     onMoreClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    containerColor: Color = Color.Transparent
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .background(containerColor)
             .statusBarsPadding()
             .height(56.dp)
             .padding(horizontal = 4.dp),
