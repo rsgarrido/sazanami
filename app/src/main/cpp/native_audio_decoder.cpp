@@ -27,6 +27,9 @@ namespace {
     constexpr int kMinimumSuccessfulSamplePoints = 4;
     constexpr auto kMaxAnalysisDuration = std::chrono::milliseconds(2'000);
     constexpr int kMaxSampledFramesPerBuffer = 512;
+    constexpr float kWaveformRmsWeight = 0.78F;
+    constexpr float kWaveformContrastExponent = 1.35F;
+    constexpr float kWaveformVisibleEnergyFloor = 0.04F;
 
     constexpr int kEncodingPcm16Bit = 2;
     constexpr int kEncodingPcm8Bit = 3;
@@ -185,7 +188,12 @@ namespace {
         return result;
     }
 
-    std::optional<float> calculateBufferRms(
+    struct BufferEnergy {
+        float rms = 0.0F;
+        float peakWeighted = 0.0F;
+    };
+
+    std::optional<BufferEnergy> calculateBufferEnergy(
             const uint8_t* buffer,
             size_t size,
             const PcmFormat& format
@@ -212,6 +220,7 @@ namespace {
         );
 
         double squaredTotal = 0.0;
+        double fourthPowerTotal = 0.0;
         uint64_t sampledFrames = 0;
         for (size_t frameIndex = 0; frameIndex < frameCount; frameIndex += sampleStride) {
             const size_t frameOffset = frameIndex * bytesPerFrame;
@@ -226,19 +235,41 @@ namespace {
                 channelTotal += readAmplitude(buffer + sampleOffset, format.encoding);
             }
             const double amplitude = channelTotal / static_cast<double>(format.channelCount);
-            squaredTotal += amplitude * amplitude;
+            const double squared = amplitude * amplitude;
+            squaredTotal += squared;
+            fourthPowerTotal += squared * squared;
             sampledFrames += 1;
         }
 
         if (sampledFrames == 0) {
             return std::nullopt;
         }
-        const double meanSquare = squaredTotal / static_cast<double>(sampledFrames);
-        const double rms = std::sqrt(std::max(0.0, meanSquare));
-        if (!std::isfinite(rms)) {
+
+        const double divisor = static_cast<double>(sampledFrames);
+        const double rms = std::sqrt(std::max(0.0, squaredTotal / divisor));
+        // The fourth-power mean reacts to attacks/transients more strongly than RMS,
+        // without letting one clipped PCM sample dominate the whole waveform point.
+        const double peakWeighted = std::pow(
+                std::max(0.0, fourthPowerTotal / divisor),
+                0.25
+        );
+        if (!std::isfinite(rms) || !std::isfinite(peakWeighted)) {
             return std::nullopt;
         }
-        return static_cast<float>(std::clamp(rms, 0.0, 1.0));
+
+        return BufferEnergy{
+                static_cast<float>(std::clamp(rms, 0.0, 1.0)),
+                static_cast<float>(std::clamp(peakWeighted, 0.0, 1.0))
+        };
+    }
+
+    float blendWaveformEnergy(float rms, float peakWeighted) {
+        constexpr float kPeakWeightedWeight = 1.0F - kWaveformRmsWeight;
+        return std::clamp(
+                rms * kWaveformRmsWeight + peakWeighted * kPeakWeightedWeight,
+                0.0F,
+                1.0F
+        );
     }
 
     std::vector<float> interpolateAndNormalizeSamples(
@@ -303,7 +334,22 @@ namespace {
             return result;
         }
         for (float& amplitude : result) {
-            amplitude = std::clamp(amplitude / maximum, 0.0F, 1.0F);
+            const float normalized = std::clamp(amplitude / maximum, 0.0F, 1.0F);
+            if (normalized <= 0.0F) {
+                amplitude = 0.0F;
+                continue;
+            }
+
+            // A gentle power curve separates the mid/high energy values common in mastered
+            // music. Keep a tiny non-zero floor so quieter material remains legible in the
+            // small seekbar canvases without turning silence into a visible bar.
+            const float contrasted = std::pow(normalized, kWaveformContrastExponent);
+            amplitude = std::clamp(
+                    kWaveformVisibleEnergyFloor +
+                    (1.0F - kWaveformVisibleEnergyFloor) * contrasted,
+                    0.0F,
+                    1.0F
+            );
         }
         return result;
     }
@@ -362,6 +408,7 @@ namespace {
     ) {
         bool inputEnded = false;
         double squaredRmsTotal = 0.0;
+        double squaredPeakWeightedTotal = 0.0;
         int outputBufferCount = 0;
 
         for (int iteration = 0; iteration < kMaxDecodeIterationsPerSample; ++iteration) {
@@ -453,13 +500,17 @@ namespace {
                         AMediaCodec_releaseOutputBuffer(codec, static_cast<size_t>(outputIndex), false);
                         return std::nullopt;
                     }
-                    const auto rms = calculateBufferRms(
+                    const auto energy = calculateBufferEnergy(
                             outputBuffer,
                             static_cast<size_t>(bufferInfo.size),
                             *pcmFormat
                     );
-                    if (rms.has_value()) {
-                        squaredRmsTotal += static_cast<double>(*rms) * static_cast<double>(*rms);
+                    if (energy.has_value()) {
+                        squaredRmsTotal +=
+                                static_cast<double>(energy->rms) * static_cast<double>(energy->rms);
+                        squaredPeakWeightedTotal +=
+                                static_cast<double>(energy->peakWeighted) *
+                                static_cast<double>(energy->peakWeighted);
                         outputBufferCount += 1;
                     }
                 }
@@ -476,9 +527,11 @@ namespace {
                     if (outputBufferCount == 0) {
                         return std::nullopt;
                     }
-                    return static_cast<float>(std::sqrt(
-                            squaredRmsTotal / static_cast<double>(outputBufferCount)
-                    ));
+                    const double divisor = static_cast<double>(outputBufferCount);
+                    return blendWaveformEnergy(
+                            static_cast<float>(std::sqrt(squaredRmsTotal / divisor)),
+                            static_cast<float>(std::sqrt(squaredPeakWeightedTotal / divisor))
+                    );
                 }
             } else if (outputIndex != AMEDIACODEC_INFO_TRY_AGAIN_LATER &&
                        outputIndex != AMEDIACODEC_INFO_OUTPUT_BUFFERS_CHANGED) {
@@ -489,9 +542,11 @@ namespace {
         if (outputBufferCount == 0) {
             return std::nullopt;
         }
-        return static_cast<float>(std::sqrt(
-                squaredRmsTotal / static_cast<double>(outputBufferCount)
-        ));
+        const double divisor = static_cast<double>(outputBufferCount);
+        return blendWaveformEnergy(
+                static_cast<float>(std::sqrt(squaredRmsTotal / divisor)),
+                static_cast<float>(std::sqrt(squaredPeakWeightedTotal / divisor))
+        );
     }
 
     bool startsWithAudioMime(const char* mime) {

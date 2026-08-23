@@ -361,11 +361,20 @@ private fun AlbumDetailHero(
                 overflow = TextOverflow.Ellipsis
             )
 
-            audioQuality?.let { quality ->
-                AlbumAudioQualityBadges(
-                    audioQuality = quality,
-                    modifier = Modifier.padding(top = 7.dp)
-                )
+            // Reserve the quality-pill row from the first frame so asynchronous metadata
+            // does not push the action buttons and song list downward when it arrives.
+            if (hasSongs) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 31.dp)
+                        .padding(top = 7.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    audioQuality?.let { quality ->
+                        AlbumAudioQualityBadges(audioQuality = quality)
+                    }
+                }
             }
         }
 
