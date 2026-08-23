@@ -58,8 +58,8 @@ object AppBackupJson {
     private fun migrateAndValidate(backup: AppBackup): AppBackup {
         require(backup.schemaVersion in OLDEST_SUPPORTED_SCHEMA_VERSION..CURRENT_SCHEMA_VERSION) {
             "Unsupported CDPlaya backup schema version ${backup.schemaVersion}; " +
-                "supported versions are $OLDEST_SUPPORTED_SCHEMA_VERSION through " +
-                "$CURRENT_SCHEMA_VERSION."
+                    "supported versions are $OLDEST_SUPPORTED_SCHEMA_VERSION through " +
+                    "$CURRENT_SCHEMA_VERSION."
         }
 
         var migrated = backup
@@ -308,7 +308,7 @@ object AppBackupJson {
         }
         require(
             equalizer.preampDb.isFinite() &&
-                equalizer.preampDb in -15.0..6.0
+                    equalizer.preampDb in -15.0..6.0
         ) {
             "Backup equalizer preamp is invalid."
         }
@@ -321,7 +321,7 @@ object AppBackupJson {
         }
         require(
             equalizer.limiterCeilingDbfs.isFinite() &&
-                equalizer.limiterCeilingDbfs in -3.0..0.0
+                    equalizer.limiterCeilingDbfs in -3.0..0.0
         ) {
             "Backup limiter ceiling is invalid."
         }
@@ -331,13 +331,13 @@ object AppBackupJson {
             }
             require(
                 preset.id.isNotBlank() &&
-                    preset.name.isNotBlank() &&
-                    preset.name.length <= 40 &&
-                    preset.preampDb.isFinite() &&
-                    preset.preampDb in -15.0..6.0 &&
-                    preset.bandGainsDb.all { gain ->
-                        gain.isFinite() && gain in -12.0..12.0
-                    }
+                        preset.name.isNotBlank() &&
+                        preset.name.length <= 40 &&
+                        preset.preampDb.isFinite() &&
+                        preset.preampDb in -15.0..6.0 &&
+                        preset.bandGainsDb.all { gain ->
+                            gain.isFinite() && gain in -12.0..12.0
+                        }
             ) {
                 "Backup equalizer preset is invalid."
             }
@@ -346,7 +346,7 @@ object AppBackupJson {
             equalizer.userPresets
                 .map { preset -> preset.id }
                 .distinct().size ==
-                equalizer.userPresets.size
+                    equalizer.userPresets.size
         ) {
             "Backup equalizer preset IDs must be unique."
         }
@@ -405,7 +405,10 @@ private fun AppBackup.sanitizedForExport(): AppBackup = copy(
     preferences = preferences.copy(
         selectedLibraryFolders = preferences.selectedLibraryFolders
             .map { it.toPortableFolderSelection() }
-            .filter { it.isNotBlank() }
+            .filter { it.isNotBlank() },
+        homePins = preferences.homePins.map { pin ->
+            pin.copy(anchor = pin.anchor.withoutAbsolutePath())
+        }
     ),
     favorites = favorites.map { favorite ->
         favorite.copy(reference = favorite.reference?.withoutAbsolutePath())

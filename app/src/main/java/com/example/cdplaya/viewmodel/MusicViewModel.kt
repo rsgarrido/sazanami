@@ -34,6 +34,7 @@ import com.example.cdplaya.data.ListeningTrendMetric
 import com.example.cdplaya.data.ListeningRankingCategory
 import com.example.cdplaya.data.ListeningImportRepository
 import com.example.cdplaya.data.preferences.AppPreferencesRepository
+import com.example.cdplaya.data.home.HomePin
 import com.example.cdplaya.data.backup.AppBackup
 import com.example.cdplaya.data.backup.BackupExportResult
 import com.example.cdplaya.data.backup.BackupRepository
@@ -86,6 +87,7 @@ import com.example.cdplaya.ui.library.LibraryViewCategory
 import com.example.cdplaya.ui.library.LibraryViewOption
 import com.example.cdplaya.ui.library.SongRatingFilter
 import com.example.cdplaya.ui.library.viewCategory
+import com.example.cdplaya.ui.home.HomeCustomizationUiState
 import com.example.cdplaya.ui.player.theme.applyOverrides
 import com.example.cdplaya.ui.player.theme.defaultTokens
 
@@ -241,6 +243,14 @@ class MusicViewModel(
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LibraryAppearanceUiState())
 
+    val homeCustomizationUiState = appPreferencesRepository.state.map { preferences ->
+        HomeCustomizationUiState(
+            pins = preferences.homePins,
+            showRecentlyAddedOnHome = preferences.showRecentlyAddedOnHome,
+            isLoaded = preferences.isLoaded
+        )
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, HomeCustomizationUiState())
+
     val audioOffloadPreference = appPreferencesRepository.state
         .map { preferences -> preferences.audioOffloadPreference }
         .stateIn(
@@ -324,6 +334,26 @@ class MusicViewModel(
                 gridColumnCount = option.gridColumnCount ?: current.gridColumnCount
             )
         }
+    }
+
+    fun addHomePin(pin: HomePin) {
+        viewModelScope.launch { appPreferencesRepository.addHomePin(pin) }
+    }
+
+    fun replaceHomePin(index: Int, pin: HomePin) {
+        viewModelScope.launch { appPreferencesRepository.replaceHomePin(index, pin) }
+    }
+
+    fun removeHomePin(pinId: String) {
+        viewModelScope.launch { appPreferencesRepository.removeHomePin(pinId) }
+    }
+
+    fun moveHomePin(pinId: String, offset: Int) {
+        viewModelScope.launch { appPreferencesRepository.moveHomePin(pinId, offset) }
+    }
+
+    fun setShowRecentlyAddedOnHome(show: Boolean) {
+        viewModelScope.launch { appPreferencesRepository.setShowRecentlyAddedOnHome(show) }
     }
 
     fun readEditableSongTags(song: Song): EditableSongTags = tagEditorRepository.readTags(song)

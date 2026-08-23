@@ -44,6 +44,7 @@ import com.example.cdplaya.ui.library.LibraryItemActionSheetTarget
 import com.example.cdplaya.ui.library.libraryItemActions
 import com.example.cdplaya.R as AppR
 import com.example.cdplaya.ui.ratings.LocalSongRatingUi
+import com.example.cdplaya.ui.home.LocalHomePinUi
 
 @Composable
 fun PlaylistSongList(
@@ -67,6 +68,7 @@ fun PlaylistSongList(
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
     }
     val ratingUi = LocalSongRatingUi.current
+    val homePinUi = LocalHomePinUi.current
     val rateSongLabel = stringResource(AppR.string.rate_song)
 
     LazyColumn(
@@ -160,6 +162,7 @@ fun PlaylistSongList(
                                     onClick = { onToggleFavoriteClick(song) }
                                 )
                             )
+                            add(homePinUi.actionForSong(song))
                             add(
                                 LibraryItemAction(
                                     label = rateSongLabel,

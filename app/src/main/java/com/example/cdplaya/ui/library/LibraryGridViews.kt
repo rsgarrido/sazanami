@@ -45,6 +45,7 @@ import com.example.cdplaya.ui.AppShellAccent
 import com.example.cdplaya.ui.AppShellTypography
 import com.example.cdplaya.ui.ratings.CompactRatingIndicator
 import com.example.cdplaya.ui.ratings.LocalSongRatingUi
+import com.example.cdplaya.ui.home.LocalHomePinUi
 
 @Composable
 fun SongGrid(
@@ -68,6 +69,7 @@ fun SongGrid(
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
     }
     val ratingUi = LocalSongRatingUi.current
+    val homePinUi = LocalHomePinUi.current
     val rateSongLabel = stringResource(R.string.rate_song)
 
     LazyVerticalGrid(
@@ -103,7 +105,8 @@ fun SongGrid(
                         onAddToPlaylistClick = onAddToPlaylistClick,
                         onEditSongTagsClick = onEditSongTagsClick,
                         rateSongLabel = rateSongLabel,
-                        onRateSongClick = ratingUi.onOpen
+                        onRateSongClick = ratingUi.onOpen,
+                        homePinAction = homePinUi.actionForSong(song)
                     )
                 },
                 modifier = Modifier.animateItem(
@@ -145,6 +148,7 @@ fun AlbumGridScreen(
     var actionSheetTarget by remember {
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
     }
+    val homePinUi = LocalHomePinUi.current
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(gridMetrics.columnCount),
@@ -180,7 +184,8 @@ fun AlbumGridScreen(
                         onShuffleClick = onAlbumShuffleClick,
                         onPlayNextClick = onAlbumPlayNextClick,
                         onAddToQueueClick = onAlbumAddToQueueClick,
-                        onAddToPlaylistClick = onAlbumAddToPlaylistClick
+                        onAddToPlaylistClick = onAlbumAddToPlaylistClick,
+                        homePinAction = homePinUi.actionForAlbum(album)
                     )
                 },
                 modifier = Modifier.animateItem(
@@ -222,6 +227,7 @@ fun ArtistGridScreen(
     var actionSheetTarget by remember {
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
     }
+    val homePinUi = LocalHomePinUi.current
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(gridMetrics.columnCount),
@@ -257,7 +263,8 @@ fun ArtistGridScreen(
                         onShuffleClick = onArtistShuffleClick,
                         onPlayNextClick = onArtistPlayNextClick,
                         onAddToQueueClick = onArtistAddToQueueClick,
-                        onAddToPlaylistClick = onArtistAddToPlaylistClick
+                        onAddToPlaylistClick = onArtistAddToPlaylistClick,
+                        homePinAction = homePinUi.actionForArtist(artist)
                     )
                 },
                 modifier = Modifier.animateItem(

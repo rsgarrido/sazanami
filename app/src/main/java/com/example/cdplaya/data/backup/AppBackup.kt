@@ -31,8 +31,19 @@ data class BackupPreferences(
     val songsGridColumnCount: Int = 2,
     val albumsGridColumnCount: Int = 2,
     val artistsGridColumnCount: Int = 2,
+    val homePins: List<BackupHomePin> = emptyList(),
+    val showRecentlyAddedOnHome: Boolean = true,
     val equalizer: BackupEqualizerPreferences =
         BackupEqualizerPreferences()
+)
+
+@Serializable
+data class BackupHomePin(
+    val id: String,
+    val type: String,
+    val title: String,
+    val subtitle: String = "",
+    val anchor: BackupSongReference
 )
 
 @Serializable
@@ -49,7 +60,7 @@ data class BackupEqualizerPreferences(
     val parametricAutomaticHeadroomEnabled: Boolean = true,
     val parametricFilters: List<BackupParametricFilter> = emptyList(),
     val parametricUserPresets:
-        List<BackupParametricEqualizerPreset> = emptyList()
+    List<BackupParametricEqualizerPreset> = emptyList()
 )
 
 @Serializable

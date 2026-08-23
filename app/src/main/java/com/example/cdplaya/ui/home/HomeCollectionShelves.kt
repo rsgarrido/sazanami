@@ -3,6 +3,7 @@ package com.example.cdplaya.ui.home
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,11 +17,21 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,9 +44,208 @@ import androidx.compose.ui.res.stringResource
 import coil.compose.AsyncImage
 import com.example.cdplaya.R
 import com.example.cdplaya.data.Song
+import com.example.cdplaya.data.home.HomePin
 import com.example.cdplaya.ui.AppShellIcons
 import com.example.cdplaya.ui.AppShellAccent
 import com.example.cdplaya.ui.AppShellTypography
+
+@Composable
+fun HomePinnedShelf(
+    pins: List<ResolvedHomePin>,
+    onSongClick: (Song) -> Unit,
+    onAlbumClick: (String) -> Unit,
+    onArtistClick: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (pins.isEmpty()) return
+
+    val homePinUi = LocalHomePinUi.current
+    var showManager by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            HomeSectionHeader(text = "Pinned")
+
+            TextButton(onClick = { showManager = true }) {
+                Text(
+                    text = "MANAGE",
+                    style = AppShellTypography.CompactAction,
+                    color = AppShellAccent
+                )
+            }
+        }
+
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+        ) {
+            val gap = 8.dp
+            val cardWidth = (maxWidth - gap * (HomePin.MAX_COUNT - 1).toFloat()) /
+                    HomePin.MAX_COUNT.toFloat()
+
+            Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                pins.take(HomePin.MAX_COUNT).forEach { pin ->
+                    HomePinnedCard(
+                        pin = pin,
+                        onClick = {
+                            when (val target = pin.target) {
+                                is HomePinTarget.SongTarget -> onSongClick(target.song)
+                                is HomePinTarget.AlbumTarget -> onAlbumClick(target.album.key)
+                                is HomePinTarget.ArtistTarget -> onArtistClick(target.artist.name)
+                                null -> Unit
+                            }
+                        },
+                        modifier = Modifier.width(cardWidth)
+                    )
+                }
+            }
+        }
+    }
+
+    if (showManager) {
+        HomePinManagerDialog(
+            pins = pins,
+            onMove = homePinUi.onMovePinRequested,
+            onUnpin = homePinUi.onUnpinRequested,
+            onDismiss = { showManager = false }
+        )
+    }
+}
+
+@Composable
+private fun HomePinnedCard(
+    pin: ResolvedHomePin,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    PressableHomeCard(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
+        Column(
+            modifier = Modifier.padding(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            ) {
+                ArtworkPlaceholder(modifier = Modifier.fillMaxSize())
+                AsyncImage(
+                    model = pin.artworkUri,
+                    contentDescription = "Artwork for ${pin.title}",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
+
+            Text(
+                text = pin.title,
+                style = AppShellTypography.SongTitle,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = pin.typeLabel,
+                style = AppShellTypography.Eyebrow,
+                color = if (pin.target == null) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun HomePinManagerDialog(
+    pins: List<ResolvedHomePin>,
+    onMove: (String, Int) -> Unit,
+    onUnpin: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Manage pins") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Use the arrows to reorder your Home shortcuts, or remove a pin.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                pins.forEachIndexed { index, pin ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = pin.title,
+                                style = AppShellTypography.SongTitle,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = pin.typeLabel,
+                                style = AppShellTypography.Eyebrow,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { onMove(pin.pin.id, -1) },
+                            enabled = index > 0
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.ArrowBack,
+                                contentDescription = "Move ${pin.title} left"
+                            )
+                        }
+                        IconButton(
+                            onClick = { onMove(pin.pin.id, 1) },
+                            enabled = index < pins.lastIndex
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.ArrowForward,
+                                contentDescription = "Move ${pin.title} right"
+                            )
+                        }
+                        IconButton(onClick = { onUnpin(pin.pin.id) }) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "Unpin ${pin.title}"
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Done")
+            }
+        }
+    )
+}
 
 @Composable
 fun HomeRecentlyPlayedShelf(

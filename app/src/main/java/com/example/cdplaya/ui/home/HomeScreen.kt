@@ -55,6 +55,9 @@ internal fun HomeScreen(
     onSettingsClick: () -> Unit,
     onStatisticsClick: () -> Unit,
     onOpenLibrary: (LibraryTab) -> Unit,
+    onPinnedSongClick: (Song) -> Unit,
+    onPinnedAlbumClick: (String) -> Unit,
+    onPinnedArtistClick: (String) -> Unit,
     onRecentlyPlayedSongClick: (Song) -> Unit,
     onRecentlyAddedSongClick: (Song) -> Unit,
     onFavoriteSongClick: (Song) -> Unit,
@@ -64,6 +67,7 @@ internal fun HomeScreen(
     val visibleRecentlyPlayedSongs = recentlyPlayedSongs
         .filterNot { song -> song.id == currentSongId }
         .ifEmpty { recentlyPlayedSongs }
+    val homePinUi = LocalHomePinUi.current
 
     LazyColumn(
         modifier = modifier
@@ -146,6 +150,17 @@ internal fun HomeScreen(
             }
         }
 
+        if (homePinUi.pins.isNotEmpty()) {
+            item {
+                HomePinnedShelf(
+                    pins = homePinUi.pins,
+                    onSongClick = onPinnedSongClick,
+                    onAlbumClick = onPinnedAlbumClick,
+                    onArtistClick = onPinnedArtistClick
+                )
+            }
+        }
+
         if (visibleRecentlyPlayedSongs.isNotEmpty()) {
             item {
                 HomeRecentlyPlayedShelf(
@@ -159,7 +174,7 @@ internal fun HomeScreen(
         }
 
         val visibleRecentlyAddedSongs = recentlyAddedShelfSongs(recentlyAddedSongs)
-        if (visibleRecentlyAddedSongs.isNotEmpty()) {
+        if (homePinUi.showRecentlyAddedOnHome && visibleRecentlyAddedSongs.isNotEmpty()) {
             item {
                 HomeRecentlyAddedShelf(
                     songs = visibleRecentlyAddedSongs,
@@ -182,7 +197,8 @@ internal fun HomeScreen(
         }
 
         if (mediaAccessState.hasAudioAccess && songCount > 0 && recentlyPlayedSongs.isEmpty() &&
-            visibleRecentlyAddedSongs.isEmpty() && favoriteSongs.isEmpty()
+            (visibleRecentlyAddedSongs.isEmpty() || !homePinUi.showRecentlyAddedOnHome) &&
+            favoriteSongs.isEmpty() && homePinUi.pins.isEmpty()
         ) {
             item {
                 Text(

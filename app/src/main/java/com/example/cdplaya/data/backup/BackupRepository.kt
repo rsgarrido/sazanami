@@ -10,6 +10,9 @@ import com.example.cdplaya.data.FolderSelection
 import com.example.cdplaya.data.ListeningHistoryRepository
 import com.example.cdplaya.data.PlayerTheme
 import com.example.cdplaya.data.PlaylistsRepository
+import com.example.cdplaya.data.home.HomePin
+import com.example.cdplaya.data.home.HomePinType
+import com.example.cdplaya.data.home.sanitizeHomePins
 import com.example.cdplaya.player.replaygain.ReplayGainMode
 import com.example.cdplaya.data.preferences.AppPreferencesRepository
 import com.example.cdplaya.data.preferences.AppPreferencesState
@@ -78,6 +81,16 @@ class BackupRepository(
                 songsGridColumnCount = appPreferences.songsGridColumnCount,
                 albumsGridColumnCount = appPreferences.albumsGridColumnCount,
                 artistsGridColumnCount = appPreferences.artistsGridColumnCount,
+                homePins = appPreferences.homePins.map { pin ->
+                    BackupHomePin(
+                        id = pin.id,
+                        type = pin.type.name,
+                        title = pin.title,
+                        subtitle = pin.subtitle,
+                        anchor = pin.anchor.toBackupSongReference()
+                    )
+                },
+                showRecentlyAddedOnHome = appPreferences.showRecentlyAddedOnHome,
                 equalizer = appPreferences
                     .equalizerPreferences
                     .toBackupEqualizerPreferences()
@@ -179,22 +192,22 @@ class BackupRepository(
             val supportedFields = theme.customizationOptions().map { it.field }.toSet()
             if (supportedFields.isEmpty()) return@mapNotNull null
             theme to PlayerThemeTokenOverrides(
-                    shellColor = backup.shellArgb.toColorIfSupported(
-                        PlayerThemeTokenField.SHELL in supportedFields
-                    ),
-                    accentColor = backup.accentArgb.toColorIfSupported(
-                        PlayerThemeTokenField.ACCENT in supportedFields
-                    ),
-                    displayBackgroundColor = backup.displayBackgroundArgb.toColorIfSupported(
-                        PlayerThemeTokenField.DISPLAY_BACKGROUND in supportedFields
-                    ),
-                    displayTextColor = backup.displayTextArgb.toColorIfSupported(
-                        PlayerThemeTokenField.DISPLAY_TEXT in supportedFields
-                    ),
-                    secondaryAccentColor = backup.secondaryAccentArgb.toColorIfSupported(
-                        PlayerThemeTokenField.SECONDARY_ACCENT in supportedFields
-                    )
+                shellColor = backup.shellArgb.toColorIfSupported(
+                    PlayerThemeTokenField.SHELL in supportedFields
+                ),
+                accentColor = backup.accentArgb.toColorIfSupported(
+                    PlayerThemeTokenField.ACCENT in supportedFields
+                ),
+                displayBackgroundColor = backup.displayBackgroundArgb.toColorIfSupported(
+                    PlayerThemeTokenField.DISPLAY_BACKGROUND in supportedFields
+                ),
+                displayTextColor = backup.displayTextArgb.toColorIfSupported(
+                    PlayerThemeTokenField.DISPLAY_TEXT in supportedFields
+                ),
+                secondaryAccentColor = backup.secondaryAccentArgb.toColorIfSupported(
+                    PlayerThemeTokenField.SECONDARY_ACCENT in supportedFields
                 )
+            )
         }.toMap()
         appPreferencesRepository.replaceAll(
             AppPreferencesState(
@@ -225,6 +238,20 @@ class BackupRepository(
                 songsGridColumnCount = preferences.songsGridColumnCount,
                 albumsGridColumnCount = preferences.albumsGridColumnCount,
                 artistsGridColumnCount = preferences.artistsGridColumnCount,
+                homePins = sanitizeHomePins(
+                    preferences.homePins.mapNotNull { backupPin ->
+                        val type = runCatching { HomePinType.valueOf(backupPin.type) }
+                            .getOrNull() ?: return@mapNotNull null
+                        HomePin(
+                            id = backupPin.id,
+                            type = type,
+                            title = backupPin.title,
+                            subtitle = backupPin.subtitle,
+                            anchor = backupPin.anchor.toSongReference()
+                        ).normalizedForPersistence()
+                    }
+                ),
+                showRecentlyAddedOnHome = preferences.showRecentlyAddedOnHome,
                 equalizerPreferences =
                     preferences.equalizer
                         .toEqualizerPreferencesState(),
@@ -239,7 +266,7 @@ class BackupRepository(
 }
 
 private fun EqualizerPreferencesState
-    .toBackupEqualizerPreferences() =
+        .toBackupEqualizerPreferences() =
     BackupEqualizerPreferences(
         enabled = enabled,
         preampDb = preampDb,
@@ -263,7 +290,7 @@ private fun EqualizerPreferencesState
         parametricAutomaticHeadroomEnabled =
             parametricState.automaticHeadroomEnabled,
         parametricFilters = parametricState.filters.map {
-            filter -> filter.toBackup()
+                filter -> filter.toBackup()
         },
         parametricUserPresets =
             parametricState.userPresets.map { preset ->
@@ -281,7 +308,7 @@ private fun EqualizerPreferencesState
     )
 
 private fun BackupEqualizerPreferences
-    .toEqualizerPreferencesState() =
+        .toEqualizerPreferencesState() =
     EqualizerPreferencesState(
         enabled = enabled,
         preampDb = preampDb,
@@ -347,7 +374,7 @@ private fun Long?.toColorIfSupported(isSupported: Boolean): Color? {
 
 private fun BackupPlayerThemeTokenOverrides.hasAnyValue(): Boolean {
     return shellArgb != null || accentArgb != null || displayBackgroundArgb != null ||
-        displayTextArgb != null || secondaryAccentArgb != null
+            displayTextArgb != null || secondaryAccentArgb != null
 }
 
 data class BackupExportResult(
