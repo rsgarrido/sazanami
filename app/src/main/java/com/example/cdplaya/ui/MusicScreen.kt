@@ -39,6 +39,7 @@ import com.example.cdplaya.player.RepeatMode
 import com.example.cdplaya.player.audio.AudioOffloadPreference
 import com.example.cdplaya.player.audio.AudioOutputUiState
 import com.example.cdplaya.player.replaygain.ReplayGainMode
+import com.example.cdplaya.player.PlaybackShuffleMode
 import com.example.cdplaya.ui.library.LibrarySortOption
 import com.example.cdplaya.ui.library.LibraryTab
 import com.example.cdplaya.ui.navigation.MainDestination
@@ -131,7 +132,7 @@ internal fun MusicScreen(
     onUndoAddToQueueClick: (Song) -> Unit,
     modifier: Modifier = Modifier,
     onSongClick: (Song, List<Song>) -> Unit,
-    onPlaySongsClick: (List<Song>, Boolean) -> Unit,
+    onPlaySongsClick: (List<Song>, PlaybackShuffleMode) -> Unit,
     onPlayPauseClick: () -> Unit,
     onPreviousClick: () -> Unit,
     onNextClick: () -> Unit,
@@ -256,7 +257,7 @@ internal fun MusicScreen(
     var isStatisticsScreenVisible by overlayState.isStatisticsScreenVisible
     var isListeningHistoryImportVisible by overlayState.isListeningHistoryImportVisible
     var isListeningHistoryReconciliationVisible by
-        overlayState.isListeningHistoryReconciliationVisible
+    overlayState.isListeningHistoryReconciliationVisible
     var isExpandedUpNextSheetVisible by overlayState.isExpandedUpNextSheetVisible
     var isCreatePlaylistDialogVisible by overlayState.isCreatePlaylistDialogVisible
     var isSleepTimerDialogVisible by overlayState.isSleepTimerDialogVisible
@@ -486,12 +487,15 @@ internal fun MusicScreen(
                 closeSettings()
             }
 
-            selectedArtistName != null -> {
-                selectedArtistName = null
-            }
-
             selectedAlbumFolderPath != null -> {
                 selectedAlbumFolderPath = null
+                if (selectedArtistName != null) {
+                    selectedLibraryTab = LibraryTab.ARTISTS
+                }
+            }
+
+            selectedArtistName != null -> {
+                selectedArtistName = null
             }
 
             selectedPlaylistId != null -> {
@@ -896,9 +900,9 @@ internal fun MusicScreen(
                         recordPlaybackLaunchContext()
                         onSongClick(song, playbackContext)
                     },
-                    onPlaySongsClick = { playbackContext, shuffle ->
+                    onPlaySongsClick = { playbackContext, shuffleMode ->
                         recordPlaybackLaunchContext()
-                        onPlaySongsClick(playbackContext, shuffle)
+                        onPlaySongsClick(playbackContext, shuffleMode)
                     },
                     onPlayPauseClick = onPlayPauseClick,
                     onPreviousClick = onPreviousClick,
@@ -921,9 +925,13 @@ internal fun MusicScreen(
                     },
                     onAlbumSelected = { albumFolderPath ->
                         selectedAlbumFolderPath = albumFolderPath
+                        selectedLibraryTab = LibraryTab.ALBUMS
                     },
                     onBackFromAlbum = {
                         selectedAlbumFolderPath = null
+                        if (selectedArtistName != null) {
+                            selectedLibraryTab = LibraryTab.ARTISTS
+                        }
                     },
                     onBackFromQueue = {
                         selectedLibraryTab = LibraryTab.SONGS
@@ -1207,11 +1215,11 @@ internal fun shouldShowPrimaryBottomNavigation(
     isSettingsScreenVisible: Boolean,
     isTagEditorVisible: Boolean
 ): Boolean = !isPlayerExpanded &&
-    !isFolderScreenVisible &&
-    !isDiagnosticsScreenVisible &&
-    !isEqualizerScreenVisible &&
-    !isStatisticsScreenVisible &&
-    !isListeningHistoryImportVisible &&
-    !isListeningHistoryReconciliationVisible &&
-    !isSettingsScreenVisible &&
-    !isTagEditorVisible
+        !isFolderScreenVisible &&
+        !isDiagnosticsScreenVisible &&
+        !isEqualizerScreenVisible &&
+        !isStatisticsScreenVisible &&
+        !isListeningHistoryImportVisible &&
+        !isListeningHistoryReconciliationVisible &&
+        !isSettingsScreenVisible &&
+        !isTagEditorVisible

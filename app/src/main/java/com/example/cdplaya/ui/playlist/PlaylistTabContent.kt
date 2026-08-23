@@ -8,6 +8,7 @@ import com.example.cdplaya.data.Playlist
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.stableKey
+import com.example.cdplaya.player.PlaybackShuffleMode
 
 @Composable
 fun PlaylistsTabContent(
@@ -25,7 +26,7 @@ fun PlaylistsTabContent(
     onExportPlaylistClick: (Playlist) -> Unit,
     onImportPlaylistClick: () -> Unit,
     onBackFromPlaylist: () -> Unit,
-    onPlaySongsClick: (List<Song>, Boolean) -> Unit,
+    onPlaySongsClick: (List<Song>, PlaybackShuffleMode) -> Unit,
     onSongClick: (Song, List<Song>) -> Unit,
     onPlayNextClick: (Song) -> Unit,
     onAddToQueueClick: (Song) -> Unit,
@@ -62,10 +63,10 @@ fun PlaylistsTabContent(
             favoriteMembershipKeys = favoriteMembershipKeys,
             onBackClick = onBackFromPlaylist,
             onPlayAllClick = {
-                onPlaySongsClick(availablePlaylistSongs, false)
+                onPlaySongsClick(availablePlaylistSongs, PlaybackShuffleMode.OFF)
             },
             onShuffleAllClick = {
-                onPlaySongsClick(availablePlaylistSongs, true)
+                onPlaySongsClick(availablePlaylistSongs, PlaybackShuffleMode.SONGS)
             },
             onSongClick = onSongClick,
             onPlayNextClick = onPlayNextClick,

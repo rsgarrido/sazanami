@@ -177,10 +177,10 @@ internal fun MusicRoute(
                     playbackContext = playbackContext
                 )
             },
-            onPlaySongsClick = { playbackContext, shuffle ->
+            onPlaySongsClick = { playbackContext, shuffleMode ->
                 musicViewModel.playSongsFromContext(
                     playbackContext = playbackContext,
-                    shuffle = shuffle
+                    shuffleMode = shuffleMode
                 )
             },
             onPlayPauseClick = {

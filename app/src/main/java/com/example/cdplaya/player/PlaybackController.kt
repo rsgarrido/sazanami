@@ -39,13 +39,14 @@ class PlaybackController(
     private val upcomingPlaylistBuilder = UpcomingPlaylistBuilder()
     private val checkpointPolicy = PlaybackStateCheckpointPolicy()
     private val replayGainRepository = ReplayGainRepository()
+    private val restoredShuffleMode = playerStateStorage.getShuffleMode()
     private var librarySongs: List<Song> = emptyList()
     private var playbackContextSongs: List<Song> = emptyList()
     private var replayGainMode: ReplayGainMode = ReplayGainMode.OFF
     private var replayGainRequestId = 0
     private val _uiState = MutableStateFlow(
         PlaybackUiState.Disconnected.copy(
-            isShuffleEnabled = playerStateStorage.isShuffleEnabled(),
+            isShuffleEnabled = restoredShuffleMode.isEnabled,
             repeatMode = playerStateStorage.getRepeatMode()
         )
     )
@@ -70,9 +71,13 @@ class PlaybackController(
     private var isPlaying: Boolean
         get() = _uiState.value.isPlaying
         set(value) = _uiState.update { state -> state.copy(isPlaying = value) }
-    private var isShuffleEnabled: Boolean
-        get() = _uiState.value.isShuffleEnabled
-        set(value) = _uiState.update { state -> state.copy(isShuffleEnabled = value) }
+    private var shuffleMode: PlaybackShuffleMode = restoredShuffleMode
+        set(value) {
+            field = value
+            _uiState.update { state -> state.copy(isShuffleEnabled = value.isEnabled) }
+        }
+    private val isShuffleEnabled: Boolean
+        get() = shuffleMode.isEnabled
     private var repeatMode: RepeatMode
         get() = _uiState.value.repeatMode
         set(value) = _uiState.update { state -> state.copy(repeatMode = value) }
@@ -164,13 +169,13 @@ class PlaybackController(
     fun connect() {
         tracePerformance(PerformanceTraceNames.PLAYBACK_CONNECT) {
             musicPlayer.connect {
-            isPlayerConnected = true
-            musicPlayer.setShuffleEnabled(isShuffleEnabled)
-            musicPlayer.setRepeatMode(repeatMode)
+                isPlayerConnected = true
+                musicPlayer.setShuffleEnabled(shuffleMode.usesDynamicSongShuffle)
+                musicPlayer.setRepeatMode(repeatMode)
 
-            if (librarySongs.isNotEmpty()) {
-                restorePlayerState()
-            }
+                if (librarySongs.isNotEmpty()) {
+                    restorePlayerState()
+                }
             }
         }
 
@@ -257,16 +262,16 @@ class PlaybackController(
 
     fun playSongsFromContext(
         playbackContext: List<Song>,
-        shuffle: Boolean
+        shuffleMode: PlaybackShuffleMode
     ) {
         if (playbackContext.isEmpty()) {
             return
         }
 
-        isShuffleEnabled = shuffle
+        this.shuffleMode = shuffleMode
         playbackNavigationHistory.clearAll()
 
-        val songToPlay = if (shuffle && playbackContext.size > 1) {
+        val songToPlay = if (shuffleMode.usesDynamicSongShuffle && playbackContext.size > 1) {
             playbackContext[Random.nextInt(playbackContext.size)]
         } else {
             playbackContext.first()
@@ -276,7 +281,8 @@ class PlaybackController(
             song = songToPlay,
             playbackContext = playbackContext,
             addCurrentToHistory = false,
-            clearForwardHistory = false
+            clearForwardHistory = false,
+            preserveSpecializedShuffleMode = true
         )
     }
 
@@ -284,11 +290,21 @@ class PlaybackController(
         song: Song,
         playbackContext: List<Song>? = null,
         addCurrentToHistory: Boolean = true,
-        clearForwardHistory: Boolean = true
+        clearForwardHistory: Boolean = true,
+        preserveSpecializedShuffleMode: Boolean = false
     ) {
         val previousSong = currentSong
 
         if (playbackContext != null) {
+            if (
+                !preserveSpecializedShuffleMode &&
+                (
+                        shuffleMode == PlaybackShuffleMode.ALBUMS ||
+                                shuffleMode == PlaybackShuffleMode.ALBUMS_AND_SONGS
+                        )
+            ) {
+                shuffleMode = PlaybackShuffleMode.OFF
+            }
             playbackNavigationHistory.clearAll()
         } else {
             if (addCurrentToHistory && previousSong != null && previousSong.id != song.id) {
@@ -348,7 +364,11 @@ class PlaybackController(
         musicPlayer.getCurrentPosition().coerceAtLeast(0).toLong()
 
     fun toggleShuffle() {
-        isShuffleEnabled = !isShuffleEnabled
+        shuffleMode = if (shuffleMode == PlaybackShuffleMode.OFF) {
+            PlaybackShuffleMode.SONGS
+        } else {
+            PlaybackShuffleMode.OFF
+        }
         playbackNavigationHistory.clearAll()
         syncServicePlaylistKeepingCurrent(preserveExistingShuffleOrder = false)
         savePlayerState()
@@ -451,7 +471,7 @@ class PlaybackController(
         playerStateStorage.saveState(
             currentSongId = currentSong?.id,
             currentPosition = musicPlayer.getCurrentPosition(),
-            isShuffleEnabled = isShuffleEnabled,
+            shuffleMode = shuffleMode,
             repeatMode = repeatMode,
             previousSongIds = playbackNavigationHistory.getPreviousSongIds(),
             nextSongIds = playbackNavigationHistory.getNextSongIds(),
@@ -506,7 +526,7 @@ class PlaybackController(
         currentPosition = playerStateStorage.getCurrentPosition().coerceIn(0, duration)
         isPlaying = false
 
-        isShuffleEnabled = playerStateStorage.isShuffleEnabled()
+        shuffleMode = playerStateStorage.getShuffleMode()
         repeatMode = playerStateStorage.getRepeatMode()
 
         val restoredPlaybackContextSongs = playerStateStorage
@@ -546,7 +566,7 @@ class PlaybackController(
             playlist = buildPlaybackPlaylist(restoredSong)
         )
 
-        musicPlayer.setShuffleEnabled(isShuffleEnabled)
+        musicPlayer.setShuffleEnabled(shuffleMode.usesDynamicSongShuffle)
         musicPlayer.setRepeatMode(repeatMode)
         applyReplayGainForCurrentSong()
 
@@ -696,7 +716,7 @@ class PlaybackController(
 
         if (currentSong?.id == newSong.id) {
             musicPlayer.setRepeatMode(repeatMode)
-            musicPlayer.setShuffleEnabled(isShuffleEnabled)
+            musicPlayer.setShuffleEnabled(shuffleMode.usesDynamicSongShuffle)
             applyReplayGainForCurrentSong()
             return
         }
@@ -774,7 +794,7 @@ class PlaybackController(
             playlist = playlist
         )
 
-        musicPlayer.setShuffleEnabled(isShuffleEnabled)
+        musicPlayer.setShuffleEnabled(shuffleMode.usesDynamicSongShuffle)
         musicPlayer.setRepeatMode(repeatMode)
         applyReplayGainForCurrentSong()
 
@@ -805,7 +825,7 @@ class PlaybackController(
                 currentSongId = startSong.id
             ),
             currentUpcomingSongs = upcomingSongs,
-            isShuffleEnabled = isShuffleEnabled,
+            shuffleMode = shuffleMode,
             repeatMode = repeatMode,
             preserveExistingShuffleOrder = preserveExistingShuffleOrder
         )
@@ -830,7 +850,7 @@ class PlaybackController(
             upcomingSongs = refreshedUpcomingSongs
         )
 
-        musicPlayer.setShuffleEnabled(isShuffleEnabled)
+        musicPlayer.setShuffleEnabled(shuffleMode.usesDynamicSongShuffle)
         musicPlayer.setRepeatMode(repeatMode)
     }
 
@@ -941,7 +961,7 @@ class PlaybackController(
 internal fun replacementSong(song: Song, updatedSongs: List<Song>): Song? {
     updatedSongs.firstOrNull { candidate ->
         candidate.id == song.id &&
-            (song.volumeName.isBlank() || candidate.volumeName == song.volumeName)
+                (song.volumeName.isBlank() || candidate.volumeName == song.volumeName)
     }?.let { return it }
     return when (val resolution = SongReferenceResolver.resolve(song.toSongReference(), updatedSongs)) {
         is SongReferenceResolution.Resolved -> resolution.song

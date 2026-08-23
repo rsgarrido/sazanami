@@ -11,7 +11,7 @@ class UpcomingPlaylistBuilder(
         playbackSourceSongs: List<Song>,
         queuedSongsAfterCurrent: List<Song>,
         currentUpcomingSongs: List<Song>,
-        isShuffleEnabled: Boolean,
+        shuffleMode: PlaybackShuffleMode,
         repeatMode: RepeatMode,
         preserveExistingShuffleOrder: Boolean
     ): List<Song> {
@@ -36,7 +36,7 @@ class UpcomingPlaylistBuilder(
                 )
             }
 
-            preserveExistingShuffleOrder && isShuffleEnabled -> {
+            preserveExistingShuffleOrder && shuffleMode.usesDynamicSongShuffle -> {
                 val remainingExistingUpcomingSongs = getRemainingSongsFromExistingUpcoming(
                     startSong = startSong,
                     currentUpcomingSongs = currentUpcomingSongs
@@ -66,7 +66,7 @@ class UpcomingPlaylistBuilder(
         }
 
         val shouldCreateNewShuffleOrder =
-            isShuffleEnabled &&
+            shuffleMode.usesDynamicSongShuffle &&
                     startIndex != -1 &&
                     (
                             !preserveExistingShuffleOrder ||

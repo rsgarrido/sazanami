@@ -59,6 +59,7 @@ import com.example.cdplaya.player.equalizer.EqualizerMode
 import com.example.cdplaya.player.equalizer.EqualizerRuntimeState
 import com.example.cdplaya.player.equalizer.parametric.ParametricFilter
 import com.example.cdplaya.player.replaygain.ReplayGainMode
+import com.example.cdplaya.player.PlaybackShuffleMode
 import com.example.cdplaya.ui.equalizer.EqualizerUiController
 import com.example.cdplaya.ui.equalizer.EqualizerImportPreviewState
 import com.example.cdplaya.ui.player.theme.PlayerThemeTokenField
@@ -689,11 +690,11 @@ class MusicViewModel(
 
     fun playSongsFromContext(
         playbackContext: List<Song>,
-        shuffle: Boolean
+        shuffleMode: PlaybackShuffleMode
     ) {
         playbackController.playSongsFromContext(
             playbackContext = playbackContext,
-            shuffle = shuffle
+            shuffleMode = shuffleMode
         )
     }
 
