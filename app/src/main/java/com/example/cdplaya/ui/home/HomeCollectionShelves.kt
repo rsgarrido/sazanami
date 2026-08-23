@@ -1,6 +1,12 @@
 package com.example.cdplaya.ui.home
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateIntOffsetAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -11,43 +17,54 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.example.cdplaya.R
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.home.HomePin
-import com.example.cdplaya.ui.AppShellIcons
 import com.example.cdplaya.ui.AppShellAccent
+import com.example.cdplaya.ui.AppShellIcons
 import com.example.cdplaya.ui.AppShellTypography
+import kotlin.math.roundToInt
 
 @Composable
 fun HomePinnedShelf(
@@ -60,7 +77,41 @@ fun HomePinnedShelf(
     if (pins.isEmpty()) return
 
     val homePinUi = LocalHomePinUi.current
-    var showManager by remember { mutableStateOf(false) }
+    val hapticFeedback = LocalHapticFeedback.current
+    val density = LocalDensity.current
+
+    val persistedPins = pins.take(HomePin.MAX_COUNT)
+    val persistedOrderKey = persistedPins
+        .joinToString(separator = "|") { pin -> pin.pin.id }
+
+    var isEditing by remember { mutableStateOf(false) }
+
+    /*
+     * visualPins is the optimistic UI order used while dragging.
+     *
+     * Keying this state to the persisted order is intentional:
+     *
+     * - A drag can update visualPins immediately without waiting for DataStore.
+     * - Pressing DONE does not reset the optimistic order.
+     * - Once the persisted pin order actually changes, Compose recreates this
+     *   state from the authoritative persisted list.
+     *
+     * This avoids a race between edit mode and an asynchronous LaunchedEffect.
+     */
+    var visualPins by remember(persistedOrderKey) {
+        mutableStateOf(persistedPins)
+    }
+
+    var draggedPinId by remember { mutableStateOf<String?>(null) }
+    var dragStartIndex by remember { mutableIntStateOf(-1) }
+    var dragOffsetX by remember { mutableFloatStateOf(0f) }
+
+    fun finishEditing() {
+        isEditing = false
+        draggedPinId = null
+        dragStartIndex = -1
+        dragOffsetX = 0f
+    }
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -75,9 +126,18 @@ fun HomePinnedShelf(
         ) {
             HomeSectionHeader(text = "Pinned")
 
-            TextButton(onClick = { showManager = true }) {
+            TextButton(
+                onClick = {
+                    if (isEditing) {
+                        finishEditing()
+                    } else {
+                        isEditing = true
+                        visualPins = persistedPins
+                    }
+                }
+            ) {
                 Text(
-                    text = "MANAGE",
+                    text = if (isEditing) "DONE" else "MANAGE",
                     style = AppShellTypography.CompactAction,
                     color = AppShellAccent
                 )
@@ -90,42 +150,251 @@ fun HomePinnedShelf(
                 .padding(horizontal = 16.dp)
         ) {
             val gap = 8.dp
-            val cardWidth = (maxWidth - gap * (HomePin.MAX_COUNT - 1).toFloat()) /
-                    HomePin.MAX_COUNT.toFloat()
+            val cardWidth =
+                (maxWidth - gap * (HomePin.MAX_COUNT - 1).toFloat()) /
+                        HomePin.MAX_COUNT.toFloat()
 
-            Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
-                pins.take(HomePin.MAX_COUNT).forEach { pin ->
-                    HomePinnedCard(
-                        pin = pin,
-                        onClick = {
-                            when (val target = pin.target) {
-                                is HomePinTarget.SongTarget -> onSongClick(target.song)
-                                is HomePinTarget.AlbumTarget -> onAlbumClick(target.album.key)
-                                is HomePinTarget.ArtistTarget -> onArtistClick(target.artist.name)
-                                null -> Unit
+            val stepPx = with(density) {
+                (cardWidth + gap).toPx()
+            }
+
+            val maxSlotIndex = (visualPins.size - 1).coerceAtLeast(0)
+
+            Box(modifier = Modifier.fillMaxWidth()) {
+                visualPins.forEach { pin ->
+                    key(pin.pin.id) {
+                        val currentIndex = visualPins.indexOfFirst { candidate ->
+                            candidate.pin.id == pin.pin.id
+                        }.coerceAtLeast(0)
+
+                        val isDragged = draggedPinId == pin.pin.id
+
+                        val slotOffset by animateIntOffsetAsState(
+                            targetValue = IntOffset(
+                                x = (currentIndex * stepPx).roundToInt(),
+                                y = 0
+                            ),
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMediumLow
+                            ),
+                            label = "homePinSlot-${pin.pin.id}"
+                        )
+
+                        val dragScale by animateFloatAsState(
+                            targetValue = if (isDragged) 1.045f else 1f,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                stiffness = Spring.StiffnessMedium
+                            ),
+                            label = "homePinDragScale-${pin.pin.id}"
+                        )
+
+                        val dragModifier = if (isEditing) {
+                            Modifier.pointerInput(
+                                pin.pin.id,
+                                stepPx,
+                                maxSlotIndex
+                            ) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = {
+                                        val startIndex =
+                                            visualPins.indexOfFirst { candidate ->
+                                                candidate.pin.id == pin.pin.id
+                                            }
+
+                                        if (startIndex >= 0) {
+                                            draggedPinId = pin.pin.id
+                                            dragStartIndex = startIndex
+                                            dragOffsetX = 0f
+
+                                            hapticFeedback.performHapticFeedback(
+                                                HapticFeedbackType.LongPress
+                                            )
+                                        }
+                                    },
+
+                                    onDrag = { change, dragAmount ->
+                                        if (
+                                            draggedPinId != pin.pin.id ||
+                                            dragStartIndex < 0
+                                        ) {
+                                            return@detectDragGesturesAfterLongPress
+                                        }
+
+                                        change.consume()
+
+                                        val minimumOffset =
+                                            -dragStartIndex * stepPx
+
+                                        val maximumOffset =
+                                            (maxSlotIndex - dragStartIndex) * stepPx
+
+                                        dragOffsetX =
+                                            (dragOffsetX + dragAmount.x)
+                                                .coerceIn(
+                                                    minimumOffset,
+                                                    maximumOffset
+                                                )
+
+                                        val desiredIndex =
+                                            (
+                                                    (
+                                                            dragStartIndex * stepPx +
+                                                                    dragOffsetX
+                                                            ) / stepPx
+                                                    )
+                                                .roundToInt()
+                                                .coerceIn(
+                                                    0,
+                                                    maxSlotIndex
+                                                )
+
+                                        val fromIndex =
+                                            visualPins.indexOfFirst { candidate ->
+                                                candidate.pin.id == pin.pin.id
+                                            }
+
+                                        if (
+                                            fromIndex >= 0 &&
+                                            fromIndex != desiredIndex
+                                        ) {
+                                            visualPins =
+                                                visualPins
+                                                    .toMutableList()
+                                                    .apply {
+                                                        val movingPin =
+                                                            removeAt(fromIndex)
+
+                                                        add(
+                                                            desiredIndex,
+                                                            movingPin
+                                                        )
+                                                    }
+                                        }
+                                    },
+
+                                    onDragEnd = {
+                                        val finalIndex =
+                                            visualPins.indexOfFirst { candidate ->
+                                                candidate.pin.id == pin.pin.id
+                                            }
+
+                                        if (
+                                            dragStartIndex >= 0 &&
+                                            finalIndex >= 0
+                                        ) {
+                                            val offset =
+                                                finalIndex - dragStartIndex
+
+                                            if (offset != 0) {
+                                                homePinUi.onMovePinRequested(
+                                                    pin.pin.id,
+                                                    offset
+                                                )
+                                            }
+                                        }
+
+                                        draggedPinId = null
+                                        dragStartIndex = -1
+                                        dragOffsetX = 0f
+                                    },
+
+                                    onDragCancel = {
+                                        draggedPinId = null
+                                        dragStartIndex = -1
+                                        dragOffsetX = 0f
+
+                                        visualPins = persistedPins
+                                    }
+                                )
                             }
-                        },
-                        modifier = Modifier.width(cardWidth)
-                    )
+                        } else {
+                            Modifier
+                        }
+
+                        val displayedOffset =
+                            if (isDragged && dragStartIndex >= 0) {
+                                IntOffset(
+                                    x = (
+                                            dragStartIndex * stepPx +
+                                                    dragOffsetX
+                                            ).roundToInt(),
+                                    y = 0
+                                )
+                            } else {
+                                slotOffset
+                            }
+
+                        HomePinnedCard(
+                            pin = pin,
+                            isEditing = isEditing,
+                            onClick = {
+                                if (!isEditing) {
+                                    when (val target = pin.target) {
+                                        is HomePinTarget.SongTarget ->
+                                            onSongClick(target.song)
+
+                                        is HomePinTarget.AlbumTarget ->
+                                            onAlbumClick(target.album.key)
+
+                                        is HomePinTarget.ArtistTarget ->
+                                            onArtistClick(target.artist.name)
+
+                                        null -> Unit
+                                    }
+                                }
+                            },
+                            onUnpin = {
+                                if (draggedPinId == pin.pin.id) {
+                                    draggedPinId = null
+                                    dragStartIndex = -1
+                                    dragOffsetX = 0f
+                                }
+
+                                visualPins =
+                                    visualPins.filterNot { candidate ->
+                                        candidate.pin.id == pin.pin.id
+                                    }
+
+                                homePinUi.onUnpinRequested(pin.pin.id)
+                            },
+                            modifier = Modifier
+                                .width(cardWidth)
+                                .offset { displayedOffset }
+                                .zIndex(
+                                    if (isDragged) 1f else 0f
+                                )
+                                .then(
+                                    if (isDragged) {
+                                        Modifier.shadow(
+                                            elevation = 10.dp,
+                                            shape = RoundedCornerShape(16.dp),
+                                            clip = false
+                                        )
+                                    } else {
+                                        Modifier
+                                    }
+                                )
+                                .graphicsLayer {
+                                    scaleX = dragScale
+                                    scaleY = dragScale
+                                }
+                                .then(dragModifier)
+                        )
+                    }
                 }
             }
         }
-    }
-
-    if (showManager) {
-        HomePinManagerDialog(
-            pins = pins,
-            onMove = homePinUi.onMovePinRequested,
-            onUnpin = homePinUi.onUnpinRequested,
-            onDismiss = { showManager = false }
-        )
     }
 }
 
 @Composable
 private fun HomePinnedCard(
     pin: ResolvedHomePin,
+    isEditing: Boolean,
     onClick: () -> Unit,
+    onUnpin: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     PressableHomeCard(
@@ -152,6 +421,32 @@ private fun HomePinnedCard(
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
+
+                if (isEditing) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .size(40.dp)
+                            .clickable(onClick = onUnpin),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Surface(
+                            modifier = Modifier.size(24.dp),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.error,
+                            shadowElevation = 4.dp
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Filled.Close,
+                                    contentDescription = "Unpin ${pin.title}",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onError
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             Text(
@@ -172,79 +467,6 @@ private fun HomePinnedCard(
             )
         }
     }
-}
-
-@Composable
-private fun HomePinManagerDialog(
-    pins: List<ResolvedHomePin>,
-    onMove: (String, Int) -> Unit,
-    onUnpin: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Manage pins") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "Use the arrows to reorder your Home shortcuts, or remove a pin.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                pins.forEachIndexed { index, pin ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = pin.title,
-                                style = AppShellTypography.SongTitle,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = pin.typeLabel,
-                                style = AppShellTypography.Eyebrow,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        IconButton(
-                            onClick = { onMove(pin.pin.id, -1) },
-                            enabled = index > 0
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.ArrowBack,
-                                contentDescription = "Move ${pin.title} left"
-                            )
-                        }
-                        IconButton(
-                            onClick = { onMove(pin.pin.id, 1) },
-                            enabled = index < pins.lastIndex
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.ArrowForward,
-                                contentDescription = "Move ${pin.title} right"
-                            )
-                        }
-                        IconButton(onClick = { onUnpin(pin.pin.id) }) {
-                            Icon(
-                                imageVector = Icons.Filled.Close,
-                                contentDescription = "Unpin ${pin.title}"
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Done")
-            }
-        }
-    )
 }
 
 @Composable
