@@ -26,4 +26,4 @@ internal fun waveformCacheKey(source: WaveformSource): String {
         .joinToString(separator = "") { byte -> "%02x".format(byte) }
 }
 
-internal const val WAVEFORM_CACHE_KEY_VERSION = 2
+internal const val WAVEFORM_CACHE_KEY_VERSION = 3

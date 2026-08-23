@@ -7,8 +7,8 @@ import org.junit.Test
 
 class WaveformDataTest {
     @Test
-    fun cacheKeyVersion_invalidatesLowerResolutionWaveforms() {
-        assertEquals(2, WAVEFORM_CACHE_KEY_VERSION)
+    fun cacheKeyVersion_invalidatesPreviousWaveformAlgorithm() {
+        assertEquals(3, WAVEFORM_CACHE_KEY_VERSION)
     }
 
     @Test
