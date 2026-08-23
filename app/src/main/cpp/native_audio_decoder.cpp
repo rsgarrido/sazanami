@@ -13,17 +13,20 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 namespace {
 
-    constexpr int64_t kCodecTimeoutUs = 10'000;
-    constexpr int kMaxIdleIterations = 1'000;
-    constexpr auto kMaxAnalysisDuration = std::chrono::seconds(45);
+    constexpr int64_t kCodecTimeoutUs = 2'000;
+    constexpr int kSparseSamplePointCount = 64;
+    constexpr int kOutputBuffersPerSample = 2;
+    constexpr int kMaxDecodeIterationsPerSample = 32;
+    constexpr int kMinimumSuccessfulSamplePoints = 4;
+    constexpr auto kMaxAnalysisDuration = std::chrono::milliseconds(2'000);
     constexpr int kMaxSampledFramesPerBuffer = 512;
-    constexpr int64_t kMicrosPerSecond = 1'000'000;
 
     constexpr int kEncodingPcm16Bit = 2;
     constexpr int kEncodingPcm8Bit = 3;
@@ -112,14 +115,14 @@ namespace {
         std::memcpy(&value, source, sizeof(T));
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
         if constexpr (sizeof(T) == 2) {
-            const auto raw = static_cast<uint16_t>(value);
-            value = static_cast<T>(__builtin_bswap16(raw));
-        } else if constexpr (sizeof(T) == 4) {
-            uint32_t raw{};
-            std::memcpy(&raw, &value, sizeof(raw));
-            raw = __builtin_bswap32(raw);
-            std::memcpy(&value, &raw, sizeof(raw));
-        }
+        const auto raw = static_cast<uint16_t>(value);
+        value = static_cast<T>(__builtin_bswap16(raw));
+    } else if constexpr (sizeof(T) == 4) {
+        uint32_t raw{};
+        std::memcpy(&raw, &value, sizeof(raw));
+        raw = __builtin_bswap32(raw);
+        std::memcpy(&value, &raw, sizeof(raw));
+    }
 #endif
         return value;
     }
@@ -182,109 +185,314 @@ namespace {
         return result;
     }
 
-    class WaveformAccumulator {
-    public:
-        WaveformAccumulator(int barCount, int64_t durationUs)
-                : squaredTotals_(static_cast<size_t>(barCount), 0.0),
-                  sampleCounts_(static_cast<size_t>(barCount), 0),
-                  durationUs_(std::max<int64_t>(1, durationUs)) {}
+    std::optional<float> calculateBufferRms(
+            const uint8_t* buffer,
+            size_t size,
+            const PcmFormat& format
+    ) {
+        if (buffer == nullptr || size == 0 || format.channelCount <= 0) {
+            return std::nullopt;
+        }
 
-        bool add(
-                const uint8_t* buffer,
-                size_t size,
-                int64_t presentationTimeUs,
-                const PcmFormat& format
-        ) {
-            if (buffer == nullptr || size == 0 || format.channelCount <= 0 || format.sampleRate <= 0) {
-                return false;
+        const int bytesPerPcmSample = bytesPerSample(format.encoding);
+        if (bytesPerPcmSample <= 0) {
+            return std::nullopt;
+        }
+
+        const size_t bytesPerFrame = static_cast<size_t>(bytesPerPcmSample) *
+                                     static_cast<size_t>(format.channelCount);
+        if (bytesPerFrame == 0 || size < bytesPerFrame) {
+            return std::nullopt;
+        }
+
+        const size_t frameCount = size / bytesPerFrame;
+        const size_t sampleStride = std::max<size_t>(
+                1,
+                frameCount / static_cast<size_t>(kMaxSampledFramesPerBuffer)
+        );
+
+        double squaredTotal = 0.0;
+        uint64_t sampledFrames = 0;
+        for (size_t frameIndex = 0; frameIndex < frameCount; frameIndex += sampleStride) {
+            const size_t frameOffset = frameIndex * bytesPerFrame;
+            if (frameOffset + bytesPerFrame > size) {
+                break;
             }
 
-            const int bytesPerPcmSample = bytesPerSample(format.encoding);
-            if (bytesPerPcmSample <= 0) {
-                return false;
+            double channelTotal = 0.0;
+            for (int channel = 0; channel < format.channelCount; ++channel) {
+                const size_t sampleOffset = frameOffset +
+                                            static_cast<size_t>(channel) * static_cast<size_t>(bytesPerPcmSample);
+                channelTotal += readAmplitude(buffer + sampleOffset, format.encoding);
+            }
+            const double amplitude = channelTotal / static_cast<double>(format.channelCount);
+            squaredTotal += amplitude * amplitude;
+            sampledFrames += 1;
+        }
+
+        if (sampledFrames == 0) {
+            return std::nullopt;
+        }
+        const double meanSquare = squaredTotal / static_cast<double>(sampledFrames);
+        const double rms = std::sqrt(std::max(0.0, meanSquare));
+        if (!std::isfinite(rms)) {
+            return std::nullopt;
+        }
+        return static_cast<float>(std::clamp(rms, 0.0, 1.0));
+    }
+
+    std::vector<float> interpolateAndNormalizeSamples(
+            std::vector<float> samples,
+            int barCount
+    ) {
+        if (samples.empty() || barCount <= 0) {
+            return {};
+        }
+
+        std::vector<size_t> validIndices;
+        validIndices.reserve(samples.size());
+        for (size_t index = 0; index < samples.size(); ++index) {
+            if (std::isfinite(samples[index])) {
+                validIndices.push_back(index);
+            }
+        }
+        const size_t minimumSuccessfulSamples = std::min(
+                samples.size(),
+                static_cast<size_t>(kMinimumSuccessfulSamplePoints)
+        );
+        if (validIndices.size() < minimumSuccessfulSamples) {
+            return {};
+        }
+
+        const size_t firstValid = validIndices.front();
+        std::fill(samples.begin(), samples.begin() + static_cast<std::ptrdiff_t>(firstValid), samples[firstValid]);
+
+        for (size_t validIndex = 1; validIndex < validIndices.size(); ++validIndex) {
+            const size_t left = validIndices[validIndex - 1];
+            const size_t right = validIndices[validIndex];
+            const float leftValue = samples[left];
+            const float rightValue = samples[right];
+            const size_t distance = right - left;
+            for (size_t index = left + 1; index < right; ++index) {
+                const float progress = static_cast<float>(index - left) / static_cast<float>(distance);
+                samples[index] = leftValue + (rightValue - leftValue) * progress;
+            }
+        }
+
+        const size_t lastValid = validIndices.back();
+        std::fill(samples.begin() + static_cast<std::ptrdiff_t>(lastValid + 1), samples.end(), samples[lastValid]);
+
+        std::vector<float> result(static_cast<size_t>(barCount), 0.0F);
+        if (barCount == 1 || samples.size() == 1) {
+            result[0] = samples.front();
+        } else {
+            const double sourceMaximum = static_cast<double>(samples.size() - 1);
+            const double targetMaximum = static_cast<double>(barCount - 1);
+            for (int index = 0; index < barCount; ++index) {
+                const double sourcePosition = static_cast<double>(index) * sourceMaximum / targetMaximum;
+                const auto left = static_cast<size_t>(std::floor(sourcePosition));
+                const auto right = std::min(left + 1, samples.size() - 1);
+                const float progress = static_cast<float>(sourcePosition - static_cast<double>(left));
+                result[static_cast<size_t>(index)] =
+                        samples[left] + (samples[right] - samples[left]) * progress;
+            }
+        }
+
+        const float maximum = *std::max_element(result.begin(), result.end());
+        if (maximum <= 0.0F || !std::isfinite(maximum)) {
+            return result;
+        }
+        for (float& amplitude : result) {
+            amplitude = std::clamp(amplitude / maximum, 0.0F, 1.0F);
+        }
+        return result;
+    }
+
+
+    std::vector<int> buildSparseSampleOrder(int samplePointCount) {
+        if (samplePointCount <= 0) {
+            return {};
+        }
+        if (samplePointCount == 1) {
+            return {0};
+        }
+
+        std::vector<int> order;
+        order.reserve(static_cast<size_t>(samplePointCount));
+        std::vector<bool> added(static_cast<size_t>(samplePointCount), false);
+        auto addIndex = [&](int index) {
+            if (index >= 0 && index < samplePointCount && !added[static_cast<size_t>(index)]) {
+                added[static_cast<size_t>(index)] = true;
+                order.push_back(index);
+            }
+        };
+
+        addIndex(0);
+        addIndex(samplePointCount - 1);
+
+        struct Interval {
+            int left;
+            int right;
+        };
+        std::vector<Interval> intervals;
+        intervals.push_back({0, samplePointCount - 1});
+        size_t cursor = 0;
+        while (cursor < intervals.size() && order.size() < static_cast<size_t>(samplePointCount)) {
+            const Interval interval = intervals[cursor++];
+            if (interval.right - interval.left <= 1) {
+                continue;
+            }
+            const int middle = interval.left + (interval.right - interval.left) / 2;
+            addIndex(middle);
+            intervals.push_back({interval.left, middle});
+            intervals.push_back({middle, interval.right});
+        }
+
+        for (int index = 0; index < samplePointCount; ++index) {
+            addIndex(index);
+        }
+        return order;
+    }
+
+    std::optional<float> decodeSampleWindow(
+            DecodeSession* session,
+            AMediaExtractor* extractor,
+            AMediaCodec* codec,
+            PcmFormat* pcmFormat
+    ) {
+        bool inputEnded = false;
+        double squaredRmsTotal = 0.0;
+        int outputBufferCount = 0;
+
+        for (int iteration = 0; iteration < kMaxDecodeIterationsPerSample; ++iteration) {
+            if (session->cancelled.load(std::memory_order_relaxed)) {
+                return std::nullopt;
             }
 
-            const size_t bytesPerFrame = static_cast<size_t>(bytesPerPcmSample) *
-                                         static_cast<size_t>(format.channelCount);
-            if (bytesPerFrame == 0 || size < bytesPerFrame) {
-                return false;
+            if (!inputEnded) {
+                const ssize_t inputIndex = AMediaCodec_dequeueInputBuffer(codec, kCodecTimeoutUs);
+                if (inputIndex >= 0) {
+                    size_t inputCapacity = 0;
+                    uint8_t* inputBuffer = AMediaCodec_getInputBuffer(
+                            codec,
+                            static_cast<size_t>(inputIndex),
+                            &inputCapacity
+                    );
+                    if (inputBuffer == nullptr || inputCapacity == 0) {
+                        return std::nullopt;
+                    }
+
+#if __ANDROID_API__ >= 28
+                    const ssize_t expectedSampleSize = AMediaExtractor_getSampleSize(extractor);
+                if (expectedSampleSize > 0 &&
+                    static_cast<size_t>(expectedSampleSize) > inputCapacity) {
+                    return std::nullopt;
+                }
+#endif
+                    const ssize_t sampleSize = AMediaExtractor_readSampleData(
+                            extractor,
+                            inputBuffer,
+                            inputCapacity
+                    );
+                    if (sampleSize < 0) {
+                        if (AMediaCodec_queueInputBuffer(
+                                codec,
+                                static_cast<size_t>(inputIndex),
+                                0,
+                                0,
+                                0,
+                                AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM
+                        ) != AMEDIA_OK) {
+                            return std::nullopt;
+                        }
+                        inputEnded = true;
+                    } else {
+                        const int64_t sampleTimeUs = std::max<int64_t>(
+                                0,
+                                AMediaExtractor_getSampleTime(extractor)
+                        );
+                        if (AMediaCodec_queueInputBuffer(
+                                codec,
+                                static_cast<size_t>(inputIndex),
+                                0,
+                                static_cast<size_t>(sampleSize),
+                                static_cast<uint64_t>(sampleTimeUs),
+                                0
+                        ) != AMEDIA_OK) {
+                            return std::nullopt;
+                        }
+                        AMediaExtractor_advance(extractor);
+                    }
+                } else if (inputIndex < AMEDIACODEC_INFO_TRY_AGAIN_LATER) {
+                    return std::nullopt;
+                }
             }
 
-            const size_t frameCount = size / bytesPerFrame;
-            const size_t sampleStride = std::max<size_t>(
-                    1,
-                    frameCount / static_cast<size_t>(kMaxSampledFramesPerBuffer)
+            AMediaCodecBufferInfo bufferInfo{};
+            const ssize_t outputIndex = AMediaCodec_dequeueOutputBuffer(
+                    codec,
+                    &bufferInfo,
+                    kCodecTimeoutUs
             );
-
-            for (size_t frameIndex = 0; frameIndex < frameCount; frameIndex += sampleStride) {
-                const size_t frameOffset = frameIndex * bytesPerFrame;
-                if (frameOffset + bytesPerFrame > size) {
-                    break;
-                }
-
-                double channelTotal = 0.0;
-                for (int channel = 0; channel < format.channelCount; ++channel) {
-                    const size_t sampleOffset = frameOffset +
-                                                static_cast<size_t>(channel) * static_cast<size_t>(bytesPerPcmSample);
-                    channelTotal += readAmplitude(buffer + sampleOffset, format.encoding);
-                }
-                const double amplitude = channelTotal / static_cast<double>(format.channelCount);
-                const int64_t frameTimeUs = std::max<int64_t>(0, presentationTimeUs) +
-                                            static_cast<int64_t>(frameIndex) * kMicrosPerSecond /
-                                            static_cast<int64_t>(format.sampleRate);
-                const long double bucketPosition =
-                        static_cast<long double>(frameTimeUs) * static_cast<long double>(squaredTotals_.size()) /
-                        static_cast<long double>(durationUs_);
-                const auto bucket = static_cast<size_t>(std::clamp<long double>(
-                        bucketPosition,
-                        0.0L,
-                        static_cast<long double>(squaredTotals_.size() - 1)
-                ));
-
-                squaredTotals_[bucket] += amplitude * amplitude;
-                sampleCounts_[bucket] += 1;
+            if (outputIndex == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED) {
+                MediaFormatPtr outputFormat(AMediaCodec_getOutputFormat(codec));
+                *pcmFormat = readPcmFormat(outputFormat.get(), *pcmFormat);
+                continue;
             }
-            return true;
+            if (outputIndex >= 0) {
+                const bool outputEnded =
+                        (bufferInfo.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM) != 0;
+                if (bufferInfo.size > 0) {
+                    size_t outputCapacity = 0;
+                    uint8_t* outputBuffer = AMediaCodec_getOutputBuffer(
+                            codec,
+                            static_cast<size_t>(outputIndex),
+                            &outputCapacity
+                    );
+                    if (outputBuffer == nullptr) {
+                        AMediaCodec_releaseOutputBuffer(codec, static_cast<size_t>(outputIndex), false);
+                        return std::nullopt;
+                    }
+                    const auto rms = calculateBufferRms(
+                            outputBuffer,
+                            static_cast<size_t>(bufferInfo.size),
+                            *pcmFormat
+                    );
+                    if (rms.has_value()) {
+                        squaredRmsTotal += static_cast<double>(*rms) * static_cast<double>(*rms);
+                        outputBufferCount += 1;
+                    }
+                }
+
+                if (AMediaCodec_releaseOutputBuffer(
+                        codec,
+                        static_cast<size_t>(outputIndex),
+                        false
+                ) != AMEDIA_OK) {
+                    return std::nullopt;
+                }
+
+                if (outputBufferCount >= kOutputBuffersPerSample || outputEnded) {
+                    if (outputBufferCount == 0) {
+                        return std::nullopt;
+                    }
+                    return static_cast<float>(std::sqrt(
+                            squaredRmsTotal / static_cast<double>(outputBufferCount)
+                    ));
+                }
+            } else if (outputIndex != AMEDIACODEC_INFO_TRY_AGAIN_LATER &&
+                       outputIndex != AMEDIACODEC_INFO_OUTPUT_BUFFERS_CHANGED) {
+                return std::nullopt;
+            }
         }
 
-        std::vector<float> normalizedAmplitudes() const {
-            if (squaredTotals_.empty()) {
-                return {};
-            }
-
-            bool hasSamples = false;
-            std::vector<float> amplitudes(squaredTotals_.size(), 0.0F);
-            float maximum = 0.0F;
-            for (size_t index = 0; index < amplitudes.size(); ++index) {
-                const uint64_t count = sampleCounts_[index];
-                if (count == 0) {
-                    continue;
-                }
-                hasSamples = true;
-                const double meanSquare = squaredTotals_[index] / static_cast<double>(count);
-                const float rms = static_cast<float>(std::sqrt(std::max(0.0, meanSquare)));
-                amplitudes[index] = std::isfinite(rms) ? std::max(0.0F, rms) : 0.0F;
-                maximum = std::max(maximum, amplitudes[index]);
-            }
-
-            if (!hasSamples) {
-                return {};
-            }
-            if (maximum <= 0.0F) {
-                return amplitudes;
-            }
-
-            for (float& amplitude : amplitudes) {
-                amplitude = std::clamp(amplitude / maximum, 0.0F, 1.0F);
-            }
-            return amplitudes;
+        if (outputBufferCount == 0) {
+            return std::nullopt;
         }
-
-    private:
-        std::vector<double> squaredTotals_;
-        std::vector<uint64_t> sampleCounts_;
-        int64_t durationUs_;
-    };
+        return static_cast<float>(std::sqrt(
+                squaredRmsTotal / static_cast<double>(outputBufferCount)
+        ));
+    }
 
     bool startsWithAudioMime(const char* mime) {
         constexpr char prefix[] = "audio/";
@@ -354,136 +562,61 @@ namespace {
         codec.markStarted();
 
         PcmFormat pcmFormat = readPcmFormat(inputFormat.get(), PcmFormat{});
-        WaveformAccumulator accumulator(barCount, durationUs);
-        bool inputEnded = false;
-        bool outputEnded = false;
-        int idleIterations = 0;
+        const int samplePointCount = std::min(barCount, kSparseSamplePointCount);
+        std::vector<float> samples(
+                static_cast<size_t>(samplePointCount),
+                std::numeric_limits<float>::quiet_NaN()
+        );
         const auto startedAt = std::chrono::steady_clock::now();
 
-        while (!outputEnded) {
+        const std::vector<int> sampleOrder = buildSparseSampleOrder(samplePointCount);
+        bool decoderHasProducedOutput = false;
+        for (const int sampleIndex : sampleOrder) {
             if (session->cancelled.load(std::memory_order_relaxed)) {
                 return {};
             }
             if (std::chrono::steady_clock::now() - startedAt > kMaxAnalysisDuration) {
-                return {};
+                break;
             }
 
-            bool madeProgress = false;
-            if (!inputEnded) {
-                const ssize_t inputIndex = AMediaCodec_dequeueInputBuffer(codec.get(), kCodecTimeoutUs);
-                if (inputIndex < AMEDIACODEC_INFO_TRY_AGAIN_LATER) {
-                    return {};
-                }
-                if (inputIndex >= 0) {
-                    size_t inputCapacity = 0;
-                    uint8_t* inputBuffer = AMediaCodec_getInputBuffer(
-                            codec.get(),
-                            static_cast<size_t>(inputIndex),
-                            &inputCapacity
-                    );
-                    if (inputBuffer == nullptr || inputCapacity == 0) {
-                        return {};
-                    }
-
-#if __ANDROID_API__ >= 28
-                    const ssize_t expectedSampleSize = AMediaExtractor_getSampleSize(extractor.get());
-                if (expectedSampleSize > 0 &&
-                    static_cast<size_t>(expectedSampleSize) > inputCapacity) {
-                    return {};
-                }
-#endif
-                    const ssize_t sampleSize = AMediaExtractor_readSampleData(
-                            extractor.get(),
-                            inputBuffer,
-                            inputCapacity
-                    );
-                    if (sampleSize < 0) {
-                        if (AMediaCodec_queueInputBuffer(
-                                codec.get(),
-                                static_cast<size_t>(inputIndex),
-                                0,
-                                0,
-                                0,
-                                AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM
-                        ) != AMEDIA_OK) {
-                            return {};
-                        }
-                        inputEnded = true;
-                    } else {
-                        const int64_t sampleTimeUs = std::max<int64_t>(
-                                0,
-                                AMediaExtractor_getSampleTime(extractor.get())
-                        );
-                        if (AMediaCodec_queueInputBuffer(
-                                codec.get(),
-                                static_cast<size_t>(inputIndex),
-                                0,
-                                static_cast<size_t>(sampleSize),
-                                static_cast<uint64_t>(sampleTimeUs),
-                                0
-                        ) != AMEDIA_OK) {
-                            return {};
-                        }
-                        AMediaExtractor_advance(extractor.get());
-                    }
-                    madeProgress = true;
-                }
-            }
-
-            AMediaCodecBufferInfo bufferInfo{};
-            const ssize_t outputIndex = AMediaCodec_dequeueOutputBuffer(
-                    codec.get(),
-                    &bufferInfo,
-                    kCodecTimeoutUs
-            );
-            if (outputIndex == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED) {
-                MediaFormatPtr outputFormat(AMediaCodec_getOutputFormat(codec.get()));
-                pcmFormat = readPcmFormat(outputFormat.get(), pcmFormat);
-                madeProgress = true;
-            } else if (outputIndex >= 0) {
-                if (bufferInfo.size > 0) {
-                    size_t outputCapacity = 0;
-                    uint8_t* outputBuffer = AMediaCodec_getOutputBuffer(
-                            codec.get(),
-                            static_cast<size_t>(outputIndex),
-                            &outputCapacity
-                    );
-                    if (outputBuffer == nullptr) {
-                        return {};
-                    }
-                    // On API <=35, NDK documents outputCapacity/offset as unreliable while
-                    // bufferInfo.size is authoritative. The buffer pointer is the start of data.
-                    const size_t validSize = static_cast<size_t>(bufferInfo.size);
-                    if (!accumulator.add(
-                            outputBuffer,
-                            validSize,
-                            bufferInfo.presentationTimeUs,
-                            pcmFormat
-                    )) {
-                        return {};
-                    }
-                }
-                outputEnded = (bufferInfo.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM) != 0;
-                if (AMediaCodec_releaseOutputBuffer(
-                        codec.get(),
-                        static_cast<size_t>(outputIndex),
-                        false
+            if (decoderHasProducedOutput) {
+                const int64_t maximumTargetUs = std::max<int64_t>(0, durationUs - 1);
+                const int64_t targetUs = samplePointCount == 1
+                                         ? 0
+                                         : static_cast<int64_t>(
+                                                 static_cast<long double>(maximumTargetUs) *
+                                                 static_cast<long double>(sampleIndex) /
+                                                 static_cast<long double>(samplePointCount - 1)
+                                         );
+                if (AMediaExtractor_seekTo(
+                        extractor.get(),
+                        targetUs,
+                        AMEDIAEXTRACTOR_SEEK_CLOSEST_SYNC
                 ) != AMEDIA_OK) {
+                    continue;
+                }
+                if (AMediaCodec_flush(codec.get()) != AMEDIA_OK) {
                     return {};
                 }
-                madeProgress = true;
-            } else if (outputIndex != AMEDIACODEC_INFO_TRY_AGAIN_LATER &&
-                       outputIndex != AMEDIACODEC_INFO_OUTPUT_BUFFERS_CHANGED) {
-                return {};
+            } else if (sampleIndex != 0) {
+                // The first decode deliberately starts at the beginning. MediaCodec documents
+                // extra codec-specific-data handling when flush happens before first output.
+                continue;
             }
 
-            idleIterations = madeProgress ? 0 : idleIterations + 1;
-            if (idleIterations > kMaxIdleIterations) {
-                return {};
+            const auto sample = decodeSampleWindow(
+                    session,
+                    extractor.get(),
+                    codec.get(),
+                    &pcmFormat
+            );
+            if (sample.has_value()) {
+                samples[static_cast<size_t>(sampleIndex)] = *sample;
+                decoderHasProducedOutput = true;
             }
         }
 
-        return accumulator.normalizedAmplitudes();
+        return interpolateAndNormalizeSamples(std::move(samples), barCount);
     }
 
     jfloatArray toJFloatArray(JNIEnv* env, const std::vector<float>& values) {

@@ -101,8 +101,23 @@ fun AlbumDetailScreen(
         mutableStateOf(AlbumPresentationMetadata())
     }
 
+    // Load independent presentation pieces separately so a slow technical-quality scan
+    // cannot hold back the release year or artwork-derived backdrop.
     LaunchedEffect(metadataKey) {
-        presentationMetadata = metadataRepository.loadAlbumMetadata(album)
+        val releaseYear = metadataRepository.getReleaseYear(album)
+        presentationMetadata = presentationMetadata.copy(releaseYear = releaseYear)
+    }
+    LaunchedEffect(metadataKey) {
+        val artworkAccentArgb = metadataRepository.getArtworkAccentArgb(
+            album.songs.firstOrNull()?.albumArtUri
+        )
+        presentationMetadata = presentationMetadata.copy(
+            artworkAccentArgb = artworkAccentArgb
+        )
+    }
+    LaunchedEffect(metadataKey) {
+        val audioQuality = metadataRepository.getAudioQualitySummary(album.songs)
+        presentationMetadata = presentationMetadata.copy(audioQuality = audioQuality)
     }
 
     val listState = rememberLazyListState()

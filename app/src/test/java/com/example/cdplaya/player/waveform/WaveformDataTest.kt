@@ -8,7 +8,7 @@ import org.junit.Test
 class WaveformDataTest {
     @Test
     fun cacheKeyVersion_invalidatesPreviousWaveformAlgorithm() {
-        assertEquals(3, WAVEFORM_CACHE_KEY_VERSION)
+        assertEquals(4, WAVEFORM_CACHE_KEY_VERSION)
     }
 
     @Test

@@ -1,7 +1,6 @@
 package com.example.cdplaya.player.nativeaudio
 
 import android.os.ParcelFileDescriptor
-import android.os.Process
 import androidx.annotation.Keep
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -51,7 +50,8 @@ internal object NativeAudioBridge {
 
             val worker = Thread(
                 {
-                    runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND) }
+                    // This work is directly user-visible and now bounded by sparse sampling,
+                    // so keep normal thread priority instead of throttling it as background work.
                     val result = runCatching {
                         nativeDecodeWaveform(
                             handle = sessionHandle,

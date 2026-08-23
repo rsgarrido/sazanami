@@ -24,6 +24,8 @@ import com.example.cdplaya.ui.player.ExpandedPlayerThemeHost
 import com.example.cdplaya.ui.player.PlayerLyricsTransitionState
 import com.example.cdplaya.ui.player.PlayerMorphState
 import com.example.cdplaya.ui.player.PlayerEndpointBounds
+import com.example.cdplaya.ui.player.WarmCurrentSongWaveform
+import com.example.cdplaya.ui.player.shouldLoadExpandedPlayerWaveform
 import com.example.cdplaya.ui.player.modern.DefaultPlayerMorphBounds
 import com.example.cdplaya.ui.player.classicwheel.ClassicWheelMorphBounds
 import com.example.cdplaya.ui.player.retrorack.RetroRackMorphBounds
@@ -113,6 +115,14 @@ fun MusicScreenOverlays(
     pocketCassetteMorphBounds: PocketCassetteMorphBounds
 ) {
     val isPlayerExpanded = playerMorphState.shouldComposeExpanded
+    val shouldWarmCurrentWaveform = shouldLoadExpandedPlayerWaveform(
+        selectedPlayerTheme = selectedPlayerTheme,
+        modernSeekbarStyle = selectedModernSeekbarStyle
+    )
+    WarmCurrentSongWaveform(
+        currentSong = currentSong,
+        shouldWarm = shouldWarmCurrentWaveform
+    )
 
     ImmersiveSystemBarsEffect(
         isImmersive = shouldUseImmersivePlayerSystemBars(

@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.provider.MediaStore
 import androidx.core.graphics.drawable.toBitmap
 import coil.imageLoader
 import coil.request.ImageRequest
@@ -63,7 +64,7 @@ internal class AlbumPresentationMetadataRepository(context: Context) {
         }.awaitAll().toMap()
     }
 
-    private suspend fun getReleaseYear(album: LibraryAlbumGroup): Int? {
+    suspend fun getReleaseYear(album: LibraryAlbumGroup): Int? {
         for (song in album.songs) {
             val year = getReleaseYear(song)
             if (year != null) return year
@@ -79,21 +80,40 @@ internal class AlbumPresentationMetadataRepository(context: Context) {
             return@withContext cached.takeUnless { it == NO_RELEASE_YEAR }
         }
 
-        val metadataYear = runCatching {
-            val retriever = MediaMetadataRetriever()
-            try {
-                retriever.setDataSource(appContext, song.uri)
-                parseReleaseYear(
-                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR)
-                ) ?: parseReleaseYear(
-                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE)
-                )
-            } finally {
-                retriever.release()
+        val mediaStoreYear = runCatching {
+            appContext.contentResolver.query(
+                song.uri,
+                arrayOf(MediaStore.Audio.AudioColumns.YEAR),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use null
+                val yearColumn = cursor.getColumnIndex(MediaStore.Audio.AudioColumns.YEAR)
+                if (yearColumn < 0 || cursor.isNull(yearColumn)) return@use null
+                cursor.getInt(yearColumn).takeIf { year -> year in 1000..2999 }
             }
         }.getOrNull()
 
-        val resolvedYear = metadataYear ?: runCatching {
+        val retrieverYear = if (mediaStoreYear == null) {
+            runCatching {
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(appContext, song.uri)
+                    parseReleaseYear(
+                        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR)
+                    ) ?: parseReleaseYear(
+                        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE)
+                    )
+                } finally {
+                    retriever.release()
+                }
+            }.getOrNull()
+        } else {
+            null
+        }
+
+        val resolvedYear = mediaStoreYear ?: retrieverYear ?: runCatching {
             parseReleaseYear(tagEditorRepository.readTags(song).year)
         }.getOrNull()
 
@@ -103,7 +123,7 @@ internal class AlbumPresentationMetadataRepository(context: Context) {
         resolvedYear
     }
 
-    private suspend fun getAudioQualitySummary(
+    suspend fun getAudioQualitySummary(
         songs: List<Song>
     ): AlbumAudioQualitySummary? = coroutineScope {
         if (songs.isEmpty()) return@coroutineScope null
@@ -117,7 +137,7 @@ internal class AlbumPresentationMetadataRepository(context: Context) {
         summarizeAlbumAudioQuality(qualityInfo)
     }
 
-    private suspend fun getArtworkAccentArgb(artworkUri: Uri?): Int? {
+    suspend fun getArtworkAccentArgb(artworkUri: Uri?): Int? {
         artworkUri ?: return null
         val cacheKey = artworkUri.toString()
         synchronized(artworkAccentCache) {
