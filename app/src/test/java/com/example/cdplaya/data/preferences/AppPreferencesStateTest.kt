@@ -9,12 +9,18 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.example.cdplaya.data.PlayerTheme
 import com.example.cdplaya.data.FolderSelectionMode
+import com.example.cdplaya.data.SongReference
+import com.example.cdplaya.data.home.HomePin
+import com.example.cdplaya.data.home.HomePinType
 import com.example.cdplaya.player.audio.AudioOffloadPreference
 import com.example.cdplaya.player.replaygain.ReplayGainMode
 import com.example.cdplaya.ui.library.LibraryViewMode
 import com.example.cdplaya.ui.player.modern.ModernArtworkTransitionStyle
 import com.example.cdplaya.ui.player.modern.ModernSeekbarStyle
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -134,4 +140,37 @@ class AppPreferencesStateTest {
             equalizer.bandGainsDb
         )
     }
+    @Test
+    fun homeCustomizationDefaultsToVisibleRecentlyAddedAndNoPins() {
+        val state = decodeAppPreferences(mutablePreferencesOf())
+
+        assertTrue(state.homePins.isEmpty())
+        assertTrue(state.showRecentlyAddedOnHome)
+    }
+
+    @Test
+    fun homePinsDecodeInOrderAreCappedAtFourAndRecentlyAddedCanBeHidden() {
+        val pins = (1..5).map { index ->
+            HomePin(
+                id = "pin-$index",
+                type = HomePinType.ALBUM,
+                title = "Album $index",
+                subtitle = "Artist $index",
+                anchor = SongReference(
+                    relativePath = "Music/Album$index/",
+                    displayName = "track$index.flac"
+                )
+            )
+        }
+        val preferences = mutablePreferencesOf(
+            stringPreferencesKey("home_pins_json") to Json.encodeToString(pins),
+            booleanPreferencesKey("show_recently_added_on_home") to false
+        )
+
+        val state = decodeAppPreferences(preferences)
+
+        assertEquals(listOf("pin-1", "pin-2", "pin-3", "pin-4"), state.homePins.map { it.id })
+        assertFalse(state.showRecentlyAddedOnHome)
+    }
+
 }

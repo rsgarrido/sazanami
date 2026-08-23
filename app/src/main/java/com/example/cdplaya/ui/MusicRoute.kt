@@ -4,6 +4,9 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import com.example.cdplaya.viewmodel.MusicViewModel
@@ -17,6 +20,11 @@ import com.example.cdplaya.ui.settings.ListeningHistoryReconciliationUiActions
 import com.example.cdplaya.ui.equalizer.EqualizerUiActions
 import com.example.cdplaya.ui.equalizer.rememberEqualizerProfilePlatformActions
 import com.example.cdplaya.mediaaccess.MediaAccessState
+import com.example.cdplaya.data.home.HomePin
+import com.example.cdplaya.ui.home.HomePinReplacementDialog
+import com.example.cdplaya.ui.home.HomePinUiEnvironment
+import com.example.cdplaya.ui.home.LocalHomePinUi
+import com.example.cdplaya.ui.home.resolveHomePins
 import com.example.cdplaya.ui.ratings.LocalSongRatingUi
 import com.example.cdplaya.ui.ratings.SongRatingDialog
 import com.example.cdplaya.ui.ratings.SongRatingUiEnvironment
@@ -55,7 +63,33 @@ internal fun MusicRoute(
     musicViewModel.spotifyImportUiState.collectAsStateWithLifecycle()
     val reconciliationUiState by
     musicViewModel.listeningHistoryReconciliationUiState.collectAsStateWithLifecycle()
-    if (!playerAppearanceUiState.isLoaded || !libraryAppearanceUiState.isLoaded) return
+    val homeCustomizationUiState by
+    musicViewModel.homeCustomizationUiState.collectAsStateWithLifecycle()
+    if (!playerAppearanceUiState.isLoaded || !libraryAppearanceUiState.isLoaded ||
+        !homeCustomizationUiState.isLoaded
+    ) return
+
+    var pendingHomePin by remember { mutableStateOf<HomePin?>(null) }
+    val resolvedHomePins = remember(homeCustomizationUiState.pins, libraryUiState.songs) {
+        resolveHomePins(
+            pins = homeCustomizationUiState.pins,
+            songs = libraryUiState.songs
+        )
+    }
+    val homePinUiEnvironment = HomePinUiEnvironment(
+        pins = resolvedHomePins,
+        showRecentlyAddedOnHome = homeCustomizationUiState.showRecentlyAddedOnHome,
+        onPinRequested = { pin ->
+            if (homeCustomizationUiState.pins.size < HomePin.MAX_COUNT) {
+                musicViewModel.addHomePin(pin)
+            } else {
+                pendingHomePin = pin
+            }
+        },
+        onUnpinRequested = musicViewModel::removeHomePin,
+        onMovePinRequested = musicViewModel::moveHomePin,
+        onShowRecentlyAddedChanged = musicViewModel::setShowRecentlyAddedOnHome
+    )
     val playlistExportActions = rememberPlaylistExportActions(
         snackbarHostState = snackbarHostState,
         onPrepareExport = musicViewModel::preparePlaylistExport,
@@ -95,357 +129,369 @@ internal fun MusicRoute(
             onSave = musicViewModel::saveSongRating,
             onClear = musicViewModel::clearSongRating,
             onFilterSelected = musicViewModel::selectSongRatingFilter
-        )
+        ),
+        LocalHomePinUi provides homePinUiEnvironment
     ) {
-    MusicScreen(
-        songs = libraryUiState.songs,
-        recentlyPlayedSongs = libraryUiState.recentlyPlayedSongs,
-        recentlyAddedLibrarySongs = libraryUiState.recentlyAddedSongs,
-        mostPlayedSongs = libraryUiState.mostPlayedSongs,
-        mediaAccessState = mediaAccessState,
-        isLibraryLoading = libraryUiState.isLoading,
-        isLibraryRefreshing = libraryUiState.isRefreshing,
-        lastLibraryRefreshSummary = libraryUiState.lastRefreshSummary,
-        libraryErrorMessage = libraryUiState.errorMessage,
-        onRequestAudioAccess = onRequestAudioAccess,
-        onRequestArtworkAccess = onRequestArtworkAccess,
-        onOpenAppSettings = onOpenAppSettings,
-        currentSong = playbackUiState.currentSong,
-        isPlayerConnected = playbackUiState.isConnected,
-        previousHistoryCount = playbackUiState.previousHistoryCount,
-        forwardHistoryCount = playbackUiState.forwardHistoryCount,
-        previousPreviewSong = playbackUiState.previousPreviewSong,
-        nextPreviewSong = playbackUiState.nextPreviewSong,
-        isPlaying = playbackUiState.isPlaying,
-        isShuffleEnabled = playbackUiState.isShuffleEnabled,
-        repeatMode = playbackUiState.repeatMode,
-        playbackProgressUiState = musicViewModel.playbackProgressUiState,
-        lyricsPlaybackUiState = lyricsPlaybackUiState,
-        queuedSongs = playbackUiState.queuedSongs,
-        upcomingSongs = playbackUiState.upcomingSongs,
-        snackbarHostState = snackbarHostState,
-        modifier = modifier,
-        libraryFolders = libraryUiState.folders,
-        folderSelectionMode = libraryUiState.folderSelectionMode,
-        selectedLibraryFolders = libraryUiState.selectedFolders,
-        excludedLibraryFolders = libraryUiState.excludedFolders,
-        favoriteMembershipKeys = libraryUiState.favoriteMembershipKeys,
-        unresolvedFavoriteCount = libraryUiState.unresolvedFavoriteCount,
-        unresolvedPlaylistRowCount = libraryUiState.unresolvedPlaylistRowCount,
-        unresolvedListeningHistoryCount = libraryUiState.unresolvedListeningHistoryCount,
-        playlists = libraryUiState.playlists,
-        selectedPlaylistName = libraryUiState.selectedPlaylistName,
-        selectedPlaylistSongs = libraryUiState.selectedPlaylistSongs,
-        onSongClick = { song, playbackContext ->
-            musicViewModel.playSelectedSong(
-                song = song,
-                playbackContext = playbackContext
+        MusicScreen(
+            songs = libraryUiState.songs,
+            recentlyPlayedSongs = libraryUiState.recentlyPlayedSongs,
+            recentlyAddedLibrarySongs = libraryUiState.recentlyAddedSongs,
+            mostPlayedSongs = libraryUiState.mostPlayedSongs,
+            mediaAccessState = mediaAccessState,
+            isLibraryLoading = libraryUiState.isLoading,
+            isLibraryRefreshing = libraryUiState.isRefreshing,
+            lastLibraryRefreshSummary = libraryUiState.lastRefreshSummary,
+            libraryErrorMessage = libraryUiState.errorMessage,
+            onRequestAudioAccess = onRequestAudioAccess,
+            onRequestArtworkAccess = onRequestArtworkAccess,
+            onOpenAppSettings = onOpenAppSettings,
+            currentSong = playbackUiState.currentSong,
+            isPlayerConnected = playbackUiState.isConnected,
+            previousHistoryCount = playbackUiState.previousHistoryCount,
+            forwardHistoryCount = playbackUiState.forwardHistoryCount,
+            previousPreviewSong = playbackUiState.previousPreviewSong,
+            nextPreviewSong = playbackUiState.nextPreviewSong,
+            isPlaying = playbackUiState.isPlaying,
+            isShuffleEnabled = playbackUiState.isShuffleEnabled,
+            repeatMode = playbackUiState.repeatMode,
+            playbackProgressUiState = musicViewModel.playbackProgressUiState,
+            lyricsPlaybackUiState = lyricsPlaybackUiState,
+            queuedSongs = playbackUiState.queuedSongs,
+            upcomingSongs = playbackUiState.upcomingSongs,
+            snackbarHostState = snackbarHostState,
+            modifier = modifier,
+            libraryFolders = libraryUiState.folders,
+            folderSelectionMode = libraryUiState.folderSelectionMode,
+            selectedLibraryFolders = libraryUiState.selectedFolders,
+            excludedLibraryFolders = libraryUiState.excludedFolders,
+            favoriteMembershipKeys = libraryUiState.favoriteMembershipKeys,
+            unresolvedFavoriteCount = libraryUiState.unresolvedFavoriteCount,
+            unresolvedPlaylistRowCount = libraryUiState.unresolvedPlaylistRowCount,
+            unresolvedListeningHistoryCount = libraryUiState.unresolvedListeningHistoryCount,
+            playlists = libraryUiState.playlists,
+            selectedPlaylistName = libraryUiState.selectedPlaylistName,
+            selectedPlaylistSongs = libraryUiState.selectedPlaylistSongs,
+            onSongClick = { song, playbackContext ->
+                musicViewModel.playSelectedSong(
+                    song = song,
+                    playbackContext = playbackContext
+                )
+            },
+            onPlaySongsClick = { playbackContext, shuffle ->
+                musicViewModel.playSongsFromContext(
+                    playbackContext = playbackContext,
+                    shuffle = shuffle
+                )
+            },
+            onPlayPauseClick = {
+                musicViewModel.togglePlayPause()
+            },
+            onPreviousClick = {
+                musicViewModel.skipToPrevious()
+            },
+            onNextClick = {
+                musicViewModel.skipToNext()
+            },
+            onSeekChange = { position ->
+                musicViewModel.seekTo(position)
+            },
+            onLyricsVisibilityChanged = musicViewModel::setLyricsVisible,
+            onSuspendLyricsAutoFollow = musicViewModel::suspendLyricsAutoFollow,
+            onReturnLyricsToCurrentLine = musicViewModel::returnLyricsToCurrentLine,
+            onRescanLyrics = musicViewModel::rescanLyrics,
+            onShuffleClick = {
+                musicViewModel.toggleShuffle()
+            },
+            onRepeatClick = {
+                musicViewModel.cycleRepeatMode()
+            },
+            onAddToQueueClick = { song ->
+                musicViewModel.addSongToQueue(song)
+            },
+            onPlayNextClick = { song ->
+                musicViewModel.addSongToPlayNext(song)
+            },
+            onUndoPlayNextClick = { song ->
+                musicViewModel.removeFirstMatchingSongFromQueue(song)
+            },
+            onRemoveFromQueueClick = { index ->
+                musicViewModel.removeSongFromQueue(index)
+            },
+            onMoveQueueItemUpClick = { index ->
+                musicViewModel.moveQueuedSongUp(index)
+            },
+            onMoveQueueItemDownClick = { index ->
+                musicViewModel.moveQueuedSongDown(index)
+            },
+            onClearQueueClick = {
+                musicViewModel.clearQueue()
+            },
+            onUndoAddToQueueClick = { song ->
+                musicViewModel.removeLastMatchingSongFromQueue(song)
+            },
+            onPlayNextSongsClick = { songs ->
+                musicViewModel.addSongsToPlayNext(songs)
+            },
+            onAddSongsToQueueClick = { songs ->
+                musicViewModel.addSongsToQueue(songs)
+            },
+            onUndoPlayNextSongsClick = { songs ->
+                musicViewModel.removeFirstMatchingSongsFromQueue(songs)
+            },
+            onUndoAddSongsToQueueClick = { songs ->
+                musicViewModel.removeLastMatchingSongsFromQueue(songs)
+            },
+            onScanLibraryClick = musicViewModel::scanLibrary,
+            onLibraryFolderToggle = { folderPath ->
+                musicViewModel.toggleLibraryFolder(folderPath)
+            },
+            onSelectAllLibraryFolders = {
+                musicViewModel.selectAllLibraryFolders()
+            },
+            onClearSelectedLibraryFolders = {
+                musicViewModel.clearSelectedLibraryFolders()
+            },
+            onToggleFavoriteClick = { song ->
+                musicViewModel.toggleFavorite(song)
+            },
+            onCreatePlaylistClick = { playlistName ->
+                musicViewModel.createPlaylist(playlistName)
+            },
+            onRenamePlaylistClick = { playlist, newName ->
+                musicViewModel.renamePlaylist(
+                    playlist = playlist,
+                    newName = newName
+                )
+            },
+            onDeletePlaylistClick = { playlist ->
+                musicViewModel.deletePlaylist(playlist)
+            },
+            onExportPlaylistClick = playlistExportActions.exportPlaylist,
+            onImportPlaylistClick = playlistImportActions.importPlaylist,
+            onExportBackupClick = backupExportActions.exportBackup,
+            onRestoreBackupClick = backupRestoreActions.restoreBackup,
+            onPlaylistSelected = { playlist ->
+                musicViewModel.loadSelectedPlaylist(playlist)
+            },
+            onAddSongToPlaylistClick = { playlist, song ->
+                musicViewModel.addSongToPlaylist(
+                    playlist = playlist,
+                    song = song
+                )
+            },
+            onAddSongsToPlaylistClick = { playlist, songs ->
+                musicViewModel.addSongsToPlaylist(
+                    playlist = playlist,
+                    songs = songs
+                )
+            },
+            onRemovePlaylistSongClick = { playlistSong ->
+                musicViewModel.removePlaylistSong(playlistSong)
+            },
+            onMovePlaylistSongUpClick = { playlistSong ->
+                musicViewModel.movePlaylistSongUp(playlistSong)
+            },
+            onMovePlaylistSongDownClick = { playlistSong ->
+                musicViewModel.movePlaylistSongDown(playlistSong)
+            },
+            onTagsEdited = { originalSong, editedTags ->
+                musicViewModel.refreshSongsAfterTagEdit(
+                    originalSong = originalSong,
+                    editedTags = editedTags
+                )
+            },
+            isSleepTimerActive = sleepTimerUiState.isActive,
+            sleepTimerDisplayText = sleepTimerUiState.displayText(),
+            onStartSleepTimerClick = { minutes ->
+                musicViewModel.startSleepTimer(minutes)
+            },
+            onCancelSleepTimerClick = {
+                musicViewModel.cancelSleepTimer()
+            },
+            selectedPlayerTheme = playerAppearanceUiState.selectedTheme,
+            selectedPlayerThemeTokens = playerAppearanceUiState.themeTokens,
+            onPlayerThemeSelected = { playerTheme ->
+                musicViewModel.selectPlayerTheme(playerTheme)
+            },
+            onUpdatePlayerThemeTokenOverride = musicViewModel::updatePlayerThemeTokenOverride,
+            onResetPlayerThemeTokenOverrides = musicViewModel::resetPlayerThemeTokenOverrides,
+            selectedModernArtworkTransitionStyle =
+                playerAppearanceUiState.modernArtworkTransitionStyle,
+            onModernArtworkTransitionStyleSelected =
+                musicViewModel::selectModernArtworkTransitionStyle,
+            selectedModernSeekbarStyle = playerAppearanceUiState.modernSeekbarStyle,
+            onModernSeekbarStyleSelected = musicViewModel::selectModernSeekbarStyle,
+            selectedReplayGainMode = playerAppearanceUiState.replayGainMode,
+            onReplayGainModeSelected = { replayGainMode ->
+                musicViewModel.selectReplayGainMode(replayGainMode)
+            },
+            selectedAudioOffloadPreference = audioOffloadPreference,
+            onAudioOffloadPreferenceSelected = musicViewModel::selectAudioOffloadPreference,
+            audioOutputUiState = audioOutputUiState,
+            equalizerScreenState = equalizerScreenState,
+            equalizerActions = EqualizerUiActions(
+                onBack = musicViewModel::closeEqualizerScreen,
+                onEnabledChanged =
+                    musicViewModel::setEqualizerEnabled,
+                onModeChanged =
+                    musicViewModel::setEqualizerMode,
+                onPreviewBandGain =
+                    musicViewModel::previewEqualizerBandGain,
+                onCommitBandGain =
+                    musicViewModel::commitEqualizerBandGain,
+                onCancelBandGainPreview =
+                    musicViewModel::cancelEqualizerBandGainPreview,
+                onPreviewPreamp =
+                    musicViewModel::previewEqualizerPreamp,
+                onCommitPreamp =
+                    musicViewModel::commitEqualizerPreamp,
+                onCancelPreampPreview =
+                    musicViewModel::cancelEqualizerPreampPreview,
+                onAutomaticHeadroomChanged =
+                    musicViewModel::
+                    setEqualizerAutomaticHeadroomEnabled,
+                onLimiterEnabledChanged =
+                    musicViewModel::setLimiterEnabled,
+                onPreviewLimiterCeiling =
+                    musicViewModel::previewLimiterCeiling,
+                onCommitLimiterCeiling =
+                    musicViewModel::commitLimiterCeiling,
+                onCancelLimiterCeilingPreview =
+                    musicViewModel::
+                    cancelLimiterCeilingPreview,
+                onResetLimiterMeters =
+                    musicViewModel::resetLimiterMeters,
+                onApplyBuiltInPreset =
+                    musicViewModel::applyBuiltInEqualizerPreset,
+                onApplyUserPreset =
+                    musicViewModel::applyUserEqualizerPreset,
+                onSaveUserPreset =
+                    musicViewModel::saveUserEqualizerPreset,
+                onRenameUserPreset =
+                    musicViewModel::renameUserEqualizerPreset,
+                onDeleteUserPreset =
+                    musicViewModel::deleteUserEqualizerPreset,
+                onSelectParametricFilter =
+                    musicViewModel::selectParametricFilter,
+                onAddParametricFilter =
+                    musicViewModel::addParametricFilter,
+                onPreviewParametricFilter =
+                    musicViewModel::previewParametricFilter,
+                onCommitParametricFilter =
+                    musicViewModel::commitParametricFilter,
+                onCancelParametricFilterPreview =
+                    musicViewModel::cancelParametricFilterPreview,
+                onMoveParametricFilter =
+                    musicViewModel::moveParametricFilter,
+                onDeleteParametricFilter =
+                    musicViewModel::deleteParametricFilter,
+                onApplyParametricFlatPreset =
+                    musicViewModel::applyParametricFlatPreset,
+                onApplyParametricUserPreset =
+                    musicViewModel::applyParametricUserPreset,
+                onSaveParametricUserPreset =
+                    musicViewModel::saveParametricUserPreset,
+                onRenameParametricUserPreset =
+                    musicViewModel::renameParametricUserPreset,
+                onDeleteParametricUserPreset =
+                    musicViewModel::deleteParametricUserPreset,
+                onImportFromFile =
+                    equalizerProfileActions.importFromFile,
+                onPasteEqText =
+                    equalizerProfileActions.pasteEqText,
+                onExportCurrentEqText =
+                    equalizerProfileActions.exportCurrentText,
+                onCopyCurrentEqText =
+                    equalizerProfileActions.copyCurrentText,
+                onExportCurrentNative =
+                    equalizerProfileActions.exportCurrentNative,
+                onExportParametricPresetText =
+                    equalizerProfileActions.exportPresetText,
+                onExportParametricPresetNative =
+                    equalizerProfileActions.exportPresetNative,
+                onDismissImportPreview =
+                    musicViewModel::dismissEqualizerImportPreview,
+                onUpdateImportPreview =
+                    musicViewModel::updateEqualizerImportPreview,
+                onReplaceWithImportedProfile =
+                    musicViewModel::
+                    replaceWithImportedEqualizerProfile,
+                onSaveImportedProfile =
+                    musicViewModel::saveImportedEqualizerProfile,
+                onResetToFlat =
+                    musicViewModel::resetEqualizerToFlat,
+                onComparisonBypassedChanged =
+                    musicViewModel::
+                    setEqualizerComparisonBypassed
+            ),
+            onReadEditableSongTags = musicViewModel::readEditableSongTags,
+            onGetUnsupportedTagEditingMessage = musicViewModel::getUnsupportedTagEditingMessage,
+            onWriteTagsAndArtwork = musicViewModel::writeTagsAndArtwork,
+            libraryAppearanceUiState = libraryAppearanceUiState,
+            onLibraryViewOptionSelected = musicViewModel::selectLibraryViewOption,
+            listeningAnalyticsUiState = listeningAnalyticsUiState,
+            onListeningAnalyticsActiveChanged = musicViewModel::setListeningAnalyticsActive,
+            onListeningAnalyticsPresetSelected = musicViewModel::selectListeningAnalyticsPreset,
+            onListeningAnalyticsCustomRangeSelected =
+                musicViewModel::selectListeningAnalyticsCustomRange,
+            onRetryListeningAnalytics = musicViewModel::retryListeningAnalytics,
+            onListeningAnalyticsTrendMetricSelected =
+                musicViewModel::selectListeningAnalyticsTrendMetric,
+            onListeningAnalyticsRankingCategorySelected =
+                musicViewModel::selectListeningAnalyticsRankingCategory,
+            spotifyImportUiState = spotifyImportUiState,
+            reconciliationUiState = reconciliationUiState,
+            reconciliationActions = ListeningHistoryReconciliationUiActions(
+                onEnter = musicViewModel::enterListeningHistoryReconciliation,
+                onBack = {},
+                onRetry = musicViewModel::retryListeningHistoryReconciliation,
+                onTabSelected = musicViewModel::selectReconciliationTab,
+                onToggleExpanded = musicViewModel::toggleReconciliationItem,
+                onToggleLinkedGroup = musicViewModel::toggleLinkedReconciliationGroup,
+                onSkip = musicViewModel::skipReconciliationItem,
+                onCandidateSelected = musicViewModel::chooseReconciliationTarget,
+                onSearchRequested = musicViewModel::openReconciliationSearch,
+                onSearchQueryChanged = musicViewModel::updateReconciliationSearch,
+                onSearchDismissed = musicViewModel::closeReconciliationSearch,
+                onUnlinkRequested = musicViewModel::requestReconciliationUnlink,
+                onConfirmationCancelled = musicViewModel::cancelReconciliationConfirmation,
+                onConfirmed = musicViewModel::confirmReconciliationChange,
+                onMessageDismissed = musicViewModel::clearReconciliationMessage
+            ),
+            spotifyImportActions = SpotifyImportUiActions(
+                onEnter = musicViewModel::enterSpotifyImport,
+                onFilesSelected = musicViewModel::selectSpotifyImportFiles,
+                onAnalyze = musicViewModel::analyzeSpotifyImport,
+                onCancelAnalysis = musicViewModel::cancelSpotifyImportAnalysis,
+                onImport = musicViewModel::executeSpotifyImport,
+                onCancelImport = musicViewModel::cancelSpotifyImport,
+                onRetry = musicViewModel::retrySpotifyImport,
+                onChangeFiles = musicViewModel::changeSpotifyImportFiles,
+                onCleanStaleImport = musicViewModel::cleanStaleSpotifyImport,
+                onImportMore = musicViewModel::resetSpotifyImport,
+                onDone = musicViewModel::resetSpotifyImport,
+                onBack = {}
             )
-        },
-        onPlaySongsClick = { playbackContext, shuffle ->
-            musicViewModel.playSongsFromContext(
-                playbackContext = playbackContext,
-                shuffle = shuffle
-            )
-        },
-        onPlayPauseClick = {
-            musicViewModel.togglePlayPause()
-        },
-        onPreviousClick = {
-            musicViewModel.skipToPrevious()
-        },
-        onNextClick = {
-            musicViewModel.skipToNext()
-        },
-        onSeekChange = { position ->
-            musicViewModel.seekTo(position)
-        },
-        onLyricsVisibilityChanged = musicViewModel::setLyricsVisible,
-        onSuspendLyricsAutoFollow = musicViewModel::suspendLyricsAutoFollow,
-        onReturnLyricsToCurrentLine = musicViewModel::returnLyricsToCurrentLine,
-        onRescanLyrics = musicViewModel::rescanLyrics,
-        onShuffleClick = {
-            musicViewModel.toggleShuffle()
-        },
-        onRepeatClick = {
-            musicViewModel.cycleRepeatMode()
-        },
-        onAddToQueueClick = { song ->
-            musicViewModel.addSongToQueue(song)
-        },
-        onPlayNextClick = { song ->
-            musicViewModel.addSongToPlayNext(song)
-        },
-        onUndoPlayNextClick = { song ->
-            musicViewModel.removeFirstMatchingSongFromQueue(song)
-        },
-        onRemoveFromQueueClick = { index ->
-            musicViewModel.removeSongFromQueue(index)
-        },
-        onMoveQueueItemUpClick = { index ->
-            musicViewModel.moveQueuedSongUp(index)
-        },
-        onMoveQueueItemDownClick = { index ->
-            musicViewModel.moveQueuedSongDown(index)
-        },
-        onClearQueueClick = {
-            musicViewModel.clearQueue()
-        },
-        onUndoAddToQueueClick = { song ->
-            musicViewModel.removeLastMatchingSongFromQueue(song)
-        },
-        onPlayNextSongsClick = { songs ->
-            musicViewModel.addSongsToPlayNext(songs)
-        },
-        onAddSongsToQueueClick = { songs ->
-            musicViewModel.addSongsToQueue(songs)
-        },
-        onUndoPlayNextSongsClick = { songs ->
-            musicViewModel.removeFirstMatchingSongsFromQueue(songs)
-        },
-        onUndoAddSongsToQueueClick = { songs ->
-            musicViewModel.removeLastMatchingSongsFromQueue(songs)
-        },
-        onScanLibraryClick = musicViewModel::scanLibrary,
-        onLibraryFolderToggle = { folderPath ->
-            musicViewModel.toggleLibraryFolder(folderPath)
-        },
-        onSelectAllLibraryFolders = {
-            musicViewModel.selectAllLibraryFolders()
-        },
-        onClearSelectedLibraryFolders = {
-            musicViewModel.clearSelectedLibraryFolders()
-        },
-        onToggleFavoriteClick = { song ->
-            musicViewModel.toggleFavorite(song)
-        },
-        onCreatePlaylistClick = { playlistName ->
-            musicViewModel.createPlaylist(playlistName)
-        },
-        onRenamePlaylistClick = { playlist, newName ->
-            musicViewModel.renamePlaylist(
-                playlist = playlist,
-                newName = newName
-            )
-        },
-        onDeletePlaylistClick = { playlist ->
-            musicViewModel.deletePlaylist(playlist)
-        },
-        onExportPlaylistClick = playlistExportActions.exportPlaylist,
-        onImportPlaylistClick = playlistImportActions.importPlaylist,
-        onExportBackupClick = backupExportActions.exportBackup,
-        onRestoreBackupClick = backupRestoreActions.restoreBackup,
-        onPlaylistSelected = { playlist ->
-            musicViewModel.loadSelectedPlaylist(playlist)
-        },
-        onAddSongToPlaylistClick = { playlist, song ->
-            musicViewModel.addSongToPlaylist(
-                playlist = playlist,
-                song = song
-            )
-        },
-        onAddSongsToPlaylistClick = { playlist, songs ->
-            musicViewModel.addSongsToPlaylist(
-                playlist = playlist,
-                songs = songs
-            )
-        },
-        onRemovePlaylistSongClick = { playlistSong ->
-            musicViewModel.removePlaylistSong(playlistSong)
-        },
-        onMovePlaylistSongUpClick = { playlistSong ->
-            musicViewModel.movePlaylistSongUp(playlistSong)
-        },
-        onMovePlaylistSongDownClick = { playlistSong ->
-            musicViewModel.movePlaylistSongDown(playlistSong)
-        },
-        onTagsEdited = { originalSong, editedTags ->
-            musicViewModel.refreshSongsAfterTagEdit(
-                originalSong = originalSong,
-                editedTags = editedTags
-            )
-        },
-        isSleepTimerActive = sleepTimerUiState.isActive,
-        sleepTimerDisplayText = sleepTimerUiState.displayText(),
-        onStartSleepTimerClick = { minutes ->
-            musicViewModel.startSleepTimer(minutes)
-        },
-        onCancelSleepTimerClick = {
-            musicViewModel.cancelSleepTimer()
-        },
-        selectedPlayerTheme = playerAppearanceUiState.selectedTheme,
-        selectedPlayerThemeTokens = playerAppearanceUiState.themeTokens,
-        onPlayerThemeSelected = { playerTheme ->
-            musicViewModel.selectPlayerTheme(playerTheme)
-        },
-        onUpdatePlayerThemeTokenOverride = musicViewModel::updatePlayerThemeTokenOverride,
-        onResetPlayerThemeTokenOverrides = musicViewModel::resetPlayerThemeTokenOverrides,
-        selectedModernArtworkTransitionStyle =
-            playerAppearanceUiState.modernArtworkTransitionStyle,
-        onModernArtworkTransitionStyleSelected =
-            musicViewModel::selectModernArtworkTransitionStyle,
-        selectedModernSeekbarStyle = playerAppearanceUiState.modernSeekbarStyle,
-        onModernSeekbarStyleSelected = musicViewModel::selectModernSeekbarStyle,
-        selectedReplayGainMode = playerAppearanceUiState.replayGainMode,
-        onReplayGainModeSelected = { replayGainMode ->
-            musicViewModel.selectReplayGainMode(replayGainMode)
-        },
-        selectedAudioOffloadPreference = audioOffloadPreference,
-        onAudioOffloadPreferenceSelected = musicViewModel::selectAudioOffloadPreference,
-        audioOutputUiState = audioOutputUiState,
-        equalizerScreenState = equalizerScreenState,
-        equalizerActions = EqualizerUiActions(
-            onBack = musicViewModel::closeEqualizerScreen,
-            onEnabledChanged =
-                musicViewModel::setEqualizerEnabled,
-            onModeChanged =
-                musicViewModel::setEqualizerMode,
-            onPreviewBandGain =
-                musicViewModel::previewEqualizerBandGain,
-            onCommitBandGain =
-                musicViewModel::commitEqualizerBandGain,
-            onCancelBandGainPreview =
-                musicViewModel::cancelEqualizerBandGainPreview,
-            onPreviewPreamp =
-                musicViewModel::previewEqualizerPreamp,
-            onCommitPreamp =
-                musicViewModel::commitEqualizerPreamp,
-            onCancelPreampPreview =
-                musicViewModel::cancelEqualizerPreampPreview,
-            onAutomaticHeadroomChanged =
-                musicViewModel::
-                setEqualizerAutomaticHeadroomEnabled,
-            onLimiterEnabledChanged =
-                musicViewModel::setLimiterEnabled,
-            onPreviewLimiterCeiling =
-                musicViewModel::previewLimiterCeiling,
-            onCommitLimiterCeiling =
-                musicViewModel::commitLimiterCeiling,
-            onCancelLimiterCeilingPreview =
-                musicViewModel::
-                cancelLimiterCeilingPreview,
-            onResetLimiterMeters =
-                musicViewModel::resetLimiterMeters,
-            onApplyBuiltInPreset =
-                musicViewModel::applyBuiltInEqualizerPreset,
-            onApplyUserPreset =
-                musicViewModel::applyUserEqualizerPreset,
-            onSaveUserPreset =
-                musicViewModel::saveUserEqualizerPreset,
-            onRenameUserPreset =
-                musicViewModel::renameUserEqualizerPreset,
-            onDeleteUserPreset =
-                musicViewModel::deleteUserEqualizerPreset,
-            onSelectParametricFilter =
-                musicViewModel::selectParametricFilter,
-            onAddParametricFilter =
-                musicViewModel::addParametricFilter,
-            onPreviewParametricFilter =
-                musicViewModel::previewParametricFilter,
-            onCommitParametricFilter =
-                musicViewModel::commitParametricFilter,
-            onCancelParametricFilterPreview =
-                musicViewModel::cancelParametricFilterPreview,
-            onMoveParametricFilter =
-                musicViewModel::moveParametricFilter,
-            onDeleteParametricFilter =
-                musicViewModel::deleteParametricFilter,
-            onApplyParametricFlatPreset =
-                musicViewModel::applyParametricFlatPreset,
-            onApplyParametricUserPreset =
-                musicViewModel::applyParametricUserPreset,
-            onSaveParametricUserPreset =
-                musicViewModel::saveParametricUserPreset,
-            onRenameParametricUserPreset =
-                musicViewModel::renameParametricUserPreset,
-            onDeleteParametricUserPreset =
-                musicViewModel::deleteParametricUserPreset,
-            onImportFromFile =
-                equalizerProfileActions.importFromFile,
-            onPasteEqText =
-                equalizerProfileActions.pasteEqText,
-            onExportCurrentEqText =
-                equalizerProfileActions.exportCurrentText,
-            onCopyCurrentEqText =
-                equalizerProfileActions.copyCurrentText,
-            onExportCurrentNative =
-                equalizerProfileActions.exportCurrentNative,
-            onExportParametricPresetText =
-                equalizerProfileActions.exportPresetText,
-            onExportParametricPresetNative =
-                equalizerProfileActions.exportPresetNative,
-            onDismissImportPreview =
-                musicViewModel::dismissEqualizerImportPreview,
-            onUpdateImportPreview =
-                musicViewModel::updateEqualizerImportPreview,
-            onReplaceWithImportedProfile =
-                musicViewModel::
-                replaceWithImportedEqualizerProfile,
-            onSaveImportedProfile =
-                musicViewModel::saveImportedEqualizerProfile,
-            onResetToFlat =
-                musicViewModel::resetEqualizerToFlat,
-            onComparisonBypassedChanged =
-                musicViewModel::
-                setEqualizerComparisonBypassed
-        ),
-        onReadEditableSongTags = musicViewModel::readEditableSongTags,
-        onGetUnsupportedTagEditingMessage = musicViewModel::getUnsupportedTagEditingMessage,
-        onWriteTagsAndArtwork = musicViewModel::writeTagsAndArtwork,
-        libraryAppearanceUiState = libraryAppearanceUiState,
-        onLibraryViewOptionSelected = musicViewModel::selectLibraryViewOption,
-        listeningAnalyticsUiState = listeningAnalyticsUiState,
-        onListeningAnalyticsActiveChanged = musicViewModel::setListeningAnalyticsActive,
-        onListeningAnalyticsPresetSelected = musicViewModel::selectListeningAnalyticsPreset,
-        onListeningAnalyticsCustomRangeSelected =
-            musicViewModel::selectListeningAnalyticsCustomRange,
-        onRetryListeningAnalytics = musicViewModel::retryListeningAnalytics,
-        onListeningAnalyticsTrendMetricSelected =
-            musicViewModel::selectListeningAnalyticsTrendMetric,
-        onListeningAnalyticsRankingCategorySelected =
-            musicViewModel::selectListeningAnalyticsRankingCategory,
-        spotifyImportUiState = spotifyImportUiState,
-        reconciliationUiState = reconciliationUiState,
-        reconciliationActions = ListeningHistoryReconciliationUiActions(
-            onEnter = musicViewModel::enterListeningHistoryReconciliation,
-            onBack = {},
-            onRetry = musicViewModel::retryListeningHistoryReconciliation,
-            onTabSelected = musicViewModel::selectReconciliationTab,
-            onToggleExpanded = musicViewModel::toggleReconciliationItem,
-            onToggleLinkedGroup = musicViewModel::toggleLinkedReconciliationGroup,
-            onSkip = musicViewModel::skipReconciliationItem,
-            onCandidateSelected = musicViewModel::chooseReconciliationTarget,
-            onSearchRequested = musicViewModel::openReconciliationSearch,
-            onSearchQueryChanged = musicViewModel::updateReconciliationSearch,
-            onSearchDismissed = musicViewModel::closeReconciliationSearch,
-            onUnlinkRequested = musicViewModel::requestReconciliationUnlink,
-            onConfirmationCancelled = musicViewModel::cancelReconciliationConfirmation,
-            onConfirmed = musicViewModel::confirmReconciliationChange,
-            onMessageDismissed = musicViewModel::clearReconciliationMessage
-        ),
-        spotifyImportActions = SpotifyImportUiActions(
-            onEnter = musicViewModel::enterSpotifyImport,
-            onFilesSelected = musicViewModel::selectSpotifyImportFiles,
-            onAnalyze = musicViewModel::analyzeSpotifyImport,
-            onCancelAnalysis = musicViewModel::cancelSpotifyImportAnalysis,
-            onImport = musicViewModel::executeSpotifyImport,
-            onCancelImport = musicViewModel::cancelSpotifyImport,
-            onRetry = musicViewModel::retrySpotifyImport,
-            onChangeFiles = musicViewModel::changeSpotifyImportFiles,
-            onCleanStaleImport = musicViewModel::cleanStaleSpotifyImport,
-            onImportMore = musicViewModel::resetSpotifyImport,
-            onDone = musicViewModel::resetSpotifyImport,
-            onBack = {}
         )
-    )
-    songRatingUiState.dialog?.let { dialog ->
-        SongRatingDialog(
-            state = dialog,
-            onDismiss = musicViewModel::closeSongRating,
-            onRatingSelected = musicViewModel::selectSongRating,
-            onSave = musicViewModel::saveSongRating,
-            onClear = musicViewModel::clearSongRating
-        )
-    }
+        songRatingUiState.dialog?.let { dialog ->
+            SongRatingDialog(
+                state = dialog,
+                onDismiss = musicViewModel::closeSongRating,
+                onRatingSelected = musicViewModel::selectSongRating,
+                onSave = musicViewModel::saveSongRating,
+                onClear = musicViewModel::clearSongRating
+            )
+        }
+        pendingHomePin?.let { pin ->
+            HomePinReplacementDialog(
+                currentPins = resolvedHomePins,
+                pendingPin = pin,
+                onReplace = { index ->
+                    musicViewModel.replaceHomePin(index, pin)
+                    pendingHomePin = null
+                },
+                onDismiss = { pendingHomePin = null }
+            )
+        }
     }
 }

@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import coil.compose.AsyncImage
 import com.example.cdplaya.data.Song
+import com.example.cdplaya.ui.home.LocalHomePinUi
 import com.example.cdplaya.R as AppR
 
 @Composable
@@ -50,6 +51,7 @@ fun ArtistListScreen(
     var actionSheetTarget by remember {
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
     }
+    val homePinUi = LocalHomePinUi.current
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -93,23 +95,24 @@ fun ArtistListScreen(
                         )
                     )
                     .libraryItemActions(
-                    clickLabel = "Open ${artist.name}",
-                    onClick = {
-                        onArtistClick(artist.name)
-                    },
-                    onShowActions = {
-                        actionSheetTarget = artistActionSheetTarget(
-                            artistName = artist.name,
-                            subtitle = songCountText,
-                            artworkUri = firstSong?.albumArtUri,
-                            artistSongs = artist.songs,
-                            onPlayClick = onArtistPlayClick,
-                            onShuffleClick = onArtistShuffleClick,
-                            onPlayNextClick = onArtistPlayNextClick,
-                            onAddToQueueClick = onArtistAddToQueueClick,
-                            onAddToPlaylistClick = onArtistAddToPlaylistClick
-                        )
-                    }
+                        clickLabel = "Open ${artist.name}",
+                        onClick = {
+                            onArtistClick(artist.name)
+                        },
+                        onShowActions = {
+                            actionSheetTarget = artistActionSheetTarget(
+                                artistName = artist.name,
+                                subtitle = songCountText,
+                                artworkUri = firstSong?.albumArtUri,
+                                artistSongs = artist.songs,
+                                onPlayClick = onArtistPlayClick,
+                                onShuffleClick = onArtistShuffleClick,
+                                onPlayNextClick = onArtistPlayNextClick,
+                                onAddToQueueClick = onArtistAddToQueueClick,
+                                onAddToPlaylistClick = onArtistAddToPlaylistClick,
+                                homePinAction = homePinUi.actionForArtist(artist)
+                            )
+                        }
                     )
             )
         }
@@ -159,39 +162,41 @@ internal fun artistActionSheetTarget(
     onShuffleClick: (String, List<Song>) -> Unit,
     onPlayNextClick: (String, List<Song>) -> Unit,
     onAddToQueueClick: (String, List<Song>) -> Unit,
-    onAddToPlaylistClick: (String, List<Song>) -> Unit
+    onAddToPlaylistClick: (String, List<Song>) -> Unit,
+    homePinAction: LibraryItemAction? = null
 ): LibraryItemActionSheetTarget {
     return LibraryItemActionSheetTarget(
         title = artistName,
         subtitle = subtitle,
         artworkUri = artworkUri,
         artworkDescription = "Artwork for $artistName",
-        actions = listOf(
-            LibraryItemAction(
+        actions = buildList {
+            add(LibraryItemAction(
                 label = "Play",
                 icon = Icons.Filled.PlayArrow,
                 onClick = { onPlayClick(artistName, artistSongs) }
-            ),
-            LibraryItemAction(
+            ))
+            add(LibraryItemAction(
                 label = "Shuffle",
                 icon = Icons.Filled.Shuffle,
                 onClick = { onShuffleClick(artistName, artistSongs) }
-            ),
-            LibraryItemAction(
+            ))
+            add(LibraryItemAction(
                 label = "Play next",
                 icon = Icons.Filled.SkipNext,
                 onClick = { onPlayNextClick(artistName, artistSongs) }
-            ),
-            LibraryItemAction(
+            ))
+            add(LibraryItemAction(
                 label = "Add to queue",
                 icon = Icons.AutoMirrored.Filled.QueueMusic,
                 onClick = { onAddToQueueClick(artistName, artistSongs) }
-            ),
-            LibraryItemAction(
+            ))
+            add(LibraryItemAction(
                 label = "Add to playlist",
                 icon = Icons.AutoMirrored.Filled.PlaylistAdd,
                 onClick = { onAddToPlaylistClick(artistName, artistSongs) }
-            )
-        )
+            ))
+            homePinAction?.let(::add)
+        }
     )
 }

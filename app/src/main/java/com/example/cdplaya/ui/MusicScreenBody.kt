@@ -429,6 +429,17 @@ internal fun MusicScreenBody(
                         onOpenLibrary = { tab ->
                             onOpenLibrary(tab)
                         },
+                        onPinnedSongClick = { song ->
+                            onSongClick(song, songs)
+                        },
+                        onPinnedAlbumClick = { albumKey ->
+                            onOpenLibrary(LibraryTab.ALBUMS)
+                            onAlbumSelected(albumKey)
+                        },
+                        onPinnedArtistClick = { artistName ->
+                            onOpenLibrary(LibraryTab.ARTISTS)
+                            onArtistSelected(artistName)
+                        },
                         onRecentlyPlayedSongClick = { song ->
                             onSongClick(song, recentlyPlayedSongs)
                         },

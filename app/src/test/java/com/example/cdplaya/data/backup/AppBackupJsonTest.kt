@@ -485,7 +485,20 @@ class AppBackupJsonTest {
         ).toBackupSongReference()
         val encoded = AppBackupJson.encodeBackup(
             emptyBackup().copy(
-                preferences = BackupPreferences(selectedLibraryFolders = listOf("/private/music")),
+                preferences = BackupPreferences(
+                    selectedLibraryFolders = listOf("/private/music"),
+                    homePins = listOf(
+                        BackupHomePin(
+                            id = "pin-private",
+                            type = "SONG",
+                            title = "Track",
+                            anchor = BackupSongReference(
+                                relativePath = "/private/pinned",
+                                displayName = "track.flac"
+                            )
+                        )
+                    )
+                ),
                 favorites = listOf(
                     BackupFavoriteSong("legacy", "Track", "Artist", "Album", 1_000L, 1L, reference)
                 )
@@ -505,6 +518,35 @@ class AppBackupJsonTest {
         assertEquals("Music/Rock", "/storage/emulated/0/Music/Rock".toPortableFolderSelection())
         assertEquals("Music/Rock", "/storage/ABCD-1234/Music/Rock".toPortableFolderSelection())
         assertEquals("Music/Rock", "/sdcard/Music/Rock".toPortableFolderSelection())
+    }
+
+
+    @Test
+    fun homePinsAndRecentlyAddedVisibilityRoundTripWithPreferences() {
+        val pin = BackupHomePin(
+            id = "pin-1",
+            type = "ALBUM",
+            title = "Pinned Album",
+            subtitle = "Pinned Artist",
+            anchor = BackupSongReference(
+                relativePath = "Music/Pinned Album/",
+                displayName = "01.flac",
+                title = "Track",
+                artist = "Pinned Artist",
+                album = "Pinned Album"
+            )
+        )
+        val backup = emptyBackup().copy(
+            preferences = BackupPreferences(
+                homePins = listOf(pin),
+                showRecentlyAddedOnHome = false
+            )
+        )
+
+        val decoded = AppBackupJson.decodeBackup(AppBackupJson.encodeBackup(backup))
+
+        assertEquals(listOf(pin), decoded.preferences.homePins)
+        assertFalse(decoded.preferences.showRecentlyAddedOnHome)
     }
 
     private fun emptyBackup() = AppBackup(

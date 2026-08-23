@@ -19,6 +19,8 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.example.cdplaya.data.PlayerTheme
 import com.example.cdplaya.data.FolderSelection
 import com.example.cdplaya.data.FolderSelectionMode
+import com.example.cdplaya.data.home.HomePin
+import com.example.cdplaya.data.home.sanitizeHomePins
 import com.example.cdplaya.player.audio.AudioOffloadPreference
 import com.example.cdplaya.player.equalizer.EqualizerMode
 import com.example.cdplaya.player.equalizer.EqualizerPreferencesState
@@ -72,6 +74,8 @@ data class AppPreferencesState(
     val songsGridColumnCount: Int = LibraryGridColumns.DEFAULT,
     val albumsGridColumnCount: Int = LibraryGridColumns.DEFAULT,
     val artistsGridColumnCount: Int = LibraryGridColumns.DEFAULT,
+    val homePins: List<HomePin> = emptyList(),
+    val showRecentlyAddedOnHome: Boolean = true,
     val isLoaded: Boolean = false
 )
 
@@ -393,6 +397,40 @@ class AppPreferencesRepository private constructor(
         preferences[Keys.gridColumns(category)] = LibraryGridColumns.normalize(gridColumnCount)
     }
 
+    suspend fun addHomePin(pin: HomePin) = edit { preferences ->
+        val current = decodeAppPreferences(preferences).homePins
+        val updated = sanitizeHomePins(current + pin)
+        preferences.writeHomePins(updated)
+    }
+
+    suspend fun replaceHomePin(index: Int, pin: HomePin) = edit { preferences ->
+        val current = decodeAppPreferences(preferences).homePins
+        if (index !in current.indices) return@edit
+        val updated = current.toMutableList().apply { this[index] = pin }
+        preferences.writeHomePins(sanitizeHomePins(updated))
+    }
+
+    suspend fun removeHomePin(pinId: String) = edit { preferences ->
+        val current = decodeAppPreferences(preferences).homePins
+        preferences.writeHomePins(current.filterNot { pin -> pin.id == pinId })
+    }
+
+    suspend fun moveHomePin(pinId: String, offset: Int) = edit { preferences ->
+        if (offset == 0) return@edit
+        val current = decodeAppPreferences(preferences).homePins.toMutableList()
+        val fromIndex = current.indexOfFirst { pin -> pin.id == pinId }
+        if (fromIndex < 0) return@edit
+        val toIndex = (fromIndex + offset).coerceIn(current.indices)
+        if (toIndex == fromIndex) return@edit
+        val pin = current.removeAt(fromIndex)
+        current.add(toIndex, pin)
+        preferences.writeHomePins(current)
+    }
+
+    suspend fun setShowRecentlyAddedOnHome(show: Boolean) = edit { preferences ->
+        preferences[Keys.showRecentlyAddedOnHome] = show
+    }
+
     suspend fun setThemeTokenOverrides(
         theme: PlayerTheme,
         overrides: PlayerThemeTokenOverrides
@@ -427,6 +465,8 @@ class AppPreferencesRepository private constructor(
             preferences[Keys.viewMode(category)] = mode.storageValue
             preferences[Keys.gridColumns(category)] = LibraryGridColumns.normalize(columns)
         }
+        preferences.writeHomePins(restored.homePins)
+        preferences[Keys.showRecentlyAddedOnHome] = restored.showRecentlyAddedOnHome
         restored.playerThemeTokenOverrides.forEach { (theme, overrides) ->
             preferences.putColor(theme, Keys.SHELL, overrides.shellColor)
             preferences.putColor(theme, Keys.ACCENT, overrides.accentColor)
@@ -521,8 +561,27 @@ internal fun decodeAppPreferences(preferences: Preferences): AppPreferencesState
         artistsGridColumnCount = LibraryGridColumns.normalize(
             preferences[Keys.artistsGridColumns] ?: LibraryGridColumns.DEFAULT
         ),
+        homePins = preferences[Keys.homePins]
+            ?.let(::decodeHomePins)
+            .orEmpty(),
+        showRecentlyAddedOnHome = preferences[Keys.showRecentlyAddedOnHome] ?: true,
         isLoaded = true
     )
+}
+
+private fun decodeHomePins(encoded: String): List<HomePin> = sanitizeHomePins(
+    runCatching {
+        preferencesJson.decodeFromString<List<HomePin>>(encoded)
+    }.getOrDefault(emptyList())
+)
+
+private fun MutablePreferences.writeHomePins(pins: List<HomePin>) {
+    val sanitized = sanitizeHomePins(pins)
+    if (sanitized.isEmpty()) {
+        remove(Keys.homePins)
+    } else {
+        this[Keys.homePins] = preferencesJson.encodeToString(sanitized)
+    }
 }
 
 private fun emptyOverrides() = PlayerThemeTokenOverrides()
@@ -610,7 +669,7 @@ private fun decodeUserEqualizerPresets(
     encoded: String
 ): List<UserEqualizerPreset> {
     val decoded = runCatching {
-        equalizerJson.decodeFromString<
+        preferencesJson.decodeFromString<
                 List<StoredUserEqualizerPreset>
                 >(encoded)
     }.getOrDefault(emptyList())
@@ -660,7 +719,7 @@ private fun decodeParametricEqualizerState(
     encoded: String
 ): ParametricEqualizerState {
     return runCatching {
-        equalizerJson.decodeFromString<StoredParametricEqualizerState>(
+        preferencesJson.decodeFromString<StoredParametricEqualizerState>(
             encoded
         ).toDomain()
     }.getOrDefault(ParametricEqualizerState())
@@ -670,7 +729,7 @@ private fun MutablePreferences.writeParametricEqualizerState(
     state: ParametricEqualizerState
 ) {
     this[Keys.parametricEqualizerState] =
-        equalizerJson.encodeToString(state.toStored())
+        preferencesJson.encodeToString(state.toStored())
 }
 
 private fun MutablePreferences.writeUserEqualizerPresets(
@@ -679,7 +738,7 @@ private fun MutablePreferences.writeUserEqualizerPresets(
     val validated = EqualizerPreferencesState(
         userPresets = presets
     ).userPresets
-    this[Keys.equalizerUserPresets] = equalizerJson.encodeToString(
+    this[Keys.equalizerUserPresets] = preferencesJson.encodeToString(
         validated.map { preset ->
             StoredUserEqualizerPreset(
                 id = preset.id,
@@ -869,7 +928,7 @@ private fun StoredParametricFilter.toDomain(): ParametricFilter {
     }
 }
 
-private val equalizerJson = Json {
+private val preferencesJson = Json {
     ignoreUnknownKeys = true
     encodeDefaults = true
 }
@@ -907,6 +966,8 @@ private object Keys {
     val songsGridColumns = intPreferencesKey("songs_view_mode_columns")
     val albumsGridColumns = intPreferencesKey("albums_view_mode_columns")
     val artistsGridColumns = intPreferencesKey("artists_view_mode_columns")
+    val homePins = stringPreferencesKey("home_pins_json")
+    val showRecentlyAddedOnHome = booleanPreferencesKey("show_recently_added_on_home")
 
     const val SHELL = "shell"
     const val ACCENT = "accent"

@@ -41,6 +41,7 @@ import com.example.cdplaya.data.membershipKey
 import com.example.cdplaya.ui.getDisplayTrackNumber
 import com.example.cdplaya.R as AppR
 import com.example.cdplaya.ui.ratings.CompactRatingIndicator
+import com.example.cdplaya.ui.home.LocalHomePinUi
 import com.example.cdplaya.ui.ratings.LocalSongRatingUi
 
 @Composable
@@ -65,6 +66,7 @@ fun SongList(
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
     }
     val ratingUi = LocalSongRatingUi.current
+    val homePinUi = LocalHomePinUi.current
     val rateSongLabel = stringResource(AppR.string.rate_song)
 
     LazyColumn(
@@ -138,24 +140,25 @@ fun SongList(
                         )
                     )
                     .libraryItemActions(
-                    clickLabel = "Play ${song.title}",
-                    onClick = {
-                        onSongClick(song, songs)
-                    },
-                    onShowActions = {
-                        actionSheetTarget = songActionSheetTarget(
-                            song = song,
-                            wasRecentlyAdded = wasRecentlyAdded,
-                            isFavorite = isFavorite,
-                            onPlayNextClick = onPlayNextClick,
-                            onAddToQueueClick = onAddToQueueClick,
-                            onToggleFavoriteClick = onToggleFavoriteClick,
-                            onAddToPlaylistClick = onAddToPlaylistClick,
-                            onEditSongTagsClick = onEditSongTagsClick,
-                            rateSongLabel = rateSongLabel,
-                            onRateSongClick = ratingUi.onOpen
-                        )
-                    }
+                        clickLabel = "Play ${song.title}",
+                        onClick = {
+                            onSongClick(song, songs)
+                        },
+                        onShowActions = {
+                            actionSheetTarget = songActionSheetTarget(
+                                song = song,
+                                wasRecentlyAdded = wasRecentlyAdded,
+                                isFavorite = isFavorite,
+                                onPlayNextClick = onPlayNextClick,
+                                onAddToQueueClick = onAddToQueueClick,
+                                onToggleFavoriteClick = onToggleFavoriteClick,
+                                onAddToPlaylistClick = onAddToPlaylistClick,
+                                onEditSongTagsClick = onEditSongTagsClick,
+                                rateSongLabel = rateSongLabel,
+                                onRateSongClick = ratingUi.onOpen,
+                                homePinAction = homePinUi.actionForSong(song)
+                            )
+                        }
                     )
             )
         }
@@ -181,7 +184,8 @@ internal fun songActionSheetTarget(
     onAddToPlaylistClick: (Song) -> Unit,
     onEditSongTagsClick: (Song) -> Unit,
     rateSongLabel: String,
-    onRateSongClick: (Song) -> Unit
+    onRateSongClick: (Song) -> Unit,
+    homePinAction: LibraryItemAction? = null
 ): LibraryItemActionSheetTarget {
     val artist = song.artist.ifBlank { "Unknown Artist" }
     val album = song.album.ifBlank { "Unknown Album" }
@@ -196,41 +200,54 @@ internal fun songActionSheetTarget(
         subtitle = subtitle,
         artworkUri = song.albumArtUri,
         artworkDescription = "Album art for ${song.title}",
-        actions = listOf(
-            LibraryItemAction(
-                label = "Play next",
-                icon = Icons.Filled.SkipNext,
-                onClick = { onPlayNextClick(song) }
-            ),
-            LibraryItemAction(
-                label = "Add to queue",
-                icon = Icons.AutoMirrored.Filled.QueueMusic,
-                onClick = { onAddToQueueClick(song) }
-            ),
-            LibraryItemAction(
-                label = if (isFavorite) {
-                    "Remove from favorites"
-                } else {
-                    "Add to favorites"
-                },
-                icon = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                onClick = { onToggleFavoriteClick(song) }
-            ),
-            LibraryItemAction(
-                label = rateSongLabel,
-                icon = Icons.Filled.Star,
-                onClick = { onRateSongClick(song) }
-            ),
-            LibraryItemAction(
-                label = "Add to playlist",
-                icon = Icons.AutoMirrored.Filled.PlaylistAdd,
-                onClick = { onAddToPlaylistClick(song) }
-            ),
-            LibraryItemAction(
-                label = "Edit tags",
-                icon = Icons.Filled.Edit,
-                onClick = { onEditSongTagsClick(song) }
+        actions = buildList {
+            add(
+                LibraryItemAction(
+                    label = "Play next",
+                    icon = Icons.Filled.SkipNext,
+                    onClick = { onPlayNextClick(song) }
+                )
             )
-        )
+            add(
+                LibraryItemAction(
+                    label = "Add to queue",
+                    icon = Icons.AutoMirrored.Filled.QueueMusic,
+                    onClick = { onAddToQueueClick(song) }
+                )
+            )
+            add(
+                LibraryItemAction(
+                    label = if (isFavorite) {
+                        "Remove from favorites"
+                    } else {
+                        "Add to favorites"
+                    },
+                    icon = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                    onClick = { onToggleFavoriteClick(song) }
+                )
+            )
+            homePinAction?.let(::add)
+            add(
+                LibraryItemAction(
+                    label = rateSongLabel,
+                    icon = Icons.Filled.Star,
+                    onClick = { onRateSongClick(song) }
+                )
+            )
+            add(
+                LibraryItemAction(
+                    label = "Add to playlist",
+                    icon = Icons.AutoMirrored.Filled.PlaylistAdd,
+                    onClick = { onAddToPlaylistClick(song) }
+                )
+            )
+            add(
+                LibraryItemAction(
+                    label = "Edit tags",
+                    icon = Icons.Filled.Edit,
+                    onClick = { onEditSongTagsClick(song) }
+                )
+            )
+        }
     )
 }

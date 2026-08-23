@@ -1,6 +1,9 @@
 package com.example.cdplaya.data
 
+import kotlinx.serialization.Serializable
+
 /** Persisted evidence used to resolve a song without assuming any one field is globally unique. */
+@Serializable
 data class SongReference(
     val mediaStoreId: Long? = null,
     val volumeName: String = "",
@@ -62,6 +65,6 @@ private fun String.normalizedPersistedText(): String = trim().takeIf { it.isNotB
 
 fun SongReference.hasPersistedIdentity(): Boolean {
     return mediaStoreId != null || contentUri.isNotBlank() ||
-        (relativePath.isNotBlank() && displayName.isNotBlank()) ||
-        portableKey.isNotBlank() || legacyStableKey.isNotBlank()
+            (relativePath.isNotBlank() && displayName.isNotBlank()) ||
+            portableKey.isNotBlank() || legacyStableKey.isNotBlank()
 }

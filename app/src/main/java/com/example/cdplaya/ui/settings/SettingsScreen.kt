@@ -16,11 +16,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -40,6 +42,7 @@ import com.example.cdplaya.player.audio.AudioOffloadPreference
 import com.example.cdplaya.player.replaygain.ReplayGainMode
 import com.example.cdplaya.ui.AppShellIcons
 import com.example.cdplaya.ui.AppShellTypography
+import com.example.cdplaya.ui.home.LocalHomePinUi
 import com.example.cdplaya.ui.state.LibraryRefreshSummary
 import com.example.cdplaya.ui.player.modern.ModernArtworkTransitionStyle
 import com.example.cdplaya.ui.player.modern.ModernSeekbarStyle
@@ -92,6 +95,7 @@ fun SettingsScreen(
     var isThemeCustomizationDialogVisible by remember { mutableStateOf(false) }
     var isArtworkTransitionDialogVisible by remember { mutableStateOf(false) }
     var isSeekbarStyleDialogVisible by remember { mutableStateOf(false) }
+    val homePinUi = LocalHomePinUi.current
 
     val themeCustomizationOptions = selectedPlayerTheme.customizationOptions()
     val folderSelectionText = when {
@@ -175,6 +179,34 @@ fun SettingsScreen(
                 title = "Songs",
                 summary = "$totalSongCount song(s) in your current library",
                 icon = AppShellIcons.MusicNote
+            )
+        }
+
+        SettingsSectionSpacer()
+
+        SettingsSection(
+            title = "Home",
+            description = "Choose which automatic shelves appear on your Home screen.",
+            icon = Icons.Filled.Home
+        ) {
+            SettingsRow(
+                title = "Recently Added",
+                summary = if (homePinUi.showRecentlyAddedOnHome) {
+                    "Shown on Home when recently added music is available"
+                } else {
+                    "Hidden from Home"
+                },
+                icon = AppShellIcons.AlbumStack,
+                trailingContent = {
+                    Switch(
+                        checked = homePinUi.showRecentlyAddedOnHome,
+                        onCheckedChange = homePinUi.onShowRecentlyAddedChanged
+                    )
+                }
+            )
+
+            SettingsFooterNote(
+                text = "Pinned songs, albums, and artists are managed from their item actions. Home holds up to 4 pins."
             )
         }
 
