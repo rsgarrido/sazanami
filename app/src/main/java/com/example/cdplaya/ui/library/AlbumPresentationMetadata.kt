@@ -330,4 +330,4 @@ private fun extractArtworkAccent(bitmap: Bitmap): Int? {
     )
 }
 
-private val releaseYearPattern = Regex("""(?<!\\d)(?:1\\d{3}|2\\d{3})(?!\\d)""")
+private val releaseYearPattern = Regex("""(?<!\d)(?:1\d{3}|2\d{3})(?!\d)""")
