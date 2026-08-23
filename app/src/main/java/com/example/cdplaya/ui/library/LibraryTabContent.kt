@@ -227,6 +227,7 @@ fun ArtistsTabContent(
     sortOption: LibrarySortOption,
     recentlyAddedSongIds: Set<Long>,
     onArtistSelected: (String) -> Unit,
+    onAlbumSelected: (String) -> Unit,
     onBackFromArtist: () -> Unit,
     onPlaySongsClick: (List<Song>, Boolean) -> Unit,
     onPlayNextClick: (Song) -> Unit,
@@ -319,52 +320,44 @@ fun ArtistsTabContent(
             }
         )
 
-        val displayedArtistSongs = filterSongsForSearch(
-            songs = artistSongs,
-            searchQuery = searchQuery
-        )
-
-        val subtitle = if (searchQuery.isBlank()) {
-            pluralStringResource(
-                R.plurals.song_count,
-                artistSongs.size,
-                artistSongs.size
-            )
-        } else {
-            pluralStringResource(
-                R.plurals.filtered_song_count,
-                artistSongs.size,
-                displayedArtistSongs.size,
-                artistSongs.size
-            )
-        }
-
-        SongGroupDetailScreen(
-            title = selectedArtistName,
-            subtitle = subtitle,
-            artworkUri = artistSongs.firstOrNull()?.albumArtUri,
-            songs = displayedArtistSongs,
-            currentSongId = currentSong?.id,
-            recentlyAddedSongIds = recentlyAddedSongIds,
-            showAlbumName = true,
-            showTrackNumbers = false,
+        ArtistDetailScreen(
+            artistName = selectedArtistName,
+            artistSongs = artistSongs,
             onBackClick = onBackFromArtist,
+            onAlbumClick = onAlbumSelected,
             onPlayAllClick = {
-                onPlaySongsClick(displayedArtistSongs, false)
+                onPlaySongsClick(artistSongs, false)
             },
-            onShuffleAllClick = {
-                onPlaySongsClick(displayedArtistSongs, true)
+            onPlayAlbumClick = { albumSongs ->
+                onPlaySongsClick(albumSongs, false)
             },
-            onSongClick = onSongClick,
-            onPlayNextClick = onPlayNextClick,
-            onAddToQueueClick = onAddToQueueClick,
-            favoriteMembershipKeys = favoriteMembershipKeys,
-            onToggleFavoriteClick = onToggleFavoriteClick,
-            onAddToPlaylistClick = onAddToPlaylistClick,
-            onAddAllToPlaylistClick = {
-                onAddSongsToPlaylistClick(displayedArtistSongs)
+            onShuffleAlbumClick = { albumSongs ->
+                onPlaySongsClick(albumSongs, true)
             },
-            onEditSongTagsClick = onEditSongTagsClick,
+            onShuffleSongsClick = {
+                onPlaySongsClick(artistSongs, true)
+            },
+            onShuffleAlbumsClick = {
+                onPlaySongsClick(
+                    buildArtistAlbumShuffleQueue(
+                        artistSongs = artistSongs,
+                        shuffleSongsWithinAlbums = false
+                    ),
+                    false
+                )
+            },
+            onShuffleAlbumsAndSongsClick = {
+                onPlaySongsClick(
+                    buildArtistAlbumShuffleQueue(
+                        artistSongs = artistSongs,
+                        shuffleSongsWithinAlbums = true
+                    ),
+                    false
+                )
+            },
+            onPlayNextSongsClick = onPlayNextSongsClick,
+            onAddSongsToQueueClick = onAddSongsToQueueClick,
+            onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
             bottomContentPadding = bottomContentPadding,
             modifier = modifier
         )
@@ -473,59 +466,63 @@ fun AlbumsTabContent(
                 song.folderPath == selectedAlbumFolderPath
             }
         )
-
-        val displayedAlbumSongs = filterSongsForSearch(
-            songs = albumSongs,
-            searchQuery = searchQuery
-        )
-
         val firstSong = albumSongs.firstOrNull()
-
-        val subtitle = if (searchQuery.isBlank()) {
-            val songCountText = pluralStringResource(
-                R.plurals.song_count,
-                albumSongs.size,
-                albumSongs.size
+        val album = firstSong?.let { song ->
+            LibraryAlbumGroup(
+                key = selectedAlbumFolderPath,
+                title = song.album.ifBlank { "Unknown Album" },
+                artistText = buildLibraryAlbumArtistText(albumSongs),
+                songs = albumSongs
             )
-            "${firstSong?.artist ?: "Unknown Artist"} • $songCountText"
-        } else {
-            val songCountText = pluralStringResource(
-                R.plurals.filtered_song_count,
-                albumSongs.size,
-                displayedAlbumSongs.size,
-                albumSongs.size
-            )
-            "${firstSong?.artist ?: "Unknown Artist"} • $songCountText"
         }
 
-        SongGroupDetailScreen(
-            title = firstSong?.album?.ifBlank { "Unknown Album" } ?: "Album",
-            subtitle = subtitle,
-            artworkUri = firstSong?.albumArtUri,
-            songs = displayedAlbumSongs,
-            currentSongId = currentSong?.id,
-            recentlyAddedSongIds = recentlyAddedSongIds,
-            showAlbumName = false,
-            showTrackNumbers = true,
-            onBackClick = onBackFromAlbum,
-            onPlayAllClick = {
-                onPlaySongsClick(displayedAlbumSongs, false)
-            },
-            onShuffleAllClick = {
-                onPlaySongsClick(displayedAlbumSongs, true)
-            },
-            onSongClick = onSongClick,
-            onPlayNextClick = onPlayNextClick,
-            onAddToQueueClick = onAddToQueueClick,
-            favoriteMembershipKeys = favoriteMembershipKeys,
-            onToggleFavoriteClick = onToggleFavoriteClick,
-            onAddToPlaylistClick = onAddToPlaylistClick,
-            onAddAllToPlaylistClick = {
-                onAddSongsToPlaylistClick(displayedAlbumSongs)
-            },
-            onEditSongTagsClick = onEditSongTagsClick,
-            bottomContentPadding = bottomContentPadding,
-            modifier = modifier
-        )
+        if (album == null) {
+            Text(
+                text = "Album is no longer available.",
+                modifier = Modifier.padding(16.dp)
+            )
+        } else {
+            AlbumDetailScreen(
+                album = album,
+                currentSongId = currentSong?.id,
+                recentlyAddedSongIds = recentlyAddedSongIds,
+                favoriteMembershipKeys = favoriteMembershipKeys,
+                onBackClick = onBackFromAlbum,
+                onPlayAllClick = {
+                    onPlaySongsClick(albumSongs, false)
+                },
+                onShuffleAllClick = {
+                    onPlaySongsClick(albumSongs, true)
+                },
+                onSongClick = onSongClick,
+                onPlayNextClick = onPlayNextClick,
+                onAddToQueueClick = onAddToQueueClick,
+                onPlayNextSongsClick = onPlayNextSongsClick,
+                onAddSongsToQueueClick = onAddSongsToQueueClick,
+                onToggleFavoriteClick = onToggleFavoriteClick,
+                onAddToPlaylistClick = onAddToPlaylistClick,
+                onAddAllToPlaylistClick = {
+                    onAddSongsToPlaylistClick(albumSongs)
+                },
+                onEditSongTagsClick = onEditSongTagsClick,
+                bottomContentPadding = bottomContentPadding,
+                modifier = modifier
+            )
+        }
     }
+}
+
+internal fun buildArtistAlbumShuffleQueue(
+    artistSongs: List<Song>,
+    shuffleSongsWithinAlbums: Boolean
+): List<Song> {
+    return buildLibraryAlbumGroups(artistSongs)
+        .shuffled()
+        .flatMap { album ->
+            if (shuffleSongsWithinAlbums) {
+                album.songs.shuffled()
+            } else {
+                album.songs
+            }
+        }
 }

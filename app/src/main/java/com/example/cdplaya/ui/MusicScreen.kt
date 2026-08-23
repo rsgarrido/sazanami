@@ -256,7 +256,7 @@ internal fun MusicScreen(
     var isStatisticsScreenVisible by overlayState.isStatisticsScreenVisible
     var isListeningHistoryImportVisible by overlayState.isListeningHistoryImportVisible
     var isListeningHistoryReconciliationVisible by
-        overlayState.isListeningHistoryReconciliationVisible
+    overlayState.isListeningHistoryReconciliationVisible
     var isExpandedUpNextSheetVisible by overlayState.isExpandedUpNextSheetVisible
     var isCreatePlaylistDialogVisible by overlayState.isCreatePlaylistDialogVisible
     var isSleepTimerDialogVisible by overlayState.isSleepTimerDialogVisible
@@ -486,12 +486,15 @@ internal fun MusicScreen(
                 closeSettings()
             }
 
-            selectedArtistName != null -> {
-                selectedArtistName = null
-            }
-
             selectedAlbumFolderPath != null -> {
                 selectedAlbumFolderPath = null
+                if (selectedArtistName != null) {
+                    selectedLibraryTab = LibraryTab.ARTISTS
+                }
+            }
+
+            selectedArtistName != null -> {
+                selectedArtistName = null
             }
 
             selectedPlaylistId != null -> {
@@ -921,9 +924,13 @@ internal fun MusicScreen(
                     },
                     onAlbumSelected = { albumFolderPath ->
                         selectedAlbumFolderPath = albumFolderPath
+                        selectedLibraryTab = LibraryTab.ALBUMS
                     },
                     onBackFromAlbum = {
                         selectedAlbumFolderPath = null
+                        if (selectedArtistName != null) {
+                            selectedLibraryTab = LibraryTab.ARTISTS
+                        }
                     },
                     onBackFromQueue = {
                         selectedLibraryTab = LibraryTab.SONGS
@@ -1207,11 +1214,11 @@ internal fun shouldShowPrimaryBottomNavigation(
     isSettingsScreenVisible: Boolean,
     isTagEditorVisible: Boolean
 ): Boolean = !isPlayerExpanded &&
-    !isFolderScreenVisible &&
-    !isDiagnosticsScreenVisible &&
-    !isEqualizerScreenVisible &&
-    !isStatisticsScreenVisible &&
-    !isListeningHistoryImportVisible &&
-    !isListeningHistoryReconciliationVisible &&
-    !isSettingsScreenVisible &&
-    !isTagEditorVisible
+        !isFolderScreenVisible &&
+        !isDiagnosticsScreenVisible &&
+        !isEqualizerScreenVisible &&
+        !isStatisticsScreenVisible &&
+        !isListeningHistoryImportVisible &&
+        !isListeningHistoryReconciliationVisible &&
+        !isSettingsScreenVisible &&
+        !isTagEditorVisible

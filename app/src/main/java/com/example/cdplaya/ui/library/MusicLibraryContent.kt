@@ -110,6 +110,7 @@ fun MusicLibraryContent(
                 gridColumnCount = gridColumnCount,
                 recentlyAddedSongIds = recentlyAddedSongIds,
                 onArtistSelected = onArtistSelected,
+                onAlbumSelected = onAlbumSelected,
                 onBackFromArtist = onBackFromArtist,
                 onPlaySongsClick = onPlaySongsClick,
                 onPlayNextClick = onPlayNextClick,

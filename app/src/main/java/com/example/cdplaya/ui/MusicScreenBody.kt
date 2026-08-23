@@ -459,8 +459,9 @@ internal fun MusicScreenBody(
                     )
                 } else {
                     val isSearchDestination = destination == MainDestination.SEARCH
-                    val isLibraryDetail = selectedArtistName != null ||
-                            selectedAlbumFolderPath != null ||
+                    val isArtistOrAlbumDetail = selectedArtistName != null ||
+                            selectedAlbumFolderPath != null
+                    val isLibraryDetail = isArtistOrAlbumDetail ||
                             selectedPlaylistId != null
                     val selectedViewMode = if (isSearchDestination) {
                         LibraryViewMode.LIST
@@ -478,48 +479,50 @@ internal fun MusicScreenBody(
                             .fillMaxSize()
                             .animateContentSize()
                     ) {
-                        MusicScreenHeader(
-                            title = when {
-                                isSearchDestination -> "Search"
-                                selectedLibraryTab == LibraryTab.QUEUE -> "Up Next"
-                                else -> "Library"
-                            },
-                            onBackClick = null,
-                            onSettingsClick = onSettingsClick,
-                            modifier = Modifier.statusBarsPadding(),
-                            viewModeAction = if (!isSearchDestination &&
-                                !isLibraryDetail &&
-                                selectedLibraryTab.viewCategory() != null
-                            ) {
-                                {
-                                    LibraryViewOptionsButton(
-                                        viewMode = selectedViewMode,
-                                        gridColumnCount = selectedGridColumnCount,
-                                        onClick = {
-                                            isLibraryViewOptionsVisible = true
-                                        }
+                        if (!isArtistOrAlbumDetail || !mediaAccessState.hasAudioAccess) {
+                            MusicScreenHeader(
+                                title = when {
+                                    isSearchDestination -> "Search"
+                                    selectedLibraryTab == LibraryTab.QUEUE -> "Up Next"
+                                    else -> "Library"
+                                },
+                                onBackClick = null,
+                                onSettingsClick = onSettingsClick,
+                                modifier = Modifier.statusBarsPadding(),
+                                viewModeAction = if (!isSearchDestination &&
+                                    !isLibraryDetail &&
+                                    selectedLibraryTab.viewCategory() != null
+                                ) {
+                                    {
+                                        LibraryViewOptionsButton(
+                                            viewMode = selectedViewMode,
+                                            gridColumnCount = selectedGridColumnCount,
+                                            onClick = {
+                                                isLibraryViewOptionsVisible = true
+                                            }
+                                        )
+                                    }
+                                } else {
+                                    null
+                                },
+                                sortAction = {
+                                    LibrarySortAction(
+                                        selectedLibraryTab = selectedLibraryTab,
+                                        selectedArtistName = selectedArtistName,
+                                        selectedAlbumFolderPath = selectedAlbumFolderPath,
+                                        selectedSongSortOption = selectedSongSortOption,
+                                        selectedArtistSortOption = selectedArtistSortOption,
+                                        selectedAlbumSortOption = selectedAlbumSortOption,
+                                        selectedFavoriteSortOption = selectedFavoriteSortOption,
+                                        onSongSortOptionSelected = onSongSortOptionSelected,
+                                        onArtistSortOptionSelected = onArtistSortOptionSelected,
+                                        onAlbumSortOptionSelected = onAlbumSortOptionSelected,
+                                        onFavoriteSortOptionSelected = onFavoriteSortOptionSelected,
+                                        ratingFeaturesEnabled = !isSearchDestination
                                     )
                                 }
-                            } else {
-                                null
-                            },
-                            sortAction = {
-                                LibrarySortAction(
-                                    selectedLibraryTab = selectedLibraryTab,
-                                    selectedArtistName = selectedArtistName,
-                                    selectedAlbumFolderPath = selectedAlbumFolderPath,
-                                    selectedSongSortOption = selectedSongSortOption,
-                                    selectedArtistSortOption = selectedArtistSortOption,
-                                    selectedAlbumSortOption = selectedAlbumSortOption,
-                                    selectedFavoriteSortOption = selectedFavoriteSortOption,
-                                    onSongSortOptionSelected = onSongSortOptionSelected,
-                                    onArtistSortOptionSelected = onArtistSortOptionSelected,
-                                    onAlbumSortOptionSelected = onAlbumSortOptionSelected,
-                                    onFavoriteSortOptionSelected = onFavoriteSortOptionSelected,
-                                    ratingFeaturesEnabled = !isSearchDestination
-                                )
-                            }
-                        )
+                            )
+                        }
 
                         if (!mediaAccessState.hasAudioAccess) {
                             MediaAccessNotice(
