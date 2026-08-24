@@ -1,13 +1,20 @@
 package com.example.cdplaya.ui.playlist
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.cdplaya.data.Playlist
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.Song
-import com.example.cdplaya.data.stableKey
 import com.example.cdplaya.player.PlaybackShuffleMode
 
 @Composable
@@ -25,6 +32,8 @@ fun PlaylistsTabContent(
     onDeletePlaylistClick: (Playlist) -> Unit,
     onExportPlaylistClick: (Playlist) -> Unit,
     onImportPlaylistClick: () -> Unit,
+    onChangePlaylistArtwork: (Playlist, Uri) -> Unit,
+    onResetPlaylistArtwork: (Playlist) -> Unit,
     onBackFromPlaylist: () -> Unit,
     onPlaySongsClick: (List<Song>, PlaybackShuffleMode) -> Unit,
     onSongClick: (Song, List<Song>) -> Unit,
@@ -39,6 +48,25 @@ fun PlaylistsTabContent(
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
+    var playlistPendingArtworkId by remember { mutableStateOf<Long?>(null) }
+    val artworkPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        val playlist = playlistPendingArtworkId?.let { playlistId ->
+            playlists.firstOrNull { it.playlistId == playlistId }
+        }
+        if (uri != null && playlist != null) {
+            onChangePlaylistArtwork(playlist, uri)
+        }
+        playlistPendingArtworkId = null
+    }
+    val chooseArtwork: (Playlist) -> Unit = { playlist ->
+        playlistPendingArtworkId = playlist.playlistId
+        artworkPicker.launch(
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+        )
+    }
+
     if (selectedPlaylistId == null) {
         PlaylistListScreen(
             playlists = playlists,
@@ -47,17 +75,36 @@ fun PlaylistsTabContent(
             onDeletePlaylistClick = onDeletePlaylistClick,
             onExportPlaylistClick = onExportPlaylistClick,
             onImportPlaylistClick = onImportPlaylistClick,
+            onChangeArtworkClick = chooseArtwork,
+            onResetArtworkClick = onResetPlaylistArtwork,
             onRenamePlaylistClick = onRenamePlaylistClick,
             bottomContentPadding = bottomContentPadding,
             modifier = modifier
         )
     } else {
-        val availablePlaylistSongs = selectedPlaylistSongs.mapNotNull(PlaylistSong::resolvedSong)
+        val availablePlaylistSongRows = selectedPlaylistSongs.filter { it.resolvedSong != null }
+        val availablePlaylistSongs = availablePlaylistSongRows.mapNotNull(PlaylistSong::resolvedSong)
+        val selectedPlaylist = playlists.firstOrNull { playlist ->
+            playlist.playlistId == selectedPlaylistId
+        } ?: Playlist(
+            playlistId = selectedPlaylistId,
+            name = selectedPlaylistName,
+            songCount = selectedPlaylistSongs.size,
+            totalDuration = selectedPlaylistSongs.sumOf { it.duration.coerceAtLeast(0L) },
+            automaticArtworkSongs = availablePlaylistSongs.distinctBy { song ->
+                Triple(
+                    song.albumArtist.ifBlank { song.artist }.lowercase(),
+                    song.album.lowercase(),
+                    song.folderPath.lowercase()
+                )
+            }.take(4)
+        )
 
         PlaylistDetailScreen(
-            playlistName = selectedPlaylistName,
+            playlist = selectedPlaylist,
+            allPlaylists = playlists,
             playlistSongs = availablePlaylistSongs,
-            playlistSongRows = selectedPlaylistSongs,
+            playlistSongRows = availablePlaylistSongRows,
             currentSongId = currentSong?.id,
             recentlyAddedSongIds = recentlyAddedSongIds,
             favoriteMembershipKeys = favoriteMembershipKeys,
@@ -68,6 +115,11 @@ fun PlaylistsTabContent(
             onShuffleAllClick = {
                 onPlaySongsClick(availablePlaylistSongs, PlaybackShuffleMode.SONGS)
             },
+            onRenamePlaylistClick = onRenamePlaylistClick,
+            onDeletePlaylistClick = onDeletePlaylistClick,
+            onExportPlaylistClick = onExportPlaylistClick,
+            onChangeArtworkClick = chooseArtwork,
+            onResetArtworkClick = onResetPlaylistArtwork,
             onSongClick = onSongClick,
             onPlayNextClick = onPlayNextClick,
             onAddToQueueClick = onAddToQueueClick,

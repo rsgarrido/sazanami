@@ -9,17 +9,45 @@ import com.example.cdplaya.data.local.PlaylistDao
 import com.example.cdplaya.data.local.PlaylistEntity
 import com.example.cdplaya.data.local.PlaylistSongEntity
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class PlaylistsRepository(
     private val playlistDao: PlaylistDao
 ) {
-    suspend fun getPlaylists(): List<Playlist> {
-        return playlistDao.getPlaylistsWithSongCount().map { playlist ->
-            Playlist(
-                playlistId = playlist.playlistId,
-                name = playlist.name,
-                songCount = playlist.songCount
-            )
+    suspend fun getPlaylists(librarySongs: Collection<Song> = emptyList()): List<Playlist> {
+        val playlistRows = playlistDao.getPlaylistsWithSongCount()
+        val songsByPlaylistId: Map<Long, List<PlaylistSongEntity>> = if (librarySongs.isEmpty()) {
+            emptyMap()
+        } else {
+            playlistDao.getAllPlaylistSongEntities().groupBy { it.playlistId }
+        }
+
+        return withContext(Dispatchers.Default) {
+            val songIndex = SongReferenceIndex.build(librarySongs)
+            playlistRows.map { playlist ->
+                val automaticArtworkSongs = songsByPlaylistId[playlist.playlistId]
+                    .orEmpty()
+                    .mapNotNull { row ->
+                        (songIndex.resolve(row.toSongReference()) as? SongReferenceResolution.Resolved)
+                            ?.song
+                    }
+                    .distinctBy(::playlistArtworkAlbumKey)
+                    .take(4)
+
+                Playlist(
+                    playlistId = playlist.playlistId,
+                    name = playlist.name,
+                    songCount = playlist.songCount,
+                    totalDuration = playlist.totalDuration,
+                    type = PlaylistType.fromStorage(playlist.type),
+                    artworkMode = PlaylistArtworkMode.fromStorage(playlist.artworkMode),
+                    artworkReference = playlist.artworkReference,
+                    createdAt = playlist.createdAt,
+                    modifiedAt = playlist.updatedAt,
+                    automaticArtworkSongs = automaticArtworkSongs
+                )
+            }
         }
     }
 
@@ -30,6 +58,9 @@ class PlaylistsRepository(
         return playlistDao.getAllPlaylistEntities().map { playlist ->
             BackupPlaylist(
                 name = playlist.name,
+                type = playlist.type,
+                artworkMode = playlist.artworkMode,
+                artworkReference = playlist.artworkReference,
                 createdAt = playlist.createdAt,
                 updatedAt = playlist.updatedAt,
                 songs = songsByPlaylistId[playlist.playlistId]
@@ -66,6 +97,9 @@ class PlaylistsRepository(
             val newPlaylistId = playlistDao.insertPlaylist(
                 PlaylistEntity(
                     name = uniqueName,
+                    type = PlaylistType.fromStorage(playlist.type).name,
+                    artworkMode = PlaylistArtworkMode.fromStorage(playlist.artworkMode).name,
+                    artworkReference = playlist.artworkReference,
                     createdAt = playlist.createdAt,
                     updatedAt = playlist.updatedAt
                 )
@@ -158,10 +192,15 @@ class PlaylistsRepository(
             throw exception
         }
 
+        val now = System.currentTimeMillis()
         return Playlist(
             playlistId = playlistId,
             name = uniqueName,
-            songCount = songs.size
+            songCount = songs.size,
+            totalDuration = songs.sumOf { it.duration.coerceAtLeast(0L) },
+            createdAt = now,
+            modifiedAt = now,
+            automaticArtworkSongs = songs.distinctBy(::playlistArtworkAlbumKey).take(4)
         )
     }
 
@@ -196,6 +235,27 @@ class PlaylistsRepository(
 
     suspend fun deletePlaylist(playlistId: Long) {
         playlistDao.deletePlaylist(playlistId)
+    }
+
+    suspend fun setCustomArtwork(
+        playlistId: Long,
+        artworkReference: String
+    ) {
+        playlistDao.updatePlaylistArtwork(
+            playlistId = playlistId,
+            artworkMode = PlaylistArtworkMode.CUSTOM.name,
+            artworkReference = artworkReference,
+            updatedAt = System.currentTimeMillis()
+        )
+    }
+
+    suspend fun resetArtwork(playlistId: Long) {
+        playlistDao.updatePlaylistArtwork(
+            playlistId = playlistId,
+            artworkMode = PlaylistArtworkMode.AUTOMATIC.name,
+            artworkReference = null,
+            updatedAt = System.currentTimeMillis()
+        )
     }
 
     suspend fun addSongToPlaylist(
@@ -357,6 +417,14 @@ class PlaylistsRepository(
     internal suspend fun applyReferenceBackfill(plan: PlaylistReferenceBackfill) {
         if (plan.rows.isNotEmpty()) playlistDao.updatePlaylistSongs(plan.rows)
     }
+}
+
+private fun playlistArtworkAlbumKey(song: Song): String = buildString {
+    append(song.albumArtist.ifBlank { song.artist }.trim().lowercase(Locale.ROOT))
+    append('\u0000')
+    append(song.album.trim().lowercase(Locale.ROOT))
+    append('\u0000')
+    append(song.folderPath.trim().lowercase(Locale.ROOT))
 }
 
 private fun BackupPlaylistSong.toEntity(playlistId: Long): PlaylistSongEntity {

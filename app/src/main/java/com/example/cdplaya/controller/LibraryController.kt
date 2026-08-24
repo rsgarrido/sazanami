@@ -20,6 +20,7 @@ import com.example.cdplaya.data.MediaLibraryAccessException
 import com.example.cdplaya.data.stableKey
 import com.example.cdplaya.data.MusicRepository
 import com.example.cdplaya.data.Playlist
+import com.example.cdplaya.data.PlaylistArtworkStore
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.PlaylistsRepository
 import com.example.cdplaya.data.PersistedSongReferenceRows
@@ -96,6 +97,7 @@ class LibraryController(
     private val listeningStatsRepository = ListeningStatsRepository(appDatabase)
     private val libraryCacheRepository = LibraryCacheRepository(appDatabase.cachedSongDao())
     private val playlistFileRepository = PlaylistFileRepository(applicationContext)
+    private val playlistArtworkStore = PlaylistArtworkStore(applicationContext)
     private var refreshJob: Job? = null
     private var reconciliationJob: Job? = null
     private val reconciliationCoordinator = ReconciliationGenerationCoordinator()
@@ -401,7 +403,7 @@ class LibraryController(
                     editedTags = editedTags
                 )
                 favoritesRepository.getFavoriteMembershipKeys() to
-                        playlistsRepository.getPlaylists()
+                        playlistsRepository.getPlaylists(songs)
             }
             val updatedFavoriteMembershipKeys = updatedUserData.first
             val updatedPlaylists = updatedUserData.second
@@ -490,6 +492,9 @@ class LibraryController(
     fun deletePlaylist(playlist: Playlist) {
         coroutineScope.launch {
             playlistsRepository.deletePlaylist(playlist.playlistId)
+            withContext(Dispatchers.IO) {
+                playlistArtworkStore.delete(playlist.artworkReference)
+            }
             loadPlaylists()
 
             val deletedPlaylistWasSelected =
@@ -502,6 +507,56 @@ class LibraryController(
                 selectedPlaylistName = "Playlist"
                 selectedPlaylistSongs = emptyList()
             }
+        }
+    }
+
+    fun changePlaylistArtwork(
+        playlist: Playlist,
+        source: Uri,
+        onComplete: (Result<Unit>) -> Unit = {}
+    ) {
+        coroutineScope.launch {
+            val result = runCatching {
+                val newReference = withContext(Dispatchers.IO) {
+                    playlistArtworkStore.importArtwork(playlist.playlistId, source)
+                }
+                try {
+                    playlistsRepository.setCustomArtwork(
+                        playlistId = playlist.playlistId,
+                        artworkReference = newReference
+                    )
+                } catch (failure: Throwable) {
+                    withContext(Dispatchers.IO) {
+                        playlistArtworkStore.delete(newReference)
+                    }
+                    throw failure
+                }
+                withContext(Dispatchers.IO) {
+                    playlistArtworkStore.delete(playlist.artworkReference)
+                }
+                loadPlaylists()
+            }.onFailure { failure ->
+                Log.e("PlaylistArtwork", "Unable to change playlist artwork", failure)
+            }
+            onComplete(result)
+        }
+    }
+
+    fun resetPlaylistArtwork(
+        playlist: Playlist,
+        onComplete: (Result<Unit>) -> Unit = {}
+    ) {
+        coroutineScope.launch {
+            val result = runCatching {
+                playlistsRepository.resetArtwork(playlist.playlistId)
+                withContext(Dispatchers.IO) {
+                    playlistArtworkStore.delete(playlist.artworkReference)
+                }
+                loadPlaylists()
+            }.onFailure { failure ->
+                Log.e("PlaylistArtwork", "Unable to reset playlist artwork", failure)
+            }
+            onComplete(result)
         }
     }
 
@@ -574,7 +629,7 @@ class LibraryController(
                         songs = fileImportResult.matchedSongs
                     )
 
-                    playlists = playlistsRepository.getPlaylists()
+                    playlists = playlistsRepository.getPlaylists(songs)
 
                     PlaylistImportResult(
                         playlistName = importedPlaylist.name,
@@ -675,7 +730,7 @@ class LibraryController(
                     )
                 },
                 favoriteMembershipKeys = favoritesRepository.getFavoriteMembershipKeys(),
-                playlists = playlistsRepository.getPlaylists()
+                playlists = playlistsRepository.getPlaylists(songs)
             )
         }
         val resolvedFolderSelection = restoredData.folderSelection.copy(
@@ -857,6 +912,7 @@ class LibraryController(
             )
         }
         PlaybackLibraryBridge.updateSongs(publishedSongs)
+        loadPlaylists()
         reconcileUserSongReferences(publishedSongs, indexedSnapshot.index)
 
         if (reconcilePlayback) {
@@ -1084,7 +1140,7 @@ class LibraryController(
 
     private fun loadPlaylists() {
         coroutineScope.launch {
-            playlists = playlistsRepository.getPlaylists()
+            playlists = playlistsRepository.getPlaylists(songs)
         }
     }
 

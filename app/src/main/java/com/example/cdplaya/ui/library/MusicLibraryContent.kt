@@ -1,5 +1,6 @@
 package com.example.cdplaya.ui.library
 
+import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -64,6 +65,8 @@ fun MusicLibraryContent(
     onDeletePlaylistClick: (Playlist) -> Unit,
     onExportPlaylistClick: (Playlist) -> Unit,
     onImportPlaylistClick: () -> Unit,
+    onChangePlaylistArtwork: (Playlist, Uri) -> Unit,
+    onResetPlaylistArtwork: (Playlist) -> Unit,
     onBackFromPlaylist: () -> Unit,
     onRemovePlaylistSongClick: (PlaylistSong) -> Unit,
     onAddSongsToPlaylistClick: (List<Song>) -> Unit,
@@ -208,6 +211,8 @@ fun MusicLibraryContent(
                 onDeletePlaylistClick = onDeletePlaylistClick,
                 onExportPlaylistClick = onExportPlaylistClick,
                 onImportPlaylistClick = onImportPlaylistClick,
+                onChangePlaylistArtwork = onChangePlaylistArtwork,
+                onResetPlaylistArtwork = onResetPlaylistArtwork,
                 onBackFromPlaylist = onBackFromPlaylist,
                 onPlaySongsClick = onPlaySongsClick,
                 onMovePlaylistSongUpClick = onMovePlaylistSongUpClick,

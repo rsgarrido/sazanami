@@ -117,6 +117,9 @@ data class BackupPlaylist(
     val name: String,
     val createdAt: Long,
     val updatedAt: Long,
+    val type: String = "MANUAL",
+    val artworkMode: String = "AUTOMATIC",
+    val artworkReference: String? = null,
     val songs: List<BackupPlaylistSong> = emptyList()
 )
 

@@ -829,6 +829,21 @@ class MusicViewModel(
         libraryController.deletePlaylist(playlist)
     }
 
+    fun changePlaylistArtwork(
+        playlist: Playlist,
+        source: Uri,
+        onComplete: (Result<Unit>) -> Unit = {}
+    ) {
+        libraryController.changePlaylistArtwork(playlist, source, onComplete)
+    }
+
+    fun resetPlaylistArtwork(
+        playlist: Playlist,
+        onComplete: (Result<Unit>) -> Unit = {}
+    ) {
+        libraryController.resetPlaylistArtwork(playlist, onComplete)
+    }
+
     fun loadSelectedPlaylist(playlist: Playlist) {
         libraryController.loadSelectedPlaylist(playlist)
     }

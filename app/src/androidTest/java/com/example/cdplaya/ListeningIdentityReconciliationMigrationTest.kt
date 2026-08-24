@@ -41,7 +41,10 @@ class ListeningIdentityReconciliationMigrationTest {
         FrameworkSQLiteOpenHelperFactory().create(configuration).use { it.writableDatabase }
 
         val database = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(DatabaseProvider.MIGRATION_11_12)
+            .addMigrations(
+                DatabaseProvider.MIGRATION_11_12,
+                DatabaseProvider.MIGRATION_12_13
+            )
             .build()
         try {
             val sqlite = database.openHelper.writableDatabase

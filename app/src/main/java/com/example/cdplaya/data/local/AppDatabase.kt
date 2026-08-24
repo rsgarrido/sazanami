@@ -24,7 +24,7 @@ import androidx.room.TypeConverters
         ImportedListeningEventEvidenceEntity::class,
         ListeningImportBatchEventEntity::class
     ],
-    version = 12,
+    version = 13,
     exportSchema = true
 )
 @TypeConverters(ListeningHistoryTypeConverters::class)

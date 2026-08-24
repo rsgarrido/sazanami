@@ -19,9 +19,13 @@ interface PlaylistDao {
         SELECT 
             playlists.playlistId,
             playlists.name,
+            playlists.type,
+            playlists.artworkMode,
+            playlists.artworkReference,
             playlists.createdAt,
             playlists.updatedAt,
-            COUNT(playlist_songs.playlistSongId) AS songCount
+            COUNT(playlist_songs.playlistSongId) AS songCount,
+            COALESCE(SUM(CASE WHEN playlist_songs.duration > 0 THEN playlist_songs.duration ELSE 0 END), 0) AS totalDuration
         FROM playlists
         LEFT JOIN playlist_songs ON playlists.playlistId = playlist_songs.playlistId
         GROUP BY playlists.playlistId
@@ -77,6 +81,22 @@ interface PlaylistDao {
     suspend fun renamePlaylist(
         playlistId: Long,
         name: String,
+        updatedAt: Long
+    )
+
+    @Query(
+        """
+        UPDATE playlists
+        SET artworkMode = :artworkMode,
+            artworkReference = :artworkReference,
+            updatedAt = :updatedAt
+        WHERE playlistId = :playlistId
+        """
+    )
+    suspend fun updatePlaylistArtwork(
+        playlistId: Long,
+        artworkMode: String,
+        artworkReference: String?,
         updatedAt: Long
     )
 

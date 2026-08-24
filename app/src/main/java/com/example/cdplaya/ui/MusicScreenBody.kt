@@ -1,5 +1,6 @@
 package com.example.cdplaya.ui
 
+import android.net.Uri
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
@@ -199,6 +200,8 @@ internal fun MusicScreenBody(
     onDeletePlaylistClick: (Playlist) -> Unit,
     onExportPlaylistClick: (Playlist) -> Unit,
     onImportPlaylistClick: () -> Unit,
+    onChangePlaylistArtwork: (Playlist, Uri) -> Unit,
+    onResetPlaylistArtwork: (Playlist) -> Unit,
     onBackFromPlaylist: () -> Unit,
     onRemovePlaylistSongClick: (PlaylistSong) -> Unit,
     onAddSongsToPlaylistClick: (List<Song>) -> Unit,
@@ -618,6 +621,8 @@ internal fun MusicScreenBody(
                                     onDeletePlaylistClick = onDeletePlaylistClick,
                                     onExportPlaylistClick = onExportPlaylistClick,
                                     onImportPlaylistClick = onImportPlaylistClick,
+                                    onChangePlaylistArtwork = onChangePlaylistArtwork,
+                                    onResetPlaylistArtwork = onResetPlaylistArtwork,
                                     onBackFromPlaylist = onBackFromPlaylist,
                                     onRemovePlaylistSongClick = onRemovePlaylistSongClick,
                                     onMovePlaylistSongUpClick = onMovePlaylistSongUpClick,

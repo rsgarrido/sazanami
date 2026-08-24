@@ -32,7 +32,8 @@ object DatabaseProvider {
                     MIGRATION_8_9,
                     MIGRATION_9_10,
                     MIGRATION_10_11,
-                    MIGRATION_11_12
+                    MIGRATION_11_12,
+                    MIGRATION_12_13
                 )
                 .build()
                 .also { database ->
@@ -648,6 +649,20 @@ object DatabaseProvider {
             db.execSQL(
                 "CREATE INDEX IF NOT EXISTS `index_listening_identity_reconciliations_targetIdentityId` " +
                     "ON `listening_identity_reconciliations` (`targetIdentityId`)"
+            )
+        }
+    }
+
+    val MIGRATION_12_13 = object : Migration(12, 13) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE `playlists` ADD COLUMN `type` TEXT NOT NULL DEFAULT 'MANUAL'"
+            )
+            db.execSQL(
+                "ALTER TABLE `playlists` ADD COLUMN `artworkMode` TEXT NOT NULL DEFAULT 'AUTOMATIC'"
+            )
+            db.execSQL(
+                "ALTER TABLE `playlists` ADD COLUMN `artworkReference` TEXT"
             )
         }
     }

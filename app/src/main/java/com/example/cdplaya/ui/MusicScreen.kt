@@ -177,6 +177,8 @@ internal fun MusicScreen(
     onDeletePlaylistClick: (Playlist) -> Unit,
     onExportPlaylistClick: (Playlist) -> Unit,
     onImportPlaylistClick: () -> Unit,
+    onChangePlaylistArtwork: (Playlist, Uri) -> Unit,
+    onResetPlaylistArtwork: (Playlist) -> Unit,
     onExportBackupClick: () -> Unit,
     onRestoreBackupClick: () -> Unit,
     onPlaylistSelected: (Playlist) -> Unit,
@@ -952,6 +954,8 @@ internal fun MusicScreen(
                     onDeletePlaylistClick = onDeletePlaylistClick,
                     onExportPlaylistClick = onExportPlaylistClick,
                     onImportPlaylistClick = onImportPlaylistClick,
+                    onChangePlaylistArtwork = onChangePlaylistArtwork,
+                    onResetPlaylistArtwork = onResetPlaylistArtwork,
                     onBackFromPlaylist = {
                         selectedPlaylistId = null
                     },
