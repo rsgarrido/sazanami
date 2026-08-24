@@ -1,14 +1,12 @@
 package com.example.cdplaya.mediaaccess
 
 internal enum class MediaPermissionRequest {
-    AUDIO,
-    ARTWORK
+    AUDIO
 }
 
 internal enum class MediaAccessEffect {
     LOAD_LIBRARY,
-    REVOKE_LIBRARY_ACCESS,
-    REFRESH_ARTWORK
+    REVOKE_LIBRARY_ACCESS
 }
 
 internal class MediaPermissionCoordinator {
@@ -18,23 +16,13 @@ internal class MediaPermissionCoordinator {
     fun onStateEvaluated(state: MediaAccessState): List<MediaAccessEffect> {
         val previous = lastState
         lastState = state
-        val effects = mutableListOf<MediaAccessEffect>()
-
-        if (state.hasAudioAccess && previous?.hasAudioAccess != true) {
-            effects += MediaAccessEffect.LOAD_LIBRARY
-        } else if (!state.hasAudioAccess && previous?.hasAudioAccess == true) {
-            effects += MediaAccessEffect.REVOKE_LIBRARY_ACCESS
+        return when {
+            state.hasAudioAccess && previous?.hasAudioAccess != true ->
+                listOf(MediaAccessEffect.LOAD_LIBRARY)
+            !state.hasAudioAccess && previous?.hasAudioAccess == true ->
+                listOf(MediaAccessEffect.REVOKE_LIBRARY_ACCESS)
+            else -> emptyList()
         }
-
-        if (
-            state.hasAudioAccess &&
-            state.hasArtworkAccess &&
-            previous?.hasAudioAccess == true &&
-            previous?.hasArtworkAccess == false
-        ) {
-            effects += MediaAccessEffect.REFRESH_ARTWORK
-        }
-        return effects
     }
 
     fun beginRequest(request: MediaPermissionRequest): Boolean {

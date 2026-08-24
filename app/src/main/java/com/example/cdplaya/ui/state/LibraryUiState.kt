@@ -26,6 +26,7 @@ data class LibraryUiState(
     val unresolvedPlaylistRowCount: Int = 0,
     val unresolvedListeningHistoryCount: Int = 0,
     val lastRefreshSummary: LibraryRefreshSummary? = null,
+    val hasPublishedInitialLibraryState: Boolean = false,
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val errorMessage: String? = null
@@ -74,6 +75,7 @@ fun libraryUiState(
     unresolvedPlaylistRowCount: Int = 0,
     unresolvedListeningHistoryCount: Int = 0,
     lastRefreshResult: LibraryRefreshResult? = null,
+    hasPublishedInitialLibraryState: Boolean = true,
     isLoading: Boolean = false,
     isRefreshing: Boolean = false,
     errorMessage: String? = null
@@ -95,6 +97,7 @@ fun libraryUiState(
     unresolvedPlaylistRowCount = unresolvedPlaylistRowCount,
     unresolvedListeningHistoryCount = unresolvedListeningHistoryCount,
     lastRefreshSummary = lastRefreshResult?.toUiSummary(),
+    hasPublishedInitialLibraryState = hasPublishedInitialLibraryState,
     isLoading = isLoading,
     isRefreshing = isRefreshing,
     errorMessage = errorMessage

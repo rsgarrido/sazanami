@@ -11,6 +11,7 @@ import com.example.cdplaya.data.FavoritesRepository
 import com.example.cdplaya.data.FolderSelection
 import com.example.cdplaya.data.FolderSelectionMode
 import com.example.cdplaya.data.LibraryFolder
+import com.example.cdplaya.data.LibraryRefreshEngine
 import com.example.cdplaya.data.ListeningHistoryRepository
 import com.example.cdplaya.data.ListeningStatsRepository
 import com.example.cdplaya.data.LibraryCacheRepository
@@ -108,6 +109,7 @@ class LibraryController(
     private val publicationTracker = LibraryPublicationTracker()
     private val libraryScanMutex = Mutex()
     private val permissionGate = LibraryPermissionGate()
+    private var folderArtworkTreeUri: Uri? = null
 
     internal fun createBackupRepository(): BackupRepository = BackupRepository(
         context = applicationContext,
@@ -167,13 +169,13 @@ class LibraryController(
                 history = listeningStatsRepository.observeProductionHistory(),
                 library = historyLibrarySnapshot
             ) { resolved ->
-                    _uiState.update { current ->
-                        current.copy(
-                            recentlyPlayedSongs = resolved.recentlyPlayed.toList(),
-                            mostPlayedSongs = resolved.mostPlayed.toList()
-                        )
-                    }
+                _uiState.update { current ->
+                    current.copy(
+                        recentlyPlayedSongs = resolved.recentlyPlayed.toList(),
+                        mostPlayedSongs = resolved.mostPlayed.toList()
+                    )
                 }
+            }
         }
     }
 
@@ -200,6 +202,7 @@ class LibraryController(
                     songs = emptyList(),
                     folders = emptyList(),
                     recentlyAddedSongs = emptyList(),
+                    hasPublishedInitialLibraryState = false,
                     isLoading = false,
                     isRefreshing = false,
                     errorMessage = null
@@ -208,6 +211,53 @@ class LibraryController(
             PlaybackLibraryBridge.updateSongs(emptyList())
         }
         return true
+    }
+
+    fun setFolderArtworkTreeUri(uri: Uri?) {
+        folderArtworkTreeUri = uri
+    }
+
+    fun refreshFolderArtwork() {
+        val scanToken = permissionGate.tokenOrNull() ?: return
+        if (songs.isNotEmpty()) {
+            updateState { copy(isRefreshing = true, errorMessage = null) }
+        }
+        coroutineScope.launch {
+            try {
+                val libraryData = withContext(Dispatchers.IO) {
+                    libraryScanMutex.withLock {
+                        if (!permissionGate.isCurrent(scanToken)) throw CancellationException()
+                        val cachedSongs = libraryCacheRepository.getAllCachedSongs()
+                        val updatedSongs = MusicRepository(applicationContext).applyFolderArtwork(
+                            songs = cachedSongs,
+                            folderArtworkTreeUri = folderArtworkTreeUri
+                        )
+                        if (updatedSongs != cachedSongs) {
+                            libraryCacheRepository.replaceCachedSongs(updatedSongs)
+                        }
+                        com.example.cdplaya.data.buildMusicLibraryData(
+                            allSongs = updatedSongs,
+                            folderSelection = folderSelection
+                        )
+                    }
+                }
+                if (permissionGate.isCurrent(scanToken)) {
+                    publishLibraryData(libraryData, reconcilePlayback = true)
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (exception: Exception) {
+                if (permissionGate.isCurrent(scanToken)) {
+                    updateState {
+                        copy(
+                            isRefreshing = false,
+                            errorMessage = exception.message?.let { "Artwork refresh failed: $it" }
+                                ?: "Artwork refresh failed."
+                        )
+                    }
+                }
+            }
+        }
     }
 
     fun loadSongs() {
@@ -807,11 +857,40 @@ class LibraryController(
                 "cache-read elapsedMs=${SystemClock.elapsedRealtime() - cacheReadStartedAt} " +
                         "songs=${cachedSongs.size} scan=$scanNumber"
             )
+
             val startedAt = SystemClock.elapsedRealtime()
+            val indexSongs = repository.queryLibraryIndex()
+            LibraryRefreshEngine.fallbackForIncompleteScan(cachedSongs, indexSongs)?.let { fallback ->
+                return@withLock com.example.cdplaya.data.buildMusicLibraryData(
+                    allSongs = fallback.songs,
+                    folderSelection = folderSelection
+                )
+            }
+            checkNotNull(indexSongs)
+            if (!permissionGate.isCurrent(scanToken)) throw CancellationException()
+
+            // A brand-new library should become usable as soon as the cheap MediaStore index is
+            // available. Persist and publish that base snapshot before per-file artwork enrichment.
+            if (cachedSongs.isEmpty()) {
+                libraryCacheRepository.replaceCachedSongs(indexSongs)
+                val indexedLibraryData = com.example.cdplaya.data.buildMusicLibraryData(
+                    allSongs = indexSongs,
+                    folderSelection = folderSelection
+                )
+                publishLibraryData(
+                    libraryData = indexedLibraryData,
+                    reconcilePlayback = false,
+                    traceName = PerformanceTraceNames.INITIAL_INDEX_PUBLICATION
+                )
+                updateState { copy(isLoading = false, isRefreshing = true) }
+            }
+
             val refreshResult = tracePerformance(PerformanceTraceNames.LIBRARY_ENRICHMENT) {
                 repository.refreshLibrary(
                     cachedSongs = cachedSongs,
-                    forceArtworkRefreshIds = forceArtworkRefreshIds
+                    forceArtworkRefreshIds = forceArtworkRefreshIds,
+                    indexSongsOverride = indexSongs,
+                    folderArtworkTreeUri = folderArtworkTreeUri
                 )
             }
             if (!permissionGate.isCurrent(scanToken)) throw CancellationException()

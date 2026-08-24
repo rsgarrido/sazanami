@@ -35,6 +35,8 @@ import com.example.cdplaya.mediaaccess.MediaAccessPolicy
 import com.example.cdplaya.mediaaccess.MediaAccessState
 import com.example.cdplaya.mediaaccess.MediaPermissionCoordinator
 import com.example.cdplaya.mediaaccess.MediaPermissionRequest
+import com.example.cdplaya.mediaaccess.FolderArtworkAccessState
+import com.example.cdplaya.mediaaccess.FolderArtworkAccessStore
 import com.example.cdplaya.mediaaccess.MediaPermissions
 import com.example.cdplaya.mediaaccess.PermissionAccess
 import com.example.cdplaya.ui.MusicRoute
@@ -56,6 +58,8 @@ class MainActivity : ComponentActivity() {
     private val musicViewModel: MusicViewModel by viewModels()
     private val permissionCoordinator = MediaPermissionCoordinator()
     private var returningFromAppSettings = false
+    private val folderArtworkAccessStore by lazy { FolderArtworkAccessStore(this) }
+    private var folderArtworkAccessState by mutableStateOf(FolderArtworkAccessState())
 
     private val audioPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -68,15 +72,21 @@ class MainActivity : ComponentActivity() {
         evaluateMediaAccess()
     }
 
-    private val artworkPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        updatePermanentDenial(
-            permission = mediaAccessState.requirements.optionalArtworkPermissions.singleOrNull(),
-            granted = granted
-        )
-        permissionCoordinator.finishRequest(MediaPermissionRequest.ARTWORK)
-        evaluateMediaAccess()
+    private val folderArtworkLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri == null) return@registerForActivityResult
+        val persisted = runCatching {
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        }.isSuccess
+        if (!persisted) return@registerForActivityResult
+        folderArtworkAccessStore.setTreeUri(uri)
+        folderArtworkAccessState = folderArtworkAccessStore.readState()
+        musicViewModel.setFolderArtworkTreeUri(uri)
+        musicViewModel.refreshFolderArtwork()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -90,6 +100,8 @@ class MainActivity : ComponentActivity() {
             window.isNavigationBarContrastEnforced = false
         }
 
+        restoreFolderArtworkState()
+        musicViewModel.setFolderArtworkTreeUri(folderArtworkAccessState.treeUri)
         evaluateMediaAccess()
         lifecycleScope.launch {
             musicViewModel.mediaAccessFailures.collect {
@@ -113,8 +125,12 @@ class MainActivity : ComponentActivity() {
                             musicViewModel = musicViewModel,
                             mediaAccessState = mediaAccessState,
                             onRequestAudioAccess = ::requestAudioAccess,
-                            onRequestArtworkAccess = ::requestArtworkAccess,
+                            onRequestArtworkAccess = {},
                             onOpenAppSettings = ::openAppSettings,
+                            folderArtworkAccessState = folderArtworkAccessState,
+                            onChooseFolderArtwork = ::chooseFolderArtwork,
+                            onSkipFolderArtwork = ::skipFolderArtwork,
+                            onClearFolderArtwork = ::clearFolderArtwork,
                             snackbarHostState = snackbarHostState,
                             modifier = Modifier.fillMaxSize()
                         )
@@ -156,32 +172,15 @@ class MainActivity : ComponentActivity() {
         audioPermissionLauncher.launch(permission)
     }
 
-    private fun requestArtworkAccess() {
-        evaluateMediaAccess()
-        if (!mediaAccessState.hasAudioAccess || mediaAccessState.hasArtworkAccess) return
-        if (
-            mediaAccessState.artworkAccess != PermissionAccess.REQUESTABLE &&
-            mediaAccessState.artworkAccess != PermissionAccess.DENIED
-        ) {
-            return
-        }
-        val permission = mediaAccessState.requirements.optionalArtworkPermissions.singleOrNull()
-            ?: return
-        if (permission in mediaAccessState.requirements.requiredAudioPermissions) return
-        if (!permissionCoordinator.beginRequest(MediaPermissionRequest.ARTWORK)) return
-        markPermissionRequested(permission)
-        artworkPermissionLauncher.launch(permission)
-    }
 
     private fun evaluateMediaAccess() {
         val knownPermissions = setOf(
             MediaPermissions.READ_EXTERNAL_STORAGE,
-            MediaPermissions.READ_MEDIA_AUDIO,
-            MediaPermissions.READ_MEDIA_IMAGES
+            MediaPermissions.READ_MEDIA_AUDIO
         )
         val granted = knownPermissions.filterTo(mutableSetOf()) { permission ->
             ContextCompat.checkSelfPermission(this, permission) ==
-                PackageManager.PERMISSION_GRANTED
+                    PackageManager.PERMISSION_GRANTED
         }
         val requested = knownPermissions.filterTo(mutableSetOf(), ::wasPermissionRequested)
         val withRationale = knownPermissions.filterTo(mutableSetOf()) { permission ->
@@ -202,9 +201,47 @@ class MainActivity : ComponentActivity() {
                 MediaAccessEffect.LOAD_LIBRARY -> musicViewModel.onMediaAccessGranted()
                 MediaAccessEffect.REVOKE_LIBRARY_ACCESS ->
                     musicViewModel.onMediaAccessRevoked()
-                MediaAccessEffect.REFRESH_ARTWORK -> musicViewModel.refreshArtwork()
             }
         }
+    }
+
+    private fun restoreFolderArtworkState() {
+        var state = folderArtworkAccessStore.readState()
+        val savedUri = state.treeUri
+        if (savedUri != null) {
+            val stillGranted = contentResolver.persistedUriPermissions.any { permission ->
+                permission.uri == savedUri && permission.isReadPermission
+            }
+            if (!stillGranted) {
+                folderArtworkAccessStore.clearTreeUri()
+                state = folderArtworkAccessStore.readState()
+            }
+        }
+        folderArtworkAccessState = state
+    }
+
+    private fun chooseFolderArtwork() {
+        folderArtworkLauncher.launch(folderArtworkAccessState.treeUri)
+    }
+
+    private fun skipFolderArtwork() {
+        folderArtworkAccessStore.skipOnboarding()
+        folderArtworkAccessState = folderArtworkAccessStore.readState()
+    }
+
+    private fun clearFolderArtwork() {
+        folderArtworkAccessState.treeUri?.let { uri ->
+            runCatching {
+                contentResolver.releasePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+        }
+        folderArtworkAccessStore.clearTreeUri()
+        folderArtworkAccessState = folderArtworkAccessStore.readState()
+        musicViewModel.setFolderArtworkTreeUri(null)
+        musicViewModel.refreshFolderArtwork()
     }
 
     private fun markPermissionRequested(permission: String) {
@@ -231,8 +268,7 @@ class MainActivity : ComponentActivity() {
         val editor = permissionPreferences.edit()
         setOf(
             MediaPermissions.READ_EXTERNAL_STORAGE,
-            MediaPermissions.READ_MEDIA_AUDIO,
-            MediaPermissions.READ_MEDIA_IMAGES
+            MediaPermissions.READ_MEDIA_AUDIO
         ).forEach { permission ->
             editor.putBoolean(permanentDenialKey(permission), false)
         }

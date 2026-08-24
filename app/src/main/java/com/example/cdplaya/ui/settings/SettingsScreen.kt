@@ -42,6 +42,8 @@ import com.example.cdplaya.player.audio.AudioOffloadPreference
 import com.example.cdplaya.player.replaygain.ReplayGainMode
 import com.example.cdplaya.ui.AppShellIcons
 import com.example.cdplaya.ui.AppShellTypography
+import com.example.cdplaya.ui.LocalFolderArtworkUi
+import com.example.cdplaya.mediaaccess.folderArtworkLocationLabel
 import com.example.cdplaya.ui.home.LocalHomePinUi
 import com.example.cdplaya.ui.state.LibraryRefreshSummary
 import com.example.cdplaya.ui.player.modern.ModernArtworkTransitionStyle
@@ -96,6 +98,7 @@ fun SettingsScreen(
     var isArtworkTransitionDialogVisible by remember { mutableStateOf(false) }
     var isSeekbarStyleDialogVisible by remember { mutableStateOf(false) }
     val homePinUi = LocalHomePinUi.current
+    val folderArtworkUi = LocalFolderArtworkUi.current
 
     val themeCustomizationOptions = selectedPlayerTheme.customizationOptions()
     val folderSelectionText = when {
@@ -158,6 +161,31 @@ fun SettingsScreen(
                 emphasizeSummary = true,
                 navigationContentDescription = "Open library folders"
             )
+
+            SettingsDivider()
+
+            SettingsRow(
+                title = "Folder artwork",
+                summary = folderArtworkLocationLabel(folderArtworkUi.state.treeUri),
+                icon = AppShellIcons.AlbumStack,
+                onClick = folderArtworkUi.onChooseFolder,
+                emphasizeSummary = folderArtworkUi.state.hasFolderAccess,
+                navigationContentDescription = if (folderArtworkUi.state.hasFolderAccess) {
+                    "Change folder artwork location"
+                } else {
+                    "Choose folder artwork location"
+                }
+            )
+
+            if (folderArtworkUi.state.hasFolderAccess) {
+                SettingsDivider()
+                SettingsRow(
+                    title = "Use embedded artwork only",
+                    summary = "Remove the selected folder and stop reading cover.jpg-style files",
+                    icon = AppShellIcons.AlbumStack,
+                    onClick = folderArtworkUi.onClearFolder
+                )
+            }
 
             SettingsDivider()
 

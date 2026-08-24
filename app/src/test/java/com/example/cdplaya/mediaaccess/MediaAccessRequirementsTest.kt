@@ -6,7 +6,7 @@ import org.junit.Test
 
 class MediaAccessRequirementsTest {
     @Test
-    fun api29Through32RequireLegacyReadPermission() {
+    fun api29Through32RequireLegacyReadPermissionForAudioOnly() {
         (29..32).forEach { sdkInt ->
             val requirements = MediaAccessPolicy.requirementsFor(sdkInt)
 
@@ -15,15 +15,12 @@ class MediaAccessRequirementsTest {
                 setOf(MediaPermissions.READ_EXTERNAL_STORAGE),
                 requirements.requiredAudioPermissions
             )
-            assertEquals(
-                requirements.requiredAudioPermissions,
-                requirements.optionalArtworkPermissions
-            )
+            assertTrue(requirements.optionalArtworkPermissions.isEmpty())
         }
     }
 
     @Test
-    fun api33Through36RequireGranularAudioAndOptionalImages() {
+    fun api33Through36RequireGranularAudioWithoutBroadImagePermission() {
         (33..36).forEach { sdkInt ->
             val requirements = MediaAccessPolicy.requirementsFor(sdkInt)
 
@@ -32,22 +29,8 @@ class MediaAccessRequirementsTest {
                 setOf(MediaPermissions.READ_MEDIA_AUDIO),
                 requirements.requiredAudioPermissions
             )
-            assertEquals(
-                setOf(MediaPermissions.READ_MEDIA_IMAGES),
-                requirements.optionalArtworkPermissions
-            )
+            assertTrue(requirements.optionalArtworkPermissions.isEmpty())
             assertTrue(MediaPermissions.READ_EXTERNAL_STORAGE !in requirements.requiredAudioPermissions)
         }
     }
-
-    @Test
-    fun imagePermissionIsAbsentWhenStandaloneArtworkIsNotQueried() {
-        val requirements = MediaAccessPolicy.requirementsFor(
-            sdkInt = 36,
-            queriesStandaloneArtwork = false
-        )
-
-        assertTrue(requirements.optionalArtworkPermissions.isEmpty())
-    }
 }
-

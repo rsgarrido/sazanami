@@ -670,6 +670,14 @@ class MusicViewModel(
         libraryController.refreshArtwork()
     }
 
+    fun setFolderArtworkTreeUri(uri: Uri?) {
+        libraryController.setFolderArtworkTreeUri(uri)
+    }
+
+    fun refreshFolderArtwork() {
+        libraryController.refreshFolderArtwork()
+    }
+
     fun scanLibrary() {
         libraryController.scanLibrary()
     }

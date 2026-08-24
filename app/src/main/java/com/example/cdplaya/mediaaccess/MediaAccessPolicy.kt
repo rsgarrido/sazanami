@@ -3,7 +3,7 @@ package com.example.cdplaya.mediaaccess
 internal object MediaPermissions {
     const val READ_EXTERNAL_STORAGE = "android.permission.READ_EXTERNAL_STORAGE"
     const val READ_MEDIA_AUDIO = "android.permission.READ_MEDIA_AUDIO"
-    const val READ_MEDIA_IMAGES = "android.permission.READ_MEDIA_IMAGES"
+    const val READ_MEDIA_IMAGES = "android.permission.READ_MEDIA_IMAGES" // Legacy policy constant; no longer requested.
 }
 
 internal data class MediaAccessRequirements(
@@ -28,11 +28,11 @@ internal data class MediaAccessState(
 ) {
     val hasAudioAccess: Boolean
         get() = audioAccess == PermissionAccess.GRANTED ||
-            audioAccess == PermissionAccess.NOT_REQUIRED
+                audioAccess == PermissionAccess.NOT_REQUIRED
 
     val hasArtworkAccess: Boolean
         get() = artworkAccess == PermissionAccess.GRANTED ||
-            artworkAccess == PermissionAccess.NOT_REQUIRED
+                artworkAccess == PermissionAccess.NOT_REQUIRED
 }
 
 internal object MediaAccessPolicy {
@@ -41,23 +41,15 @@ internal object MediaAccessPolicy {
 
     fun requirementsFor(
         sdkInt: Int,
-        queriesStandaloneArtwork: Boolean = true
+        queriesStandaloneArtwork: Boolean = false
     ): MediaAccessRequirements = when {
         sdkInt >= ANDROID_13_API -> MediaAccessRequirements(
             requiredAudioPermissions = setOf(MediaPermissions.READ_MEDIA_AUDIO),
-            optionalArtworkPermissions = if (queriesStandaloneArtwork) {
-                setOf(MediaPermissions.READ_MEDIA_IMAGES)
-            } else {
-                emptySet()
-            }
+            optionalArtworkPermissions = emptySet()
         )
         sdkInt >= RUNTIME_PERMISSIONS_API -> MediaAccessRequirements(
             requiredAudioPermissions = setOf(MediaPermissions.READ_EXTERNAL_STORAGE),
-            optionalArtworkPermissions = if (queriesStandaloneArtwork) {
-                setOf(MediaPermissions.READ_EXTERNAL_STORAGE)
-            } else {
-                emptySet()
-            }
+            optionalArtworkPermissions = emptySet()
         )
         else -> MediaAccessRequirements(
             requiredAudioPermissions = emptySet(),
@@ -71,7 +63,7 @@ internal object MediaAccessPolicy {
         requestedPermissions: Set<String>,
         permissionsWithRationale: Set<String>,
         permanentlyDeniedPermissions: Set<String> = emptySet(),
-        queriesStandaloneArtwork: Boolean = true
+        queriesStandaloneArtwork: Boolean = false
     ): MediaAccessState {
         val requirements = requirementsFor(sdkInt, queriesStandaloneArtwork)
         val audioAccess = accessFor(
