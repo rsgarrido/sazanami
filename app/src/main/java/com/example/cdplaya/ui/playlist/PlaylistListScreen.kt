@@ -273,7 +273,10 @@ fun PlaylistListScreen(
                 contentPadding = PaddingValues(bottom = bottomContentPadding + 8.dp)
             ) {
                 if (currentFolder == null) {
-                    items(folders, key = PlaylistFolder::folderId) { folder ->
+                    items(
+                        items = folders,
+                        key = { folder -> playlistFolderLazyListKey(folder.folderId) }
+                    ) { folder ->
                         PlaylistFolderRow(
                             folder = folder,
                             onClick = { onFolderSelected(folder.folderId) },
@@ -281,7 +284,10 @@ fun PlaylistListScreen(
                         )
                     }
                 }
-                items(visiblePlaylists, key = Playlist::playlistId) { playlist ->
+                items(
+                    items = visiblePlaylists,
+                    key = { playlist -> playlistLazyListKey(playlist.playlistId) }
+                ) { playlist ->
                     PlaylistRow(
                         playlist = playlist,
                         onClick = { onPlaylistClick(playlist) },

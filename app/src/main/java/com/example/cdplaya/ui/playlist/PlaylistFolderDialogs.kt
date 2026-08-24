@@ -103,7 +103,7 @@ fun MovePlaylistToFolderDialog(
         title = { Text("Move ${playlist.name}") },
         text = {
             LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
-                item(key = "root") {
+                item(key = PLAYLIST_ROOT_FOLDER_LAZY_LIST_KEY) {
                     FolderDestinationRow(
                         name = "Playlist root",
                         selected = playlist.folderId == null,
@@ -111,7 +111,10 @@ fun MovePlaylistToFolderDialog(
                         onClick = { onFolderSelected(null) }
                     )
                 }
-                items(folders, key = PlaylistFolder::folderId) { folder ->
+                items(
+                    items = folders,
+                    key = { folder -> playlistFolderLazyListKey(folder.folderId) }
+                ) { folder ->
                     FolderDestinationRow(
                         name = folder.name,
                         selected = playlist.folderId == folder.folderId,

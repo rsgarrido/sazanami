@@ -59,7 +59,7 @@ fun AddToPlaylistDialog(
         },
         text = {
             LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
-                item(key = "create-playlist") {
+                item(key = CREATE_PLAYLIST_LAZY_LIST_KEY) {
                     ListItem(
                         leadingContent = {
                             Icon(
@@ -73,7 +73,7 @@ fun AddToPlaylistDialog(
                     )
                 }
                 if (eligiblePlaylists.isEmpty()) {
-                    item(key = "no-playlists") {
+                    item(key = EMPTY_PLAYLISTS_LAZY_LIST_KEY) {
                         Text(
                             text = "No manual playlists yet.",
                             modifier = Modifier,
@@ -83,7 +83,7 @@ fun AddToPlaylistDialog(
                 } else {
                     items(
                         items = eligiblePlaylists,
-                        key = { playlist -> playlist.playlistId }
+                        key = { playlist -> playlistLazyListKey(playlist.playlistId) }
                     ) { playlist ->
                         val songsMissing = distinctSongs.filter { song ->
                             song.membershipKey() !in playlist.songMembershipKeys
