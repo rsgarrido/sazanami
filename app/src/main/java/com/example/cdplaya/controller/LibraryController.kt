@@ -262,26 +262,45 @@ class LibraryController(
 
     fun loadSongs() {
         launchProtectedRefresh { scanToken ->
+            val startupStartedAt = SystemClock.elapsedRealtime()
+            val preferencesStartedAt = SystemClock.elapsedRealtime()
             val savedPreferences = appPreferencesRepository.awaitLoadedState()
             val savedSelection = FolderSelection.fromStored(
                 storedMode = savedPreferences.folderSelectionMode.name,
                 storedFolders = savedPreferences.selectedLibraryFolders
             )
             tracePerformance(PerformanceTraceNames.PREFERENCES_READY) { Unit }
+            debugLibraryTiming(
+                "startup-preferences-ready elapsedMs=" +
+                        "${SystemClock.elapsedRealtime() - preferencesStartedAt} " +
+                        "sinceLoadStartMs=${SystemClock.elapsedRealtime() - startupStartedAt}"
+            )
             folderSelection = savedSelection
 
+            val cacheProbeStartedAt = SystemClock.elapsedRealtime()
             val hasCachedSongs = withContext(Dispatchers.IO) {
                 libraryCacheRepository.hasCachedSongs()
             }
+            debugLibraryTiming(
+                "startup-cache-probe elapsedMs=${SystemClock.elapsedRealtime() - cacheProbeStartedAt} " +
+                        "hasCache=$hasCachedSongs"
+            )
 
             if (hasCachedSongs) {
                 val cachedLibraryData = loadCachedLibraryDataForPublication(savedSelection)
 
                 if (permissionGate.isCurrent(scanToken)) {
+                    val publicationStartedAt = SystemClock.elapsedRealtime()
                     publishLibraryData(
                         libraryData = cachedLibraryData,
                         reconcilePlayback = false,
                         traceName = PerformanceTraceNames.CACHE_FIRST_PUBLICATION
+                    )
+                    debugLibraryTiming(
+                        "startup-cache-first-ready elapsedMs=" +
+                                "${SystemClock.elapsedRealtime() - publicationStartedAt} " +
+                                "sinceLoadStartMs=${SystemClock.elapsedRealtime() - startupStartedAt} " +
+                                "songs=${cachedLibraryData.songs.size}"
                     )
                 }
             }
@@ -793,7 +812,13 @@ class LibraryController(
                     "referenceSongs=${libraryData.referenceSongs.size} " +
                     "visibleSongs=${libraryData.songs.size}"
         )
+        val publicationStartedAt = SystemClock.elapsedRealtime()
         publishLibrarySnapshot(libraryData, reconcilePlayback, indexedSnapshot, traceName)
+        debugLibraryTiming(
+            "library-publication-complete trace=$traceName elapsedMs=" +
+                    "${SystemClock.elapsedRealtime() - publicationStartedAt} " +
+                    "songs=${libraryData.songs.size}"
+        )
     }
 
     private fun publishLibrarySnapshot(
@@ -945,18 +970,27 @@ class LibraryController(
             "cache-publication-read elapsedMs=" +
                     "${SystemClock.elapsedRealtime() - cacheReadStartedAt} songs=${cachedSongs.size}"
         )
-        val cachePreparationStartedAt = SystemClock.elapsedRealtime()
-        val publicationSongs = MusicRepository(applicationContext)
-            .prepareCachedSongsForPublication(cachedSongs)
+
+        // Do not stat every embedded-artwork cache file before publishing the Room snapshot.
+        // EmbeddedArtworkProvider can reconstruct a missing file on demand for visible artwork,
+        // while the fresh MediaStore reconciliation immediately following this publication will
+        // validate/repair stale references in the background. A missing cover must never delay
+        // getting the user's songs onto Home.
         debugLibraryTiming(
-            "cache-publication-prepare elapsedMs=" +
-                    "${SystemClock.elapsedRealtime() - cachePreparationStartedAt} " +
-                    "songs=${publicationSongs.size}"
+            "cache-publication-artwork-preflight skipped=true songs=${cachedSongs.size}"
         )
-        com.example.cdplaya.data.buildMusicLibraryData(
-            allSongs = publicationSongs,
+
+        val libraryBuildStartedAt = SystemClock.elapsedRealtime()
+        val libraryData = com.example.cdplaya.data.buildMusicLibraryData(
+            allSongs = cachedSongs,
             folderSelection = folderSelection
         )
+        debugLibraryTiming(
+            "cache-publication-library-build elapsedMs=" +
+                    "${SystemClock.elapsedRealtime() - libraryBuildStartedAt} " +
+                    "songs=${libraryData.songs.size} folders=${libraryData.libraryFolders.size}"
+        )
+        libraryData
     }
 
     private fun loadFavoriteMembershipKeys() {

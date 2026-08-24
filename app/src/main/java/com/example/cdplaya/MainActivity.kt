@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.view.animation.DecelerateInterpolator
 import android.provider.Settings
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -60,6 +61,7 @@ class MainActivity : ComponentActivity() {
 
     private val musicViewModel: MusicViewModel by viewModels()
     private val permissionCoordinator = MediaPermissionCoordinator()
+    private var splashExitReason: SplashExitReason? = null
     private var returningFromAppSettings = false
     private val folderArtworkAccessStore by lazy { FolderArtworkAccessStore(this) }
     private var folderArtworkAccessState by mutableStateOf(FolderArtworkAccessState())
@@ -117,15 +119,31 @@ class MainActivity : ComponentActivity() {
                         musicViewModel.libraryAppearanceUiState.value.isLoaded &&
                         musicViewModel.homeCustomizationUiState.value.isLoaded
             val startupCanStillProgress = libraryState.errorMessage == null
-            val withinFailsafe =
-                SystemClock.elapsedRealtime() - splashStartedAt < SPLASH_READY_HOLD_LIMIT_MILLIS
+            val elapsedMs = SystemClock.elapsedRealtime() - splashStartedAt
 
-            mediaAccessState.hasAudioAccess &&
-                    !stableFirstFrameReady &&
-                    startupCanStillProgress &&
-                    withinFailsafe
+            val exitReason = when {
+                !mediaAccessState.hasAudioAccess -> SplashExitReason.NO_AUDIO_ACCESS
+                stableFirstFrameReady -> SplashExitReason.READY
+                !startupCanStillProgress -> SplashExitReason.ERROR
+                elapsedMs >= SPLASH_READY_HOLD_LIMIT_MILLIS -> SplashExitReason.TIMEOUT
+                else -> null
+            }
+            if (exitReason != null) {
+                splashExitReason = exitReason
+            }
+            exitReason == null
         }
         splashScreen.setOnExitAnimationListener { provider ->
+            val libraryState = musicViewModel.libraryUiState.value
+            debugStartupTiming(
+                "splash-exit reason=${splashExitReason ?: SplashExitReason.UNKNOWN} " +
+                        "elapsedMs=${SystemClock.elapsedRealtime() - splashStartedAt} " +
+                        "songs=${libraryState.songs.size} " +
+                        "libraryPublished=${libraryState.hasPublishedInitialLibraryState} " +
+                        "playerPrefs=${musicViewModel.playerAppearanceUiState.value.isLoaded} " +
+                        "libraryPrefs=${musicViewModel.libraryAppearanceUiState.value.isLoaded} " +
+                        "homePrefs=${musicViewModel.homeCustomizationUiState.value.isLoaded}"
+            )
             val interpolator = DecelerateInterpolator()
             provider.iconView.animate()
                 .scaleX(1.06f)
@@ -343,7 +361,22 @@ class MainActivity : ComponentActivity() {
         musicViewModel.savePlayerState()
     }
 
+    private fun debugStartupTiming(message: String) {
+        if (BuildConfig.DEBUG) {
+            Log.d(STARTUP_TIMING_TAG, message)
+        }
+    }
+
+    private enum class SplashExitReason {
+        READY,
+        ERROR,
+        TIMEOUT,
+        NO_AUDIO_ACCESS,
+        UNKNOWN
+    }
+
     private companion object {
+        const val STARTUP_TIMING_TAG = "StartupTiming"
         const val SPLASH_READY_HOLD_LIMIT_MILLIS = 3_000L
         const val SPLASH_EXIT_DURATION_MILLIS = 180L
     }
