@@ -98,13 +98,32 @@ class MainActivity : ComponentActivity() {
 
         super.onCreate(savedInstanceState)
 
-        // Hide only the brief, incomplete normal-launch frame while the cached library is
-        // restored. First-run onboarding is never held behind the splash, and the timeout
-        // guarantees that a slow/failed restore cannot trap the user on the launch screen.
+        // Resolve persisted access and start cache restoration before the first draw. This keeps
+        // the splash handoff tied to the same state MusicRoute needs rather than an arbitrary
+        // short delay.
+        restoreFolderArtworkState()
+        musicViewModel.setFolderArtworkTreeUri(folderArtworkAccessState.treeUri)
+        evaluateMediaAccess()
+
+        // Normal cold starts stay on the system splash only until the cached library and the
+        // appearance/home preferences required by MusicRoute are ready. First-run onboarding is
+        // never hidden because audio access is not granted yet. A generous failsafe still lets
+        // the real UI surface an unexpected startup error instead of trapping the user here.
         splashScreen.setKeepOnScreenCondition {
+            val libraryState = musicViewModel.libraryUiState.value
+            val stableFirstFrameReady =
+                libraryState.hasPublishedInitialLibraryState &&
+                        musicViewModel.playerAppearanceUiState.value.isLoaded &&
+                        musicViewModel.libraryAppearanceUiState.value.isLoaded &&
+                        musicViewModel.homeCustomizationUiState.value.isLoaded
+            val startupCanStillProgress = libraryState.errorMessage == null
+            val withinFailsafe =
+                SystemClock.elapsedRealtime() - splashStartedAt < SPLASH_READY_HOLD_LIMIT_MILLIS
+
             mediaAccessState.hasAudioAccess &&
-                    !musicViewModel.libraryUiState.value.hasPublishedInitialLibraryState &&
-                    SystemClock.elapsedRealtime() - splashStartedAt < SPLASH_CACHE_HOLD_LIMIT_MILLIS
+                    !stableFirstFrameReady &&
+                    startupCanStillProgress &&
+                    withinFailsafe
         }
         splashScreen.setOnExitAnimationListener { provider ->
             val interpolator = DecelerateInterpolator()
@@ -131,9 +150,6 @@ class MainActivity : ComponentActivity() {
             window.isNavigationBarContrastEnforced = false
         }
 
-        restoreFolderArtworkState()
-        musicViewModel.setFolderArtworkTreeUri(folderArtworkAccessState.treeUri)
-        evaluateMediaAccess()
         lifecycleScope.launch {
             musicViewModel.mediaAccessFailures.collect {
                 evaluateMediaAccess()
@@ -328,7 +344,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private companion object {
-        const val SPLASH_CACHE_HOLD_LIMIT_MILLIS = 800L
+        const val SPLASH_READY_HOLD_LIMIT_MILLIS = 3_000L
         const val SPLASH_EXIT_DURATION_MILLIS = 180L
     }
 }
