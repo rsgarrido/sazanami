@@ -1,5 +1,6 @@
 package com.example.cdplaya.ui.playlist
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,7 +13,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PlayArrow
@@ -20,14 +25,20 @@ import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import com.example.cdplaya.data.Playlist
 import com.example.cdplaya.data.PlaylistArtworkMode
 import com.example.cdplaya.data.PlaylistSong
+import com.example.cdplaya.data.PlaylistType
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.ui.AppShellAccent
 import com.example.cdplaya.ui.AppShellTypography
@@ -48,32 +60,35 @@ import com.example.cdplaya.ui.library.LibraryDetailTopBar
 import com.example.cdplaya.ui.library.LibraryItemAction
 import com.example.cdplaya.ui.library.LibraryItemActionSheet
 import com.example.cdplaya.ui.library.LibraryItemActionSheetTarget
+import kotlinx.coroutines.delay
+
+private const val PLAYLIST_LOADING_INDICATOR_DELAY_MILLIS = 175L
 
 @Composable
 fun PlaylistDetailScreen(
     playlist: Playlist,
     allPlaylists: List<Playlist>,
-    playlistSongs: List<Song>,
+    allSongs: List<Song>,
     playlistSongRows: List<PlaylistSong>,
     isLoading: Boolean,
     currentSongId: Long?,
     recentlyAddedSongIds: Set<Long>,
     favoriteMembershipKeys: Set<String>,
     onBackClick: () -> Unit,
-    onPlayAllClick: () -> Unit,
-    onShuffleAllClick: () -> Unit,
+    onPlayAllClick: (List<Song>) -> Unit,
+    onShuffleAllClick: (List<Song>) -> Unit,
     onRenamePlaylistClick: (Playlist, String) -> Unit,
     onDeletePlaylistClick: (Playlist) -> Unit,
     onExportPlaylistClick: (Playlist) -> Unit,
     onChangeArtworkClick: (Playlist) -> Unit,
     onResetArtworkClick: (Playlist) -> Unit,
+    onAddSongsClick: (List<Song>) -> Unit,
+    onReorderPlaylistSongs: (Long, List<Long>) -> Unit,
     onSongClick: (Song, List<Song>) -> Unit,
     onPlayNextClick: (Song) -> Unit,
     onAddToQueueClick: (Song) -> Unit,
     onToggleFavoriteClick: (Song) -> Unit,
     onRemovePlaylistSongClick: (PlaylistSong) -> Unit,
-    onMovePlaylistSongUpClick: (PlaylistSong) -> Unit,
-    onMovePlaylistSongDownClick: (PlaylistSong) -> Unit,
     onEditSongTagsClick: (Song) -> Unit,
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
@@ -81,9 +96,34 @@ fun PlaylistDetailScreen(
     var actionSheetTarget by remember { mutableStateOf<LibraryItemActionSheetTarget?>(null) }
     var renameDialogVisible by remember { mutableStateOf(false) }
     var deleteDialogVisible by remember { mutableStateOf(false) }
+    var addSongsVisible by remember { mutableStateOf(false) }
+    var isEditingOrder by remember { mutableStateOf(false) }
+    var showDelayedLoadingUi by remember(playlist.playlistId) { mutableStateOf(false) }
+    var sortOptionName by rememberSaveable(playlist.playlistId) {
+        mutableStateOf(PlaylistSongSortOption.CUSTOM.name)
+    }
+    val sortOption = PlaylistSongSortOption.valueOf(sortOptionName)
     val listState = rememberLazyListState()
     val showCompactTitle by remember {
         derivedStateOf { listState.firstVisibleItemIndex > 0 }
+    }
+    val displayedRows = remember(playlistSongRows, sortOption) {
+        sortOption.sort(playlistSongRows).filter { it.resolvedSong != null }
+    }
+    val displayedSongs = remember(displayedRows) {
+        displayedRows.mapNotNull(PlaylistSong::resolvedSong)
+    }
+
+    LaunchedEffect(isLoading, playlist.playlistId) {
+        showDelayedLoadingUi = false
+        if (isLoading) {
+            delay(PLAYLIST_LOADING_INDICATOR_DELAY_MILLIS)
+            showDelayedLoadingUi = true
+        }
+    }
+
+    BackHandler(enabled = isEditingOrder) {
+        isEditingOrder = false
     }
 
     fun showPlaylistActions() {
@@ -93,6 +133,18 @@ fun PlaylistDetailScreen(
             artworkUri = null,
             artworkDescription = "Artwork for ${playlist.name}",
             actions = buildList {
+                if (!isLoading && playlist.type == PlaylistType.MANUAL) {
+                    add(LibraryItemAction("Add songs", Icons.AutoMirrored.Filled.PlaylistAdd) {
+                        addSongsVisible = true
+                    })
+                    add(LibraryItemAction("Edit order", Icons.Filled.DragHandle) {
+                        sortOptionName = PlaylistSongSortOption.CUSTOM.name
+                        isEditingOrder = true
+                    })
+                }
+                add(LibraryItemAction("Rename", Icons.Filled.Edit) {
+                    renameDialogVisible = true
+                })
                 add(LibraryItemAction("Change artwork", Icons.Filled.Image) {
                     onChangeArtworkClick(playlist)
                 })
@@ -101,9 +153,6 @@ fun PlaylistDetailScreen(
                         onResetArtworkClick(playlist)
                     })
                 }
-                add(LibraryItemAction("Rename", Icons.Filled.Edit) {
-                    renameDialogVisible = true
-                })
                 add(LibraryItemAction("Export as M3U8", Icons.Filled.Share) {
                     onExportPlaylistClick(playlist)
                 })
@@ -124,57 +173,96 @@ fun PlaylistDetailScreen(
     Column(modifier = modifier.fillMaxSize()) {
         LibraryDetailTopBar(
             title = playlist.name,
-            showTitle = showCompactTitle,
-            containerColor = if (showCompactTitle) {
+            showTitle = isEditingOrder || showCompactTitle,
+            containerColor = if (isEditingOrder || showCompactTitle) {
                 MaterialTheme.colorScheme.surface.copy(alpha = 0.97f)
             } else {
                 Color.Transparent
             },
-            onBackClick = onBackClick,
-            onMoreClick = ::showPlaylistActions
+            onBackClick = {
+                if (isEditingOrder) isEditingOrder = false else onBackClick()
+            },
+            onMoreClick = ::showPlaylistActions,
+            trailingContent = if (isEditingOrder) {
+                {
+                    TextButton(onClick = { isEditingOrder = false }) {
+                        Text(
+                            text = "DONE",
+                            style = AppShellTypography.CompactAction,
+                            color = AppShellAccent
+                        )
+                    }
+                }
+            } else {
+                null
+            }
         )
 
-        PlaylistSongList(
-            playlistSongs = playlistSongs,
-            playlistSongRows = playlistSongRows,
-            currentSongId = currentSongId,
-            recentlyAddedSongIds = recentlyAddedSongIds,
-            favoriteMembershipKeys = favoriteMembershipKeys,
-            onSongClick = onSongClick,
-            onPlayNextClick = onPlayNextClick,
-            onAddToQueueClick = onAddToQueueClick,
-            onToggleFavoriteClick = onToggleFavoriteClick,
-            onRemovePlaylistSongClick = onRemovePlaylistSongClick,
-            onMovePlaylistSongUpClick = onMovePlaylistSongUpClick,
-            onMovePlaylistSongDownClick = onMovePlaylistSongDownClick,
-            onEditSongTagsClick = onEditSongTagsClick,
-            listState = listState,
-            headerContent = {
-                PlaylistDetailHero(
-                    playlist = playlist,
-                    hasSongs = playlistSongs.isNotEmpty(),
-                    onPlayClick = onPlayAllClick,
-                    onShuffleClick = onShuffleAllClick
-                )
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
-                )
-            },
-            emptyContent = {
-                PlaylistDetailEmptyState(
-                    playlist = playlist,
-                    isLoading = isLoading
-                )
-            },
-            bottomContentPadding = bottomContentPadding,
-            modifier = Modifier.fillMaxSize()
-        )
+        when {
+            isEditingOrder -> PlaylistReorderSongList(
+                playlistSongRows = playlistSongRows,
+                onOrderCommitted = { orderedIds ->
+                    onReorderPlaylistSongs(playlist.playlistId, orderedIds)
+                },
+                bottomContentPadding = bottomContentPadding,
+                modifier = Modifier.fillMaxSize()
+            )
+
+            isLoading && !showDelayedLoadingUi -> Box(modifier = Modifier.fillMaxSize())
+
+            isLoading -> PlaylistLoadingState(modifier = Modifier.fillMaxSize())
+
+            else -> PlaylistSongList(
+                playlistSongs = displayedSongs,
+                playlistSongRows = displayedRows,
+                currentSongId = currentSongId,
+                recentlyAddedSongIds = recentlyAddedSongIds,
+                favoriteMembershipKeys = favoriteMembershipKeys,
+                onSongClick = onSongClick,
+                onPlayNextClick = onPlayNextClick,
+                onAddToQueueClick = onAddToQueueClick,
+                onToggleFavoriteClick = onToggleFavoriteClick,
+                onRemovePlaylistSongClick = onRemovePlaylistSongClick,
+                onEditSongTagsClick = onEditSongTagsClick,
+                listState = listState,
+                headerContent = {
+                    PlaylistDetailHero(
+                        playlist = playlist,
+                        hasSongs = displayedSongs.isNotEmpty(),
+                        sortOption = sortOption,
+                        onSortOptionSelected = { option -> sortOptionName = option.name },
+                        onPlayClick = { onPlayAllClick(displayedSongs) },
+                        onShuffleClick = { onShuffleAllClick(displayedSongs) }
+                    )
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                    )
+                },
+                emptyContent = {
+                    PlaylistDetailEmptyState(
+                        playlist = playlist
+                    )
+                },
+                bottomContentPadding = bottomContentPadding,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
     }
 
     actionSheetTarget?.let { target ->
         LibraryItemActionSheet(
             target = target,
             onDismissRequest = { actionSheetTarget = null }
+        )
+    }
+
+    if (addSongsVisible) {
+        PlaylistAddSongsScreen(
+            playlistName = playlist.name,
+            allSongs = allSongs,
+            playlistSongRows = playlistSongRows,
+            onDismiss = { addSongsVisible = false },
+            onAddSongs = onAddSongsClick
         )
     }
 
@@ -210,13 +298,16 @@ fun PlaylistDetailScreen(
 private fun PlaylistDetailHero(
     playlist: Playlist,
     hasSongs: Boolean,
+    sortOption: PlaylistSongSortOption,
+    onSortOptionSelected: (PlaylistSongSortOption) -> Unit,
     onPlayClick: () -> Unit,
     onShuffleClick: () -> Unit
 ) {
+    var sortMenuExpanded by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 20.dp),
+            .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(9.dp)
     ) {
@@ -272,13 +363,55 @@ private fun PlaylistDetailHero(
                 onClick = onShuffleClick
             )
         }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Songs",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Box {
+                TextButton(
+                    onClick = { sortMenuExpanded = true }
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.Sort,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(sortOption.label)
+                }
+                DropdownMenu(
+                    expanded = sortMenuExpanded,
+                    onDismissRequest = { sortMenuExpanded = false }
+                ) {
+                    PlaylistSongSortOption.entries.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.label) },
+                            leadingIcon = {
+                                if (option == sortOption) {
+                                    Icon(Icons.Filled.Check, contentDescription = "Selected")
+                                }
+                            },
+                            onClick = {
+                                onSortOptionSelected(option)
+                                sortMenuExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
 @Composable
 private fun PlaylistDetailEmptyState(
-    playlist: Playlist,
-    isLoading: Boolean
+    playlist: Playlist
 ) {
     Box(
         modifier = Modifier
@@ -286,26 +419,32 @@ private fun PlaylistDetailEmptyState(
             .padding(horizontal = 24.dp, vertical = 32.dp),
         contentAlignment = Alignment.Center
     ) {
-        if (isLoading) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                CircularProgressIndicator(modifier = Modifier.size(22.dp))
-                Text(
-                    text = "Loading playlist\u2026",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        } else {
+        Text(
+            text = if (playlist.songCount == 0) {
+                "This playlist is empty."
+            } else {
+                "The songs in this playlist are not currently available on this device."
+            },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
+private fun PlaylistLoadingState(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(22.dp))
             Text(
-                text = if (playlist.songCount == 0) {
-                    "This playlist is empty."
-                } else {
-                    "The songs in this playlist are not currently available on this device."
-                },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
+                text = "Loading playlist\u2026",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

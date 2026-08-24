@@ -345,12 +345,7 @@ internal fun MusicRoute(
             onRemovePlaylistSongClick = { playlistSong ->
                 musicViewModel.removePlaylistSong(playlistSong)
             },
-            onMovePlaylistSongUpClick = { playlistSong ->
-                musicViewModel.movePlaylistSongUp(playlistSong)
-            },
-            onMovePlaylistSongDownClick = { playlistSong ->
-                musicViewModel.movePlaylistSongDown(playlistSong)
-            },
+            onReorderPlaylistSongs = musicViewModel::reorderPlaylistSongs,
             onTagsEdited = { originalSong, editedTags ->
                 musicViewModel.refreshSongsAfterTagEdit(
                     originalSong = originalSong,

@@ -188,8 +188,7 @@ internal fun MusicScreen(
     onAddSongToPlaylistClick: (Playlist, Song) -> Unit,
     onAddSongsToPlaylistClick: (Playlist, List<Song>) -> Unit,
     onRemovePlaylistSongClick: (PlaylistSong) -> Unit,
-    onMovePlaylistSongUpClick: (PlaylistSong) -> Unit,
-    onMovePlaylistSongDownClick: (PlaylistSong) -> Unit,
+    onReorderPlaylistSongs: (Long, List<Long>) -> Unit,
     onTagsEdited: (Song, EditableSongTags) -> Unit,
     onReadEditableSongTags: (Song) -> EditableSongTags,
     onGetUnsupportedTagEditingMessage: (Song) -> String?,
@@ -975,8 +974,10 @@ internal fun MusicScreen(
                     onRemovePlaylistSongClick = { playlistSong ->
                         playlistSnackbarActions.removePlaylistSong(playlistSong)
                     },
-                    onMovePlaylistSongUpClick = onMovePlaylistSongUpClick,
-                    onMovePlaylistSongDownClick = onMovePlaylistSongDownClick,
+                    onReorderPlaylistSongs = onReorderPlaylistSongs,
+                    onAddSongsToCurrentPlaylistClick = { playlist, songs ->
+                        playlistSnackbarActions.addSongsToPlaylist(playlist, songs)
+                    },
                     onEditSongTagsClick = { song ->
                         isTagSaveInProgress = false
                         hasUnsavedTagChanges = false

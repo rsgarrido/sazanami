@@ -3,6 +3,7 @@ package com.example.cdplaya.data.local
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 
 @Dao
@@ -40,12 +41,6 @@ interface PlaylistDao {
     @Query("SELECT * FROM playlist_songs WHERE playlistId = :playlistId ORDER BY position ASC")
     suspend fun getPlaylistSongs(playlistId: Long): List<PlaylistSongEntity>
 
-    @Query("UPDATE playlist_songs SET position = :position WHERE playlistSongId = :playlistSongId")
-    suspend fun updatePlaylistSongPosition(
-        playlistSongId: Long,
-        position: Int
-    )
-
     @Query("SELECT COUNT(*) FROM playlists WHERE LOWER(name) = LOWER(:name)")
     suspend fun countPlaylistsWithName(name: String): Int
 
@@ -76,6 +71,31 @@ interface PlaylistDao {
 
     @Update
     suspend fun updatePlaylistSongs(playlistSongs: List<PlaylistSongEntity>)
+
+    @Transaction
+    suspend fun updatePlaylistSongOrder(
+        playlistId: Long,
+        orderedPlaylistSongIds: List<Long>,
+        updatedAt: Long
+    ): Boolean {
+        val playlistSongs = getPlaylistSongs(playlistId)
+        if (
+            orderedPlaylistSongIds.size != playlistSongs.size ||
+            orderedPlaylistSongIds.distinct().size != orderedPlaylistSongIds.size ||
+            orderedPlaylistSongIds.toSet() != playlistSongs
+                .mapTo(mutableSetOf(), PlaylistSongEntity::playlistSongId)
+        ) {
+            return false
+        }
+        val songsById = playlistSongs.associateBy(PlaylistSongEntity::playlistSongId)
+        updatePlaylistSongs(
+            orderedPlaylistSongIds.mapIndexed { position, playlistSongId ->
+                checkNotNull(songsById[playlistSongId]).copy(position = position)
+            }
+        )
+        updatePlaylistTimestamp(playlistId, updatedAt)
+        return true
+    }
 
     @Query("UPDATE playlists SET name = :name, updatedAt = :updatedAt WHERE playlistId = :playlistId")
     suspend fun renamePlaylist(

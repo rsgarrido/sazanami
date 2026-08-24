@@ -955,12 +955,14 @@ class MusicViewModel(
         libraryController.removePlaylistSong(playlistSong)
     }
 
-    fun movePlaylistSongUp(playlistSong: PlaylistSong) {
-        libraryController.movePlaylistSongUp(playlistSong)
-    }
-
-    fun movePlaylistSongDown(playlistSong: PlaylistSong) {
-        libraryController.movePlaylistSongDown(playlistSong)
+    fun reorderPlaylistSongs(
+        playlistId: Long,
+        orderedPlaylistSongIds: List<Long>
+    ) {
+        libraryController.reorderPlaylistSongs(
+            playlistId = playlistId,
+            orderedPlaylistSongIds = orderedPlaylistSongIds
+        )
     }
 
     fun refreshSongsAfterTagEdit(

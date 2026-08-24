@@ -712,31 +712,40 @@ class LibraryController(
         }
     }
 
-    fun movePlaylistSongUp(playlistSong: PlaylistSong) {
-        coroutineScope.launch {
-            playlistsRepository.movePlaylistSongUp(
-                playlistId = playlistSong.playlistId,
-                playlistSongId = playlistSong.playlistSongId
-            )
-
-            loadPlaylists()
-            val updatedRows = getResolvedPlaylistSongs(playlistSong.playlistId)
-            if (selectedPlaylistId == playlistSong.playlistId) {
-                selectedPlaylistSongs = updatedRows
-            }
+    fun reorderPlaylistSongs(
+        playlistId: Long,
+        orderedPlaylistSongIds: List<Long>
+    ) {
+        val currentRows = selectedPlaylistSongs
+        if (
+            selectedPlaylistId != playlistId ||
+            orderedPlaylistSongIds.size != currentRows.size ||
+            orderedPlaylistSongIds.toSet() != currentRows
+                .mapTo(mutableSetOf(), PlaylistSong::playlistSongId)
+        ) {
+            return
         }
-    }
 
-    fun movePlaylistSongDown(playlistSong: PlaylistSong) {
+        val rowsById = currentRows.associateBy(PlaylistSong::playlistSongId)
+        selectedPlaylistSongs = orderedPlaylistSongIds.mapIndexed { position, playlistSongId ->
+            checkNotNull(rowsById[playlistSongId]).copy(position = position)
+        }
+
         coroutineScope.launch {
-            playlistsRepository.movePlaylistSongDown(
-                playlistId = playlistSong.playlistId,
-                playlistSongId = playlistSong.playlistSongId
+            val didReorder = playlistsRepository.reorderPlaylistSongs(
+                playlistId = playlistId,
+                orderedPlaylistSongIds = orderedPlaylistSongIds
             )
-
+            if (!didReorder) {
+                val authoritativeRows = getResolvedPlaylistSongs(playlistId)
+                if (selectedPlaylistId == playlistId) {
+                    selectedPlaylistSongs = authoritativeRows
+                }
+                return@launch
+            }
             loadPlaylists()
-            val updatedRows = getResolvedPlaylistSongs(playlistSong.playlistId)
-            if (selectedPlaylistId == playlistSong.playlistId) {
+            val updatedRows = getResolvedPlaylistSongs(playlistId)
+            if (selectedPlaylistId == playlistId) {
                 selectedPlaylistSongs = updatedRows
             }
         }

@@ -45,8 +45,8 @@ fun PlaylistsTabContent(
     onToggleFavoriteClick: (Song) -> Unit,
     onRemovePlaylistSongClick: (PlaylistSong) -> Unit,
     onRenamePlaylistClick: (Playlist, String) -> Unit,
-    onMovePlaylistSongUpClick: (PlaylistSong) -> Unit,
-    onMovePlaylistSongDownClick: (PlaylistSong) -> Unit,
+    onReorderPlaylistSongs: (Long, List<Long>) -> Unit,
+    onAddSongsToCurrentPlaylistClick: (Playlist, List<Song>) -> Unit,
     onEditSongTagsClick: (Song) -> Unit,
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
@@ -113,18 +113,18 @@ fun PlaylistsTabContent(
             PlaylistDetailScreen(
                 playlist = selectedPlaylist,
                 allPlaylists = playlists,
-                playlistSongs = availablePlaylistSongs,
-                playlistSongRows = availablePlaylistSongRows,
+                allSongs = songs,
+                playlistSongRows = scopedPlaylistSongRows,
                 isLoading = !stateMatchesSelection || isSelectedPlaylistLoading,
                 currentSongId = currentSong?.id,
                 recentlyAddedSongIds = recentlyAddedSongIds,
                 favoriteMembershipKeys = favoriteMembershipKeys,
                 onBackClick = onBackFromPlaylist,
-                onPlayAllClick = {
-                    onPlaySongsClick(availablePlaylistSongs, PlaybackShuffleMode.OFF)
+                onPlayAllClick = { songsToPlay ->
+                    onPlaySongsClick(songsToPlay, PlaybackShuffleMode.OFF)
                 },
-                onShuffleAllClick = {
-                    onPlaySongsClick(availablePlaylistSongs, PlaybackShuffleMode.SONGS)
+                onShuffleAllClick = { songsToPlay ->
+                    onPlaySongsClick(songsToPlay, PlaybackShuffleMode.SONGS)
                 },
                 onRenamePlaylistClick = onRenamePlaylistClick,
                 onDeletePlaylistClick = onDeletePlaylistClick,
@@ -137,8 +137,10 @@ fun PlaylistsTabContent(
                 onToggleFavoriteClick = onToggleFavoriteClick,
                 onRemovePlaylistSongClick = onRemovePlaylistSongClick,
                 onEditSongTagsClick = onEditSongTagsClick,
-                onMovePlaylistSongUpClick = onMovePlaylistSongUpClick,
-                onMovePlaylistSongDownClick = onMovePlaylistSongDownClick,
+                onReorderPlaylistSongs = onReorderPlaylistSongs,
+                onAddSongsClick = { selectedSongs ->
+                    onAddSongsToCurrentPlaylistClick(selectedPlaylist, selectedSongs)
+                },
                 bottomContentPadding = bottomContentPadding,
                 modifier = modifier
             )
