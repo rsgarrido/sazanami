@@ -97,6 +97,7 @@ fun SettingsScreen(
     var isThemeCustomizationDialogVisible by remember { mutableStateOf(false) }
     var isArtworkTransitionDialogVisible by remember { mutableStateOf(false) }
     var isSeekbarStyleDialogVisible by remember { mutableStateOf(false) }
+    var isEmbeddedArtworkOnlyDialogVisible by remember { mutableStateOf(false) }
     val homePinUi = LocalHomePinUi.current
     val folderArtworkUi = LocalFolderArtworkUi.current
 
@@ -183,7 +184,9 @@ fun SettingsScreen(
                     title = "Use embedded artwork only",
                     summary = "Remove the selected folder and stop reading cover.jpg-style files",
                     icon = AppShellIcons.AlbumStack,
-                    onClick = folderArtworkUi.onClearFolder
+                    onClick = {
+                        isEmbeddedArtworkOnlyDialogVisible = true
+                    }
                 )
             }
 
@@ -535,6 +538,41 @@ fun SettingsScreen(
             confirmButton = {
                 TextButton(onClick = { isAudioOffloadDialogVisible = false }) {
                     Text(text = "Close")
+                }
+            }
+        )
+    }
+
+    if (isEmbeddedArtworkOnlyDialogVisible) {
+        AlertDialog(
+            onDismissRequest = {
+                isEmbeddedArtworkOnlyDialogVisible = false
+            },
+            title = {
+                Text(text = "Use embedded artwork only?")
+            },
+            text = {
+                Text(
+                    text = "CDPlaya will stop using cover.jpg-style files from the selected folder and remove its saved folder access. Embedded artwork inside your music files will still be used. You can choose a folder again later in Settings."
+                )
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        isEmbeddedArtworkOnlyDialogVisible = false
+                    }
+                ) {
+                    Text(text = "Cancel")
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        isEmbeddedArtworkOnlyDialogVisible = false
+                        folderArtworkUi.onClearFolder()
+                    }
+                ) {
+                    Text(text = "Use embedded only")
                 }
             }
         )
