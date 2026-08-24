@@ -51,7 +51,6 @@ import coil.compose.AsyncImage
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.ui.AppShellAccent
 import com.example.cdplaya.ui.AppShellTypography
-import kotlin.math.abs
 
 @Composable
 internal fun PlaylistReorderSongList(
@@ -71,22 +70,41 @@ internal fun PlaylistReorderSongList(
     val density = LocalDensity.current
     val edgeThresholdPx = with(density) { 72.dp.toPx() }
     val maximumAutoScrollPerFramePx = with(density) { 12.dp.toPx() }
+    val crossingHysteresisPx = with(density) { 6.dp.toPx() }
     val latestOnOrderCommitted by rememberUpdatedState(onOrderCommitted)
 
-    fun updateVisualOrderForPointer() {
+    fun moveDraggedRowAcrossNeighbor(direction: Int) {
+        if (direction == 0) return
         val draggedId = draggedRowId ?: return
-        val visibleItems = listState.layoutInfo.visibleItemsInfo
-        if (visibleItems.isEmpty()) return
-        val targetItem = visibleItems.minByOrNull { item ->
-            abs(item.offset + item.size / 2f - dragPointerY)
-        } ?: return
-        val targetId = targetItem.key as? Long ?: return
-        val fromIndex = visualRows.indexOfFirst { it.playlistSongId == draggedId }
-        val targetIndex = visualRows.indexOfFirst { it.playlistSongId == targetId }
-        if (fromIndex < 0 || targetIndex < 0 || fromIndex == targetIndex) return
+        val visibleItemsByKey = listState.layoutInfo.visibleItemsInfo.associateBy { item ->
+            item.key
+        }
+        val updatedRows = visualRows.toMutableList()
+        var didMove = false
+        var attempts = 0
 
-        visualRows = visualRows.toMutableList().apply {
-            add(targetIndex, removeAt(fromIndex))
+        while (attempts < updatedRows.size) {
+            val fromIndex = updatedRows.indexOfFirst { it.playlistSongId == draggedId }
+            val neighborIndex = fromIndex + direction
+            if (fromIndex < 0 || neighborIndex !in updatedRows.indices) break
+
+            val neighborId = updatedRows[neighborIndex].playlistSongId
+            val neighborInfo = visibleItemsByKey[neighborId] ?: break
+            val neighborCenter = neighborInfo.offset + neighborInfo.size / 2f
+            val crossedNeighbor = if (direction > 0) {
+                dragPointerY >= neighborCenter + crossingHysteresisPx
+            } else {
+                dragPointerY <= neighborCenter - crossingHysteresisPx
+            }
+            if (!crossedNeighbor) break
+
+            updatedRows.add(neighborIndex, updatedRows.removeAt(fromIndex))
+            didMove = true
+            attempts += 1
+        }
+
+        if (didMove) {
+            visualRows = updatedRows
         }
     }
 
@@ -126,8 +144,14 @@ internal fun PlaylistReorderSongList(
 
     LaunchedEffect(draggedRowId, autoScrollPerFrame) {
         while (draggedRowId != null && autoScrollPerFrame != 0f) {
-            listState.scrollBy(autoScrollPerFrame)
-            updateVisualOrderForPointer()
+            val consumedScroll = listState.scrollBy(autoScrollPerFrame)
+            moveDraggedRowAcrossNeighbor(
+                direction = when {
+                    consumedScroll > 0f -> 1
+                    consumedScroll < 0f -> -1
+                    else -> 0
+                }
+            )
             withFrameNanos { }
         }
     }
@@ -172,6 +196,16 @@ internal fun PlaylistReorderSongList(
                     label = "playlistDragScale-${row.playlistSongId}"
                 )
                 val song = row.resolvedSong
+                val placementModifier = if (isDragged) {
+                    Modifier
+                } else {
+                    Modifier.animateItem(
+                        placementSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        )
+                    )
+                }
 
                 ListItem(
                     leadingContent = {
@@ -229,7 +263,13 @@ internal fun PlaylistReorderSongList(
                                                 layoutInfo.viewportStartOffset.toFloat(),
                                                 layoutInfo.viewportEndOffset.toFloat()
                                             )
-                                            updateVisualOrderForPointer()
+                                            moveDraggedRowAcrossNeighbor(
+                                                direction = when {
+                                                    dragAmount.y > 0.5f -> 1
+                                                    dragAmount.y < -0.5f -> -1
+                                                    else -> 0
+                                                }
+                                            )
                                             updateAutoScroll()
                                         },
                                         onDragEnd = { finishDrag(commit = true) },
@@ -247,13 +287,7 @@ internal fun PlaylistReorderSongList(
                             )
                         }
                     },
-                    modifier = Modifier
-                        .animateItem(
-                            placementSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessMediumLow
-                            )
-                        )
+                    modifier = placementModifier
                         .zIndex(if (isDragged) 1f else 0f)
                         .graphicsLayer {
                             this.translationY = translationY

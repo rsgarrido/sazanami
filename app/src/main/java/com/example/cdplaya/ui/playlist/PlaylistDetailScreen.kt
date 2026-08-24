@@ -20,6 +20,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Share
@@ -29,6 +31,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -99,16 +102,20 @@ fun PlaylistDetailScreen(
     var addSongsVisible by remember { mutableStateOf(false) }
     var isEditingOrder by remember { mutableStateOf(false) }
     var showDelayedLoadingUi by remember(playlist.playlistId) { mutableStateOf(false) }
-    var sortOptionName by rememberSaveable(playlist.playlistId) {
-        mutableStateOf(PlaylistSongSortOption.CUSTOM.name)
+    var sortFieldName by rememberSaveable(playlist.playlistId) {
+        mutableStateOf(PlaylistSongSortField.CUSTOM.name)
     }
-    val sortOption = PlaylistSongSortOption.valueOf(sortOptionName)
+    var sortDirectionName by rememberSaveable(playlist.playlistId) {
+        mutableStateOf(PlaylistSongSortDirection.ASCENDING.name)
+    }
+    val sortField = PlaylistSongSortField.valueOf(sortFieldName)
+    val sortDirection = PlaylistSongSortDirection.valueOf(sortDirectionName)
     val listState = rememberLazyListState()
     val showCompactTitle by remember {
         derivedStateOf { listState.firstVisibleItemIndex > 0 }
     }
-    val displayedRows = remember(playlistSongRows, sortOption) {
-        sortOption.sort(playlistSongRows).filter { it.resolvedSong != null }
+    val displayedRows = remember(playlistSongRows, sortField, sortDirection) {
+        sortField.sort(playlistSongRows, sortDirection).filter { it.resolvedSong != null }
     }
     val displayedSongs = remember(displayedRows) {
         displayedRows.mapNotNull(PlaylistSong::resolvedSong)
@@ -138,7 +145,7 @@ fun PlaylistDetailScreen(
                         addSongsVisible = true
                     })
                     add(LibraryItemAction("Edit order", Icons.Filled.DragHandle) {
-                        sortOptionName = PlaylistSongSortOption.CUSTOM.name
+                        sortFieldName = PlaylistSongSortField.CUSTOM.name
                         isEditingOrder = true
                     })
                 }
@@ -229,8 +236,12 @@ fun PlaylistDetailScreen(
                     PlaylistDetailHero(
                         playlist = playlist,
                         hasSongs = displayedSongs.isNotEmpty(),
-                        sortOption = sortOption,
-                        onSortOptionSelected = { option -> sortOptionName = option.name },
+                        sortField = sortField,
+                        sortDirection = sortDirection,
+                        onSortFieldSelected = { field -> sortFieldName = field.name },
+                        onSortDirectionToggle = {
+                            sortDirectionName = sortDirection.toggled().name
+                        },
                         onPlayClick = { onPlayAllClick(displayedSongs) },
                         onShuffleClick = { onShuffleAllClick(displayedSongs) }
                     )
@@ -298,8 +309,10 @@ fun PlaylistDetailScreen(
 private fun PlaylistDetailHero(
     playlist: Playlist,
     hasSongs: Boolean,
-    sortOption: PlaylistSongSortOption,
-    onSortOptionSelected: (PlaylistSongSortOption) -> Unit,
+    sortField: PlaylistSongSortField,
+    sortDirection: PlaylistSongSortDirection,
+    onSortFieldSelected: (PlaylistSongSortField) -> Unit,
+    onSortDirectionToggle: () -> Unit,
     onPlayClick: () -> Unit,
     onShuffleClick: () -> Unit
 ) {
@@ -383,26 +396,48 @@ private fun PlaylistDetailHero(
                         contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )
-                    Text(sortOption.label)
+                    Text(sortField.label)
                 }
                 DropdownMenu(
                     expanded = sortMenuExpanded,
                     onDismissRequest = { sortMenuExpanded = false }
                 ) {
-                    PlaylistSongSortOption.entries.forEach { option ->
+                    PlaylistSongSortField.entries.forEach { field ->
                         DropdownMenuItem(
-                            text = { Text(option.label) },
+                            text = { Text(field.label) },
                             leadingIcon = {
-                                if (option == sortOption) {
+                                if (field == sortField) {
                                     Icon(Icons.Filled.Check, contentDescription = "Selected")
                                 }
                             },
                             onClick = {
-                                onSortOptionSelected(option)
+                                onSortFieldSelected(field)
                                 sortMenuExpanded = false
                             }
                         )
                     }
+                }
+            }
+            if (sortField != PlaylistSongSortField.CUSTOM) {
+                IconButton(onClick = onSortDirectionToggle) {
+                    Icon(
+                        imageVector = if (
+                            sortDirection == PlaylistSongSortDirection.ASCENDING
+                        ) {
+                            Icons.Filled.ArrowUpward
+                        } else {
+                            Icons.Filled.ArrowDownward
+                        },
+                        contentDescription = if (
+                            sortDirection == PlaylistSongSortDirection.ASCENDING
+                        ) {
+                            "Sort ascending"
+                        } else {
+                            "Sort descending"
+                        },
+                        tint = AppShellAccent,
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
             }
         }
