@@ -9,7 +9,6 @@ class MediaPermissionCoordinatorTest {
     @Test
     fun oneLibraryLoadIsEmittedForGrantAcrossRepeatedEvaluation() {
         val coordinator = MediaPermissionCoordinator()
-
         assertEquals(emptyList<MediaAccessEffect>(), coordinator.onStateEvaluated(deniedState()))
         assertEquals(
             listOf(MediaAccessEffect.LOAD_LIBRARY),
@@ -21,7 +20,6 @@ class MediaPermissionCoordinatorTest {
     @Test
     fun revocationAndSettingsGrantEmitDeterministicEffects() {
         val coordinator = MediaPermissionCoordinator()
-
         coordinator.onStateEvaluated(grantedState())
         assertEquals(
             listOf(MediaAccessEffect.REVOKE_LIBRARY_ACCESS),
@@ -34,36 +32,18 @@ class MediaPermissionCoordinatorTest {
     }
 
     @Test
-    fun artworkGrantRefreshesWithoutReloadingAudioLibrary() {
+    fun concurrentAudioRequestsAreRejected() {
         val coordinator = MediaPermissionCoordinator()
-        coordinator.onStateEvaluated(grantedState(artworkGranted = false))
-
-        assertEquals(
-            listOf(MediaAccessEffect.REFRESH_ARTWORK),
-            coordinator.onStateEvaluated(grantedState(artworkGranted = true))
-        )
-    }
-
-    @Test
-    fun concurrentLauncherEventsAreRejected() {
-        val coordinator = MediaPermissionCoordinator()
-
         assertTrue(coordinator.beginRequest(MediaPermissionRequest.AUDIO))
-        assertFalse(coordinator.beginRequest(MediaPermissionRequest.ARTWORK))
+        assertFalse(coordinator.beginRequest(MediaPermissionRequest.AUDIO))
         coordinator.finishRequest(MediaPermissionRequest.AUDIO)
-        assertTrue(coordinator.beginRequest(MediaPermissionRequest.ARTWORK))
+        assertTrue(coordinator.beginRequest(MediaPermissionRequest.AUDIO))
     }
 
-    private fun grantedState(artworkGranted: Boolean = true) = MediaAccessPolicy.evaluate(
+    private fun grantedState() = MediaAccessPolicy.evaluate(
         sdkInt = 33,
-        grantedPermissions = buildSet {
-            add(MediaPermissions.READ_MEDIA_AUDIO)
-            if (artworkGranted) add(MediaPermissions.READ_MEDIA_IMAGES)
-        },
-        requestedPermissions = setOf(
-            MediaPermissions.READ_MEDIA_AUDIO,
-            MediaPermissions.READ_MEDIA_IMAGES
-        ),
+        grantedPermissions = setOf(MediaPermissions.READ_MEDIA_AUDIO),
+        requestedPermissions = setOf(MediaPermissions.READ_MEDIA_AUDIO),
         permissionsWithRationale = emptySet()
     )
 
@@ -74,4 +54,3 @@ class MediaPermissionCoordinatorTest {
         permissionsWithRationale = emptySet()
     )
 }
-

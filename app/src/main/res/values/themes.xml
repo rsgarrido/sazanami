@@ -2,4 +2,10 @@
 <resources>
 
     <style name="Theme.Cdplaya" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <style name="Theme.Cdplaya.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/cdplaya_splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_cdplaya</item>
+        <item name="postSplashScreenTheme">@style/Theme.Cdplaya</item>
+    </style>
 </resources>

@@ -25,74 +25,89 @@ class MusicRepository(private val context: Context) {
         return getLibraryData(selectedFolders).songs
     }
 
+    fun queryLibraryIndex(): List<Song>? = try {
+        tracePerformance(PerformanceTraceNames.MEDIASTORE_INDEX_QUERY) { querySongIndex() }
+    } catch (exception: SecurityException) {
+        throw MediaLibraryAccessException(exception)
+    }
+
     fun refreshLibrary(
         cachedSongs: List<Song>,
-        forceArtworkRefreshIds: Set<Long> = emptySet()
+        forceArtworkRefreshIds: Set<Long> = emptySet(),
+        indexSongsOverride: List<Song>? = null,
+        folderArtworkTreeUri: Uri? = null
     ): LibraryRefreshResult {
-        val indexSongs = try {
-            tracePerformance(PerformanceTraceNames.MEDIASTORE_INDEX_QUERY) { querySongIndex() }
-        } catch (exception: SecurityException) {
-            throw MediaLibraryAccessException(exception)
-        }
+        val indexSongs = indexSongsOverride ?: queryLibraryIndex()
         LibraryRefreshEngine.fallbackForIncompleteScan(cachedSongs, indexSongs)?.let { return it }
         checkNotNull(indexSongs)
         val embeddedArtworkResolver = EmbeddedArtworkResolver(context)
+        val folderArtworkResolver = FolderArtworkResolver(context, folderArtworkTreeUri)
         tracePerformance(PerformanceTraceNames.ARTWORK_REPAIR_BATCH) {
             cachedSongs.filter { it.id in forceArtworkRefreshIds }
                 .forEach(embeddedArtworkResolver::invalidate)
         }
-        var albumArtByFolder: Map<String, Uri>? = null
-        var standaloneArtworkLookupMs = 0L
         var embeddedArtworkExtractionMs = 0L
         var embeddedArtworkExtractionCount = 0
         val artworkRepairKeys = mutableSetOf<String>()
         val classificationStartedAt = SystemClock.elapsedRealtime()
         val result = tracePerformance(PerformanceTraceNames.LIBRARY_CLASSIFICATION) {
             LibraryRefreshEngine.refresh(
-            cachedSongs = cachedSongs,
-            indexSongs = indexSongs,
-            requiresEnrichment = { cached, current ->
-                val requiresRepair = cached.id in forceArtworkRefreshIds ||
-                    cached.requiresArtworkRepair(current) ||
-                    embeddedArtworkResolver.requiresReconstruction(cached)
-                if (requiresRepair) artworkRepairKeys += current.uri.toString()
-                requiresRepair
-            },
-            enrich = { indexSong ->
-                val folderArtwork = albumArtByFolder ?: run {
-                    val startedAt = SystemClock.elapsedRealtime()
-                    getAlbumArtByFolderOrEmpty().also {
-                        standaloneArtworkLookupMs += SystemClock.elapsedRealtime() - startedAt
-                        albumArtByFolder = it
-                    }
+                cachedSongs = cachedSongs,
+                indexSongs = indexSongs,
+                requiresEnrichment = { cached, current ->
+                    val requiresRepair = cached.id in forceArtworkRefreshIds ||
+                            cached.requiresArtworkRepair(current) ||
+                            embeddedArtworkResolver.requiresReconstruction(cached)
+                    if (requiresRepair) artworkRepairKeys += current.uri.toString()
+                    requiresRepair
+                },
+                enrich = { indexSong ->
+                    val embeddedStartedAt = SystemClock.elapsedRealtime()
+                    val embeddedArtwork = embeddedArtworkResolver.resolve(indexSong)
+                    embeddedArtworkExtractionMs +=
+                        SystemClock.elapsedRealtime() - embeddedStartedAt
+                    embeddedArtworkExtractionCount += 1
+                    indexSong.copy(
+                        albumArtUri = selectArtwork(
+                            embedded = embeddedArtwork,
+                            folder = folderArtworkResolver.resolve(indexSong)
+                        ),
+                        artworkEnrichmentVersion = CURRENT_ARTWORK_ENRICHMENT_VERSION
+                    )
                 }
-                val embeddedStartedAt = SystemClock.elapsedRealtime()
-                val embeddedArtwork = embeddedArtworkResolver.resolve(indexSong)
-                embeddedArtworkExtractionMs +=
-                    SystemClock.elapsedRealtime() - embeddedStartedAt
-                embeddedArtworkExtractionCount += 1
-                indexSong.copy(
-                    albumArtUri = selectArtwork(
-                        embedded = embeddedArtwork,
-                        folder = folderArtwork[indexSong.folderPath]
-                    ),
-                    artworkEnrichmentVersion = CURRENT_ARTWORK_ENRICHMENT_VERSION
-                )
-            })
+            )
         }
         debugTiming(
             "classification elapsedMs=${SystemClock.elapsedRealtime() - classificationStartedAt} " +
-                "songs=${indexSongs.size}"
-        )
-        debugTiming(
-            "standalone-artwork elapsedMs=$standaloneArtworkLookupMs " +
-                "folders=${albumArtByFolder?.size ?: 0}"
+                    "songs=${indexSongs.size}"
         )
         debugTiming(
             "embedded-artwork-extraction elapsedMs=$embeddedArtworkExtractionMs " +
-                "files=$embeddedArtworkExtractionCount"
+                    "files=$embeddedArtworkExtractionCount"
         )
         return result.copy(artworkRepairCount = artworkRepairKeys.size)
+    }
+
+    fun applyFolderArtwork(
+        songs: List<Song>,
+        folderArtworkTreeUri: Uri?
+    ): List<Song> {
+        val folderArtworkResolver = FolderArtworkResolver(context, folderArtworkTreeUri)
+        var changed = false
+        val updated = songs.map { song ->
+            if (EmbeddedArtworkContract.isEmbeddedArtworkUri(song.albumArtUri)) {
+                song
+            } else {
+                val folderArtwork = folderArtworkResolver.resolve(song)
+                if (folderArtwork != song.albumArtUri) {
+                    changed = true
+                    song.copy(albumArtUri = folderArtwork)
+                } else {
+                    song
+                }
+            }
+        }
+        return if (changed) updated else songs
     }
 
     fun prepareCachedSongsForPublication(cachedSongs: List<Song>): List<Song> {
@@ -208,100 +223,9 @@ class MusicRepository(private val context: Context) {
         }
         debugTiming(
             "cursor-mapping elapsedMs=${SystemClock.elapsedRealtime() - mappingStartedAt} " +
-                "songs=${songs.size}"
+                    "songs=${songs.size}"
         )
         return if (query == null) null else songs
-    }
-
-    private fun getAlbumArtByFolderOrEmpty(): Map<String, Uri> = try {
-        getAlbumArtByFolder()
-    } catch (_: SecurityException) {
-        emptyMap()
-    }
-
-    private fun getAlbumArtByFolder(): Map<String, Uri> {
-        val albumArtByFolder = mutableMapOf<String, Uri>()
-
-        val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-
-        val projection = MediaStoreProjectionPolicy.imageProjection(Build.VERSION.SDK_INT)
-            .toTypedArray()
-
-        val sortOrder = "${MediaStore.Images.Media.DISPLAY_NAME} ASC"
-
-        val query = context.contentResolver.query(
-            collection,
-            projection,
-            null,
-            null,
-            sortOrder
-        )
-
-        query?.use { cursor ->
-            val idColumn = cursor.getColumnIndexOrThrow(MediaStoreProjectionPolicy.ID)
-            val dataColumn = cursor.getColumnIndexOrThrow(MediaStoreProjectionPolicy.DATA)
-            val displayNameColumn =
-                cursor.getColumnIndexOrThrow(MediaStoreProjectionPolicy.DISPLAY_NAME)
-            val volumeNameColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                cursor.getColumnIndex(MediaStoreProjectionPolicy.VOLUME_NAME)
-            } else {
-                -1
-            }
-            val relativePathColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                cursor.getColumnIndex(MediaStoreProjectionPolicy.RELATIVE_PATH)
-            } else {
-                -1
-            }
-
-            while (cursor.moveToNext()) {
-                val id = cursor.getLong(idColumn)
-                val imagePath = cursor.getString(dataColumn) ?: ""
-                val displayName = cursor.getString(displayNameColumn) ?: ""
-                val volumeName = cursor.stringOrEmpty(volumeNameColumn)
-                val relativePath = cursor.stringOrEmpty(relativePathColumn)
-
-                if (!isLikelyAlbumCover(displayName)) {
-                    continue
-                }
-
-                val folderPath = mediaFolderPath(imagePath, relativePath)
-
-                if (folderPath.isBlank()) {
-                    continue
-                }
-
-                if (albumArtByFolder.containsKey(folderPath)) {
-                    continue
-                }
-
-                val imageCollection = if (
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
-                    volumeName.isNotBlank()
-                ) {
-                    MediaStore.Images.Media.getContentUri(volumeName)
-                } else {
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-                }
-                val imageUri = ContentUris.withAppendedId(imageCollection, id)
-
-                albumArtByFolder[folderPath] = imageUri
-            }
-        }
-
-        return albumArtByFolder
-    }
-
-    private fun isLikelyAlbumCover(fileName: String): Boolean {
-        val normalizedName = fileName.lowercase()
-
-        return normalizedName == "cover.jpg" ||
-                normalizedName == "cover.png" ||
-                normalizedName == "folder.jpg" ||
-                normalizedName == "folder.png" ||
-                normalizedName == "front.jpg" ||
-                normalizedName == "front.png" ||
-                normalizedName == "album.jpg" ||
-                normalizedName == "album.png"
     }
 
     private fun debugTiming(message: String) {

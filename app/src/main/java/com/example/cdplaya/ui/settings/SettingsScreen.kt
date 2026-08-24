@@ -42,6 +42,8 @@ import com.example.cdplaya.player.audio.AudioOffloadPreference
 import com.example.cdplaya.player.replaygain.ReplayGainMode
 import com.example.cdplaya.ui.AppShellIcons
 import com.example.cdplaya.ui.AppShellTypography
+import com.example.cdplaya.ui.LocalFolderArtworkUi
+import com.example.cdplaya.mediaaccess.folderArtworkLocationLabel
 import com.example.cdplaya.ui.home.LocalHomePinUi
 import com.example.cdplaya.ui.state.LibraryRefreshSummary
 import com.example.cdplaya.ui.player.modern.ModernArtworkTransitionStyle
@@ -95,7 +97,9 @@ fun SettingsScreen(
     var isThemeCustomizationDialogVisible by remember { mutableStateOf(false) }
     var isArtworkTransitionDialogVisible by remember { mutableStateOf(false) }
     var isSeekbarStyleDialogVisible by remember { mutableStateOf(false) }
+    var isEmbeddedArtworkOnlyDialogVisible by remember { mutableStateOf(false) }
     val homePinUi = LocalHomePinUi.current
+    val folderArtworkUi = LocalFolderArtworkUi.current
 
     val themeCustomizationOptions = selectedPlayerTheme.customizationOptions()
     val folderSelectionText = when {
@@ -158,6 +162,33 @@ fun SettingsScreen(
                 emphasizeSummary = true,
                 navigationContentDescription = "Open library folders"
             )
+
+            SettingsDivider()
+
+            SettingsRow(
+                title = "Folder artwork",
+                summary = folderArtworkLocationLabel(folderArtworkUi.state.treeUri),
+                icon = AppShellIcons.AlbumStack,
+                onClick = folderArtworkUi.onChooseFolder,
+                emphasizeSummary = folderArtworkUi.state.hasFolderAccess,
+                navigationContentDescription = if (folderArtworkUi.state.hasFolderAccess) {
+                    "Change folder artwork location"
+                } else {
+                    "Choose folder artwork location"
+                }
+            )
+
+            if (folderArtworkUi.state.hasFolderAccess) {
+                SettingsDivider()
+                SettingsRow(
+                    title = "Use embedded artwork only",
+                    summary = "Remove the selected folder and stop reading cover.jpg-style files",
+                    icon = AppShellIcons.AlbumStack,
+                    onClick = {
+                        isEmbeddedArtworkOnlyDialogVisible = true
+                    }
+                )
+            }
 
             SettingsDivider()
 
@@ -507,6 +538,41 @@ fun SettingsScreen(
             confirmButton = {
                 TextButton(onClick = { isAudioOffloadDialogVisible = false }) {
                     Text(text = "Close")
+                }
+            }
+        )
+    }
+
+    if (isEmbeddedArtworkOnlyDialogVisible) {
+        AlertDialog(
+            onDismissRequest = {
+                isEmbeddedArtworkOnlyDialogVisible = false
+            },
+            title = {
+                Text(text = "Use embedded artwork only?")
+            },
+            text = {
+                Text(
+                    text = "CDPlaya will stop using cover.jpg-style files from the selected folder and remove its saved folder access. Embedded artwork inside your music files will still be used. You can choose a folder again later in Settings."
+                )
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        isEmbeddedArtworkOnlyDialogVisible = false
+                    }
+                ) {
+                    Text(text = "Cancel")
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        isEmbeddedArtworkOnlyDialogVisible = false
+                        folderArtworkUi.onClearFolder()
+                    }
+                ) {
+                    Text(text = "Use embedded only")
                 }
             }
         )

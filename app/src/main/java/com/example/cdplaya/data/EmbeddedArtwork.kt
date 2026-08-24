@@ -7,7 +7,7 @@ import org.jaudiotagger.audio.AudioFileIO
 import java.io.File
 import java.security.MessageDigest
 
-internal const val CURRENT_ARTWORK_ENRICHMENT_VERSION = 1
+internal const val CURRENT_ARTWORK_ENRICHMENT_VERSION = 2
 
 internal data class EmbeddedArtworkSource(
     val uri: Uri,
@@ -110,7 +110,7 @@ internal object EmbeddedArtworkContract {
 
     fun isEmbeddedArtworkUri(uri: Uri?): Boolean {
         return uri?.scheme == "content" &&
-            uri.authority?.endsWith(PROVIDER_SUFFIX) == true
+                uri.authority?.endsWith(PROVIDER_SUFFIX) == true
     }
 }
 
@@ -177,7 +177,7 @@ internal class EmbeddedArtworkResolver(private val context: Context) {
         val prefix = "${source.cacheKey}-"
         val file = cacheDirectory.listFiles()?.firstOrNull { candidate ->
             candidate.isFile && candidate.name.startsWith(prefix) &&
-                candidate.extension.lowercase() in ARTWORK_EXTENSIONS
+                    candidate.extension.lowercase() in ARTWORK_EXTENSIONS
         } ?: return null
         val artworkHash = file.name.removePrefix(prefix).substringBeforeLast('.')
         if (!artworkHash.isSha256()) return null
@@ -335,13 +335,13 @@ private fun artworkExtension(mimeType: String?): String = when (mimeType?.lowerc
 
 internal fun embeddedArtworkExtension(bytes: ByteArray): String = when {
     bytes.size >= 8 &&
-        bytes[0].toInt() and 0xff == 0x89 &&
-        bytes[1] == 0x50.toByte() &&
-        bytes[2] == 0x4e.toByte() &&
-        bytes[3] == 0x47.toByte() -> "png"
+            bytes[0].toInt() and 0xff == 0x89 &&
+            bytes[1] == 0x50.toByte() &&
+            bytes[2] == 0x4e.toByte() &&
+            bytes[3] == 0x47.toByte() -> "png"
     bytes.size >= 12 &&
-        bytes.copyOfRange(0, 4).contentEquals("RIFF".toByteArray()) &&
-        bytes.copyOfRange(8, 12).contentEquals("WEBP".toByteArray()) -> "webp"
+            bytes.copyOfRange(0, 4).contentEquals("RIFF".toByteArray()) &&
+            bytes.copyOfRange(8, 12).contentEquals("WEBP".toByteArray()) -> "webp"
     else -> "jpg"
 }
 

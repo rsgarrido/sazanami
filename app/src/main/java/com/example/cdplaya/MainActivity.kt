@@ -5,7 +5,10 @@ import android.graphics.Color as AndroidColor
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
+import android.view.animation.DecelerateInterpolator
 import android.provider.Settings
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -28,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import android.content.pm.PackageManager
 import com.example.cdplaya.mediaaccess.MediaAccessEffect
@@ -35,6 +39,8 @@ import com.example.cdplaya.mediaaccess.MediaAccessPolicy
 import com.example.cdplaya.mediaaccess.MediaAccessState
 import com.example.cdplaya.mediaaccess.MediaPermissionCoordinator
 import com.example.cdplaya.mediaaccess.MediaPermissionRequest
+import com.example.cdplaya.mediaaccess.FolderArtworkAccessState
+import com.example.cdplaya.mediaaccess.FolderArtworkAccessStore
 import com.example.cdplaya.mediaaccess.MediaPermissions
 import com.example.cdplaya.mediaaccess.PermissionAccess
 import com.example.cdplaya.ui.MusicRoute
@@ -55,7 +61,10 @@ class MainActivity : ComponentActivity() {
 
     private val musicViewModel: MusicViewModel by viewModels()
     private val permissionCoordinator = MediaPermissionCoordinator()
+    private var splashExitReason: SplashExitReason? = null
     private var returningFromAppSettings = false
+    private val folderArtworkAccessStore by lazy { FolderArtworkAccessStore(this) }
+    private var folderArtworkAccessState by mutableStateOf(FolderArtworkAccessState())
 
     private val audioPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -68,19 +77,88 @@ class MainActivity : ComponentActivity() {
         evaluateMediaAccess()
     }
 
-    private val artworkPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        updatePermanentDenial(
-            permission = mediaAccessState.requirements.optionalArtworkPermissions.singleOrNull(),
-            granted = granted
-        )
-        permissionCoordinator.finishRequest(MediaPermissionRequest.ARTWORK)
-        evaluateMediaAccess()
+    private val folderArtworkLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri == null) return@registerForActivityResult
+        val persisted = runCatching {
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        }.isSuccess
+        if (!persisted) return@registerForActivityResult
+        folderArtworkAccessStore.setTreeUri(uri)
+        folderArtworkAccessState = folderArtworkAccessStore.readState()
+        musicViewModel.setFolderArtworkTreeUri(uri)
+        musicViewModel.refreshFolderArtwork()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splashStartedAt = SystemClock.elapsedRealtime()
+        val splashScreen = installSplashScreen()
+
         super.onCreate(savedInstanceState)
+
+        // Resolve persisted access and start cache restoration before the first draw. This keeps
+        // the splash handoff tied to the same state MusicRoute needs rather than an arbitrary
+        // short delay.
+        restoreFolderArtworkState()
+        musicViewModel.setFolderArtworkTreeUri(folderArtworkAccessState.treeUri)
+        evaluateMediaAccess()
+
+        // Normal cold starts stay on the system splash only until the cached library and the
+        // appearance/home preferences required by MusicRoute are ready. First-run onboarding is
+        // never hidden because audio access is not granted yet. A generous failsafe still lets
+        // the real UI surface an unexpected startup error instead of trapping the user here.
+        splashScreen.setKeepOnScreenCondition {
+            val libraryState = musicViewModel.libraryUiState.value
+            val stableFirstFrameReady =
+                libraryState.hasPublishedInitialLibraryState &&
+                        musicViewModel.playerAppearanceUiState.value.isLoaded &&
+                        musicViewModel.libraryAppearanceUiState.value.isLoaded &&
+                        musicViewModel.homeCustomizationUiState.value.isLoaded
+            val startupCanStillProgress = libraryState.errorMessage == null
+            val elapsedMs = SystemClock.elapsedRealtime() - splashStartedAt
+
+            val exitReason = when {
+                !mediaAccessState.hasAudioAccess -> SplashExitReason.NO_AUDIO_ACCESS
+                stableFirstFrameReady -> SplashExitReason.READY
+                !startupCanStillProgress -> SplashExitReason.ERROR
+                elapsedMs >= SPLASH_READY_HOLD_LIMIT_MILLIS -> SplashExitReason.TIMEOUT
+                else -> null
+            }
+            if (exitReason != null) {
+                splashExitReason = exitReason
+            }
+            exitReason == null
+        }
+        splashScreen.setOnExitAnimationListener { provider ->
+            val libraryState = musicViewModel.libraryUiState.value
+            debugStartupTiming(
+                "splash-exit reason=${splashExitReason ?: SplashExitReason.UNKNOWN} " +
+                        "elapsedMs=${SystemClock.elapsedRealtime() - splashStartedAt} " +
+                        "songs=${libraryState.songs.size} " +
+                        "libraryPublished=${libraryState.hasPublishedInitialLibraryState} " +
+                        "playerPrefs=${musicViewModel.playerAppearanceUiState.value.isLoaded} " +
+                        "libraryPrefs=${musicViewModel.libraryAppearanceUiState.value.isLoaded} " +
+                        "homePrefs=${musicViewModel.homeCustomizationUiState.value.isLoaded}"
+            )
+            val interpolator = DecelerateInterpolator()
+            provider.iconView.animate()
+                .scaleX(1.06f)
+                .scaleY(1.06f)
+                .setDuration(SPLASH_EXIT_DURATION_MILLIS)
+                .setInterpolator(interpolator)
+                .start()
+            provider.view.animate()
+                .alpha(0f)
+                .setDuration(SPLASH_EXIT_DURATION_MILLIS)
+                .setInterpolator(interpolator)
+                .withEndAction { provider.remove() }
+                .start()
+        }
+
         val transparentSystemBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
         enableEdgeToEdge(
             statusBarStyle = transparentSystemBarStyle,
@@ -90,7 +168,6 @@ class MainActivity : ComponentActivity() {
             window.isNavigationBarContrastEnforced = false
         }
 
-        evaluateMediaAccess()
         lifecycleScope.launch {
             musicViewModel.mediaAccessFailures.collect {
                 evaluateMediaAccess()
@@ -113,8 +190,12 @@ class MainActivity : ComponentActivity() {
                             musicViewModel = musicViewModel,
                             mediaAccessState = mediaAccessState,
                             onRequestAudioAccess = ::requestAudioAccess,
-                            onRequestArtworkAccess = ::requestArtworkAccess,
+                            onRequestArtworkAccess = {},
                             onOpenAppSettings = ::openAppSettings,
+                            folderArtworkAccessState = folderArtworkAccessState,
+                            onChooseFolderArtwork = ::chooseFolderArtwork,
+                            onSkipFolderArtwork = ::skipFolderArtwork,
+                            onClearFolderArtwork = ::clearFolderArtwork,
                             snackbarHostState = snackbarHostState,
                             modifier = Modifier.fillMaxSize()
                         )
@@ -156,32 +237,15 @@ class MainActivity : ComponentActivity() {
         audioPermissionLauncher.launch(permission)
     }
 
-    private fun requestArtworkAccess() {
-        evaluateMediaAccess()
-        if (!mediaAccessState.hasAudioAccess || mediaAccessState.hasArtworkAccess) return
-        if (
-            mediaAccessState.artworkAccess != PermissionAccess.REQUESTABLE &&
-            mediaAccessState.artworkAccess != PermissionAccess.DENIED
-        ) {
-            return
-        }
-        val permission = mediaAccessState.requirements.optionalArtworkPermissions.singleOrNull()
-            ?: return
-        if (permission in mediaAccessState.requirements.requiredAudioPermissions) return
-        if (!permissionCoordinator.beginRequest(MediaPermissionRequest.ARTWORK)) return
-        markPermissionRequested(permission)
-        artworkPermissionLauncher.launch(permission)
-    }
 
     private fun evaluateMediaAccess() {
         val knownPermissions = setOf(
             MediaPermissions.READ_EXTERNAL_STORAGE,
-            MediaPermissions.READ_MEDIA_AUDIO,
-            MediaPermissions.READ_MEDIA_IMAGES
+            MediaPermissions.READ_MEDIA_AUDIO
         )
         val granted = knownPermissions.filterTo(mutableSetOf()) { permission ->
             ContextCompat.checkSelfPermission(this, permission) ==
-                PackageManager.PERMISSION_GRANTED
+                    PackageManager.PERMISSION_GRANTED
         }
         val requested = knownPermissions.filterTo(mutableSetOf(), ::wasPermissionRequested)
         val withRationale = knownPermissions.filterTo(mutableSetOf()) { permission ->
@@ -202,9 +266,47 @@ class MainActivity : ComponentActivity() {
                 MediaAccessEffect.LOAD_LIBRARY -> musicViewModel.onMediaAccessGranted()
                 MediaAccessEffect.REVOKE_LIBRARY_ACCESS ->
                     musicViewModel.onMediaAccessRevoked()
-                MediaAccessEffect.REFRESH_ARTWORK -> musicViewModel.refreshArtwork()
             }
         }
+    }
+
+    private fun restoreFolderArtworkState() {
+        var state = folderArtworkAccessStore.readState()
+        val savedUri = state.treeUri
+        if (savedUri != null) {
+            val stillGranted = contentResolver.persistedUriPermissions.any { permission ->
+                permission.uri == savedUri && permission.isReadPermission
+            }
+            if (!stillGranted) {
+                folderArtworkAccessStore.clearTreeUri()
+                state = folderArtworkAccessStore.readState()
+            }
+        }
+        folderArtworkAccessState = state
+    }
+
+    private fun chooseFolderArtwork() {
+        folderArtworkLauncher.launch(folderArtworkAccessState.treeUri)
+    }
+
+    private fun skipFolderArtwork() {
+        folderArtworkAccessStore.skipOnboarding()
+        folderArtworkAccessState = folderArtworkAccessStore.readState()
+    }
+
+    private fun clearFolderArtwork() {
+        folderArtworkAccessState.treeUri?.let { uri ->
+            runCatching {
+                contentResolver.releasePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+        }
+        folderArtworkAccessStore.clearTreeUri()
+        folderArtworkAccessState = folderArtworkAccessStore.readState()
+        musicViewModel.setFolderArtworkTreeUri(null)
+        musicViewModel.refreshFolderArtwork()
     }
 
     private fun markPermissionRequested(permission: String) {
@@ -231,8 +333,7 @@ class MainActivity : ComponentActivity() {
         val editor = permissionPreferences.edit()
         setOf(
             MediaPermissions.READ_EXTERNAL_STORAGE,
-            MediaPermissions.READ_MEDIA_AUDIO,
-            MediaPermissions.READ_MEDIA_IMAGES
+            MediaPermissions.READ_MEDIA_AUDIO
         ).forEach { permission ->
             editor.putBoolean(permanentDenialKey(permission), false)
         }
@@ -258,5 +359,25 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         musicViewModel.savePlayerState()
+    }
+
+    private fun debugStartupTiming(message: String) {
+        if (BuildConfig.DEBUG) {
+            Log.d(STARTUP_TIMING_TAG, message)
+        }
+    }
+
+    private enum class SplashExitReason {
+        READY,
+        ERROR,
+        TIMEOUT,
+        NO_AUDIO_ACCESS,
+        UNKNOWN
+    }
+
+    private companion object {
+        const val STARTUP_TIMING_TAG = "StartupTiming"
+        const val SPLASH_READY_HOLD_LIMIT_MILLIS = 3_000L
+        const val SPLASH_EXIT_DURATION_MILLIS = 180L
     }
 }

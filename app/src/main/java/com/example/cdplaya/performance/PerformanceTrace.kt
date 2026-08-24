@@ -5,6 +5,7 @@ import androidx.tracing.trace
 internal object PerformanceTraceNames {
     const val PREFERENCES_READY = "CDP.PreferencesReady"
     const val CACHE_FIRST_PUBLICATION = "CDP.CacheFirstPublication"
+    const val INITIAL_INDEX_PUBLICATION = "CDP.InitialIndexPublication"
     const val MEDIASTORE_INDEX_QUERY = "CDP.MediaStoreIndexQuery"
     const val LIBRARY_CLASSIFICATION = "CDP.LibraryClassification"
     const val LIBRARY_ENRICHMENT = "CDP.LibraryEnrichment"

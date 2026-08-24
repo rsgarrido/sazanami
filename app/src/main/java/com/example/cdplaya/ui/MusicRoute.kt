@@ -20,6 +20,7 @@ import com.example.cdplaya.ui.settings.ListeningHistoryReconciliationUiActions
 import com.example.cdplaya.ui.equalizer.EqualizerUiActions
 import com.example.cdplaya.ui.equalizer.rememberEqualizerProfilePlatformActions
 import com.example.cdplaya.mediaaccess.MediaAccessState
+import com.example.cdplaya.mediaaccess.FolderArtworkAccessState
 import com.example.cdplaya.data.home.HomePin
 import com.example.cdplaya.ui.home.HomePinReplacementDialog
 import com.example.cdplaya.ui.home.HomePinUiEnvironment
@@ -36,6 +37,10 @@ internal fun MusicRoute(
     onRequestAudioAccess: () -> Unit,
     onRequestArtworkAccess: () -> Unit,
     onOpenAppSettings: () -> Unit,
+    folderArtworkAccessState: FolderArtworkAccessState,
+    onChooseFolderArtwork: () -> Unit,
+    onSkipFolderArtwork: () -> Unit,
+    onClearFolderArtwork: () -> Unit,
     snackbarHostState: SnackbarHostState,
     modifier: Modifier = Modifier
 ) {
@@ -68,6 +73,23 @@ internal fun MusicRoute(
     if (!playerAppearanceUiState.isLoaded || !libraryAppearanceUiState.isLoaded ||
         !homeCustomizationUiState.isLoaded
     ) return
+
+    val startupBlocked = !mediaAccessState.hasAudioAccess ||
+            !libraryUiState.hasPublishedInitialLibraryState ||
+            !folderArtworkAccessState.onboardingComplete
+    if (startupBlocked) {
+        LibraryStartupScreen(
+            mediaAccessState = mediaAccessState,
+            initialLibraryReady = libraryUiState.hasPublishedInitialLibraryState,
+            folderArtworkOnboardingComplete = folderArtworkAccessState.onboardingComplete,
+            onRequestAudioAccess = onRequestAudioAccess,
+            onOpenAppSettings = onOpenAppSettings,
+            onChooseFolderArtwork = onChooseFolderArtwork,
+            onSkipFolderArtwork = onSkipFolderArtwork,
+            modifier = modifier
+        )
+        return
+    }
 
     var pendingHomePin by remember { mutableStateOf<HomePin?>(null) }
     val resolvedHomePins = remember(homeCustomizationUiState.pins, libraryUiState.songs) {
@@ -130,7 +152,12 @@ internal fun MusicRoute(
             onClear = musicViewModel::clearSongRating,
             onFilterSelected = musicViewModel::selectSongRatingFilter
         ),
-        LocalHomePinUi provides homePinUiEnvironment
+        LocalHomePinUi provides homePinUiEnvironment,
+        LocalFolderArtworkUi provides FolderArtworkUiEnvironment(
+            state = folderArtworkAccessState,
+            onChooseFolder = onChooseFolderArtwork,
+            onClearFolder = onClearFolderArtwork
+        )
     ) {
         MusicScreen(
             songs = libraryUiState.songs,
