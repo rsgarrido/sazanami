@@ -155,6 +155,8 @@ class LibraryController(
     private var playlists: List<Playlist>
         get() = _uiState.value.playlists
         set(value) = updateState { copy(playlists = value.toList()) }
+    private val selectedPlaylistId: Long?
+        get() = _uiState.value.selectedPlaylistId
     private var selectedPlaylistName: String
         get() = _uiState.value.selectedPlaylistName
         set(value) = updateState { copy(selectedPlaylistName = value) }
@@ -388,6 +390,7 @@ class LibraryController(
         originalSong: Song,
         editedTags: EditableSongTags
     ) {
+        val activePlaylistId = selectedPlaylistId
         launchProtectedRefresh { scanToken ->
             val updatedUserData = withContext(Dispatchers.IO) {
                 favoritesRepository.updateSongReferenceAfterTagEdit(
@@ -408,9 +411,7 @@ class LibraryController(
             val updatedFavoriteMembershipKeys = updatedUserData.first
             val updatedPlaylists = updatedUserData.second
 
-            val selectedPlaylistId = selectedPlaylistSongs.firstOrNull()?.playlistId
-
-            val updatedSelectedPlaylistSongs = selectedPlaylistId?.let { playlistId ->
+            val updatedSelectedPlaylistSongs = activePlaylistId?.let { playlistId ->
                 getResolvedPlaylistSongs(playlistId)
             }
 
@@ -426,7 +427,7 @@ class LibraryController(
             favoriteMembershipKeys = updatedFavoriteMembershipKeys
             playlists = updatedPlaylists
 
-            if (updatedSelectedPlaylistSongs != null) {
+            if (updatedSelectedPlaylistSongs != null && selectedPlaylistId == activePlaylistId) {
                 selectedPlaylistSongs = updatedSelectedPlaylistSongs
             }
             publishLibraryData(libraryData, reconcilePlayback = true)
@@ -477,12 +478,7 @@ class LibraryController(
             if (wasRenamed) {
                 loadPlaylists()
 
-                val renamedPlaylistWasSelected =
-                    selectedPlaylistSongs.any { playlistSong ->
-                        playlistSong.playlistId == playlist.playlistId
-                    }
-
-                if (renamedPlaylistWasSelected) {
+                if (selectedPlaylistId == playlist.playlistId) {
                     selectedPlaylistName = trimmedName
                 }
             }
@@ -497,15 +493,8 @@ class LibraryController(
             }
             loadPlaylists()
 
-            val deletedPlaylistWasSelected =
-                selectedPlaylistName == playlist.name ||
-                        selectedPlaylistSongs.any { playlistSong ->
-                            playlistSong.playlistId == playlist.playlistId
-                        }
-
-            if (deletedPlaylistWasSelected) {
-                selectedPlaylistName = "Playlist"
-                selectedPlaylistSongs = emptyList()
+            if (selectedPlaylistId == playlist.playlistId) {
+                clearSelectedPlaylist()
             }
         }
     }
@@ -561,9 +550,39 @@ class LibraryController(
     }
 
     fun loadSelectedPlaylist(playlist: Playlist) {
+        updateState {
+            copy(
+                selectedPlaylistId = playlist.playlistId,
+                selectedPlaylistName = playlist.name,
+                selectedPlaylistSongs = emptyList(),
+                isSelectedPlaylistLoading = true
+            )
+        }
         coroutineScope.launch {
-            selectedPlaylistName = playlist.name
-            selectedPlaylistSongs = getResolvedPlaylistSongs(playlist.playlistId)
+            val result = runCatching {
+                getResolvedPlaylistSongs(playlist.playlistId)
+            }
+            _uiState.update { current ->
+                if (current.selectedPlaylistId != playlist.playlistId) {
+                    current
+                } else {
+                    current.copy(
+                        selectedPlaylistSongs = result.getOrDefault(emptyList()).toList(),
+                        isSelectedPlaylistLoading = false
+                    )
+                }
+            }
+        }
+    }
+
+    fun clearSelectedPlaylist() {
+        updateState {
+            copy(
+                selectedPlaylistId = null,
+                selectedPlaylistName = LibraryUiState.DEFAULT_PLAYLIST_NAME,
+                selectedPlaylistSongs = emptyList(),
+                isSelectedPlaylistLoading = false
+            )
         }
     }
 
@@ -669,13 +688,11 @@ class LibraryController(
 
             loadPlaylists()
 
-            val addedToSelectedPlaylist =
-                selectedPlaylistSongs.any { playlistSong ->
-                    playlistSong.playlistId == playlist.playlistId
+            if (selectedPlaylistId == playlist.playlistId) {
+                val updatedRows = getResolvedPlaylistSongs(playlist.playlistId)
+                if (selectedPlaylistId == playlist.playlistId) {
+                    selectedPlaylistSongs = updatedRows
                 }
-
-            if (addedToSelectedPlaylist) {
-                selectedPlaylistSongs = getResolvedPlaylistSongs(playlist.playlistId)
             }
         }
     }
@@ -688,7 +705,10 @@ class LibraryController(
             )
 
             loadPlaylists()
-            selectedPlaylistSongs = getResolvedPlaylistSongs(playlistSong.playlistId)
+            val updatedRows = getResolvedPlaylistSongs(playlistSong.playlistId)
+            if (selectedPlaylistId == playlistSong.playlistId) {
+                selectedPlaylistSongs = updatedRows
+            }
         }
     }
 
@@ -700,9 +720,10 @@ class LibraryController(
             )
 
             loadPlaylists()
-            selectedPlaylistSongs = getResolvedPlaylistSongs(
-                playlistSong.playlistId
-            )
+            val updatedRows = getResolvedPlaylistSongs(playlistSong.playlistId)
+            if (selectedPlaylistId == playlistSong.playlistId) {
+                selectedPlaylistSongs = updatedRows
+            }
         }
     }
 
@@ -714,9 +735,10 @@ class LibraryController(
             )
 
             loadPlaylists()
-            selectedPlaylistSongs = getResolvedPlaylistSongs(
-                playlistSong.playlistId
-            )
+            val updatedRows = getResolvedPlaylistSongs(playlistSong.playlistId)
+            if (selectedPlaylistId == playlistSong.playlistId) {
+                selectedPlaylistSongs = updatedRows
+            }
         }
     }
 
@@ -749,8 +771,7 @@ class LibraryController(
         folderSelection = resolvedFolderSelection
         favoriteMembershipKeys = restoredData.favoriteMembershipKeys
         playlists = restoredData.playlists
-        selectedPlaylistName = "Playlist"
-        selectedPlaylistSongs = emptyList()
+        clearSelectedPlaylist()
         if (folderSelectionChanged) {
             reloadSongsAfterFolderChange()
         } else {
@@ -896,8 +917,10 @@ class LibraryController(
                 excludedFolders = folderSelection.excludedFolders,
                 favoriteMembershipKeys = current.favoriteMembershipKeys,
                 playlists = current.playlists,
+                selectedPlaylistId = current.selectedPlaylistId,
                 selectedPlaylistName = current.selectedPlaylistName,
                 selectedPlaylistSongs = current.selectedPlaylistSongs,
+                isSelectedPlaylistLoading = current.isSelectedPlaylistLoading,
                 recentlyPlayedSongs = current.recentlyPlayedSongs,
                 mostPlayedSongs = current.mostPlayedSongs,
                 recentlyAddedSongs = sortSongsByDateAddedDescending(publishedSongs),
@@ -1061,7 +1084,7 @@ class LibraryController(
     ) {
         val generation = reconciliationCoordinator.nextGeneration()
         reconciliationJob?.cancel()
-        val selectedPlaylistId = selectedPlaylistSongs.firstOrNull()?.playlistId
+        val activePlaylistId = selectedPlaylistId
         val visibleMembershipKeys = currentSongs.mapTo(mutableSetOf()) { it.membershipKey() }
         reconciliationJob = coroutineScope.launch {
             val startedAt = SystemClock.elapsedRealtime()
@@ -1084,7 +1107,7 @@ class LibraryController(
                         playlistsRepository.applyReferenceBackfill(plan.playlists)
                         listeningHistoryRepository.applyReferenceBackfill(plan.history)
                     }
-                    val selectedPlaylistRows = selectedPlaylistId?.let {
+                    val selectedPlaylistRows = activePlaylistId?.let {
                         playlistsRepository.getPlaylistSongs(it)
                     }
                     selectedPlaylistRows
@@ -1120,8 +1143,12 @@ class LibraryController(
                     unresolvedFavoriteCount = reconciled.unresolvedFavorites,
                     unresolvedPlaylistRowCount = reconciled.unresolvedPlaylistRows,
                     unresolvedListeningHistoryCount = reconciled.unresolvedHistoryRows,
-                    selectedPlaylistSongs = reconciled.selectedPlaylistSongs?.toList()
-                        ?: current.selectedPlaylistSongs
+                    selectedPlaylistSongs = if (current.selectedPlaylistId == activePlaylistId) {
+                        reconciled.selectedPlaylistSongs?.toList()
+                            ?: current.selectedPlaylistSongs
+                    } else {
+                        current.selectedPlaylistSongs
+                    }
                 )
             }
             if (applicationContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {

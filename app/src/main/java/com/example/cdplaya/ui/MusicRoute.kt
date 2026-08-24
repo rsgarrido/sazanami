@@ -199,8 +199,10 @@ internal fun MusicRoute(
             unresolvedPlaylistRowCount = libraryUiState.unresolvedPlaylistRowCount,
             unresolvedListeningHistoryCount = libraryUiState.unresolvedListeningHistoryCount,
             playlists = libraryUiState.playlists,
+            selectedPlaylistStateId = libraryUiState.selectedPlaylistId,
             selectedPlaylistName = libraryUiState.selectedPlaylistName,
             selectedPlaylistSongs = libraryUiState.selectedPlaylistSongs,
+            isSelectedPlaylistLoading = libraryUiState.isSelectedPlaylistLoading,
             onSongClick = { song, playbackContext ->
                 musicViewModel.playSelectedSong(
                     song = song,
@@ -327,6 +329,7 @@ internal fun MusicRoute(
             onPlaylistSelected = { playlist ->
                 musicViewModel.loadSelectedPlaylist(playlist)
             },
+            onPlaylistCleared = musicViewModel::clearSelectedPlaylist,
             onAddSongToPlaylistClick = { playlist, song ->
                 musicViewModel.addSongToPlaylist(
                     playlist = playlist,

@@ -40,14 +40,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.cdplaya.data.Playlist
 import com.example.cdplaya.data.PlaylistArtworkMode
-import com.example.cdplaya.data.PlaylistArtworkStore
 import com.example.cdplaya.ui.AppShellAccent
 import com.example.cdplaya.ui.AppShellIcons
 import com.example.cdplaya.ui.AppShellTypography
@@ -82,15 +80,12 @@ fun PlaylistListScreen(
     val sortedPlaylists = remember(playlists, sortOption) {
         playlists.sortedWith(sortOption.comparator)
     }
-    val context = LocalContext.current
 
     fun showActions(playlist: Playlist) {
-        val sheetArtwork = PlaylistArtworkStore.fileFor(context, playlist.artworkReference)
-            ?: playlist.automaticArtworkSongs.firstOrNull()?.albumArtUri
         actionSheetTarget = LibraryItemActionSheetTarget(
             title = playlist.name,
             subtitle = playlistMetadataText(playlist),
-            artworkUri = sheetArtwork,
+            artworkUri = null,
             artworkDescription = "Artwork for ${playlist.name}",
             actions = buildList {
                 add(LibraryItemAction("Change artwork", Icons.Filled.Image) {
@@ -110,6 +105,13 @@ fun PlaylistListScreen(
                 add(LibraryItemAction("Delete", Icons.Filled.Delete, isDestructive = true) {
                     playlistPendingDelete = playlist
                 })
+            },
+            artworkContent = {
+                PlaylistArtwork(
+                    playlist = playlist,
+                    contentDescription = "Artwork for ${playlist.name}",
+                    modifier = Modifier.fillMaxSize()
+                )
             }
         )
     }

@@ -848,6 +848,10 @@ class MusicViewModel(
         libraryController.loadSelectedPlaylist(playlist)
     }
 
+    fun clearSelectedPlaylist() {
+        libraryController.clearSelectedPlaylist()
+    }
+
     fun preparePlaylistExport(
         playlist: Playlist,
         onPrepared: (Result<PreparedPlaylistExport>) -> Unit

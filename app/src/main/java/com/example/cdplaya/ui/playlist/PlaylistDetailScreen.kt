@@ -1,39 +1,39 @@
 package com.example.cdplaya.ui.playlist
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -43,6 +43,11 @@ import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.ui.AppShellAccent
 import com.example.cdplaya.ui.AppShellTypography
+import com.example.cdplaya.ui.library.LibraryDetailAction
+import com.example.cdplaya.ui.library.LibraryDetailTopBar
+import com.example.cdplaya.ui.library.LibraryItemAction
+import com.example.cdplaya.ui.library.LibraryItemActionSheet
+import com.example.cdplaya.ui.library.LibraryItemActionSheetTarget
 
 @Composable
 fun PlaylistDetailScreen(
@@ -50,6 +55,7 @@ fun PlaylistDetailScreen(
     allPlaylists: List<Playlist>,
     playlistSongs: List<Song>,
     playlistSongRows: List<PlaylistSong>,
+    isLoading: Boolean,
     currentSongId: Long?,
     recentlyAddedSongIds: Set<Long>,
     favoriteMembershipKeys: Set<String>,
@@ -72,169 +78,104 @@ fun PlaylistDetailScreen(
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
-    var overflowExpanded by remember { mutableStateOf(false) }
+    var actionSheetTarget by remember { mutableStateOf<LibraryItemActionSheetTarget?>(null) }
     var renameDialogVisible by remember { mutableStateOf(false) }
     var deleteDialogVisible by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+    val showCompactTitle by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 0 }
+    }
 
-    Column(modifier = modifier) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onBackClick) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
-            }
-            Text(
-                text = playlist.name,
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            androidx.compose.foundation.layout.Box {
-                IconButton(onClick = { overflowExpanded = true }) {
-                    Icon(
-                        Icons.Filled.MoreVert,
-                        contentDescription = "More options for ${playlist.name}"
-                    )
+    fun showPlaylistActions() {
+        actionSheetTarget = LibraryItemActionSheetTarget(
+            title = playlist.name,
+            subtitle = playlistMetadataText(playlist),
+            artworkUri = null,
+            artworkDescription = "Artwork for ${playlist.name}",
+            actions = buildList {
+                add(LibraryItemAction("Change artwork", Icons.Filled.Image) {
+                    onChangeArtworkClick(playlist)
+                })
+                if (playlist.artworkMode == PlaylistArtworkMode.CUSTOM) {
+                    add(LibraryItemAction("Reset to automatic artwork", Icons.Filled.Restore) {
+                        onResetArtworkClick(playlist)
+                    })
                 }
-                DropdownMenu(overflowExpanded, { overflowExpanded = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Rename") },
-                        leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
-                        onClick = {
-                            overflowExpanded = false
-                            renameDialogVisible = true
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Change artwork") },
-                        leadingIcon = { Icon(Icons.Filled.Image, contentDescription = null) },
-                        onClick = {
-                            overflowExpanded = false
-                            onChangeArtworkClick(playlist)
-                        }
-                    )
-                    if (playlist.artworkMode == PlaylistArtworkMode.CUSTOM) {
-                        DropdownMenuItem(
-                            text = { Text("Reset to automatic artwork") },
-                            leadingIcon = { Icon(Icons.Filled.Restore, contentDescription = null) },
-                            onClick = {
-                                overflowExpanded = false
-                                onResetArtworkClick(playlist)
-                            }
-                        )
-                    }
-                    DropdownMenuItem(
-                        text = { Text("Export as M3U8") },
-                        leadingIcon = { Icon(Icons.Filled.Share, contentDescription = null) },
-                        onClick = {
-                            overflowExpanded = false
-                            onExportPlaylistClick(playlist)
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Delete") },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Filled.Delete,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        },
-                        onClick = {
-                            overflowExpanded = false
-                            deleteDialogVisible = true
-                        }
-                    )
-                }
-            }
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            PlaylistArtwork(
-                playlist = playlist,
-                contentDescription = "Artwork for ${playlist.name}",
-                modifier = Modifier.size(132.dp)
-            )
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Text(
-                    text = playlist.name,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = playlistMetadataText(playlist),
-                    style = AppShellTypography.SongSubtitle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "Manual playlist",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = AppShellAccent
+                add(LibraryItemAction("Rename", Icons.Filled.Edit) {
+                    renameDialogVisible = true
+                })
+                add(LibraryItemAction("Export as M3U8", Icons.Filled.Share) {
+                    onExportPlaylistClick(playlist)
+                })
+                add(LibraryItemAction("Delete", Icons.Filled.Delete, isDestructive = true) {
+                    deleteDialogVisible = true
+                })
+            },
+            artworkContent = {
+                PlaylistArtwork(
+                    playlist = playlist,
+                    contentDescription = "Artwork for ${playlist.name}",
+                    modifier = Modifier.fillMaxSize()
                 )
             }
-        }
+        )
+    }
 
-        Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-            Button(
-                onClick = onPlayAllClick,
-                enabled = playlistSongs.isNotEmpty(),
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Filled.PlayArrow, contentDescription = null)
-                Text(text = "Play")
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            OutlinedButton(
-                onClick = onShuffleAllClick,
-                enabled = playlistSongs.isNotEmpty(),
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Filled.Shuffle, contentDescription = null)
-                Text(text = "Shuffle")
-            }
-        }
+    Column(modifier = modifier.fillMaxSize()) {
+        LibraryDetailTopBar(
+            title = playlist.name,
+            showTitle = showCompactTitle,
+            containerColor = if (showCompactTitle) {
+                MaterialTheme.colorScheme.surface.copy(alpha = 0.97f)
+            } else {
+                Color.Transparent
+            },
+            onBackClick = onBackClick,
+            onMoreClick = ::showPlaylistActions
+        )
 
-        when {
-            playlist.songCount == 0 -> Text(
-                text = "This playlist is empty.",
-                modifier = Modifier.padding(16.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            playlistSongs.isEmpty() -> Text(
-                text = "The songs in this playlist are not currently available on this device.",
-                modifier = Modifier.padding(16.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            else -> PlaylistSongList(
-                playlistSongs = playlistSongs,
-                playlistSongRows = playlistSongRows,
-                currentSongId = currentSongId,
-                recentlyAddedSongIds = recentlyAddedSongIds,
-                favoriteMembershipKeys = favoriteMembershipKeys,
-                onSongClick = onSongClick,
-                onPlayNextClick = onPlayNextClick,
-                onAddToQueueClick = onAddToQueueClick,
-                onToggleFavoriteClick = onToggleFavoriteClick,
-                onRemovePlaylistSongClick = onRemovePlaylistSongClick,
-                onMovePlaylistSongUpClick = onMovePlaylistSongUpClick,
-                onMovePlaylistSongDownClick = onMovePlaylistSongDownClick,
-                onEditSongTagsClick = onEditSongTagsClick,
-                bottomContentPadding = bottomContentPadding,
-                modifier = Modifier.weight(1f)
-            )
-        }
+        PlaylistSongList(
+            playlistSongs = playlistSongs,
+            playlistSongRows = playlistSongRows,
+            currentSongId = currentSongId,
+            recentlyAddedSongIds = recentlyAddedSongIds,
+            favoriteMembershipKeys = favoriteMembershipKeys,
+            onSongClick = onSongClick,
+            onPlayNextClick = onPlayNextClick,
+            onAddToQueueClick = onAddToQueueClick,
+            onToggleFavoriteClick = onToggleFavoriteClick,
+            onRemovePlaylistSongClick = onRemovePlaylistSongClick,
+            onMovePlaylistSongUpClick = onMovePlaylistSongUpClick,
+            onMovePlaylistSongDownClick = onMovePlaylistSongDownClick,
+            onEditSongTagsClick = onEditSongTagsClick,
+            listState = listState,
+            headerContent = {
+                PlaylistDetailHero(
+                    playlist = playlist,
+                    hasSongs = playlistSongs.isNotEmpty(),
+                    onPlayClick = onPlayAllClick,
+                    onShuffleClick = onShuffleAllClick
+                )
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                )
+            },
+            emptyContent = {
+                PlaylistDetailEmptyState(
+                    playlist = playlist,
+                    isLoading = isLoading
+                )
+            },
+            bottomContentPadding = bottomContentPadding,
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+
+    actionSheetTarget?.let { target ->
+        LibraryItemActionSheet(
+            target = target,
+            onDismissRequest = { actionSheetTarget = null }
+        )
     }
 
     if (renameDialogVisible) {
@@ -262,5 +203,110 @@ fun PlaylistDetailScreen(
                 onBackClick()
             }
         )
+    }
+}
+
+@Composable
+private fun PlaylistDetailHero(
+    playlist: Playlist,
+    hasSongs: Boolean,
+    onPlayClick: () -> Unit,
+    onShuffleClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(9.dp)
+    ) {
+        PlaylistArtwork(
+            playlist = playlist,
+            contentDescription = "Artwork for ${playlist.name}",
+            modifier = Modifier
+                .fillMaxWidth(0.72f)
+                .widthIn(max = 320.dp)
+                .aspectRatio(1f)
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 5.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Text(
+                text = playlist.name,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = playlistMetadataText(playlist),
+                style = AppShellTypography.SongSubtitle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "Manual playlist",
+                style = MaterialTheme.typography.labelMedium,
+                color = AppShellAccent
+            )
+        }
+
+        Row(
+            modifier = Modifier.padding(top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(22.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            LibraryDetailAction(
+                icon = Icons.Filled.PlayArrow,
+                label = "Play",
+                enabled = hasSongs,
+                onClick = onPlayClick
+            )
+            LibraryDetailAction(
+                icon = Icons.Filled.Shuffle,
+                label = "Shuffle",
+                enabled = hasSongs,
+                onClick = onShuffleClick
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlaylistDetailEmptyState(
+    playlist: Playlist,
+    isLoading: Boolean
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        if (isLoading) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(22.dp))
+                Text(
+                    text = "Loading playlist\u2026",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            Text(
+                text = if (playlist.songCount == 0) {
+                    "This playlist is empty."
+                } else {
+                    "The songs in this playlist are not currently available on this device."
+                },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+        }
     }
 }

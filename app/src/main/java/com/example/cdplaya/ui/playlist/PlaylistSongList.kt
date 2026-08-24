@@ -3,8 +3,10 @@ package com.example.cdplaya.ui.playlist
 import android.R
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
@@ -61,6 +63,9 @@ fun PlaylistSongList(
     onMovePlaylistSongUpClick: (PlaylistSong) -> Unit,
     onMovePlaylistSongDownClick: (PlaylistSong) -> Unit,
     onEditSongTagsClick: (Song) -> Unit,
+    listState: LazyListState? = null,
+    headerContent: (@Composable () -> Unit)? = null,
+    emptyContent: (@Composable () -> Unit)? = null,
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
@@ -70,11 +75,27 @@ fun PlaylistSongList(
     val ratingUi = LocalSongRatingUi.current
     val homePinUi = LocalHomePinUi.current
     val rateSongLabel = stringResource(AppR.string.rate_song)
+    val rememberedListState = rememberLazyListState()
 
     LazyColumn(
+        state = listState ?: rememberedListState,
         modifier = modifier,
         contentPadding = PaddingValues(bottom = bottomContentPadding)
     ) {
+        headerContent?.let { content ->
+            item(key = "playlist-detail-header") {
+                content()
+            }
+        }
+
+        if (playlistSongs.isEmpty()) {
+            emptyContent?.let { content ->
+                item(key = "playlist-detail-empty") {
+                    content()
+                }
+            }
+        }
+
         itemsIndexed(
             items = playlistSongs,
             key = { index, song ->

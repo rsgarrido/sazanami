@@ -6,6 +6,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -22,8 +23,10 @@ fun PlaylistsTabContent(
     songs: List<Song>,
     playlists: List<Playlist>,
     selectedPlaylistId: Long?,
+    selectedPlaylistStateId: Long?,
     selectedPlaylistName: String,
     selectedPlaylistSongs: List<PlaylistSong>,
+    isSelectedPlaylistLoading: Boolean,
     currentSong: Song?,
     recentlyAddedSongIds: Set<Long>,
     favoriteMembershipKeys: Set<String>,
@@ -82,15 +85,21 @@ fun PlaylistsTabContent(
             modifier = modifier
         )
     } else {
-        val availablePlaylistSongRows = selectedPlaylistSongs.filter { it.resolvedSong != null }
+        val stateMatchesSelection = selectedPlaylistStateId == selectedPlaylistId
+        val scopedPlaylistSongRows = if (stateMatchesSelection) {
+            selectedPlaylistSongs
+        } else {
+            emptyList()
+        }
+        val availablePlaylistSongRows = scopedPlaylistSongRows.filter { it.resolvedSong != null }
         val availablePlaylistSongs = availablePlaylistSongRows.mapNotNull(PlaylistSong::resolvedSong)
         val selectedPlaylist = playlists.firstOrNull { playlist ->
             playlist.playlistId == selectedPlaylistId
         } ?: Playlist(
             playlistId = selectedPlaylistId,
-            name = selectedPlaylistName,
-            songCount = selectedPlaylistSongs.size,
-            totalDuration = selectedPlaylistSongs.sumOf { it.duration.coerceAtLeast(0L) },
+            name = if (stateMatchesSelection) selectedPlaylistName else "Playlist",
+            songCount = scopedPlaylistSongRows.size,
+            totalDuration = scopedPlaylistSongRows.sumOf { it.duration.coerceAtLeast(0L) },
             automaticArtworkSongs = availablePlaylistSongs.distinctBy { song ->
                 Triple(
                     song.albumArtist.ifBlank { song.artist }.lowercase(),
@@ -100,36 +109,39 @@ fun PlaylistsTabContent(
             }.take(4)
         )
 
-        PlaylistDetailScreen(
-            playlist = selectedPlaylist,
-            allPlaylists = playlists,
-            playlistSongs = availablePlaylistSongs,
-            playlistSongRows = availablePlaylistSongRows,
-            currentSongId = currentSong?.id,
-            recentlyAddedSongIds = recentlyAddedSongIds,
-            favoriteMembershipKeys = favoriteMembershipKeys,
-            onBackClick = onBackFromPlaylist,
-            onPlayAllClick = {
-                onPlaySongsClick(availablePlaylistSongs, PlaybackShuffleMode.OFF)
-            },
-            onShuffleAllClick = {
-                onPlaySongsClick(availablePlaylistSongs, PlaybackShuffleMode.SONGS)
-            },
-            onRenamePlaylistClick = onRenamePlaylistClick,
-            onDeletePlaylistClick = onDeletePlaylistClick,
-            onExportPlaylistClick = onExportPlaylistClick,
-            onChangeArtworkClick = chooseArtwork,
-            onResetArtworkClick = onResetPlaylistArtwork,
-            onSongClick = onSongClick,
-            onPlayNextClick = onPlayNextClick,
-            onAddToQueueClick = onAddToQueueClick,
-            onToggleFavoriteClick = onToggleFavoriteClick,
-            onRemovePlaylistSongClick = onRemovePlaylistSongClick,
-            onEditSongTagsClick = onEditSongTagsClick,
-            onMovePlaylistSongUpClick = onMovePlaylistSongUpClick,
-            onMovePlaylistSongDownClick = onMovePlaylistSongDownClick,
-            bottomContentPadding = bottomContentPadding,
-            modifier = modifier
-        )
+        key(selectedPlaylistId) {
+            PlaylistDetailScreen(
+                playlist = selectedPlaylist,
+                allPlaylists = playlists,
+                playlistSongs = availablePlaylistSongs,
+                playlistSongRows = availablePlaylistSongRows,
+                isLoading = !stateMatchesSelection || isSelectedPlaylistLoading,
+                currentSongId = currentSong?.id,
+                recentlyAddedSongIds = recentlyAddedSongIds,
+                favoriteMembershipKeys = favoriteMembershipKeys,
+                onBackClick = onBackFromPlaylist,
+                onPlayAllClick = {
+                    onPlaySongsClick(availablePlaylistSongs, PlaybackShuffleMode.OFF)
+                },
+                onShuffleAllClick = {
+                    onPlaySongsClick(availablePlaylistSongs, PlaybackShuffleMode.SONGS)
+                },
+                onRenamePlaylistClick = onRenamePlaylistClick,
+                onDeletePlaylistClick = onDeletePlaylistClick,
+                onExportPlaylistClick = onExportPlaylistClick,
+                onChangeArtworkClick = chooseArtwork,
+                onResetArtworkClick = onResetPlaylistArtwork,
+                onSongClick = onSongClick,
+                onPlayNextClick = onPlayNextClick,
+                onAddToQueueClick = onAddToQueueClick,
+                onToggleFavoriteClick = onToggleFavoriteClick,
+                onRemovePlaylistSongClick = onRemovePlaylistSongClick,
+                onEditSongTagsClick = onEditSongTagsClick,
+                onMovePlaylistSongUpClick = onMovePlaylistSongUpClick,
+                onMovePlaylistSongDownClick = onMovePlaylistSongDownClick,
+                bottomContentPadding = bottomContentPadding,
+                modifier = modifier
+            )
+        }
     }
 }

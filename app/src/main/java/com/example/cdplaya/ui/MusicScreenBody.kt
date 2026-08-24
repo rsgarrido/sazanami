@@ -116,8 +116,10 @@ internal fun MusicScreenBody(
     unresolvedPlaylistRowCount: Int,
     unresolvedListeningHistoryCount: Int,
     playlists: List<Playlist>,
+    selectedPlaylistStateId: Long?,
     selectedPlaylistName: String,
     selectedPlaylistSongs: List<PlaylistSong>,
+    isSelectedPlaylistLoading: Boolean,
     mainDestination: MainDestination,
     selectedLibraryTab: LibraryTab,
     selectedArtistName: String?,
@@ -483,7 +485,7 @@ internal fun MusicScreenBody(
                             .fillMaxSize()
                             .animateContentSize()
                     ) {
-                        if (!isArtistOrAlbumDetail || !mediaAccessState.hasAudioAccess) {
+                        if (!isLibraryDetail || !mediaAccessState.hasAudioAccess) {
                             MusicScreenHeader(
                                 title = when {
                                     isSearchDestination -> "Search"
@@ -582,8 +584,10 @@ internal fun MusicScreenBody(
                                     selectedAlbumFolderPath = selectedAlbumFolderPath,
                                     selectedPlaylistId = selectedPlaylistId,
                                     playlists = playlists,
+                                    selectedPlaylistStateId = selectedPlaylistStateId,
                                     selectedPlaylistName = selectedPlaylistName,
                                     selectedPlaylistSongs = selectedPlaylistSongs,
+                                    isSelectedPlaylistLoading = isSelectedPlaylistLoading,
                                     currentSong = currentSong,
                                     recentlyAddedSongIds = recentlyAddedSongIds,
                                     favoriteMembershipKeys = favoriteMembershipKeys,
