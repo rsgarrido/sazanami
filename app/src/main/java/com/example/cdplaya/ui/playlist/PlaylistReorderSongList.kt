@@ -4,7 +4,8 @@ import android.R
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
@@ -25,6 +26,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -38,8 +40,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
@@ -51,6 +57,7 @@ import coil.compose.AsyncImage
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.ui.AppShellAccent
 import com.example.cdplaya.ui.AppShellTypography
+import kotlin.math.abs
 
 @Composable
 internal fun PlaylistReorderSongList(
@@ -72,6 +79,9 @@ internal fun PlaylistReorderSongList(
     val maximumAutoScrollPerFramePx = with(density) { 12.dp.toPx() }
     val crossingHysteresisPx = with(density) { 6.dp.toPx() }
     val latestOnOrderCommitted by rememberUpdatedState(onOrderCommitted)
+    val containerCoordinates = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    val viewportCoordinates = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    val dragHandleCoordinates = remember { mutableMapOf<Long, LayoutCoordinates>() }
 
     fun moveDraggedRowAcrossNeighbor(direction: Int) {
         if (direction == 0) return
@@ -145,6 +155,10 @@ internal fun PlaylistReorderSongList(
     LaunchedEffect(draggedRowId, autoScrollPerFrame) {
         while (draggedRowId != null && autoScrollPerFrame != 0f) {
             val consumedScroll = listState.scrollBy(autoScrollPerFrame)
+            if (consumedScroll == 0f) {
+                autoScrollPerFrame = 0f
+                break
+            }
             moveDraggedRowAcrossNeighbor(
                 direction = when {
                     consumedScroll > 0f -> 1
@@ -156,7 +170,94 @@ internal fun PlaylistReorderSongList(
         }
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .onGloballyPositioned { coordinates ->
+                containerCoordinates[0] = coordinates
+            }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val container = containerCoordinates[0]
+                        ?.takeIf { it.isAttached }
+                        ?: return@awaitEachGesture
+                    val viewport = viewportCoordinates[0]
+                        ?.takeIf { it.isAttached }
+                        ?: return@awaitEachGesture
+                    val candidateRowId = dragHandleCoordinates.entries
+                        .firstOrNull { (_, handle) ->
+                            handle.isAttached && container.localBoundingBoxOf(
+                                sourceCoordinates = handle,
+                                clipBounds = true
+                            ).contains(down.position)
+                        }
+                        ?.key
+                        ?: return@awaitEachGesture
+                    val candidateIsVisible = listState.layoutInfo.visibleItemsInfo.any { item ->
+                        item.key == candidateRowId
+                    }
+                    if (!candidateIsVisible) return@awaitEachGesture
+
+                    val viewportBounds = container.localBoundingBoxOf(
+                        sourceCoordinates = viewport,
+                        clipBounds = false
+                    )
+                    down.consume()
+
+                    var accumulatedDragY = 0f
+                    var started = false
+                    var completed = false
+                    try {
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val change = event.changes.firstOrNull { it.id == down.id }
+                                ?: break
+                            if (!change.pressed) {
+                                completed = true
+                                break
+                            }
+
+                            val dragAmountY = change.positionChange().y
+                            change.consume()
+                            if (!started) {
+                                accumulatedDragY += dragAmountY
+                                if (abs(accumulatedDragY) >= viewConfiguration.touchSlop) {
+                                    started = true
+                                    draggedRowId = candidateRowId
+                                    dragPointerY = change.position.y - viewportBounds.top
+                                    hapticFeedback.performHapticFeedback(
+                                        HapticFeedbackType.LongPress
+                                    )
+                                    moveDraggedRowAcrossNeighbor(
+                                        direction = when {
+                                            accumulatedDragY > 0f -> 1
+                                            accumulatedDragY < 0f -> -1
+                                            else -> 0
+                                        }
+                                    )
+                                    updateAutoScroll()
+                                }
+                            } else if (dragAmountY != 0f) {
+                                dragPointerY += dragAmountY
+                                moveDraggedRowAcrossNeighbor(
+                                    direction = when {
+                                        dragAmountY > 0.5f -> 1
+                                        dragAmountY < -0.5f -> -1
+                                        else -> 0
+                                    }
+                                )
+                                updateAutoScroll()
+                            }
+                        }
+                    } finally {
+                        if (started && draggedRowId == candidateRowId) {
+                            finishDrag(commit = completed)
+                        }
+                    }
+                }
+            }
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -171,13 +272,22 @@ internal fun PlaylistReorderSongList(
 
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .onGloballyPositioned { coordinates ->
+                    viewportCoordinates[0] = coordinates
+                },
             contentPadding = PaddingValues(bottom = bottomContentPadding)
         ) {
             items(
                 items = visualRows,
                 key = PlaylistSong::playlistSongId
             ) { row ->
+                DisposableEffect(row.playlistSongId) {
+                    onDispose {
+                        dragHandleCoordinates.remove(row.playlistSongId)
+                    }
+                }
                 val isDragged = draggedRowId == row.playlistSongId
                 val visibleInfo = listState.layoutInfo.visibleItemsInfo.firstOrNull { item ->
                     item.key == row.playlistSongId
@@ -240,41 +350,8 @@ internal fun PlaylistReorderSongList(
                         Box(
                             modifier = Modifier
                                 .size(48.dp)
-                                .pointerInput(row.playlistSongId) {
-                                    detectDragGestures(
-                                        onDragStart = {
-                                            val itemInfo = listState.layoutInfo.visibleItemsInfo
-                                                .firstOrNull { item ->
-                                                    item.key == row.playlistSongId
-                                                } ?: return@detectDragGestures
-                                            draggedRowId = row.playlistSongId
-                                            dragPointerY = itemInfo.offset + itemInfo.size / 2f
-                                            hapticFeedback.performHapticFeedback(
-                                                HapticFeedbackType.LongPress
-                                            )
-                                        },
-                                        onDrag = { change, dragAmount ->
-                                            if (draggedRowId != row.playlistSongId) {
-                                                return@detectDragGestures
-                                            }
-                                            change.consume()
-                                            val layoutInfo = listState.layoutInfo
-                                            dragPointerY = (dragPointerY + dragAmount.y).coerceIn(
-                                                layoutInfo.viewportStartOffset.toFloat(),
-                                                layoutInfo.viewportEndOffset.toFloat()
-                                            )
-                                            moveDraggedRowAcrossNeighbor(
-                                                direction = when {
-                                                    dragAmount.y > 0.5f -> 1
-                                                    dragAmount.y < -0.5f -> -1
-                                                    else -> 0
-                                                }
-                                            )
-                                            updateAutoScroll()
-                                        },
-                                        onDragEnd = { finishDrag(commit = true) },
-                                        onDragCancel = { finishDrag(commit = false) }
-                                    )
+                                .onGloballyPositioned { coordinates ->
+                                    dragHandleCoordinates[row.playlistSongId] = coordinates
                                 },
                             contentAlignment = Alignment.Center
                         ) {
