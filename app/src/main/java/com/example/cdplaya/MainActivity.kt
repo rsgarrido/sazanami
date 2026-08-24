@@ -5,6 +5,8 @@ import android.graphics.Color as AndroidColor
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
+import android.view.animation.DecelerateInterpolator
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -28,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import android.content.pm.PackageManager
 import com.example.cdplaya.mediaaccess.MediaAccessEffect
@@ -90,7 +93,35 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splashStartedAt = SystemClock.elapsedRealtime()
+        val splashScreen = installSplashScreen()
+
         super.onCreate(savedInstanceState)
+
+        // Hide only the brief, incomplete normal-launch frame while the cached library is
+        // restored. First-run onboarding is never held behind the splash, and the timeout
+        // guarantees that a slow/failed restore cannot trap the user on the launch screen.
+        splashScreen.setKeepOnScreenCondition {
+            mediaAccessState.hasAudioAccess &&
+                    !musicViewModel.libraryUiState.value.hasPublishedInitialLibraryState &&
+                    SystemClock.elapsedRealtime() - splashStartedAt < SPLASH_CACHE_HOLD_LIMIT_MILLIS
+        }
+        splashScreen.setOnExitAnimationListener { provider ->
+            val interpolator = DecelerateInterpolator()
+            provider.iconView.animate()
+                .scaleX(1.06f)
+                .scaleY(1.06f)
+                .setDuration(SPLASH_EXIT_DURATION_MILLIS)
+                .setInterpolator(interpolator)
+                .start()
+            provider.view.animate()
+                .alpha(0f)
+                .setDuration(SPLASH_EXIT_DURATION_MILLIS)
+                .setInterpolator(interpolator)
+                .withEndAction { provider.remove() }
+                .start()
+        }
+
         val transparentSystemBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
         enableEdgeToEdge(
             statusBarStyle = transparentSystemBarStyle,
@@ -294,5 +325,10 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         musicViewModel.savePlayerState()
+    }
+
+    private companion object {
+        const val SPLASH_CACHE_HOLD_LIMIT_MILLIS = 800L
+        const val SPLASH_EXIT_DURATION_MILLIS = 180L
     }
 }

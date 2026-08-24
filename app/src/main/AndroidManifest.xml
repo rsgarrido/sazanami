@@ -42,7 +42,7 @@
             android:exported="true"
             android:label="@string/app_name"
             android:launchMode="singleTop"
-            android:theme="@style/Theme.Cdplaya">
+            android:theme="@style/Theme.Cdplaya.Starting">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
