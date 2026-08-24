@@ -14,11 +14,15 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Restore
@@ -33,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,6 +51,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.cdplaya.data.Playlist
 import com.example.cdplaya.data.PlaylistArtworkMode
+import com.example.cdplaya.data.PlaylistFolder
 import com.example.cdplaya.ui.AppShellAccent
 import com.example.cdplaya.ui.AppShellIcons
 import com.example.cdplaya.ui.AppShellTypography
@@ -57,7 +63,14 @@ import com.example.cdplaya.ui.library.libraryItemActions
 @Composable
 fun PlaylistListScreen(
     playlists: List<Playlist>,
-    onCreatePlaylistClick: () -> Unit,
+    folders: List<PlaylistFolder>,
+    selectedFolderId: Long?,
+    onFolderSelected: (Long?) -> Unit,
+    onCreatePlaylistClick: (Long?) -> Unit,
+    onCreateFolderClick: (String) -> Unit,
+    onRenameFolderClick: (PlaylistFolder, String) -> Unit,
+    onDeleteFolderClick: (PlaylistFolder) -> Unit,
+    onMovePlaylistClick: (Playlist, Long?) -> Unit,
     onPlaylistClick: (Playlist) -> Unit,
     onRenamePlaylistClick: (Playlist, String) -> Unit,
     onDeletePlaylistClick: (Playlist) -> Unit,
@@ -70,6 +83,10 @@ fun PlaylistListScreen(
 ) {
     var playlistPendingRename by remember { mutableStateOf<Playlist?>(null) }
     var playlistPendingDelete by remember { mutableStateOf<Playlist?>(null) }
+    var playlistPendingMove by remember { mutableStateOf<Playlist?>(null) }
+    var folderPendingRename by remember { mutableStateOf<PlaylistFolder?>(null) }
+    var folderPendingDelete by remember { mutableStateOf<PlaylistFolder?>(null) }
+    var createFolderDialogVisible by remember { mutableStateOf(false) }
     var actionSheetTarget by remember { mutableStateOf<LibraryItemActionSheetTarget?>(null) }
     var sortMenuExpanded by remember { mutableStateOf(false) }
     var overflowExpanded by remember { mutableStateOf(false) }
@@ -77,11 +94,16 @@ fun PlaylistListScreen(
         mutableStateOf(PlaylistSortOption.RECENTLY_MODIFIED.name)
     }
     val sortOption = PlaylistSortOption.valueOf(sortOptionName)
-    val sortedPlaylists = remember(playlists, sortOption) {
-        playlists.sortedWith(sortOption.comparator)
+    val currentFolder = folders.firstOrNull { it.folderId == selectedFolderId }
+    val visiblePlaylists = remember(playlists, selectedFolderId, sortOption) {
+        playlists.filter { it.folderId == selectedFolderId }.sortedWith(sortOption.comparator)
     }
 
-    fun showActions(playlist: Playlist) {
+    LaunchedEffect(selectedFolderId, currentFolder) {
+        if (selectedFolderId != null && currentFolder == null) onFolderSelected(null)
+    }
+
+    fun showPlaylistActions(playlist: Playlist) {
         actionSheetTarget = LibraryItemActionSheetTarget(
             title = playlist.name,
             subtitle = playlistMetadataText(playlist),
@@ -96,6 +118,9 @@ fun PlaylistListScreen(
                         onResetArtworkClick(playlist)
                     })
                 }
+                add(LibraryItemAction("Move to folder", Icons.AutoMirrored.Filled.DriveFileMove) {
+                    playlistPendingMove = playlist
+                })
                 add(LibraryItemAction("Rename", Icons.Filled.Edit) {
                     playlistPendingRename = playlist
                 })
@@ -116,22 +141,62 @@ fun PlaylistListScreen(
         )
     }
 
+    fun showFolderActions(folder: PlaylistFolder) {
+        actionSheetTarget = LibraryItemActionSheetTarget(
+            title = folder.name,
+            subtitle = folderPlaylistCountText(folder.playlistCount),
+            artworkUri = null,
+            artworkDescription = "Folder ${folder.name}",
+            actions = listOf(
+                LibraryItemAction("Rename folder", Icons.Filled.Edit) {
+                    folderPendingRename = folder
+                },
+                LibraryItemAction("Delete folder", Icons.Filled.Delete, isDestructive = true) {
+                    folderPendingDelete = folder
+                }
+            ),
+            artworkContent = {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Filled.Folder,
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = AppShellAccent
+                    )
+                }
+            }
+        )
+    }
+
     Column(modifier = modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, top = 12.dp, end = 8.dp, bottom = 8.dp),
+                .padding(
+                    start = if (currentFolder == null) 16.dp else 4.dp,
+                    top = 12.dp,
+                    end = 8.dp,
+                    bottom = 8.dp
+                ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            if (currentFolder != null) {
+                IconButton(onClick = { onFolderSelected(null) }) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to playlists")
+                }
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Your playlists",
+                    text = currentFolder?.name ?: "Your playlists",
                     style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = if (playlists.size == 1) "1 playlist" else "${playlists.size} playlists",
+                    text = currentFolder?.let { folderPlaylistCountText(it.playlistCount) }
+                        ?: rootCollectionCountText(folders.size, visiblePlaylists.size),
                     style = AppShellTypography.SongSubtitle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -169,6 +234,16 @@ fun PlaylistListScreen(
                 }
                 DropdownMenu(overflowExpanded, { overflowExpanded = false }) {
                     DropdownMenuItem(
+                        text = { Text("Create folder") },
+                        leadingIcon = {
+                            Icon(Icons.Filled.CreateNewFolder, contentDescription = null)
+                        },
+                        onClick = {
+                            overflowExpanded = false
+                            createFolderDialogVisible = true
+                        }
+                    )
+                    DropdownMenuItem(
                         text = { Text("Import M3U") },
                         leadingIcon = { Icon(Icons.Filled.UploadFile, contentDescription = null) },
                         onClick = {
@@ -180,7 +255,7 @@ fun PlaylistListScreen(
             }
 
             FilledTonalButton(
-                onClick = onCreatePlaylistClick,
+                onClick = { onCreatePlaylistClick(selectedFolderId) },
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
             ) {
                 Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -188,82 +263,30 @@ fun PlaylistListScreen(
             }
         }
 
-        if (sortedPlaylists.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize().padding(32.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = AppShellIcons.AlbumStack,
-                        contentDescription = null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text("No playlists yet", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "Create one to start building your library.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
+        val collectionIsEmpty = visiblePlaylists.isEmpty() &&
+            (currentFolder != null || folders.isEmpty())
+        if (collectionIsEmpty) {
+            PlaylistCollectionEmptyState(inFolder = currentFolder != null)
         } else {
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(bottom = bottomContentPadding + 8.dp)
             ) {
-                items(sortedPlaylists, key = Playlist::playlistId) { playlist ->
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 5.dp)
-                            .libraryItemActions(
-                                clickLabel = "Open ${playlist.name}",
-                                onClick = { onPlaylistClick(playlist) },
-                                onShowActions = { showActions(playlist) }
-                            ),
-                        shape = RoundedCornerShape(18.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
-                        border = BorderStroke(
-                            1.dp,
-                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+                if (currentFolder == null) {
+                    items(folders, key = PlaylistFolder::folderId) { folder ->
+                        PlaylistFolderRow(
+                            folder = folder,
+                            onClick = { onFolderSelected(folder.folderId) },
+                            onMoreClick = { showFolderActions(folder) }
                         )
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            PlaylistArtwork(
-                                playlist = playlist,
-                                contentDescription = "Artwork for ${playlist.name}",
-                                modifier = Modifier.size(72.dp)
-                            )
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = playlist.name,
-                                    style = AppShellTypography.FeaturedSongTitle,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = playlistMetadataText(playlist),
-                                    style = AppShellTypography.SongSubtitle,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            IconButton(onClick = { showActions(playlist) }) {
-                                Icon(
-                                    imageVector = Icons.Filled.MoreVert,
-                                    contentDescription = "More options for ${playlist.name}"
-                                )
-                            }
-                        }
                     }
+                }
+                items(visiblePlaylists, key = Playlist::playlistId) { playlist ->
+                    PlaylistRow(
+                        playlist = playlist,
+                        onClick = { onPlaylistClick(playlist) },
+                        onMoreClick = { showPlaylistActions(playlist) }
+                    )
                 }
             }
         }
@@ -298,6 +321,203 @@ fun PlaylistListScreen(
             }
         )
     }
+
+    playlistPendingMove?.let { playlist ->
+        MovePlaylistToFolderDialog(
+            playlist = playlist,
+            folders = folders,
+            onDismiss = { playlistPendingMove = null },
+            onFolderSelected = { folderId ->
+                onMovePlaylistClick(playlist, folderId)
+                playlistPendingMove = null
+            }
+        )
+    }
+
+    if (createFolderDialogVisible) {
+        PlaylistFolderNameDialog(
+            title = "Create Folder",
+            confirmButtonText = "Create",
+            existingNames = folders.map(PlaylistFolder::name),
+            onDismiss = { createFolderDialogVisible = false },
+            onConfirmClick = { name ->
+                onCreateFolderClick(name)
+                createFolderDialogVisible = false
+            }
+        )
+    }
+
+    folderPendingRename?.let { folder ->
+        PlaylistFolderNameDialog(
+            title = "Rename Folder",
+            confirmButtonText = "Rename",
+            existingNames = folders.map(PlaylistFolder::name),
+            initialName = folder.name,
+            originalName = folder.name,
+            onDismiss = { folderPendingRename = null },
+            onConfirmClick = { name ->
+                onRenameFolderClick(folder, name)
+                folderPendingRename = null
+            }
+        )
+    }
+
+    folderPendingDelete?.let { folder ->
+        DeletePlaylistFolderDialog(
+            folder = folder,
+            onDismiss = { folderPendingDelete = null },
+            onConfirm = {
+                if (selectedFolderId == folder.folderId) onFolderSelected(null)
+                onDeleteFolderClick(folder)
+                folderPendingDelete = null
+            }
+        )
+    }
+}
+
+@Composable
+private fun PlaylistFolderRow(
+    folder: PlaylistFolder,
+    onClick: () -> Unit,
+    onMoreClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 5.dp)
+            .libraryItemActions(
+                clickLabel = "Open ${folder.name}",
+                onClick = onClick,
+                onShowActions = onMoreClick
+            ),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Row(
+            modifier = Modifier.padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(modifier = Modifier.size(72.dp), contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Filled.Folder,
+                    contentDescription = null,
+                    modifier = Modifier.size(52.dp),
+                    tint = AppShellAccent
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = folder.name,
+                    style = AppShellTypography.FeaturedSongTitle,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = folderPlaylistCountText(folder.playlistCount),
+                    style = AppShellTypography.SongSubtitle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(onClick = onMoreClick) {
+                Icon(Icons.Filled.MoreVert, contentDescription = "More options for ${folder.name}")
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaylistRow(
+    playlist: Playlist,
+    onClick: () -> Unit,
+    onMoreClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 5.dp)
+            .libraryItemActions(
+                clickLabel = "Open ${playlist.name}",
+                onClick = onClick,
+                onShowActions = onMoreClick
+            ),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            PlaylistArtwork(
+                playlist = playlist,
+                contentDescription = "Artwork for ${playlist.name}",
+                modifier = Modifier.size(72.dp)
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = playlist.name,
+                    style = AppShellTypography.FeaturedSongTitle,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = playlistMetadataText(playlist),
+                    style = AppShellTypography.SongSubtitle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(onClick = onMoreClick) {
+                Icon(
+                    imageVector = Icons.Filled.MoreVert,
+                    contentDescription = "More options for ${playlist.name}"
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaylistCollectionEmptyState(inFolder: Boolean) {
+    Box(
+        modifier = Modifier.fillMaxSize().padding(32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = if (inFolder) Icons.Filled.Folder else AppShellIcons.AlbumStack,
+                contentDescription = null,
+                modifier = Modifier.size(48.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                if (inFolder) "No playlists in this folder" else "No playlists yet",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                if (inFolder) "Move a playlist here from its action menu."
+                else "Create one to start building your library.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+private fun folderPlaylistCountText(count: Int): String =
+    if (count == 1) "1 playlist" else "$count playlists"
+
+private fun rootCollectionCountText(folderCount: Int, playlistCount: Int): String = buildString {
+    append(folderPlaylistCountText(playlistCount))
+    if (folderCount > 0) append(" • $folderCount folder${if (folderCount == 1) "" else "s"}")
 }
 
 private enum class PlaylistSortOption(

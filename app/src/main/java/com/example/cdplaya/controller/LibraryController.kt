@@ -20,6 +20,7 @@ import com.example.cdplaya.data.MediaLibraryAccessException
 import com.example.cdplaya.data.stableKey
 import com.example.cdplaya.data.MusicRepository
 import com.example.cdplaya.data.Playlist
+import com.example.cdplaya.data.PlaylistFolder
 import com.example.cdplaya.data.PlaylistArtworkStore
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.PlaylistsRepository
@@ -155,6 +156,9 @@ class LibraryController(
     private var playlists: List<Playlist>
         get() = _uiState.value.playlists
         set(value) = updateState { copy(playlists = value.toList()) }
+    private var playlistFolders: List<PlaylistFolder>
+        get() = _uiState.value.playlistFolders
+        set(value) = updateState { copy(playlistFolders = value.toList()) }
     private val selectedPlaylistId: Long?
         get() = _uiState.value.selectedPlaylistId
     private var selectedPlaylistName: String
@@ -453,9 +457,9 @@ class LibraryController(
         }
     }
 
-    fun createPlaylist(playlistName: String) {
+    fun createPlaylist(playlistName: String, folderId: Long? = null) {
         coroutineScope.launch {
-            val wasCreated = playlistsRepository.createPlaylist(playlistName)
+            val wasCreated = playlistsRepository.createPlaylist(playlistName, folderId)
 
             if (wasCreated) {
                 loadPlaylists()
@@ -528,6 +532,54 @@ class LibraryController(
                 Log.e("PlaylistArtwork", "Unable to change playlist artwork", failure)
             }
             onComplete(result)
+        }
+    }
+
+    fun createPlaylistWithSongs(
+        playlistName: String,
+        initialSongs: List<Song>,
+        onComplete: (Result<Playlist>) -> Unit = {}
+    ) {
+        coroutineScope.launch {
+            val result = runCatching {
+                checkNotNull(
+                    playlistsRepository.createPlaylist(
+                        name = playlistName,
+                        initialSongs = initialSongs
+                    )
+                ) { "Unable to create playlist." }
+            }
+            if (result.isSuccess) loadPlaylists()
+            onComplete(result)
+        }
+    }
+
+    fun createPlaylistFolder(name: String) {
+        coroutineScope.launch {
+            if (playlistsRepository.createPlaylistFolder(name)) loadPlaylists()
+        }
+    }
+
+    fun renamePlaylistFolder(folder: PlaylistFolder, newName: String) {
+        coroutineScope.launch {
+            if (playlistsRepository.renamePlaylistFolder(folder.folderId, newName)) {
+                loadPlaylists()
+            }
+        }
+    }
+
+    fun deletePlaylistFolder(folder: PlaylistFolder) {
+        coroutineScope.launch {
+            playlistsRepository.deletePlaylistFolder(folder.folderId)
+            loadPlaylists()
+        }
+    }
+
+    fun movePlaylistToFolder(playlist: Playlist, folderId: Long?) {
+        coroutineScope.launch {
+            if (playlistsRepository.movePlaylistToFolder(playlist.playlistId, folderId)) {
+                loadPlaylists()
+            }
         }
     }
 
@@ -761,7 +813,8 @@ class LibraryController(
                     )
                 },
                 favoriteMembershipKeys = favoritesRepository.getFavoriteMembershipKeys(),
-                playlists = playlistsRepository.getPlaylists(songs)
+                playlists = playlistsRepository.getPlaylists(songs),
+                playlistFolders = playlistsRepository.getPlaylistFolders()
             )
         }
         val resolvedFolderSelection = restoredData.folderSelection.copy(
@@ -780,6 +833,7 @@ class LibraryController(
         folderSelection = resolvedFolderSelection
         favoriteMembershipKeys = restoredData.favoriteMembershipKeys
         playlists = restoredData.playlists
+        playlistFolders = restoredData.playlistFolders
         clearSelectedPlaylist()
         if (folderSelectionChanged) {
             reloadSongsAfterFolderChange()
@@ -926,6 +980,7 @@ class LibraryController(
                 excludedFolders = folderSelection.excludedFolders,
                 favoriteMembershipKeys = current.favoriteMembershipKeys,
                 playlists = current.playlists,
+                playlistFolders = current.playlistFolders,
                 selectedPlaylistId = current.selectedPlaylistId,
                 selectedPlaylistName = current.selectedPlaylistName,
                 selectedPlaylistSongs = current.selectedPlaylistSongs,
@@ -1176,7 +1231,14 @@ class LibraryController(
 
     private fun loadPlaylists() {
         coroutineScope.launch {
-            playlists = playlistsRepository.getPlaylists(songs)
+            val refreshedPlaylists = playlistsRepository.getPlaylists(songs)
+            val refreshedFolders = playlistsRepository.getPlaylistFolders()
+            updateState {
+                copy(
+                    playlists = refreshedPlaylists,
+                    playlistFolders = refreshedFolders
+                )
+            }
         }
     }
 
@@ -1225,7 +1287,8 @@ class LibraryController(
 private data class BackupRestoredUserData(
     val folderSelection: FolderSelection,
     val favoriteMembershipKeys: Set<String>,
-    val playlists: List<Playlist>
+    val playlists: List<Playlist>,
+    val playlistFolders: List<PlaylistFolder>
 )
 
 private data class ReferenceReconciliationData(

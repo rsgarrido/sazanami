@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Check
@@ -52,6 +53,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.cdplaya.data.Playlist
+import com.example.cdplaya.data.PlaylistFolder
 import com.example.cdplaya.data.PlaylistArtworkMode
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.PlaylistType
@@ -71,6 +73,7 @@ private const val PLAYLIST_LOADING_INDICATOR_DELAY_MILLIS = 175L
 fun PlaylistDetailScreen(
     playlist: Playlist,
     allPlaylists: List<Playlist>,
+    playlistFolders: List<PlaylistFolder>,
     allSongs: List<Song>,
     playlistSongRows: List<PlaylistSong>,
     isLoading: Boolean,
@@ -85,6 +88,7 @@ fun PlaylistDetailScreen(
     onExportPlaylistClick: (Playlist) -> Unit,
     onChangeArtworkClick: (Playlist) -> Unit,
     onResetArtworkClick: (Playlist) -> Unit,
+    onMovePlaylistClick: (Playlist, Long?) -> Unit,
     onAddSongsClick: (List<Song>) -> Unit,
     onReorderPlaylistSongs: (Long, List<Long>) -> Unit,
     onSongClick: (Song, List<Song>) -> Unit,
@@ -100,6 +104,7 @@ fun PlaylistDetailScreen(
     var renameDialogVisible by remember { mutableStateOf(false) }
     var deleteDialogVisible by remember { mutableStateOf(false) }
     var addSongsVisible by remember { mutableStateOf(false) }
+    var movePlaylistVisible by remember { mutableStateOf(false) }
     var isEditingOrder by remember { mutableStateOf(false) }
     var showDelayedLoadingUi by remember(playlist.playlistId) { mutableStateOf(false) }
     var sortFieldName by rememberSaveable(playlist.playlistId) {
@@ -151,6 +156,9 @@ fun PlaylistDetailScreen(
                 }
                 add(LibraryItemAction("Rename", Icons.Filled.Edit) {
                     renameDialogVisible = true
+                })
+                add(LibraryItemAction("Move to folder", Icons.AutoMirrored.Filled.DriveFileMove) {
+                    movePlaylistVisible = true
                 })
                 add(LibraryItemAction("Change artwork", Icons.Filled.Image) {
                     onChangeArtworkClick(playlist)
@@ -300,6 +308,18 @@ fun PlaylistDetailScreen(
                 onDeletePlaylistClick(it)
                 deleteDialogVisible = false
                 onBackClick()
+            }
+        )
+    }
+
+    if (movePlaylistVisible) {
+        MovePlaylistToFolderDialog(
+            playlist = playlist,
+            folders = playlistFolders,
+            onDismiss = { movePlaylistVisible = false },
+            onFolderSelected = { folderId ->
+                onMovePlaylistClick(playlist, folderId)
+                movePlaylistVisible = false
             }
         )
     }

@@ -6,6 +6,7 @@ data class PlaylistWithSongCount(
     val type: String,
     val artworkMode: String,
     val artworkReference: String?,
+    val folderId: Long?,
     val createdAt: Long,
     val updatedAt: Long,
     val songCount: Int,

@@ -58,6 +58,7 @@ class BackupRepository(
             createdAt = System.currentTimeMillis(),
             appName = APP_NAME,
             favorites = favoritesRepository.getFavoritesForBackup(),
+            playlistFolders = playlistsRepository.getPlaylistFoldersForBackup(),
             playlists = playlistsRepository.getPlaylistsForBackup(),
             listeningHistory = emptyList(),
             canonicalListeningHistory = canonical.history,
@@ -141,7 +142,10 @@ class BackupRepository(
                     restoredIdentityIds
                 )
                 favoritesRepository.restoreFavoritesFromBackup(backup.favorites)
-                playlistsRepository.restorePlaylistsFromBackup(backup.playlists)
+                playlistsRepository.restorePlaylistsFromBackup(
+                    folders = backup.playlistFolders,
+                    playlists = backup.playlists
+                )
                 listeningHistoryRepository.restoreListeningHistoryFromBackup(
                     backup.listeningHistory
                 )

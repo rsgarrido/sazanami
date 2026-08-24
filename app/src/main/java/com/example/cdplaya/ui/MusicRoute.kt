@@ -199,6 +199,7 @@ internal fun MusicRoute(
             unresolvedPlaylistRowCount = libraryUiState.unresolvedPlaylistRowCount,
             unresolvedListeningHistoryCount = libraryUiState.unresolvedListeningHistoryCount,
             playlists = libraryUiState.playlists,
+            playlistFolders = libraryUiState.playlistFolders,
             selectedPlaylistStateId = libraryUiState.selectedPlaylistId,
             selectedPlaylistName = libraryUiState.selectedPlaylistName,
             selectedPlaylistSongs = libraryUiState.selectedPlaylistSongs,
@@ -286,9 +287,34 @@ internal fun MusicRoute(
             onToggleFavoriteClick = { song ->
                 musicViewModel.toggleFavorite(song)
             },
-            onCreatePlaylistClick = { playlistName ->
-                musicViewModel.createPlaylist(playlistName)
+            onCreatePlaylistClick = { playlistName, folderId ->
+                musicViewModel.createPlaylist(playlistName, folderId)
             },
+            onCreatePlaylistWithSongsClick = { playlistName, initialSongs ->
+                musicViewModel.createPlaylistWithSongs(
+                    playlistName = playlistName,
+                    initialSongs = initialSongs
+                ) { result ->
+                    routeScope.launch {
+                        snackbarHostState.showSnackbar(
+                            result.fold(
+                                onSuccess = { playlist ->
+                                    if (initialSongs.size == 1) {
+                                        "\"${initialSongs.first().title}\" added to \"${playlist.name}\""
+                                    } else {
+                                        "${initialSongs.size} songs added to \"${playlist.name}\""
+                                    }
+                                },
+                                onFailure = { it.message ?: "Unable to create playlist." }
+                            )
+                        )
+                    }
+                }
+            },
+            onCreatePlaylistFolderClick = musicViewModel::createPlaylistFolder,
+            onRenamePlaylistFolderClick = musicViewModel::renamePlaylistFolder,
+            onDeletePlaylistFolderClick = musicViewModel::deletePlaylistFolder,
+            onMovePlaylistToFolderClick = musicViewModel::movePlaylistToFolder,
             onRenamePlaylistClick = { playlist, newName ->
                 musicViewModel.renamePlaylist(
                     playlist = playlist,

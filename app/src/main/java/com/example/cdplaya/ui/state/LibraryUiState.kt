@@ -4,6 +4,7 @@ import com.example.cdplaya.data.LibraryFolder
 import com.example.cdplaya.data.FolderSelectionMode
 import com.example.cdplaya.data.LibraryRefreshResult
 import com.example.cdplaya.data.Playlist
+import com.example.cdplaya.data.PlaylistFolder
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.ui.library.SongRatingFilter
@@ -16,6 +17,7 @@ data class LibraryUiState(
     val excludedFolders: Set<String> = emptySet(),
     val favoriteMembershipKeys: Set<String> = emptySet(),
     val playlists: List<Playlist> = emptyList(),
+    val playlistFolders: List<PlaylistFolder> = emptyList(),
     val selectedPlaylistId: Long? = null,
     val selectedPlaylistName: String = DEFAULT_PLAYLIST_NAME,
     val selectedPlaylistSongs: List<PlaylistSong> = emptyList(),
@@ -67,6 +69,7 @@ fun libraryUiState(
     excludedFolders: Collection<String> = emptySet(),
     favoriteMembershipKeys: Collection<String> = emptySet(),
     playlists: Collection<Playlist> = emptyList(),
+    playlistFolders: Collection<PlaylistFolder> = emptyList(),
     selectedPlaylistId: Long? = null,
     selectedPlaylistName: String = LibraryUiState.DEFAULT_PLAYLIST_NAME,
     selectedPlaylistSongs: Collection<PlaylistSong> = emptyList(),
@@ -91,6 +94,7 @@ fun libraryUiState(
     excludedFolders = excludedFolders.toSet(),
     favoriteMembershipKeys = favoriteMembershipKeys.toSet(),
     playlists = playlists.toList(),
+    playlistFolders = playlistFolders.toList(),
     selectedPlaylistId = selectedPlaylistId,
     selectedPlaylistName = selectedPlaylistName,
     selectedPlaylistSongs = selectedPlaylistSongs.toList(),

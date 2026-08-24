@@ -9,11 +9,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.cdplaya.data.Playlist
+import com.example.cdplaya.data.PlaylistFolder
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.player.PlaybackShuffleMode
@@ -22,6 +24,7 @@ import com.example.cdplaya.player.PlaybackShuffleMode
 fun PlaylistsTabContent(
     songs: List<Song>,
     playlists: List<Playlist>,
+    playlistFolders: List<PlaylistFolder>,
     selectedPlaylistId: Long?,
     selectedPlaylistStateId: Long?,
     selectedPlaylistName: String,
@@ -30,7 +33,11 @@ fun PlaylistsTabContent(
     currentSong: Song?,
     recentlyAddedSongIds: Set<Long>,
     favoriteMembershipKeys: Set<String>,
-    onCreatePlaylistClick: () -> Unit,
+    onCreatePlaylistClick: (Long?) -> Unit,
+    onCreateFolderClick: (String) -> Unit,
+    onRenameFolderClick: (PlaylistFolder, String) -> Unit,
+    onDeleteFolderClick: (PlaylistFolder) -> Unit,
+    onMovePlaylistClick: (Playlist, Long?) -> Unit,
     onPlaylistClick: (Playlist) -> Unit,
     onDeletePlaylistClick: (Playlist) -> Unit,
     onExportPlaylistClick: (Playlist) -> Unit,
@@ -52,6 +59,7 @@ fun PlaylistsTabContent(
     modifier: Modifier = Modifier
 ) {
     var playlistPendingArtworkId by remember { mutableStateOf<Long?>(null) }
+    var selectedFolderId by rememberSaveable { mutableStateOf<Long?>(null) }
     val artworkPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
@@ -73,7 +81,14 @@ fun PlaylistsTabContent(
     if (selectedPlaylistId == null) {
         PlaylistListScreen(
             playlists = playlists,
+            folders = playlistFolders,
+            selectedFolderId = selectedFolderId,
+            onFolderSelected = { selectedFolderId = it },
             onCreatePlaylistClick = onCreatePlaylistClick,
+            onCreateFolderClick = onCreateFolderClick,
+            onRenameFolderClick = onRenameFolderClick,
+            onDeleteFolderClick = onDeleteFolderClick,
+            onMovePlaylistClick = onMovePlaylistClick,
             onPlaylistClick = onPlaylistClick,
             onDeletePlaylistClick = onDeletePlaylistClick,
             onExportPlaylistClick = onExportPlaylistClick,
@@ -113,6 +128,7 @@ fun PlaylistsTabContent(
             PlaylistDetailScreen(
                 playlist = selectedPlaylist,
                 allPlaylists = playlists,
+                playlistFolders = playlistFolders,
                 allSongs = songs,
                 playlistSongRows = scopedPlaylistSongRows,
                 isLoading = !stateMatchesSelection || isSelectedPlaylistLoading,
@@ -131,6 +147,7 @@ fun PlaylistsTabContent(
                 onExportPlaylistClick = onExportPlaylistClick,
                 onChangeArtworkClick = chooseArtwork,
                 onResetArtworkClick = onResetPlaylistArtwork,
+                onMovePlaylistClick = onMovePlaylistClick,
                 onSongClick = onSongClick,
                 onPlayNextClick = onPlayNextClick,
                 onAddToQueueClick = onAddToQueueClick,

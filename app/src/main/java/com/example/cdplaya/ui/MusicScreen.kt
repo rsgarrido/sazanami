@@ -33,6 +33,7 @@ import com.example.cdplaya.data.FolderSelectionMode
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.PlayerTheme
 import com.example.cdplaya.data.Playlist
+import com.example.cdplaya.data.PlaylistFolder
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.TagEditorResult
 import com.example.cdplaya.player.RepeatMode
@@ -170,11 +171,17 @@ internal fun MusicScreen(
     unresolvedListeningHistoryCount: Int,
     onToggleFavoriteClick: (Song) -> Unit,
     playlists: List<Playlist>,
+    playlistFolders: List<PlaylistFolder>,
     selectedPlaylistStateId: Long?,
     selectedPlaylistName: String,
     selectedPlaylistSongs: List<PlaylistSong>,
     isSelectedPlaylistLoading: Boolean,
-    onCreatePlaylistClick: (String) -> Unit,
+    onCreatePlaylistClick: (String, Long?) -> Unit,
+    onCreatePlaylistWithSongsClick: (String, List<Song>) -> Unit,
+    onCreatePlaylistFolderClick: (String) -> Unit,
+    onRenamePlaylistFolderClick: (PlaylistFolder, String) -> Unit,
+    onDeletePlaylistFolderClick: (PlaylistFolder) -> Unit,
+    onMovePlaylistToFolderClick: (Playlist, Long?) -> Unit,
     onRenamePlaylistClick: (Playlist, String) -> Unit,
     onDeletePlaylistClick: (Playlist) -> Unit,
     onExportPlaylistClick: (Playlist) -> Unit,
@@ -264,6 +271,7 @@ internal fun MusicScreen(
     overlayState.isListeningHistoryReconciliationVisible
     var isExpandedUpNextSheetVisible by overlayState.isExpandedUpNextSheetVisible
     var isCreatePlaylistDialogVisible by overlayState.isCreatePlaylistDialogVisible
+    var playlistCreationFolderId by rememberSaveable { mutableStateOf<Long?>(null) }
     var isSleepTimerDialogVisible by overlayState.isSleepTimerDialogVisible
     var songPendingPlaylistAdd by remember { mutableStateOf<Song?>(null) }
     var songsPendingPlaylistAdd by remember { mutableStateOf<List<Song>>(emptyList()) }
@@ -773,6 +781,7 @@ internal fun MusicScreen(
                     unresolvedPlaylistRowCount = unresolvedPlaylistRowCount,
                     unresolvedListeningHistoryCount = unresolvedListeningHistoryCount,
                     playlists = playlists,
+                    playlistFolders = playlistFolders,
                     selectedPlaylistStateId = selectedPlaylistStateId,
                     selectedPlaylistName = selectedPlaylistName,
                     selectedPlaylistSongs = selectedPlaylistSongs,
@@ -955,9 +964,14 @@ internal fun MusicScreen(
                     onMoveQueueItemUpClick = onMoveQueueItemUpClick,
                     onMoveQueueItemDownClick = onMoveQueueItemDownClick,
                     onClearQueueClick = onClearQueueClick,
-                    onCreatePlaylistClick = {
+                    onCreatePlaylistClick = { folderId ->
+                        playlistCreationFolderId = folderId
                         isCreatePlaylistDialogVisible = true
                     },
+                    onCreatePlaylistFolderClick = onCreatePlaylistFolderClick,
+                    onRenamePlaylistFolderClick = onRenamePlaylistFolderClick,
+                    onDeletePlaylistFolderClick = onDeletePlaylistFolderClick,
+                    onMovePlaylistToFolderClick = onMovePlaylistToFolderClick,
                     onRenamePlaylistClick = onRenamePlaylistClick,
                     onPlaylistClick = { playlist ->
                         selectedPlaylistId = playlist.playlistId
@@ -1139,6 +1153,7 @@ internal fun MusicScreen(
                     queuedSongs = queuedSongs,
                     upcomingSongs = upcomingSongs,
                     isCreatePlaylistDialogVisible = isCreatePlaylistDialogVisible,
+                    createPlaylistFolderId = playlistCreationFolderId,
                     songPendingPlaylistAdd = songPendingPlaylistAdd,
                     playlists = playlists,
                     onPlayPauseClick = onPlayPauseClick,
@@ -1181,8 +1196,10 @@ internal fun MusicScreen(
                     onToggleFavoriteClick = onToggleFavoriteClick,
                     onDismissCreatePlaylistDialog = {
                         isCreatePlaylistDialogVisible = false
+                        playlistCreationFolderId = null
                     },
                     onCreatePlaylistClick = onCreatePlaylistClick,
+                    onCreatePlaylistWithSongsClick = onCreatePlaylistWithSongsClick,
                     onDismissAddToPlaylistDialog = {
                         songPendingPlaylistAdd = null
                     },

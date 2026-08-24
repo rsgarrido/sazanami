@@ -33,6 +33,7 @@ import com.example.cdplaya.data.LibraryFolder
 import com.example.cdplaya.data.FolderSelectionMode
 import com.example.cdplaya.data.PlayerTheme
 import com.example.cdplaya.data.Playlist
+import com.example.cdplaya.data.PlaylistFolder
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.AnalyticsRangePreset
@@ -116,6 +117,7 @@ internal fun MusicScreenBody(
     unresolvedPlaylistRowCount: Int,
     unresolvedListeningHistoryCount: Int,
     playlists: List<Playlist>,
+    playlistFolders: List<PlaylistFolder>,
     selectedPlaylistStateId: Long?,
     selectedPlaylistName: String,
     selectedPlaylistSongs: List<PlaylistSong>,
@@ -196,7 +198,11 @@ internal fun MusicScreenBody(
     onMoveQueueItemUpClick: (Int) -> Unit,
     onMoveQueueItemDownClick: (Int) -> Unit,
     onClearQueueClick: () -> Unit,
-    onCreatePlaylistClick: () -> Unit,
+    onCreatePlaylistClick: (Long?) -> Unit,
+    onCreatePlaylistFolderClick: (String) -> Unit,
+    onRenamePlaylistFolderClick: (PlaylistFolder, String) -> Unit,
+    onDeletePlaylistFolderClick: (PlaylistFolder) -> Unit,
+    onMovePlaylistToFolderClick: (Playlist, Long?) -> Unit,
     onRenamePlaylistClick: (Playlist, String) -> Unit,
     onPlaylistClick: (Playlist) -> Unit,
     onDeletePlaylistClick: (Playlist) -> Unit,
@@ -584,6 +590,7 @@ internal fun MusicScreenBody(
                                     selectedAlbumFolderPath = selectedAlbumFolderPath,
                                     selectedPlaylistId = selectedPlaylistId,
                                     playlists = playlists,
+                                    playlistFolders = playlistFolders,
                                     selectedPlaylistStateId = selectedPlaylistStateId,
                                     selectedPlaylistName = selectedPlaylistName,
                                     selectedPlaylistSongs = selectedPlaylistSongs,
@@ -620,6 +627,10 @@ internal fun MusicScreenBody(
                                     onMoveQueueItemDownClick = onMoveQueueItemDownClick,
                                     onClearQueueClick = onClearQueueClick,
                                     onCreatePlaylistClick = onCreatePlaylistClick,
+                                    onCreatePlaylistFolderClick = onCreatePlaylistFolderClick,
+                                    onRenamePlaylistFolderClick = onRenamePlaylistFolderClick,
+                                    onDeletePlaylistFolderClick = onDeletePlaylistFolderClick,
+                                    onMovePlaylistToFolderClick = onMovePlaylistToFolderClick,
                                     onRenamePlaylistClick = onRenamePlaylistClick,
                                     onPlaylistClick = onPlaylistClick,
                                     onDeletePlaylistClick = onDeletePlaylistClick,

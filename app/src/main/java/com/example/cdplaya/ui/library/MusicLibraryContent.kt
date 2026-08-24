@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.example.cdplaya.R
 import com.example.cdplaya.data.Playlist
+import com.example.cdplaya.data.PlaylistFolder
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.player.PlaybackShuffleMode
@@ -34,6 +35,7 @@ fun MusicLibraryContent(
     selectedAlbumFolderPath: String?,
     selectedPlaylistId: Long?,
     playlists: List<Playlist>,
+    playlistFolders: List<PlaylistFolder>,
     selectedPlaylistStateId: Long?,
     selectedPlaylistName: String,
     selectedPlaylistSongs: List<PlaylistSong>,
@@ -61,7 +63,11 @@ fun MusicLibraryContent(
     onMoveQueueItemUpClick: (Int) -> Unit,
     onMoveQueueItemDownClick: (Int) -> Unit,
     onClearQueueClick: () -> Unit,
-    onCreatePlaylistClick: () -> Unit,
+    onCreatePlaylistClick: (Long?) -> Unit,
+    onCreatePlaylistFolderClick: (String) -> Unit,
+    onRenamePlaylistFolderClick: (PlaylistFolder, String) -> Unit,
+    onDeletePlaylistFolderClick: (PlaylistFolder) -> Unit,
+    onMovePlaylistToFolderClick: (Playlist, Long?) -> Unit,
     onRenamePlaylistClick: (Playlist, String) -> Unit,
     onPlaylistClick: (Playlist) -> Unit,
     onDeletePlaylistClick: (Playlist) -> Unit,
@@ -201,6 +207,7 @@ fun MusicLibraryContent(
             PlaylistsTabContent(
                 songs = songs,
                 playlists = playlists,
+                playlistFolders = playlistFolders,
                 selectedPlaylistId = selectedPlaylistId,
                 selectedPlaylistStateId = selectedPlaylistStateId,
                 selectedPlaylistName = selectedPlaylistName,
@@ -210,6 +217,10 @@ fun MusicLibraryContent(
                 recentlyAddedSongIds = recentlyAddedSongIds,
                 favoriteMembershipKeys = favoriteMembershipKeys,
                 onCreatePlaylistClick = onCreatePlaylistClick,
+                onCreateFolderClick = onCreatePlaylistFolderClick,
+                onRenameFolderClick = onRenamePlaylistFolderClick,
+                onDeleteFolderClick = onDeletePlaylistFolderClick,
+                onMovePlaylistClick = onMovePlaylistToFolderClick,
                 onRenamePlaylistClick = onRenamePlaylistClick,
                 onPlaylistClick = onPlaylistClick,
                 onDeletePlaylistClick = onDeletePlaylistClick,
