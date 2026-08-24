@@ -74,7 +74,7 @@ class WaveformRepository internal constructor(
 ) {
     constructor(context: Context) : this(
         cache = WaveformCache(File(context.cacheDir, WAVEFORM_CACHE_DIRECTORY)),
-        analyzer = AndroidWaveformAnalyzer(context),
+        analyzer = NativeWaveformAnalyzer(context),
         sourceResolver = AndroidWaveformSourceResolver(context),
         ioDispatcher = Dispatchers.IO
     )

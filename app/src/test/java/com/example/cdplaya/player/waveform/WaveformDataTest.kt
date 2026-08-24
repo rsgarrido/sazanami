@@ -7,8 +7,8 @@ import org.junit.Test
 
 class WaveformDataTest {
     @Test
-    fun cacheKeyVersion_invalidatesLowerResolutionWaveforms() {
-        assertEquals(2, WAVEFORM_CACHE_KEY_VERSION)
+    fun cacheKeyVersion_invalidatesPreviousWaveformAlgorithm() {
+        assertEquals(5, WAVEFORM_CACHE_KEY_VERSION)
     }
 
     @Test
@@ -49,7 +49,18 @@ class WaveformDataTest {
 
         val mapped = mapWaveformAmplitudes(listOf(0f, 1f, 0f, 1f), 2)
 
-        assertEquals(listOf(0.5f, 0.5f), mapped)
+        assertEquals(listOf(0.61f, 0.61f), mapped)
+    }
+
+    @Test
+    fun mapping_preservesSomeLocalPeakWhenDownsampling() {
+        val mapped = mapWaveformAmplitudes(
+            amplitudes = listOf(0.2f, 1f, 0.2f, 0.2f),
+            barCount = 2
+        )
+
+        assertTrue(mapped.first() > 0.6f)
+        assertEquals(0.2f, mapped.last(), 0.0001f)
     }
 
     @Test

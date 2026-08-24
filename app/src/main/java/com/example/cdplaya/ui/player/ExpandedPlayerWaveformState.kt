@@ -58,6 +58,32 @@ internal fun rememberExpandedPlayerWaveformData(
     return waveformData
 }
 
+@Composable
+internal fun WarmCurrentSongWaveform(
+    currentSong: Song?,
+    shouldWarm: Boolean
+) {
+    val appContext = LocalContext.current.applicationContext
+    val repository = remember(appContext) { WaveformRepository.shared(appContext) }
+
+    LaunchedEffect(
+        currentSong?.id,
+        currentSong?.filePath,
+        currentSong?.uri,
+        shouldWarm
+    ) {
+        if (!shouldWarm || currentSong == null) return@LaunchedEffect
+
+        try {
+            repository.load(currentSong)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            // Warm-up is opportunistic. The expanded player can retry normally.
+        }
+    }
+}
+
 private const val WAVEFORM_PREFETCH_DELAY_MILLIS = 250L
 
 internal fun shouldLoadExpandedPlayerWaveform(

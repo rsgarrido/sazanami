@@ -1,7 +1,13 @@
 package com.example.cdplaya.ui.library
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -46,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
@@ -101,8 +108,23 @@ fun AlbumDetailScreen(
         mutableStateOf(AlbumPresentationMetadata())
     }
 
+    // Load independent presentation pieces separately so a slow technical-quality scan
+    // cannot hold back the release year or artwork-derived backdrop.
     LaunchedEffect(metadataKey) {
-        presentationMetadata = metadataRepository.loadAlbumMetadata(album)
+        val releaseYear = metadataRepository.getReleaseYear(album)
+        presentationMetadata = presentationMetadata.copy(releaseYear = releaseYear)
+    }
+    LaunchedEffect(metadataKey) {
+        val artworkAccentArgb = metadataRepository.getArtworkAccentArgb(
+            album.songs.firstOrNull()?.albumArtUri
+        )
+        presentationMetadata = presentationMetadata.copy(
+            artworkAccentArgb = artworkAccentArgb
+        )
+    }
+    LaunchedEffect(metadataKey) {
+        val audioQuality = metadataRepository.getAudioQualitySummary(album.songs)
+        presentationMetadata = presentationMetadata.copy(audioQuality = audioQuality)
     }
 
     val listState = rememberLazyListState()
@@ -346,11 +368,18 @@ private fun AlbumDetailHero(
                 overflow = TextOverflow.Ellipsis
             )
 
-            audioQuality?.let { quality ->
-                AlbumAudioQualityBadges(
-                    audioQuality = quality,
-                    modifier = Modifier.padding(top = 7.dp)
-                )
+            // Reserve the quality-pill row from the first frame so asynchronous metadata
+            // does not push the action buttons and song list downward when it arrives.
+            if (hasSongs) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 31.dp)
+                        .padding(top = 7.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    AlbumAudioQualityBadges(audioQuality = audioQuality)
+                }
             }
         }
 
@@ -383,19 +412,49 @@ private fun AlbumDetailHero(
 
 @Composable
 private fun AlbumAudioQualityBadges(
-    audioQuality: AlbumAudioQualitySummary,
+    audioQuality: AlbumAudioQualitySummary?,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(7.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        audioQuality.formatLabel?.let { label ->
-            AudioQualityBadge(text = label)
-        }
-        audioQuality.qualityLabel?.let { label ->
-            AudioQualityBadge(text = label)
+    AnimatedContent(
+        targetState = audioQuality,
+        transitionSpec = {
+            val fadeInScale = fadeIn(
+                animationSpec = tween(durationMillis = ALBUM_METADATA_TRANSITION_DURATION_MILLIS)
+            ) + scaleIn(
+                initialScale = 0.85f,
+                transformOrigin = TransformOrigin.Center,
+                animationSpec = tween(durationMillis = ALBUM_METADATA_TRANSITION_DURATION_MILLIS)
+            )
+
+            val fadeOutScale = fadeOut(
+                animationSpec = tween(durationMillis = 140)
+            ) + scaleOut(
+                targetScale = 0.85f,
+                transformOrigin = TransformOrigin.Center,
+                animationSpec = tween(durationMillis = 140)
+            )
+
+            fadeInScale.togetherWith(fadeOutScale)
+        },
+        contentAlignment = Alignment.CenterStart,
+        contentKey = { quality ->
+            quality?.let { summary -> summary.formatLabel to summary.qualityLabel }
+        },
+        modifier = modifier.graphicsLayer { clip = false },
+        label = "albumAudioQuality"
+    ) { displayedQuality ->
+        if (displayedQuality != null) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                displayedQuality.formatLabel?.let { label ->
+                    AudioQualityBadge(text = label)
+                }
+                displayedQuality.qualityLabel?.let { label ->
+                    AudioQualityBadge(text = label)
+                }
+            }
         }
     }
 }
@@ -538,3 +597,5 @@ private fun formatCollectionDuration(durationMs: Long): String {
         else -> "$hours hr $minutes min"
     }
 }
+
+private const val ALBUM_METADATA_TRANSITION_DURATION_MILLIS = 220
