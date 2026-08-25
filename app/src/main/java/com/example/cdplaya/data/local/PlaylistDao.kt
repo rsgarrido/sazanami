@@ -44,8 +44,8 @@ interface PlaylistDao {
             playlists.folderId,
             playlists.createdAt,
             playlists.updatedAt,
-            COUNT(playlist_songs.playlistSongId) AS songCount,
-            COALESCE(SUM(CASE WHEN playlist_songs.duration > 0 THEN playlist_songs.duration ELSE 0 END), 0) AS totalDuration
+            COUNT(CASE WHEN playlists.type = 'MANUAL' THEN playlist_songs.playlistSongId END) AS songCount,
+            COALESCE(SUM(CASE WHEN playlists.type = 'MANUAL' AND playlist_songs.duration > 0 THEN playlist_songs.duration ELSE 0 END), 0) AS totalDuration
         FROM playlists
         LEFT JOIN playlist_songs ON playlists.playlistId = playlist_songs.playlistId
         GROUP BY playlists.playlistId

@@ -31,12 +31,17 @@ class PlaylistsRepository(
         return withContext(Dispatchers.Default) {
             val songIndex = SongReferenceIndex.build(librarySongs)
             playlistRows.map { playlist ->
-                val resolvedSongs = songsByPlaylistId[playlist.playlistId]
-                    .orEmpty()
-                    .mapNotNull { row ->
-                        (songIndex.resolve(row.toSongReference()) as? SongReferenceResolution.Resolved)
-                            ?.song
-                    }
+                val playlistType = PlaylistType.fromStorage(playlist.type)
+                val resolvedSongs = if (playlistType == PlaylistType.MANUAL) {
+                    songsByPlaylistId[playlist.playlistId]
+                        .orEmpty()
+                        .mapNotNull { row ->
+                            (songIndex.resolve(row.toSongReference()) as? SongReferenceResolution.Resolved)
+                                ?.song
+                        }
+                } else {
+                    emptyList()
+                }
                 val automaticArtworkSongs = resolvedSongs
                     .distinctBy(::playlistArtworkAlbumKey)
                     .take(4)
@@ -46,7 +51,7 @@ class PlaylistsRepository(
                     name = playlist.name,
                     songCount = playlist.songCount,
                     totalDuration = playlist.totalDuration,
-                    type = PlaylistType.fromStorage(playlist.type),
+                    type = playlistType,
                     artworkMode = PlaylistArtworkMode.fromStorage(playlist.artworkMode),
                     artworkReference = playlist.artworkReference,
                     folderId = playlist.folderId,
@@ -158,7 +163,10 @@ class PlaylistsRepository(
                 restoredPlaylistIds[backupPlaylistId] = newPlaylistId
             }
 
-            if (playlist.songs.isNotEmpty()) {
+            if (
+                PlaylistType.fromStorage(playlist.type) == PlaylistType.MANUAL &&
+                playlist.songs.isNotEmpty()
+            ) {
                 playlistDao.insertPlaylistSongs(
                     playlist.songs.map { playlistSong ->
                         playlistSong.toEntity(newPlaylistId)
@@ -174,6 +182,8 @@ class PlaylistsRepository(
     }
 
     suspend fun getPlaylistSongs(playlistId: Long): List<PlaylistSong> {
+        val playlist = playlistDao.getPlaylistById(playlistId) ?: return emptyList()
+        if (PlaylistType.fromStorage(playlist.type) != PlaylistType.MANUAL) return emptyList()
         return playlistDao.getPlaylistSongs(playlistId).map { playlistSong ->
             PlaylistSong(
                 playlistSongId = playlistSong.playlistSongId,
@@ -360,6 +370,7 @@ class PlaylistsRepository(
         playlistId: Long,
         songs: List<Song>
     ): Int = membershipMutationMutex.withLock {
+        requireManualPlaylist(playlistId)
         if (songs.isEmpty()) {
             return@withLock 0
         }
@@ -401,6 +412,7 @@ class PlaylistsRepository(
         playlistId: Long,
         playlistSongId: Long
     ) {
+        requireManualPlaylist(playlistId)
         playlistDao.deletePlaylistSong(playlistSongId)
         playlistDao.updatePlaylistTimestamp(
             playlistId = playlistId,
@@ -412,6 +424,7 @@ class PlaylistsRepository(
         playlistId: Long,
         orderedPlaylistSongIds: List<Long>
     ): Boolean {
+        requireManualPlaylist(playlistId)
         return playlistDao.updatePlaylistSongOrder(
             playlistId = playlistId,
             orderedPlaylistSongIds = orderedPlaylistSongIds,
@@ -456,6 +469,15 @@ class PlaylistsRepository(
 
     internal suspend fun applyReferenceBackfill(plan: PlaylistReferenceBackfill) {
         if (plan.rows.isNotEmpty()) playlistDao.updatePlaylistSongs(plan.rows)
+    }
+
+    private suspend fun requireManualPlaylist(playlistId: Long) {
+        val playlist = requireNotNull(playlistDao.getPlaylistById(playlistId)) {
+            "Playlist $playlistId does not exist."
+        }
+        require(PlaylistType.fromStorage(playlist.type) == PlaylistType.MANUAL) {
+            "Smart Playlist membership is derived and cannot be edited through playlist_songs."
+        }
     }
 }
 

@@ -124,7 +124,37 @@ data class BackupPlaylist(
     val artworkMode: String = "AUTOMATIC",
     val artworkReference: String? = null,
     val folderId: Long? = null,
-    val songs: List<BackupPlaylistSong> = emptyList()
+    val songs: List<BackupPlaylistSong> = emptyList(),
+    val smartDefinition: BackupSmartPlaylistDefinition? = null,
+    val generatedState: BackupGeneratedPlaylistState? = null
+)
+
+@Serializable
+data class BackupSmartPlaylistDefinition(
+    val matchMode: String = "ALL",
+    val rules: List<com.example.cdplaya.data.SmartPlaylistRule> = emptyList(),
+    val sortField: String = "title",
+    val sortDirection: String = "ASC",
+    val resultLimit: Int? = null,
+    val definitionVersion: Int = 1,
+    val updatedAt: Long = 0L
+)
+
+@Serializable
+data class BackupGeneratedPlaylistState(
+    val templateKey: String,
+    val membershipMode: String = "snapshot",
+    val refreshPolicy: String,
+    val refreshIntervalMillis: Long? = null,
+    val lastRefreshedAt: Long? = null,
+    val snapshotVersion: Int = 1,
+    val songs: List<BackupGeneratedPlaylistSong> = emptyList()
+)
+
+@Serializable
+data class BackupGeneratedPlaylistSong(
+    val position: Int,
+    val reference: BackupSongReference
 )
 
 @Serializable

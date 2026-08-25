@@ -49,6 +49,7 @@ class BackupRepository(
 ) {
     private val context = context.applicationContext ?: context
     private val canonicalHistoryRepository = ListeningHistoryBackupRepository(appDatabase)
+    private val smartPlaylistBackupRepository = SmartPlaylistBackupRepository(appDatabase)
 
     suspend fun createBackup(): AppBackup = withContext(Dispatchers.IO) {
         val appPreferences = appPreferencesRepository.awaitLoadedState()
@@ -59,7 +60,9 @@ class BackupRepository(
             appName = APP_NAME,
             favorites = favoritesRepository.getFavoritesForBackup(),
             playlistFolders = playlistsRepository.getPlaylistFoldersForBackup(),
-            playlists = playlistsRepository.getPlaylistsForBackup(),
+            playlists = smartPlaylistBackupRepository.attachTo(
+                playlistsRepository.getPlaylistsForBackup()
+            ),
             listeningHistory = emptyList(),
             canonicalListeningHistory = canonical.history,
             songRatings = canonical.ratings,
@@ -146,6 +149,10 @@ class BackupRepository(
                 val playlistIds = playlistsRepository.restorePlaylistsFromBackup(
                     folders = backup.playlistFolders,
                     playlists = backup.playlists
+                )
+                smartPlaylistBackupRepository.restoreWithinTransaction(
+                    backup.playlists,
+                    playlistIds
                 )
                 listeningHistoryRepository.restoreListeningHistoryFromBackup(
                     backup.listeningHistory

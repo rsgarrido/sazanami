@@ -317,7 +317,7 @@ class ListeningIdentityReconciliationBackupRoundTripTest {
         )
 
         val migratedHistory = requireNotNull(migrated.canonicalListeningHistory)
-        assertEquals(10, migrated.schemaVersion)
+        assertEquals(AppBackupJson.CURRENT_SCHEMA_VERSION, migrated.schemaVersion)
         assertEquals(2, migratedHistory.formatVersion)
         assertTrue(migratedHistory.reconciliations.isEmpty())
         backupRepository.restore(migratedHistory)
