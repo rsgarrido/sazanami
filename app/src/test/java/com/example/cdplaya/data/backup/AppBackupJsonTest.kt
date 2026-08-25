@@ -12,7 +12,9 @@ class AppBackupJsonTest {
     fun encodeBackup_includesCurrentSchemaVersion() {
         val encoded = AppBackupJson.encodeBackup(emptyBackup())
 
-        assertTrue(encoded.contains("\"schemaVersion\":10"))
+        assertTrue(
+            encoded.contains("\"schemaVersion\":${AppBackupJson.CURRENT_SCHEMA_VERSION}")
+        )
     }
 
     @Test
@@ -80,7 +82,7 @@ class AppBackupJsonTest {
             """.trimIndent()
         )
 
-        assertEquals(10, decoded.schemaVersion)
+        assertEquals(AppBackupJson.CURRENT_SCHEMA_VERSION, decoded.schemaVersion)
         assertEquals("slide", decoded.preferences.modernArtworkTransitionStyle)
         assertEquals("classic_bar", decoded.preferences.modernSeekbarStyle)
         assertEquals(emptyMap<String, BackupPlayerThemeTokenOverrides>(), decoded.preferences.playerThemeTokenOverrides)
@@ -159,7 +161,7 @@ class AppBackupJsonTest {
             """.trimIndent()
         )
 
-        assertEquals(10, decoded.schemaVersion)
+        assertEquals(AppBackupJson.CURRENT_SCHEMA_VERSION, decoded.schemaVersion)
         assertEquals("old-key", decoded.favorites.single().reference?.legacyStableKey)
     }
 
@@ -167,11 +169,18 @@ class AppBackupJsonTest {
     fun decodeBackup_rejectsUnsupportedSchemaVersion() {
         val exception = expectIllegalArgumentException {
             AppBackupJson.decodeBackup(
-                AppBackupJson.encodeBackup(emptyBackup().copy(schemaVersion = 11))
+                AppBackupJson.encodeBackup(
+                    emptyBackup().copy(schemaVersion = AppBackupJson.CURRENT_SCHEMA_VERSION + 1)
+                )
             )
         }
 
-        assertTrue(exception.message.orEmpty().contains("Unsupported CDPlaya backup schema version 11"))
+        assertTrue(
+            exception.message.orEmpty().contains(
+                "Unsupported CDPlaya backup schema version " +
+                    (AppBackupJson.CURRENT_SCHEMA_VERSION + 1)
+            )
+        )
     }
 
     @Test
@@ -199,7 +208,7 @@ class AppBackupJsonTest {
 
         val decoded = AppBackupJson.decodeBackup(AppBackupJson.encodeBackup(backup9))
 
-        assertEquals(10, decoded.schemaVersion)
+        assertEquals(AppBackupJson.CURRENT_SCHEMA_VERSION, decoded.schemaVersion)
         assertEquals(2, decoded.canonicalListeningHistory?.formatVersion)
         assertTrue(decoded.canonicalListeningHistory?.reconciliations.orEmpty().isEmpty())
     }
@@ -291,7 +300,7 @@ class AppBackupJsonTest {
             """.trimIndent()
         )
 
-        assertEquals(10, decoded.schemaVersion)
+        assertEquals(AppBackupJson.CURRENT_SCHEMA_VERSION, decoded.schemaVersion)
         assertFalse(decoded.preferences.equalizer.limiterEnabled)
         assertEquals(
             -1.0,
@@ -547,6 +556,32 @@ class AppBackupJsonTest {
 
         assertEquals(listOf(pin), decoded.preferences.homePins)
         assertFalse(decoded.preferences.showRecentlyAddedOnHome)
+    }
+
+    @Test
+    fun playlistPinAndStableBackupPlaylistIdRoundTrip() {
+        val playlistPin = BackupHomePin(
+            id = "playlist-pin",
+            type = "PLAYLIST",
+            title = "Pinned playlist",
+            playlistId = 72L
+        )
+        val backup = emptyBackup().copy(
+            playlists = listOf(
+                BackupPlaylist(
+                    playlistId = 72L,
+                    name = "Pinned playlist",
+                    createdAt = 1L,
+                    updatedAt = 2L
+                )
+            ),
+            preferences = BackupPreferences(homePins = listOf(playlistPin))
+        )
+
+        val decoded = AppBackupJson.decodeBackup(AppBackupJson.encodeBackup(backup))
+
+        assertEquals(72L, decoded.playlists.single().playlistId)
+        assertEquals(playlistPin, decoded.preferences.homePins.single())
     }
 
     private fun emptyBackup() = AppBackup(

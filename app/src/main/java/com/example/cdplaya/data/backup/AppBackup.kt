@@ -8,6 +8,7 @@ data class AppBackup(
     val createdAt: Long,
     val appName: String = "CDPlaya",
     val favorites: List<BackupFavoriteSong> = emptyList(),
+    val playlistFolders: List<BackupPlaylistFolder> = emptyList(),
     val playlists: List<BackupPlaylist> = emptyList(),
     val listeningHistory: List<BackupListeningHistoryEntry> = emptyList(),
     val canonicalListeningHistory: BackupListeningHistoryV2? = null,
@@ -43,7 +44,8 @@ data class BackupHomePin(
     val type: String,
     val title: String,
     val subtitle: String = "",
-    val anchor: BackupSongReference
+    val anchor: BackupSongReference? = null,
+    val playlistId: Long? = null
 )
 
 @Serializable
@@ -114,10 +116,23 @@ data class BackupFavoriteSong(
 
 @Serializable
 data class BackupPlaylist(
+    val playlistId: Long? = null,
     val name: String,
     val createdAt: Long,
     val updatedAt: Long,
+    val type: String = "MANUAL",
+    val artworkMode: String = "AUTOMATIC",
+    val artworkReference: String? = null,
+    val folderId: Long? = null,
     val songs: List<BackupPlaylistSong> = emptyList()
+)
+
+@Serializable
+data class BackupPlaylistFolder(
+    val folderId: Long,
+    val name: String,
+    val createdAt: Long,
+    val updatedAt: Long
 )
 
 @Serializable

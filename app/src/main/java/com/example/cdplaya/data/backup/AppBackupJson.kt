@@ -19,7 +19,7 @@ import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.encodeToStream
 
 object AppBackupJson {
-    const val CURRENT_SCHEMA_VERSION = 10
+    const val CURRENT_SCHEMA_VERSION = 13
     private const val OLDEST_SUPPORTED_SCHEMA_VERSION = 1
 
     private val json = Json {
@@ -89,6 +89,15 @@ object AppBackupJson {
         }
         if (migrated.schemaVersion == 9) {
             migrated = migrateV9ToV10(migrated)
+        }
+        if (migrated.schemaVersion == 10) {
+            migrated = migrateV10ToV11(migrated)
+        }
+        if (migrated.schemaVersion == 11) {
+            migrated = migrateV11ToV12(migrated)
+        }
+        if (migrated.schemaVersion == 12) {
+            migrated = migrateV12ToV13(migrated)
         }
         validateEqualizerBackup(migrated.preferences.equalizer)
         val history = requireNotNull(migrated.canonicalListeningHistory) {
@@ -300,6 +309,27 @@ object AppBackupJson {
         )
     }
 
+    private fun migrateV10ToV11(backup: AppBackup): AppBackup = backup.copy(
+        schemaVersion = 11,
+        playlists = backup.playlists.map { playlist ->
+            playlist.copy(
+                type = playlist.type.ifBlank { "MANUAL" },
+                artworkMode = playlist.artworkMode.ifBlank { "AUTOMATIC" },
+                artworkReference = playlist.artworkReference?.takeIf { it.isNotBlank() }
+            )
+        }
+    )
+
+    private fun migrateV11ToV12(backup: AppBackup): AppBackup = backup.copy(
+        schemaVersion = 12,
+        playlistFolders = emptyList(),
+        playlists = backup.playlists.map { it.copy(folderId = null) }
+    )
+
+    private fun migrateV12ToV13(backup: AppBackup): AppBackup = backup.copy(
+        schemaVersion = 13
+    )
+
     private fun validateEqualizerBackup(
         equalizer: BackupEqualizerPreferences
     ) {
@@ -407,7 +437,7 @@ private fun AppBackup.sanitizedForExport(): AppBackup = copy(
             .map { it.toPortableFolderSelection() }
             .filter { it.isNotBlank() },
         homePins = preferences.homePins.map { pin ->
-            pin.copy(anchor = pin.anchor.withoutAbsolutePath())
+            pin.copy(anchor = pin.anchor?.withoutAbsolutePath())
         }
     ),
     favorites = favorites.map { favorite ->

@@ -55,7 +55,8 @@ data class LibraryItemActionSheetTarget(
     val subtitle: String?,
     val artworkUri: Any?,
     val artworkDescription: String,
-    val actions: List<LibraryItemAction>
+    val actions: List<LibraryItemAction>,
+    val artworkContent: (@Composable () -> Unit)? = null
 )
 
 @Composable
@@ -141,19 +142,24 @@ fun LibraryItemActionSheet(
                     shape = RoundedCornerShape(15.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerHighest
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = AppShellIcons.AlbumStack,
-                            contentDescription = null,
-                            modifier = Modifier.size(28.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        AsyncImage(
-                            model = target.artworkUri,
-                            contentDescription = target.artworkDescription,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
+                    val artworkContent = target.artworkContent
+                    if (artworkContent != null) {
+                        artworkContent()
+                    } else {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = AppShellIcons.AlbumStack,
+                                contentDescription = null,
+                                modifier = Modifier.size(28.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            AsyncImage(
+                                model = target.artworkUri,
+                                contentDescription = target.artworkDescription,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
                     }
                 }
 

@@ -20,6 +20,7 @@ import com.example.cdplaya.data.LocalReconciliationTarget
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.EditableSongTags
 import com.example.cdplaya.data.Playlist
+import com.example.cdplaya.data.PlaylistFolder
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.TagEditorRepository
 import com.example.cdplaya.data.TagEditorResult
@@ -811,8 +812,32 @@ class MusicViewModel(
         libraryController.toggleFavorite(song)
     }
 
-    fun createPlaylist(playlistName: String) {
-        libraryController.createPlaylist(playlistName)
+    fun createPlaylist(playlistName: String, folderId: Long? = null) {
+        libraryController.createPlaylist(playlistName, folderId)
+    }
+
+    fun createPlaylistWithSongs(
+        playlistName: String,
+        initialSongs: List<Song>,
+        onComplete: (Result<Playlist>) -> Unit = {}
+    ) {
+        libraryController.createPlaylistWithSongs(playlistName, initialSongs, onComplete)
+    }
+
+    fun createPlaylistFolder(name: String) {
+        libraryController.createPlaylistFolder(name)
+    }
+
+    fun renamePlaylistFolder(folder: PlaylistFolder, newName: String) {
+        libraryController.renamePlaylistFolder(folder, newName)
+    }
+
+    fun deletePlaylistFolder(folder: PlaylistFolder) {
+        libraryController.deletePlaylistFolder(folder)
+    }
+
+    fun movePlaylistToFolder(playlist: Playlist, folderId: Long?) {
+        libraryController.movePlaylistToFolder(playlist, folderId)
     }
 
     fun renamePlaylist(
@@ -829,8 +854,27 @@ class MusicViewModel(
         libraryController.deletePlaylist(playlist)
     }
 
+    fun changePlaylistArtwork(
+        playlist: Playlist,
+        source: Uri,
+        onComplete: (Result<Unit>) -> Unit = {}
+    ) {
+        libraryController.changePlaylistArtwork(playlist, source, onComplete)
+    }
+
+    fun resetPlaylistArtwork(
+        playlist: Playlist,
+        onComplete: (Result<Unit>) -> Unit = {}
+    ) {
+        libraryController.resetPlaylistArtwork(playlist, onComplete)
+    }
+
     fun loadSelectedPlaylist(playlist: Playlist) {
         libraryController.loadSelectedPlaylist(playlist)
+    }
+
+    fun clearSelectedPlaylist() {
+        libraryController.clearSelectedPlaylist()
     }
 
     fun preparePlaylistExport(
@@ -936,12 +980,24 @@ class MusicViewModel(
         libraryController.removePlaylistSong(playlistSong)
     }
 
-    fun movePlaylistSongUp(playlistSong: PlaylistSong) {
-        libraryController.movePlaylistSongUp(playlistSong)
+    fun reorderPlaylistSongs(
+        playlistId: Long,
+        orderedPlaylistSongIds: List<Long>
+    ) {
+        libraryController.reorderPlaylistSongs(
+            playlistId = playlistId,
+            orderedPlaylistSongIds = orderedPlaylistSongIds
+        )
     }
 
-    fun movePlaylistSongDown(playlistSong: PlaylistSong) {
-        libraryController.movePlaylistSongDown(playlistSong)
+    fun preparePlaylistQueueSongs(
+        playlist: Playlist,
+        onPrepared: (Result<List<Song>>) -> Unit
+    ) {
+        libraryController.preparePlaylistQueueSongs(
+            playlist = playlist,
+            onPrepared = onPrepared
+        )
     }
 
     fun refreshSongsAfterTagEdit(

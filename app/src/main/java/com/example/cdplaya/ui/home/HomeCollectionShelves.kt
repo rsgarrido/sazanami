@@ -59,11 +59,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.example.cdplaya.R
+import com.example.cdplaya.data.Playlist
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.home.HomePin
 import com.example.cdplaya.ui.AppShellAccent
 import com.example.cdplaya.ui.AppShellIcons
 import com.example.cdplaya.ui.AppShellTypography
+import com.example.cdplaya.ui.playlist.PlaylistArtwork
 import kotlin.math.roundToInt
 
 @Composable
@@ -72,6 +74,7 @@ fun HomePinnedShelf(
     onSongClick: (Song) -> Unit,
     onAlbumClick: (String) -> Unit,
     onArtistClick: (String) -> Unit,
+    onPlaylistClick: (Playlist) -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (pins.isEmpty()) return
@@ -341,6 +344,9 @@ fun HomePinnedShelf(
                                         is HomePinTarget.ArtistTarget ->
                                             onArtistClick(target.artist.name)
 
+                                        is HomePinTarget.PlaylistTarget ->
+                                            onPlaylistClick(target.playlist)
+
                                         null -> Unit
                                     }
                                 }
@@ -414,13 +420,22 @@ private fun HomePinnedCard(
                     .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest)
             ) {
-                ArtworkPlaceholder(modifier = Modifier.fillMaxSize())
-                AsyncImage(
-                    model = pin.artworkUri,
-                    contentDescription = "Artwork for ${pin.title}",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
+                val playlistTarget = pin.target as? HomePinTarget.PlaylistTarget
+                if (playlistTarget != null) {
+                    PlaylistArtwork(
+                        playlist = playlistTarget.playlist,
+                        contentDescription = "Artwork for ${pin.title}",
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    ArtworkPlaceholder(modifier = Modifier.fillMaxSize())
+                    AsyncImage(
+                        model = pin.artworkUri,
+                        contentDescription = "Artwork for ${pin.title}",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
 
                 if (isEditing) {
                     Box(

@@ -1,6 +1,7 @@
 package com.example.cdplaya.ui.home
 
 import android.net.Uri
+import com.example.cdplaya.data.Playlist
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.SongReference
 import com.example.cdplaya.data.home.HomePin
@@ -72,6 +73,38 @@ class HomePinResolutionTest {
 
         assertTrue(resolved.target is HomePinTarget.SongTarget)
         assertEquals(33L, (resolved.target as HomePinTarget.SongTarget).song.id)
+    }
+
+    @Test
+    fun playlistPinResolvesByStablePlaylistId() {
+        val original = Playlist(playlistId = 41L, name = "Old name", songCount = 1)
+        val renamed = original.copy(name = "New name", songCount = 3)
+        val pin = HomePin.playlist(original)
+
+        val resolved = resolveHomePins(
+            pins = listOf(pin),
+            songs = emptyList(),
+            playlists = listOf(renamed)
+        ).single()
+
+        val target = resolved.target as HomePinTarget.PlaylistTarget
+        assertEquals(41L, target.playlist.playlistId)
+        assertEquals("New name", resolved.title)
+    }
+
+    @Test
+    fun deletedPlaylistPinIsOmittedFromResolvedHomePins() {
+        val pin = HomePin.playlist(
+            Playlist(playlistId = 41L, name = "Deleted", songCount = 1)
+        )
+
+        assertTrue(
+            resolveHomePins(
+                pins = listOf(pin),
+                songs = emptyList(),
+                playlists = emptyList()
+            ).isEmpty()
+        )
     }
 
     private fun song(

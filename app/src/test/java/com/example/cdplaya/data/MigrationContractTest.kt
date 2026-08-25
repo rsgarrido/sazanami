@@ -15,7 +15,11 @@ class MigrationContractTest {
         assertEquals(11, DatabaseProvider.MIGRATION_10_11.endVersion)
         assertEquals(11, DatabaseProvider.MIGRATION_11_12.startVersion)
         assertEquals(12, DatabaseProvider.MIGRATION_11_12.endVersion)
-        assertEquals(10, AppBackupJson.CURRENT_SCHEMA_VERSION)
+        assertEquals(12, DatabaseProvider.MIGRATION_12_13.startVersion)
+        assertEquals(13, DatabaseProvider.MIGRATION_12_13.endVersion)
+        assertEquals(13, DatabaseProvider.MIGRATION_13_14.startVersion)
+        assertEquals(14, DatabaseProvider.MIGRATION_13_14.endVersion)
+        assertEquals(13, AppBackupJson.CURRENT_SCHEMA_VERSION)
         assertEquals(2, com.example.cdplaya.data.backup.BackupListeningHistoryV2.CURRENT_FORMAT_VERSION)
         assertEquals(1, BackupSongRatings.CURRENT_FORMAT_VERSION)
     }

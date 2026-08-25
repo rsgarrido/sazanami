@@ -443,7 +443,8 @@ internal fun LibraryDetailTopBar(
     onBackClick: () -> Unit,
     onMoreClick: () -> Unit,
     modifier: Modifier = Modifier,
-    containerColor: Color = Color.Transparent
+    containerColor: Color = Color.Transparent,
+    trailingContent: (@Composable () -> Unit)? = null
 ) {
     Row(
         modifier = modifier
@@ -474,11 +475,15 @@ internal fun LibraryDetailTopBar(
             Spacer(modifier = Modifier.weight(1f))
         }
 
-        IconButton(onClick = onMoreClick) {
-            Icon(
-                imageVector = Icons.Filled.MoreVert,
-                contentDescription = "More options"
-            )
+        if (trailingContent != null) {
+            trailingContent()
+        } else {
+            IconButton(onClick = onMoreClick) {
+                Icon(
+                    imageVector = Icons.Filled.MoreVert,
+                    contentDescription = "More options"
+                )
+            }
         }
     }
 }

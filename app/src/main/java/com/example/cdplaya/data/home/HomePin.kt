@@ -1,5 +1,6 @@
 package com.example.cdplaya.data.home
 
+import com.example.cdplaya.data.Playlist
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.SongReference
 import com.example.cdplaya.data.hasPersistedIdentity
@@ -12,7 +13,8 @@ import kotlinx.serialization.Serializable
 enum class HomePinType {
     SONG,
     ALBUM,
-    ARTIST
+    ARTIST,
+    PLAYLIST
 }
 
 @Serializable
@@ -21,19 +23,30 @@ data class HomePin(
     val type: HomePinType,
     val title: String,
     val subtitle: String = "",
-    val anchor: SongReference
+    val anchor: SongReference? = null,
+    val playlistId: Long? = null
 ) {
     fun normalizedForPersistence(): HomePin? {
         val normalizedId = id.trim()
         val normalizedTitle = title.trim()
-        if (normalizedId.isBlank() || normalizedTitle.isBlank() || !anchor.hasPersistedIdentity()) {
-            return null
+        if (normalizedId.isBlank() || normalizedTitle.isBlank()) return null
+
+        val normalizedAnchor = when (type) {
+            HomePinType.PLAYLIST -> null
+            else -> anchor?.takeIf { it.hasPersistedIdentity() }
+                ?.normalizedForPersistence()
+                ?: return null
+        }
+        val normalizedPlaylistId = when (type) {
+            HomePinType.PLAYLIST -> playlistId?.takeIf { it > 0L } ?: return null
+            else -> null
         }
         return copy(
             id = normalizedId,
             title = normalizedTitle,
             subtitle = subtitle.trim(),
-            anchor = anchor.normalizedForPersistence()
+            anchor = normalizedAnchor,
+            playlistId = normalizedPlaylistId
         )
     }
 
@@ -76,6 +89,14 @@ data class HomePin(
                 anchor = anchorSong.toSongReference()
             )
         }
+
+        fun playlist(playlist: Playlist): HomePin = HomePin(
+            id = UUID.randomUUID().toString(),
+            type = HomePinType.PLAYLIST,
+            title = playlist.name,
+            subtitle = "Playlist",
+            playlistId = playlist.playlistId
+        )
     }
 }
 

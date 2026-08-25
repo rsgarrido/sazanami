@@ -33,6 +33,7 @@ import com.example.cdplaya.data.FolderSelectionMode
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.PlayerTheme
 import com.example.cdplaya.data.Playlist
+import com.example.cdplaya.data.PlaylistFolder
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.TagEditorResult
 import com.example.cdplaya.player.RepeatMode
@@ -170,21 +171,32 @@ internal fun MusicScreen(
     unresolvedListeningHistoryCount: Int,
     onToggleFavoriteClick: (Song) -> Unit,
     playlists: List<Playlist>,
+    playlistFolders: List<PlaylistFolder>,
+    selectedPlaylistStateId: Long?,
     selectedPlaylistName: String,
     selectedPlaylistSongs: List<PlaylistSong>,
-    onCreatePlaylistClick: (String) -> Unit,
+    isSelectedPlaylistLoading: Boolean,
+    onCreatePlaylistClick: (String, Long?) -> Unit,
+    onCreatePlaylistWithSongsClick: (String, List<Song>) -> Unit,
+    onCreatePlaylistFolderClick: (String) -> Unit,
+    onRenamePlaylistFolderClick: (PlaylistFolder, String) -> Unit,
+    onDeletePlaylistFolderClick: (PlaylistFolder) -> Unit,
+    onMovePlaylistToFolderClick: (Playlist, Long?) -> Unit,
     onRenamePlaylistClick: (Playlist, String) -> Unit,
     onDeletePlaylistClick: (Playlist) -> Unit,
     onExportPlaylistClick: (Playlist) -> Unit,
+    onPreparePlaylistQueueSongs: (Playlist, (Result<List<Song>>) -> Unit) -> Unit,
     onImportPlaylistClick: () -> Unit,
+    onChangePlaylistArtwork: (Playlist, Uri) -> Unit,
+    onResetPlaylistArtwork: (Playlist) -> Unit,
     onExportBackupClick: () -> Unit,
     onRestoreBackupClick: () -> Unit,
     onPlaylistSelected: (Playlist) -> Unit,
+    onPlaylistCleared: () -> Unit,
     onAddSongToPlaylistClick: (Playlist, Song) -> Unit,
     onAddSongsToPlaylistClick: (Playlist, List<Song>) -> Unit,
     onRemovePlaylistSongClick: (PlaylistSong) -> Unit,
-    onMovePlaylistSongUpClick: (PlaylistSong) -> Unit,
-    onMovePlaylistSongDownClick: (PlaylistSong) -> Unit,
+    onReorderPlaylistSongs: (Long, List<Long>) -> Unit,
     onTagsEdited: (Song, EditableSongTags) -> Unit,
     onReadEditableSongTags: (Song) -> EditableSongTags,
     onGetUnsupportedTagEditingMessage: (Song) -> String?,
@@ -260,6 +272,7 @@ internal fun MusicScreen(
     overlayState.isListeningHistoryReconciliationVisible
     var isExpandedUpNextSheetVisible by overlayState.isExpandedUpNextSheetVisible
     var isCreatePlaylistDialogVisible by overlayState.isCreatePlaylistDialogVisible
+    var playlistCreationFolderId by rememberSaveable { mutableStateOf<Long?>(null) }
     var isSleepTimerDialogVisible by overlayState.isSleepTimerDialogVisible
     var songPendingPlaylistAdd by remember { mutableStateOf<Song?>(null) }
     var songsPendingPlaylistAdd by remember { mutableStateOf<List<Song>>(emptyList()) }
@@ -310,6 +323,17 @@ internal fun MusicScreen(
         onAddSongsToQueueClick = onAddSongsToQueueClick,
         onUndoAddSongsToQueueClick = onUndoAddSongsToQueueClick
     )
+    val addPlaylistToQueue: (Playlist) -> Unit = { playlist ->
+        onPreparePlaylistQueueSongs(playlist) { result ->
+            result.onSuccess { customOrderSongs ->
+                queueSnackbarActions.addSongsToQueue(playlist.name, customOrderSongs)
+            }.onFailure {
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar("Unable to add playlist to queue")
+                }
+            }
+        }
+    }
 
     val playlistSnackbarActions = rememberPlaylistSnackbarActions(
         snackbarHostState = snackbarHostState,
@@ -360,6 +384,14 @@ internal fun MusicScreen(
         )
     }
 
+    fun clearPlaylistSelection() {
+        val hadSelection = selectedPlaylistId != null || selectedPlaylistStateId != null
+        selectedPlaylistId = null
+        if (hadSelection) {
+            onPlaylistCleared()
+        }
+    }
+
     fun restorePlaybackLaunchContext() {
         val validContext = playbackLaunchContext.withValidDetails(
             albumFolderPaths = songs.mapTo(mutableSetOf()) { song -> song.folderPath },
@@ -372,7 +404,7 @@ internal fun MusicScreen(
         lyricsTransitionState.snapToExpanded()
         selectedArtistName = null
         selectedAlbumFolderPath = null
-        selectedPlaylistId = null
+        clearPlaylistSelection()
 
         when (validContext) {
             PlaybackLaunchContext.Home -> {
@@ -499,7 +531,7 @@ internal fun MusicScreen(
             }
 
             selectedPlaylistId != null -> {
-                selectedPlaylistId = null
+                clearPlaylistSelection()
             }
 
             mainDestination != MainDestination.HOME -> {
@@ -761,8 +793,11 @@ internal fun MusicScreen(
                     unresolvedPlaylistRowCount = unresolvedPlaylistRowCount,
                     unresolvedListeningHistoryCount = unresolvedListeningHistoryCount,
                     playlists = playlists,
+                    playlistFolders = playlistFolders,
+                    selectedPlaylistStateId = selectedPlaylistStateId,
                     selectedPlaylistName = selectedPlaylistName,
                     selectedPlaylistSongs = selectedPlaylistSongs,
+                    isSelectedPlaylistLoading = isSelectedPlaylistLoading,
                     mainDestination = mainDestination,
                     selectedLibraryTab = selectedLibraryTab,
                     selectedArtistName = selectedArtistName,
@@ -823,7 +858,7 @@ internal fun MusicScreen(
                         selectedLibraryTab = tab
                         selectedArtistName = null
                         selectedAlbumFolderPath = null
-                        selectedPlaylistId = null
+                        clearPlaylistSelection()
                         searchQuery = ""
                         mainDestination = MainDestination.LIBRARY
                     },
@@ -893,7 +928,7 @@ internal fun MusicScreen(
                         selectedLibraryTab = LibraryTab.QUEUE
                         selectedArtistName = null
                         selectedAlbumFolderPath = null
-                        selectedPlaylistId = null
+                        clearPlaylistSelection()
                         mainDestination = MainDestination.LIBRARY
                     },
                     onSongClick = { song, playbackContext ->
@@ -941,9 +976,14 @@ internal fun MusicScreen(
                     onMoveQueueItemUpClick = onMoveQueueItemUpClick,
                     onMoveQueueItemDownClick = onMoveQueueItemDownClick,
                     onClearQueueClick = onClearQueueClick,
-                    onCreatePlaylistClick = {
+                    onCreatePlaylistClick = { folderId ->
+                        playlistCreationFolderId = folderId
                         isCreatePlaylistDialogVisible = true
                     },
+                    onCreatePlaylistFolderClick = onCreatePlaylistFolderClick,
+                    onRenamePlaylistFolderClick = onRenamePlaylistFolderClick,
+                    onDeletePlaylistFolderClick = onDeletePlaylistFolderClick,
+                    onMovePlaylistToFolderClick = onMovePlaylistToFolderClick,
                     onRenamePlaylistClick = onRenamePlaylistClick,
                     onPlaylistClick = { playlist ->
                         selectedPlaylistId = playlist.playlistId
@@ -951,15 +991,20 @@ internal fun MusicScreen(
                     },
                     onDeletePlaylistClick = onDeletePlaylistClick,
                     onExportPlaylistClick = onExportPlaylistClick,
+                    onAddPlaylistToQueueClick = addPlaylistToQueue,
                     onImportPlaylistClick = onImportPlaylistClick,
+                    onChangePlaylistArtwork = onChangePlaylistArtwork,
+                    onResetPlaylistArtwork = onResetPlaylistArtwork,
                     onBackFromPlaylist = {
-                        selectedPlaylistId = null
+                        clearPlaylistSelection()
                     },
                     onRemovePlaylistSongClick = { playlistSong ->
                         playlistSnackbarActions.removePlaylistSong(playlistSong)
                     },
-                    onMovePlaylistSongUpClick = onMovePlaylistSongUpClick,
-                    onMovePlaylistSongDownClick = onMovePlaylistSongDownClick,
+                    onReorderPlaylistSongs = onReorderPlaylistSongs,
+                    onAddSongsToCurrentPlaylistClick = { playlist, songs ->
+                        playlistSnackbarActions.addSongsToPlaylist(playlist, songs)
+                    },
                     onEditSongTagsClick = { song ->
                         isTagSaveInProgress = false
                         hasUnsavedTagChanges = false
@@ -1032,7 +1077,7 @@ internal fun MusicScreen(
                             selectedLibraryTab = LibraryTab.QUEUE
                             selectedArtistName = null
                             selectedAlbumFolderPath = null
-                            selectedPlaylistId = null
+                            clearPlaylistSelection()
                             mainDestination = MainDestination.LIBRARY
                         },
                         onToggleFavoriteClick = onToggleFavoriteClick,
@@ -1075,7 +1120,7 @@ internal fun MusicScreen(
                     onDestinationSelected = { destination ->
                         selectedArtistName = null
                         selectedAlbumFolderPath = null
-                        selectedPlaylistId = null
+                        clearPlaylistSelection()
                         if (destination == MainDestination.SEARCH) {
                             selectedLibraryTab = LibraryTab.SONGS
                         }
@@ -1121,6 +1166,7 @@ internal fun MusicScreen(
                     queuedSongs = queuedSongs,
                     upcomingSongs = upcomingSongs,
                     isCreatePlaylistDialogVisible = isCreatePlaylistDialogVisible,
+                    createPlaylistFolderId = playlistCreationFolderId,
                     songPendingPlaylistAdd = songPendingPlaylistAdd,
                     playlists = playlists,
                     onPlayPauseClick = onPlayPauseClick,
@@ -1163,8 +1209,10 @@ internal fun MusicScreen(
                     onToggleFavoriteClick = onToggleFavoriteClick,
                     onDismissCreatePlaylistDialog = {
                         isCreatePlaylistDialogVisible = false
+                        playlistCreationFolderId = null
                     },
                     onCreatePlaylistClick = onCreatePlaylistClick,
+                    onCreatePlaylistWithSongsClick = onCreatePlaylistWithSongsClick,
                     onDismissAddToPlaylistDialog = {
                         songPendingPlaylistAdd = null
                     },

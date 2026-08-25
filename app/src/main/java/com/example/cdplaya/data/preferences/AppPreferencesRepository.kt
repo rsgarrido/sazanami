@@ -20,6 +20,7 @@ import com.example.cdplaya.data.PlayerTheme
 import com.example.cdplaya.data.FolderSelection
 import com.example.cdplaya.data.FolderSelectionMode
 import com.example.cdplaya.data.home.HomePin
+import com.example.cdplaya.data.home.HomePinType
 import com.example.cdplaya.data.home.sanitizeHomePins
 import com.example.cdplaya.player.audio.AudioOffloadPreference
 import com.example.cdplaya.player.equalizer.EqualizerMode
@@ -413,6 +414,15 @@ class AppPreferencesRepository private constructor(
     suspend fun removeHomePin(pinId: String) = edit { preferences ->
         val current = decodeAppPreferences(preferences).homePins
         preferences.writeHomePins(current.filterNot { pin -> pin.id == pinId })
+    }
+
+    suspend fun removeHomePinsForPlaylist(playlistId: Long) = edit { preferences ->
+        val current = decodeAppPreferences(preferences).homePins
+        preferences.writeHomePins(
+            current.filterNot { pin ->
+                pin.type == HomePinType.PLAYLIST && pin.playlistId == playlistId
+            }
+        )
     }
 
     suspend fun moveHomePin(pinId: String, offset: Int) = edit { preferences ->

@@ -48,7 +48,8 @@ class ListeningImportFoundationMigrationTest {
         val database = Room.databaseBuilder(context, AppDatabase::class.java, name)
             .addMigrations(
                 DatabaseProvider.MIGRATION_10_11,
-                DatabaseProvider.MIGRATION_11_12
+                DatabaseProvider.MIGRATION_11_12,
+                DatabaseProvider.MIGRATION_12_13
             ).build()
         try {
             val sqlite = database.openHelper.writableDatabase

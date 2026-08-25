@@ -6,6 +6,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
@@ -29,6 +30,7 @@ import com.example.cdplaya.ui.home.resolveHomePins
 import com.example.cdplaya.ui.ratings.LocalSongRatingUi
 import com.example.cdplaya.ui.ratings.SongRatingDialog
 import com.example.cdplaya.ui.ratings.SongRatingUiEnvironment
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun MusicRoute(
@@ -73,6 +75,7 @@ internal fun MusicRoute(
     if (!playerAppearanceUiState.isLoaded || !libraryAppearanceUiState.isLoaded ||
         !homeCustomizationUiState.isLoaded
     ) return
+    val routeScope = rememberCoroutineScope()
 
     val startupBlocked = !mediaAccessState.hasAudioAccess ||
             !libraryUiState.hasPublishedInitialLibraryState ||
@@ -92,10 +95,15 @@ internal fun MusicRoute(
     }
 
     var pendingHomePin by remember { mutableStateOf<HomePin?>(null) }
-    val resolvedHomePins = remember(homeCustomizationUiState.pins, libraryUiState.songs) {
+    val resolvedHomePins = remember(
+        homeCustomizationUiState.pins,
+        libraryUiState.songs,
+        libraryUiState.playlists
+    ) {
         resolveHomePins(
             pins = homeCustomizationUiState.pins,
-            songs = libraryUiState.songs
+            songs = libraryUiState.songs,
+            playlists = libraryUiState.playlists
         )
     }
     val homePinUiEnvironment = HomePinUiEnvironment(
@@ -196,8 +204,11 @@ internal fun MusicRoute(
             unresolvedPlaylistRowCount = libraryUiState.unresolvedPlaylistRowCount,
             unresolvedListeningHistoryCount = libraryUiState.unresolvedListeningHistoryCount,
             playlists = libraryUiState.playlists,
+            playlistFolders = libraryUiState.playlistFolders,
+            selectedPlaylistStateId = libraryUiState.selectedPlaylistId,
             selectedPlaylistName = libraryUiState.selectedPlaylistName,
             selectedPlaylistSongs = libraryUiState.selectedPlaylistSongs,
+            isSelectedPlaylistLoading = libraryUiState.isSelectedPlaylistLoading,
             onSongClick = { song, playbackContext ->
                 musicViewModel.playSelectedSong(
                     song = song,
@@ -281,9 +292,34 @@ internal fun MusicRoute(
             onToggleFavoriteClick = { song ->
                 musicViewModel.toggleFavorite(song)
             },
-            onCreatePlaylistClick = { playlistName ->
-                musicViewModel.createPlaylist(playlistName)
+            onCreatePlaylistClick = { playlistName, folderId ->
+                musicViewModel.createPlaylist(playlistName, folderId)
             },
+            onCreatePlaylistWithSongsClick = { playlistName, initialSongs ->
+                musicViewModel.createPlaylistWithSongs(
+                    playlistName = playlistName,
+                    initialSongs = initialSongs
+                ) { result ->
+                    routeScope.launch {
+                        snackbarHostState.showSnackbar(
+                            result.fold(
+                                onSuccess = { playlist ->
+                                    if (initialSongs.size == 1) {
+                                        "\"${initialSongs.first().title}\" added to \"${playlist.name}\""
+                                    } else {
+                                        "${initialSongs.size} songs added to \"${playlist.name}\""
+                                    }
+                                },
+                                onFailure = { it.message ?: "Unable to create playlist." }
+                            )
+                        )
+                    }
+                }
+            },
+            onCreatePlaylistFolderClick = musicViewModel::createPlaylistFolder,
+            onRenamePlaylistFolderClick = musicViewModel::renamePlaylistFolder,
+            onDeletePlaylistFolderClick = musicViewModel::deletePlaylistFolder,
+            onMovePlaylistToFolderClick = musicViewModel::movePlaylistToFolder,
             onRenamePlaylistClick = { playlist, newName ->
                 musicViewModel.renamePlaylist(
                     playlist = playlist,
@@ -294,12 +330,38 @@ internal fun MusicRoute(
                 musicViewModel.deletePlaylist(playlist)
             },
             onExportPlaylistClick = playlistExportActions.exportPlaylist,
+            onPreparePlaylistQueueSongs = musicViewModel::preparePlaylistQueueSongs,
             onImportPlaylistClick = playlistImportActions.importPlaylist,
+            onChangePlaylistArtwork = { playlist, uri ->
+                musicViewModel.changePlaylistArtwork(playlist, uri) { result ->
+                    routeScope.launch {
+                        snackbarHostState.showSnackbar(
+                            result.fold(
+                                onSuccess = { "Playlist artwork updated." },
+                                onFailure = { it.message ?: "Unable to update playlist artwork." }
+                            )
+                        )
+                    }
+                }
+            },
+            onResetPlaylistArtwork = { playlist ->
+                musicViewModel.resetPlaylistArtwork(playlist) { result ->
+                    routeScope.launch {
+                        snackbarHostState.showSnackbar(
+                            result.fold(
+                                onSuccess = { "Using automatic playlist artwork." },
+                                onFailure = { it.message ?: "Unable to reset playlist artwork." }
+                            )
+                        )
+                    }
+                }
+            },
             onExportBackupClick = backupExportActions.exportBackup,
             onRestoreBackupClick = backupRestoreActions.restoreBackup,
             onPlaylistSelected = { playlist ->
                 musicViewModel.loadSelectedPlaylist(playlist)
             },
+            onPlaylistCleared = musicViewModel::clearSelectedPlaylist,
             onAddSongToPlaylistClick = { playlist, song ->
                 musicViewModel.addSongToPlaylist(
                     playlist = playlist,
@@ -315,12 +377,7 @@ internal fun MusicRoute(
             onRemovePlaylistSongClick = { playlistSong ->
                 musicViewModel.removePlaylistSong(playlistSong)
             },
-            onMovePlaylistSongUpClick = { playlistSong ->
-                musicViewModel.movePlaylistSongUp(playlistSong)
-            },
-            onMovePlaylistSongDownClick = { playlistSong ->
-                musicViewModel.movePlaylistSongDown(playlistSong)
-            },
+            onReorderPlaylistSongs = musicViewModel::reorderPlaylistSongs,
             onTagsEdited = { originalSong, editedTags ->
                 musicViewModel.refreshSongsAfterTagEdit(
                     originalSong = originalSong,

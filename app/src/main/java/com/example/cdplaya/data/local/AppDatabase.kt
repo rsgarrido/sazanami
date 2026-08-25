@@ -8,6 +8,7 @@ import androidx.room.TypeConverters
     entities = [
         DatabaseMarkerEntity::class,
         FavoriteSongEntity::class,
+        PlaylistFolderEntity::class,
         PlaylistEntity::class,
         PlaylistSongEntity::class,
         SongPlayStatsEntity::class,
@@ -24,7 +25,7 @@ import androidx.room.TypeConverters
         ImportedListeningEventEvidenceEntity::class,
         ListeningImportBatchEventEntity::class
     ],
-    version = 12,
+    version = 14,
     exportSchema = true
 )
 @TypeConverters(ListeningHistoryTypeConverters::class)

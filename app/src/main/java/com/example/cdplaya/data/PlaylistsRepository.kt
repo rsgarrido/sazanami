@@ -1,27 +1,74 @@
 package com.example.cdplaya.data
 
 import com.example.cdplaya.data.backup.BackupPlaylist
+import com.example.cdplaya.data.backup.BackupPlaylistFolder
 import com.example.cdplaya.data.backup.BackupPlaylistSong
 import com.example.cdplaya.data.backup.BackupSongReference
 import com.example.cdplaya.data.backup.toBackupSongReference
 import com.example.cdplaya.data.backup.toSongReference
 import com.example.cdplaya.data.local.PlaylistDao
 import com.example.cdplaya.data.local.PlaylistEntity
+import com.example.cdplaya.data.local.PlaylistFolderEntity
 import com.example.cdplaya.data.local.PlaylistSongEntity
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 class PlaylistsRepository(
     private val playlistDao: PlaylistDao
 ) {
-    suspend fun getPlaylists(): List<Playlist> {
-        return playlistDao.getPlaylistsWithSongCount().map { playlist ->
-            Playlist(
-                playlistId = playlist.playlistId,
-                name = playlist.name,
-                songCount = playlist.songCount
-            )
+    private val membershipMutationMutex = Mutex()
+    suspend fun getPlaylists(librarySongs: Collection<Song> = emptyList()): List<Playlist> {
+        val playlistRows = playlistDao.getPlaylistsWithSongCount()
+        val songsByPlaylistId: Map<Long, List<PlaylistSongEntity>> = if (librarySongs.isEmpty()) {
+            emptyMap()
+        } else {
+            playlistDao.getAllPlaylistSongEntities().groupBy { it.playlistId }
+        }
+
+        return withContext(Dispatchers.Default) {
+            val songIndex = SongReferenceIndex.build(librarySongs)
+            playlistRows.map { playlist ->
+                val resolvedSongs = songsByPlaylistId[playlist.playlistId]
+                    .orEmpty()
+                    .mapNotNull { row ->
+                        (songIndex.resolve(row.toSongReference()) as? SongReferenceResolution.Resolved)
+                            ?.song
+                    }
+                val automaticArtworkSongs = resolvedSongs
+                    .distinctBy(::playlistArtworkAlbumKey)
+                    .take(4)
+
+                Playlist(
+                    playlistId = playlist.playlistId,
+                    name = playlist.name,
+                    songCount = playlist.songCount,
+                    totalDuration = playlist.totalDuration,
+                    type = PlaylistType.fromStorage(playlist.type),
+                    artworkMode = PlaylistArtworkMode.fromStorage(playlist.artworkMode),
+                    artworkReference = playlist.artworkReference,
+                    folderId = playlist.folderId,
+                    createdAt = playlist.createdAt,
+                    modifiedAt = playlist.updatedAt,
+                    songMembershipKeys = resolvedSongs.mapTo(linkedSetOf(), Song::membershipKey),
+                    automaticArtworkSongs = automaticArtworkSongs
+                )
+            }
         }
     }
+
+    suspend fun getPlaylistFolders(): List<PlaylistFolder> =
+        playlistDao.getPlaylistFoldersWithCount().map { folder ->
+            PlaylistFolder(
+                folderId = folder.folderId,
+                name = folder.name,
+                playlistCount = folder.playlistCount,
+                createdAt = folder.createdAt,
+                modifiedAt = folder.updatedAt
+            )
+        }
 
     suspend fun getPlaylistsForBackup(): List<BackupPlaylist> {
         val songsByPlaylistId = playlistDao.getAllPlaylistSongEntities()
@@ -29,7 +76,12 @@ class PlaylistsRepository(
 
         return playlistDao.getAllPlaylistEntities().map { playlist ->
             BackupPlaylist(
+                playlistId = playlist.playlistId,
                 name = playlist.name,
+                type = playlist.type,
+                artworkMode = playlist.artworkMode,
+                artworkReference = playlist.artworkReference,
+                folderId = playlist.folderId,
                 createdAt = playlist.createdAt,
                 updatedAt = playlist.updatedAt,
                 songs = songsByPlaylistId[playlist.playlistId]
@@ -50,11 +102,39 @@ class PlaylistsRepository(
         }
     }
 
-    suspend fun restorePlaylistsFromBackup(playlists: List<BackupPlaylist>) {
+    suspend fun getPlaylistFoldersForBackup(): List<BackupPlaylistFolder> =
+        playlistDao.getAllPlaylistFolderEntities().map { folder ->
+            BackupPlaylistFolder(
+                folderId = folder.folderId,
+                name = folder.name,
+                createdAt = folder.createdAt,
+                updatedAt = folder.updatedAt
+            )
+        }
+
+    suspend fun restorePlaylistsFromBackup(
+        folders: List<BackupPlaylistFolder>,
+        playlists: List<BackupPlaylist>
+    ): Map<Long, Long> {
         playlistDao.deleteAllPlaylistSongs()
         playlistDao.deleteAllPlaylists()
+        playlistDao.deleteAllPlaylistFolders()
+
+        val restoredFolderNames = mutableListOf<String>()
+        val restoredFolderIds = folders.associate { folder ->
+            val uniqueName = uniquePlaylistFolderName(folder.name, restoredFolderNames)
+            restoredFolderNames += uniqueName
+            folder.folderId to playlistDao.insertPlaylistFolder(
+                PlaylistFolderEntity(
+                    name = uniqueName,
+                    createdAt = folder.createdAt,
+                    updatedAt = folder.updatedAt
+                )
+            )
+        }
 
         val restoredNames = mutableListOf<String>()
+        val restoredPlaylistIds = mutableMapOf<Long, Long>()
 
         playlists.forEach { playlist ->
             val uniqueName = uniquePlaylistName(
@@ -66,10 +146,17 @@ class PlaylistsRepository(
             val newPlaylistId = playlistDao.insertPlaylist(
                 PlaylistEntity(
                     name = uniqueName,
+                    type = PlaylistType.fromStorage(playlist.type).name,
+                    artworkMode = PlaylistArtworkMode.fromStorage(playlist.artworkMode).name,
+                    artworkReference = playlist.artworkReference,
+                    folderId = playlist.folderId?.let(restoredFolderIds::get),
                     createdAt = playlist.createdAt,
                     updatedAt = playlist.updatedAt
                 )
             )
+            playlist.playlistId?.takeIf { it > 0L }?.let { backupPlaylistId ->
+                restoredPlaylistIds[backupPlaylistId] = newPlaylistId
+            }
 
             if (playlist.songs.isNotEmpty()) {
                 playlistDao.insertPlaylistSongs(
@@ -79,6 +166,7 @@ class PlaylistsRepository(
                 )
             }
         }
+        return restoredPlaylistIds
     }
 
     suspend fun getPlaylistName(playlistId: Long): String {
@@ -101,11 +189,26 @@ class PlaylistsRepository(
         }
     }
 
-    suspend fun createPlaylist(name: String): Boolean {
-        return createPlaylistReturningId(name) != null
+    suspend fun createPlaylist(name: String, folderId: Long? = null): Boolean {
+        return createPlaylistReturningId(name, folderId) != null
     }
 
-    suspend fun createPlaylistReturningId(name: String): Long? {
+    suspend fun createPlaylist(
+        name: String,
+        initialSongs: List<Song>,
+        folderId: Long? = null
+    ): Playlist? {
+        val playlistId = createPlaylistReturningId(name, folderId) ?: return null
+        try {
+            addSongsToPlaylist(playlistId, initialSongs)
+        } catch (failure: Throwable) {
+            playlistDao.deletePlaylist(playlistId)
+            throw failure
+        }
+        return getPlaylists(initialSongs).firstOrNull { it.playlistId == playlistId }
+    }
+
+    suspend fun createPlaylistReturningId(name: String, folderId: Long? = null): Long? {
         val trimmedName = name.trim()
 
         if (trimmedName.isBlank()) {
@@ -118,12 +221,14 @@ class PlaylistsRepository(
         if (playlistNameAlreadyExists) {
             return null
         }
+        if (folderId != null && playlistDao.getPlaylistFolderById(folderId) == null) return null
 
         val now = System.currentTimeMillis()
 
         return playlistDao.insertPlaylist(
             PlaylistEntity(
                 name = trimmedName,
+                folderId = folderId,
                 createdAt = now,
                 updatedAt = now
             )
@@ -144,26 +249,48 @@ class PlaylistsRepository(
                 playlist.name
             }
         )
-        val playlistId = checkNotNull(createPlaylistReturningId(uniqueName)) {
+        return checkNotNull(createPlaylist(uniqueName, songs)) {
             "Unable to create imported playlist."
         }
-
-        try {
-            addSongsToPlaylist(
-                playlistId = playlistId,
-                songs = songs
-            )
-        } catch (exception: Exception) {
-            playlistDao.deletePlaylist(playlistId)
-            throw exception
-        }
-
-        return Playlist(
-            playlistId = playlistId,
-            name = uniqueName,
-            songCount = songs.size
-        )
     }
+
+    suspend fun restorePlaylistsFromBackup(playlists: List<BackupPlaylist>): Map<Long, Long> =
+        restorePlaylistsFromBackup(folders = emptyList(), playlists = playlists)
+
+    suspend fun createPlaylistFolder(name: String): Boolean {
+        val trimmedName = name.trim()
+        if (trimmedName.isBlank() || playlistDao.countPlaylistFoldersWithName(trimmedName) > 0) {
+            return false
+        }
+        val now = System.currentTimeMillis()
+        playlistDao.insertPlaylistFolder(
+            PlaylistFolderEntity(name = trimmedName, createdAt = now, updatedAt = now)
+        )
+        return true
+    }
+
+    suspend fun renamePlaylistFolder(folderId: Long, newName: String): Boolean {
+        val trimmedName = newName.trim()
+        if (
+            trimmedName.isBlank() ||
+            playlistDao.countOtherPlaylistFoldersWithName(folderId, trimmedName) > 0
+        ) {
+            return false
+        }
+        playlistDao.renamePlaylistFolder(folderId, trimmedName, System.currentTimeMillis())
+        return true
+    }
+
+    suspend fun deletePlaylistFolder(folderId: Long) {
+        playlistDao.deletePlaylistFolder(folderId, System.currentTimeMillis())
+    }
+
+    suspend fun movePlaylistToFolder(playlistId: Long, folderId: Long?): Boolean =
+        playlistDao.movePlaylistToFolder(
+            playlistId = playlistId,
+            folderId = folderId,
+            updatedAt = System.currentTimeMillis()
+        )
 
     suspend fun renamePlaylist(
         playlistId: Long,
@@ -198,6 +325,27 @@ class PlaylistsRepository(
         playlistDao.deletePlaylist(playlistId)
     }
 
+    suspend fun setCustomArtwork(
+        playlistId: Long,
+        artworkReference: String
+    ) {
+        playlistDao.updatePlaylistArtwork(
+            playlistId = playlistId,
+            artworkMode = PlaylistArtworkMode.CUSTOM.name,
+            artworkReference = artworkReference,
+            updatedAt = System.currentTimeMillis()
+        )
+    }
+
+    suspend fun resetArtwork(playlistId: Long) {
+        playlistDao.updatePlaylistArtwork(
+            playlistId = playlistId,
+            artworkMode = PlaylistArtworkMode.AUTOMATIC.name,
+            artworkReference = null,
+            updatedAt = System.currentTimeMillis()
+        )
+    }
+
     suspend fun addSongToPlaylist(
         playlistId: Long,
         song: Song
@@ -211,15 +359,26 @@ class PlaylistsRepository(
     suspend fun addSongsToPlaylist(
         playlistId: Long,
         songs: List<Song>
-    ): Int {
+    ): Int = membershipMutationMutex.withLock {
         if (songs.isEmpty()) {
-            return 0
+            return@withLock 0
         }
+
+        val distinctSongs = songs.distinctBy(Song::membershipKey)
+        val incomingIndex = SongReferenceIndex.build(distinctSongs)
+        val existingMembershipKeys = playlistDao.getPlaylistSongs(playlistId)
+            .mapNotNullTo(mutableSetOf()) { existing ->
+                (incomingIndex.resolve(existing.toSongReference()) as? SongReferenceResolution.Resolved)
+                    ?.song
+                    ?.membershipKey()
+            }
+        val songsToInsert = distinctSongs.filter { it.membershipKey() !in existingMembershipKeys }
+        if (songsToInsert.isEmpty()) return@withLock 0
 
         val now = System.currentTimeMillis()
         val firstPosition = playlistDao.getLastPositionForPlaylist(playlistId) + 1
 
-        val playlistSongEntities = songs.mapIndexed { index, song ->
+        val playlistSongEntities = songsToInsert.mapIndexed { index, song ->
             playlistSongEntity(
                 playlistId = playlistId,
                 position = firstPosition + index,
@@ -235,7 +394,7 @@ class PlaylistsRepository(
             updatedAt = now
         )
 
-        return songs.size
+        songsToInsert.size
     }
 
     suspend fun removePlaylistSong(
@@ -249,72 +408,13 @@ class PlaylistsRepository(
         )
     }
 
-    suspend fun movePlaylistSongUp(
+    suspend fun reorderPlaylistSongs(
         playlistId: Long,
-        playlistSongId: Long
-    ) {
-        val playlistSongs = playlistDao.getPlaylistSongs(playlistId)
-        val currentIndex = playlistSongs.indexOfFirst { playlistSong ->
-            playlistSong.playlistSongId == playlistSongId
-        }
-
-        if (currentIndex <= 0) {
-            return
-        }
-
-        val currentPlaylistSong = playlistSongs[currentIndex]
-        val previousPlaylistSong = playlistSongs[currentIndex - 1]
-
-        swapPlaylistSongPositions(
+        orderedPlaylistSongIds: List<Long>
+    ): Boolean {
+        return playlistDao.updatePlaylistSongOrder(
             playlistId = playlistId,
-            firstPlaylistSong = currentPlaylistSong,
-            secondPlaylistSong = previousPlaylistSong
-        )
-    }
-
-    suspend fun movePlaylistSongDown(
-        playlistId: Long,
-        playlistSongId: Long
-    ) {
-        val playlistSongs = playlistDao.getPlaylistSongs(playlistId)
-        val currentIndex = playlistSongs.indexOfFirst { playlistSong ->
-            playlistSong.playlistSongId == playlistSongId
-        }
-
-        if (currentIndex == -1 || currentIndex >= playlistSongs.lastIndex) {
-            return
-        }
-
-        val currentPlaylistSong = playlistSongs[currentIndex]
-        val nextPlaylistSong = playlistSongs[currentIndex + 1]
-
-        swapPlaylistSongPositions(
-            playlistId = playlistId,
-            firstPlaylistSong = currentPlaylistSong,
-            secondPlaylistSong = nextPlaylistSong
-        )
-    }
-
-    private suspend fun swapPlaylistSongPositions(
-        playlistId: Long,
-        firstPlaylistSong: PlaylistSongEntity,
-        secondPlaylistSong: PlaylistSongEntity
-    ) {
-        val firstPosition = firstPlaylistSong.position
-        val secondPosition = secondPlaylistSong.position
-
-        playlistDao.updatePlaylistSongPosition(
-            playlistSongId = firstPlaylistSong.playlistSongId,
-            position = secondPosition
-        )
-
-        playlistDao.updatePlaylistSongPosition(
-            playlistSongId = secondPlaylistSong.playlistSongId,
-            position = firstPosition
-        )
-
-        playlistDao.updatePlaylistTimestamp(
-            playlistId = playlistId,
+            orderedPlaylistSongIds = orderedPlaylistSongIds,
             updatedAt = System.currentTimeMillis()
         )
     }
@@ -357,6 +457,14 @@ class PlaylistsRepository(
     internal suspend fun applyReferenceBackfill(plan: PlaylistReferenceBackfill) {
         if (plan.rows.isNotEmpty()) playlistDao.updatePlaylistSongs(plan.rows)
     }
+}
+
+private fun playlistArtworkAlbumKey(song: Song): String = buildString {
+    append(song.albumArtist.ifBlank { song.artist }.trim().lowercase(Locale.ROOT))
+    append('\u0000')
+    append(song.album.trim().lowercase(Locale.ROOT))
+    append('\u0000')
+    append(song.folderPath.trim().lowercase(Locale.ROOT))
 }
 
 private fun BackupPlaylistSong.toEntity(playlistId: Long): PlaylistSongEntity {
@@ -442,6 +550,24 @@ internal fun uniquePlaylistName(
             return candidate
         }
 
+        suffix += 1
+    }
+}
+
+private fun uniquePlaylistFolderName(
+    preferredName: String,
+    existingNames: Collection<String>
+): String {
+    val baseName = preferredName.trim().ifBlank { "Playlist Folder" }
+    val lowercaseExistingNames = existingNames.mapTo(mutableSetOf()) {
+        it.trim().lowercase(Locale.ROOT)
+    }
+    if (baseName.lowercase(Locale.ROOT) !in lowercaseExistingNames) return baseName
+
+    var suffix = 2
+    while (true) {
+        val candidate = "$baseName ($suffix)"
+        if (candidate.lowercase(Locale.ROOT) !in lowercaseExistingNames) return candidate
         suffix += 1
     }
 }

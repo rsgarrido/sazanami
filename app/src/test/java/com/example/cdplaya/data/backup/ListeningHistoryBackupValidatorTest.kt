@@ -46,7 +46,7 @@ class ListeningHistoryBackupValidatorTest {
         )
         val history = decoded.canonicalListeningHistory!!
 
-        assertEquals(10, decoded.schemaVersion)
+        assertEquals(AppBackupJson.CURRENT_SCHEMA_VERSION, decoded.schemaVersion)
         assertEquals(2, history.identities.size)
         assertEquals(2, history.bindings.size)
         assertEquals(listOf(3, 4), history.baselines.map { it.historicalPlayCount })
@@ -110,7 +110,7 @@ class ListeningHistoryBackupValidatorTest {
         )
         val migrated = requireNotNull(decoded.canonicalListeningHistory)
 
-        assertEquals(10, decoded.schemaVersion)
+        assertEquals(AppBackupJson.CURRENT_SCHEMA_VERSION, decoded.schemaVersion)
         assertEquals(nativeEvent, migrated.events.single())
         assertEquals(4, decoded.songRatings.entries.single().rating)
         assertEquals(123L, decoded.songRatings.entries.single().ratedAt)

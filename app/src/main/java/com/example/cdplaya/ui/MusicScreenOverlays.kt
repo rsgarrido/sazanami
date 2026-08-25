@@ -67,6 +67,7 @@ fun MusicScreenOverlays(
     queuedSongs: List<Song>,
     upcomingSongs: List<Song>,
     isCreatePlaylistDialogVisible: Boolean,
+    createPlaylistFolderId: Long?,
     songPendingPlaylistAdd: Song?,
     playlists: List<Playlist>,
     onPlayPauseClick: () -> Unit,
@@ -91,7 +92,8 @@ fun MusicScreenOverlays(
     onClearQueueClick: () -> Unit,
     onToggleFavoriteClick: (Song) -> Unit,
     onDismissCreatePlaylistDialog: () -> Unit,
-    onCreatePlaylistClick: (String) -> Unit,
+    onCreatePlaylistClick: (String, Long?) -> Unit,
+    onCreatePlaylistWithSongsClick: (String, List<Song>) -> Unit,
     onDismissAddToPlaylistDialog: () -> Unit,
     onAddSongToPlaylistClick: (Playlist, Song) -> Unit,
     onAddSongsToPlaylistClick: (Playlist, List<Song>) -> Unit,
@@ -247,7 +249,7 @@ fun MusicScreenOverlays(
             },
             onDismiss = onDismissCreatePlaylistDialog,
             onConfirmClick = { playlistName ->
-                onCreatePlaylistClick(playlistName)
+                onCreatePlaylistClick(playlistName, createPlaylistFolderId)
                 onDismissCreatePlaylistDialog()
             }
         )
@@ -266,22 +268,26 @@ fun MusicScreenOverlays(
     if (songPendingPlaylistAdd != null) {
         AddToPlaylistDialog(
             playlists = playlists,
+            songsToAdd = listOf(songPendingPlaylistAdd),
             onDismiss = onDismissAddToPlaylistDialog,
-            onPlaylistSelected = { playlist ->
-                onAddSongToPlaylistClick(playlist, songPendingPlaylistAdd)
+            onPlaylistSelected = { playlist, songs ->
+                songs.singleOrNull()?.let { onAddSongToPlaylistClick(playlist, it) }
                 onDismissAddToPlaylistDialog()
-            }
+            },
+            onCreatePlaylist = onCreatePlaylistWithSongsClick
         )
     }
 
     if (songsPendingPlaylistAdd.isNotEmpty()) {
         AddToPlaylistDialog(
             playlists = playlists,
+            songsToAdd = songsPendingPlaylistAdd,
             onDismiss = onDismissBulkAddToPlaylistDialog,
-            onPlaylistSelected = { playlist ->
-                onAddSongsToPlaylistClick(playlist, songsPendingPlaylistAdd)
+            onPlaylistSelected = { playlist, songs ->
+                onAddSongsToPlaylistClick(playlist, songs)
                 onDismissBulkAddToPlaylistDialog()
-            }
+            },
+            onCreatePlaylist = onCreatePlaylistWithSongsClick
         )
     }
 }

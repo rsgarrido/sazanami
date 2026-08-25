@@ -1,5 +1,6 @@
 package com.example.cdplaya.ui
 
+import android.net.Uri
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
@@ -32,6 +33,7 @@ import com.example.cdplaya.data.LibraryFolder
 import com.example.cdplaya.data.FolderSelectionMode
 import com.example.cdplaya.data.PlayerTheme
 import com.example.cdplaya.data.Playlist
+import com.example.cdplaya.data.PlaylistFolder
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.AnalyticsRangePreset
@@ -115,8 +117,11 @@ internal fun MusicScreenBody(
     unresolvedPlaylistRowCount: Int,
     unresolvedListeningHistoryCount: Int,
     playlists: List<Playlist>,
+    playlistFolders: List<PlaylistFolder>,
+    selectedPlaylistStateId: Long?,
     selectedPlaylistName: String,
     selectedPlaylistSongs: List<PlaylistSong>,
+    isSelectedPlaylistLoading: Boolean,
     mainDestination: MainDestination,
     selectedLibraryTab: LibraryTab,
     selectedArtistName: String?,
@@ -193,17 +198,24 @@ internal fun MusicScreenBody(
     onMoveQueueItemUpClick: (Int) -> Unit,
     onMoveQueueItemDownClick: (Int) -> Unit,
     onClearQueueClick: () -> Unit,
-    onCreatePlaylistClick: () -> Unit,
+    onCreatePlaylistClick: (Long?) -> Unit,
+    onCreatePlaylistFolderClick: (String) -> Unit,
+    onRenamePlaylistFolderClick: (PlaylistFolder, String) -> Unit,
+    onDeletePlaylistFolderClick: (PlaylistFolder) -> Unit,
+    onMovePlaylistToFolderClick: (Playlist, Long?) -> Unit,
     onRenamePlaylistClick: (Playlist, String) -> Unit,
     onPlaylistClick: (Playlist) -> Unit,
     onDeletePlaylistClick: (Playlist) -> Unit,
     onExportPlaylistClick: (Playlist) -> Unit,
+    onAddPlaylistToQueueClick: (Playlist) -> Unit,
     onImportPlaylistClick: () -> Unit,
+    onChangePlaylistArtwork: (Playlist, Uri) -> Unit,
+    onResetPlaylistArtwork: (Playlist) -> Unit,
     onBackFromPlaylist: () -> Unit,
     onRemovePlaylistSongClick: (PlaylistSong) -> Unit,
     onAddSongsToPlaylistClick: (List<Song>) -> Unit,
-    onMovePlaylistSongUpClick: (PlaylistSong) -> Unit,
-    onMovePlaylistSongDownClick: (PlaylistSong) -> Unit,
+    onReorderPlaylistSongs: (Long, List<Long>) -> Unit,
+    onAddSongsToCurrentPlaylistClick: (Playlist, List<Song>) -> Unit,
     onEditSongTagsClick: (Song) -> Unit,
     isSleepTimerActive: Boolean,
     sleepTimerDisplayText: String,
@@ -441,6 +453,10 @@ internal fun MusicScreenBody(
                             onOpenLibrary(LibraryTab.ARTISTS)
                             onArtistSelected(artistName)
                         },
+                        onPinnedPlaylistClick = { playlist ->
+                            onOpenLibrary(LibraryTab.PLAYLISTS)
+                            onPlaylistClick(playlist)
+                        },
                         onRecentlyPlayedSongClick = { song ->
                             onSongClick(song, recentlyPlayedSongs)
                         },
@@ -480,7 +496,7 @@ internal fun MusicScreenBody(
                             .fillMaxSize()
                             .animateContentSize()
                     ) {
-                        if (!isArtistOrAlbumDetail || !mediaAccessState.hasAudioAccess) {
+                        if (!isLibraryDetail || !mediaAccessState.hasAudioAccess) {
                             MusicScreenHeader(
                                 title = when {
                                     isSearchDestination -> "Search"
@@ -579,8 +595,11 @@ internal fun MusicScreenBody(
                                     selectedAlbumFolderPath = selectedAlbumFolderPath,
                                     selectedPlaylistId = selectedPlaylistId,
                                     playlists = playlists,
+                                    playlistFolders = playlistFolders,
+                                    selectedPlaylistStateId = selectedPlaylistStateId,
                                     selectedPlaylistName = selectedPlaylistName,
                                     selectedPlaylistSongs = selectedPlaylistSongs,
+                                    isSelectedPlaylistLoading = isSelectedPlaylistLoading,
                                     currentSong = currentSong,
                                     recentlyAddedSongIds = recentlyAddedSongIds,
                                     favoriteMembershipKeys = favoriteMembershipKeys,
@@ -613,15 +632,23 @@ internal fun MusicScreenBody(
                                     onMoveQueueItemDownClick = onMoveQueueItemDownClick,
                                     onClearQueueClick = onClearQueueClick,
                                     onCreatePlaylistClick = onCreatePlaylistClick,
+                                    onCreatePlaylistFolderClick = onCreatePlaylistFolderClick,
+                                    onRenamePlaylistFolderClick = onRenamePlaylistFolderClick,
+                                    onDeletePlaylistFolderClick = onDeletePlaylistFolderClick,
+                                    onMovePlaylistToFolderClick = onMovePlaylistToFolderClick,
                                     onRenamePlaylistClick = onRenamePlaylistClick,
                                     onPlaylistClick = onPlaylistClick,
                                     onDeletePlaylistClick = onDeletePlaylistClick,
                                     onExportPlaylistClick = onExportPlaylistClick,
+                                    onAddPlaylistToQueueClick = onAddPlaylistToQueueClick,
                                     onImportPlaylistClick = onImportPlaylistClick,
+                                    onChangePlaylistArtwork = onChangePlaylistArtwork,
+                                    onResetPlaylistArtwork = onResetPlaylistArtwork,
                                     onBackFromPlaylist = onBackFromPlaylist,
                                     onRemovePlaylistSongClick = onRemovePlaylistSongClick,
-                                    onMovePlaylistSongUpClick = onMovePlaylistSongUpClick,
-                                    onMovePlaylistSongDownClick = onMovePlaylistSongDownClick,
+                                    onReorderPlaylistSongs = onReorderPlaylistSongs,
+                                    onAddSongsToCurrentPlaylistClick =
+                                        onAddSongsToCurrentPlaylistClick,
                                     onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
                                     onEditSongTagsClick = onEditSongTagsClick,
                                     ratingFeaturesEnabled = !isSearchDestination,
