@@ -5,6 +5,8 @@ import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.test.assertDoesNotExist
+import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -16,6 +18,7 @@ import com.example.cdplaya.data.membershipKey
 import com.example.cdplaya.ui.ratings.LocalSongRatingUi
 import com.example.cdplaya.ui.ratings.SongRatingUiEnvironment
 import com.example.cdplaya.ui.LibrarySortAction
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -57,15 +60,39 @@ class SongsRatingIntegrationTest {
             }
         }
 
-        composeRule.onNodeWithContentDescription("Quick rate songs").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Start Quick Rate").assertDoesNotExist()
         composeRule.runOnIdle { selectedTab.value = LibraryTab.RATED }
-        composeRule.onNodeWithContentDescription("Quick rate songs").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Start Quick Rate").assertIsDisplayed()
             .performClick()
-        composeRule.onNodeWithContentDescription("Done rating songs").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Exit Quick Rate").assertIsDisplayed()
+            .performClick()
+        composeRule.onNodeWithContentDescription("Start Quick Rate").assertIsDisplayed()
     }
 
     @Test
-    fun ratingSortReactsImmediatelyWithoutInlineIndicators() {
+    fun ratedFilterRowOffersAllAndExactStarChoices() {
+        val selectedFilter = mutableStateOf(RatedSongFilter.ALL)
+        composeRule.setContent {
+            MaterialTheme {
+                RatedSongFilterRow(
+                    selectedFilter = selectedFilter.value,
+                    onFilterSelected = { selectedFilter.value = it }
+                )
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("All ratings").assertIsDisplayed()
+        (1..5).forEach { rating ->
+            composeRule.onNodeWithContentDescription(
+                "$rating star${if (rating == 1) "" else "s"}"
+            ).assertExists()
+        }
+        composeRule.onNodeWithContentDescription("4 stars").performClick()
+        composeRule.runOnIdle { assertEquals(RatedSongFilter.FOUR, selectedFilter.value) }
+    }
+
+    @Test
+    fun ratedListShowsCompactRatingsAndReactsImmediately() {
         val low = song(1, "Low")
         val high = song(2, "High")
         val unrated = song(3, "Unrated song")
@@ -104,8 +131,8 @@ class SongsRatingIntegrationTest {
             }
         }
 
-        composeRule.onNodeWithContentDescription("Rated 5 out of 5").assertDoesNotExist()
-        composeRule.onNodeWithContentDescription("Rated 1 out of 5").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Rated 5 out of 5").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Rated 1 out of 5").assertIsDisplayed()
         composeRule.onNodeWithText("Unrated song").assertDoesNotExist()
         val highY = composeRule.onNodeWithText("High").fetchSemanticsNode().positionInRoot.y
         val lowY = composeRule.onNodeWithText("Low").fetchSemanticsNode().positionInRoot.y
@@ -122,6 +149,55 @@ class SongsRatingIntegrationTest {
         val updatedLowY = composeRule.onNodeWithText("Low").fetchSemanticsNode().positionInRoot.y
         assertTrue(updatedHighY < unratedY)
         assertTrue(unratedY < updatedLowY)
+        composeRule.onNodeWithContentDescription("Rated 4 out of 5").assertIsDisplayed()
+    }
+
+    @Test
+    fun ratedListAndGridUseTheSameExactStarFilterAndCompactIndicator() {
+        val five = song(1, "Five")
+        val four = song(2, "Four")
+        val viewMode = mutableStateOf(LibraryViewMode.LIST)
+        composeRule.setContent {
+            MaterialTheme {
+                CompositionLocalProvider(
+                    LocalSongRatingUi provides SongRatingUiEnvironment(
+                        state = SongRatingUiState(
+                            ratingsByReferenceKey = mapOf(
+                                five.membershipKey() to 5,
+                                four.membershipKey() to 4
+                            )
+                        )
+                    )
+                ) {
+                    RatedSongsTabContent(
+                        songs = listOf(five, four),
+                        searchQuery = "",
+                        sortOption = LibrarySortOption.RATING_HIGH_TO_LOW,
+                        selectedFilter = RatedSongFilter.FOUR,
+                        currentSong = null,
+                        viewMode = viewMode.value,
+                        gridColumnCount = 2,
+                        recentlyAddedSongIds = emptySet(),
+                        favoriteMembershipKeys = emptySet(),
+                        onSongClick = { _, _ -> },
+                        onPlayNextClick = {},
+                        onAddToQueueClick = {},
+                        onToggleFavoriteClick = {},
+                        onAddToPlaylistClick = {},
+                        onEditSongTagsClick = {}
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithText("Four").assertIsDisplayed()
+        composeRule.onNodeWithText("Five").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Rated 4 out of 5").assertIsDisplayed()
+
+        composeRule.runOnIdle { viewMode.value = LibraryViewMode.GRID }
+        composeRule.onNodeWithText("Four").assertIsDisplayed()
+        composeRule.onNodeWithText("Five").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Rated 4 out of 5").assertIsDisplayed()
     }
 
     @Test

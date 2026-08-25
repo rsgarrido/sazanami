@@ -34,8 +34,8 @@ import com.example.cdplaya.ui.library.displayTitleFor
 import com.example.cdplaya.ui.library.librarySortOptionsFor
 import com.example.cdplaya.ui.library.showsQuickRateAction
 import com.example.cdplaya.ui.ratings.LocalSongRatingUi
-import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarOutline
 import com.example.cdplaya.ui.library.LibraryTab
 import com.example.cdplaya.ui.player.PlayerCard
 import com.example.cdplaya.ui.player.PlayerMorphState
@@ -301,20 +301,22 @@ fun LibrarySortAction(
         if (selectedLibraryTab.showsQuickRateAction(ratingFeaturesEnabled)) {
             val ratingUi = LocalSongRatingUi.current
             Row {
-                if (ratingUi.quickRateMode) {
-                    AppShellIconButton(
-                        onClick = { ratingUi.onQuickRateModeChanged(false) },
-                        imageVector = Icons.Filled.Done,
-                        contentDescription = "Done rating songs",
-                        accented = true
-                    )
-                } else {
-                    AppShellIconButton(
-                        onClick = { ratingUi.onQuickRateModeChanged(true) },
-                        imageVector = Icons.Filled.Star,
-                        contentDescription = "Quick rate songs"
-                    )
-                }
+                AppShellIconButton(
+                    onClick = {
+                        ratingUi.onQuickRateModeChanged(!ratingUi.quickRateMode)
+                    },
+                    imageVector = if (ratingUi.quickRateMode) {
+                        Icons.Filled.Star
+                    } else {
+                        Icons.Outlined.StarOutline
+                    },
+                    contentDescription = if (ratingUi.quickRateMode) {
+                        "Exit Quick Rate"
+                    } else {
+                        "Start Quick Rate"
+                    },
+                    accented = ratingUi.quickRateMode
+                )
                 selectedSortOption?.let { option ->
                     LibrarySortDropdown(
                         selectedOption = option,

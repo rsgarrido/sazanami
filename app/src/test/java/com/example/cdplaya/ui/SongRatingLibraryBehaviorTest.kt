@@ -5,6 +5,8 @@ import com.example.cdplaya.ui.library.SongRatingFilter
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.membershipKey
 import com.example.cdplaya.ui.library.LibrarySortOption
+import com.example.cdplaya.ui.library.RatedSongFilter
+import com.example.cdplaya.ui.library.filterSongsForRatedCollection
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
 import org.junit.Test
@@ -89,6 +91,85 @@ class SongRatingLibraryBehaviorTest {
         assertEquals(
             emptyList<Song>(),
             filterSongsByRating(songs, SongRatingFilter.RATED, emptyMap())
+        )
+    }
+
+    @Test
+    fun ratedCollectionSupportsEveryExactStarFilter() {
+        val songs = (1L..6L).map { id -> song(id, "Song $id") }
+        val ratings = songs.take(5).associate { candidate ->
+            candidate.membershipKey() to candidate.id.toInt()
+        }
+
+        assertEquals(
+            songs.take(5),
+            filterSongsForRatedCollection(songs, RatedSongFilter.ALL, ratings)
+        )
+        listOf(
+            RatedSongFilter.FIVE to 5,
+            RatedSongFilter.FOUR to 4,
+            RatedSongFilter.THREE to 3,
+            RatedSongFilter.TWO to 2,
+            RatedSongFilter.ONE to 1
+        ).forEach { (filter, rating) ->
+            assertEquals(
+                listOf(songs[rating - 1]),
+                filterSongsForRatedCollection(songs, filter, ratings)
+            )
+        }
+    }
+
+    @Test
+    fun exactFilterComposesWithRatingSortAndReactsToRatingChanges() {
+        val alpha = song(1, "Alpha")
+        val beta = song(2, "Beta")
+        val source = listOf(beta, alpha)
+        val initialRatings = mapOf(
+            alpha.membershipKey() to 4,
+            beta.membershipKey() to 5
+        )
+
+        val initiallyFiltered = filterSongsForRatedCollection(
+            source,
+            RatedSongFilter.FOUR,
+            initialRatings
+        )
+        assertEquals(
+            listOf(alpha),
+            sortSongsForLibrary(
+                initiallyFiltered,
+                LibrarySortOption.RATING_HIGH_TO_LOW,
+                initialRatings
+            )
+        )
+
+        val changedRatings = mapOf(
+            alpha.membershipKey() to 5,
+            beta.membershipKey() to 4
+        )
+        assertEquals(
+            listOf(beta),
+            filterSongsForRatedCollection(source, RatedSongFilter.FOUR, changedRatings)
+        )
+        assertEquals(
+            emptyList<Song>(),
+            filterSongsForRatedCollection(
+                source,
+                RatedSongFilter.FOUR,
+                changedRatings - beta.membershipKey()
+            )
+        )
+        assertEquals(
+            listOf(alpha),
+            filterSongsForRatedCollection(
+                source,
+                RatedSongFilter.ALL,
+                changedRatings - beta.membershipKey()
+            )
+        )
+        assertEquals(
+            emptyList<Song>(),
+            filterSongsForRatedCollection(source, RatedSongFilter.ALL, emptyMap())
         )
     }
 

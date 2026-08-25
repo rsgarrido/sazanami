@@ -21,7 +21,6 @@ import com.example.cdplaya.ui.filterSongsForSearch
 import com.example.cdplaya.ui.sortSongsByAlbumOrder
 import com.example.cdplaya.ui.sortSongsForArtistDetail
 import com.example.cdplaya.ui.sortSongsForLibrary
-import com.example.cdplaya.ui.filterSongsByRating
 import com.example.cdplaya.ui.ratings.LocalSongRatingUi
 import androidx.compose.ui.res.stringResource
 
@@ -121,6 +120,7 @@ fun RatedSongsTabContent(
     songs: List<Song>,
     searchQuery: String,
     sortOption: LibrarySortOption,
+    selectedFilter: RatedSongFilter = RatedSongFilter.ALL,
     currentSong: Song?,
     viewMode: LibraryViewMode,
     gridColumnCount: Int,
@@ -139,8 +139,8 @@ fun RatedSongsTabContent(
     val ratingUi = LocalSongRatingUi.current
     val quickRateActive = ratingFeaturesEnabled && ratingUi.quickRateMode
     val ratings = ratingUi.state.ratingsByReferenceKey
-    val ratedSongs = remember(songs, ratings) {
-        filterSongsByRating(songs, SongRatingFilter.RATED, ratings)
+    val ratedSongs = remember(songs, selectedFilter, ratings) {
+        filterSongsForRatedCollection(songs, selectedFilter, ratings)
     }
     val searchedSongs = remember(ratedSongs, searchQuery) {
         filterSongsForSearch(ratedSongs, searchQuery)
@@ -148,17 +148,10 @@ fun RatedSongsTabContent(
     val displayedSongs = remember(searchedSongs, sortOption, ratings) {
         sortSongsForLibrary(searchedSongs, sortOption, ratings)
     }
-    val quickRateSongs = remember(songs, searchQuery, sortOption, ratings) {
-        sortSongsForLibrary(
-            filterSongsForSearch(songs, searchQuery),
-            sortOption,
-            ratings
-        )
-    }
 
-    if (quickRateActive && quickRateSongs.isNotEmpty()) {
+    if (quickRateActive && displayedSongs.isNotEmpty()) {
         SongList(
-            songs = quickRateSongs,
+            songs = displayedSongs,
             currentSongId = currentSong?.id,
             recentlyAddedSongIds = recentlyAddedSongIds,
             onSongClick = onSongClick,
@@ -173,12 +166,11 @@ fun RatedSongsTabContent(
             quickRatingMode = true,
             modifier = modifier.fillMaxSize()
         )
-    } else if (quickRateActive) {
-        Text("No songs match your search.", modifier = Modifier.padding(16.dp))
-    } else if (ratedSongs.isEmpty()) {
-        Text("No rated songs yet.", modifier = Modifier.padding(16.dp))
-    } else if (searchedSongs.isEmpty()) {
-        Text("No rated songs match your search.", modifier = Modifier.padding(16.dp))
+    } else if (quickRateActive || ratedSongs.isEmpty() || searchedSongs.isEmpty()) {
+        Text(
+            ratedCollectionEmptyMessage(selectedFilter, searchQuery),
+            modifier = Modifier.padding(16.dp)
+        )
     } else {
         LibraryLayoutTransition(
             viewMode = viewMode,
@@ -196,6 +188,7 @@ fun RatedSongsTabContent(
                     onAddToPlaylistClick = onAddToPlaylistClick,
                     onEditSongTagsClick = onEditSongTagsClick,
                     bottomContentPadding = bottomContentPadding,
+                    ratingValuesByReferenceKey = ratings,
                     modifier = Modifier.fillMaxSize()
                 )
             },
@@ -213,6 +206,7 @@ fun RatedSongsTabContent(
                     onAddToPlaylistClick = onAddToPlaylistClick,
                     onEditSongTagsClick = onEditSongTagsClick,
                     bottomContentPadding = bottomContentPadding,
+                    ratingValuesByReferenceKey = ratings,
                     modifier = Modifier.fillMaxSize()
                 )
             }

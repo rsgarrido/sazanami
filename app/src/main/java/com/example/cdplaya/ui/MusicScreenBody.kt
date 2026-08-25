@@ -54,6 +54,8 @@ import com.example.cdplaya.ui.library.FolderSelectionScreen
 import com.example.cdplaya.ui.library.LibraryBrowseSwitcher
 import com.example.cdplaya.ui.library.LibrarySortOption
 import com.example.cdplaya.ui.library.LibraryTab
+import com.example.cdplaya.ui.library.RatedSongFilter
+import com.example.cdplaya.ui.library.RatedSongFilterRow
 import com.example.cdplaya.ui.library.LibraryViewMode
 import com.example.cdplaya.ui.library.LibraryGridColumns
 import com.example.cdplaya.ui.library.LibraryViewOptionsButton
@@ -255,6 +257,9 @@ internal fun MusicScreenBody(
     }
     var selectedAddedSortOption by rememberSaveable {
         mutableStateOf(LibrarySortOption.DATE_ADDED_NEWEST)
+    }
+    var selectedRatedFilter by rememberSaveable {
+        mutableStateOf(RatedSongFilter.ALL)
     }
     val selectedCollectionSortOption = when (selectedLibraryTab) {
         LibraryTab.RATED -> selectedRatedSortOption
@@ -589,6 +594,13 @@ internal fun MusicScreenBody(
                                     },
                                     modifier = Modifier.padding(bottom = 4.dp)
                                 )
+                                if (selectedLibraryTab == LibraryTab.RATED) {
+                                    RatedSongFilterRow(
+                                        selectedFilter = selectedRatedFilter,
+                                        onFilterSelected = { selectedRatedFilter = it },
+                                        modifier = Modifier.padding(bottom = 4.dp)
+                                    )
+                                }
                             }
 
                             LibrarySearchControl(
@@ -614,6 +626,7 @@ internal fun MusicScreenBody(
                                     songs = songs,
                                     searchQuery = searchQuery,
                                     selectedSongSortOption = selectedCollectionSortOption,
+                                    selectedRatedFilter = selectedRatedFilter,
                                     selectedArtistSortOption = selectedArtistSortOption,
                                     selectedAlbumSortOption = selectedAlbumSortOption,
                                     selectedFavoriteSortOption = selectedFavoriteSortOption,
