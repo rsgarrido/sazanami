@@ -325,7 +325,7 @@ class PlaybackController(
     }
 
     fun togglePlayPause() {
-        if (musicPlayer.isPlaying()) {
+        if (musicPlayer.isPlayWhenReady()) {
             musicPlayer.pause()
             isPlaying = false
             savePlayerState()

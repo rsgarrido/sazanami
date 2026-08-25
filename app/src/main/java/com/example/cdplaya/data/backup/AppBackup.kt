@@ -23,6 +23,7 @@ data class BackupPreferences(
     val selectedPlayerThemeId: String = "",
     val replayGainMode: String = "",
     val audioOffloadPreference: String = "",
+    val smoothPlayPauseEnabled: Boolean = true,
     val modernArtworkTransitionStyle: String = "slide",
     val modernSeekbarStyle: String = "classic_bar",
     val playerThemeTokenOverrides: Map<String, BackupPlayerThemeTokenOverrides> = emptyMap(),

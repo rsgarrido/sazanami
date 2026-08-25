@@ -57,6 +57,8 @@ internal fun MusicRoute(
     musicViewModel.libraryAppearanceUiState.collectAsStateWithLifecycle()
     val audioOffloadPreference by
     musicViewModel.audioOffloadPreference.collectAsStateWithLifecycle()
+    val smoothPlayPauseEnabled by
+    musicViewModel.smoothPlayPauseEnabled.collectAsStateWithLifecycle()
     val audioOutputUiState by
     musicViewModel.audioOutputUiState.collectAsStateWithLifecycle()
     val equalizerScreenState by
@@ -425,6 +427,9 @@ internal fun MusicRoute(
             },
             selectedAudioOffloadPreference = audioOffloadPreference,
             onAudioOffloadPreferenceSelected = musicViewModel::selectAudioOffloadPreference,
+            smoothPlayPauseEnabled = smoothPlayPauseEnabled,
+            onSmoothPlayPauseEnabledChanged =
+                musicViewModel::setSmoothPlayPauseEnabled,
             audioOutputUiState = audioOutputUiState,
             equalizerScreenState = equalizerScreenState,
             equalizerActions = EqualizerUiActions(

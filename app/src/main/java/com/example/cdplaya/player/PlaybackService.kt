@@ -65,6 +65,7 @@ class PlaybackService : MediaLibraryService() {
     private var mediaSession: MediaLibrarySession? = null
     private val equalizerAudioProcessor = EqualizerAudioProcessor()
     private lateinit var player: ExoPlayer
+    private lateinit var sessionPlayer: SmoothPlaybackPlayer
     private lateinit var playerStateStorage: PlayerStateStorage
     private lateinit var listeningAdapter: PlaybackServiceListeningAdapter
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -311,6 +312,7 @@ class PlaybackService : MediaLibraryService() {
             .setAudioAttributes(audioAttributes, true)
             .setHandleAudioBecomingNoisy(true)
             .build()
+        sessionPlayer = SmoothPlaybackPlayer(player)
         appPreferencesRepository = AppPreferencesRepository.getInstance(this)
         audioManager = getSystemService(AudioManager::class.java)
         playerStateStorage = PlayerStateStorage(this)
@@ -332,6 +334,7 @@ class PlaybackService : MediaLibraryService() {
         observeAudioOffloadPreference()
         observeEqualizerPreferences()
         observeEqualizerRuntimeState()
+        observeSmoothPlaybackPreference()
 
         val sessionActivity = PendingIntent.getActivity(
             this,
@@ -342,7 +345,7 @@ class PlaybackService : MediaLibraryService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        mediaSession = MediaLibrarySession.Builder(this, player, libraryCallback)
+        mediaSession = MediaLibrarySession.Builder(this, sessionPlayer, libraryCallback)
             .setSessionActivity(sessionActivity)
             .build()
     }
@@ -363,6 +366,7 @@ class PlaybackService : MediaLibraryService() {
         audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)
         mediaSession?.release()
         mediaSession = null
+        sessionPlayer.releaseTransitionResources()
         player.release()
         EqualizerRuntimeBridge.release()
         serviceScope.cancel()
@@ -404,6 +408,16 @@ class PlaybackService : MediaLibraryService() {
                             requirements.comparisonSessionActive
                     )
                 }
+        }
+    }
+
+    private fun observeSmoothPlaybackPreference() {
+        serviceScope.launch {
+            appPreferencesRepository.state
+                .filter { preferences -> preferences.isLoaded }
+                .map { preferences -> preferences.smoothPlayPauseEnabled }
+                .distinctUntilChanged()
+                .collectLatest(sessionPlayer::setSmoothPlaybackEnabled)
         }
     }
 

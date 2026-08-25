@@ -41,6 +41,7 @@ class AppPreferencesStateTest {
         assertEquals(PlayerTheme.DEFAULT, state.selectedPlayerTheme)
         assertEquals(ReplayGainMode.OFF, state.replayGainMode)
         assertEquals(AudioOffloadPreference.DISABLED, state.audioOffloadPreference)
+        assertTrue(state.smoothPlayPauseEnabled)
         assertEquals(ModernArtworkTransitionStyle.SLIDE, state.modernArtworkTransitionStyle)
         assertEquals(ModernSeekbarStyle.CLASSIC_BAR, state.modernSeekbarStyle)
         assertEquals(2, state.songsGridColumnCount)
@@ -109,6 +110,17 @@ class AppPreferencesStateTest {
         assertEquals(AudioOffloadPreference.AUTOMATIC, state.audioOffloadPreference)
         assertEquals(PlayerTheme.RETRO_RACK, state.selectedPlayerTheme)
         assertEquals(ReplayGainMode.OFF, state.replayGainMode)
+    }
+
+    @Test
+    fun smoothPlayPauseCanBePersistedDisabled() {
+        val state = decodeAppPreferences(
+            mutablePreferencesOf(
+                booleanPreferencesKey("smooth_play_pause_enabled") to false
+            )
+        )
+
+        assertFalse(state.smoothPlayPauseEnabled)
     }
 
     @Test

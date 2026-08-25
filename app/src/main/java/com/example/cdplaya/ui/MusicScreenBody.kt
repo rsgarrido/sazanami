@@ -239,6 +239,8 @@ internal fun MusicScreenBody(
     onReplayGainModeSelected: (ReplayGainMode) -> Unit,
     selectedAudioOffloadPreference: AudioOffloadPreference,
     onAudioOffloadPreferenceSelected: (AudioOffloadPreference) -> Unit,
+    smoothPlayPauseEnabled: Boolean,
+    onSmoothPlayPauseEnabledChanged: (Boolean) -> Unit,
     audioOutputUiState: AudioOutputUiState,
     equalizerScreenState: EqualizerScreenState,
     equalizerActions: EqualizerUiActions,
@@ -404,6 +406,8 @@ internal fun MusicScreenBody(
                 onReplayGainModeSelected = onReplayGainModeSelected,
                 selectedAudioOffloadPreference = selectedAudioOffloadPreference,
                 onAudioOffloadPreferenceSelected = onAudioOffloadPreferenceSelected,
+                smoothPlayPauseEnabled = smoothPlayPauseEnabled,
+                onSmoothPlayPauseEnabledChanged = onSmoothPlayPauseEnabledChanged,
                 scrollState = settingsScrollState,
                 modifier = modifier
                     .fillMaxSize()

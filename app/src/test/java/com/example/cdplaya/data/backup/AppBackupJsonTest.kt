@@ -102,6 +102,7 @@ class AppBackupJsonTest {
             selectedPlayerThemeId = "retro_rack",
             replayGainMode = "TRACK",
             audioOffloadPreference = "AUTOMATIC",
+            smoothPlayPauseEnabled = false,
             modernArtworkTransitionStyle = "cover_flow",
             modernSeekbarStyle = "waveform_glow",
             playerThemeTokenOverrides = mapOf(

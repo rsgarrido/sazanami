@@ -272,6 +272,10 @@ class MusicViewModel(
             AudioOffloadPreference.DISABLED
         )
 
+    val smoothPlayPauseEnabled = appPreferencesRepository.state
+        .map { preferences -> preferences.smoothPlayPauseEnabled }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
     fun selectPlayerTheme(playerTheme: PlayerTheme) {
         viewModelScope.launch { appPreferencesRepository.setSelectedPlayerTheme(playerTheme) }
     }
@@ -335,6 +339,12 @@ class MusicViewModel(
     fun selectAudioOffloadPreference(preference: AudioOffloadPreference) {
         viewModelScope.launch {
             appPreferencesRepository.setAudioOffloadPreference(preference)
+        }
+    }
+
+    fun setSmoothPlayPauseEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            appPreferencesRepository.setSmoothPlayPauseEnabled(enabled)
         }
     }
 

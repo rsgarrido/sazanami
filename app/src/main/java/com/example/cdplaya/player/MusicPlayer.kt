@@ -208,6 +208,10 @@ class MusicPlayer(private val context: Context) {
         return controller?.isPlaying == true
     }
 
+    fun isPlayWhenReady(): Boolean {
+        return controller?.playWhenReady == true
+    }
+
     fun getCurrentSong(): Song? {
         return currentSong
     }

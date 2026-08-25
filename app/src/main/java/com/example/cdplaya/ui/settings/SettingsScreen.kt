@@ -88,6 +88,8 @@ fun SettingsScreen(
     onReplayGainModeSelected: (ReplayGainMode) -> Unit,
     selectedAudioOffloadPreference: AudioOffloadPreference,
     onAudioOffloadPreferenceSelected: (AudioOffloadPreference) -> Unit,
+    smoothPlayPauseEnabled: Boolean = true,
+    onSmoothPlayPauseEnabledChanged: (Boolean) -> Unit = {},
     scrollState: ScrollState = rememberScrollState(),
     modifier: Modifier = Modifier
 ) {
@@ -252,6 +254,20 @@ fun SettingsScreen(
             description = "Control sound processing, loudness, timing, and power use.",
             icon = AppShellIcons.Equalizer
         ) {
+            SettingsRow(
+                title = "Smooth play/pause",
+                summary = "Fade briefly when playback starts or pauses",
+                icon = AppShellIcons.MusicNote,
+                trailingContent = {
+                    Switch(
+                        checked = smoothPlayPauseEnabled,
+                        onCheckedChange = onSmoothPlayPauseEnabledChanged
+                    )
+                }
+            )
+
+            SettingsDivider()
+
             SettingsRow(
                 title = "Equalizer",
                 summary = equalizerSummary,

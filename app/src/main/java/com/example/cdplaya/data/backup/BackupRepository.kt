@@ -75,6 +75,7 @@ class BackupRepository(
                 selectedPlayerThemeId = appPreferences.selectedPlayerTheme.id,
                 replayGainMode = appPreferences.replayGainMode.name,
                 audioOffloadPreference = appPreferences.audioOffloadPreference.name,
+                smoothPlayPauseEnabled = appPreferences.smoothPlayPauseEnabled,
                 modernArtworkTransitionStyle =
                     appPreferences.modernArtworkTransitionStyle.storageValue,
                 modernSeekbarStyle = appPreferences.modernSeekbarStyle.storageValue,
@@ -242,6 +243,7 @@ class BackupRepository(
                 audioOffloadPreference = AudioOffloadPreference.fromStorageValue(
                     preferences.audioOffloadPreference
                 ),
+                smoothPlayPauseEnabled = preferences.smoothPlayPauseEnabled,
                 folderSelectionMode = FolderSelection.fromStored(
                     storedMode = preferences.folderSelectionMode,
                     storedFolders = preferences.selectedLibraryFolders.toSet()

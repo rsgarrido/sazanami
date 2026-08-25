@@ -220,6 +220,8 @@ internal fun MusicScreen(
     onReplayGainModeSelected: (ReplayGainMode) -> Unit,
     selectedAudioOffloadPreference: AudioOffloadPreference,
     onAudioOffloadPreferenceSelected: (AudioOffloadPreference) -> Unit,
+    smoothPlayPauseEnabled: Boolean,
+    onSmoothPlayPauseEnabledChanged: (Boolean) -> Unit,
     audioOutputUiState: AudioOutputUiState,
     equalizerScreenState: EqualizerScreenState,
     equalizerActions: EqualizerUiActions,
@@ -1033,6 +1035,8 @@ internal fun MusicScreen(
                     onReplayGainModeSelected = onReplayGainModeSelected,
                     selectedAudioOffloadPreference = selectedAudioOffloadPreference,
                     onAudioOffloadPreferenceSelected = onAudioOffloadPreferenceSelected,
+                    smoothPlayPauseEnabled = smoothPlayPauseEnabled,
+                    onSmoothPlayPauseEnabledChanged = onSmoothPlayPauseEnabledChanged,
                     audioOutputUiState = audioOutputUiState,
                     equalizerScreenState =
                         equalizerScreenState,
