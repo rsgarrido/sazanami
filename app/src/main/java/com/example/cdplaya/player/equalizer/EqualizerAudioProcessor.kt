@@ -17,8 +17,8 @@ import kotlin.math.min
 
 @OptIn(UnstableApi::class)
 internal class EqualizerAudioProcessor(
-    private val runtimeBridge: EqualizerRuntimeBridge =
-        EqualizerRuntimeBridge,
+    private val runtimeBridge: EqualizerProcessorRuntime =
+        EqualizerRuntimeBridge.createSelectedRuntimeForCompatibility(),
     transitionDurationMillis: Int =
         EqualizerTransitionState.DEFAULT_DURATION_MILLIS
 ) : BaseAudioProcessor() {

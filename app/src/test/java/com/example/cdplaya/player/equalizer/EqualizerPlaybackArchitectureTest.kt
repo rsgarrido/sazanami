@@ -23,6 +23,12 @@ class EqualizerPlaybackArchitectureTest {
         assertEquals(
             1,
             instanceFields.count { field ->
+                field.type == EqualizerDspRuntime::class.java
+            }
+        )
+        assertEquals(
+            1,
+            instanceFields.count { field ->
                 field.type ==
                     AppPreferencesRepository::class.java
             }
@@ -67,6 +73,15 @@ class EqualizerPlaybackArchitectureTest {
                     )
                 }
             }
+    }
+
+    @Test
+    fun sharedBridgeCannotBeUsedAsAProcessorRuntime() {
+        assertFalse(
+            EqualizerProcessorRuntime::class.java.isAssignableFrom(
+                EqualizerRuntimeBridge::class.java
+            )
+        )
     }
 
     @Test

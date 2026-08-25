@@ -40,6 +40,7 @@ import com.example.cdplaya.player.audio.mapAudioSourceFormat
 import com.example.cdplaya.player.audio.withAudioOffloadPreference
 import com.example.cdplaya.player.equalizer.AudioProcessingPolicy
 import com.example.cdplaya.player.equalizer.EqualizerAudioProcessor
+import com.example.cdplaya.player.equalizer.EqualizerDspRuntime
 import com.example.cdplaya.player.equalizer.EqualizerRenderersFactory
 import com.example.cdplaya.player.equalizer.EqualizerRuntimeBridge
 import com.example.cdplaya.player.equalizer.activeAutomaticHeadroomEnabled
@@ -63,7 +64,10 @@ import kotlinx.coroutines.launch
 class PlaybackService : MediaLibraryService() {
 
     private var mediaSession: MediaLibrarySession? = null
-    private val equalizerAudioProcessor = EqualizerAudioProcessor()
+    private val equalizerRuntime: EqualizerDspRuntime =
+        EqualizerRuntimeBridge.createRuntime()
+    private val equalizerAudioProcessor =
+        EqualizerAudioProcessor(equalizerRuntime)
     private lateinit var player: ExoPlayer
     private lateinit var sessionPlayer: SmoothPlaybackPlayer
     private lateinit var playerStateStorage: PlayerStateStorage
@@ -298,7 +302,8 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onCreate() {
         super.onCreate()
-        EqualizerRuntimeBridge.start(serviceScope)
+        EqualizerRuntimeBridge.selectTelemetryRuntime(equalizerRuntime)
+        EqualizerRuntimeBridge.start(equalizerRuntime, serviceScope)
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
