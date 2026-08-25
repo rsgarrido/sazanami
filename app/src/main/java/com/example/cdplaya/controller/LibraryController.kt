@@ -101,7 +101,10 @@ class LibraryController(
     private val appPreferencesRepository = AppPreferencesRepository.getInstance(applicationContext)
     private val favoritesRepository = FavoritesRepository(appDatabase.favoriteSongDao())
     private val playlistsRepository = PlaylistsRepository(appDatabase.playlistDao())
-    private val smartPlaylistRepository = SmartPlaylistRepository(appDatabase)
+    private val smartPlaylistRepository = SmartPlaylistRepository(
+        database = appDatabase,
+        eligibleFolderSelection = { folderSelection }
+    )
     private val listeningHistoryRepository = ListeningHistoryRepository(
         appDatabase.songPlayStatsDao()
     )
@@ -975,6 +978,9 @@ class LibraryController(
 
     private fun reloadSongsAfterFolderChange() {
         launchProtectedRefresh { scanToken ->
+            withContext(Dispatchers.IO) {
+                smartPlaylistRepository.invalidateLibraryEligibility()
+            }
             val hasCachedSongs = withContext(Dispatchers.IO) {
                 libraryCacheRepository.hasCachedSongs()
             }
@@ -1302,8 +1308,14 @@ class LibraryController(
                         playlistsRepository.applyReferenceBackfill(plan.playlists)
                         listeningHistoryRepository.applyReferenceBackfill(plan.history)
                     }
-                    val selectedPlaylistRows = activePlaylistId?.let {
-                        playlistsRepository.getPlaylistSongs(it)
+                    val selectedPlaylistRows = activePlaylistId?.let { playlistId ->
+                        if (smartPlaylistRepository.getMembershipBehavior(playlistId) ==
+                            PlaylistMembershipBehavior.MANUAL
+                        ) {
+                            playlistsRepository.getPlaylistSongs(playlistId)
+                        } else {
+                            getResolvedPlaylistSongs(playlistId)
+                        }
                     }
                     selectedPlaylistRows
                 }

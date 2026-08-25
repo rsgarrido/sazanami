@@ -53,7 +53,9 @@ class AppPreferencesStateTest {
             stringPreferencesKey("retro_rack.accent") to "#80123456",
             stringSetPreferencesKey("selected_folders") to setOf("Music", "Card/Music"),
             stringPreferencesKey("songs_view_mode") to "grid",
-            intPreferencesKey("songs_view_mode_columns") to 3
+            intPreferencesKey("songs_view_mode_columns") to 3,
+            stringPreferencesKey("playlists_view_mode") to "grid",
+            intPreferencesKey("playlists_view_mode_columns") to 4
         )
 
         val state = decodeAppPreferences(preferences)
@@ -66,6 +68,8 @@ class AppPreferencesStateTest {
         assertEquals(FolderSelectionMode.CUSTOM, state.folderSelectionMode)
         assertEquals(LibraryViewMode.GRID, state.songsViewMode)
         assertEquals(3, state.songsGridColumnCount)
+        assertEquals(LibraryViewMode.GRID, state.playlistsViewMode)
+        assertEquals(4, state.playlistsGridColumnCount)
     }
 
     @Test

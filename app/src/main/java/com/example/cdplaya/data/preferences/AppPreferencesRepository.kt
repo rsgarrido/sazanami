@@ -72,9 +72,11 @@ data class AppPreferencesState(
     val songsViewMode: LibraryViewMode = LibraryViewMode.LIST,
     val albumsViewMode: LibraryViewMode = LibraryViewMode.LIST,
     val artistsViewMode: LibraryViewMode = LibraryViewMode.LIST,
+    val playlistsViewMode: LibraryViewMode = LibraryViewMode.LIST,
     val songsGridColumnCount: Int = LibraryGridColumns.DEFAULT,
     val albumsGridColumnCount: Int = LibraryGridColumns.DEFAULT,
     val artistsGridColumnCount: Int = LibraryGridColumns.DEFAULT,
+    val playlistsGridColumnCount: Int = LibraryGridColumns.DEFAULT,
     val homePins: List<HomePin> = emptyList(),
     val showRecentlyAddedOnHome: Boolean = true,
     val isLoaded: Boolean = false
@@ -562,6 +564,7 @@ internal fun decodeAppPreferences(preferences: Preferences): AppPreferencesState
         songsViewMode = LibraryViewMode.fromStorageValue(preferences[Keys.songsViewMode]),
         albumsViewMode = LibraryViewMode.fromStorageValue(preferences[Keys.albumsViewMode]),
         artistsViewMode = LibraryViewMode.fromStorageValue(preferences[Keys.artistsViewMode]),
+        playlistsViewMode = LibraryViewMode.fromStorageValue(preferences[Keys.playlistsViewMode]),
         songsGridColumnCount = LibraryGridColumns.normalize(
             preferences[Keys.songsGridColumns] ?: LibraryGridColumns.DEFAULT
         ),
@@ -570,6 +573,9 @@ internal fun decodeAppPreferences(preferences: Preferences): AppPreferencesState
         ),
         artistsGridColumnCount = LibraryGridColumns.normalize(
             preferences[Keys.artistsGridColumns] ?: LibraryGridColumns.DEFAULT
+        ),
+        playlistsGridColumnCount = LibraryGridColumns.normalize(
+            preferences[Keys.playlistsGridColumns] ?: LibraryGridColumns.DEFAULT
         ),
         homePins = preferences[Keys.homePins]
             ?.let(::decodeHomePins)
@@ -602,6 +608,7 @@ private fun AppPreferencesState.libraryView(
     LibraryViewCategory.SONGS -> songsViewMode to songsGridColumnCount
     LibraryViewCategory.ALBUMS -> albumsViewMode to albumsGridColumnCount
     LibraryViewCategory.ARTISTS -> artistsViewMode to artistsGridColumnCount
+    LibraryViewCategory.PLAYLISTS -> playlistsViewMode to playlistsGridColumnCount
 }
 
 private fun Preferences.color(theme: PlayerTheme, field: String): Color? {
@@ -973,9 +980,11 @@ private object Keys {
     val songsViewMode = stringPreferencesKey("songs_view_mode")
     val albumsViewMode = stringPreferencesKey("albums_view_mode")
     val artistsViewMode = stringPreferencesKey("artists_view_mode")
+    val playlistsViewMode = stringPreferencesKey("playlists_view_mode")
     val songsGridColumns = intPreferencesKey("songs_view_mode_columns")
     val albumsGridColumns = intPreferencesKey("albums_view_mode_columns")
     val artistsGridColumns = intPreferencesKey("artists_view_mode_columns")
+    val playlistsGridColumns = intPreferencesKey("playlists_view_mode_columns")
     val homePins = stringPreferencesKey("home_pins_json")
     val showRecentlyAddedOnHome = booleanPreferencesKey("show_recently_added_on_home")
 
@@ -993,11 +1002,13 @@ private object Keys {
         LibraryViewCategory.SONGS -> songsViewMode
         LibraryViewCategory.ALBUMS -> albumsViewMode
         LibraryViewCategory.ARTISTS -> artistsViewMode
+        LibraryViewCategory.PLAYLISTS -> playlistsViewMode
     }
 
     fun gridColumns(category: LibraryViewCategory) = when (category) {
         LibraryViewCategory.SONGS -> songsGridColumns
         LibraryViewCategory.ALBUMS -> albumsGridColumns
         LibraryViewCategory.ARTISTS -> artistsGridColumns
+        LibraryViewCategory.PLAYLISTS -> playlistsGridColumns
     }
 }

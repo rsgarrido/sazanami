@@ -23,7 +23,7 @@ class SongsRatingIntegrationTest {
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
-    fun indicatorFilterAndRatingSortReactImmediatelyOnSongsOnly() {
+    fun ratingSortReactsImmediatelyWithoutInlineIndicators() {
         val low = song(1, "Low")
         val high = song(2, "High")
         val unrated = song(3, "Unrated song")
@@ -35,13 +35,11 @@ class SongsRatingIntegrationTest {
                 )
             )
         )
-        val filter = mutableStateOf(SongRatingFilter.ALL)
         composeRule.setContent {
             MaterialTheme {
                 CompositionLocalProvider(
                     LocalSongRatingUi provides SongRatingUiEnvironment(
-                        state = state.value,
-                        filter = filter.value
+                        state = state.value
                     )
                 ) {
                     SongsTabContent(
@@ -64,17 +62,11 @@ class SongsRatingIntegrationTest {
             }
         }
 
-        composeRule.onNodeWithContentDescription("Rated 5 out of 5").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Rated 1 out of 5").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Rated 5 out of 5").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Rated 1 out of 5").assertDoesNotExist()
         val highY = composeRule.onNodeWithText("High").fetchSemanticsNode().positionInRoot.y
         val lowY = composeRule.onNodeWithText("Low").fetchSemanticsNode().positionInRoot.y
         assertTrue(highY < lowY)
-
-        composeRule.runOnIdle {
-            filter.value = SongRatingFilter.UNRATED
-        }
-        composeRule.onNodeWithText("Unrated song").assertIsDisplayed()
-        composeRule.onNodeWithText("High").assertDoesNotExist()
 
         composeRule.runOnIdle {
             state.value = state.value.copy(
@@ -82,8 +74,11 @@ class SongsRatingIntegrationTest {
                     (unrated.membershipKey() to 4)
             )
         }
-        composeRule.onNodeWithText("Unrated song").assertDoesNotExist()
-        composeRule.onNodeWithText("No songs match this rating filter.").assertIsDisplayed()
+        val updatedHighY = composeRule.onNodeWithText("High").fetchSemanticsNode().positionInRoot.y
+        val unratedY = composeRule.onNodeWithText("Unrated song").fetchSemanticsNode().positionInRoot.y
+        val updatedLowY = composeRule.onNodeWithText("Low").fetchSemanticsNode().positionInRoot.y
+        assertTrue(updatedHighY < unratedY)
+        assertTrue(unratedY < updatedLowY)
     }
 
     @Test

@@ -1,6 +1,8 @@
 package com.example.cdplaya.data.local
 
 import com.example.cdplaya.data.SmartPlaylistDraft
+import com.example.cdplaya.data.FolderSelection
+import com.example.cdplaya.data.FolderSelectionMode
 import com.example.cdplaya.data.SmartPlaylistMatchMode
 import com.example.cdplaya.data.SmartPlaylistOperator
 import com.example.cdplaya.data.SmartPlaylistRule
@@ -87,5 +89,37 @@ class SmartPlaylistQueriesTest {
         assertTrue(query.sql.contains("NOT LIKE '%' || ? || '%' ESCAPE"))
         assertTrue(query.sql.contains("library_rows.lastPlayedAt IS NOT NULL"))
         assertTrue(query.sql.contains("library_rows.lastPlayedAt < ?"))
+    }
+
+    @Test
+    fun candidateCteAppliesAuthoritativeFolderSelection() {
+        val query = SmartPlaylistQueries.resolve(
+            SmartPlaylistDraft(),
+            1_000L,
+            FolderSelection(
+                mode = FolderSelectionMode.CUSTOM,
+                customFolders = setOf("/music"),
+                excludedFolders = setOf("/music/private")
+            )
+        )
+
+        assertTrue(query.sql.contains("WHERE CASE"))
+        assertTrue(query.sql.contains("songs.folderPath = ? COLLATE NOCASE"))
+        assertTrue(query.sql.contains("END = 1"))
+    }
+
+    @Test
+    fun aboutDurationUsesNearestMinuteHalfOpenBucket() {
+        val query = SmartPlaylistQueries.resolve(
+            SmartPlaylistDraft(rules = listOf(SmartPlaylistRule(
+                SmartPlaylistRuleField.DURATION,
+                SmartPlaylistOperator.ABOUT,
+                listOf("240000")
+            ))),
+            1_000L
+        )
+
+        assertTrue(query.sql.contains("library_rows.duration >= ?"))
+        assertTrue(query.sql.contains("library_rows.duration < ?"))
     }
 }

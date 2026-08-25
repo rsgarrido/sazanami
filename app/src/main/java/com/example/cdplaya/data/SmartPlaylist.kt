@@ -115,6 +115,11 @@ object SmartPlaylistOperator {
     const val WITHIN_LAST_DAYS = "within_last_days"
     const val MORE_THAN_DAYS_AGO = "more_than_days_ago"
     const val NEVER = "never"
+    const val SHORTER_THAN = "shorter_than"
+    const val LONGER_THAN = "longer_than"
+    const val ABOUT = "about"
+    const val BEFORE = "before"
+    const val AFTER = "after"
 }
 
 object SmartPlaylistSortField {

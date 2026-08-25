@@ -30,10 +30,15 @@ import com.example.cdplaya.player.RepeatMode
 import com.example.cdplaya.ui.library.LibrarySearchBar
 import com.example.cdplaya.ui.library.LibrarySortDropdown
 import com.example.cdplaya.ui.library.LibrarySortOption
-import com.example.cdplaya.ui.library.SongRatingFilterDropdown
 import com.example.cdplaya.ui.ratings.LocalSongRatingUi
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.example.cdplaya.ui.library.LibraryTab
 import com.example.cdplaya.ui.player.PlayerCard
 import com.example.cdplaya.ui.player.PlayerMorphState
@@ -255,6 +260,7 @@ fun LibrarySortAction(
 ) {
     val shouldShowSortDropdown =
         selectedLibraryTab == LibraryTab.SONGS ||
+                selectedLibraryTab == LibraryTab.RATED ||
                 selectedLibraryTab == LibraryTab.FAVORITES ||
                 selectedLibraryTab == LibraryTab.RECENTLY_ADDED ||
                 selectedLibraryTab == LibraryTab.ARTISTS && selectedArtistName == null ||
@@ -265,6 +271,7 @@ fun LibrarySortAction(
             LibraryTab.SONGS -> if (
                 !ratingFeaturesEnabled && selectedSongSortOption == LibrarySortOption.RATING
             ) LibrarySortOption.TITLE else selectedSongSortOption
+            LibraryTab.RATED -> selectedSongSortOption
             LibraryTab.FAVORITES -> selectedFavoriteSortOption
             LibraryTab.RECENTLY_ADDED -> LibrarySortOption.DATE_ADDED
             LibraryTab.ARTISTS -> selectedArtistSortOption
@@ -282,6 +289,14 @@ fun LibrarySortAction(
                 LibrarySortOption.ALBUM,
                 LibrarySortOption.DATE_ADDED,
                 LibrarySortOption.RATING.takeIf { ratingFeaturesEnabled }
+            )
+
+            LibraryTab.RATED -> listOf(
+                LibrarySortOption.TITLE,
+                LibrarySortOption.ARTIST,
+                LibrarySortOption.ALBUM,
+                LibrarySortOption.DATE_ADDED,
+                LibrarySortOption.RATING
             )
 
             LibraryTab.FAVORITES -> listOf(
@@ -312,6 +327,7 @@ fun LibrarySortAction(
         val onOptionSelected: (LibrarySortOption) -> Unit = { option ->
                 when (selectedLibraryTab) {
                     LibraryTab.SONGS -> onSongSortOptionSelected(option)
+                    LibraryTab.RATED -> onSongSortOptionSelected(option)
                     LibraryTab.FAVORITES -> onFavoriteSortOptionSelected(option)
                     LibraryTab.RECENTLY_ADDED -> Unit
                     LibraryTab.ARTISTS -> onArtistSortOptionSelected(option)
@@ -324,14 +340,34 @@ fun LibrarySortAction(
         }
         if (selectedLibraryTab == LibraryTab.SONGS && ratingFeaturesEnabled) {
             val ratingUi = LocalSongRatingUi.current
+            var overflowExpanded by remember { mutableStateOf(false) }
             Row {
-                AppShellIconButton(
-                    onClick = { ratingUi.onQuickRateModeChanged(!ratingUi.quickRateMode) },
-                    imageVector = if (ratingUi.quickRateMode) Icons.Filled.Done else Icons.Filled.Star,
-                    contentDescription = if (ratingUi.quickRateMode) "Done rating songs" else "Rate songs",
-                    accented = ratingUi.quickRateMode
-                )
-                SongRatingFilterDropdown()
+                if (ratingUi.quickRateMode) {
+                    AppShellIconButton(
+                        onClick = { ratingUi.onQuickRateModeChanged(false) },
+                        imageVector = Icons.Filled.Done,
+                        contentDescription = "Done rating songs",
+                        accented = true
+                    )
+                } else Box {
+                    AppShellIconButton(
+                        onClick = { overflowExpanded = true },
+                        imageVector = Icons.Filled.MoreVert,
+                        contentDescription = "More song actions"
+                    )
+                    DropdownMenu(
+                        expanded = overflowExpanded,
+                        onDismissRequest = { overflowExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Rate songs") },
+                            onClick = {
+                                overflowExpanded = false
+                                ratingUi.onQuickRateModeChanged(true)
+                            }
+                        )
+                    }
+                }
                 LibrarySortDropdown(
                     selectedOption = selectedSortOption,
                     options = availableSortOptions,

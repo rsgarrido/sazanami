@@ -112,6 +112,25 @@ fun MusicLibraryContent(
             )
         }
 
+        LibraryTab.RATED -> {
+            RatedSongsTabContent(
+                songs = songs,
+                searchQuery = searchQuery,
+                sortOption = selectedSongSortOption,
+                currentSong = currentSong,
+                recentlyAddedSongIds = recentlyAddedSongIds,
+                favoriteMembershipKeys = favoriteMembershipKeys,
+                onSongClick = onSongClick,
+                onPlayNextClick = onPlayNextClick,
+                onAddToQueueClick = onAddToQueueClick,
+                onToggleFavoriteClick = onToggleFavoriteClick,
+                onAddToPlaylistClick = onAddToPlaylistClick,
+                onEditSongTagsClick = onEditSongTagsClick,
+                bottomContentPadding = bottomContentPadding,
+                modifier = modifier
+            )
+        }
+
         LibraryTab.ARTISTS -> {
             ArtistsTabContent(
                 songs = songs,
@@ -217,6 +236,8 @@ fun MusicLibraryContent(
                 currentSong = currentSong,
                 recentlyAddedSongIds = recentlyAddedSongIds,
                 favoriteMembershipKeys = favoriteMembershipKeys,
+                viewMode = viewMode,
+                gridColumnCount = gridColumnCount,
                 onCreatePlaylistClick = onCreatePlaylistClick,
                 onCreateFolderClick = onCreatePlaylistFolderClick,
                 onRenameFolderClick = onRenamePlaylistFolderClick,

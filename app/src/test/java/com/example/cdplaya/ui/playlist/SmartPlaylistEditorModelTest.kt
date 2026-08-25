@@ -29,7 +29,7 @@ class SmartPlaylistEditorModelTest {
                 SmartPlaylistEditorRule(
                     id = 2,
                     field = SmartPlaylistRuleField.DURATION,
-                    operator = SmartPlaylistOperator.AT_LEAST,
+                    operator = SmartPlaylistOperator.LONGER_THAN,
                     value = "3.5"
                 )
             ),
@@ -44,6 +44,91 @@ class SmartPlaylistEditorModelTest {
         assertEquals("The Warning", draft.rules[0].values.single())
         assertEquals("210000", draft.rules[1].values.single())
         assertEquals(25, draft.resultLimit)
+    }
+
+    @Test
+    fun fieldMatrixUsesNaturalTypeSpecificConditions() {
+        val duration = smartRuleFieldOptions.single { it.storage == SmartPlaylistRuleField.DURATION }
+        val history = smartRuleFieldOptions.single { it.storage == LISTENING_HISTORY_EDITOR_FIELD }
+        val year = smartRuleFieldOptions.single { it.storage == SmartPlaylistRuleField.YEAR }
+
+        assertEquals(
+            listOf(
+                SmartPlaylistOperator.SHORTER_THAN,
+                SmartPlaylistOperator.LONGER_THAN,
+                SmartPlaylistOperator.BETWEEN,
+                SmartPlaylistOperator.ABOUT
+            ),
+            duration.operators.map { it.storage }
+        )
+        assertEquals(
+            listOf(
+                SmartPlaylistOperator.NEVER,
+                SmartPlaylistOperator.WITHIN_LAST_DAYS,
+                SmartPlaylistOperator.MORE_THAN_DAYS_AGO
+            ),
+            history.operators.map { it.storage }
+        )
+        assertEquals(
+            listOf(
+                SmartPlaylistOperator.EQUALS,
+                SmartPlaylistOperator.BEFORE,
+                SmartPlaylistOperator.AFTER,
+                SmartPlaylistOperator.BETWEEN
+            ),
+            year.operators.map { it.storage }
+        )
+    }
+
+    @Test
+    fun durationMinutesAndListeningHistoryMapToExistingStorageRules() {
+        val about = SmartPlaylistEditorModel(
+            name = "About four",
+            rules = listOf(SmartPlaylistEditorRule(
+                id = 1,
+                field = SmartPlaylistRuleField.DURATION,
+                operator = SmartPlaylistOperator.ABOUT,
+                value = "4"
+            ))
+        ).toDraft().rules.single()
+        val never = SmartPlaylistEditorModel(
+            name = "Never",
+            rules = listOf(SmartPlaylistEditorRule(
+                id = 1,
+                field = LISTENING_HISTORY_EDITOR_FIELD,
+                operator = SmartPlaylistOperator.NEVER
+            ))
+        ).toDraft().rules.single()
+
+        assertEquals(listOf("240000"), about.values)
+        assertEquals(SmartPlaylistRuleField.NEVER_PLAYED, never.field)
+        assertEquals(SmartPlaylistOperator.IS, never.operator)
+    }
+
+    @Test
+    fun legacyGenericDurationConditionReopensAsNaturalDurationUx() {
+        val model = SmartPlaylistEditorModel.fromDraft(
+            "Legacy duration",
+            com.example.cdplaya.data.SmartPlaylistDraft(rules = listOf(
+                com.example.cdplaya.data.SmartPlaylistRule(
+                    SmartPlaylistRuleField.DURATION,
+                    SmartPlaylistOperator.EQUALS,
+                    listOf("240000")
+                )
+            ))
+        )
+
+        assertEquals(SmartPlaylistOperator.ABOUT, model.rules.single().operator)
+        assertEquals("4", model.rules.single().value)
+        assertTrue(model.validation(emptyList()).isValid)
+    }
+
+    @Test
+    fun matchModeChoiceOnlyAppearsWhenConditionsCanDiffer() {
+        assertFalse(SmartPlaylistEditorModel().showsMatchModeChoice)
+        assertTrue(SmartPlaylistEditorModel(
+            rules = listOf(SmartPlaylistEditorRule(1), SmartPlaylistEditorRule(2))
+        ).showsMatchModeChoice)
     }
 
     @Test
@@ -68,6 +153,21 @@ class SmartPlaylistEditorModelTest {
         assertTrue(allowsManualPlaylistActions(playlist(PlaylistType.MANUAL, PlaylistMembershipBehavior.MANUAL)))
         assertFalse(allowsManualPlaylistActions(playlist(PlaylistType.SMART, PlaylistMembershipBehavior.USER_SMART_LIVE)))
         assertFalse(allowsManualPlaylistActions(playlist(PlaylistType.SMART, PlaylistMembershipBehavior.GENERATED_SMART_SNAPSHOT)))
+    }
+
+    @Test
+    fun smartPresentationDoesNotExposeSuggestedOrLiveEngineTerms() {
+        val userSmart = playlist(PlaylistType.SMART, PlaylistMembershipBehavior.USER_SMART_LIVE)
+        val generatedLive = playlist(
+            PlaylistType.SMART,
+            PlaylistMembershipBehavior.GENERATED_SMART_LIVE
+        )
+
+        assertEquals("Smart", playlistCollectionKindText(userSmart))
+        assertEquals("Smart Playlist • Updates automatically", playlistKindText(userSmart))
+        assertEquals("Smart Playlist • Updates automatically", playlistKindText(generatedLive))
+        assertFalse(playlistKindText(generatedLive).contains("Suggested"))
+        assertFalse(playlistKindText(generatedLive).contains("Live"))
     }
 
     private fun playlist(type: PlaylistType, behavior: PlaylistMembershipBehavior) = Playlist(

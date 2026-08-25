@@ -29,9 +29,11 @@ data class BackupPreferences(
     val songsViewMode: String = "list",
     val albumsViewMode: String = "list",
     val artistsViewMode: String = "list",
+    val playlistsViewMode: String = "list",
     val songsGridColumnCount: Int = 2,
     val albumsGridColumnCount: Int = 2,
     val artistsGridColumnCount: Int = 2,
+    val playlistsGridColumnCount: Int = 2,
     val homePins: List<BackupHomePin> = emptyList(),
     val showRecentlyAddedOnHome: Boolean = true,
     val equalizer: BackupEqualizerPreferences =

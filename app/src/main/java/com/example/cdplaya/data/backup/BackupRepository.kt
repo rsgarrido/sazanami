@@ -82,9 +82,11 @@ class BackupRepository(
                 songsViewMode = appPreferences.songsViewMode.storageValue,
                 albumsViewMode = appPreferences.albumsViewMode.storageValue,
                 artistsViewMode = appPreferences.artistsViewMode.storageValue,
+                playlistsViewMode = appPreferences.playlistsViewMode.storageValue,
                 songsGridColumnCount = appPreferences.songsGridColumnCount,
                 albumsGridColumnCount = appPreferences.albumsGridColumnCount,
                 artistsGridColumnCount = appPreferences.artistsGridColumnCount,
+                playlistsGridColumnCount = appPreferences.playlistsGridColumnCount,
                 homePins = appPreferences.homePins.map { pin ->
                     BackupHomePin(
                         id = pin.id,
@@ -251,9 +253,11 @@ class BackupRepository(
                 songsViewMode = LibraryViewMode.fromStorageValue(preferences.songsViewMode),
                 albumsViewMode = LibraryViewMode.fromStorageValue(preferences.albumsViewMode),
                 artistsViewMode = LibraryViewMode.fromStorageValue(preferences.artistsViewMode),
+                playlistsViewMode = LibraryViewMode.fromStorageValue(preferences.playlistsViewMode),
                 songsGridColumnCount = preferences.songsGridColumnCount,
                 albumsGridColumnCount = preferences.albumsGridColumnCount,
                 artistsGridColumnCount = preferences.artistsGridColumnCount,
+                playlistsGridColumnCount = preferences.playlistsGridColumnCount,
                 homePins = sanitizeHomePins(
                     preferences.homePins.mapNotNull { backupPin ->
                         val type = runCatching { HomePinType.valueOf(backupPin.type) }

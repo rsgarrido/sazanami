@@ -66,6 +66,9 @@ interface SmartPlaylistDao {
     @Query("UPDATE smart_playlist_resolution_states SET isDirty = 1 WHERE playlistId = :playlistId")
     suspend fun markDirty(playlistId: Long)
 
+    @Query("UPDATE smart_playlist_resolution_states SET isDirty = 1")
+    suspend fun markAllDirty()
+
     @Query("SELECT songs.* FROM smart_playlist_cached_songs cache JOIN cached_songs songs ON songs.mediaStoreId = cache.mediaStoreId AND songs.volumeName = cache.volumeName WHERE cache.playlistId = :playlistId ORDER BY cache.position ASC")
     suspend fun getCachedSongs(playlistId: Long): List<CachedSongEntity>
 

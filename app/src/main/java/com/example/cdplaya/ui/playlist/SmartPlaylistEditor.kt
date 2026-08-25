@@ -109,7 +109,7 @@ fun PlaylistCreationChooserDialog(
                     Text("Smart Playlist", modifier = Modifier.padding(start = 8.dp))
                 }
                 Text(
-                    "Suggested Smart Playlists",
+                    "Smart Playlist ideas",
                     style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier.padding(top = 6.dp)
                 )
@@ -228,12 +228,12 @@ fun SmartPlaylistEditor(
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
-                    item {
-                        Text("Match", style = MaterialTheme.typography.titleMedium)
+                    if (model.showsMatchModeChoice) item {
+                        Text("Songs must match:", style = MaterialTheme.typography.titleMedium)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf(
-                                SmartPlaylistMatchMode.ALL to "All rules",
-                                SmartPlaylistMatchMode.ANY to "Any rule"
+                                SmartPlaylistMatchMode.ALL to "All conditions",
+                                SmartPlaylistMatchMode.ANY to "Any condition"
                             ).forEach { (mode, label) ->
                                 FilterChip(
                                     selected = model.matchMode == mode,
@@ -243,6 +243,15 @@ fun SmartPlaylistEditor(
                                 )
                             }
                         }
+                        Text(
+                            if (model.matchMode == SmartPlaylistMatchMode.ALL) {
+                                "Every condition must match."
+                            } else {
+                                "At least one condition must match."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                     items(model.rules, key = SmartPlaylistEditorRule::id) { rule ->
                         SmartRuleCard(
@@ -409,7 +418,11 @@ private fun RuleValueInput(
         )
         return
     }
-    val numeric = kind != SmartRuleValueKind.TEXT
+    val keyboardType = when (kind) {
+        SmartRuleValueKind.TEXT -> KeyboardType.Text
+        SmartRuleValueKind.DURATION_MINUTES -> KeyboardType.Decimal
+        else -> KeyboardType.Number
+    }
     OutlinedTextField(
         value = rule.value,
         onValueChange = { if (!readOnly) onChange(rule.copy(value = it)) },
@@ -422,18 +435,29 @@ private fun RuleValueInput(
             })
         },
         keyboardOptions = KeyboardOptions(
-            keyboardType = if (numeric) KeyboardType.Decimal else KeyboardType.Text
+            keyboardType = keyboardType
         ),
         singleLine = true,
         modifier = Modifier.fillMaxWidth()
     )
+    if (kind == SmartRuleValueKind.DURATION_MINUTES &&
+        rule.operator == SmartPlaylistOperator.ABOUT
+    ) {
+        Text(
+            "Uses the nearest-minute bucket; for example, about 4 minutes matches 3:30–4:29.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
     if (rule.operator == SmartPlaylistOperator.BETWEEN) {
         OutlinedTextField(
             value = rule.secondValue,
             onValueChange = { if (!readOnly) onChange(rule.copy(secondValue = it)) },
             enabled = !readOnly,
-            label = { Text("And") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            label = {
+                Text(if (kind == SmartRuleValueKind.DURATION_MINUTES) "And (minutes)" else "And")
+            },
+            keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
@@ -527,18 +551,28 @@ internal fun naturalRuleText(rule: SmartPlaylistEditorRule): String {
     return when {
         rule.field == SmartPlaylistRuleField.RATING && rule.operator != SmartPlaylistOperator.UNRATED ->
             "$field | $operator | ${"★".repeat(rule.value.toIntOrNull() ?: 0)}"
-        rule.operator == SmartPlaylistOperator.UNRATED || rule.operator == SmartPlaylistOperator.NEVER ||
-            rule.field == SmartPlaylistRuleField.NEVER_PLAYED -> "$field | $operator"
-        rule.field == SmartPlaylistRuleField.LAST_PLAYED || rule.field == SmartPlaylistRuleField.DATE_ADDED ->
+        rule.operator == SmartPlaylistOperator.UNRATED || rule.operator == SmartPlaylistOperator.NEVER ->
+            "$field | $operator"
+        rule.field == LISTENING_HISTORY_EDITOR_FIELD ->
             if (rule.operator == SmartPlaylistOperator.WITHIN_LAST_DAYS) {
-                "$field | within | last ${rule.value} days"
+                "$field | played within last ${rule.value} days"
             } else {
-                "$field | more than | ${rule.value} days ago"
+                "$field | not played for ${rule.value} days"
+            }
+        rule.field == SmartPlaylistRuleField.DATE_ADDED ->
+            if (rule.operator == SmartPlaylistOperator.WITHIN_LAST_DAYS) {
+                "$field | within last ${rule.value} days"
+            } else {
+                "$field | more than ${rule.value} days ago"
             }
         rule.field == SmartPlaylistRuleField.RECENT_PLAY_COUNT ->
             "$field | $operator | ${rule.value} in ${rule.windowDays} days"
         rule.field == SmartPlaylistRuleField.DURATION ->
-            "$field | $operator | ${rule.value} minute${if (rule.value == "1") "" else "s"}"
+            if (rule.operator == SmartPlaylistOperator.BETWEEN) {
+                "$field | between | ${rule.value} and ${rule.secondValue} minutes"
+            } else {
+                "$field | $operator | ${rule.value} minute${if (rule.value == "1") "" else "s"}"
+            }
         rule.operator == SmartPlaylistOperator.BETWEEN ->
             "$field | between | ${rule.value} and ${rule.secondValue}"
         else -> "$field | $operator | ${rule.value}"

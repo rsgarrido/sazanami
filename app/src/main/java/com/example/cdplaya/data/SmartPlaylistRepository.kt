@@ -21,6 +21,7 @@ import kotlinx.serialization.json.Json
 
 class SmartPlaylistRepository(
     private val database: AppDatabase,
+    private val eligibleFolderSelection: () -> FolderSelection = { FolderSelection.All },
     private val nowMillis: () -> Long = System::currentTimeMillis
 ) {
     private val dao = database.smartPlaylistDao()
@@ -103,7 +104,17 @@ class SmartPlaylistRepository(
         previewMatchingSongs(draft).songs
 
     suspend fun getMatchingCount(draft: SmartPlaylistDraft): Int =
-        dao.count(SmartPlaylistQueries.count(draft.validated(), nowMillis())).count
+        dao.count(
+            SmartPlaylistQueries.count(
+                draft.validated(),
+                nowMillis(),
+                eligibleFolderSelection()
+            )
+        ).count
+
+    suspend fun invalidateLibraryEligibility() {
+        dao.markAllDirty()
+    }
 
     suspend fun getQualifiedCount(playlistId: Long): Int {
         val definition = requireNotNull(dao.getDefinition(playlistId)).toDomain()
@@ -138,9 +149,12 @@ class SmartPlaylistRepository(
         val cacheIsFresh = state != null && !state.isDirty &&
             (state.validUntil == null || now < state.validUntil)
         if (cacheIsFresh) {
+            val selection = eligibleFolderSelection()
             return SmartPlaylistResolution(
                 playlistId = playlistId,
-                songs = dao.getCachedSongs(playlistId).map(CachedSongEntity::toSong),
+                songs = dao.getCachedSongs(playlistId)
+                    .map(CachedSongEntity::toSong)
+                    .filter { selection.includes(it.folderPath) },
                 resolvedAt = state.resolvedAt ?: now,
                 fromDerivedCache = true
             )
@@ -271,7 +285,9 @@ class SmartPlaylistRepository(
         playlistId: Long?
     ): SmartPlaylistResolution {
         val resolvedAt = nowMillis()
-        val songs = dao.evaluate(SmartPlaylistQueries.resolve(draft, resolvedAt))
+        val songs = dao.evaluate(
+            SmartPlaylistQueries.resolve(draft, resolvedAt, eligibleFolderSelection())
+        )
             .map(SmartPlaylistCandidateRow::toSong)
         return SmartPlaylistResolution(
             playlistId = playlistId,
@@ -284,7 +300,10 @@ class SmartPlaylistRepository(
     private suspend fun resolveGeneratedSnapshot(
         state: GeneratedPlaylistStateEntity
     ): SmartPlaylistResolution {
-        val library = database.cachedSongDao().getAllCachedSongs().map(CachedSongEntity::toSong)
+        val selection = eligibleFolderSelection()
+        val library = database.cachedSongDao().getAllCachedSongs()
+            .map(CachedSongEntity::toSong)
+            .filter { selection.includes(it.folderPath) }
         val index = SongReferenceIndex.build(library)
         val songs = dao.getGeneratedSongs(state.playlistId).mapNotNull { row ->
             (index.resolve(row.toSongReference()) as? SongReferenceResolution.Resolved)?.song

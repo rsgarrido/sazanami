@@ -3,6 +3,8 @@ package com.example.cdplaya.data.local
 import androidx.sqlite.db.SimpleSQLiteQuery
 import androidx.sqlite.db.SupportSQLiteQuery
 import com.example.cdplaya.data.SmartPlaylistDraft
+import com.example.cdplaya.data.FolderSelection
+import com.example.cdplaya.data.FolderSelectionMode
 import com.example.cdplaya.data.SmartPlaylistMatchMode
 import com.example.cdplaya.data.SmartPlaylistOperator
 import com.example.cdplaya.data.SmartPlaylistRule
@@ -18,7 +20,9 @@ internal object SmartPlaylistDependencies {
     const val ALL = LIBRARY or RATINGS or LISTENING
 
     fun forDefinition(draft: SmartPlaylistDraft): Int {
-        var mask = draft.rules.fold(0) { result, rule -> result or forField(rule.field) }
+        // The authoritative library membership is a dependency for every definition, even when
+        // all of its explicit rules concern ratings or listening history.
+        var mask = draft.rules.fold(LIBRARY) { result, rule -> result or forField(rule.field) }
         mask = mask or when (draft.sortField) {
             SmartPlaylistSortField.PLAY_COUNT,
             SmartPlaylistSortField.RECENT_PLAY_COUNT,
@@ -57,18 +61,29 @@ internal object SmartPlaylistDependencies {
 }
 
 internal object SmartPlaylistQueries {
-    fun resolve(draft: SmartPlaylistDraft, nowMillis: Long): SupportSQLiteQuery =
-        build(draft, nowMillis).toQuery()
+    fun resolve(
+        draft: SmartPlaylistDraft,
+        nowMillis: Long,
+        folderSelection: FolderSelection = FolderSelection.All
+    ): SupportSQLiteQuery = build(draft, nowMillis, folderSelection).toQuery()
 
-    fun count(draft: SmartPlaylistDraft, nowMillis: Long): SupportSQLiteQuery {
-        val inner = build(draft.copy(resultLimit = null), nowMillis)
+    fun count(
+        draft: SmartPlaylistDraft,
+        nowMillis: Long,
+        folderSelection: FolderSelection = FolderSelection.All
+    ): SupportSQLiteQuery {
+        val inner = build(draft.copy(resultLimit = null), nowMillis, folderSelection)
         return SimpleSQLiteQuery(
             "SELECT COUNT(*) AS count FROM (${inner.sql})",
             inner.args
         )
     }
 
-    private fun build(draft: SmartPlaylistDraft, nowMillis: Long): SqlAndArgs {
+    private fun build(
+        draft: SmartPlaylistDraft,
+        nowMillis: Long,
+        folderSelection: FolderSelection
+    ): SqlAndArgs {
         draft.validated()
         val recentWindows = draft.rules
             .filter { it.field == SmartPlaylistRuleField.RECENT_PLAY_COUNT }
@@ -99,6 +114,7 @@ internal object SmartPlaylistQueries {
         val recentColumns = recentWindows.indices.joinToString("") { index ->
             ", COALESCE(recent_$index.qualifiedPlayCount, 0) AS recentPlayCount$index"
         }
+        val eligibleLibraryPredicate = folderSelectionPredicate(folderSelection, args)
         val predicates = draft.rules.map { rule ->
             predicate(rule, recentWindows, nowMillis, args)
         }
@@ -192,6 +208,7 @@ internal object SmartPlaylistQueries {
                 LEFT JOIN resolved_baseline ON resolved_baseline.trackIdentityId = binding.trackIdentityId
                 LEFT JOIN song_ratings ratings ON ratings.trackIdentityId = binding.trackIdentityId
                 $recentJoins
+                WHERE $eligibleLibraryPredicate
             )
             SELECT mediaStoreId, title, artist, album, trackNumber, duration, uriString,
                    filePath, folderPath, albumArtUriString, albumArtist, volumeName,
@@ -253,6 +270,17 @@ internal object SmartPlaylistQueries {
             require(rule.field == SmartPlaylistRuleField.LAST_PLAYED)
             return "$column IS NULL"
         }
+        if (rule.operator == SmartPlaylistOperator.ABOUT) {
+            require(rule.field == SmartPlaylistRuleField.DURATION)
+            val center = numericValue(
+                requireNotNull(rule.values.firstOrNull()) { "An approximate duration is required." }
+            ).toLong()
+            val lowerInclusive = (center - HALF_MINUTE_MILLIS).coerceAtLeast(0L)
+            val upperExclusive = center + HALF_MINUTE_MILLIS
+            args += lowerInclusive
+            args += upperExclusive
+            return "$column IS NOT NULL AND $column >= ? AND $column < ?"
+        }
         if (rule.operator == SmartPlaylistOperator.WITHIN_LAST_DAYS ||
             rule.operator == SmartPlaylistOperator.MORE_THAN_DAYS_AGO
         ) {
@@ -277,6 +305,22 @@ internal object SmartPlaylistQueries {
             SmartPlaylistOperator.EQUALS -> numericPredicate(column, "=", rule, args)
             SmartPlaylistOperator.AT_LEAST -> numericPredicate(column, ">=", rule, args)
             SmartPlaylistOperator.AT_MOST -> numericPredicate(column, "<=", rule, args)
+            SmartPlaylistOperator.SHORTER_THAN -> {
+                require(rule.field == SmartPlaylistRuleField.DURATION)
+                numericPredicate(column, "<", rule, args)
+            }
+            SmartPlaylistOperator.LONGER_THAN -> {
+                require(rule.field == SmartPlaylistRuleField.DURATION)
+                numericPredicate(column, ">", rule, args)
+            }
+            SmartPlaylistOperator.BEFORE -> {
+                require(rule.field == SmartPlaylistRuleField.YEAR)
+                numericPredicate(column, "<", rule, args)
+            }
+            SmartPlaylistOperator.AFTER -> {
+                require(rule.field == SmartPlaylistRuleField.YEAR)
+                numericPredicate(column, ">", rule, args)
+            }
             SmartPlaylistOperator.BETWEEN -> {
                 require(rule.values.size == 2) { "Between requires two values." }
                 args += numericValue(rule.values[0])
@@ -345,6 +389,52 @@ internal object SmartPlaylistQueries {
         return "$knownValue AND $column $comparison ?"
     }
 
+    /** Mirrors [FolderSelection.includes] without narrowing the durable reference cache. */
+    private fun folderSelectionPredicate(
+        selection: FolderSelection,
+        args: MutableList<Any>
+    ): String {
+        data class FolderRule(val path: String, val included: Boolean)
+
+        val rules = buildList {
+            selection.excludedFolders.forEach { path ->
+                normalizeFolderRoot(path)?.let { add(FolderRule(it, included = false)) }
+            }
+            selection.customFolders.forEach { path ->
+                normalizeFolderRoot(path)?.let { add(FolderRule(it, included = true)) }
+            }
+        }.distinctBy { it.path.lowercase(Locale.ROOT) to it.included }
+            .sortedWith(
+                compareByDescending<FolderRule> { it.path.length }
+                    // An equal-specificity exclusion wins, matching FolderSelection.includes.
+                    .thenBy { it.included }
+            )
+
+        if (rules.isEmpty()) {
+            return if (selection.mode == FolderSelectionMode.ALL) "1 = 1" else "0 = 1"
+        }
+
+        return buildString {
+            append("CASE ")
+            rules.forEach { rule ->
+                append("WHEN (songs.folderPath = ? COLLATE NOCASE OR ")
+                append("LOWER(songs.folderPath) LIKE LOWER(? || '/%') ESCAPE '\\') THEN ")
+                append(if (rule.included) "1 " else "0 ")
+                args += rule.path
+                args += escapeLike(rule.path)
+            }
+            append("ELSE ")
+            append(if (selection.mode == FolderSelectionMode.ALL) "1 " else "0 ")
+            append("END = 1")
+        }
+    }
+
+    private fun normalizeFolderRoot(path: String): String? = path
+        .trim()
+        .replace('\\', '/')
+        .trimEnd('/')
+        .takeIf(String::isNotBlank)
+
     private fun recentWindowDays(rule: SmartPlaylistRule): Int = positiveInt(
         rule.parameters["days"],
         "recent play-count window days"
@@ -365,6 +455,7 @@ internal object SmartPlaylistQueries {
         .replace("_", "\\_")
 
     private const val MILLIS_PER_DAY = 86_400_000L
+    private const val HALF_MINUTE_MILLIS = 30_000L
 
     private data class SqlAndArgs(val sql: String, val args: Array<Any>) {
         fun toQuery(): SupportSQLiteQuery = SimpleSQLiteQuery(sql, args)

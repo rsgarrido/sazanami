@@ -5,6 +5,8 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.cdplaya.data.GeneratedPlaylistRefreshPolicy
+import com.example.cdplaya.data.FolderSelection
+import com.example.cdplaya.data.FolderSelectionMode
 import com.example.cdplaya.data.PlaylistsRepository
 import com.example.cdplaya.data.SmartPlaylistDraft
 import com.example.cdplaya.data.SmartPlaylistMatchMode
@@ -110,8 +112,9 @@ class SmartPlaylistRepositoryTest {
 
         assertEquals(listOf("Beta"), repository.previewMatchingSongs(
             SmartPlaylistDraft(rules = listOf(SmartPlaylistRule(
-                SmartPlaylistRuleField.LAST_PLAYED,
-                SmartPlaylistOperator.NEVER
+                SmartPlaylistRuleField.NEVER_PLAYED,
+                SmartPlaylistOperator.IS,
+                listOf("true")
             )))
         ).songs.map { it.title })
         assertEquals(listOf("Beta", "Gamma"), repository.previewMatchingSongs(
@@ -140,6 +143,25 @@ class SmartPlaylistRepositoryTest {
                 parameters = mapOf("days" to "30")
             )))
         ).songs.map { it.title })
+    }
+
+    @Test
+    fun aboutDurationUsesNearestMinuteBucket() = runBlocking {
+        seedSong(4L, "Three thirty", "Clock", "Times", 2022, 210_000L, null, 0)
+        seedSong(5L, "Four twenty nine", "Clock", "Times", 2022, 269_999L, null, 0)
+        seedSong(6L, "Four thirty", "Clock", "Times", 2022, 270_000L, null, 0)
+        val repository = SmartPlaylistRepository(database) { now }
+
+        assertEquals(
+            listOf("Four twenty nine", "Three thirty"),
+            repository.previewMatchingSongs(SmartPlaylistDraft(rules = listOf(
+                SmartPlaylistRule(
+                    SmartPlaylistRuleField.DURATION,
+                    SmartPlaylistOperator.ABOUT,
+                    listOf("240000")
+                )
+            ))).songs.map { it.title }
+        )
     }
 
     @Test
@@ -184,6 +206,87 @@ class SmartPlaylistRepositoryTest {
     }
 
     @Test
+    fun excludedReferenceAudioNeverEntersLiveRulesOrNeverPlayed() = runBlocking {
+        seedSong(
+            4L,
+            "Excluded voice note",
+            "Messenger",
+            "Voice notes",
+            2022,
+            20_000L,
+            null,
+            0,
+            folderPath = "/messaging/audio"
+        )
+        var selection = FolderSelection.All
+        val repository = SmartPlaylistRepository(
+            database = database,
+            eligibleFolderSelection = { selection },
+            nowMillis = { now }
+        )
+        val live = requireNotNull(repository.createSmartPlaylist(
+            "Eligible library",
+            SmartPlaylistDraft()
+        ))
+        assertEquals(4, repository.resolveFinalMembership(live.playlistId).count)
+
+        selection = FolderSelection(
+            mode = FolderSelectionMode.CUSTOM,
+            customFolders = setOf("/music")
+        )
+        repository.invalidateLibraryEligibility()
+
+        assertEquals(
+            listOf("Alpha", "Beta", "Gamma"),
+            repository.previewMatchingSongs(SmartPlaylistDraft()).songs.map { it.title }
+        )
+        assertEquals(
+            listOf("Alpha", "Beta", "Gamma"),
+            repository.resolveFinalMembership(live.playlistId).songs.map { it.title }
+        )
+        assertEquals(
+            listOf("Beta"),
+            repository.previewMatchingSongs(SmartPlaylistDraft(rules = listOf(
+                SmartPlaylistRule(
+                    SmartPlaylistRuleField.NEVER_PLAYED,
+                    SmartPlaylistOperator.IS,
+                    listOf("true")
+                )
+            ))).songs.map { it.title }
+        )
+    }
+
+    @Test
+    fun generatedSnapshotIsIntersectedAfterFolderBecomesIneligible() = runBlocking {
+        seedSong(4L, "Outside", "Other", "Other", 2022, 150_000L, null, 0,
+            folderPath = "/outside")
+        var selection = FolderSelection.All
+        val repository = SmartPlaylistRepository(
+            database = database,
+            eligibleFolderSelection = { selection },
+            nowMillis = { now }
+        )
+        val definition = requireNotNull(repository.createGeneratedPlaylist(
+            name = "Snapshot eligibility",
+            templateKey = "heavy_rotation",
+            draft = SmartPlaylistDraft(sortField = SmartPlaylistSortField.TITLE),
+            refreshPolicy = GeneratedPlaylistRefreshPolicy.PERIODIC,
+            refreshIntervalMillis = 86_400_000L
+        ))
+
+        assertEquals(4, repository.refreshGeneratedSnapshot(definition.playlistId).count)
+        selection = FolderSelection(
+            mode = FolderSelectionMode.CUSTOM,
+            customFolders = setOf("/music")
+        )
+
+        assertEquals(
+            listOf("Alpha", "Beta", "Gamma"),
+            repository.resolveFinalMembership(definition.playlistId).songs.map { it.title }
+        )
+    }
+
+    @Test
     fun manualAndSmartMembershipStoresRemainSeparated() = runBlocking {
         val manualRepository = PlaylistsRepository(database.playlistDao())
         val smartRepository = SmartPlaylistRepository(database) { now }
@@ -211,7 +314,8 @@ class SmartPlaylistRepositoryTest {
         year: Int,
         duration: Long,
         rating: Int?,
-        plays: Int
+        plays: Int,
+        folderPath: String = "/music"
     ) {
         database.cachedSongDao().insertCachedSongs(listOf(CachedSongEntity(
             mediaStoreId = mediaStoreId,
@@ -221,13 +325,13 @@ class SmartPlaylistRepositoryTest {
             trackNumber = 1,
             duration = duration,
             uriString = "content://media/external/audio/$mediaStoreId",
-            filePath = "/music/$title.mp3",
-            folderPath = "/music",
+            filePath = "$folderPath/$title.mp3",
+            folderPath = folderPath,
             albumArtUriString = null,
             albumArtist = artist,
             volumeName = "external",
             displayName = "$title.mp3",
-            relativePath = "Music/",
+            relativePath = folderPath.trim('/').plus('/'),
             fileSizeBytes = duration,
             dateAddedEpochSeconds = 1_700_000_000L + mediaStoreId,
             dateModifiedEpochSeconds = 1_700_000_000L,

@@ -59,23 +59,14 @@ fun SongsTabContent(
     } else {
         emptyMap()
     }
-    val activeFilter = if (ratingFeaturesEnabled) {
-        ratingUi.filter
-    } else {
-        SongRatingFilter.ALL
-    }
     val effectiveSortOption = if (!ratingFeaturesEnabled && sortOption == LibrarySortOption.RATING) {
         LibrarySortOption.TITLE
     } else {
         sortOption
     }
-    val ratingFilteredSongs = remember(filteredSongs, activeFilter, activeRatings) {
-        filterSongsByRating(
-            songs = filteredSongs,
-            filter = activeFilter,
-            ratingsByReferenceKey = activeRatings
-        )
-    }
+    // The normal Songs collection stays visually and semantically uncluttered. Rated songs have
+    // their own collection below, while ratings remain available for sorting and Quick Rate.
+    val ratingFilteredSongs = filteredSongs
 
     val displayedSongs = remember(ratingFilteredSongs, effectiveSortOption, activeRatings) {
         sortSongsForLibrary(
@@ -134,7 +125,6 @@ fun SongsTabContent(
                     onAddToPlaylistClick = onAddToPlaylistClick,
                     onEditSongTagsClick = onEditSongTagsClick,
                     bottomContentPadding = bottomContentPadding,
-                    ratingValuesByReferenceKey = activeRatings,
                     quickRatingMode = false,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -153,10 +143,60 @@ fun SongsTabContent(
                     onAddToPlaylistClick = onAddToPlaylistClick,
                     onEditSongTagsClick = onEditSongTagsClick,
                     bottomContentPadding = bottomContentPadding,
-                    modifier = Modifier.fillMaxSize(),
-                    ratingValuesByReferenceKey = activeRatings
+                    modifier = Modifier.fillMaxSize()
                 )
             }
+        )
+    }
+}
+
+@Composable
+fun RatedSongsTabContent(
+    songs: List<Song>,
+    searchQuery: String,
+    sortOption: LibrarySortOption,
+    currentSong: Song?,
+    recentlyAddedSongIds: Set<Long>,
+    favoriteMembershipKeys: Set<String>,
+    onSongClick: (Song, List<Song>) -> Unit,
+    onPlayNextClick: (Song) -> Unit,
+    onAddToQueueClick: (Song) -> Unit,
+    onToggleFavoriteClick: (Song) -> Unit,
+    onAddToPlaylistClick: (Song) -> Unit,
+    onEditSongTagsClick: (Song) -> Unit,
+    bottomContentPadding: Dp = 0.dp,
+    modifier: Modifier = Modifier
+) {
+    val ratings = LocalSongRatingUi.current.state.ratingsByReferenceKey
+    val ratedSongs = remember(songs, ratings) {
+        filterSongsByRating(songs, SongRatingFilter.RATED, ratings)
+    }
+    val searchedSongs = remember(ratedSongs, searchQuery) {
+        filterSongsForSearch(ratedSongs, searchQuery)
+    }
+    val displayedSongs = remember(searchedSongs, sortOption, ratings) {
+        sortSongsForLibrary(searchedSongs, sortOption, ratings)
+    }
+
+    if (ratedSongs.isEmpty()) {
+        Text("No rated songs yet.", modifier = Modifier.padding(16.dp))
+    } else if (searchedSongs.isEmpty()) {
+        Text("No rated songs match your search.", modifier = Modifier.padding(16.dp))
+    } else {
+        SongList(
+            songs = displayedSongs,
+            currentSongId = currentSong?.id,
+            recentlyAddedSongIds = recentlyAddedSongIds,
+            onSongClick = onSongClick,
+            onPlayNextClick = onPlayNextClick,
+            onAddToQueueClick = onAddToQueueClick,
+            onToggleFavoriteClick = onToggleFavoriteClick,
+            favoriteMembershipKeys = favoriteMembershipKeys,
+            onAddToPlaylistClick = onAddToPlaylistClick,
+            onEditSongTagsClick = onEditSongTagsClick,
+            bottomContentPadding = bottomContentPadding,
+            ratingValuesByReferenceKey = ratings,
+            modifier = modifier.fillMaxSize()
         )
     }
 }

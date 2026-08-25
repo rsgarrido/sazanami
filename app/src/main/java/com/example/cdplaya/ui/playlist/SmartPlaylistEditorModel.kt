@@ -26,6 +26,8 @@ data class SmartPlaylistEditorModel(
     val sortDirection: String = SmartPlaylistSortDirection.ASCENDING,
     val resultLimit: String = ""
 ) {
+    val showsMatchModeChoice: Boolean get() = rules.size > 1
+
     fun validation(existingNames: Collection<String>, originalName: String? = null): SmartEditorValidation {
         val errors = mutableMapOf<Long, String>()
         rules.forEach { rule -> validateRule(rule)?.let { errors[rule.id] = it } }
@@ -103,9 +105,10 @@ private val equals = SmartRuleOperatorOption(SmartPlaylistOperator.EQUALS, "equa
 private val atLeast = SmartRuleOperatorOption(SmartPlaylistOperator.AT_LEAST, "at least")
 private val atMost = SmartRuleOperatorOption(SmartPlaylistOperator.AT_MOST, "at most")
 private val between = SmartRuleOperatorOption(SmartPlaylistOperator.BETWEEN, "between")
+internal const val LISTENING_HISTORY_EDITOR_FIELD = "listening_history_editor"
 private val relativeOperators = listOf(
-    SmartRuleOperatorOption(SmartPlaylistOperator.WITHIN_LAST_DAYS, "within"),
-    SmartRuleOperatorOption(SmartPlaylistOperator.MORE_THAN_DAYS_AGO, "more than")
+    SmartRuleOperatorOption(SmartPlaylistOperator.WITHIN_LAST_DAYS, "within last N days"),
+    SmartRuleOperatorOption(SmartPlaylistOperator.MORE_THAN_DAYS_AGO, "more than N days ago")
 )
 
 val smartRuleFieldOptions = listOf(
@@ -128,16 +131,14 @@ val smartRuleFieldOptions = listOf(
         SmartRuleValueKind.RECENT_COUNT
     ),
     SmartRuleFieldOption(
-        SmartPlaylistRuleField.LAST_PLAYED,
-        "Last played",
-        relativeOperators + SmartRuleOperatorOption(SmartPlaylistOperator.NEVER, "never played"),
-        SmartRuleValueKind.RELATIVE_DAYS
-    ),
-    SmartRuleFieldOption(
-        SmartPlaylistRuleField.NEVER_PLAYED,
+        LISTENING_HISTORY_EDITOR_FIELD,
         "Listening history",
-        listOf(SmartRuleOperatorOption(SmartPlaylistOperator.IS, "never played")),
-        SmartRuleValueKind.NONE
+        listOf(
+            SmartRuleOperatorOption(SmartPlaylistOperator.NEVER, "Never played"),
+            SmartRuleOperatorOption(SmartPlaylistOperator.WITHIN_LAST_DAYS, "Played within last"),
+            SmartRuleOperatorOption(SmartPlaylistOperator.MORE_THAN_DAYS_AGO, "Not played for")
+        ),
+        SmartRuleValueKind.RELATIVE_DAYS
     ),
     SmartRuleFieldOption(
         SmartPlaylistRuleField.TITLE,
@@ -160,13 +161,23 @@ val smartRuleFieldOptions = listOf(
     SmartRuleFieldOption(
         SmartPlaylistRuleField.YEAR,
         "Year",
-        listOf(equals, atLeast, atMost, between),
+        listOf(
+            equals,
+            SmartRuleOperatorOption(SmartPlaylistOperator.BEFORE, "before"),
+            SmartRuleOperatorOption(SmartPlaylistOperator.AFTER, "after"),
+            between
+        ),
         SmartRuleValueKind.NUMBER
     ),
     SmartRuleFieldOption(
         SmartPlaylistRuleField.DURATION,
         "Duration",
-        listOf(equals, atLeast, atMost, between),
+        listOf(
+            SmartRuleOperatorOption(SmartPlaylistOperator.SHORTER_THAN, "shorter than"),
+            SmartRuleOperatorOption(SmartPlaylistOperator.LONGER_THAN, "longer than"),
+            between,
+            SmartRuleOperatorOption(SmartPlaylistOperator.ABOUT, "about")
+        ),
         SmartRuleValueKind.DURATION_MINUTES
     ),
     SmartRuleFieldOption(
@@ -209,16 +220,32 @@ private fun validateRule(rule: SmartPlaylistEditorRule): String? {
     return when (field.valueKind) {
         SmartRuleValueKind.TEXT -> null
         SmartRuleValueKind.RATING -> if (rule.value.toIntOrNull() in 1..5) null else "Choose 1 to 5 stars."
-        SmartRuleValueKind.NUMBER -> numericRuleError(rule, positive = false)
+        SmartRuleValueKind.NUMBER -> when (rule.field) {
+            SmartPlaylistRuleField.YEAR -> wholeNumberRuleError(rule, minimum = 1)
+            SmartPlaylistRuleField.TOTAL_PLAY_COUNT -> wholeNumberRuleError(rule, minimum = 0)
+            else -> numericRuleError(rule, positive = false)
+        }
         SmartRuleValueKind.DURATION_MINUTES -> numericRuleError(rule, positive = true)
         SmartRuleValueKind.RELATIVE_DAYS -> if (rule.value.toIntOrNull()?.let { it > 0 } == true) null
             else "Enter a positive number of days."
         SmartRuleValueKind.RECENT_COUNT -> when {
             rule.windowDays.toIntOrNull()?.let { it > 0 } != true -> "Enter a positive listening window."
-            else -> numericRuleError(rule, positive = false)
+            else -> wholeNumberRuleError(rule, minimum = 0)
         }
         SmartRuleValueKind.NONE -> null
     }
+}
+
+private fun wholeNumberRuleError(rule: SmartPlaylistEditorRule, minimum: Int): String? {
+    val first = rule.value.toIntOrNull()
+    if (first == null || first < minimum) return "Enter a valid whole number."
+    if (rule.operator == SmartPlaylistOperator.BETWEEN) {
+        val second = rule.secondValue.toIntOrNull()
+        if (second == null || second < first) {
+            return "Enter a whole-number upper value at least as large as the first."
+        }
+    }
+    return null
 }
 
 private fun numericRuleError(rule: SmartPlaylistEditorRule, positive: Boolean): String? {
@@ -241,19 +268,45 @@ private fun SmartPlaylistEditorRule.toRule(): SmartPlaylistRule {
         else -> listOf(convertValue(value, kind))
     }
     return SmartPlaylistRule(
-        field = field,
-        operator = operator,
+        field = when {
+            field == LISTENING_HISTORY_EDITOR_FIELD && operator == SmartPlaylistOperator.NEVER ->
+                SmartPlaylistRuleField.NEVER_PLAYED
+            field == LISTENING_HISTORY_EDITOR_FIELD -> SmartPlaylistRuleField.LAST_PLAYED
+            else -> field
+        },
+        operator = if (
+            field == LISTENING_HISTORY_EDITOR_FIELD && operator == SmartPlaylistOperator.NEVER
+        ) SmartPlaylistOperator.IS else operator,
         values = values,
         parameters = if (kind == SmartRuleValueKind.RECENT_COUNT) mapOf("days" to windowDays) else emptyMap()
     )
 }
 
 private fun SmartPlaylistRule.toEditorRule(id: Long): SmartPlaylistEditorRule {
-    val kind = smartRuleFieldOptions.firstOrNull { it.storage == field }?.valueKind
+    val editorField = when (field) {
+        SmartPlaylistRuleField.LAST_PLAYED,
+        SmartPlaylistRuleField.NEVER_PLAYED -> LISTENING_HISTORY_EDITOR_FIELD
+        else -> field
+    }
+    val editorOperator = when {
+        field == SmartPlaylistRuleField.NEVER_PLAYED -> SmartPlaylistOperator.NEVER
+        field == SmartPlaylistRuleField.DURATION && operator == SmartPlaylistOperator.EQUALS ->
+            SmartPlaylistOperator.ABOUT
+        field == SmartPlaylistRuleField.DURATION && operator == SmartPlaylistOperator.AT_LEAST ->
+            SmartPlaylistOperator.LONGER_THAN
+        field == SmartPlaylistRuleField.DURATION && operator == SmartPlaylistOperator.AT_MOST ->
+            SmartPlaylistOperator.SHORTER_THAN
+        field == SmartPlaylistRuleField.YEAR && operator == SmartPlaylistOperator.AT_LEAST ->
+            SmartPlaylistOperator.AFTER
+        field == SmartPlaylistRuleField.YEAR && operator == SmartPlaylistOperator.AT_MOST ->
+            SmartPlaylistOperator.BEFORE
+        else -> operator
+    }
+    val kind = smartRuleFieldOptions.firstOrNull { it.storage == editorField }?.valueKind
     return SmartPlaylistEditorRule(
         id = id,
-        field = field,
-        operator = operator,
+        field = editorField,
+        operator = editorOperator,
         value = displayValue(values.getOrNull(0).orEmpty(), kind),
         secondValue = displayValue(values.getOrNull(1).orEmpty(), kind),
         windowDays = parameters["days"] ?: "30"

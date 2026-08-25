@@ -20,6 +20,7 @@ import com.example.cdplaya.data.PlaylistFolder
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.player.PlaybackShuffleMode
+import com.example.cdplaya.ui.library.LibraryViewMode
 
 @Composable
 fun PlaylistsTabContent(
@@ -34,6 +35,8 @@ fun PlaylistsTabContent(
     currentSong: Song?,
     recentlyAddedSongIds: Set<Long>,
     favoriteMembershipKeys: Set<String>,
+    viewMode: LibraryViewMode,
+    gridColumnCount: Int,
     onCreatePlaylistClick: (Long?) -> Unit,
     onCreateFolderClick: (String) -> Unit,
     onRenameFolderClick: (PlaylistFolder, String) -> Unit,
@@ -113,6 +116,8 @@ fun PlaylistsTabContent(
             onChangeArtworkClick = chooseArtwork,
             onResetArtworkClick = onResetPlaylistArtwork,
             onRenamePlaylistClick = onRenamePlaylistClick,
+            viewMode = viewMode,
+            gridColumnCount = gridColumnCount,
             bottomContentPadding = bottomContentPadding,
             modifier = modifier
         )

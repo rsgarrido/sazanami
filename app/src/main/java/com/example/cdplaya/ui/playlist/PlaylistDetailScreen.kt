@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
@@ -40,7 +41,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,9 +70,6 @@ import com.example.cdplaya.ui.library.LibraryDetailTopBar
 import com.example.cdplaya.ui.library.LibraryItemAction
 import com.example.cdplaya.ui.library.LibraryItemActionSheet
 import com.example.cdplaya.ui.library.LibraryItemActionSheetTarget
-import kotlinx.coroutines.delay
-
-private const val PLAYLIST_LOADING_INDICATOR_DELAY_MILLIS = 175L
 
 @Composable
 fun PlaylistDetailScreen(
@@ -113,7 +110,6 @@ fun PlaylistDetailScreen(
     var addSongsVisible by remember { mutableStateOf(false) }
     var movePlaylistVisible by remember { mutableStateOf(false) }
     var isEditingOrder by remember { mutableStateOf(false) }
-    var showDelayedLoadingUi by remember(playlist.playlistId) { mutableStateOf(false) }
     var smartEditorData by remember(playlist.playlistId) { mutableStateOf<com.example.cdplaya.controller.SmartPlaylistUiData?>(null) }
     var smartActionError by remember(playlist.playlistId) { mutableStateOf<String?>(null) }
     var isRefreshingSnapshot by remember(playlist.playlistId) { mutableStateOf(false) }
@@ -135,14 +131,6 @@ fun PlaylistDetailScreen(
     }
     val displayedSongs = remember(displayedRows) {
         displayedRows.mapNotNull(PlaylistSong::resolvedSong)
-    }
-
-    LaunchedEffect(isLoading, playlist.playlistId) {
-        showDelayedLoadingUi = false
-        if (isLoading) {
-            delay(PLAYLIST_LOADING_INDICATOR_DELAY_MILLIS)
-            showDelayedLoadingUi = true
-        }
     }
 
     BackHandler(enabled = isEditingOrder) {
@@ -222,8 +210,8 @@ fun PlaylistDetailScreen(
     Column(modifier = modifier.fillMaxSize()) {
         LibraryDetailTopBar(
             title = playlist.name,
-            showTitle = isEditingOrder || showCompactTitle,
-            containerColor = if (isEditingOrder || showCompactTitle) {
+            showTitle = isLoading || isEditingOrder || showCompactTitle,
+            containerColor = if (isLoading || isEditingOrder || showCompactTitle) {
                 MaterialTheme.colorScheme.surface.copy(alpha = 0.97f)
             } else {
                 Color.Transparent
@@ -257,9 +245,29 @@ fun PlaylistDetailScreen(
                 modifier = Modifier.fillMaxSize()
             )
 
-            isLoading && !showDelayedLoadingUi -> Box(modifier = Modifier.fillMaxSize())
-
-            isLoading -> PlaylistLoadingState(modifier = Modifier.fillMaxSize())
+            isLoading -> LazyColumn(modifier = Modifier.fillMaxSize()) {
+                item(key = "playlist-loading-header") {
+                    PlaylistDetailHero(
+                        playlist = playlist,
+                        hasSongs = false,
+                        sortField = sortField,
+                        sortDirection = sortDirection,
+                        onSortFieldSelected = { field -> sortFieldName = field.name },
+                        onSortDirectionToggle = {
+                            sortDirectionName = sortDirection.toggled().name
+                        },
+                        onPlayClick = {},
+                        onShuffleClick = {},
+                        isRefreshingSnapshot = false,
+                        onRefreshClick = null
+                    )
+                }
+                item(key = "playlist-loading-progress") {
+                    PlaylistLoadingState(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp)
+                    )
+                }
+            }
 
             else -> PlaylistSongList(
                 playlistSongs = displayedSongs,
@@ -581,12 +589,12 @@ private fun PlaylistDetailEmptyState(
     }
 }
 
-private fun playlistKindText(playlist: Playlist): String = when (playlist.membershipBehavior) {
+internal fun playlistKindText(playlist: Playlist): String = when (playlist.membershipBehavior) {
     PlaylistMembershipBehavior.MANUAL -> "Manual playlist"
-    PlaylistMembershipBehavior.USER_SMART_LIVE -> "Smart Playlist • Live"
-    PlaylistMembershipBehavior.GENERATED_SMART_LIVE -> "Suggested Smart Playlist • Live"
+    PlaylistMembershipBehavior.USER_SMART_LIVE -> "Smart Playlist • Updates automatically"
+    PlaylistMembershipBehavior.GENERATED_SMART_LIVE -> "Smart Playlist • Updates automatically"
     PlaylistMembershipBehavior.GENERATED_SMART_SNAPSHOT -> buildString {
-        append("Generated Smart Playlist")
+        append("Smart Playlist")
         playlist.generatedLastRefreshedAt?.let { refreshedAt ->
             append(" • Updated ")
             append(relativeUpdatedText(refreshedAt))
@@ -598,7 +606,7 @@ internal fun allowsManualPlaylistActions(playlist: Playlist): Boolean =
     playlist.type == PlaylistType.MANUAL &&
         playlist.membershipBehavior == PlaylistMembershipBehavior.MANUAL
 
-private fun relativeUpdatedText(timestamp: Long, now: Long = System.currentTimeMillis()): String {
+internal fun relativeUpdatedText(timestamp: Long, now: Long = System.currentTimeMillis()): String {
     val elapsed = (now - timestamp).coerceAtLeast(0L)
     val minutes = elapsed / 60_000L
     val hours = minutes / 60L

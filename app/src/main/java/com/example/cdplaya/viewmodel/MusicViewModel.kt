@@ -248,6 +248,10 @@ class MusicViewModel(
                 preferences.artistsViewMode,
                 preferences.artistsGridColumnCount
             ),
+            playlists = LibraryCategoryAppearance(
+                preferences.playlistsViewMode,
+                preferences.playlistsGridColumnCount
+            ),
             isLoaded = preferences.isLoaded
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LibraryAppearanceUiState())

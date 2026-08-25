@@ -8,10 +8,14 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -62,6 +66,7 @@ import com.example.cdplaya.ui.library.LibraryItemAction
 import com.example.cdplaya.ui.library.LibraryItemActionSheet
 import com.example.cdplaya.ui.library.LibraryItemActionSheetTarget
 import com.example.cdplaya.ui.library.libraryItemActions
+import com.example.cdplaya.ui.library.LibraryViewMode
 
 @Composable
 fun PlaylistListScreen(
@@ -82,6 +87,8 @@ fun PlaylistListScreen(
     onImportPlaylistClick: () -> Unit,
     onChangeArtworkClick: (Playlist) -> Unit,
     onResetArtworkClick: (Playlist) -> Unit,
+    viewMode: LibraryViewMode,
+    gridColumnCount: Int,
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
@@ -276,7 +283,7 @@ fun PlaylistListScreen(
             (currentFolder != null || folders.isEmpty())
         if (collectionIsEmpty) {
             PlaylistCollectionEmptyState(inFolder = currentFolder != null)
-        } else {
+        } else if (viewMode == LibraryViewMode.LIST) {
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(bottom = bottomContentPadding + 8.dp)
@@ -298,6 +305,41 @@ fun PlaylistListScreen(
                     key = { playlist -> playlistLazyListKey(playlist.playlistId) }
                 ) { playlist ->
                     PlaylistRow(
+                        playlist = playlist,
+                        onClick = { onPlaylistClick(playlist) },
+                        onMoreClick = { showPlaylistActions(playlist) }
+                    )
+                }
+            }
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(gridColumnCount.coerceAtLeast(2)),
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(
+                    start = 8.dp,
+                    end = 8.dp,
+                    bottom = bottomContentPadding + 8.dp
+                ),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (currentFolder == null) {
+                    gridItems(
+                        items = folders,
+                        key = { folder -> playlistFolderLazyListKey(folder.folderId) }
+                    ) { folder ->
+                        PlaylistFolderGridTile(
+                            folder = folder,
+                            onClick = { onFolderSelected(folder.folderId) },
+                            onMoreClick = { showFolderActions(folder) }
+                        )
+                    }
+                }
+                gridItems(
+                    items = visiblePlaylists,
+                    key = { playlist -> playlistLazyListKey(playlist.playlistId) }
+                ) { playlist ->
+                    PlaylistGridTile(
                         playlist = playlist,
                         onClick = { onPlaylistClick(playlist) },
                         onMoreClick = { showPlaylistActions(playlist) }
@@ -488,7 +530,7 @@ private fun PlaylistRow(
                 )
                 if (playlist.type == PlaylistType.SMART) {
                     Text(
-                        text = if (playlist.generatedTemplateKey == null) "Smart" else "Smart • Suggested",
+                        text = playlistCollectionKindText(playlist),
                         style = MaterialTheme.typography.labelSmall,
                         color = AppShellAccent
                     )
@@ -498,6 +540,108 @@ private fun PlaylistRow(
                 Icon(
                     imageVector = Icons.Filled.MoreVert,
                     contentDescription = "More options for ${playlist.name}"
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaylistFolderGridTile(
+    folder: PlaylistFolder,
+    onClick: () -> Unit,
+    onMoreClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .libraryItemActions(
+                clickLabel = "Open ${folder.name}",
+                onClick = onClick,
+                onShowActions = onMoreClick
+            ),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Box(
+                modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Filled.Folder,
+                    contentDescription = null,
+                    modifier = Modifier.size(72.dp),
+                    tint = AppShellAccent
+                )
+                IconButton(onClick = onMoreClick, modifier = Modifier.align(Alignment.TopEnd)) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "More options for ${folder.name}")
+                }
+            }
+            Text(
+                folder.name,
+                style = AppShellTypography.FeaturedSongTitle,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                folderPlaylistCountText(folder.playlistCount),
+                style = AppShellTypography.SongSubtitle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlaylistGridTile(
+    playlist: Playlist,
+    onClick: () -> Unit,
+    onMoreClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .libraryItemActions(
+                clickLabel = "Open ${playlist.name}",
+                onClick = onClick,
+                onShowActions = onMoreClick
+            ),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f)) {
+                PlaylistArtwork(
+                    playlist = playlist,
+                    contentDescription = "Artwork for ${playlist.name}",
+                    modifier = Modifier.fillMaxSize()
+                )
+                IconButton(onClick = onMoreClick, modifier = Modifier.align(Alignment.TopEnd)) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "More options for ${playlist.name}")
+                }
+            }
+            Text(
+                playlist.name,
+                style = AppShellTypography.FeaturedSongTitle,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+            Text(
+                playlistMetadataText(playlist),
+                style = AppShellTypography.SongSubtitle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (playlist.type == PlaylistType.SMART) {
+                Text(
+                    playlistCollectionKindText(playlist),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = AppShellAccent
                 )
             }
         }
@@ -541,6 +685,16 @@ private fun rootCollectionCountText(folderCount: Int, playlistCount: Int): Strin
     append(folderPlaylistCountText(playlistCount))
     if (folderCount > 0) append(" • $folderCount folder${if (folderCount == 1) "" else "s"}")
 }
+
+internal fun playlistCollectionKindText(playlist: Playlist): String =
+    when {
+        playlist.type != PlaylistType.SMART -> "Manual"
+        playlist.membershipBehavior ==
+            com.example.cdplaya.data.PlaylistMembershipBehavior.GENERATED_SMART_SNAPSHOT &&
+            playlist.generatedLastRefreshedAt != null ->
+            "Smart • Updated ${relativeUpdatedText(playlist.generatedLastRefreshedAt)}"
+        else -> "Smart"
+    }
 
 private enum class PlaylistSortOption(
     val label: String,

@@ -45,7 +45,8 @@ enum class LibraryViewMode(val storageValue: String) {
 enum class LibraryViewCategory(val storageKey: String) {
     SONGS("songs_view_mode"),
     ALBUMS("albums_view_mode"),
-    ARTISTS("artists_view_mode")
+    ARTISTS("artists_view_mode"),
+    PLAYLISTS("playlists_view_mode")
 }
 
 object LibraryGridColumns {
@@ -75,6 +76,7 @@ fun LibraryTab.viewCategory(): LibraryViewCategory? {
         LibraryTab.SONGS -> LibraryViewCategory.SONGS
         LibraryTab.ALBUMS -> LibraryViewCategory.ALBUMS
         LibraryTab.ARTISTS -> LibraryViewCategory.ARTISTS
+        LibraryTab.PLAYLISTS -> LibraryViewCategory.PLAYLISTS
         else -> null
     }
 }
