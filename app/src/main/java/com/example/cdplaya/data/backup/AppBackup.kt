@@ -44,7 +44,8 @@ data class BackupHomePin(
     val type: String,
     val title: String,
     val subtitle: String = "",
-    val anchor: BackupSongReference
+    val anchor: BackupSongReference? = null,
+    val playlistId: Long? = null
 )
 
 @Serializable
@@ -115,6 +116,7 @@ data class BackupFavoriteSong(
 
 @Serializable
 data class BackupPlaylist(
+    val playlistId: Long? = null,
     val name: String,
     val createdAt: Long,
     val updatedAt: Long,

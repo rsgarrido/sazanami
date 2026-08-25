@@ -19,7 +19,7 @@ import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.encodeToStream
 
 object AppBackupJson {
-    const val CURRENT_SCHEMA_VERSION = 12
+    const val CURRENT_SCHEMA_VERSION = 13
     private const val OLDEST_SUPPORTED_SCHEMA_VERSION = 1
 
     private val json = Json {
@@ -95,6 +95,9 @@ object AppBackupJson {
         }
         if (migrated.schemaVersion == 11) {
             migrated = migrateV11ToV12(migrated)
+        }
+        if (migrated.schemaVersion == 12) {
+            migrated = migrateV12ToV13(migrated)
         }
         validateEqualizerBackup(migrated.preferences.equalizer)
         val history = requireNotNull(migrated.canonicalListeningHistory) {
@@ -323,6 +326,10 @@ object AppBackupJson {
         playlists = backup.playlists.map { it.copy(folderId = null) }
     )
 
+    private fun migrateV12ToV13(backup: AppBackup): AppBackup = backup.copy(
+        schemaVersion = 13
+    )
+
     private fun validateEqualizerBackup(
         equalizer: BackupEqualizerPreferences
     ) {
@@ -430,7 +437,7 @@ private fun AppBackup.sanitizedForExport(): AppBackup = copy(
             .map { it.toPortableFolderSelection() }
             .filter { it.isNotBlank() },
         homePins = preferences.homePins.map { pin ->
-            pin.copy(anchor = pin.anchor.withoutAbsolutePath())
+            pin.copy(anchor = pin.anchor?.withoutAbsolutePath())
         }
     ),
     favorites = favorites.map { favorite ->

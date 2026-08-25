@@ -113,7 +113,15 @@ fun rememberQueueSnackbarActions(
             }
         },
         addSongsToQueue = { label, songsToAdd ->
-            if (songsToAdd.isNotEmpty()) {
+            if (songsToAdd.isEmpty()) {
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar(
+                        message = "No playable songs in \"$label\"",
+                        withDismissAction = true,
+                        duration = SnackbarDuration.Short
+                    )
+                }
+            } else {
                 onAddSongsToQueueClick(songsToAdd)
                 markSongsAsRecentlyAdded(songsToAdd)
 

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.cdplaya.data.Playlist
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.SongReferenceIndex
 import com.example.cdplaya.data.SongReferenceResolution
@@ -33,6 +34,7 @@ sealed interface HomePinTarget {
     data class SongTarget(val song: Song) : HomePinTarget
     data class AlbumTarget(val album: LibraryAlbumGroup) : HomePinTarget
     data class ArtistTarget(val artist: LibraryArtistGroup) : HomePinTarget
+    data class PlaylistTarget(val playlist: Playlist) : HomePinTarget
 }
 
 @Immutable
@@ -45,6 +47,7 @@ data class ResolvedHomePin(
             is HomePinTarget.SongTarget -> currentTarget.song.title.ifBlank { "Unknown Title" }
             is HomePinTarget.AlbumTarget -> currentTarget.album.title
             is HomePinTarget.ArtistTarget -> currentTarget.artist.name
+            is HomePinTarget.PlaylistTarget -> currentTarget.playlist.name
             null -> pin.title
         }
 
@@ -53,6 +56,7 @@ data class ResolvedHomePin(
             is HomePinTarget.SongTarget -> currentTarget.song.artist.ifBlank { "Unknown Artist" }
             is HomePinTarget.AlbumTarget -> currentTarget.album.artistText
             is HomePinTarget.ArtistTarget -> "Artist"
+            is HomePinTarget.PlaylistTarget -> "Playlist"
             null -> pin.subtitle
         }
 
@@ -61,6 +65,7 @@ data class ResolvedHomePin(
             is HomePinTarget.SongTarget -> currentTarget.song.albumArtUri
             is HomePinTarget.AlbumTarget -> currentTarget.album.songs.firstOrNull()?.albumArtUri
             is HomePinTarget.ArtistTarget -> currentTarget.artist.songs.firstOrNull()?.albumArtUri
+            is HomePinTarget.PlaylistTarget -> null
             null -> null
         }
 
@@ -69,6 +74,7 @@ data class ResolvedHomePin(
             HomePinType.SONG -> "SONG"
             HomePinType.ALBUM -> "ALBUM"
             HomePinType.ARTIST -> "ARTIST"
+            HomePinType.PLAYLIST -> "PLAYLIST"
         }
 }
 
@@ -104,6 +110,11 @@ data class HomePinUiEnvironment(
     fun pinForArtist(artist: LibraryArtistGroup): ResolvedHomePin? = pins.firstOrNull { resolved ->
         val target = resolved.target as? HomePinTarget.ArtistTarget
         target?.artist?.name.equals(artist.name, ignoreCase = true)
+    }
+
+    fun pinForPlaylist(playlist: Playlist): ResolvedHomePin? = pins.firstOrNull { resolved ->
+        val target = resolved.target as? HomePinTarget.PlaylistTarget
+        target?.playlist?.playlistId == playlist.playlistId
     }
 
     fun actionForSong(song: Song): LibraryItemAction {
@@ -150,13 +161,29 @@ data class HomePinUiEnvironment(
             }
         )
     }
+
+    fun actionForPlaylist(playlist: Playlist): LibraryItemAction {
+        val existing = pinForPlaylist(playlist)
+        return LibraryItemAction(
+            label = if (existing == null) "Pin to Home" else "Unpin from Home",
+            icon = Icons.Filled.PushPin,
+            onClick = {
+                if (existing == null) {
+                    onPinRequested(HomePin.playlist(playlist))
+                } else {
+                    onUnpinRequested(existing.pin.id)
+                }
+            }
+        )
+    }
 }
 
 val LocalHomePinUi = staticCompositionLocalOf { HomePinUiEnvironment() }
 
 fun resolveHomePins(
     pins: List<HomePin>,
-    songs: List<Song>
+    songs: List<Song>,
+    playlists: List<Playlist> = emptyList()
 ): List<ResolvedHomePin> {
     if (pins.isEmpty()) return emptyList()
 
@@ -166,10 +193,14 @@ fun resolveHomePins(
     val albumsByFolder = albums.associateBy { album -> album.key }
     val artistsByName = artists.associateBy { artist -> artist.name.lowercase(Locale.ROOT) }
 
-    return pins.map { pin ->
-        val anchorSong = when (val resolution = songIndex.resolve(pin.anchor)) {
-            is SongReferenceResolution.Resolved -> resolution.song
-            else -> null
+    val playlistsById = playlists.associateBy(Playlist::playlistId)
+
+    return pins.mapNotNull { pin ->
+        val anchorSong = pin.anchor?.let { anchor ->
+            when (val resolution = songIndex.resolve(anchor)) {
+                is SongReferenceResolution.Resolved -> resolution.song
+                else -> null
+            }
         }
         val target = when (pin.type) {
             HomePinType.SONG -> anchorSong?.let(HomePinTarget::SongTarget)
@@ -194,8 +225,15 @@ fun resolveHomePins(
                     }
                 artist?.let(HomePinTarget::ArtistTarget)
             }
+            HomePinType.PLAYLIST -> pin.playlistId
+                ?.let(playlistsById::get)
+                ?.let(HomePinTarget::PlaylistTarget)
         }
-        ResolvedHomePin(pin = pin, target = target)
+        if (pin.type == HomePinType.PLAYLIST && target == null) {
+            null
+        } else {
+            ResolvedHomePin(pin = pin, target = target)
+        }
     }
 }
 

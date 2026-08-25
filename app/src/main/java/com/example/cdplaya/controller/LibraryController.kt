@@ -492,6 +492,7 @@ class LibraryController(
     fun deletePlaylist(playlist: Playlist) {
         coroutineScope.launch {
             playlistsRepository.deletePlaylist(playlist.playlistId)
+            appPreferencesRepository.removeHomePinsForPlaylist(playlist.playlistId)
             withContext(Dispatchers.IO) {
                 playlistArtworkStore.delete(playlist.artworkReference)
             }
@@ -654,6 +655,19 @@ class LibraryController(
                 )
             }
 
+            onPrepared(result)
+        }
+    }
+
+    fun preparePlaylistQueueSongs(
+        playlist: Playlist,
+        onPrepared: (Result<List<Song>>) -> Unit
+    ) {
+        coroutineScope.launch {
+            val result = runCatching {
+                getResolvedPlaylistSongs(playlist.playlistId)
+                    .mapNotNull(PlaylistSong::resolvedSong)
+            }
             onPrepared(result)
         }
     }

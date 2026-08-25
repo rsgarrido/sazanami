@@ -990,6 +990,16 @@ class MusicViewModel(
         )
     }
 
+    fun preparePlaylistQueueSongs(
+        playlist: Playlist,
+        onPrepared: (Result<List<Song>>) -> Unit
+    ) {
+        libraryController.preparePlaylistQueueSongs(
+            playlist = playlist,
+            onPrepared = onPrepared
+        )
+    }
+
     fun refreshSongsAfterTagEdit(
         originalSong: Song,
         editedTags: EditableSongTags

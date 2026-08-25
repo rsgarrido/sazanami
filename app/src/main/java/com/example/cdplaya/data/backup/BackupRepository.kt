@@ -88,7 +88,8 @@ class BackupRepository(
                         type = pin.type.name,
                         title = pin.title,
                         subtitle = pin.subtitle,
-                        anchor = pin.anchor.toBackupSongReference()
+                        anchor = pin.anchor?.toBackupSongReference(),
+                        playlistId = pin.playlistId
                     )
                 },
                 showRecentlyAddedOnHome = appPreferences.showRecentlyAddedOnHome,
@@ -134,7 +135,7 @@ class BackupRepository(
                 validatedHistory
             )
 
-            appDatabase.withTransaction {
+            val restoredPlaylistIds = appDatabase.withTransaction {
                 val restoredIdentityIds =
                     canonicalHistoryRepository.restoreValidatedWithinTransaction(validatedHistory)
                 canonicalHistoryRepository.restoreRatingsValidatedWithinTransaction(
@@ -142,15 +143,16 @@ class BackupRepository(
                     restoredIdentityIds
                 )
                 favoritesRepository.restoreFavoritesFromBackup(backup.favorites)
-                playlistsRepository.restorePlaylistsFromBackup(
+                val playlistIds = playlistsRepository.restorePlaylistsFromBackup(
                     folders = backup.playlistFolders,
                     playlists = backup.playlists
                 )
                 listeningHistoryRepository.restoreListeningHistoryFromBackup(
                     backup.listeningHistory
                 )
+                playlistIds
             }
-            restorePreferences(backup.preferences)
+            restorePreferences(backup.preferences, restoredPlaylistIds)
 
             BackupRestoreResult(
                 favoriteCount = summary.favoriteCount,
@@ -190,7 +192,10 @@ class BackupRepository(
         }.toMap()
     }
 
-    private suspend fun restorePreferences(preferences: BackupPreferences) {
+    private suspend fun restorePreferences(
+        preferences: BackupPreferences,
+        restoredPlaylistIds: Map<Long, Long>
+    ) {
         val overrides = PlayerTheme.entries.mapNotNull { theme ->
             val backup = preferences.playerThemeTokenOverrides[theme.id] ?: return@mapNotNull null
             val supportedFields = theme.customizationOptions().map { it.field }.toSet()
@@ -251,7 +256,12 @@ class BackupRepository(
                             type = type,
                             title = backupPin.title,
                             subtitle = backupPin.subtitle,
-                            anchor = backupPin.anchor.toSongReference()
+                            anchor = backupPin.anchor?.toSongReference(),
+                            playlistId = if (type == HomePinType.PLAYLIST) {
+                                backupPin.playlistId?.let(restoredPlaylistIds::get)
+                            } else {
+                                null
+                            }
                         ).normalizedForPersistence()
                     }
                 ),

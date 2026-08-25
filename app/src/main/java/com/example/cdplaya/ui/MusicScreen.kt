@@ -185,6 +185,7 @@ internal fun MusicScreen(
     onRenamePlaylistClick: (Playlist, String) -> Unit,
     onDeletePlaylistClick: (Playlist) -> Unit,
     onExportPlaylistClick: (Playlist) -> Unit,
+    onPreparePlaylistQueueSongs: (Playlist, (Result<List<Song>>) -> Unit) -> Unit,
     onImportPlaylistClick: () -> Unit,
     onChangePlaylistArtwork: (Playlist, Uri) -> Unit,
     onResetPlaylistArtwork: (Playlist) -> Unit,
@@ -322,6 +323,17 @@ internal fun MusicScreen(
         onAddSongsToQueueClick = onAddSongsToQueueClick,
         onUndoAddSongsToQueueClick = onUndoAddSongsToQueueClick
     )
+    val addPlaylistToQueue: (Playlist) -> Unit = { playlist ->
+        onPreparePlaylistQueueSongs(playlist) { result ->
+            result.onSuccess { customOrderSongs ->
+                queueSnackbarActions.addSongsToQueue(playlist.name, customOrderSongs)
+            }.onFailure {
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar("Unable to add playlist to queue")
+                }
+            }
+        }
+    }
 
     val playlistSnackbarActions = rememberPlaylistSnackbarActions(
         snackbarHostState = snackbarHostState,
@@ -979,6 +991,7 @@ internal fun MusicScreen(
                     },
                     onDeletePlaylistClick = onDeletePlaylistClick,
                     onExportPlaylistClick = onExportPlaylistClick,
+                    onAddPlaylistToQueueClick = addPlaylistToQueue,
                     onImportPlaylistClick = onImportPlaylistClick,
                     onChangePlaylistArtwork = onChangePlaylistArtwork,
                     onResetPlaylistArtwork = onResetPlaylistArtwork,

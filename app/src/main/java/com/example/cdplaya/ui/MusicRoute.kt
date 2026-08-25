@@ -95,10 +95,15 @@ internal fun MusicRoute(
     }
 
     var pendingHomePin by remember { mutableStateOf<HomePin?>(null) }
-    val resolvedHomePins = remember(homeCustomizationUiState.pins, libraryUiState.songs) {
+    val resolvedHomePins = remember(
+        homeCustomizationUiState.pins,
+        libraryUiState.songs,
+        libraryUiState.playlists
+    ) {
         resolveHomePins(
             pins = homeCustomizationUiState.pins,
-            songs = libraryUiState.songs
+            songs = libraryUiState.songs,
+            playlists = libraryUiState.playlists
         )
     }
     val homePinUiEnvironment = HomePinUiEnvironment(
@@ -325,6 +330,7 @@ internal fun MusicRoute(
                 musicViewModel.deletePlaylist(playlist)
             },
             onExportPlaylistClick = playlistExportActions.exportPlaylist,
+            onPreparePlaylistQueueSongs = musicViewModel::preparePlaylistQueueSongs,
             onImportPlaylistClick = playlistImportActions.importPlaylist,
             onChangePlaylistArtwork = { playlist, uri ->
                 musicViewModel.changePlaylistArtwork(playlist, uri) { result ->

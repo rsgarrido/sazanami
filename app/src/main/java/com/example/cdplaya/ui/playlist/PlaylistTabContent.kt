@@ -1,6 +1,7 @@
 package com.example.cdplaya.ui.playlist
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -41,6 +42,7 @@ fun PlaylistsTabContent(
     onPlaylistClick: (Playlist) -> Unit,
     onDeletePlaylistClick: (Playlist) -> Unit,
     onExportPlaylistClick: (Playlist) -> Unit,
+    onAddPlaylistToQueueClick: (Playlist) -> Unit,
     onImportPlaylistClick: () -> Unit,
     onChangePlaylistArtwork: (Playlist, Uri) -> Unit,
     onResetPlaylistArtwork: (Playlist) -> Unit,
@@ -60,6 +62,11 @@ fun PlaylistsTabContent(
 ) {
     var playlistPendingArtworkId by remember { mutableStateOf<Long?>(null) }
     var selectedFolderId by rememberSaveable { mutableStateOf<Long?>(null) }
+    val returnToPlaylistRoot = { selectedFolderId = null }
+
+    BackHandler(enabled = selectedPlaylistId == null && selectedFolderId != null) {
+        returnToPlaylistRoot()
+    }
     val artworkPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
@@ -83,7 +90,9 @@ fun PlaylistsTabContent(
             playlists = playlists,
             folders = playlistFolders,
             selectedFolderId = selectedFolderId,
-            onFolderSelected = { selectedFolderId = it },
+            onFolderSelected = { folderId ->
+                if (folderId == null) returnToPlaylistRoot() else selectedFolderId = folderId
+            },
             onCreatePlaylistClick = onCreatePlaylistClick,
             onCreateFolderClick = onCreateFolderClick,
             onRenameFolderClick = onRenameFolderClick,
@@ -92,6 +101,7 @@ fun PlaylistsTabContent(
             onPlaylistClick = onPlaylistClick,
             onDeletePlaylistClick = onDeletePlaylistClick,
             onExportPlaylistClick = onExportPlaylistClick,
+            onAddPlaylistToQueueClick = onAddPlaylistToQueueClick,
             onImportPlaylistClick = onImportPlaylistClick,
             onChangeArtworkClick = chooseArtwork,
             onResetArtworkClick = onResetPlaylistArtwork,
@@ -145,6 +155,7 @@ fun PlaylistsTabContent(
                 onRenamePlaylistClick = onRenamePlaylistClick,
                 onDeletePlaylistClick = onDeletePlaylistClick,
                 onExportPlaylistClick = onExportPlaylistClick,
+                onAddPlaylistToQueueClick = onAddPlaylistToQueueClick,
                 onChangeArtworkClick = chooseArtwork,
                 onResetArtworkClick = onResetPlaylistArtwork,
                 onMovePlaylistClick = onMovePlaylistClick,

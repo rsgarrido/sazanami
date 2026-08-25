@@ -24,6 +24,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.cdplaya.R
+import com.example.cdplaya.data.Playlist
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.recentlyAddedShelfSongs
 import com.example.cdplaya.ui.AppShellTypography
@@ -58,6 +59,7 @@ internal fun HomeScreen(
     onPinnedSongClick: (Song) -> Unit,
     onPinnedAlbumClick: (String) -> Unit,
     onPinnedArtistClick: (String) -> Unit,
+    onPinnedPlaylistClick: (Playlist) -> Unit,
     onRecentlyPlayedSongClick: (Song) -> Unit,
     onRecentlyAddedSongClick: (Song) -> Unit,
     onFavoriteSongClick: (Song) -> Unit,
@@ -156,7 +158,8 @@ internal fun HomeScreen(
                     pins = homePinUi.pins,
                     onSongClick = onPinnedSongClick,
                     onAlbumClick = onPinnedAlbumClick,
-                    onArtistClick = onPinnedArtistClick
+                    onArtistClick = onPinnedArtistClick,
+                    onPlaylistClick = onPinnedPlaylistClick
                 )
             }
         }

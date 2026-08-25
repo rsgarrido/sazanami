@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -55,6 +56,7 @@ import com.example.cdplaya.data.PlaylistFolder
 import com.example.cdplaya.ui.AppShellAccent
 import com.example.cdplaya.ui.AppShellIcons
 import com.example.cdplaya.ui.AppShellTypography
+import com.example.cdplaya.ui.home.LocalHomePinUi
 import com.example.cdplaya.ui.library.LibraryItemAction
 import com.example.cdplaya.ui.library.LibraryItemActionSheet
 import com.example.cdplaya.ui.library.LibraryItemActionSheetTarget
@@ -75,12 +77,14 @@ fun PlaylistListScreen(
     onRenamePlaylistClick: (Playlist, String) -> Unit,
     onDeletePlaylistClick: (Playlist) -> Unit,
     onExportPlaylistClick: (Playlist) -> Unit,
+    onAddPlaylistToQueueClick: (Playlist) -> Unit,
     onImportPlaylistClick: () -> Unit,
     onChangeArtworkClick: (Playlist) -> Unit,
     onResetArtworkClick: (Playlist) -> Unit,
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
+    val homePinUi = LocalHomePinUi.current
     var playlistPendingRename by remember { mutableStateOf<Playlist?>(null) }
     var playlistPendingDelete by remember { mutableStateOf<Playlist?>(null) }
     var playlistPendingMove by remember { mutableStateOf<Playlist?>(null) }
@@ -110,6 +114,10 @@ fun PlaylistListScreen(
             artworkUri = null,
             artworkDescription = "Artwork for ${playlist.name}",
             actions = buildList {
+                add(homePinUi.actionForPlaylist(playlist))
+                add(LibraryItemAction("Add to queue", Icons.AutoMirrored.Filled.QueueMusic) {
+                    onAddPlaylistToQueueClick(playlist)
+                })
                 add(LibraryItemAction("Change artwork", Icons.Filled.Image) {
                     onChangeArtworkClick(playlist)
                 })

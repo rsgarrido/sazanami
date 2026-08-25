@@ -207,6 +207,7 @@ internal fun MusicScreenBody(
     onPlaylistClick: (Playlist) -> Unit,
     onDeletePlaylistClick: (Playlist) -> Unit,
     onExportPlaylistClick: (Playlist) -> Unit,
+    onAddPlaylistToQueueClick: (Playlist) -> Unit,
     onImportPlaylistClick: () -> Unit,
     onChangePlaylistArtwork: (Playlist, Uri) -> Unit,
     onResetPlaylistArtwork: (Playlist) -> Unit,
@@ -452,6 +453,10 @@ internal fun MusicScreenBody(
                             onOpenLibrary(LibraryTab.ARTISTS)
                             onArtistSelected(artistName)
                         },
+                        onPinnedPlaylistClick = { playlist ->
+                            onOpenLibrary(LibraryTab.PLAYLISTS)
+                            onPlaylistClick(playlist)
+                        },
                         onRecentlyPlayedSongClick = { song ->
                             onSongClick(song, recentlyPlayedSongs)
                         },
@@ -635,6 +640,7 @@ internal fun MusicScreenBody(
                                     onPlaylistClick = onPlaylistClick,
                                     onDeletePlaylistClick = onDeletePlaylistClick,
                                     onExportPlaylistClick = onExportPlaylistClick,
+                                    onAddPlaylistToQueueClick = onAddPlaylistToQueueClick,
                                     onImportPlaylistClick = onImportPlaylistClick,
                                     onChangePlaylistArtwork = onChangePlaylistArtwork,
                                     onResetPlaylistArtwork = onResetPlaylistArtwork,

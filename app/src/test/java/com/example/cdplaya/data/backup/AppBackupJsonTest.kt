@@ -558,6 +558,32 @@ class AppBackupJsonTest {
         assertFalse(decoded.preferences.showRecentlyAddedOnHome)
     }
 
+    @Test
+    fun playlistPinAndStableBackupPlaylistIdRoundTrip() {
+        val playlistPin = BackupHomePin(
+            id = "playlist-pin",
+            type = "PLAYLIST",
+            title = "Pinned playlist",
+            playlistId = 72L
+        )
+        val backup = emptyBackup().copy(
+            playlists = listOf(
+                BackupPlaylist(
+                    playlistId = 72L,
+                    name = "Pinned playlist",
+                    createdAt = 1L,
+                    updatedAt = 2L
+                )
+            ),
+            preferences = BackupPreferences(homePins = listOf(playlistPin))
+        )
+
+        val decoded = AppBackupJson.decodeBackup(AppBackupJson.encodeBackup(backup))
+
+        assertEquals(72L, decoded.playlists.single().playlistId)
+        assertEquals(playlistPin, decoded.preferences.homePins.single())
+    }
+
     private fun emptyBackup() = AppBackup(
         createdAt = 123L,
         canonicalListeningHistory = BackupListeningHistoryV2()

@@ -76,6 +76,7 @@ class PlaylistsRepository(
 
         return playlistDao.getAllPlaylistEntities().map { playlist ->
             BackupPlaylist(
+                playlistId = playlist.playlistId,
                 name = playlist.name,
                 type = playlist.type,
                 artworkMode = playlist.artworkMode,
@@ -114,7 +115,7 @@ class PlaylistsRepository(
     suspend fun restorePlaylistsFromBackup(
         folders: List<BackupPlaylistFolder>,
         playlists: List<BackupPlaylist>
-    ) {
+    ): Map<Long, Long> {
         playlistDao.deleteAllPlaylistSongs()
         playlistDao.deleteAllPlaylists()
         playlistDao.deleteAllPlaylistFolders()
@@ -133,6 +134,7 @@ class PlaylistsRepository(
         }
 
         val restoredNames = mutableListOf<String>()
+        val restoredPlaylistIds = mutableMapOf<Long, Long>()
 
         playlists.forEach { playlist ->
             val uniqueName = uniquePlaylistName(
@@ -152,6 +154,9 @@ class PlaylistsRepository(
                     updatedAt = playlist.updatedAt
                 )
             )
+            playlist.playlistId?.takeIf { it > 0L }?.let { backupPlaylistId ->
+                restoredPlaylistIds[backupPlaylistId] = newPlaylistId
+            }
 
             if (playlist.songs.isNotEmpty()) {
                 playlistDao.insertPlaylistSongs(
@@ -161,6 +166,7 @@ class PlaylistsRepository(
                 )
             }
         }
+        return restoredPlaylistIds
     }
 
     suspend fun getPlaylistName(playlistId: Long): String {
@@ -248,9 +254,8 @@ class PlaylistsRepository(
         }
     }
 
-    suspend fun restorePlaylistsFromBackup(playlists: List<BackupPlaylist>) {
+    suspend fun restorePlaylistsFromBackup(playlists: List<BackupPlaylist>): Map<Long, Long> =
         restorePlaylistsFromBackup(folders = emptyList(), playlists = playlists)
-    }
 
     suspend fun createPlaylistFolder(name: String): Boolean {
         val trimmedName = name.trim()
