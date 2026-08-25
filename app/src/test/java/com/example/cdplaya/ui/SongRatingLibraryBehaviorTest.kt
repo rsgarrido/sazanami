@@ -28,7 +28,11 @@ class SongRatingLibraryBehaviorTest {
             fiveA1.membershipKey() to 5
         )
 
-        val sorted = sortSongsForLibrary(source, LibrarySortOption.RATING, ratings)
+        val sorted = sortSongsForLibrary(
+            source,
+            LibrarySortOption.RATING_HIGH_TO_LOW,
+            ratings
+        )
 
         assertEquals(
             listOf(fiveA1, fiveA2).sortedBy { it.membershipKey() },
@@ -37,6 +41,27 @@ class SongRatingLibraryBehaviorTest {
         assertEquals(listOf(5, 5, 5, 4, 1, null), sorted.map { ratings[it.membershipKey()] })
         assertEquals(source, listOf(unrated, fiveB, one, four, fiveA2, fiveA1))
         assertNotSame(source, sorted)
+    }
+
+    @Test
+    fun ratingSortSupportsLowToHighWithUnratedLast() {
+        val unrated = song(4, "Unrated")
+        val high = song(3, "High")
+        val low = song(2, "Low")
+        val middle = song(1, "Middle")
+        val ratings = mapOf(
+            high.membershipKey() to 5,
+            low.membershipKey() to 1,
+            middle.membershipKey() to 3
+        )
+
+        val sorted = sortSongsForLibrary(
+            listOf(unrated, high, low, middle),
+            LibrarySortOption.RATING_LOW_TO_HIGH,
+            ratings
+        )
+
+        assertEquals(listOf(low, middle, high, unrated), sorted)
     }
 
     @Test

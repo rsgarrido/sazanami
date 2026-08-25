@@ -17,6 +17,15 @@ class RecentlyAddedSongsTest {
     }
 
     @Test
+    fun knownDatesSortOldestFirstAndUnknownDatesStillSortLast() {
+        val sorted = sortSongsByDateAddedAscending(
+            listOf(song(1, "Unknown", 0), song(2, "Older", 100), song(3, "Newest", 200))
+        )
+
+        assertEquals(listOf(2L, 3L, 1L), sorted.map { it.id })
+    }
+
+    @Test
     fun tiesUseDeterministicTitleArtistAndIdOrder() {
         val sorted = sortSongsByDateAddedDescending(
             listOf(

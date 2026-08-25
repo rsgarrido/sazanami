@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -57,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import com.example.cdplaya.data.Playlist
 import com.example.cdplaya.data.PlaylistArtworkMode
 import com.example.cdplaya.data.PlaylistFolder
+import com.example.cdplaya.data.PlaylistMembershipBehavior
 import com.example.cdplaya.data.PlaylistType
 import com.example.cdplaya.ui.AppShellAccent
 import com.example.cdplaya.ui.AppShellIcons
@@ -67,6 +69,13 @@ import com.example.cdplaya.ui.library.LibraryItemActionSheet
 import com.example.cdplaya.ui.library.LibraryItemActionSheetTarget
 import com.example.cdplaya.ui.library.libraryItemActions
 import com.example.cdplaya.ui.library.LibraryViewMode
+
+internal object PlaylistGridLayout {
+    val minimumTileWidth = 148.dp
+    val metadataHeight = 72.dp
+    const val titleMaxLines = 2
+    const val secondaryMaxLines = 1
+}
 
 @Composable
 fun PlaylistListScreen(
@@ -88,7 +97,6 @@ fun PlaylistListScreen(
     onChangeArtworkClick: (Playlist) -> Unit,
     onResetArtworkClick: (Playlist) -> Unit,
     viewMode: LibraryViewMode,
-    gridColumnCount: Int,
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
@@ -313,7 +321,7 @@ fun PlaylistListScreen(
             }
         } else {
             LazyVerticalGrid(
-                columns = GridCells.Fixed(gridColumnCount.coerceAtLeast(2)),
+                columns = GridCells.Adaptive(PlaylistGridLayout.minimumTileWidth),
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(
                     start = 8.dp,
@@ -579,17 +587,26 @@ private fun PlaylistFolderGridTile(
                     Icon(Icons.Filled.MoreVert, contentDescription = "More options for ${folder.name}")
                 }
             }
-            Text(
-                folder.name,
-                style = AppShellTypography.FeaturedSongTitle,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                folderPlaylistCountText(folder.playlistCount),
-                style = AppShellTypography.SongSubtitle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(PlaylistGridLayout.metadataHeight)
+                    .padding(top = 8.dp)
+            ) {
+                Text(
+                    folder.name,
+                    style = AppShellTypography.FeaturedSongTitle,
+                    maxLines = PlaylistGridLayout.titleMaxLines,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    folderPlaylistCountText(folder.playlistCount),
+                    style = AppShellTypography.SongSubtitle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = PlaylistGridLayout.secondaryMaxLines,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
@@ -623,25 +640,28 @@ private fun PlaylistGridTile(
                     Icon(Icons.Filled.MoreVert, contentDescription = "More options for ${playlist.name}")
                 }
             }
-            Text(
-                playlist.name,
-                style = AppShellTypography.FeaturedSongTitle,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 8.dp)
-            )
-            Text(
-                playlistMetadataText(playlist),
-                style = AppShellTypography.SongSubtitle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (playlist.type == PlaylistType.SMART) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(PlaylistGridLayout.metadataHeight)
+                    .padding(top = 8.dp)
+            ) {
                 Text(
-                    playlistCollectionKindText(playlist),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = AppShellAccent
+                    playlist.name,
+                    style = AppShellTypography.FeaturedSongTitle,
+                    maxLines = PlaylistGridLayout.titleMaxLines,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    playlistGridMetadataText(playlist),
+                    style = AppShellTypography.SongSubtitle,
+                    color = if (playlist.type == PlaylistType.SMART) {
+                        AppShellAccent
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    maxLines = PlaylistGridLayout.secondaryMaxLines,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -695,6 +715,30 @@ internal fun playlistCollectionKindText(playlist: Playlist): String =
             "Smart • Updated ${relativeUpdatedText(playlist.generatedLastRefreshedAt)}"
         else -> "Smart"
     }
+
+internal fun playlistGridMetadataText(
+    playlist: Playlist,
+    now: Long = System.currentTimeMillis()
+): String = when {
+    playlist.type != PlaylistType.SMART -> playlistMetadataText(playlist)
+    playlist.membershipBehavior == PlaylistMembershipBehavior.GENERATED_SMART_SNAPSHOT &&
+        playlist.generatedLastRefreshedAt != null ->
+        "Smart \u2022 Updated ${compactRelativeUpdatedText(playlist.generatedLastRefreshedAt, now)}"
+    else -> "Smart"
+}
+
+internal fun compactRelativeUpdatedText(timestamp: Long, now: Long = System.currentTimeMillis()): String {
+    val elapsed = (now - timestamp).coerceAtLeast(0L)
+    val minutes = elapsed / 60_000L
+    val hours = minutes / 60L
+    val days = hours / 24L
+    return when {
+        minutes < 1L -> "now"
+        minutes < 60L -> "${minutes}m"
+        hours < 24L -> "${hours}h"
+        else -> "${days}d"
+    }
+}
 
 private enum class PlaylistSortOption(
     val label: String,

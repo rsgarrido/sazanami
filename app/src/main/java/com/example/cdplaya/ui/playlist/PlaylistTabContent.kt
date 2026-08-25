@@ -36,7 +36,6 @@ fun PlaylistsTabContent(
     recentlyAddedSongIds: Set<Long>,
     favoriteMembershipKeys: Set<String>,
     viewMode: LibraryViewMode,
-    gridColumnCount: Int,
     onCreatePlaylistClick: (Long?) -> Unit,
     onCreateFolderClick: (String) -> Unit,
     onRenameFolderClick: (PlaylistFolder, String) -> Unit,
@@ -117,7 +116,6 @@ fun PlaylistsTabContent(
             onResetArtworkClick = onResetPlaylistArtwork,
             onRenamePlaylistClick = onRenamePlaylistClick,
             viewMode = viewMode,
-            gridColumnCount = gridColumnCount,
             bottomContentPadding = bottomContentPadding,
             modifier = modifier
         )

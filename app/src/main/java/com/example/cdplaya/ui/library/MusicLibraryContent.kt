@@ -118,6 +118,8 @@ fun MusicLibraryContent(
                 searchQuery = searchQuery,
                 sortOption = selectedSongSortOption,
                 currentSong = currentSong,
+                viewMode = viewMode,
+                gridColumnCount = gridColumnCount,
                 recentlyAddedSongIds = recentlyAddedSongIds,
                 favoriteMembershipKeys = favoriteMembershipKeys,
                 onSongClick = onSongClick,
@@ -126,6 +128,7 @@ fun MusicLibraryContent(
                 onToggleFavoriteClick = onToggleFavoriteClick,
                 onAddToPlaylistClick = onAddToPlaylistClick,
                 onEditSongTagsClick = onEditSongTagsClick,
+                ratingFeaturesEnabled = ratingFeaturesEnabled,
                 bottomContentPadding = bottomContentPadding,
                 modifier = modifier
             )
@@ -195,6 +198,8 @@ fun MusicLibraryContent(
                 searchQuery = searchQuery,
                 sortOption = selectedFavoriteSortOption,
                 currentSong = currentSong,
+                viewMode = viewMode,
+                gridColumnCount = gridColumnCount,
                 recentlyAddedSongIds = recentlyAddedSongIds,
                 onSongClick = onSongClick,
                 onPlayNextClick = onPlayNextClick,
@@ -237,7 +242,6 @@ fun MusicLibraryContent(
                 recentlyAddedSongIds = recentlyAddedSongIds,
                 favoriteMembershipKeys = favoriteMembershipKeys,
                 viewMode = viewMode,
-                gridColumnCount = gridColumnCount,
                 onCreatePlaylistClick = onCreatePlaylistClick,
                 onCreateFolderClick = onCreatePlaylistFolderClick,
                 onRenameFolderClick = onRenamePlaylistFolderClick,
@@ -291,9 +295,13 @@ fun MusicLibraryContent(
         }
 
         LibraryTab.RECENTLY_ADDED -> {
-            val displayedSongs = com.example.cdplaya.ui.filterSongsForSearch(
+            val searchedSongs = com.example.cdplaya.ui.filterSongsForSearch(
                 recentlyAddedSongs,
                 searchQuery
+            )
+            val displayedSongs = com.example.cdplaya.ui.sortSongsForLibrary(
+                searchedSongs,
+                selectedSongSortOption
             )
             if (displayedSongs.isEmpty()) {
                 EmptyHistoryMessage(
@@ -301,19 +309,42 @@ fun MusicLibraryContent(
                     modifier = modifier
                 )
             } else {
-                SongList(
-                    songs = displayedSongs,
-                    currentSongId = currentSong?.id,
-                    recentlyAddedSongIds = recentlyAddedSongIds,
-                    favoriteMembershipKeys = favoriteMembershipKeys,
-                    onSongClick = onSongClick,
-                    onPlayNextClick = onPlayNextClick,
-                    onAddToQueueClick = onAddToQueueClick,
-                    onToggleFavoriteClick = onToggleFavoriteClick,
-                    onAddToPlaylistClick = onAddToPlaylistClick,
-                    onEditSongTagsClick = onEditSongTagsClick,
-                    bottomContentPadding = bottomContentPadding,
-                    modifier = modifier
+                LibraryLayoutTransition(
+                    viewMode = viewMode,
+                    modifier = modifier,
+                    listContent = {
+                        SongList(
+                            songs = displayedSongs,
+                            currentSongId = currentSong?.id,
+                            recentlyAddedSongIds = recentlyAddedSongIds,
+                            favoriteMembershipKeys = favoriteMembershipKeys,
+                            onSongClick = onSongClick,
+                            onPlayNextClick = onPlayNextClick,
+                            onAddToQueueClick = onAddToQueueClick,
+                            onToggleFavoriteClick = onToggleFavoriteClick,
+                            onAddToPlaylistClick = onAddToPlaylistClick,
+                            onEditSongTagsClick = onEditSongTagsClick,
+                            bottomContentPadding = bottomContentPadding,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    },
+                    gridContent = {
+                        SongGrid(
+                            songs = displayedSongs,
+                            currentSongId = currentSong?.id,
+                            gridColumnCount = gridColumnCount,
+                            recentlyAddedSongIds = recentlyAddedSongIds,
+                            favoriteMembershipKeys = favoriteMembershipKeys,
+                            onSongClick = onSongClick,
+                            onPlayNextClick = onPlayNextClick,
+                            onAddToQueueClick = onAddToQueueClick,
+                            onToggleFavoriteClick = onToggleFavoriteClick,
+                            onAddToPlaylistClick = onAddToPlaylistClick,
+                            onEditSongTagsClick = onEditSongTagsClick,
+                            bottomContentPadding = bottomContentPadding,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 )
             }
         }

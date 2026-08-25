@@ -30,15 +30,12 @@ import com.example.cdplaya.player.RepeatMode
 import com.example.cdplaya.ui.library.LibrarySearchBar
 import com.example.cdplaya.ui.library.LibrarySortDropdown
 import com.example.cdplaya.ui.library.LibrarySortOption
+import com.example.cdplaya.ui.library.displayTitleFor
+import com.example.cdplaya.ui.library.librarySortOptionsFor
+import com.example.cdplaya.ui.library.showsQuickRateAction
 import com.example.cdplaya.ui.ratings.LocalSongRatingUi
 import androidx.compose.material.icons.filled.Done
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.Star
 import com.example.cdplaya.ui.library.LibraryTab
 import com.example.cdplaya.ui.player.PlayerCard
 import com.example.cdplaya.ui.player.PlayerMorphState
@@ -267,13 +264,11 @@ fun LibrarySortAction(
                 selectedLibraryTab == LibraryTab.ALBUMS && selectedAlbumFolderPath == null
 
     if (shouldShowSortDropdown) {
-        val selectedSortOption = when (selectedLibraryTab) {
-            LibraryTab.SONGS -> if (
-                !ratingFeaturesEnabled && selectedSongSortOption == LibrarySortOption.RATING
-            ) LibrarySortOption.TITLE else selectedSongSortOption
-            LibraryTab.RATED -> selectedSongSortOption
+        val requestedSortOption = when (selectedLibraryTab) {
+            LibraryTab.SONGS,
+            LibraryTab.RATED,
+            LibraryTab.RECENTLY_ADDED -> selectedSongSortOption
             LibraryTab.FAVORITES -> selectedFavoriteSortOption
-            LibraryTab.RECENTLY_ADDED -> LibrarySortOption.DATE_ADDED
             LibraryTab.ARTISTS -> selectedArtistSortOption
             LibraryTab.ALBUMS -> selectedAlbumSortOption
             LibraryTab.PLAYLISTS -> selectedSongSortOption
@@ -282,54 +277,19 @@ fun LibrarySortAction(
             LibraryTab.QUEUE -> selectedSongSortOption
         }
 
-        val availableSortOptions = when (selectedLibraryTab) {
-            LibraryTab.SONGS -> listOfNotNull(
-                LibrarySortOption.TITLE,
-                LibrarySortOption.ARTIST,
-                LibrarySortOption.ALBUM,
-                LibrarySortOption.DATE_ADDED,
-                LibrarySortOption.RATING.takeIf { ratingFeaturesEnabled }
-            )
-
-            LibraryTab.RATED -> listOf(
-                LibrarySortOption.TITLE,
-                LibrarySortOption.ARTIST,
-                LibrarySortOption.ALBUM,
-                LibrarySortOption.DATE_ADDED,
-                LibrarySortOption.RATING
-            )
-
-            LibraryTab.FAVORITES -> listOf(
-                LibrarySortOption.TITLE,
-                LibrarySortOption.ARTIST,
-                LibrarySortOption.ALBUM,
-                LibrarySortOption.DATE_ADDED
-            )
-
-            LibraryTab.ARTISTS -> listOf(
-                LibrarySortOption.NAME,
-                LibrarySortOption.SONG_COUNT
-            )
-
-            LibraryTab.ALBUMS -> listOf(
-                LibrarySortOption.TITLE,
-                LibrarySortOption.ARTIST,
-                LibrarySortOption.SONG_COUNT
-            )
-
-            LibraryTab.PLAYLISTS,
-            LibraryTab.RECENTLY_ADDED,
-            LibraryTab.RECENTLY_PLAYED,
-            LibraryTab.MOST_PLAYED,
-            LibraryTab.QUEUE -> emptyList()
-        }
+        val availableSortOptions = librarySortOptionsFor(
+            tab = selectedLibraryTab,
+            ratingFeaturesEnabled = ratingFeaturesEnabled
+        )
+        val selectedSortOption = requestedSortOption.takeIf(availableSortOptions::contains)
+            ?: availableSortOptions.firstOrNull()
 
         val onOptionSelected: (LibrarySortOption) -> Unit = { option ->
                 when (selectedLibraryTab) {
                     LibraryTab.SONGS -> onSongSortOptionSelected(option)
                     LibraryTab.RATED -> onSongSortOptionSelected(option)
                     LibraryTab.FAVORITES -> onFavoriteSortOptionSelected(option)
-                    LibraryTab.RECENTLY_ADDED -> Unit
+                    LibraryTab.RECENTLY_ADDED -> onSongSortOptionSelected(option)
                     LibraryTab.ARTISTS -> onArtistSortOptionSelected(option)
                     LibraryTab.ALBUMS -> onAlbumSortOptionSelected(option)
                     LibraryTab.PLAYLISTS -> Unit
@@ -338,9 +298,8 @@ fun LibrarySortAction(
                     LibraryTab.QUEUE -> Unit
                 }
         }
-        if (selectedLibraryTab == LibraryTab.SONGS && ratingFeaturesEnabled) {
+        if (selectedLibraryTab.showsQuickRateAction(ratingFeaturesEnabled)) {
             val ratingUi = LocalSongRatingUi.current
-            var overflowExpanded by remember { mutableStateOf(false) }
             Row {
                 if (ratingUi.quickRateMode) {
                     AppShellIconButton(
@@ -349,36 +308,28 @@ fun LibrarySortAction(
                         contentDescription = "Done rating songs",
                         accented = true
                     )
-                } else Box {
+                } else {
                     AppShellIconButton(
-                        onClick = { overflowExpanded = true },
-                        imageVector = Icons.Filled.MoreVert,
-                        contentDescription = "More song actions"
+                        onClick = { ratingUi.onQuickRateModeChanged(true) },
+                        imageVector = Icons.Filled.Star,
+                        contentDescription = "Quick rate songs"
                     )
-                    DropdownMenu(
-                        expanded = overflowExpanded,
-                        onDismissRequest = { overflowExpanded = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Rate songs") },
-                            onClick = {
-                                overflowExpanded = false
-                                ratingUi.onQuickRateModeChanged(true)
-                            }
-                        )
-                    }
                 }
-                LibrarySortDropdown(
-                    selectedOption = selectedSortOption,
-                    options = availableSortOptions,
-                    onOptionSelected = onOptionSelected
-                )
+                selectedSortOption?.let { option ->
+                    LibrarySortDropdown(
+                        selectedOption = option,
+                        options = availableSortOptions,
+                        onOptionSelected = onOptionSelected,
+                        optionTitle = { it.displayTitleFor(selectedLibraryTab) }
+                    )
+                }
             }
-        } else {
+        } else if (selectedSortOption != null) {
             LibrarySortDropdown(
                 selectedOption = selectedSortOption,
                 options = availableSortOptions,
-                onOptionSelected = onOptionSelected
+                onOptionSelected = onOptionSelected,
+                optionTitle = { it.displayTitleFor(selectedLibraryTab) }
             )
         }
     }

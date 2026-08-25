@@ -9,11 +9,13 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import com.example.cdplaya.controller.SongRatingUiState
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.membershipKey
 import com.example.cdplaya.ui.ratings.LocalSongRatingUi
 import com.example.cdplaya.ui.ratings.SongRatingUiEnvironment
+import com.example.cdplaya.ui.LibrarySortAction
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -21,6 +23,46 @@ import org.junit.Test
 class SongsRatingIntegrationTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun quickRateActionIsOnlyVisibleInRatedCollection() {
+        val selectedTab = mutableStateOf(LibraryTab.SONGS)
+        val quickRateMode = mutableStateOf(false)
+        composeRule.setContent {
+            MaterialTheme {
+                CompositionLocalProvider(
+                    LocalSongRatingUi provides SongRatingUiEnvironment(
+                        quickRateMode = quickRateMode.value,
+                        onQuickRateModeChanged = { quickRateMode.value = it }
+                    )
+                ) {
+                    LibrarySortAction(
+                        selectedLibraryTab = selectedTab.value,
+                        selectedArtistName = null,
+                        selectedAlbumFolderPath = null,
+                        selectedSongSortOption = if (selectedTab.value == LibraryTab.RATED) {
+                            LibrarySortOption.RATING_HIGH_TO_LOW
+                        } else {
+                            LibrarySortOption.TITLE
+                        },
+                        selectedArtistSortOption = LibrarySortOption.NAME,
+                        selectedAlbumSortOption = LibrarySortOption.TITLE,
+                        selectedFavoriteSortOption = LibrarySortOption.TITLE,
+                        onSongSortOptionSelected = {},
+                        onArtistSortOptionSelected = {},
+                        onAlbumSortOptionSelected = {},
+                        onFavoriteSortOptionSelected = {}
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("Quick rate songs").assertDoesNotExist()
+        composeRule.runOnIdle { selectedTab.value = LibraryTab.RATED }
+        composeRule.onNodeWithContentDescription("Quick rate songs").assertIsDisplayed()
+            .performClick()
+        composeRule.onNodeWithContentDescription("Done rating songs").assertIsDisplayed()
+    }
 
     @Test
     fun ratingSortReactsImmediatelyWithoutInlineIndicators() {
@@ -42,10 +84,10 @@ class SongsRatingIntegrationTest {
                         state = state.value
                     )
                 ) {
-                    SongsTabContent(
+                    RatedSongsTabContent(
                         songs = listOf(low, high, unrated),
                         searchQuery = "",
-                        sortOption = LibrarySortOption.RATING,
+                        sortOption = LibrarySortOption.RATING_HIGH_TO_LOW,
                         currentSong = null,
                         viewMode = LibraryViewMode.LIST,
                         gridColumnCount = 2,
@@ -64,6 +106,7 @@ class SongsRatingIntegrationTest {
 
         composeRule.onNodeWithContentDescription("Rated 5 out of 5").assertDoesNotExist()
         composeRule.onNodeWithContentDescription("Rated 1 out of 5").assertDoesNotExist()
+        composeRule.onNodeWithText("Unrated song").assertDoesNotExist()
         val highY = composeRule.onNodeWithText("High").fetchSemanticsNode().positionInRoot.y
         val lowY = composeRule.onNodeWithText("Low").fetchSemanticsNode().positionInRoot.y
         assertTrue(highY < lowY)
@@ -97,7 +140,7 @@ class SongsRatingIntegrationTest {
                     SongsTabContent(
                         songs = listOf(song),
                         searchQuery = "Search",
-                        sortOption = LibrarySortOption.RATING,
+                        sortOption = LibrarySortOption.RATING_HIGH_TO_LOW,
                         currentSong = null,
                         viewMode = LibraryViewMode.LIST,
                         gridColumnCount = 2,
