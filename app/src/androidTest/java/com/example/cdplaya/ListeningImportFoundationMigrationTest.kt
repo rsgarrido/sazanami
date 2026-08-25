@@ -49,7 +49,9 @@ class ListeningImportFoundationMigrationTest {
             .addMigrations(
                 DatabaseProvider.MIGRATION_10_11,
                 DatabaseProvider.MIGRATION_11_12,
-                DatabaseProvider.MIGRATION_12_13
+                DatabaseProvider.MIGRATION_12_13,
+                DatabaseProvider.MIGRATION_13_14,
+                DatabaseProvider.MIGRATION_14_15
             ).build()
         try {
             val sqlite = database.openHelper.writableDatabase

@@ -30,7 +30,12 @@ import com.example.cdplaya.player.RepeatMode
 import com.example.cdplaya.ui.library.LibrarySearchBar
 import com.example.cdplaya.ui.library.LibrarySortDropdown
 import com.example.cdplaya.ui.library.LibrarySortOption
-import com.example.cdplaya.ui.library.SongRatingFilterDropdown
+import com.example.cdplaya.ui.library.displayTitleFor
+import com.example.cdplaya.ui.library.librarySortOptionsFor
+import com.example.cdplaya.ui.library.showsQuickRateAction
+import com.example.cdplaya.ui.ratings.LocalSongRatingUi
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarOutline
 import com.example.cdplaya.ui.library.LibraryTab
 import com.example.cdplaya.ui.player.PlayerCard
 import com.example.cdplaya.ui.player.PlayerMorphState
@@ -252,18 +257,18 @@ fun LibrarySortAction(
 ) {
     val shouldShowSortDropdown =
         selectedLibraryTab == LibraryTab.SONGS ||
+                selectedLibraryTab == LibraryTab.RATED ||
                 selectedLibraryTab == LibraryTab.FAVORITES ||
                 selectedLibraryTab == LibraryTab.RECENTLY_ADDED ||
                 selectedLibraryTab == LibraryTab.ARTISTS && selectedArtistName == null ||
                 selectedLibraryTab == LibraryTab.ALBUMS && selectedAlbumFolderPath == null
 
     if (shouldShowSortDropdown) {
-        val selectedSortOption = when (selectedLibraryTab) {
-            LibraryTab.SONGS -> if (
-                !ratingFeaturesEnabled && selectedSongSortOption == LibrarySortOption.RATING
-            ) LibrarySortOption.TITLE else selectedSongSortOption
+        val requestedSortOption = when (selectedLibraryTab) {
+            LibraryTab.SONGS,
+            LibraryTab.RATED,
+            LibraryTab.RECENTLY_ADDED -> selectedSongSortOption
             LibraryTab.FAVORITES -> selectedFavoriteSortOption
-            LibraryTab.RECENTLY_ADDED -> LibrarySortOption.DATE_ADDED
             LibraryTab.ARTISTS -> selectedArtistSortOption
             LibraryTab.ALBUMS -> selectedAlbumSortOption
             LibraryTab.PLAYLISTS -> selectedSongSortOption
@@ -272,45 +277,19 @@ fun LibrarySortAction(
             LibraryTab.QUEUE -> selectedSongSortOption
         }
 
-        val availableSortOptions = when (selectedLibraryTab) {
-            LibraryTab.SONGS -> listOfNotNull(
-                LibrarySortOption.TITLE,
-                LibrarySortOption.ARTIST,
-                LibrarySortOption.ALBUM,
-                LibrarySortOption.DATE_ADDED,
-                LibrarySortOption.RATING.takeIf { ratingFeaturesEnabled }
-            )
-
-            LibraryTab.FAVORITES -> listOf(
-                LibrarySortOption.TITLE,
-                LibrarySortOption.ARTIST,
-                LibrarySortOption.ALBUM,
-                LibrarySortOption.DATE_ADDED
-            )
-
-            LibraryTab.ARTISTS -> listOf(
-                LibrarySortOption.NAME,
-                LibrarySortOption.SONG_COUNT
-            )
-
-            LibraryTab.ALBUMS -> listOf(
-                LibrarySortOption.TITLE,
-                LibrarySortOption.ARTIST,
-                LibrarySortOption.SONG_COUNT
-            )
-
-            LibraryTab.PLAYLISTS,
-            LibraryTab.RECENTLY_ADDED,
-            LibraryTab.RECENTLY_PLAYED,
-            LibraryTab.MOST_PLAYED,
-            LibraryTab.QUEUE -> emptyList()
-        }
+        val availableSortOptions = librarySortOptionsFor(
+            tab = selectedLibraryTab,
+            ratingFeaturesEnabled = ratingFeaturesEnabled
+        )
+        val selectedSortOption = requestedSortOption.takeIf(availableSortOptions::contains)
+            ?: availableSortOptions.firstOrNull()
 
         val onOptionSelected: (LibrarySortOption) -> Unit = { option ->
                 when (selectedLibraryTab) {
                     LibraryTab.SONGS -> onSongSortOptionSelected(option)
+                    LibraryTab.RATED -> onSongSortOptionSelected(option)
                     LibraryTab.FAVORITES -> onFavoriteSortOptionSelected(option)
-                    LibraryTab.RECENTLY_ADDED -> Unit
+                    LibraryTab.RECENTLY_ADDED -> onSongSortOptionSelected(option)
                     LibraryTab.ARTISTS -> onArtistSortOptionSelected(option)
                     LibraryTab.ALBUMS -> onAlbumSortOptionSelected(option)
                     LibraryTab.PLAYLISTS -> Unit
@@ -319,20 +298,40 @@ fun LibrarySortAction(
                     LibraryTab.QUEUE -> Unit
                 }
         }
-        if (selectedLibraryTab == LibraryTab.SONGS && ratingFeaturesEnabled) {
+        if (selectedLibraryTab.showsQuickRateAction(ratingFeaturesEnabled)) {
+            val ratingUi = LocalSongRatingUi.current
             Row {
-                SongRatingFilterDropdown()
-                LibrarySortDropdown(
-                    selectedOption = selectedSortOption,
-                    options = availableSortOptions,
-                    onOptionSelected = onOptionSelected
+                AppShellIconButton(
+                    onClick = {
+                        ratingUi.onQuickRateModeChanged(!ratingUi.quickRateMode)
+                    },
+                    imageVector = if (ratingUi.quickRateMode) {
+                        Icons.Filled.Star
+                    } else {
+                        Icons.Outlined.StarOutline
+                    },
+                    contentDescription = if (ratingUi.quickRateMode) {
+                        "Exit Quick Rate"
+                    } else {
+                        "Start Quick Rate"
+                    },
+                    accented = ratingUi.quickRateMode
                 )
+                selectedSortOption?.let { option ->
+                    LibrarySortDropdown(
+                        selectedOption = option,
+                        options = availableSortOptions,
+                        onOptionSelected = onOptionSelected,
+                        optionTitle = { it.displayTitleFor(selectedLibraryTab) }
+                    )
+                }
             }
-        } else {
+        } else if (selectedSortOption != null) {
             LibrarySortDropdown(
                 selectedOption = selectedSortOption,
                 options = availableSortOptions,
-                onOptionSelected = onOptionSelected
+                onOptionSelected = onOptionSelected,
+                optionTitle = { it.displayTitleFor(selectedLibraryTab) }
             )
         }
     }

@@ -38,6 +38,7 @@ class LibrarySourceMetadataTest {
             fileSizeBytes = 12_345_678L,
             dateAddedEpochSeconds = 1_700_000_123L,
             dateModifiedEpochSeconds = 1_700_000_456L,
+            year = 2024,
             artworkEnrichmentVersion = 1
         )
 
@@ -142,12 +143,14 @@ class LibrarySourceMetadataTest {
                 DatabaseProvider.MIGRATION_9_10,
                 DatabaseProvider.MIGRATION_10_11,
                 DatabaseProvider.MIGRATION_11_12,
-                DatabaseProvider.MIGRATION_12_13
+                DatabaseProvider.MIGRATION_12_13,
+                DatabaseProvider.MIGRATION_13_14,
+                DatabaseProvider.MIGRATION_14_15
             )
             .build()
         try {
             val cursor = database.openHelper.writableDatabase.query(
-                "SELECT title, volumeName, displayName, fileSizeBytes, dateAddedEpochSeconds, dateModifiedEpochSeconds, artworkEnrichmentVersion FROM cached_songs WHERE mediaStoreId = 7"
+                "SELECT title, volumeName, displayName, fileSizeBytes, dateAddedEpochSeconds, dateModifiedEpochSeconds, artworkEnrichmentVersion, year FROM cached_songs WHERE mediaStoreId = 7"
             )
             cursor.use {
                 assertTrue(it.moveToFirst())
@@ -158,6 +161,7 @@ class LibrarySourceMetadataTest {
                 assertEquals(0L, it.getLong(4))
                 assertEquals(0L, it.getLong(5))
                 assertEquals(0, it.getInt(6))
+                assertTrue(it.isNull(7))
             }
             database.openHelper.writableDatabase.query(
                 "SELECT referenceKey, songKey, createdAt FROM favorite_songs"

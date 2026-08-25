@@ -2,6 +2,8 @@ package com.example.cdplaya.data.backup
 
 import com.example.cdplaya.data.identityNormalized
 import com.example.cdplaya.data.portableMetadataKey
+import com.example.cdplaya.data.PlaylistType
+import com.example.cdplaya.data.SmartPlaylistDraft
 import com.example.cdplaya.player.equalizer.GraphicEqualizerPresets
 import com.example.cdplaya.player.equalizer.EqualizerMode
 import com.example.cdplaya.player.equalizer.parametric.MAX_PARAMETRIC_FILTER_COUNT
@@ -19,7 +21,7 @@ import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.encodeToStream
 
 object AppBackupJson {
-    const val CURRENT_SCHEMA_VERSION = 13
+    const val CURRENT_SCHEMA_VERSION = 14
     private const val OLDEST_SUPPORTED_SCHEMA_VERSION = 1
 
     private val json = Json {
@@ -99,12 +101,16 @@ object AppBackupJson {
         if (migrated.schemaVersion == 12) {
             migrated = migrateV12ToV13(migrated)
         }
+        if (migrated.schemaVersion == 13) {
+            migrated = migrateV13ToV14(migrated)
+        }
         validateEqualizerBackup(migrated.preferences.equalizer)
         val history = requireNotNull(migrated.canonicalListeningHistory) {
             "CDPlaya backup schema 10 requires canonical listening history."
         }
         ListeningHistoryBackupValidator.validate(history)
         SongRatingBackupValidator.validate(migrated.songRatings, history)
+        validateSmartPlaylists(migrated.playlists)
         return migrated
     }
 
@@ -330,6 +336,10 @@ object AppBackupJson {
         schemaVersion = 13
     )
 
+    private fun migrateV13ToV14(backup: AppBackup): AppBackup = backup.copy(
+        schemaVersion = 14
+    )
+
     private fun validateEqualizerBackup(
         equalizer: BackupEqualizerPreferences
     ) {
@@ -427,6 +437,39 @@ object AppBackupJson {
             userPresets = userPresets
         )
     }
+
+    private fun validateSmartPlaylists(playlists: List<BackupPlaylist>) {
+        playlists.forEach { playlist ->
+            val type = PlaylistType.fromStorage(playlist.type)
+            if (type == PlaylistType.MANUAL) {
+                require(playlist.smartDefinition == null && playlist.generatedState == null) {
+                    "Manual playlist backup cannot contain Smart Playlist state."
+                }
+                return@forEach
+            }
+            playlist.smartDefinition?.let { definition ->
+                SmartPlaylistDraft(
+                    matchMode = definition.matchMode,
+                    rules = definition.rules,
+                    sortField = definition.sortField,
+                    sortDirection = definition.sortDirection,
+                    resultLimit = definition.resultLimit,
+                    definitionVersion = definition.definitionVersion
+                ).validated()
+            }
+            playlist.generatedState?.let { generated ->
+                require(generated.templateKey.isNotBlank())
+                require(generated.membershipMode in setOf("live_derived", "snapshot"))
+                require(generated.refreshPolicy.isNotBlank())
+                require(generated.refreshIntervalMillis == null ||
+                    generated.refreshIntervalMillis > 0L)
+                require(generated.snapshotVersion > 0)
+                require(generated.songs.all { it.position >= 0 })
+                require(generated.songs.map { it.position }.distinct().size == generated.songs.size)
+                require(generated.membershipMode != "live_derived" || generated.songs.isEmpty())
+            }
+        }
+    }
 }
 
 private fun AppBackup.sanitizedForExport(): AppBackup = copy(
@@ -447,6 +490,13 @@ private fun AppBackup.sanitizedForExport(): AppBackup = copy(
         playlist.copy(
             songs = playlist.songs.map { song ->
                 song.copy(reference = song.reference?.withoutAbsolutePath())
+            },
+            generatedState = playlist.generatedState?.let { generated ->
+                generated.copy(
+                    songs = generated.songs.map { song ->
+                        song.copy(reference = song.reference.withoutAbsolutePath())
+                    }
+                )
             }
         )
     },

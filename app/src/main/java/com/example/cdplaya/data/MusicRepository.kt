@@ -152,6 +152,7 @@ class MusicRepository(private val context: Context) {
             val fileSizeColumn = cursor.getColumnIndex(MediaStoreProjectionPolicy.SIZE)
             val dateAddedColumn = cursor.getColumnIndex(MediaStoreProjectionPolicy.DATE_ADDED)
             val dateModifiedColumn = cursor.getColumnIndex(MediaStoreProjectionPolicy.DATE_MODIFIED)
+            val yearColumn = cursor.getColumnIndex(MediaStoreProjectionPolicy.YEAR)
             val volumeNameColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 cursor.getColumnIndex(MediaStoreProjectionPolicy.VOLUME_NAME)
             } else {
@@ -175,6 +176,7 @@ class MusicRepository(private val context: Context) {
                 val fileSizeBytes = cursor.longOrZero(fileSizeColumn)
                 val dateAddedEpochSeconds = cursor.longOrZero(dateAddedColumn)
                 val dateModifiedEpochSeconds = cursor.longOrZero(dateModifiedColumn)
+                val year = cursor.intOrNull(yearColumn)?.takeIf { it in 1000..2999 }
                 val volumeName = cursor.stringOrEmpty(volumeNameColumn)
                 val relativePath = cursor.stringOrEmpty(relativePathColumn)
 
@@ -215,7 +217,8 @@ class MusicRepository(private val context: Context) {
                     relativePath = relativePath,
                     fileSizeBytes = fileSizeBytes,
                     dateAddedEpochSeconds = dateAddedEpochSeconds,
-                    dateModifiedEpochSeconds = dateModifiedEpochSeconds
+                    dateModifiedEpochSeconds = dateModifiedEpochSeconds,
+                    year = year
                 )
 
                 songs.add(song)
@@ -266,6 +269,10 @@ private fun android.database.Cursor.stringOrEmpty(columnIndex: Int): String {
 
 private fun android.database.Cursor.longOrZero(columnIndex: Int): Long {
     return if (columnIndex >= 0 && !isNull(columnIndex)) getLong(columnIndex) else 0L
+}
+
+private fun android.database.Cursor.intOrNull(columnIndex: Int): Int? {
+    return if (columnIndex >= 0 && !isNull(columnIndex)) getInt(columnIndex) else null
 }
 
 internal fun mediaFolderPath(dataPath: String, relativePath: String): String {

@@ -30,6 +30,8 @@ import com.example.cdplaya.ui.home.resolveHomePins
 import com.example.cdplaya.ui.ratings.LocalSongRatingUi
 import com.example.cdplaya.ui.ratings.SongRatingDialog
 import com.example.cdplaya.ui.ratings.SongRatingUiEnvironment
+import com.example.cdplaya.ui.playlist.LocalSmartPlaylistUi
+import com.example.cdplaya.ui.playlist.SmartPlaylistUiEnvironment
 import kotlinx.coroutines.launch
 
 @Composable
@@ -95,6 +97,7 @@ internal fun MusicRoute(
     }
 
     var pendingHomePin by remember { mutableStateOf<HomePin?>(null) }
+    var quickRateMode by remember { mutableStateOf(false) }
     val resolvedHomePins = remember(
         homeCustomizationUiState.pins,
         libraryUiState.songs,
@@ -158,7 +161,18 @@ internal fun MusicRoute(
             onSelectRating = musicViewModel::selectSongRating,
             onSave = musicViewModel::saveSongRating,
             onClear = musicViewModel::clearSongRating,
-            onFilterSelected = musicViewModel::selectSongRatingFilter
+            onFilterSelected = musicViewModel::selectSongRatingFilter,
+            quickRateMode = quickRateMode,
+            onQuickRateModeChanged = { quickRateMode = it },
+            onSetDirectRating = musicViewModel::setSongRatingDirect
+        ),
+        LocalSmartPlaylistUi provides SmartPlaylistUiEnvironment(
+            onPreview = musicViewModel::previewSmartPlaylist,
+            onCreate = musicViewModel::createSmartPlaylist,
+            onUpdate = musicViewModel::updateSmartPlaylist,
+            onLoad = musicViewModel::loadSmartPlaylistData,
+            onRefresh = musicViewModel::refreshGeneratedPlaylist,
+            onResolve = musicViewModel::resolveSmartPlaylist
         ),
         LocalHomePinUi provides homePinUiEnvironment,
         LocalFolderArtworkUi provides FolderArtworkUiEnvironment(

@@ -1,0 +1,87 @@
+package com.example.cdplaya.ui.library
+
+import com.example.cdplaya.ui.state.LibraryAppearanceUiState
+import com.example.cdplaya.ui.state.LibraryCategoryAppearance
+import com.example.cdplaya.ui.state.gridColumnCountFor
+import com.example.cdplaya.ui.state.modeFor
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class LibraryCollectionModelTest {
+    @Test
+    fun ratedIsASecondarySongsCollection() {
+        assertTrue(LibraryTab.RATED in songCollectionTabs)
+        assertEquals(LibraryTab.SONGS, LibraryTab.RATED.primaryBrowseTab())
+    }
+
+    @Test
+    fun songCollectionsShareTheSongsViewPreference() {
+        assertEquals(LibraryViewCategory.SONGS, LibraryTab.SONGS.viewCategory())
+        assertEquals(LibraryViewCategory.SONGS, LibraryTab.FAVORITES.viewCategory())
+        assertEquals(LibraryViewCategory.SONGS, LibraryTab.RATED.viewCategory())
+        assertEquals(LibraryViewCategory.SONGS, LibraryTab.RECENTLY_ADDED.viewCategory())
+
+        val appearance = LibraryAppearanceUiState(
+            songs = LibraryCategoryAppearance(
+                viewMode = LibraryViewMode.GRID,
+                gridColumnCount = 3
+            )
+        )
+        listOf(
+            LibraryTab.SONGS,
+            LibraryTab.FAVORITES,
+            LibraryTab.RATED,
+            LibraryTab.RECENTLY_ADDED
+        ).forEach { tab ->
+            assertEquals(LibraryViewMode.GRID, appearance.modeFor(tab))
+            assertEquals(3, appearance.gridColumnCountFor(tab))
+        }
+    }
+
+    @Test
+    fun ratingControlsAndSortsAreCollectionAware() {
+        assertFalse(LibraryTab.SONGS.showsQuickRateAction())
+        assertTrue(LibraryTab.RATED.showsQuickRateAction())
+        assertFalse(LibraryTab.FAVORITES.showsQuickRateAction())
+
+        val allOptions = librarySortOptionsFor(LibraryTab.SONGS)
+        val ratedOptions = librarySortOptionsFor(LibraryTab.RATED)
+        assertFalse(LibrarySortOption.RATING_HIGH_TO_LOW in allOptions)
+        assertFalse(LibrarySortOption.RATING_LOW_TO_HIGH in allOptions)
+        assertTrue(LibrarySortOption.RATING_HIGH_TO_LOW in ratedOptions)
+        assertTrue(LibrarySortOption.RATING_LOW_TO_HIGH in ratedOptions)
+        assertEquals(
+            listOf(
+                LibrarySortOption.DATE_ADDED_NEWEST,
+                LibrarySortOption.DATE_ADDED_OLDEST
+            ),
+            librarySortOptionsFor(LibraryTab.RECENTLY_ADDED)
+        )
+        assertEquals(
+            "Newest first",
+            LibrarySortOption.DATE_ADDED_NEWEST.displayTitleFor(LibraryTab.RECENTLY_ADDED)
+        )
+        assertEquals(
+            "Oldest first",
+            LibrarySortOption.DATE_ADDED_OLDEST.displayTitleFor(LibraryTab.RECENTLY_ADDED)
+        )
+    }
+
+    @Test
+    fun playlistGridUsesAResponsiveViewChoice() {
+        assertEquals(
+            listOf(LibraryViewOption.LIST, LibraryViewOption.GRID_2),
+            libraryViewOptions(adaptiveGrid = true)
+        )
+        assertEquals("Grid (responsive)", LibraryViewOption.GRID_2.displayLabel(true))
+    }
+
+    @Test
+    fun playlistsHaveTheirOwnPersistedViewCategory() {
+        assertEquals(LibraryViewCategory.PLAYLISTS, LibraryTab.PLAYLISTS.viewCategory())
+        assertEquals(LibraryViewMode.LIST, LibraryViewMode.fromStorageValue("missing"))
+        assertEquals(LibraryViewMode.GRID, LibraryViewMode.fromStorageValue("grid"))
+    }
+}

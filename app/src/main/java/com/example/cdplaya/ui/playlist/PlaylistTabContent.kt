@@ -20,6 +20,7 @@ import com.example.cdplaya.data.PlaylistFolder
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.player.PlaybackShuffleMode
+import com.example.cdplaya.ui.library.LibraryViewMode
 
 @Composable
 fun PlaylistsTabContent(
@@ -34,6 +35,7 @@ fun PlaylistsTabContent(
     currentSong: Song?,
     recentlyAddedSongIds: Set<Long>,
     favoriteMembershipKeys: Set<String>,
+    viewMode: LibraryViewMode,
     onCreatePlaylistClick: (Long?) -> Unit,
     onCreateFolderClick: (String) -> Unit,
     onRenameFolderClick: (PlaylistFolder, String) -> Unit,
@@ -60,8 +62,12 @@ fun PlaylistsTabContent(
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
+    val smartUi = LocalSmartPlaylistUi.current
     var playlistPendingArtworkId by remember { mutableStateOf<Long?>(null) }
     var selectedFolderId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var creationChooserVisible by remember { mutableStateOf(false) }
+    var creationFolderId by remember { mutableStateOf<Long?>(null) }
+    var smartEditorRequest by remember { mutableStateOf<SmartPlaylistEditorRequest?>(null) }
     val returnToPlaylistRoot = { selectedFolderId = null }
 
     BackHandler(enabled = selectedPlaylistId == null && selectedFolderId != null) {
@@ -93,7 +99,10 @@ fun PlaylistsTabContent(
             onFolderSelected = { folderId ->
                 if (folderId == null) returnToPlaylistRoot() else selectedFolderId = folderId
             },
-            onCreatePlaylistClick = onCreatePlaylistClick,
+            onCreatePlaylistClick = { folderId ->
+                creationFolderId = folderId
+                creationChooserVisible = true
+            },
             onCreateFolderClick = onCreateFolderClick,
             onRenameFolderClick = onRenameFolderClick,
             onDeleteFolderClick = onDeleteFolderClick,
@@ -106,6 +115,7 @@ fun PlaylistsTabContent(
             onChangeArtworkClick = chooseArtwork,
             onResetArtworkClick = onResetPlaylistArtwork,
             onRenamePlaylistClick = onRenamePlaylistClick,
+            viewMode = viewMode,
             bottomContentPadding = bottomContentPadding,
             modifier = modifier
         )
@@ -147,10 +157,26 @@ fun PlaylistsTabContent(
                 favoriteMembershipKeys = favoriteMembershipKeys,
                 onBackClick = onBackFromPlaylist,
                 onPlayAllClick = { songsToPlay ->
-                    onPlaySongsClick(songsToPlay, PlaybackShuffleMode.OFF)
+                    if (selectedPlaylist.type == com.example.cdplaya.data.PlaylistType.SMART) {
+                        smartUi.onResolve(selectedPlaylist.playlistId) { result ->
+                            result.onSuccess {
+                                onPlaySongsClick(it.songs.toList(), PlaybackShuffleMode.OFF)
+                            }
+                        }
+                    } else {
+                        onPlaySongsClick(songsToPlay.toList(), PlaybackShuffleMode.OFF)
+                    }
                 },
                 onShuffleAllClick = { songsToPlay ->
-                    onPlaySongsClick(songsToPlay, PlaybackShuffleMode.SONGS)
+                    if (selectedPlaylist.type == com.example.cdplaya.data.PlaylistType.SMART) {
+                        smartUi.onResolve(selectedPlaylist.playlistId) { result ->
+                            result.onSuccess {
+                                onPlaySongsClick(it.songs.toList(), PlaybackShuffleMode.SONGS)
+                            }
+                        }
+                    } else {
+                        onPlaySongsClick(songsToPlay.toList(), PlaybackShuffleMode.SONGS)
+                    }
                 },
                 onRenamePlaylistClick = onRenamePlaylistClick,
                 onDeletePlaylistClick = onDeletePlaylistClick,
@@ -173,5 +199,34 @@ fun PlaylistsTabContent(
                 modifier = modifier
             )
         }
+    }
+
+    if (creationChooserVisible) {
+        PlaylistCreationChooserDialog(
+            onDismiss = { creationChooserVisible = false },
+            onManual = {
+                creationChooserVisible = false
+                onCreatePlaylistClick(creationFolderId)
+            },
+            onSmart = { template ->
+                creationChooserVisible = false
+                smartEditorRequest = SmartPlaylistEditorRequest(
+                    folderId = creationFolderId,
+                    model = template?.let {
+                        SmartPlaylistEditorModel.fromDraft(it.displayName, it.draft)
+                    } ?: SmartPlaylistEditorModel(),
+                    template = template
+                )
+            }
+        )
+    }
+
+    smartEditorRequest?.let { request ->
+        SmartPlaylistEditor(
+            request = request,
+            existingNames = playlists.map(Playlist::name),
+            onDismiss = { smartEditorRequest = null },
+            onSaved = { smartEditorRequest = null }
+        )
     }
 }

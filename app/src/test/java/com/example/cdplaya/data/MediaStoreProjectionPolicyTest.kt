@@ -12,6 +12,7 @@ class MediaStoreProjectionPolicyTest {
 
         assertTrue(MediaStoreProjectionPolicy.VOLUME_NAME in projection)
         assertTrue(MediaStoreProjectionPolicy.RELATIVE_PATH in projection)
+        assertTrue(MediaStoreProjectionPolicy.YEAR in projection)
         assertFalse("generation_added" in projection)
         assertFalse("is_trashed" in projection)
         assertFalse("date_expires" in projection)

@@ -114,9 +114,11 @@ class AppBackupJsonTest {
             songsViewMode = "grid",
             albumsViewMode = "list",
             artistsViewMode = "grid",
+            playlistsViewMode = "grid",
             songsGridColumnCount = 4,
             albumsGridColumnCount = 3,
-            artistsGridColumnCount = 2
+            artistsGridColumnCount = 2,
+            playlistsGridColumnCount = 3
         )
         val reference = BackupSongReference(
             relativePath = "Music/Album/",

@@ -19,7 +19,7 @@ class AllDatabaseMigrationsTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val migrations = allMigrations()
 
-        for (startVersion in 1..12) {
+        for (startVersion in 1..14) {
             val databaseName = "all-migrations-$startVersion-${System.nanoTime()}.db"
             val configuration = SupportSQLiteOpenHelper.Configuration.builder(context)
                 .name(databaseName)
@@ -50,6 +50,19 @@ class AllDatabaseMigrationsTest {
             try {
                 database.openHelper.writableDatabase
                 assertTrue(database.isOpen)
+                assertTrue(database.openHelper.writableDatabase.query(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'smart_playlist_definitions'"
+                ).use { it.moveToFirst() })
+                assertTrue(database.openHelper.writableDatabase.query(
+                    "PRAGMA table_info(cached_songs)"
+                ).use { cursor ->
+                    val nameIndex = cursor.getColumnIndexOrThrow("name")
+                    var found = false
+                    while (cursor.moveToNext()) {
+                        if (cursor.getString(nameIndex) == "year") found = true
+                    }
+                    found
+                })
             } finally {
                 database.close()
                 context.deleteDatabase(databaseName)
@@ -69,6 +82,8 @@ class AllDatabaseMigrationsTest {
         DatabaseProvider.MIGRATION_9_10,
         DatabaseProvider.MIGRATION_10_11,
         DatabaseProvider.MIGRATION_11_12,
-        DatabaseProvider.MIGRATION_12_13
+        DatabaseProvider.MIGRATION_12_13,
+        DatabaseProvider.MIGRATION_13_14,
+        DatabaseProvider.MIGRATION_14_15
     )
 }

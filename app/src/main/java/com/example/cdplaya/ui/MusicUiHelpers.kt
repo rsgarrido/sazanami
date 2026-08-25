@@ -3,6 +3,7 @@ package com.example.cdplaya.ui
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.ui.library.LibrarySortOption
 import com.example.cdplaya.data.sortSongsByDateAddedDescending
+import com.example.cdplaya.data.sortSongsByDateAddedAscending
 import com.example.cdplaya.data.membershipKey
 import com.example.cdplaya.ui.library.SongRatingFilter
 
@@ -152,9 +153,16 @@ fun sortSongsForLibrary(
             )
         }
 
-        LibrarySortOption.RATING -> songs.sortedWith(
+        LibrarySortOption.RATING_HIGH_TO_LOW -> songs.sortedWith(
             compareByDescending<Song> { song ->
                 ratingsByReferenceKey[song.membershipKey()] ?: Int.MIN_VALUE
+            }.thenBy { song -> song.title.trim().lowercase() }
+                .thenBy { song -> song.membershipKey() }
+        )
+
+        LibrarySortOption.RATING_LOW_TO_HIGH -> songs.sortedWith(
+            compareBy<Song> { song ->
+                ratingsByReferenceKey[song.membershipKey()] ?: Int.MAX_VALUE
             }.thenBy { song -> song.title.trim().lowercase() }
                 .thenBy { song -> song.membershipKey() }
         )
@@ -163,7 +171,8 @@ fun sortSongsForLibrary(
             songs
         }
 
-        LibrarySortOption.DATE_ADDED -> sortSongsByDateAddedDescending(songs)
+        LibrarySortOption.DATE_ADDED_NEWEST -> sortSongsByDateAddedDescending(songs)
+        LibrarySortOption.DATE_ADDED_OLDEST -> sortSongsByDateAddedAscending(songs)
     }
 }
 

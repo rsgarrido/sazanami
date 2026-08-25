@@ -31,6 +31,7 @@ data class LibraryAppearanceUiState(
     val songs: LibraryCategoryAppearance = LibraryCategoryAppearance(),
     val albums: LibraryCategoryAppearance = LibraryCategoryAppearance(),
     val artists: LibraryCategoryAppearance = LibraryCategoryAppearance(),
+    val playlists: LibraryCategoryAppearance = LibraryCategoryAppearance(),
     val isLoaded: Boolean = false
 )
 
@@ -39,6 +40,7 @@ fun LibraryAppearanceUiState.category(category: LibraryViewCategory): LibraryCat
         LibraryViewCategory.SONGS -> songs
         LibraryViewCategory.ALBUMS -> albums
         LibraryViewCategory.ARTISTS -> artists
+        LibraryViewCategory.PLAYLISTS -> playlists
     }
 
 fun LibraryAppearanceUiState.modeFor(tab: LibraryTab): LibraryViewMode =

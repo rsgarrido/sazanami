@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -53,12 +54,15 @@ import com.example.cdplaya.ui.library.FolderSelectionScreen
 import com.example.cdplaya.ui.library.LibraryBrowseSwitcher
 import com.example.cdplaya.ui.library.LibrarySortOption
 import com.example.cdplaya.ui.library.LibraryTab
+import com.example.cdplaya.ui.library.RatedSongFilter
+import com.example.cdplaya.ui.library.RatedSongFilterRow
 import com.example.cdplaya.ui.library.LibraryViewMode
 import com.example.cdplaya.ui.library.LibraryGridColumns
 import com.example.cdplaya.ui.library.LibraryViewOptionsButton
 import com.example.cdplaya.ui.library.LibraryViewOptionsSheet
 import com.example.cdplaya.ui.library.MusicLibraryContent
 import com.example.cdplaya.ui.library.viewCategory
+import com.example.cdplaya.ui.ratings.LocalSongRatingUi
 import com.example.cdplaya.ui.navigation.MainDestination
 import com.example.cdplaya.ui.queue.QueueSnackbarActions
 import com.example.cdplaya.ui.player.theme.PlayerThemeTokenField
@@ -247,6 +251,26 @@ internal fun MusicScreenBody(
 ) {
     var isLibraryViewOptionsVisible by rememberSaveable {
         mutableStateOf(false)
+    }
+    var selectedRatedSortOption by rememberSaveable {
+        mutableStateOf(LibrarySortOption.RATING_HIGH_TO_LOW)
+    }
+    var selectedAddedSortOption by rememberSaveable {
+        mutableStateOf(LibrarySortOption.DATE_ADDED_NEWEST)
+    }
+    var selectedRatedFilter by rememberSaveable {
+        mutableStateOf(RatedSongFilter.ALL)
+    }
+    val selectedCollectionSortOption = when (selectedLibraryTab) {
+        LibraryTab.RATED -> selectedRatedSortOption
+        LibraryTab.RECENTLY_ADDED -> selectedAddedSortOption
+        else -> selectedSongSortOption
+    }
+    val ratingUi = LocalSongRatingUi.current
+    LaunchedEffect(selectedLibraryTab) {
+        if (selectedLibraryTab != LibraryTab.RATED && ratingUi.quickRateMode) {
+            ratingUi.onQuickRateModeChanged(false)
+        }
     }
 
     when {
@@ -514,6 +538,8 @@ internal fun MusicScreenBody(
                                         LibraryViewOptionsButton(
                                             viewMode = selectedViewMode,
                                             gridColumnCount = selectedGridColumnCount,
+                                            adaptiveGrid =
+                                                selectedLibraryTab == LibraryTab.PLAYLISTS,
                                             onClick = {
                                                 isLibraryViewOptionsVisible = true
                                             }
@@ -527,11 +553,18 @@ internal fun MusicScreenBody(
                                         selectedLibraryTab = selectedLibraryTab,
                                         selectedArtistName = selectedArtistName,
                                         selectedAlbumFolderPath = selectedAlbumFolderPath,
-                                        selectedSongSortOption = selectedSongSortOption,
+                                        selectedSongSortOption = selectedCollectionSortOption,
                                         selectedArtistSortOption = selectedArtistSortOption,
                                         selectedAlbumSortOption = selectedAlbumSortOption,
                                         selectedFavoriteSortOption = selectedFavoriteSortOption,
-                                        onSongSortOptionSelected = onSongSortOptionSelected,
+                                        onSongSortOptionSelected = { option ->
+                                            when (selectedLibraryTab) {
+                                                LibraryTab.RATED -> selectedRatedSortOption = option
+                                                LibraryTab.RECENTLY_ADDED ->
+                                                    selectedAddedSortOption = option
+                                                else -> onSongSortOptionSelected(option)
+                                            }
+                                        },
                                         onArtistSortOptionSelected = onArtistSortOptionSelected,
                                         onAlbumSortOptionSelected = onAlbumSortOptionSelected,
                                         onFavoriteSortOptionSelected = onFavoriteSortOptionSelected,
@@ -561,6 +594,13 @@ internal fun MusicScreenBody(
                                     },
                                     modifier = Modifier.padding(bottom = 4.dp)
                                 )
+                                if (selectedLibraryTab == LibraryTab.RATED) {
+                                    RatedSongFilterRow(
+                                        selectedFilter = selectedRatedFilter,
+                                        onFilterSelected = { selectedRatedFilter = it },
+                                        modifier = Modifier.padding(bottom = 4.dp)
+                                    )
+                                }
                             }
 
                             LibrarySearchControl(
@@ -585,7 +625,8 @@ internal fun MusicScreenBody(
                                     selectedLibraryTab = selectedLibraryTab,
                                     songs = songs,
                                     searchQuery = searchQuery,
-                                    selectedSongSortOption = selectedSongSortOption,
+                                    selectedSongSortOption = selectedCollectionSortOption,
+                                    selectedRatedFilter = selectedRatedFilter,
                                     selectedArtistSortOption = selectedArtistSortOption,
                                     selectedAlbumSortOption = selectedAlbumSortOption,
                                     selectedFavoriteSortOption = selectedFavoriteSortOption,
@@ -668,6 +709,7 @@ internal fun MusicScreenBody(
                 LibraryViewOptionsSheet(
                     viewMode = currentLibraryViewMode,
                     gridColumnCount = currentGridColumnCount,
+                    adaptiveGrid = selectedLibraryTab == LibraryTab.PLAYLISTS,
                     onOptionSelected = { option ->
                         selectedLibraryTab.viewCategory()?.let { category ->
                             onLibraryViewOptionSelected(category, option)

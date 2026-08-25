@@ -28,6 +28,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -47,6 +48,7 @@ import com.example.cdplaya.ui.library.LibraryLayoutMotionDurationMillis
 import com.example.cdplaya.ui.library.libraryItemActions
 import com.example.cdplaya.R as AppR
 import com.example.cdplaya.ui.ratings.LocalSongRatingUi
+import com.example.cdplaya.ui.ratings.CompactRatingIndicator
 import com.example.cdplaya.ui.home.LocalHomePinUi
 
 @Composable
@@ -61,6 +63,7 @@ fun PlaylistSongList(
     onAddToQueueClick: (Song) -> Unit,
     onToggleFavoriteClick: (Song) -> Unit,
     onRemovePlaylistSongClick: (PlaylistSong) -> Unit,
+    allowManualRemoval: Boolean = true,
     onEditSongTagsClick: (Song) -> Unit,
     listState: LazyListState? = null,
     headerContent: (@Composable () -> Unit)? = null,
@@ -105,6 +108,7 @@ fun PlaylistSongList(
             val isCurrentSong = song.id == currentSongId
             val wasRecentlyAdded = song.id in recentlyAddedSongIds
             val isFavorite = song.membershipKey() in favoriteMembershipKeys
+            val rating = ratingUi.state.ratingsByReferenceKey[song.membershipKey()]
 
             ListItem(
                 leadingContent = {
@@ -131,6 +135,15 @@ fun PlaylistSongList(
                 },
                 supportingContent = {
                     Text(text = song.artist.ifBlank { "Unknown Artist" })
+                },
+                trailingContent = rating?.let { value ->
+                    {
+                        CompactRatingIndicator(
+                            rating = value,
+                            iconFirst = true,
+                            modifier = Modifier.clickable { ratingUi.onOpen(song) }
+                        )
+                    }
                 },
                 colors = ListItemDefaults.colors(
                     containerColor = if (isCurrentSong) {
@@ -202,7 +215,7 @@ fun PlaylistSongList(
                                     onClick = { onEditSongTagsClick(song) }
                                 )
                             )
-                            if (playlistSong != null) {
+                            if (allowManualRemoval && playlistSong != null) {
                                 add(
                                     LibraryItemAction(
                                         label = "Remove from playlist",

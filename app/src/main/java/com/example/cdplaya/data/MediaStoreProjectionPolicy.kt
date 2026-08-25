@@ -14,6 +14,7 @@ internal object MediaStoreProjectionPolicy {
     const val SIZE = "_size"
     const val DATE_ADDED = "date_added"
     const val DATE_MODIFIED = "date_modified"
+    const val YEAR = "year"
     const val VOLUME_NAME = "volume_name"
     const val RELATIVE_PATH = "relative_path"
 
@@ -29,6 +30,7 @@ internal object MediaStoreProjectionPolicy {
         add(SIZE)
         add(DATE_ADDED)
         add(DATE_MODIFIED)
+        add(YEAR)
         if (sdkInt >= ANDROID_10_API) {
             add(VOLUME_NAME)
             add(RELATIVE_PATH)

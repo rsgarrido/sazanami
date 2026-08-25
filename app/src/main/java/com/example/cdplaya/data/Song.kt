@@ -20,6 +20,7 @@ data class Song(
     val fileSizeBytes: Long = 0L,
     val dateAddedEpochSeconds: Long = 0L,
     val dateModifiedEpochSeconds: Long = 0L,
+    val year: Int? = null,
     val artworkEnrichmentVersion: Int = 0
 ) {
     /** Warmed by [SongReferenceIndex] off the main thread for cheap UI membership checks. */

@@ -45,7 +45,8 @@ enum class LibraryViewMode(val storageValue: String) {
 enum class LibraryViewCategory(val storageKey: String) {
     SONGS("songs_view_mode"),
     ALBUMS("albums_view_mode"),
-    ARTISTS("artists_view_mode")
+    ARTISTS("artists_view_mode"),
+    PLAYLISTS("playlists_view_mode")
 }
 
 object LibraryGridColumns {
@@ -70,11 +71,25 @@ enum class LibraryViewOption(
         get() = if (this == LIST) "List" else "Grid: $gridColumnCount columns"
 }
 
+internal fun libraryViewOptions(adaptiveGrid: Boolean): List<LibraryViewOption> =
+    if (adaptiveGrid) {
+        listOf(LibraryViewOption.LIST, LibraryViewOption.GRID_2)
+    } else {
+        LibraryViewOption.entries
+    }
+
+internal fun LibraryViewOption.displayLabel(adaptiveGrid: Boolean): String =
+    if (adaptiveGrid && viewMode == LibraryViewMode.GRID) "Grid (responsive)" else label
+
 fun LibraryTab.viewCategory(): LibraryViewCategory? {
     return when (this) {
-        LibraryTab.SONGS -> LibraryViewCategory.SONGS
+        LibraryTab.SONGS,
+        LibraryTab.FAVORITES,
+        LibraryTab.RATED,
+        LibraryTab.RECENTLY_ADDED -> LibraryViewCategory.SONGS
         LibraryTab.ALBUMS -> LibraryViewCategory.ALBUMS
         LibraryTab.ARTISTS -> LibraryViewCategory.ARTISTS
+        LibraryTab.PLAYLISTS -> LibraryViewCategory.PLAYLISTS
         else -> null
     }
 }
@@ -83,12 +98,17 @@ fun LibraryTab.viewCategory(): LibraryViewCategory? {
 fun LibraryViewOptionsButton(
     viewMode: LibraryViewMode,
     gridColumnCount: Int,
+    adaptiveGrid: Boolean = false,
     onClick: () -> Unit
 ) {
     val description = if (viewMode == LibraryViewMode.LIST) {
         "View options, currently list"
     } else {
-        "View options, currently grid, $gridColumnCount columns"
+        if (adaptiveGrid) {
+            "View options, currently responsive grid"
+        } else {
+            "View options, currently grid, $gridColumnCount columns"
+        }
     }
     AppShellIconButton(
         onClick = onClick,
@@ -107,6 +127,7 @@ fun LibraryViewOptionsButton(
 fun LibraryViewOptionsSheet(
     viewMode: LibraryViewMode,
     gridColumnCount: Int,
+    adaptiveGrid: Boolean = false,
     onOptionSelected: (LibraryViewOption) -> Unit,
     onDismissRequest: () -> Unit
 ) {
@@ -130,12 +151,14 @@ fun LibraryViewOptionsSheet(
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
             )
 
-            LibraryViewOption.entries.forEach { option ->
+            libraryViewOptions(adaptiveGrid).forEach { option ->
                 val isSelected = option.viewMode == viewMode &&
-                        (option.gridColumnCount == null ||
+                        (adaptiveGrid && option.viewMode == LibraryViewMode.GRID ||
+                                option.gridColumnCount == null ||
                                 option.gridColumnCount == gridColumnCount)
                 LibraryViewOptionRow(
                     option = option,
+                    label = option.displayLabel(adaptiveGrid),
                     isSelected = isSelected,
                     onClick = {
                         onOptionSelected(option)
@@ -149,6 +172,7 @@ fun LibraryViewOptionsSheet(
 @Composable
 private fun LibraryViewOptionRow(
     option: LibraryViewOption,
+    label: String,
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
@@ -192,7 +216,7 @@ private fun LibraryViewOptionRow(
                 }
             )
             Text(
-                text = option.label,
+                text = label,
                 style = AppShellTypography.SongTitle,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f)

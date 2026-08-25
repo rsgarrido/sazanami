@@ -5,6 +5,7 @@ import android.content.ContentValues
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
+import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.cdplaya.data.identityNormalized
@@ -34,8 +35,14 @@ object DatabaseProvider {
                     MIGRATION_10_11,
                     MIGRATION_11_12,
                     MIGRATION_12_13,
-                    MIGRATION_13_14
+                    MIGRATION_13_14,
+                    MIGRATION_14_15
                 )
+                .addCallback(object : RoomDatabase.Callback() {
+                    override fun onOpen(db: SupportSQLiteDatabase) {
+                        SmartPlaylistDatabaseTriggers.install(db)
+                    }
+                })
                 .build()
                 .also { database ->
                     instance = database
@@ -692,6 +699,120 @@ object DatabaseProvider {
                 "CREATE INDEX IF NOT EXISTS `index_playlists_folderId` " +
                     "ON `playlists` (`folderId`)"
             )
+        }
+    }
+
+    val MIGRATION_14_15 = object : Migration(14, 15) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `cached_songs` ADD COLUMN `year` INTEGER")
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `smart_playlist_definitions` (
+                    `playlistId` INTEGER NOT NULL,
+                    `matchMode` TEXT NOT NULL,
+                    `rulesJson` TEXT NOT NULL,
+                    `sortField` TEXT NOT NULL,
+                    `sortDirection` TEXT NOT NULL,
+                    `resultLimit` INTEGER,
+                    `definitionVersion` INTEGER NOT NULL,
+                    `dependencyMask` INTEGER NOT NULL,
+                    `updatedAt` INTEGER NOT NULL,
+                    PRIMARY KEY(`playlistId`),
+                    FOREIGN KEY(`playlistId`) REFERENCES `playlists`(`playlistId`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_smart_playlist_definitions_dependencyMask` ON `smart_playlist_definitions` (`dependencyMask`)")
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `smart_playlist_resolution_states` (
+                    `playlistId` INTEGER NOT NULL,
+                    `isDirty` INTEGER NOT NULL DEFAULT 1,
+                    `resolvedAt` INTEGER,
+                    `validUntil` INTEGER,
+                    `resultCount` INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY(`playlistId`),
+                    FOREIGN KEY(`playlistId`) REFERENCES `playlists`(`playlistId`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `smart_playlist_cached_songs` (
+                    `playlistId` INTEGER NOT NULL,
+                    `position` INTEGER NOT NULL,
+                    `mediaStoreId` INTEGER NOT NULL,
+                    `volumeName` TEXT NOT NULL,
+                    PRIMARY KEY(`playlistId`, `position`),
+                    FOREIGN KEY(`playlistId`) REFERENCES `playlists`(`playlistId`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_smart_playlist_cached_songs_mediaStoreId_volumeName` ON `smart_playlist_cached_songs` (`mediaStoreId`, `volumeName`)")
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `generated_playlist_states` (
+                    `playlistId` INTEGER NOT NULL,
+                    `templateKey` TEXT NOT NULL,
+                    `membershipMode` TEXT NOT NULL DEFAULT 'snapshot',
+                    `refreshPolicy` TEXT NOT NULL,
+                    `refreshIntervalMillis` INTEGER,
+                    `lastRefreshedAt` INTEGER,
+                    `snapshotVersion` INTEGER NOT NULL,
+                    PRIMARY KEY(`playlistId`),
+                    FOREIGN KEY(`playlistId`) REFERENCES `playlists`(`playlistId`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_generated_playlist_states_templateKey` ON `generated_playlist_states` (`templateKey`)")
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `generated_playlist_songs` (
+                    `playlistId` INTEGER NOT NULL,
+                    `position` INTEGER NOT NULL,
+                    `songKey` TEXT NOT NULL,
+                    `title` TEXT NOT NULL,
+                    `artist` TEXT NOT NULL,
+                    `album` TEXT NOT NULL,
+                    `duration` INTEGER NOT NULL,
+                    `mediaStoreId` INTEGER,
+                    `volumeName` TEXT NOT NULL DEFAULT '',
+                    `contentUri` TEXT NOT NULL DEFAULT '',
+                    `relativePath` TEXT NOT NULL DEFAULT '',
+                    `displayName` TEXT NOT NULL DEFAULT '',
+                    `fileSizeBytes` INTEGER NOT NULL DEFAULT 0,
+                    `dateModifiedEpochSeconds` INTEGER NOT NULL DEFAULT 0,
+                    `albumArtist` TEXT NOT NULL DEFAULT '',
+                    `portableKey` TEXT NOT NULL DEFAULT '',
+                    `portableKeyVersion` INTEGER NOT NULL DEFAULT 1,
+                    PRIMARY KEY(`playlistId`, `position`),
+                    FOREIGN KEY(`playlistId`) REFERENCES `playlists`(`playlistId`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_generated_playlist_songs_songKey` ON `generated_playlist_songs` (`songKey`)")
+            db.execSQL(
+                """
+                INSERT OR IGNORE INTO smart_playlist_definitions(
+                    playlistId, matchMode, rulesJson, sortField, sortDirection,
+                    resultLimit, definitionVersion, dependencyMask, updatedAt
+                )
+                SELECT playlistId, 'ALL', '[]', 'title', 'ASC', NULL, 1,
+                       ${SmartPlaylistDependencies.LIBRARY}, updatedAt
+                FROM playlists
+                WHERE type = 'SMART'
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                INSERT OR IGNORE INTO smart_playlist_resolution_states(
+                    playlistId, isDirty, resolvedAt, validUntil, resultCount
+                )
+                SELECT playlistId, 1, NULL, NULL, 0
+                FROM smart_playlist_definitions
+                """.trimIndent()
+            )
+            SmartPlaylistDatabaseTriggers.install(db)
         }
     }
 

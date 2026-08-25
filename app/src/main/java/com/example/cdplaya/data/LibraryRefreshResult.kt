@@ -112,6 +112,7 @@ object LibraryRefreshEngine {
         if (cached.dateModifiedEpochSeconds > 0L && current.dateModifiedEpochSeconds > 0L &&
             cached.dateModifiedEpochSeconds != current.dateModifiedEpochSeconds
         ) return true
+        if (current.year != null && cached.year != current.year) return true
         return cached.duration > 0L && current.duration > 0L &&
             kotlin.math.abs(cached.duration - current.duration) > 2_000L
     }
@@ -133,7 +134,8 @@ object LibraryRefreshEngine {
         dateAddedEpochSeconds = current.dateAddedEpochSeconds.takeIf { it > 0L }
             ?: dateAddedEpochSeconds,
         dateModifiedEpochSeconds = current.dateModifiedEpochSeconds.takeIf { it > 0L }
-            ?: dateModifiedEpochSeconds
+            ?: dateModifiedEpochSeconds,
+        year = current.year ?: year
     )
 }
 

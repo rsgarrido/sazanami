@@ -31,6 +31,11 @@ import com.example.cdplaya.data.AnalyticsZoneIdProvider
 import com.example.cdplaya.data.ListeningAnalyticsRangeResolver
 import com.example.cdplaya.data.ListeningStatsRepository
 import com.example.cdplaya.data.SongRatingRepository
+import com.example.cdplaya.data.SmartPlaylistDefinition
+import com.example.cdplaya.data.SmartPlaylistDraft
+import com.example.cdplaya.data.SmartPlaylistResolution
+import com.example.cdplaya.data.SmartPlaylistTemplate
+import com.example.cdplaya.controller.SmartPlaylistUiData
 import com.example.cdplaya.data.ListeningTrendMetric
 import com.example.cdplaya.data.ListeningRankingCategory
 import com.example.cdplaya.data.ListeningImportRepository
@@ -184,6 +189,8 @@ class MusicViewModel(
     fun selectSongRating(value: Int) = songRatingUiController.selectRating(value)
     fun saveSongRating() = songRatingUiController.save()
     fun clearSongRating() = songRatingUiController.clear()
+    fun setSongRatingDirect(song: Song, value: Int?) =
+        songRatingUiController.setDirectRating(song, value)
     fun selectSongRatingFilter(filter: SongRatingFilter) =
         libraryController.selectSongRatingFilter(filter)
 
@@ -240,6 +247,10 @@ class MusicViewModel(
             artists = LibraryCategoryAppearance(
                 preferences.artistsViewMode,
                 preferences.artistsGridColumnCount
+            ),
+            playlists = LibraryCategoryAppearance(
+                preferences.playlistsViewMode,
+                preferences.playlistsGridColumnCount
             ),
             isLoaded = preferences.isLoaded
         )
@@ -815,6 +826,40 @@ class MusicViewModel(
     fun createPlaylist(playlistName: String, folderId: Long? = null) {
         libraryController.createPlaylist(playlistName, folderId)
     }
+
+    fun previewSmartPlaylist(
+        draft: SmartPlaylistDraft,
+        onComplete: (Result<SmartPlaylistResolution>) -> Unit
+    ) = libraryController.previewSmartPlaylist(draft, onComplete)
+
+    fun createSmartPlaylist(
+        name: String,
+        draft: SmartPlaylistDraft,
+        folderId: Long?,
+        template: SmartPlaylistTemplate?,
+        onComplete: (Result<SmartPlaylistDefinition>) -> Unit
+    ) = libraryController.createSmartPlaylist(name, draft, folderId, template, onComplete)
+
+    fun updateSmartPlaylist(
+        playlistId: Long,
+        draft: SmartPlaylistDraft,
+        onComplete: (Result<SmartPlaylistDefinition>) -> Unit
+    ) = libraryController.updateSmartPlaylist(playlistId, draft, onComplete)
+
+    fun loadSmartPlaylistData(
+        playlistId: Long,
+        onComplete: (Result<SmartPlaylistUiData>) -> Unit
+    ) = libraryController.loadSmartPlaylistData(playlistId, onComplete)
+
+    fun refreshGeneratedPlaylist(
+        playlistId: Long,
+        onComplete: (Result<SmartPlaylistResolution>) -> Unit
+    ) = libraryController.refreshGeneratedPlaylist(playlistId, onComplete)
+
+    fun resolveSmartPlaylist(
+        playlistId: Long,
+        onComplete: (Result<SmartPlaylistResolution>) -> Unit
+    ) = libraryController.resolveSmartPlaylist(playlistId, onComplete)
 
     fun createPlaylistWithSongs(
         playlistName: String,

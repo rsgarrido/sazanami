@@ -23,9 +23,14 @@ import androidx.room.TypeConverters
         ListeningImportBatchEntity::class,
         ListeningTrackExternalIdEntity::class,
         ImportedListeningEventEvidenceEntity::class,
-        ListeningImportBatchEventEntity::class
+        ListeningImportBatchEventEntity::class,
+        SmartPlaylistDefinitionEntity::class,
+        SmartPlaylistResolutionStateEntity::class,
+        SmartPlaylistCachedSongEntity::class,
+        GeneratedPlaylistStateEntity::class,
+        GeneratedPlaylistSongEntity::class
     ],
-    version = 14,
+    version = 15,
     exportSchema = true
 )
 @TypeConverters(ListeningHistoryTypeConverters::class)
@@ -47,4 +52,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun listeningTrackExternalIdDao(): ListeningTrackExternalIdDao
     abstract fun importedListeningEventEvidenceDao(): ImportedListeningEventEvidenceDao
     abstract fun listeningImportBatchEventDao(): ListeningImportBatchEventDao
+    abstract fun smartPlaylistDao(): SmartPlaylistDao
 }

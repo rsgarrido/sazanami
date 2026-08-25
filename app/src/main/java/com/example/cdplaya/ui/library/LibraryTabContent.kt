@@ -21,7 +21,6 @@ import com.example.cdplaya.ui.filterSongsForSearch
 import com.example.cdplaya.ui.sortSongsByAlbumOrder
 import com.example.cdplaya.ui.sortSongsForArtistDetail
 import com.example.cdplaya.ui.sortSongsForLibrary
-import com.example.cdplaya.ui.filterSongsByRating
 import com.example.cdplaya.ui.ratings.LocalSongRatingUi
 import androidx.compose.ui.res.stringResource
 
@@ -45,8 +44,6 @@ fun SongsTabContent(
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
-    val ratingUi = LocalSongRatingUi.current
-    val ratingUiState = ratingUi.state
     val filteredSongs = remember(songs, searchQuery) {
         filterSongsForSearch(
             songs = songs,
@@ -54,34 +51,15 @@ fun SongsTabContent(
         )
     }
 
-    val activeRatings = if (ratingFeaturesEnabled) {
-        ratingUiState.ratingsByReferenceKey
-    } else {
-        emptyMap()
-    }
-    val activeFilter = if (ratingFeaturesEnabled) {
-        ratingUi.filter
-    } else {
-        SongRatingFilter.ALL
-    }
-    val effectiveSortOption = if (!ratingFeaturesEnabled && sortOption == LibrarySortOption.RATING) {
-        LibrarySortOption.TITLE
-    } else {
-        sortOption
-    }
-    val ratingFilteredSongs = remember(filteredSongs, activeFilter, activeRatings) {
-        filterSongsByRating(
-            songs = filteredSongs,
-            filter = activeFilter,
-            ratingsByReferenceKey = activeRatings
-        )
-    }
-
-    val displayedSongs = remember(ratingFilteredSongs, effectiveSortOption, activeRatings) {
+    val effectiveSortOption = sortOption.takeIf {
+        it in librarySortOptionsFor(LibraryTab.SONGS, ratingFeaturesEnabled)
+    } ?: LibrarySortOption.TITLE
+    // The normal Songs collection stays visually and semantically uncluttered. Rating management
+    // and rating-specific sorting belong to the Rated collection.
+    val displayedSongs = remember(filteredSongs, effectiveSortOption) {
         sortSongsForLibrary(
-            songs = ratingFilteredSongs,
-            sortOption = effectiveSortOption,
-            ratingsByReferenceKey = activeRatings
+            songs = filteredSongs,
+            sortOption = effectiveSortOption
         )
     }
 
@@ -93,11 +71,6 @@ fun SongsTabContent(
     } else if (filteredSongs.isEmpty()) {
         Text(
             text = "No songs match your search.",
-            modifier = Modifier.padding(16.dp)
-        )
-    } else if (ratingFilteredSongs.isEmpty()) {
-        Text(
-            text = stringResource(R.string.rating_filter_empty),
             modifier = Modifier.padding(16.dp)
         )
     } else {
@@ -117,7 +90,7 @@ fun SongsTabContent(
                     onAddToPlaylistClick = onAddToPlaylistClick,
                     onEditSongTagsClick = onEditSongTagsClick,
                     bottomContentPadding = bottomContentPadding,
-                    ratingValuesByReferenceKey = activeRatings,
+                    quickRatingMode = false,
                     modifier = Modifier.fillMaxSize()
                 )
             },
@@ -135,8 +108,106 @@ fun SongsTabContent(
                     onAddToPlaylistClick = onAddToPlaylistClick,
                     onEditSongTagsClick = onEditSongTagsClick,
                     bottomContentPadding = bottomContentPadding,
-                    modifier = Modifier.fillMaxSize(),
-                    ratingValuesByReferenceKey = activeRatings
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        )
+    }
+}
+
+@Composable
+fun RatedSongsTabContent(
+    songs: List<Song>,
+    searchQuery: String,
+    sortOption: LibrarySortOption,
+    selectedFilter: RatedSongFilter = RatedSongFilter.ALL,
+    currentSong: Song?,
+    viewMode: LibraryViewMode,
+    gridColumnCount: Int,
+    recentlyAddedSongIds: Set<Long>,
+    favoriteMembershipKeys: Set<String>,
+    onSongClick: (Song, List<Song>) -> Unit,
+    onPlayNextClick: (Song) -> Unit,
+    onAddToQueueClick: (Song) -> Unit,
+    onToggleFavoriteClick: (Song) -> Unit,
+    onAddToPlaylistClick: (Song) -> Unit,
+    onEditSongTagsClick: (Song) -> Unit,
+    ratingFeaturesEnabled: Boolean = true,
+    bottomContentPadding: Dp = 0.dp,
+    modifier: Modifier = Modifier
+) {
+    val ratingUi = LocalSongRatingUi.current
+    val quickRateActive = ratingFeaturesEnabled && ratingUi.quickRateMode
+    val ratings = ratingUi.state.ratingsByReferenceKey
+    val ratedSongs = remember(songs, selectedFilter, ratings) {
+        filterSongsForRatedCollection(songs, selectedFilter, ratings)
+    }
+    val searchedSongs = remember(ratedSongs, searchQuery) {
+        filterSongsForSearch(ratedSongs, searchQuery)
+    }
+    val displayedSongs = remember(searchedSongs, sortOption, ratings) {
+        sortSongsForLibrary(searchedSongs, sortOption, ratings)
+    }
+
+    if (quickRateActive && displayedSongs.isNotEmpty()) {
+        SongList(
+            songs = displayedSongs,
+            currentSongId = currentSong?.id,
+            recentlyAddedSongIds = recentlyAddedSongIds,
+            onSongClick = onSongClick,
+            onPlayNextClick = onPlayNextClick,
+            onAddToQueueClick = onAddToQueueClick,
+            onToggleFavoriteClick = onToggleFavoriteClick,
+            favoriteMembershipKeys = favoriteMembershipKeys,
+            onAddToPlaylistClick = onAddToPlaylistClick,
+            onEditSongTagsClick = onEditSongTagsClick,
+            bottomContentPadding = bottomContentPadding,
+            ratingValuesByReferenceKey = ratings,
+            quickRatingMode = true,
+            modifier = modifier.fillMaxSize()
+        )
+    } else if (quickRateActive || ratedSongs.isEmpty() || searchedSongs.isEmpty()) {
+        Text(
+            ratedCollectionEmptyMessage(selectedFilter, searchQuery),
+            modifier = Modifier.padding(16.dp)
+        )
+    } else {
+        LibraryLayoutTransition(
+            viewMode = viewMode,
+            modifier = modifier,
+            listContent = {
+                SongList(
+                    songs = displayedSongs,
+                    currentSongId = currentSong?.id,
+                    recentlyAddedSongIds = recentlyAddedSongIds,
+                    onSongClick = onSongClick,
+                    onPlayNextClick = onPlayNextClick,
+                    onAddToQueueClick = onAddToQueueClick,
+                    onToggleFavoriteClick = onToggleFavoriteClick,
+                    favoriteMembershipKeys = favoriteMembershipKeys,
+                    onAddToPlaylistClick = onAddToPlaylistClick,
+                    onEditSongTagsClick = onEditSongTagsClick,
+                    bottomContentPadding = bottomContentPadding,
+                    ratingValuesByReferenceKey = ratings,
+                    modifier = Modifier.fillMaxSize()
+                )
+            },
+            gridContent = {
+                SongGrid(
+                    songs = displayedSongs,
+                    currentSongId = currentSong?.id,
+                    gridColumnCount = gridColumnCount,
+                    recentlyAddedSongIds = recentlyAddedSongIds,
+                    favoriteMembershipKeys = favoriteMembershipKeys,
+                    onSongClick = onSongClick,
+                    onPlayNextClick = onPlayNextClick,
+                    onAddToQueueClick = onAddToQueueClick,
+                    onToggleFavoriteClick = onToggleFavoriteClick,
+                    onAddToPlaylistClick = onAddToPlaylistClick,
+                    onEditSongTagsClick = onEditSongTagsClick,
+                    bottomContentPadding = bottomContentPadding,
+                    ratingValuesByReferenceKey = ratings,
+                    modifier = Modifier.fillMaxSize()
                 )
             }
         )
@@ -150,6 +221,8 @@ fun FavoritesTabContent(
     searchQuery: String,
     sortOption: LibrarySortOption,
     currentSong: Song?,
+    viewMode: LibraryViewMode,
+    gridColumnCount: Int,
     recentlyAddedSongIds: Set<Long>,
     onSongClick: (Song, List<Song>) -> Unit,
     onPlayNextClick: (Song) -> Unit,
@@ -199,19 +272,42 @@ fun FavoritesTabContent(
                 Text(text = "Add all to playlist")
             }
 
-            SongList(
-                songs = displayedSongs,
-                currentSongId = currentSong?.id,
-                recentlyAddedSongIds = recentlyAddedSongIds,
-                favoriteMembershipKeys = favoriteMembershipKeys,
-                onSongClick = onSongClick,
-                onPlayNextClick = onPlayNextClick,
-                onAddToQueueClick = onAddToQueueClick,
-                onToggleFavoriteClick = onToggleFavoriteClick,
-                onAddToPlaylistClick = onAddToPlaylistClick,
-                onEditSongTagsClick = onEditSongTagsClick,
-                bottomContentPadding = bottomContentPadding,
-                modifier = Modifier.weight(1f)
+            LibraryLayoutTransition(
+                viewMode = viewMode,
+                modifier = Modifier.weight(1f),
+                listContent = {
+                    SongList(
+                        songs = displayedSongs,
+                        currentSongId = currentSong?.id,
+                        recentlyAddedSongIds = recentlyAddedSongIds,
+                        favoriteMembershipKeys = favoriteMembershipKeys,
+                        onSongClick = onSongClick,
+                        onPlayNextClick = onPlayNextClick,
+                        onAddToQueueClick = onAddToQueueClick,
+                        onToggleFavoriteClick = onToggleFavoriteClick,
+                        onAddToPlaylistClick = onAddToPlaylistClick,
+                        onEditSongTagsClick = onEditSongTagsClick,
+                        bottomContentPadding = bottomContentPadding,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                },
+                gridContent = {
+                    SongGrid(
+                        songs = displayedSongs,
+                        currentSongId = currentSong?.id,
+                        gridColumnCount = gridColumnCount,
+                        recentlyAddedSongIds = recentlyAddedSongIds,
+                        favoriteMembershipKeys = favoriteMembershipKeys,
+                        onSongClick = onSongClick,
+                        onPlayNextClick = onPlayNextClick,
+                        onAddToQueueClick = onAddToQueueClick,
+                        onToggleFavoriteClick = onToggleFavoriteClick,
+                        onAddToPlaylistClick = onAddToPlaylistClick,
+                        onEditSongTagsClick = onEditSongTagsClick,
+                        bottomContentPadding = bottomContentPadding,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             )
         }
     }

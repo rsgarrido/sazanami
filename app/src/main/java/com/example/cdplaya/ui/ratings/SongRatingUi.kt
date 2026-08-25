@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarOutline
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -62,7 +63,10 @@ data class SongRatingUiEnvironment(
     val onSelectRating: (Int) -> Unit = {},
     val onSave: () -> Unit = {},
     val onClear: () -> Unit = {},
-    val onFilterSelected: (SongRatingFilter) -> Unit = {}
+    val onFilterSelected: (SongRatingFilter) -> Unit = {},
+    val quickRateMode: Boolean = false,
+    val onQuickRateModeChanged: (Boolean) -> Unit = {},
+    val onSetDirectRating: (Song, Int?) -> Unit = { _, _ -> }
 )
 
 val LocalSongRatingUi = compositionLocalOf { SongRatingUiEnvironment() }
@@ -148,6 +152,48 @@ fun CompactRatingIndicator(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         if (!iconFirst) icon()
+    }
+}
+
+@Composable
+fun QuickRatingControl(
+    rating: Int?,
+    onRatingSelected: (Int?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(0.dp)
+    ) {
+        (1..5).forEach { value ->
+            IconButton(
+                onClick = { onRatingSelected(value) },
+                modifier = Modifier.size(30.dp)
+            ) {
+                Icon(
+                    imageVector = if (rating != null && value <= rating) {
+                        Icons.Filled.Star
+                    } else {
+                        Icons.Outlined.StarOutline
+                    },
+                    contentDescription = "Rate $value stars",
+                    modifier = Modifier.size(19.dp),
+                    tint = if (rating != null && value <= rating) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+            }
+        }
+        IconButton(
+            onClick = { onRatingSelected(null) },
+            enabled = rating != null,
+            modifier = Modifier.size(30.dp)
+        ) {
+            Icon(Icons.Filled.Clear, contentDescription = "Clear rating", modifier = Modifier.size(18.dp))
+        }
     }
 }
 

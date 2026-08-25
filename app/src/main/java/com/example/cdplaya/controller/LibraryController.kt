@@ -24,6 +24,14 @@ import com.example.cdplaya.data.PlaylistFolder
 import com.example.cdplaya.data.PlaylistArtworkStore
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.PlaylistsRepository
+import com.example.cdplaya.data.GeneratedPlaylistState
+import com.example.cdplaya.data.PlaylistMembershipBehavior
+import com.example.cdplaya.data.PlaylistType
+import com.example.cdplaya.data.SmartPlaylistDefinition
+import com.example.cdplaya.data.SmartPlaylistDraft
+import com.example.cdplaya.data.SmartPlaylistRepository
+import com.example.cdplaya.data.SmartPlaylistResolution
+import com.example.cdplaya.data.SmartPlaylistTemplate
 import com.example.cdplaya.data.PersistedSongReferenceRows
 import com.example.cdplaya.data.ReconciliationGenerationCoordinator
 import com.example.cdplaya.data.Song
@@ -31,6 +39,7 @@ import com.example.cdplaya.data.SongReferenceIndex
 import com.example.cdplaya.data.SongReferenceReconciliationPlanner
 import com.example.cdplaya.data.SongReferenceResolution
 import com.example.cdplaya.data.membershipKey
+import com.example.cdplaya.data.toSongReference
 import com.example.cdplaya.data.sortSongsByDateAddedDescending
 import com.example.cdplaya.data.local.AppDatabase
 import com.example.cdplaya.data.preferences.AppPreferencesRepository
@@ -92,6 +101,10 @@ class LibraryController(
     private val appPreferencesRepository = AppPreferencesRepository.getInstance(applicationContext)
     private val favoritesRepository = FavoritesRepository(appDatabase.favoriteSongDao())
     private val playlistsRepository = PlaylistsRepository(appDatabase.playlistDao())
+    private val smartPlaylistRepository = SmartPlaylistRepository(
+        database = appDatabase,
+        eligibleFolderSelection = { folderSelection }
+    )
     private val listeningHistoryRepository = ListeningHistoryRepository(
         appDatabase.songPlayStatsDao()
     )
@@ -410,7 +423,7 @@ class LibraryController(
                     editedTags = editedTags
                 )
                 favoritesRepository.getFavoriteMembershipKeys() to
-                        playlistsRepository.getPlaylists(songs)
+                        getPlaylistsWithSmartMembership()
             }
             val updatedFavoriteMembershipKeys = updatedUserData.first
             val updatedPlaylists = updatedUserData.second
@@ -464,6 +477,105 @@ class LibraryController(
             if (wasCreated) {
                 loadPlaylists()
             }
+        }
+    }
+
+    fun previewSmartPlaylist(
+        draft: SmartPlaylistDraft,
+        onComplete: (Result<SmartPlaylistResolution>) -> Unit
+    ) {
+        coroutineScope.launch {
+            onComplete(runCatching { smartPlaylistRepository.previewMatchingSongs(draft) })
+        }
+    }
+
+    fun createSmartPlaylist(
+        name: String,
+        draft: SmartPlaylistDraft,
+        folderId: Long?,
+        template: SmartPlaylistTemplate?,
+        onComplete: (Result<SmartPlaylistDefinition>) -> Unit
+    ) {
+        coroutineScope.launch {
+            val result = runCatching {
+                val created = if (template == null) {
+                    smartPlaylistRepository.createSmartPlaylist(name, draft, folderId)
+                } else {
+                    smartPlaylistRepository.createGeneratedPlaylist(
+                        name = name,
+                        templateKey = template.key,
+                        draft = template.draft,
+                        membershipMode = template.membershipMode,
+                        refreshPolicy = template.refreshPolicy,
+                        refreshIntervalMillis = template.refreshIntervalMillis,
+                        folderId = folderId
+                    )
+                }
+                checkNotNull(created) { "A playlist with that name already exists." }
+            }
+            if (result.isSuccess) loadPlaylists()
+            onComplete(result)
+        }
+    }
+
+    fun updateSmartPlaylist(
+        playlistId: Long,
+        draft: SmartPlaylistDraft,
+        onComplete: (Result<SmartPlaylistDefinition>) -> Unit
+    ) {
+        coroutineScope.launch {
+            val result = runCatching {
+                checkNotNull(
+                    smartPlaylistRepository.updateSmartPlaylistDefinition(playlistId, draft)
+                ) { "This Smart Playlist is no longer available." }
+            }
+            if (result.isSuccess) {
+                loadPlaylists()
+                reloadSelectedPlaylistIfCurrent(playlistId)
+            }
+            onComplete(result)
+        }
+    }
+
+    fun loadSmartPlaylistData(
+        playlistId: Long,
+        onComplete: (Result<SmartPlaylistUiData>) -> Unit
+    ) {
+        coroutineScope.launch {
+            onComplete(runCatching {
+                SmartPlaylistUiData(
+                    definition = checkNotNull(
+                        smartPlaylistRepository.loadSmartPlaylistDefinition(playlistId)
+                    ) { "This Smart Playlist definition is unavailable." },
+                    behavior = smartPlaylistRepository.getMembershipBehavior(playlistId),
+                    generatedState = smartPlaylistRepository.loadGeneratedPlaylistState(playlistId)
+                )
+            })
+        }
+    }
+
+    fun refreshGeneratedPlaylist(
+        playlistId: Long,
+        onComplete: (Result<SmartPlaylistResolution>) -> Unit
+    ) {
+        coroutineScope.launch {
+            val result = runCatching {
+                smartPlaylistRepository.refreshGeneratedSnapshot(playlistId)
+            }
+            if (result.isSuccess) {
+                loadPlaylists()
+                reloadSelectedPlaylistIfCurrent(playlistId)
+            }
+            onComplete(result)
+        }
+    }
+
+    fun resolveSmartPlaylist(
+        playlistId: Long,
+        onComplete: (Result<SmartPlaylistResolution>) -> Unit
+    ) {
+        coroutineScope.launch {
+            onComplete(runCatching { smartPlaylistRepository.resolveFinalMembership(playlistId) })
         }
     }
 
@@ -619,8 +731,16 @@ class LibraryController(
                 if (current.selectedPlaylistId != playlist.playlistId) {
                     current
                 } else {
+                    val rows = result.getOrDefault(emptyList()).toList()
                     current.copy(
-                        selectedPlaylistSongs = result.getOrDefault(emptyList()).toList(),
+                        playlists = if (result.isSuccess) {
+                            current.playlists.map { existing ->
+                                if (existing.playlistId == playlist.playlistId) {
+                                    existing.withResolvedRows(rows)
+                                } else existing
+                            }
+                        } else current.playlists,
+                        selectedPlaylistSongs = rows,
                         isSelectedPlaylistLoading = false
                     )
                 }
@@ -714,7 +834,7 @@ class LibraryController(
                         songs = fileImportResult.matchedSongs
                     )
 
-                    playlists = playlistsRepository.getPlaylists(songs)
+                    playlists = getPlaylistsWithSmartMembership()
 
                     PlaylistImportResult(
                         playlistName = importedPlaylist.name,
@@ -827,7 +947,7 @@ class LibraryController(
                     )
                 },
                 favoriteMembershipKeys = favoritesRepository.getFavoriteMembershipKeys(),
-                playlists = playlistsRepository.getPlaylists(songs),
+                playlists = getPlaylistsWithSmartMembership(),
                 playlistFolders = playlistsRepository.getPlaylistFolders()
             )
         }
@@ -858,6 +978,9 @@ class LibraryController(
 
     private fun reloadSongsAfterFolderChange() {
         launchProtectedRefresh { scanToken ->
+            withContext(Dispatchers.IO) {
+                smartPlaylistRepository.invalidateLibraryEligibility()
+            }
             val hasCachedSongs = withContext(Dispatchers.IO) {
                 libraryCacheRepository.hasCachedSongs()
             }
@@ -1185,8 +1308,14 @@ class LibraryController(
                         playlistsRepository.applyReferenceBackfill(plan.playlists)
                         listeningHistoryRepository.applyReferenceBackfill(plan.history)
                     }
-                    val selectedPlaylistRows = activePlaylistId?.let {
-                        playlistsRepository.getPlaylistSongs(it)
+                    val selectedPlaylistRows = activePlaylistId?.let { playlistId ->
+                        if (smartPlaylistRepository.getMembershipBehavior(playlistId) ==
+                            PlaylistMembershipBehavior.MANUAL
+                        ) {
+                            playlistsRepository.getPlaylistSongs(playlistId)
+                        } else {
+                            getResolvedPlaylistSongs(playlistId)
+                        }
                     }
                     selectedPlaylistRows
                 }
@@ -1245,7 +1374,7 @@ class LibraryController(
 
     private fun loadPlaylists() {
         coroutineScope.launch {
-            val refreshedPlaylists = playlistsRepository.getPlaylists(songs)
+            val refreshedPlaylists = getPlaylistsWithSmartMembership()
             val refreshedFolders = playlistsRepository.getPlaylistFolders()
             updateState {
                 copy(
@@ -1257,11 +1386,56 @@ class LibraryController(
     }
 
     private suspend fun getResolvedPlaylistSongs(playlistId: Long): List<PlaylistSong> {
+        val behavior = smartPlaylistRepository.getMembershipBehavior(playlistId)
+        if (behavior != PlaylistMembershipBehavior.MANUAL) {
+            return smartPlaylistRepository.resolveFinalMembership(playlistId).songs
+                .mapIndexed { position, song -> song.toDerivedPlaylistSong(playlistId, position) }
+        }
         val rows = withContext(Dispatchers.IO) {
             playlistsRepository.getPlaylistSongs(playlistId)
         }
         return withContext(Dispatchers.Default) {
             resolvePlaylistRows(rows, songReferenceIndex, visibleSongMembershipKeys)
+        }
+    }
+
+    private suspend fun getPlaylistsWithSmartMembership(): List<Playlist> {
+        return playlistsRepository.getPlaylists(songs).map { playlist ->
+            if (playlist.type == PlaylistType.MANUAL) return@map playlist
+            runCatching {
+                val behavior = smartPlaylistRepository.getMembershipBehavior(playlist.playlistId)
+                val generated = smartPlaylistRepository.loadGeneratedPlaylistState(playlist.playlistId)
+                val resolution = smartPlaylistRepository.resolveFinalMembership(playlist.playlistId)
+                playlist.copy(
+                    songCount = resolution.count,
+                    totalDuration = resolution.songs.sumOf { it.duration.coerceAtLeast(0L) },
+                    membershipBehavior = behavior,
+                    generatedTemplateKey = generated?.templateKey,
+                    generatedLastRefreshedAt = generated?.lastRefreshedAt
+                        ?: resolution.resolvedAt.takeIf { resolution.generatedSnapshot },
+                    songMembershipKeys = resolution.songs.mapTo(linkedSetOf(), Song::membershipKey),
+                    automaticArtworkSongs = resolution.songs.distinctBy { song ->
+                        Triple(
+                            song.albumArtist.ifBlank { song.artist }.lowercase(),
+                            song.album.lowercase(),
+                            song.folderPath.lowercase()
+                        )
+                    }.take(4)
+                )
+            }.getOrElse {
+                playlist.copy(
+                    membershipBehavior = PlaylistMembershipBehavior.USER_SMART_LIVE,
+                    smartResolutionError = "Some rules are not supported by this app version."
+                )
+            }
+        }
+    }
+
+    private fun reloadSelectedPlaylistIfCurrent(playlistId: Long) {
+        if (selectedPlaylistId != playlistId) return
+        coroutineScope.launch {
+            val rows = runCatching { getResolvedPlaylistSongs(playlistId) }.getOrDefault(emptyList())
+            if (selectedPlaylistId == playlistId) selectedPlaylistSongs = rows
         }
     }
 
@@ -1304,6 +1478,42 @@ private data class BackupRestoredUserData(
     val playlists: List<Playlist>,
     val playlistFolders: List<PlaylistFolder>
 )
+
+data class SmartPlaylistUiData(
+    val definition: SmartPlaylistDefinition,
+    val behavior: PlaylistMembershipBehavior,
+    val generatedState: GeneratedPlaylistState?
+)
+
+private fun Song.toDerivedPlaylistSong(playlistId: Long, position: Int): PlaylistSong =
+    PlaylistSong(
+        playlistSongId = -(position.toLong() + 1L),
+        playlistId = playlistId,
+        songKey = membershipKey(),
+        position = position,
+        title = title,
+        artist = artist,
+        album = album,
+        duration = duration,
+        reference = toSongReference(),
+        resolvedSong = this
+    )
+
+private fun Playlist.withResolvedRows(rows: List<PlaylistSong>): Playlist {
+    val resolvedSongs = rows.mapNotNull(PlaylistSong::resolvedSong)
+    return copy(
+        songCount = rows.size,
+        totalDuration = rows.sumOf { it.duration.coerceAtLeast(0L) },
+        songMembershipKeys = resolvedSongs.mapTo(linkedSetOf(), Song::membershipKey),
+        automaticArtworkSongs = resolvedSongs.distinctBy { song ->
+            Triple(
+                song.albumArtist.ifBlank { song.artist }.lowercase(),
+                song.album.lowercase(),
+                song.folderPath.lowercase()
+            )
+        }.take(4)
+    )
+}
 
 private data class ReferenceReconciliationData(
     val favoriteMembershipKeys: Set<String>,

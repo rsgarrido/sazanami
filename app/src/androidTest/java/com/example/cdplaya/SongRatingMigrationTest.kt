@@ -90,7 +90,9 @@ class SongRatingMigrationTest {
                 DatabaseProvider.MIGRATION_9_10,
                 DatabaseProvider.MIGRATION_10_11,
                 DatabaseProvider.MIGRATION_11_12,
-                DatabaseProvider.MIGRATION_12_13
+                DatabaseProvider.MIGRATION_12_13,
+                DatabaseProvider.MIGRATION_13_14,
+                DatabaseProvider.MIGRATION_14_15
             )
             .build()
         try {

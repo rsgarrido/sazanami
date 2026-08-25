@@ -5,6 +5,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -27,6 +28,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -41,6 +43,7 @@ import com.example.cdplaya.data.membershipKey
 import com.example.cdplaya.ui.getDisplayTrackNumber
 import com.example.cdplaya.R as AppR
 import com.example.cdplaya.ui.ratings.CompactRatingIndicator
+import com.example.cdplaya.ui.ratings.QuickRatingControl
 import com.example.cdplaya.ui.home.LocalHomePinUi
 import com.example.cdplaya.ui.ratings.LocalSongRatingUi
 
@@ -60,7 +63,8 @@ fun SongList(
     showAlbumName: Boolean = false,
     showTrackNumbers: Boolean = false,
     bottomContentPadding: Dp = 0.dp,
-    ratingValuesByReferenceKey: Map<String, Int> = emptyMap()
+    ratingValuesByReferenceKey: Map<String, Int> = emptyMap(),
+    quickRatingMode: Boolean = false
 ) {
     var actionSheetTarget by remember {
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
@@ -114,16 +118,32 @@ fun SongList(
                     )
                 },
                 supportingContent = {
-                    Text(
-                        text = if (showAlbumName) {
-                            song.album.ifBlank { "Unknown Album" }
-                        } else {
-                            song.artist.ifBlank { "Unknown Artist" }
+                    Column {
+                        Text(
+                            text = if (showAlbumName) {
+                                song.album.ifBlank { "Unknown Album" }
+                            } else {
+                                song.artist.ifBlank { "Unknown Artist" }
+                            }
+                        )
+                        if (quickRatingMode) {
+                            QuickRatingControl(
+                                rating = rating,
+                                onRatingSelected = { value ->
+                                    ratingUi.onSetDirectRating(song, value)
+                                }
+                            )
                         }
-                    )
+                    }
                 },
-                trailingContent = rating?.let { value ->
-                    { CompactRatingIndicator(rating = value) }
+                trailingContent = if (quickRatingMode) null else rating?.let { value ->
+                    {
+                        CompactRatingIndicator(
+                            rating = value,
+                            iconFirst = true,
+                            modifier = Modifier.clickable { ratingUi.onOpen(song) }
+                        )
+                    }
                 },
                 colors = ListItemDefaults.colors(
                     containerColor = if (isCurrentSong) {
