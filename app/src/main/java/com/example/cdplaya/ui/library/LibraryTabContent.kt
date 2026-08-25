@@ -101,7 +101,24 @@ fun SongsTabContent(
             modifier = Modifier.padding(16.dp)
         )
     } else {
-        LibraryLayoutTransition(
+        if (ratingFeaturesEnabled && ratingUi.quickRateMode) {
+            SongList(
+                songs = displayedSongs,
+                currentSongId = currentSong?.id,
+                recentlyAddedSongIds = recentlyAddedSongIds,
+                onSongClick = onSongClick,
+                onPlayNextClick = onPlayNextClick,
+                onAddToQueueClick = onAddToQueueClick,
+                onToggleFavoriteClick = onToggleFavoriteClick,
+                favoriteMembershipKeys = favoriteMembershipKeys,
+                onAddToPlaylistClick = onAddToPlaylistClick,
+                onEditSongTagsClick = onEditSongTagsClick,
+                bottomContentPadding = bottomContentPadding,
+                ratingValuesByReferenceKey = activeRatings,
+                quickRatingMode = true,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else LibraryLayoutTransition(
             viewMode = viewMode,
             modifier = modifier,
             listContent = {
@@ -118,6 +135,7 @@ fun SongsTabContent(
                     onEditSongTagsClick = onEditSongTagsClick,
                     bottomContentPadding = bottomContentPadding,
                     ratingValuesByReferenceKey = activeRatings,
+                    quickRatingMode = false,
                     modifier = Modifier.fillMaxSize()
                 )
             },

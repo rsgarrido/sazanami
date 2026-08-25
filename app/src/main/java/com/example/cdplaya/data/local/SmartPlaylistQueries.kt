@@ -21,7 +21,9 @@ internal object SmartPlaylistDependencies {
         var mask = draft.rules.fold(0) { result, rule -> result or forField(rule.field) }
         mask = mask or when (draft.sortField) {
             SmartPlaylistSortField.PLAY_COUNT,
+            SmartPlaylistSortField.RECENT_PLAY_COUNT,
             SmartPlaylistSortField.LAST_PLAYED -> LISTENING
+            SmartPlaylistSortField.FORGOTTEN_FAVORITES_RANK -> LISTENING or RATINGS
             SmartPlaylistSortField.RATING -> RATINGS
             SmartPlaylistSortField.TITLE,
             SmartPlaylistSortField.ARTIST,
@@ -112,6 +114,16 @@ internal object SmartPlaylistQueries {
         }
         val primaryOrder = when (draft.sortField) {
             SmartPlaylistSortField.PLAY_COUNT -> "library_rows.totalPlayCount $direction"
+            SmartPlaylistSortField.RECENT_PLAY_COUNT -> {
+                require(recentWindows.isNotEmpty()) {
+                    "Recent play-count sorting requires a recent play-count rule."
+                }
+                "library_rows.recentPlayCount0 $direction"
+            }
+            SmartPlaylistSortField.FORGOTTEN_FAVORITES_RANK ->
+                "library_rows.totalPlayCount DESC, " +
+                    "CASE WHEN library_rows.rating IS NULL THEN 1 ELSE 0 END ASC, " +
+                    "library_rows.rating DESC, library_rows.lastPlayedAt ASC"
             SmartPlaylistSortField.LAST_PLAYED -> if (
                 direction == SmartPlaylistSortDirection.ASCENDING
             ) {

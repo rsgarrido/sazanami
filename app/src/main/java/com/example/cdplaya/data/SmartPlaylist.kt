@@ -119,6 +119,8 @@ object SmartPlaylistOperator {
 
 object SmartPlaylistSortField {
     const val PLAY_COUNT = "play_count"
+    const val RECENT_PLAY_COUNT = "recent_play_count"
+    const val FORGOTTEN_FAVORITES_RANK = "forgotten_favorites_rank"
     const val LAST_PLAYED = "last_played"
     const val RATING = "rating"
     const val TITLE = "title"
@@ -148,3 +150,11 @@ const val CURRENT_SMART_PLAYLIST_DEFINITION_VERSION = 1
 const val CURRENT_GENERATED_SNAPSHOT_VERSION = 1
 const val MAX_SMART_PLAYLIST_RULES = 64
 const val MAX_SMART_PLAYLIST_RESULT_LIMIT = 10_000
+
+fun generatedSnapshotRefreshEligible(state: GeneratedPlaylistState, nowMillis: Long): Boolean {
+    if (state.membershipMode != GeneratedPlaylistMembershipMode.SNAPSHOT) return false
+    if (state.lastRefreshedAt == null) return true
+    if (state.refreshPolicy != GeneratedPlaylistRefreshPolicy.ON_OPEN_IF_STALE) return false
+    val interval = state.refreshIntervalMillis ?: return false
+    return nowMillis - state.lastRefreshedAt >= interval
+}

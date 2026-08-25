@@ -28,6 +28,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -58,6 +60,7 @@ import com.example.cdplaya.data.PlaylistFolder
 import com.example.cdplaya.data.PlaylistArtworkMode
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.PlaylistType
+import com.example.cdplaya.data.PlaylistMembershipBehavior
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.ui.AppShellAccent
 import com.example.cdplaya.ui.AppShellTypography
@@ -111,6 +114,10 @@ fun PlaylistDetailScreen(
     var movePlaylistVisible by remember { mutableStateOf(false) }
     var isEditingOrder by remember { mutableStateOf(false) }
     var showDelayedLoadingUi by remember(playlist.playlistId) { mutableStateOf(false) }
+    var smartEditorData by remember(playlist.playlistId) { mutableStateOf<com.example.cdplaya.controller.SmartPlaylistUiData?>(null) }
+    var smartActionError by remember(playlist.playlistId) { mutableStateOf<String?>(null) }
+    var isRefreshingSnapshot by remember(playlist.playlistId) { mutableStateOf(false) }
+    val smartUi = LocalSmartPlaylistUi.current
     var sortFieldName by rememberSaveable(playlist.playlistId) {
         mutableStateOf(PlaylistSongSortField.CUSTOM.name)
     }
@@ -153,13 +160,32 @@ fun PlaylistDetailScreen(
                 add(LibraryItemAction("Add to queue", Icons.AutoMirrored.Filled.QueueMusic) {
                     onAddPlaylistToQueueClick(playlist)
                 })
-                if (!isLoading && playlist.type == PlaylistType.MANUAL) {
+                if (!isLoading && allowsManualPlaylistActions(playlist)) {
                     add(LibraryItemAction("Add songs", Icons.AutoMirrored.Filled.PlaylistAdd) {
                         addSongsVisible = true
                     })
                     add(LibraryItemAction("Edit order", Icons.Filled.DragHandle) {
                         sortFieldName = PlaylistSongSortField.CUSTOM.name
                         isEditingOrder = true
+                    })
+                }
+                if (playlist.membershipBehavior == PlaylistMembershipBehavior.USER_SMART_LIVE) {
+                    add(LibraryItemAction("Edit Smart Playlist", Icons.Filled.AutoAwesome) {
+                        smartActionError = null
+                        smartUi.onLoad(playlist.playlistId) { result ->
+                            result.onSuccess { smartEditorData = it }
+                                .onFailure { smartActionError = it.message ?: "Unable to load Smart Playlist rules." }
+                        }
+                    })
+                }
+                if (playlist.membershipBehavior == PlaylistMembershipBehavior.GENERATED_SMART_SNAPSHOT) {
+                    add(LibraryItemAction("Refresh", Icons.Filled.Refresh) {
+                        isRefreshingSnapshot = true
+                        smartActionError = null
+                        smartUi.onRefresh(playlist.playlistId) { result ->
+                            isRefreshingSnapshot = false
+                            result.onFailure { smartActionError = it.message ?: "Unable to refresh this playlist." }
+                        }
                     })
                 }
                 add(LibraryItemAction("Rename", Icons.Filled.Edit) {
@@ -246,6 +272,7 @@ fun PlaylistDetailScreen(
                 onAddToQueueClick = onAddToQueueClick,
                 onToggleFavoriteClick = onToggleFavoriteClick,
                 onRemovePlaylistSongClick = onRemovePlaylistSongClick,
+                allowManualRemoval = allowsManualPlaylistActions(playlist),
                 onEditSongTagsClick = onEditSongTagsClick,
                 listState = listState,
                 headerContent = {
@@ -259,8 +286,37 @@ fun PlaylistDetailScreen(
                             sortDirectionName = sortDirection.toggled().name
                         },
                         onPlayClick = { onPlayAllClick(displayedSongs) },
-                        onShuffleClick = { onShuffleAllClick(displayedSongs) }
+                        onShuffleClick = { onShuffleAllClick(displayedSongs) },
+                        isRefreshingSnapshot = isRefreshingSnapshot,
+                        onRefreshClick = if (
+                            playlist.membershipBehavior == PlaylistMembershipBehavior.GENERATED_SMART_SNAPSHOT
+                        ) {
+                            {
+                                isRefreshingSnapshot = true
+                                smartActionError = null
+                                smartUi.onRefresh(playlist.playlistId) { result ->
+                                    isRefreshingSnapshot = false
+                                    result.onFailure {
+                                        smartActionError = it.message ?: "Unable to refresh this playlist."
+                                    }
+                                }
+                            }
+                        } else null
                     )
+                    playlist.smartResolutionError?.let { error ->
+                        Text(
+                            text = error,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                        )
+                    }
+                    smartActionError?.let { error ->
+                        Text(
+                            text = error,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                        )
+                    }
                     HorizontalDivider(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
                     )
@@ -331,6 +387,23 @@ fun PlaylistDetailScreen(
             }
         )
     }
+
+    smartEditorData?.let { data ->
+        SmartPlaylistEditor(
+            request = SmartPlaylistEditorRequest(
+                folderId = playlist.folderId,
+                playlistId = playlist.playlistId,
+                originalName = playlist.name,
+                model = SmartPlaylistEditorModel.fromDraft(playlist.name, data.definition.draft)
+            ),
+            existingNames = allPlaylists.map(Playlist::name),
+            onDismiss = { smartEditorData = null },
+            onSaved = { savedName ->
+                if (savedName != playlist.name) onRenamePlaylistClick(playlist, savedName)
+                smartEditorData = null
+            }
+        )
+    }
 }
 
 @Composable
@@ -342,7 +415,9 @@ private fun PlaylistDetailHero(
     onSortFieldSelected: (PlaylistSongSortField) -> Unit,
     onSortDirectionToggle: () -> Unit,
     onPlayClick: () -> Unit,
-    onShuffleClick: () -> Unit
+    onShuffleClick: () -> Unit,
+    isRefreshingSnapshot: Boolean,
+    onRefreshClick: (() -> Unit)?
 ) {
     var sortMenuExpanded by remember { mutableStateOf(false) }
     Column(
@@ -380,7 +455,7 @@ private fun PlaylistDetailHero(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = "Manual playlist",
+                text = playlistKindText(playlist),
                 style = MaterialTheme.typography.labelMedium,
                 color = AppShellAccent
             )
@@ -403,6 +478,14 @@ private fun PlaylistDetailHero(
                 enabled = hasSongs,
                 onClick = onShuffleClick
             )
+            onRefreshClick?.let { refresh ->
+                LibraryDetailAction(
+                    icon = Icons.Filled.Refresh,
+                    label = if (isRefreshingSnapshot) "Refreshing" else "Refresh",
+                    enabled = !isRefreshingSnapshot,
+                    onClick = refresh
+                )
+            }
         }
 
         Row(
@@ -483,14 +566,48 @@ private fun PlaylistDetailEmptyState(
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = if (playlist.songCount == 0) {
-                "This playlist is empty."
+            text = playlist.smartResolutionError ?: if (playlist.songCount == 0) {
+                if (playlist.type == PlaylistType.SMART) {
+                    "No songs currently match this Smart Playlist."
+                } else {
+                    "This playlist is empty."
+                }
             } else {
                 "The songs in this playlist are not currently available on this device."
             },
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
+    }
+}
+
+private fun playlistKindText(playlist: Playlist): String = when (playlist.membershipBehavior) {
+    PlaylistMembershipBehavior.MANUAL -> "Manual playlist"
+    PlaylistMembershipBehavior.USER_SMART_LIVE -> "Smart Playlist • Live"
+    PlaylistMembershipBehavior.GENERATED_SMART_LIVE -> "Suggested Smart Playlist • Live"
+    PlaylistMembershipBehavior.GENERATED_SMART_SNAPSHOT -> buildString {
+        append("Generated Smart Playlist")
+        playlist.generatedLastRefreshedAt?.let { refreshedAt ->
+            append(" • Updated ")
+            append(relativeUpdatedText(refreshedAt))
+        }
+    }
+}
+
+internal fun allowsManualPlaylistActions(playlist: Playlist): Boolean =
+    playlist.type == PlaylistType.MANUAL &&
+        playlist.membershipBehavior == PlaylistMembershipBehavior.MANUAL
+
+private fun relativeUpdatedText(timestamp: Long, now: Long = System.currentTimeMillis()): String {
+    val elapsed = (now - timestamp).coerceAtLeast(0L)
+    val minutes = elapsed / 60_000L
+    val hours = minutes / 60L
+    val days = hours / 24L
+    return when {
+        minutes < 1L -> "just now"
+        minutes < 60L -> "$minutes min ago"
+        hours < 24L -> "$hours hr ago"
+        else -> "$days day${if (days == 1L) "" else "s"} ago"
     }
 }
 

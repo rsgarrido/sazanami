@@ -138,6 +138,13 @@ class SongRatingUiController(
         }
     }
 
+    fun setDirectRating(song: Song, value: Int?) {
+        if (value != null && value !in 1..5) return
+        scope.launch {
+            if (value == null) repository.clearRating(song) else repository.setRating(song, value)
+        }
+    }
+
     private fun isCurrentDialog(generation: Long, referenceKey: String): Boolean =
         generation == requestGeneration &&
             _state.value.dialog?.song?.membershipKey() == referenceKey

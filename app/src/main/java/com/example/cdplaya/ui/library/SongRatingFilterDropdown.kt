@@ -3,7 +3,8 @@ package com.example.cdplaya.ui.library
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -28,7 +29,11 @@ fun SongRatingFilterDropdown(modifier: Modifier = Modifier) {
     Box(modifier) {
         AppShellIconButton(
             onClick = { expanded = true },
-            imageVector = Icons.Filled.FilterList,
+            imageVector = if (ratingUi.filter == SongRatingFilter.ALL) {
+                Icons.Outlined.StarOutline
+            } else {
+                Icons.Filled.Star
+            },
             contentDescription = stringResource(R.string.rating_filter, selectedLabel),
             accented = ratingUi.filter != SongRatingFilter.ALL
         )

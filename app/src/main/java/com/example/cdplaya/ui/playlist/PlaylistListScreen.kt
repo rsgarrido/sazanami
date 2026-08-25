@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import com.example.cdplaya.data.Playlist
 import com.example.cdplaya.data.PlaylistArtworkMode
 import com.example.cdplaya.data.PlaylistFolder
+import com.example.cdplaya.data.PlaylistType
 import com.example.cdplaya.ui.AppShellAccent
 import com.example.cdplaya.ui.AppShellIcons
 import com.example.cdplaya.ui.AppShellTypography
@@ -485,6 +486,13 @@ private fun PlaylistRow(
                     style = AppShellTypography.SongSubtitle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (playlist.type == PlaylistType.SMART) {
+                    Text(
+                        text = if (playlist.generatedTemplateKey == null) "Smart" else "Smart • Suggested",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = AppShellAccent
+                    )
+                }
             }
             IconButton(onClick = onMoreClick) {
                 Icon(

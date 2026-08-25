@@ -156,6 +156,20 @@ class SongRatingUiControllerTest {
     }
 
     @Test
+    fun directRatingModeSetsChangesAndClearsWithoutOpeningDialogs() {
+        val song = song(8, "Quick rate")
+
+        controller.setDirectRating(song, 2)
+        assertEquals(2, repository.ratings[song.membershipKey()]?.value)
+        controller.setDirectRating(song, 5)
+        assertEquals(5, repository.ratings[song.membershipKey()]?.value)
+        controller.setDirectRating(song, null)
+
+        assertFalse(repository.ratings.containsKey(song.membershipKey()))
+        assertNull(controller.state.value.dialog)
+    }
+
+    @Test
     fun observationFailureRetainsLastSuccessfulSharedMaps() {
         val failingRepository = object : SongRatingDataSource {
             override fun observeRatingSnapshot(): Flow<SongRatingSnapshot> = flow {

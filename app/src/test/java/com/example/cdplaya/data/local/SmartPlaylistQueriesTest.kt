@@ -38,7 +38,7 @@ class SmartPlaylistQueriesTest {
                     listOf("1"),
                     parameters = mapOf("days" to "30")
                 )),
-                sortField = SmartPlaylistSortField.PLAY_COUNT,
+                sortField = SmartPlaylistSortField.RECENT_PLAY_COUNT,
                 sortDirection = SmartPlaylistSortDirection.DESCENDING,
                 resultLimit = 25
             ),
@@ -47,9 +47,23 @@ class SmartPlaylistQueriesTest {
 
         assertTrue(query.sql.contains("recent_0 AS"))
         assertTrue(query.sql.contains("GROUP BY COALESCE(r.targetIdentityId, e.trackIdentityId)"))
+        assertTrue(query.sql.contains("library_rows.recentPlayCount0 DESC"))
         assertTrue(query.sql.contains("library_rows.volumeName ASC"))
         assertTrue(query.sql.contains("library_rows.mediaStoreId ASC"))
         assertTrue(query.sql.contains("LIMIT ?"))
+    }
+
+    @Test
+    fun forgottenFavoritesRankingUsesHistoryThenOptionalRatingWithStableTies() {
+        val query = SmartPlaylistQueries.resolve(
+            com.example.cdplaya.data.SmartPlaylistTemplate.FORGOTTEN_FAVORITES.draft,
+            10_000_000_000L
+        )
+
+        assertTrue(query.sql.contains("library_rows.totalPlayCount DESC"))
+        assertTrue(query.sql.contains("library_rows.rating DESC"))
+        assertTrue(query.sql.contains("library_rows.lastPlayedAt ASC"))
+        assertTrue(query.sql.contains("library_rows.title COLLATE NOCASE ASC"))
     }
 
     @Test

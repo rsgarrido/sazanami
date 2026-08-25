@@ -31,6 +31,9 @@ import com.example.cdplaya.ui.library.LibrarySearchBar
 import com.example.cdplaya.ui.library.LibrarySortDropdown
 import com.example.cdplaya.ui.library.LibrarySortOption
 import com.example.cdplaya.ui.library.SongRatingFilterDropdown
+import com.example.cdplaya.ui.ratings.LocalSongRatingUi
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Done
 import com.example.cdplaya.ui.library.LibraryTab
 import com.example.cdplaya.ui.player.PlayerCard
 import com.example.cdplaya.ui.player.PlayerMorphState
@@ -320,7 +323,14 @@ fun LibrarySortAction(
                 }
         }
         if (selectedLibraryTab == LibraryTab.SONGS && ratingFeaturesEnabled) {
+            val ratingUi = LocalSongRatingUi.current
             Row {
+                AppShellIconButton(
+                    onClick = { ratingUi.onQuickRateModeChanged(!ratingUi.quickRateMode) },
+                    imageVector = if (ratingUi.quickRateMode) Icons.Filled.Done else Icons.Filled.Star,
+                    contentDescription = if (ratingUi.quickRateMode) "Done rating songs" else "Rate songs",
+                    accented = ratingUi.quickRateMode
+                )
                 SongRatingFilterDropdown()
                 LibrarySortDropdown(
                     selectedOption = selectedSortOption,

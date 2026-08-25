@@ -124,6 +124,9 @@ class SmartPlaylistRepository(
         require(playlistId > 0L)
         dao.getGeneratedState(playlistId)?.let { generated ->
             if (generated.membershipMode == GeneratedPlaylistMembershipMode.SNAPSHOT) {
+                if (isGeneratedSnapshotRefreshEligible(generated.toDomain())) {
+                    return refreshGeneratedSnapshotLocked(generated)
+                }
                 return resolveGeneratedSnapshot(generated)
             }
         }
@@ -197,6 +200,18 @@ class SmartPlaylistRepository(
         require(generated.membershipMode == GeneratedPlaylistMembershipMode.SNAPSHOT) {
             "Live-derived generated playlists do not have durable snapshot membership."
         }
+        return resolutionMutex.withLock { refreshGeneratedSnapshotLocked(generated) }
+    }
+
+    fun isGeneratedSnapshotRefreshEligible(
+        state: GeneratedPlaylistState,
+        now: Long = nowMillis()
+    ): Boolean = generatedSnapshotRefreshEligible(state, now)
+
+    private suspend fun refreshGeneratedSnapshotLocked(
+        generated: GeneratedPlaylistStateEntity
+    ): SmartPlaylistResolution {
+        val playlistId = generated.playlistId
         val definition = requireNotNull(dao.getDefinition(playlistId)).toDomain()
         val evaluated = evaluate(definition.draft, playlistId)
         val refreshedAt = evaluated.resolvedAt
