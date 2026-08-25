@@ -281,6 +281,39 @@ class SmoothPlaybackTransitionCoordinatorTest {
     }
 
     @Test
+    fun roleRebindCancelsOldFadeAndUsesIncomingBaselineAndPlayIntent() {
+        val harness = Harness(
+            initialPlayWhenReady = true,
+            initialAudible = true,
+            baselineVolume = 0.8f
+        )
+        harness.coordinator.requestPause()
+        harness.advanceBy(60)
+
+        harness.coordinator.rebindPhysicalPlayer(
+            physicalPlayWhenReady = false,
+            isAudible = false,
+            baselineVolume = 0.35f,
+            logicalPlayWhenReady = true
+        )
+        val volumeAfterRebind = harness.output.volume
+        harness.advanceBy(500)
+
+        assertClose(0.35f, volumeAfterRebind)
+        assertClose(volumeAfterRebind, harness.output.volume)
+        assertTrue(harness.output.playWhenReadyCalls.isEmpty())
+
+        harness.coordinator.activateReboundPhysicalPlayer()
+        assertEquals(listOf(true), harness.output.playWhenReadyCalls)
+        harness.coordinator.onAudibilityChanged(true)
+        harness.coordinator.requestPause()
+        harness.advanceBy(100)
+
+        assertClose(0.5f, harness.coordinator.envelope)
+        assertClose(0.175f, harness.output.volume)
+    }
+
+    @Test
     fun completedPauseIsForwardedExactlyOnce() {
         val harness = Harness(initialPlayWhenReady = true, initialAudible = true)
 

@@ -145,6 +145,46 @@ internal class SmoothPlaybackTransitionCoordinator(
         }
     }
 
+    /** Cancels stale frames and installs one physical role's independent baseline. */
+    fun rebindPhysicalPlayer(
+        physicalPlayWhenReady: Boolean,
+        isAudible: Boolean,
+        baselineVolume: Float,
+        logicalPlayWhenReady: Boolean
+    ) {
+        if (released) return
+        cancelScheduledFrame()
+        this.physicalPlayWhenReady = physicalPlayWhenReady
+        audible = isAudible
+        this.baselineVolume = baselineVolume.coerceIn(0f, 1f)
+        this.logicalPlayWhenReady = logicalPlayWhenReady
+        envelope = if (logicalPlayWhenReady) 1f else 0f
+        applyEffectiveVolume()
+        state = when {
+            !logicalPlayWhenReady -> SmoothPlaybackTransitionState.PAUSED_SILENT
+            isAudible -> SmoothPlaybackTransitionState.FULLY_AUDIBLE
+            else -> SmoothPlaybackTransitionState.WAITING_FOR_AUDIBLE
+        }
+    }
+
+    /** Applies preserved logical intent after the new role and its listeners are authoritative. */
+    fun activateReboundPhysicalPlayer() {
+        if (released) return
+        if (logicalPlayWhenReady) {
+            setEnvelope(1f)
+            setPhysicalPlayWhenReadyIfChanged(true)
+            state = if (audible) {
+                SmoothPlaybackTransitionState.FULLY_AUDIBLE
+            } else {
+                SmoothPlaybackTransitionState.WAITING_FOR_AUDIBLE
+            }
+        } else {
+            setEnvelope(0f)
+            setPhysicalPlayWhenReadyIfChanged(false)
+            state = SmoothPlaybackTransitionState.PAUSED_SILENT
+        }
+    }
+
     fun onAudibilityChanged(isAudible: Boolean) {
         if (released || audible == isAudible) return
         audible = isAudible

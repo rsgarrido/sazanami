@@ -12,22 +12,40 @@ import androidx.media3.common.util.UnstableApi
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 
+/** Narrow role-switch contract so physical A/B authority is testable without replacing Player. */
+internal interface LogicalPlayerRoleBinding {
+    val logicalPlayWhenReady: Boolean
+
+    fun rebindPhysicalPlayer(
+        newPhysicalPlayer: Player,
+        baselineVolume: Float,
+        logicalPlayWhenReady: Boolean
+    )
+
+    fun activateReboundPhysicalPlayer()
+}
+
 /** The single logical Player exposed by PlaybackService to MediaLibrarySession. */
 @OptIn(UnstableApi::class)
 internal class SmoothPlaybackPlayer(
-    private val physicalPlayer: Player,
+    initialPhysicalPlayer: Player,
+    private val onBaselineVolumeChanged: (Float) -> Unit = {},
     clock: PlaybackTransitionClock = PlaybackTransitionClock {
         SystemClock.elapsedRealtime()
     },
     scheduler: PlaybackTransitionScheduler = HandlerPlaybackTransitionScheduler(
-        Handler(physicalPlayer.applicationLooper)
+        Handler(initialPhysicalPlayer.applicationLooper)
     )
-) : ForwardingSimpleBasePlayer(physicalPlayer), Player.Listener {
+) : ForwardingSimpleBasePlayer(initialPhysicalPlayer), LogicalPlayerRoleBinding {
+
+    private var physicalPlayer: Player = initialPhysicalPlayer
 
     private var logicalPlayWhenReadyChangeReason =
         Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
-    private var logicalUnmuteVolume = physicalPlayer.volume.takeIf { it > 0f } ?: 1f
+    private var logicalUnmuteVolume =
+        initialPhysicalPlayer.volume.takeIf { it > 0f } ?: 1f
     private var releasedTransitionResources = false
+    private var physicalListener = createPhysicalListener(initialPhysicalPlayer)
     private val transitionCoordinator = SmoothPlaybackTransitionCoordinator(
         output = object : SmoothPlaybackTransitionOutput {
             override fun setPhysicalPlayWhenReady(playWhenReady: Boolean) {
@@ -40,14 +58,17 @@ internal class SmoothPlaybackPlayer(
         },
         clock = clock,
         scheduler = scheduler,
-        initialPhysicalPlayWhenReady = physicalPlayer.playWhenReady,
-        initialAudible = physicalPlayer.isPlaying,
-        initialBaselineVolume = physicalPlayer.volume
+        initialPhysicalPlayWhenReady = initialPhysicalPlayer.playWhenReady,
+        initialAudible = initialPhysicalPlayer.isPlaying,
+        initialBaselineVolume = initialPhysicalPlayer.volume
     )
 
     init {
-        physicalPlayer.addListener(this)
+        initialPhysicalPlayer.addListener(physicalListener)
     }
+
+    override val logicalPlayWhenReady: Boolean
+        get() = transitionCoordinator.logicalPlayWhenReady
 
     override fun getState(): SimpleBasePlayer.State {
         return super.getState()
@@ -86,6 +107,7 @@ internal class SmoothPlaybackPlayer(
             logicalUnmuteVolume = transitionCoordinator.baselineVolume
         }
         transitionCoordinator.setBaselineVolume(volume)
+        onBaselineVolumeChanged(volume)
         invalidateState()
         return Futures.immediateVoidFuture()
     }
@@ -100,29 +122,6 @@ internal class SmoothPlaybackPlayer(
         return super.handleRelease()
     }
 
-    override fun onIsPlayingChanged(isPlaying: Boolean) {
-        transitionCoordinator.onAudibilityChanged(isPlaying)
-    }
-
-    override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-        transitionCoordinator.onPhysicalPlayWhenReadyChanged(playWhenReady)
-        if (reason != Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) {
-            logicalPlayWhenReadyChangeReason = reason
-            transitionCoordinator.onSystemPlayWhenReadyChanged(playWhenReady)
-            invalidateState()
-        }
-    }
-
-    override fun onPlaybackSuppressionReasonChanged(playbackSuppressionReason: Int) {
-        if (playbackSuppressionReason != Player.PLAYBACK_SUPPRESSION_REASON_NONE) {
-            transitionCoordinator.bypassForSafety()
-        }
-    }
-
-    override fun onPlayerError(error: PlaybackException) {
-        transitionCoordinator.bypassForSafety()
-    }
-
     fun setSmoothPlaybackEnabled(enabled: Boolean) {
         transitionCoordinator.setEnabled(enabled)
         invalidateState()
@@ -131,9 +130,81 @@ internal class SmoothPlaybackPlayer(
     fun releaseTransitionResources() {
         if (releasedTransitionResources) return
         releasedTransitionResources = true
-        physicalPlayer.removeListener(this)
+        physicalPlayer.removeListener(physicalListener)
         transitionCoordinator.release()
     }
+
+    override fun rebindPhysicalPlayer(
+        newPhysicalPlayer: Player,
+        baselineVolume: Float,
+        logicalPlayWhenReady: Boolean
+    ) {
+        if (releasedTransitionResources) return
+        val isPhysicalSwap = newPhysicalPlayer !== physicalPlayer
+        if (isPhysicalSwap) {
+            physicalPlayer.removeListener(physicalListener)
+            physicalPlayer = newPhysicalPlayer
+            physicalListener = createPhysicalListener(newPhysicalPlayer)
+        }
+        transitionCoordinator.rebindPhysicalPlayer(
+            physicalPlayWhenReady = newPhysicalPlayer.playWhenReady,
+            isAudible = newPhysicalPlayer.isPlaying,
+            baselineVolume = baselineVolume,
+            logicalPlayWhenReady = logicalPlayWhenReady
+        )
+        if (isPhysicalSwap) {
+            // ForwardingSimpleBasePlayer observes one coherent incoming state: its delegate is
+            // changed only after the logical intent and the role-specific baseline are installed.
+            setPlayer(newPhysicalPlayer)
+            newPhysicalPlayer.addListener(physicalListener)
+        }
+        logicalUnmuteVolume = baselineVolume.takeIf { it > 0f } ?: logicalUnmuteVolume
+        invalidateState()
+    }
+
+    override fun activateReboundPhysicalPlayer() {
+        transitionCoordinator.activateReboundPhysicalPlayer()
+        invalidateState()
+    }
+
+    private fun createPhysicalListener(source: Player): Player.Listener =
+        object : Player.Listener {
+            private fun isCurrent(): Boolean =
+                !releasedTransitionResources && physicalPlayer === source
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isCurrent()) transitionCoordinator.onAudibilityChanged(isPlaying)
+            }
+
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                if (!isCurrent()) return
+                transitionCoordinator.onPhysicalPlayWhenReadyChanged(playWhenReady)
+                if (
+                    reason != Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST &&
+                    reason != Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM
+                ) {
+                    logicalPlayWhenReadyChangeReason = reason
+                    transitionCoordinator.onSystemPlayWhenReadyChanged(playWhenReady)
+                    invalidateState()
+                }
+            }
+
+            override fun onPlaybackSuppressionReasonChanged(
+                playbackSuppressionReason: Int
+            ) {
+                if (
+                    isCurrent() &&
+                    playbackSuppressionReason !=
+                    Player.PLAYBACK_SUPPRESSION_REASON_NONE
+                ) {
+                    transitionCoordinator.bypassForSafety()
+                }
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                if (isCurrent()) transitionCoordinator.bypassForSafety()
+            }
+        }
 }
 
 private class HandlerPlaybackTransitionScheduler(

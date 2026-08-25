@@ -1,8 +1,10 @@
 package com.example.cdplaya.player.equalizer
 
 import androidx.media3.exoplayer.ExoPlayer
-import com.example.cdplaya.player.PlaybackService
 import com.example.cdplaya.data.preferences.AppPreferencesRepository
+import com.example.cdplaya.player.DualPlayerPlaybackCoordinator
+import com.example.cdplaya.player.PhysicalPlayerPipeline
+import com.example.cdplaya.player.PlaybackService
 import java.lang.reflect.Modifier
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -10,10 +12,40 @@ import org.junit.Test
 
 class EqualizerPlaybackArchitectureTest {
     @Test
-    fun playbackServiceDeclaresOnePlayerAndOneEqualizerProcessor() {
+    fun playbackServiceOwnsOneDualPlayerCoordinator() {
         val instanceFields = PlaybackService::class.java.declaredFields
             .filterNot { field -> Modifier.isStatic(field.modifiers) }
 
+        assertEquals(
+            1,
+            instanceFields.count { field ->
+                field.type == DualPlayerPlaybackCoordinator::class.java
+            }
+        )
+        assertEquals(
+            1,
+            instanceFields.count { field ->
+                field.type ==
+                    AppPreferencesRepository::class.java
+            }
+        )
+        assertEquals(
+            0,
+            instanceFields.count { field ->
+                field.type == ExoPlayer::class.java
+            }
+        )
+    }
+
+    @Test
+    fun everyPhysicalPipelineOwnsOnePlayerProcessorAndRuntime() {
+        val instanceFields = PhysicalPlayerPipeline::class.java.declaredFields
+            .filterNot { field -> Modifier.isStatic(field.modifiers) }
+
+        assertEquals(
+            1,
+            instanceFields.count { field -> field.type == ExoPlayer::class.java }
+        )
         assertEquals(
             1,
             instanceFields.count { field ->
@@ -26,19 +58,27 @@ class EqualizerPlaybackArchitectureTest {
                 field.type == EqualizerDspRuntime::class.java
             }
         )
-        assertEquals(
-            1,
-            instanceFields.count { field ->
-                field.type ==
-                    AppPreferencesRepository::class.java
-            }
+    }
+
+    @Test
+    fun dualPlayerCoordinatorOwnsNoUiSessionOrListeningHistoryObjects() {
+        val forbiddenTypeFragments = listOf(
+            "MediaSession",
+            "Listening",
+            "Repository",
+            "ViewModel"
         )
-        assertEquals(
-            1,
-            instanceFields.count { field ->
-                field.type == ExoPlayer::class.java
+
+        DualPlayerPlaybackCoordinator::class.java.declaredFields
+            .filterNot { field -> Modifier.isStatic(field.modifiers) }
+            .forEach { field ->
+                forbiddenTypeFragments.forEach { fragment ->
+                    assertFalse(
+                        "${field.name} exposes $fragment",
+                        field.type.name.contains(fragment)
+                    )
+                }
             }
-        )
     }
 
     @Test

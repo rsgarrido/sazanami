@@ -190,6 +190,14 @@ internal object EqualizerRuntimeBridge {
     internal fun selectedTelemetryRuntime(): EqualizerDspRuntime? =
         telemetrySelector.selectedRuntime()
 
+    internal fun registeredRuntimeCountForTest(): Int =
+        synchronized(lock) { runtimes.size }
+
+    internal fun isRuntimeRegisteredForTest(
+        runtime: EqualizerDspRuntime
+    ): Boolean =
+        synchronized(lock) { runtime in runtimes }
+
     fun start(scope: CoroutineScope) {
         selectedOrCompatibilityRuntime().start(scope)
     }
