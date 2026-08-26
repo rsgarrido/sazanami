@@ -3,7 +3,11 @@ package com.example.cdplaya.ui.player.classicwheel
 import android.content.Context
 import android.media.AudioManager
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,7 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -68,6 +72,7 @@ fun ClassicWheelExpandedPlayer(
     onMorphDragEnd: (Float) -> Unit = {},
     onMorphDragCancel: () -> Unit = {},
     wheelPlayControlAlpha: Float = 1f,
+    displayLyricsGestureModifier: Modifier = Modifier,
     modifier: Modifier = Modifier
 ) {
     val palette = remember(tokens) { ClassicWheelPalette.from(tokens) }
@@ -279,42 +284,48 @@ fun ClassicWheelExpandedPlayer(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceEvenly
         ) {
-            ClassicWheelScreen(
-                currentSong = currentSong,
-                currentPosition = currentPosition,
-                duration = duration,
-                isCurrentSongFavorite = isCurrentSongFavorite,
-                isShuffleEnabled = isShuffleEnabled,
-                repeatMode = repeatMode,
-                menuState = menuState,
-                mainMenuItems = mainMenuItems,
-                songMenuItems = songMenuItems,
-                artistMenuItems = artistMenuItems,
-                albumMenuItems = albumMenuItems,
-                albumCarouselItems = albumCarouselItems,
-                selectedArtistSongMenuItems = selectedArtistSongMenuItems,
-                selectedAlbumSongMenuItems = selectedAlbumSongMenuItems,
-                musicVolume = musicVolume,
-                maxMusicVolume = maxMusicVolume,
-                isVolumeOverlayVisible = isVolumeOverlayVisible,
-                onSeekChange = onSeekChange,
-                onShuffleClick = onShuffleClick,
-                onRepeatClick = onRepeatClick,
-                onCollapseClick = onCollapseClick,
-                onOpenUpNextClick = onOpenUpNextClick,
-                onToggleFavoriteClick = onToggleFavoriteClick,
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(screenHeight)
-                    .classicWheelCollapseDrag(
-                        onStart = onMorphDragStart,
-                        onDelta = onMorphDragBy,
-                        onEnd = onMorphDragEnd,
-                        onCancel = onMorphDragCancel
-                    ),
-                morphBounds = morphBounds,
-                sharedContentVisible = sharedContentVisible
-            )
+                    .then(displayLyricsGestureModifier)
+            ) {
+                ClassicWheelScreen(
+                    currentSong = currentSong,
+                    currentPosition = currentPosition,
+                    duration = duration,
+                    isCurrentSongFavorite = isCurrentSongFavorite,
+                    isShuffleEnabled = isShuffleEnabled,
+                    repeatMode = repeatMode,
+                    menuState = menuState,
+                    mainMenuItems = mainMenuItems,
+                    songMenuItems = songMenuItems,
+                    artistMenuItems = artistMenuItems,
+                    albumMenuItems = albumMenuItems,
+                    albumCarouselItems = albumCarouselItems,
+                    selectedArtistSongMenuItems = selectedArtistSongMenuItems,
+                    selectedAlbumSongMenuItems = selectedAlbumSongMenuItems,
+                    musicVolume = musicVolume,
+                    maxMusicVolume = maxMusicVolume,
+                    isVolumeOverlayVisible = isVolumeOverlayVisible,
+                    onSeekChange = onSeekChange,
+                    onShuffleClick = onShuffleClick,
+                    onRepeatClick = onRepeatClick,
+                    onCollapseClick = onCollapseClick,
+                    onOpenUpNextClick = onOpenUpNextClick,
+                    onToggleFavoriteClick = onToggleFavoriteClick,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .classicWheelDownwardCollapseDrag(
+                            onStart = onMorphDragStart,
+                            onDelta = onMorphDragBy,
+                            onEnd = onMorphDragEnd,
+                            onCancel = onMorphDragCancel
+                        ),
+                    morphBounds = morphBounds,
+                    sharedContentVisible = sharedContentVisible
+                )
+            }
 
             ClassicControlWheel(
                 isPlaying = isPlaying,
@@ -364,21 +375,48 @@ fun ClassicWheelExpandedPlayer(
     }
 }
 
-private fun Modifier.classicWheelCollapseDrag(
+/** Claims downward collapse drags and leaves upward intent to lyrics or menu scrolling. */
+private fun Modifier.classicWheelDownwardCollapseDrag(
     onStart: () -> Unit, onDelta: (Float) -> Unit, onEnd: (Float) -> Unit, onCancel: () -> Unit
 ): Modifier = pointerInput(onStart, onDelta, onEnd, onCancel) {
-    var owns = false
-    val velocity = VelocityTracker()
-    detectDragGestures(
-        onDragStart = { owns = false; velocity.resetTracking() },
-        onDrag = { change, amount ->
-            velocity.addPosition(change.uptimeMillis, change.position)
-            if (!owns && kotlin.math.abs(amount.y) > kotlin.math.abs(amount.x)) { owns = true; onStart() }
-            if (owns) { change.consume(); onDelta(amount.y) }
-        },
-        onDragEnd = { if (owns) onEnd(velocity.calculateVelocity().y) },
-        onDragCancel = { if (owns) onCancel() }
-    )
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        val velocityTracker = VelocityTracker().apply {
+            addPosition(down.uptimeMillis, down.position)
+        }
+        var started = false
+
+        val slopChange = awaitVerticalTouchSlopOrCancellation(down.id) { change, overSlop ->
+            if (overSlop > 0f) {
+                started = true
+                change.consume()
+                velocityTracker.addPosition(change.uptimeMillis, change.position)
+                onStart()
+                onDelta(overSlop)
+            }
+        }
+
+        if (!started || slopChange == null) {
+            if (started) onCancel()
+            return@awaitEachGesture
+        }
+
+        var active = true
+        while (active) {
+            val event = awaitPointerEvent()
+            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+            velocityTracker.addPosition(change.uptimeMillis, change.position)
+            val deltaY = change.positionChange().y
+
+            if (deltaY != 0f) {
+                change.consume()
+                onDelta(deltaY)
+            }
+            active = change.pressed
+        }
+
+        onEnd(velocityTracker.calculateVelocity().y)
+    }
 }
 
 private fun handleClassicWheelMenuAction(

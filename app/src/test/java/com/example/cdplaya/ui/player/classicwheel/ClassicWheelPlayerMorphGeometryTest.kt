@@ -48,6 +48,32 @@ class ClassicWheelPlayerMorphGeometryTest {
         assertEquals(0f, classicWheelMiniChromeAlpha(1f))
     }
 
+    @Test fun `play pause visual ownership hands off before the expanded endpoint`() {
+        val collapsed = classicWheelPlayPauseVisualOwnership(0f)
+        val middle = classicWheelPlayPauseVisualOwnership(.5f)
+        val handoff = classicWheelPlayPauseVisualOwnership(.91f)
+        val expanded = classicWheelPlayPauseVisualOwnership(1f)
+
+        assertEquals(1f, collapsed.sharedAlpha)
+        assertEquals(0f, collapsed.expandedAlpha)
+        assertEquals(1f, middle.sharedAlpha)
+        assertEquals(0f, middle.expandedAlpha)
+        assertTrue(handoff.sharedAlpha > 0f && handoff.sharedAlpha < 1f)
+        assertTrue(handoff.expandedAlpha > 0f && handoff.expandedAlpha < 1f)
+        assertEquals(1f, handoff.sharedAlpha + handoff.expandedAlpha, .0001f)
+        assertEquals(0f, expanded.sharedAlpha)
+        assertEquals(1f, expanded.expandedAlpha)
+    }
+
+    @Test fun `play pause ownership is deterministic across a full round trip`() {
+        val firstExpanded = classicWheelPlayPauseVisualOwnership(1f)
+        val collapsed = classicWheelPlayPauseVisualOwnership(0f)
+        val secondExpanded = classicWheelPlayPauseVisualOwnership(1f)
+
+        assertEquals(1f, collapsed.sharedAlpha)
+        assertEquals(firstExpanded, secondExpanded)
+    }
+
     @Test fun `shared artwork and metadata reach their measured anchors`() {
         val elements = ClassicWheelMorphBounds().also {
             it.updateMiniArtwork(Rect(16f, 710f, 60f, 754f))

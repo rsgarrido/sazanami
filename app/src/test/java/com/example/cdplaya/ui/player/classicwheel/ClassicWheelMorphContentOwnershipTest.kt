@@ -39,4 +39,21 @@ class ClassicWheelMorphContentOwnershipTest {
         state.goBack()
         assertTrue(state.currentScreen.ownsNowPlayingMorphContent())
     }
+
+    @Test
+    fun `only now playing allows the display lyrics swipe`() {
+        assertTrue(ClassicWheelMenuScreen.NowPlaying.allowsLyricsSwipe())
+
+        val internalPages = listOf(
+            ClassicWheelMenuScreen.MainMenu,
+            ClassicWheelMenuScreen.Songs,
+            ClassicWheelMenuScreen.Artists,
+            ClassicWheelMenuScreen.ArtistSongs("Artist"),
+            ClassicWheelMenuScreen.Albums,
+            ClassicWheelMenuScreen.AlbumSongs("album-key", "Album")
+        )
+        internalPages.forEach { page ->
+            assertFalse(page.allowsLyricsSwipe())
+        }
+    }
 }
