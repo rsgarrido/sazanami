@@ -22,6 +22,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -35,6 +36,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.width
+import com.example.cdplaya.data.preferences.CrossfadePreferences
 import com.example.cdplaya.R
 import com.example.cdplaya.data.FolderSelectionMode
 import com.example.cdplaya.data.PlayerTheme
@@ -51,6 +54,7 @@ import com.example.cdplaya.ui.player.modern.ModernSeekbarStyle
 import com.example.cdplaya.ui.player.theme.PlayerThemeTokenField
 import com.example.cdplaya.ui.player.theme.PlayerThemeTokens
 import com.example.cdplaya.ui.player.theme.customizationOptions
+import kotlin.math.roundToInt
 
 @Composable
 fun SettingsScreen(
@@ -88,6 +92,14 @@ fun SettingsScreen(
     onReplayGainModeSelected: (ReplayGainMode) -> Unit,
     selectedAudioOffloadPreference: AudioOffloadPreference,
     onAudioOffloadPreferenceSelected: (AudioOffloadPreference) -> Unit,
+    smoothPlayPauseEnabled: Boolean = true,
+    onSmoothPlayPauseEnabledChanged: (Boolean) -> Unit = {},
+    crossfadeEnabled: Boolean = false,
+    onCrossfadeEnabledChanged: (Boolean) -> Unit = {},
+    crossfadeDurationMs: Int = CrossfadePreferences.DEFAULT_DURATION_MS,
+    onCrossfadeDurationMsChanged: (Int) -> Unit = {},
+    preserveAlbumTransitions: Boolean = true,
+    onPreserveAlbumTransitionsChanged: (Boolean) -> Unit = {},
     scrollState: ScrollState = rememberScrollState(),
     modifier: Modifier = Modifier
 ) {
@@ -253,6 +265,73 @@ fun SettingsScreen(
             icon = AppShellIcons.Equalizer
         ) {
             SettingsRow(
+                title = "Smooth play/pause",
+                summary = "Fade briefly when playback starts or pauses",
+                icon = AppShellIcons.MusicNote,
+                trailingContent = {
+                    Switch(
+                        checked = smoothPlayPauseEnabled,
+                        onCheckedChange = onSmoothPlayPauseEnabledChanged
+                    )
+                }
+            )
+
+            SettingsDivider()
+
+            SettingsRow(
+                title = "Crossfade",
+                summary = "Overlap automatic track transitions",
+                icon = AppShellIcons.MusicNote,
+                trailingContent = {
+                    Switch(
+                        checked = crossfadeEnabled,
+                        onCheckedChange = onCrossfadeEnabledChanged
+                    )
+                }
+            )
+
+            SettingsDivider()
+
+            SettingsRow(
+                title = "Crossfade duration",
+                summary = (crossfadeDurationMs / 1_000).let { seconds ->
+                    "$seconds ${if (seconds == 1) "second" else "seconds"}"
+                },
+                icon = AppShellIcons.Timer,
+                trailingContent = {
+                    Slider(
+                        value = (crossfadeDurationMs / 1_000f).coerceIn(1f, 12f),
+                        onValueChange = { seconds ->
+                            onCrossfadeDurationMsChanged(
+                                seconds.roundToInt().coerceIn(1, 12) * 1_000
+                            )
+                        },
+                        valueRange = 1f..12f,
+                        steps = 10,
+                        enabled = crossfadeEnabled,
+                        modifier = Modifier.width(150.dp)
+                    )
+                }
+            )
+
+            SettingsDivider()
+
+            SettingsRow(
+                title = "Preserve album transitions",
+                summary = "Keep confident sequential album tracks un-crossfaded",
+                icon = AppShellIcons.AlbumStack,
+                trailingContent = {
+                    Switch(
+                        checked = preserveAlbumTransitions,
+                        onCheckedChange = onPreserveAlbumTransitionsChanged,
+                        enabled = crossfadeEnabled
+                    )
+                }
+            )
+
+            SettingsDivider()
+
+            SettingsRow(
                 title = "Equalizer",
                 summary = equalizerSummary,
                 icon = AppShellIcons.Equalizer,
@@ -303,7 +382,8 @@ fun SettingsScreen(
             SettingsFooterNote(
                 text = "Audio offload may reduce power use during long background playback. " +
                         "CDPlaya falls back to normal decoded playback when offload is unavailable " +
-                        "or incompatible with an active audio feature."
+                        "or incompatible with an active audio feature. Crossfade uses decoded " +
+                        "playback while enabled."
             )
         }
 

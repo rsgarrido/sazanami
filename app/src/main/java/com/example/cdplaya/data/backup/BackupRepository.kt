@@ -16,6 +16,7 @@ import com.example.cdplaya.data.home.sanitizeHomePins
 import com.example.cdplaya.player.replaygain.ReplayGainMode
 import com.example.cdplaya.data.preferences.AppPreferencesRepository
 import com.example.cdplaya.data.preferences.AppPreferencesState
+import com.example.cdplaya.data.preferences.CrossfadePreferences
 import com.example.cdplaya.data.local.AppDatabase
 import com.example.cdplaya.player.audio.AudioOffloadPreference
 import com.example.cdplaya.player.equalizer.EqualizerPreferencesState
@@ -75,6 +76,10 @@ class BackupRepository(
                 selectedPlayerThemeId = appPreferences.selectedPlayerTheme.id,
                 replayGainMode = appPreferences.replayGainMode.name,
                 audioOffloadPreference = appPreferences.audioOffloadPreference.name,
+                smoothPlayPauseEnabled = appPreferences.smoothPlayPauseEnabled,
+                crossfadeEnabled = appPreferences.crossfadeEnabled,
+                crossfadeDurationMs = appPreferences.crossfadeDurationMs,
+                preserveAlbumTransitions = appPreferences.preserveAlbumTransitions,
                 modernArtworkTransitionStyle =
                     appPreferences.modernArtworkTransitionStyle.storageValue,
                 modernSeekbarStyle = appPreferences.modernSeekbarStyle.storageValue,
@@ -242,6 +247,12 @@ class BackupRepository(
                 audioOffloadPreference = AudioOffloadPreference.fromStorageValue(
                     preferences.audioOffloadPreference
                 ),
+                smoothPlayPauseEnabled = preferences.smoothPlayPauseEnabled,
+                crossfadeEnabled = preferences.crossfadeEnabled,
+                crossfadeDurationMs = CrossfadePreferences.clampDurationMs(
+                    preferences.crossfadeDurationMs
+                ),
+                preserveAlbumTransitions = preferences.preserveAlbumTransitions,
                 folderSelectionMode = FolderSelection.fromStored(
                     storedMode = preferences.folderSelectionMode,
                     storedFolders = preferences.selectedLibraryFolders.toSet()

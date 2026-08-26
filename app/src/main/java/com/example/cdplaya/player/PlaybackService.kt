@@ -39,7 +39,9 @@ import com.example.cdplaya.player.audio.mapAudioRoute
 import com.example.cdplaya.player.audio.mapAudioSourceFormat
 import com.example.cdplaya.player.audio.withAudioOffloadPreference
 import com.example.cdplaya.player.equalizer.AudioProcessingPolicy
+import com.example.cdplaya.player.equalizer.CrossfadeOffloadPolicy
 import com.example.cdplaya.player.equalizer.EqualizerAudioProcessor
+import com.example.cdplaya.player.equalizer.EqualizerDspRuntime
 import com.example.cdplaya.player.equalizer.EqualizerRenderersFactory
 import com.example.cdplaya.player.equalizer.EqualizerRuntimeBridge
 import com.example.cdplaya.player.equalizer.activeAutomaticHeadroomEnabled
@@ -63,19 +65,22 @@ import kotlinx.coroutines.launch
 class PlaybackService : MediaLibraryService() {
 
     private var mediaSession: MediaLibrarySession? = null
-    private val equalizerAudioProcessor = EqualizerAudioProcessor()
-    private lateinit var player: ExoPlayer
+    private lateinit var physicalPlayers: DualPlayerPlaybackCoordinator
+    private val player: ExoPlayer
+        get() = physicalPlayers.logicalPhysicalPlayer
+    private lateinit var sessionPlayer: SmoothPlaybackPlayer
     private lateinit var playerStateStorage: PlayerStateStorage
     private lateinit var listeningAdapter: PlaybackServiceListeningAdapter
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var appPreferencesRepository: AppPreferencesRepository
     private lateinit var audioManager: AudioManager
     private var isRemotePlayback = false
+    private var activeServiceBinding: ActiveServiceBinding? = null
     private val checkpointHandler = Handler(Looper.getMainLooper())
     private val checkpointRunnable = object : Runnable {
         override fun run() {
             saveServicePlaybackState()
-            if (::player.isInitialized && player.isPlaying) {
+            if (::physicalPlayers.isInitialized && player.isPlaying) {
                 checkpointHandler.postDelayed(
                     this,
                     PlaybackStateCheckpointPolicy.DEFAULT_INTERVAL_MILLIS
@@ -83,121 +88,198 @@ class PlaybackService : MediaLibraryService() {
             }
         }
     }
-    private val persistenceListener = object : Player.Listener {
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            saveServicePlaybackState()
+    private val activePlayerIntegration = object : ActivePlayerIntegration {
+        override fun unbind(pipeline: PhysicalPlayerPipeline) {
+            unbindActivePipeline(pipeline)
         }
 
-        override fun onIsPlayingChanged(isPlaying: Boolean) {
-            checkpointHandler.removeCallbacks(checkpointRunnable)
-            if (isPlaying) {
-                checkpointHandler.postDelayed(
-                    checkpointRunnable,
-                    PlaybackStateCheckpointPolicy.DEFAULT_INTERVAL_MILLIS
+        override fun bind(
+            pipeline: PhysicalPlayerPipeline,
+            transition: AuthoritativeRoleTransition?
+        ) {
+            bindActivePipeline(pipeline, transition)
+        }
+
+        override fun onCrossfadeIncomingAudible(incomingMediaItem: MediaItem) {
+            listeningAdapter.onCrossfadeIncomingAudible(incomingMediaItem)
+        }
+
+        override fun onCrossfadeLogicalHandoff(incomingMediaItem: MediaItem) {
+            listeningAdapter.onCrossfadeLogicalHandoff(incomingMediaItem)
+        }
+
+        override fun onCrossfadeCompleted(outgoingMediaItem: MediaItem?) {
+            listeningAdapter.onCrossfadeCompleted(outgoingMediaItem)
+        }
+
+        override fun onCrossfadeCancelled(
+            outgoingMediaItem: MediaItem?,
+            incomingMediaItem: MediaItem,
+            survivingMediaItem: MediaItem?
+        ) {
+            listeningAdapter.onCrossfadeCancelled(
+                outgoingItem = outgoingMediaItem,
+                incomingItem = incomingMediaItem,
+                survivingItem = survivingMediaItem
+            )
+        }
+    }
+
+    /** All authoritative service callbacks are identity-gated to one physical role. */
+    private inner class ActiveServiceBinding(
+        val pipeline: PhysicalPlayerPipeline
+    ) {
+        private var released = false
+
+        private fun isAuthoritative(): Boolean =
+            !released &&
+                ::physicalPlayers.isInitialized &&
+                physicalPlayers.isActive(pipeline.player)
+
+        private val playerListener = object : Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                if (!isAuthoritative()) return
+                saveServicePlaybackState()
+                AdvancedAudioRuntimeBridge.updateSourceFormat(null)
+                val mappedReason = when (reason) {
+                    Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT ->
+                        ListeningMediaTransitionReason.REPEAT
+                    Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ->
+                        ListeningMediaTransitionReason.AUTOMATIC
+                    Player.MEDIA_ITEM_TRANSITION_REASON_SEEK ->
+                        ListeningMediaTransitionReason.SEEK
+                    Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED ->
+                        ListeningMediaTransitionReason.PLAYLIST_CHANGED
+                    else -> return
+                }
+                listeningAdapter.onMediaItemTransition(
+                    mediaItem,
+                    mappedReason,
+                    pipeline.player.isPlaying
                 )
-            } else {
-                saveServicePlaybackState()
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (!isAuthoritative()) return
+                checkpointHandler.removeCallbacks(checkpointRunnable)
+                if (isPlaying) {
+                    checkpointHandler.postDelayed(
+                        checkpointRunnable,
+                        PlaybackStateCheckpointPolicy.DEFAULT_INTERVAL_MILLIS
+                    )
+                } else {
+                    saveServicePlaybackState()
+                }
+                listeningAdapter.onIsPlayingChanged(
+                    pipeline.player.currentMediaItem,
+                    isPlaying
+                )
+            }
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int
+            ) {
+                if (!isAuthoritative()) return
+                if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                    saveServicePlaybackState()
+                }
+                val isWithinSameItem =
+                    oldPosition.mediaItemIndex == newPosition.mediaItemIndex
+                val isSeek = reason == Player.DISCONTINUITY_REASON_SEEK ||
+                    reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT
+                if (isWithinSameItem && isSeek) {
+                    listeningAdapter.onPositionDiscontinuity(
+                        pipeline.player.currentMediaItem
+                    )
+                }
+            }
+
+            override fun onRepeatModeChanged(repeatMode: Int) {
+                if (isAuthoritative()) saveServicePlaybackState()
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (!isAuthoritative()) return
+                when (playbackState) {
+                    Player.STATE_ENDED -> listeningAdapter.onNaturalEnd(
+                        pipeline.player.currentMediaItem
+                    )
+                    Player.STATE_IDLE -> listeningAdapter.onStopped()
+                }
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                if (isAuthoritative()) listeningAdapter.onError()
+            }
+
+            override fun onDeviceInfoChanged(deviceInfo: DeviceInfo) {
+                if (!isAuthoritative()) return
+                isRemotePlayback =
+                    deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_REMOTE
+                publishAudioRoute()
             }
         }
 
-        override fun onPositionDiscontinuity(
-            oldPosition: Player.PositionInfo,
-            newPosition: Player.PositionInfo,
-            reason: Int
-        ) {
-            if (reason == Player.DISCONTINUITY_REASON_SEEK) {
-                saveServicePlaybackState()
+        private val analyticsListener = object : AnalyticsListener {
+            override fun onAudioInputFormatChanged(
+                eventTime: AnalyticsListener.EventTime,
+                format: Format,
+                decoderReuseEvaluation: DecoderReuseEvaluation?
+            ) {
+                if (!isAuthoritative()) return
+                tracePerformance(PerformanceTraceNames.AUDIO_INPUT_FORMAT_CHANGED) {
+                    AdvancedAudioRuntimeBridge.updateSourceFormat(
+                        mapAudioSourceFormat(format)
+                    )
+                }
+            }
+
+            override fun onAudioSessionIdChanged(
+                eventTime: AnalyticsListener.EventTime,
+                audioSessionId: Int
+            ) {
+                if (isAuthoritative()) {
+                    AdvancedAudioRuntimeBridge.updateAudioSessionId(
+                        audioSessionId.takeIf { it > 0 }
+                    )
+                }
             }
         }
 
-        override fun onRepeatModeChanged(repeatMode: Int) {
-            saveServicePlaybackState()
-        }
-    }
+        private val offloadListener = object : ExoPlayer.AudioOffloadListener {
+            override fun onOffloadedPlayback(isOffloadedPlayback: Boolean) {
+                if (!isAuthoritative()) return
+                tracePerformance(PerformanceTraceNames.AUDIO_OFFLOAD_STATE_CHANGED) {
+                    AdvancedAudioRuntimeBridge.updateOffloadPlayback(
+                        isOffloadedPlayback
+                    )
+                }
+            }
 
-    private val audioOffloadListener = object : ExoPlayer.AudioOffloadListener {
-        override fun onOffloadedPlayback(isOffloadedPlayback: Boolean) {
-            tracePerformance(PerformanceTraceNames.AUDIO_OFFLOAD_STATE_CHANGED) {
-                AdvancedAudioRuntimeBridge.updateOffloadPlayback(isOffloadedPlayback)
+            override fun onSleepingForOffloadChanged(isSleepingForOffload: Boolean) {
+                if (!isAuthoritative()) return
+                tracePerformance(PerformanceTraceNames.AUDIO_OFFLOAD_SLEEPING_CHANGED) {
+                    AdvancedAudioRuntimeBridge.updateSleepingForOffload(
+                        isSleepingForOffload
+                    )
+                }
             }
         }
 
-        override fun onSleepingForOffloadChanged(isSleepingForOffload: Boolean) {
-            tracePerformance(PerformanceTraceNames.AUDIO_OFFLOAD_SLEEPING_CHANGED) {
-                AdvancedAudioRuntimeBridge.updateSleepingForOffload(isSleepingForOffload)
-            }
-        }
-    }
-
-    private val advancedAudioPlayerListener = object : Player.Listener {
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            AdvancedAudioRuntimeBridge.updateSourceFormat(null)
+        fun attach() {
+            pipeline.player.addListener(playerListener)
+            pipeline.player.addAnalyticsListener(analyticsListener)
+            pipeline.player.addAudioOffloadListener(offloadListener)
         }
 
-        override fun onDeviceInfoChanged(deviceInfo: DeviceInfo) {
-            isRemotePlayback = deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_REMOTE
-            publishAudioRoute()
-        }
-    }
-
-    private val listeningPlayerListener = object : Player.Listener {
-        override fun onIsPlayingChanged(isPlaying: Boolean) {
-            listeningAdapter.onIsPlayingChanged(player.currentMediaItem, isPlaying)
-        }
-
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            val mappedReason = when (reason) {
-                Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT -> ListeningMediaTransitionReason.REPEAT
-                Player.MEDIA_ITEM_TRANSITION_REASON_AUTO -> ListeningMediaTransitionReason.AUTOMATIC
-                Player.MEDIA_ITEM_TRANSITION_REASON_SEEK -> ListeningMediaTransitionReason.SEEK
-                Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED ->
-                    ListeningMediaTransitionReason.PLAYLIST_CHANGED
-                else -> return
-            }
-            listeningAdapter.onMediaItemTransition(mediaItem, mappedReason, player.isPlaying)
-        }
-
-        override fun onPositionDiscontinuity(
-            oldPosition: Player.PositionInfo,
-            newPosition: Player.PositionInfo,
-            reason: Int
-        ) {
-            val isWithinSameItem = oldPosition.mediaItemIndex == newPosition.mediaItemIndex
-            val isSeek = reason == Player.DISCONTINUITY_REASON_SEEK ||
-                reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT
-            if (isWithinSameItem && isSeek) {
-                listeningAdapter.onPositionDiscontinuity(player.currentMediaItem)
-            }
-        }
-
-        override fun onPlaybackStateChanged(playbackState: Int) {
-            when (playbackState) {
-                Player.STATE_ENDED -> listeningAdapter.onNaturalEnd(player.currentMediaItem)
-                Player.STATE_IDLE -> listeningAdapter.onStopped()
-            }
-        }
-
-        override fun onPlayerError(error: PlaybackException) {
-            listeningAdapter.onError()
-        }
-    }
-
-    private val advancedAudioAnalyticsListener = object : AnalyticsListener {
-        override fun onAudioInputFormatChanged(
-            eventTime: AnalyticsListener.EventTime,
-            format: Format,
-            decoderReuseEvaluation: DecoderReuseEvaluation?
-        ) {
-            tracePerformance(PerformanceTraceNames.AUDIO_INPUT_FORMAT_CHANGED) {
-                AdvancedAudioRuntimeBridge.updateSourceFormat(mapAudioSourceFormat(format))
-            }
-        }
-
-        override fun onAudioSessionIdChanged(
-            eventTime: AnalyticsListener.EventTime,
-            audioSessionId: Int
-        ) {
-            AdvancedAudioRuntimeBridge.updateAudioSessionId(audioSessionId.takeIf { it > 0 })
+        fun release() {
+            if (released) return
+            released = true
+            pipeline.player.removeListener(playerListener)
+            pipeline.player.removeAnalyticsListener(analyticsListener)
+            pipeline.player.removeAudioOffloadListener(offloadListener)
         }
     }
 
@@ -297,20 +379,50 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onCreate() {
         super.onCreate()
-        EqualizerRuntimeBridge.start(serviceScope)
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
 
-        val renderersFactory = EqualizerRenderersFactory(
-            context = this,
-            equalizerAudioProcessor = equalizerAudioProcessor
+        val activePipeline = createPhysicalPlayerPipeline(
+            role = PhysicalPlayerRole.ACTIVE,
+            audioAttributes = audioAttributes
         )
-        player = ExoPlayer.Builder(this, renderersFactory)
-            .setAudioAttributes(audioAttributes, true)
-            .setHandleAudioBecomingNoisy(true)
-            .build()
+        val standbyPipeline = try {
+            createPhysicalPlayerPipeline(
+                role = PhysicalPlayerRole.STANDBY,
+                audioAttributes = audioAttributes
+            )
+        } catch (error: RuntimeException) {
+            activePipeline.release()
+            throw error
+        }
+        physicalPlayers = DualPlayerPlaybackCoordinator(
+            initialActive = activePipeline,
+            initialStandby = standbyPipeline,
+            standbyBaselinePreparer = StandbyBaselinePreparer { mediaItem, result ->
+                PlaybackLibraryBridge.prepareReplayGainBaseline(
+                    mediaId = mediaItem.mediaId,
+                    onPrepared = result
+                )
+            },
+            crossfadeScheduler = HandlerCrossfadeScheduler(
+                Handler(activePipeline.player.applicationLooper)
+            ),
+            initialCrossfadeConfiguration = CrossfadeRuntimeConfiguration.DISABLED
+        )
+        physicalPlayers.start(serviceScope)
+        sessionPlayer = SmoothPlaybackPlayer(
+            initialPhysicalPlayer = player,
+            onBaselineVolumeChanged = physicalPlayers::updateActiveBaseline,
+            onLogicalCommand = { event ->
+                physicalPlayers.onLogicalCommand(event)
+            }
+        )
+        physicalPlayers.attachLogicalPlayer(
+            player = sessionPlayer,
+            integration = activePlayerIntegration
+        )
         appPreferencesRepository = AppPreferencesRepository.getInstance(this)
         audioManager = getSystemService(AudioManager::class.java)
         playerStateStorage = PlayerStateStorage(this)
@@ -319,19 +431,16 @@ class PlaybackService : MediaLibraryService() {
             trackResolver = ListeningNativeTrackResolver(database),
             eventRepository = ListeningEventRepository(database.listeningEventDao())
         )
-        player.addListener(persistenceListener)
-        player.addListener(advancedAudioPlayerListener)
-        player.addListener(listeningPlayerListener)
-        player.addAnalyticsListener(advancedAudioAnalyticsListener)
-        player.addAudioOffloadListener(audioOffloadListener)
+        bindActivePipeline(activePipeline, transition = null)
         audioManager.registerAudioDeviceCallback(audioDeviceCallback, checkpointHandler)
         applyAudioOffloadPreference(AudioOffloadPreference.DISABLED)
         AdvancedAudioRuntimeBridge.onPlayerConnected(AudioOffloadPreference.DISABLED)
         isRemotePlayback = player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_REMOTE
         publishAudioRoute()
-        observeAudioOffloadPreference()
+        observePlaybackAudioPreferences()
         observeEqualizerPreferences()
         observeEqualizerRuntimeState()
+        observeSmoothPlaybackPreference()
 
         val sessionActivity = PendingIntent.getActivity(
             this,
@@ -342,7 +451,7 @@ class PlaybackService : MediaLibraryService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        mediaSession = MediaLibrarySession.Builder(this, player, libraryCallback)
+        mediaSession = MediaLibrarySession.Builder(this, sessionPlayer, libraryCallback)
             .setSessionActivity(sessionActivity)
             .build()
     }
@@ -354,28 +463,25 @@ class PlaybackService : MediaLibraryService() {
     override fun onDestroy() {
         checkpointHandler.removeCallbacks(checkpointRunnable)
         saveServicePlaybackState()
-        player.removeListener(persistenceListener)
-        player.removeListener(advancedAudioPlayerListener)
-        player.removeListener(listeningPlayerListener)
+        activeServiceBinding?.release()
+        activeServiceBinding = null
         listeningAdapter.closeGracefully()
-        player.removeAnalyticsListener(advancedAudioAnalyticsListener)
-        player.removeAudioOffloadListener(audioOffloadListener)
         audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)
         mediaSession?.release()
         mediaSession = null
-        player.release()
+        sessionPlayer.releaseTransitionResources()
+        physicalPlayers.release()
         EqualizerRuntimeBridge.release()
         serviceScope.cancel()
         AdvancedAudioRuntimeBridge.disconnect()
         super.onDestroy()
     }
 
-    private fun observeAudioOffloadPreference() {
+    private fun observePlaybackAudioPreferences() {
         serviceScope.launch {
             combine(
                 appPreferencesRepository.state
-                .filter { preferences -> preferences.isLoaded }
-                .map { preferences -> preferences.audioOffloadPreference },
+                    .filter { preferences -> preferences.isLoaded },
                 EqualizerRuntimeBridge.state
                     .map { state ->
                         AudioProcessingRequirements(
@@ -389,21 +495,46 @@ class PlaybackService : MediaLibraryService() {
                                 state.comparisonSessionActive
                         )
                     }
-            ) { preference, requirements ->
-                preference to requirements
+            ) { preferences, requirements ->
+                PlaybackAudioRuntimePreferences(
+                    userOffloadPreference = preferences.audioOffloadPreference,
+                    requirements = requirements,
+                    crossfade = CrossfadeRuntimeConfiguration(
+                        enabled = preferences.crossfadeEnabled,
+                        durationMillis = preferences.crossfadeDurationMs.toLong(),
+                        preserveAlbumTransitions =
+                            preferences.preserveAlbumTransitions
+                    ).normalized()
+                )
             }
                 .distinctUntilChanged()
-                .collectLatest { (preference, requirements) ->
-                    applyAudioProcessingPolicy(
-                        userPreference = preference,
-                        equalizerEffectivelyActive =
-                            requirements.equalizerEffectivelyActive,
-                        limiterEffectivelyActive =
-                            requirements.limiterEffectivelyActive,
-                        comparisonSessionActive =
-                            requirements.comparisonSessionActive
+                .collectLatest { runtime ->
+                    CrossfadeTrace.log(
+                        "PREFERENCES enabled=${runtime.crossfade.enabled} " +
+                            "durationMs=${runtime.crossfade.durationMillis} " +
+                            "preserveAlbumTransitions=" +
+                            runtime.crossfade.preserveAlbumTransitions
                     )
+                    if (runtime.crossfade.enabled) {
+                        // Decode both pipelines before overlap can become eligible.
+                        applyAudioProcessingPolicy(runtime, crossfadeEnabled = true)
+                        physicalPlayers.updateCrossfadeConfiguration(runtime.crossfade)
+                    } else {
+                        // Collapse an active overlap before restoring normal offload policy.
+                        physicalPlayers.updateCrossfadeConfiguration(runtime.crossfade)
+                        applyAudioProcessingPolicy(runtime, crossfadeEnabled = false)
+                    }
                 }
+        }
+    }
+
+    private fun observeSmoothPlaybackPreference() {
+        serviceScope.launch {
+            appPreferencesRepository.state
+                .filter { preferences -> preferences.isLoaded }
+                .map { preferences -> preferences.smoothPlayPauseEnabled }
+                .distinctUntilChanged()
+                .collectLatest(sessionPlayer::setSmoothPlaybackEnabled)
         }
     }
 
@@ -454,7 +585,24 @@ class PlaybackService : MediaLibraryService() {
             userPreference = preference,
             equalizerEffectivelyActive = false,
             limiterEffectivelyActive = false,
-            comparisonSessionActive = false
+            comparisonSessionActive = false,
+            crossfadeEnabled = false
+        )
+    }
+
+    private fun applyAudioProcessingPolicy(
+        runtime: PlaybackAudioRuntimePreferences,
+        crossfadeEnabled: Boolean
+    ) {
+        applyAudioProcessingPolicy(
+            userPreference = runtime.userOffloadPreference,
+            equalizerEffectivelyActive =
+                runtime.requirements.equalizerEffectivelyActive,
+            limiterEffectivelyActive =
+                runtime.requirements.limiterEffectivelyActive,
+            comparisonSessionActive =
+                runtime.requirements.comparisonSessionActive,
+            crossfadeEnabled = crossfadeEnabled
         )
     }
 
@@ -462,7 +610,8 @@ class PlaybackService : MediaLibraryService() {
         userPreference: AudioOffloadPreference,
         equalizerEffectivelyActive: Boolean,
         limiterEffectivelyActive: Boolean,
-        comparisonSessionActive: Boolean
+        comparisonSessionActive: Boolean,
+        crossfadeEnabled: Boolean
     ) {
         tracePerformance(PerformanceTraceNames.AUDIO_OFFLOAD_PREFERENCE_APPLIED) {
             val decision = AudioProcessingPolicy.evaluate(
@@ -474,15 +623,25 @@ class PlaybackService : MediaLibraryService() {
                 comparisonSessionActive =
                     comparisonSessionActive
             )
-            val updatedParameters = player.trackSelectionParameters
-                .withAudioOffloadPreference(
-                    decision.effectiveOffloadPreference
-                )
-            if (player.trackSelectionParameters != updatedParameters) {
-                player.trackSelectionParameters = updatedParameters
+            val effectiveOffloadPreference = CrossfadeOffloadPolicy.effectivePreference(
+                normalPreference = decision.effectiveOffloadPreference,
+                crossfadeEnabled = crossfadeEnabled
+            )
+            CrossfadeTrace.log(
+                "OFFLOAD crossfadeEnabled=$crossfadeEnabled effectivePreference=" +
+                    effectiveOffloadPreference
+            )
+            physicalPlayers.forEachPipeline { pipeline ->
+                val updatedParameters = pipeline.player.trackSelectionParameters
+                    .withAudioOffloadPreference(
+                        effectiveOffloadPreference
+                    )
+                if (pipeline.player.trackSelectionParameters != updatedParameters) {
+                    pipeline.player.trackSelectionParameters = updatedParameters
+                }
             }
             AdvancedAudioRuntimeBridge.updateOffloadPreference(
-                userPreference
+                effectiveOffloadPreference
             )
         }
     }
@@ -492,6 +651,44 @@ class PlaybackService : MediaLibraryService() {
         val limiterEffectivelyActive: Boolean,
         val comparisonSessionActive: Boolean
     )
+
+    private data class PlaybackAudioRuntimePreferences(
+        val userOffloadPreference: AudioOffloadPreference,
+        val requirements: AudioProcessingRequirements,
+        val crossfade: CrossfadeRuntimeConfiguration
+    )
+
+    private fun bindActivePipeline(
+        pipeline: PhysicalPlayerPipeline,
+        transition: AuthoritativeRoleTransition?
+    ) {
+        check(physicalPlayers.isActive(pipeline.player))
+        activeServiceBinding?.release()
+        if (transition?.affectsListeningHistory == true) {
+            listeningAdapter.onMediaItemTransition(
+                transition.incomingMediaItem,
+                ListeningMediaTransitionReason.AUTOMATIC,
+                isPlaying = pipeline.player.isPlaying
+            )
+        }
+        AdvancedAudioRuntimeBridge.updateSourceFormat(null)
+        AdvancedAudioRuntimeBridge.updateAudioSessionId(null)
+        AdvancedAudioRuntimeBridge.updateOffloadPlayback(false)
+        AdvancedAudioRuntimeBridge.updateSleepingForOffload(false)
+        activeServiceBinding = ActiveServiceBinding(pipeline).also { it.attach() }
+        isRemotePlayback =
+            pipeline.player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_REMOTE
+        publishAudioRoute()
+        saveServicePlaybackState()
+    }
+
+    private fun unbindActivePipeline(pipeline: PhysicalPlayerPipeline) {
+        val binding = activeServiceBinding ?: return
+        if (binding.pipeline !== pipeline) return
+        binding.release()
+        activeServiceBinding = null
+        checkpointHandler.removeCallbacks(checkpointRunnable)
+    }
 
     private fun publishAudioRoute() {
         val route = if (isRemotePlayback) {
@@ -539,7 +736,12 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private fun saveServicePlaybackState() {
-        if (!::player.isInitialized || !::playerStateStorage.isInitialized) return
+        if (
+            !::physicalPlayers.isInitialized ||
+            !::playerStateStorage.isInitialized
+        ) {
+            return
+        }
         val songId = player.currentMediaItem?.mediaId?.toLongOrNull() ?: return
         val repeatMode = when (player.repeatMode) {
             Player.REPEAT_MODE_ALL -> RepeatMode.ALL
@@ -553,6 +755,45 @@ class PlaybackService : MediaLibraryService() {
                 .toInt(),
             repeatMode = repeatMode
         )
+    }
+
+    private fun createPhysicalPlayerPipeline(
+        role: PhysicalPlayerRole,
+        audioAttributes: AudioAttributes
+    ): PhysicalPlayerPipeline {
+        val runtime: EqualizerDspRuntime =
+            EqualizerRuntimeBridge.createRuntime()
+        val processor = EqualizerAudioProcessor(runtime)
+        val renderersFactory = EqualizerRenderersFactory(
+            context = this,
+            equalizerAudioProcessor = processor
+        )
+        return try {
+            val physicalPlayer = ExoPlayer.Builder(this, renderersFactory)
+                .setAudioAttributes(
+                    audioAttributes,
+                    role.managesAudioFocus
+                )
+                .setHandleAudioBecomingNoisy(
+                    role.handlesAudioBecomingNoisy
+                )
+                .setPauseAtEndOfMediaItems(true)
+                .build()
+            if (role == PhysicalPlayerRole.STANDBY) {
+                physicalPlayer.volume = 0f
+                physicalPlayer.playWhenReady = false
+            }
+            PhysicalPlayerPipeline(
+                initialRole = role,
+                player = physicalPlayer,
+                equalizerRuntime = runtime,
+                equalizerAudioProcessor = processor,
+                audioAttributes = audioAttributes
+            )
+        } catch (error: RuntimeException) {
+            EqualizerRuntimeBridge.releaseRuntime(runtime)
+            throw error
+        }
     }
 
     private fun buildBrowseTree(): AutoBrowseNode {

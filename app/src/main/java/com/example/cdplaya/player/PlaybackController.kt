@@ -325,7 +325,7 @@ class PlaybackController(
     }
 
     fun togglePlayPause() {
-        if (musicPlayer.isPlaying()) {
+        if (musicPlayer.isPlayWhenReady()) {
             musicPlayer.pause()
             isPlaying = false
             savePlayerState()
@@ -715,8 +715,12 @@ class PlaybackController(
         } ?: return
 
         if (currentSong?.id == newSong.id) {
-            musicPlayer.setRepeatMode(repeatMode)
-            musicPlayer.setShuffleEnabled(shuffleMode.usesDynamicSongShuffle)
+            musicPlayer.synchronizeNavigationPolicy(
+                shuffleEnabled = shuffleMode.usesDynamicSongShuffle,
+                repeatMode = repeatMode,
+                origin =
+                    ControllerSynchronizationOrigin.CROSSFADE_HANDOFF_INTERNAL
+            )
             applyReplayGainForCurrentSong()
             return
         }
@@ -735,7 +739,10 @@ class PlaybackController(
             playbackQueue.removeAt(0)
         }
 
-        syncServicePlaylistKeepingCurrent()
+        syncServicePlaylistKeepingCurrent(
+            playlistSynchronizationOrigin =
+                ControllerSynchronizationOrigin.CROSSFADE_HANDOFF_INTERNAL
+        )
         applyReplayGainForCurrentSong()
 
         startProgressUpdates()
@@ -836,7 +843,9 @@ class PlaybackController(
     }
 
     private fun syncServicePlaylistKeepingCurrent(
-        preserveExistingShuffleOrder: Boolean = true
+        preserveExistingShuffleOrder: Boolean = true,
+        playlistSynchronizationOrigin: ControllerSynchronizationOrigin =
+            ControllerSynchronizationOrigin.EXTERNAL
     ) {
         publishDerivedPlaybackState()
         val song = currentSong ?: return
@@ -847,11 +856,15 @@ class PlaybackController(
         )
 
         musicPlayer.updateUpcomingPlaylist(
-            upcomingSongs = refreshedUpcomingSongs
+            upcomingSongs = refreshedUpcomingSongs,
+            origin = playlistSynchronizationOrigin
         )
 
-        musicPlayer.setShuffleEnabled(shuffleMode.usesDynamicSongShuffle)
-        musicPlayer.setRepeatMode(repeatMode)
+        musicPlayer.synchronizeNavigationPolicy(
+            shuffleEnabled = shuffleMode.usesDynamicSongShuffle,
+            repeatMode = repeatMode,
+            origin = playlistSynchronizationOrigin
+        )
     }
 
     private fun applyReplayGainForCurrentSong() {
@@ -911,6 +924,45 @@ class PlaybackController(
                 }
             }
         }
+    }
+
+    /** Prepares a target-scoped baseline without changing the current logical player's volume. */
+    internal fun prepareReplayGainBaseline(
+        songId: Long,
+        onPrepared: (Float) -> Unit
+    ): Boolean {
+        val song = sequenceOf(
+            playbackContextSongs,
+            playbackQueue.toList(),
+            upcomingSongsValue,
+            librarySongs
+        ).flatten().firstOrNull { candidate -> candidate.id == songId }
+            ?: return false
+        val requestedMode = replayGainMode
+        val requestedIsAlbumPlaybackContext = isAlbumPlaybackContextForSong(song)
+        if (requestedMode == ReplayGainMode.OFF) {
+            onPrepared(1f)
+            return true
+        }
+
+        coroutineScope.launch {
+            val replayGainInfo = runCatching {
+                replayGainRepository.getReplayGainInfo(song)
+            }.getOrNull() ?: return@launch
+            val volumeMultiplier = replayGainVolumeMultiplier(
+                replayGainInfo = replayGainInfo,
+                replayGainMode = requestedMode,
+                isAlbumPlaybackContext = requestedIsAlbumPlaybackContext
+            )
+            if (
+                replayGainMode == requestedMode &&
+                isAlbumPlaybackContextForSong(song) ==
+                requestedIsAlbumPlaybackContext
+            ) {
+                onPrepared(volumeMultiplier)
+            }
+        }
+        return true
     }
 
     private fun isAlbumPlaybackContextForSong(song: Song): Boolean {

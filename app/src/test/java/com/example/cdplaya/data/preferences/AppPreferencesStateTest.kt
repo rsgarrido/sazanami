@@ -41,6 +41,10 @@ class AppPreferencesStateTest {
         assertEquals(PlayerTheme.DEFAULT, state.selectedPlayerTheme)
         assertEquals(ReplayGainMode.OFF, state.replayGainMode)
         assertEquals(AudioOffloadPreference.DISABLED, state.audioOffloadPreference)
+        assertTrue(state.smoothPlayPauseEnabled)
+        assertFalse(state.crossfadeEnabled)
+        assertEquals(5_000, state.crossfadeDurationMs)
+        assertTrue(state.preserveAlbumTransitions)
         assertEquals(ModernArtworkTransitionStyle.SLIDE, state.modernArtworkTransitionStyle)
         assertEquals(ModernSeekbarStyle.CLASSIC_BAR, state.modernSeekbarStyle)
         assertEquals(2, state.songsGridColumnCount)
@@ -109,6 +113,48 @@ class AppPreferencesStateTest {
         assertEquals(AudioOffloadPreference.AUTOMATIC, state.audioOffloadPreference)
         assertEquals(PlayerTheme.RETRO_RACK, state.selectedPlayerTheme)
         assertEquals(ReplayGainMode.OFF, state.replayGainMode)
+    }
+
+    @Test
+    fun smoothPlayPauseCanBePersistedDisabled() {
+        val state = decodeAppPreferences(
+            mutablePreferencesOf(
+                booleanPreferencesKey("smooth_play_pause_enabled") to false
+            )
+        )
+
+        assertFalse(state.smoothPlayPauseEnabled)
+    }
+
+    @Test
+    fun crossfadePreferencesDecodeAndClampDuration() {
+        val enabled = decodeAppPreferences(
+            mutablePreferencesOf(
+                booleanPreferencesKey("crossfade_enabled") to true,
+                intPreferencesKey("crossfade_duration_ms") to 12_000,
+                booleanPreferencesKey("preserve_album_transitions") to false
+            )
+        )
+        assertTrue(enabled.crossfadeEnabled)
+        assertEquals(12_000, enabled.crossfadeDurationMs)
+        assertFalse(enabled.preserveAlbumTransitions)
+
+        assertEquals(
+            1_000,
+            decodeAppPreferences(
+                mutablePreferencesOf(
+                    intPreferencesKey("crossfade_duration_ms") to -500
+                )
+            ).crossfadeDurationMs
+        )
+        assertEquals(
+            12_000,
+            decodeAppPreferences(
+                mutablePreferencesOf(
+                    intPreferencesKey("crossfade_duration_ms") to 99_000
+                )
+            ).crossfadeDurationMs
+        )
     }
 
     @Test

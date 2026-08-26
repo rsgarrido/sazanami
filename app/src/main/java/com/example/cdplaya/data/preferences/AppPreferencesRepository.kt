@@ -65,6 +65,10 @@ data class AppPreferencesState(
     val modernSeekbarStyle: ModernSeekbarStyle = ModernSeekbarStyle.CLASSIC_BAR,
     val replayGainMode: ReplayGainMode = ReplayGainMode.OFF,
     val audioOffloadPreference: AudioOffloadPreference = AudioOffloadPreference.DISABLED,
+    val smoothPlayPauseEnabled: Boolean = true,
+    val crossfadeEnabled: Boolean = false,
+    val crossfadeDurationMs: Int = CrossfadePreferences.DEFAULT_DURATION_MS,
+    val preserveAlbumTransitions: Boolean = true,
     val equalizerPreferences: EqualizerPreferencesState =
         EqualizerPreferencesState(),
     val folderSelectionMode: FolderSelectionMode = FolderSelectionMode.ALL,
@@ -113,6 +117,22 @@ class AppPreferencesRepository private constructor(
 
     suspend fun setAudioOffloadPreference(preference: AudioOffloadPreference) = edit {
         it[Keys.audioOffloadPreference] = preference.name
+    }
+
+    suspend fun setSmoothPlayPauseEnabled(enabled: Boolean) = edit {
+        it[Keys.smoothPlayPauseEnabled] = enabled
+    }
+
+    suspend fun setCrossfadeEnabled(enabled: Boolean) = edit {
+        it[Keys.crossfadeEnabled] = enabled
+    }
+
+    suspend fun setCrossfadeDurationMs(durationMs: Int) = edit {
+        it[Keys.crossfadeDurationMs] = CrossfadePreferences.clampDurationMs(durationMs)
+    }
+
+    suspend fun setPreserveAlbumTransitions(enabled: Boolean) = edit {
+        it[Keys.preserveAlbumTransitions] = enabled
     }
 
     suspend fun setEqualizerEnabled(enabled: Boolean) = edit {
@@ -467,6 +487,11 @@ class AppPreferencesRepository private constructor(
         preferences[Keys.modernSeekbarStyle] = restored.modernSeekbarStyle.storageValue
         preferences[Keys.replayGainMode] = restored.replayGainMode.name
         preferences[Keys.audioOffloadPreference] = restored.audioOffloadPreference.name
+        preferences[Keys.smoothPlayPauseEnabled] = restored.smoothPlayPauseEnabled
+        preferences[Keys.crossfadeEnabled] = restored.crossfadeEnabled
+        preferences[Keys.crossfadeDurationMs] =
+            CrossfadePreferences.clampDurationMs(restored.crossfadeDurationMs)
+        preferences[Keys.preserveAlbumTransitions] = restored.preserveAlbumTransitions
         preferences.writeEqualizerPreferences(
             restored.equalizerPreferences
         )
@@ -558,6 +583,13 @@ internal fun decodeAppPreferences(preferences: Preferences): AppPreferencesState
         audioOffloadPreference = AudioOffloadPreference.fromStorageValue(
             preferences[Keys.audioOffloadPreference]
         ),
+        smoothPlayPauseEnabled = preferences[Keys.smoothPlayPauseEnabled] ?: true,
+        crossfadeEnabled = preferences[Keys.crossfadeEnabled] ?: false,
+        crossfadeDurationMs = CrossfadePreferences.clampDurationMs(
+            preferences[Keys.crossfadeDurationMs]
+                ?: CrossfadePreferences.DEFAULT_DURATION_MS
+        ),
+        preserveAlbumTransitions = preferences[Keys.preserveAlbumTransitions] ?: true,
         equalizerPreferences = decodeEqualizerPreferences(preferences),
         folderSelectionMode = folderSelection.mode,
         selectedLibraryFolders = folderSelection.toStoredFolders(),
@@ -956,6 +988,10 @@ private object Keys {
     val modernSeekbarStyle = stringPreferencesKey("seekbar_style")
     val replayGainMode = stringPreferencesKey("replay_gain_mode")
     val audioOffloadPreference = stringPreferencesKey("audio_offload_preference")
+    val smoothPlayPauseEnabled = booleanPreferencesKey("smooth_play_pause_enabled")
+    val crossfadeEnabled = booleanPreferencesKey("crossfade_enabled")
+    val crossfadeDurationMs = intPreferencesKey("crossfade_duration_ms")
+    val preserveAlbumTransitions = booleanPreferencesKey("preserve_album_transitions")
     val equalizerEnabled =
         booleanPreferencesKey("equalizer_enabled")
     val equalizerMode =

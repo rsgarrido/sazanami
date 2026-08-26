@@ -187,6 +187,83 @@ class PlaybackListeningCoordinatorTest {
         assertEquals(100_000L, fixture.drafts.single().startedAt)
     }
 
+    @Test
+    fun crossfadeAccountsBothAudibleIntervalsIndependentOfLogicalMidpoint() = runBlocking {
+        val fixture = fixture()
+        fixture.coordinator.onIsPlayingChanged(fixture.a, true, at(0))
+        fixture.coordinator.onAudibleStarted(fixture.b, at(5_000))
+        fixture.coordinator.onLogicalHandoff(fixture.b)
+
+        assertTrue(fixture.drafts.isEmpty())
+
+        fixture.coordinator.onAudibleEnded(
+            fixture.a,
+            ListeningEndReason.NATURAL_END,
+            at(10_000)
+        )
+        fixture.coordinator.onIsPlayingChanged(fixture.b, true, at(11_000))
+        fixture.coordinator.onStopped(at(12_000))
+
+        assertEquals(listOf(10_000L, 7_000L), fixture.drafts.map { it.listenedMs })
+        assertEquals(
+            listOf(ListeningEndReason.NATURAL_END, ListeningEndReason.STOPPED),
+            fixture.drafts.map { it.endReason }
+        )
+        assertEquals(2, fixture.drafts.map { it.playbackSessionId }.distinct().size)
+    }
+
+    @Test
+    fun crossfadeCancellationBeforeAndAfterMidpointRetainsHeardIntervals() = runBlocking {
+        val before = fixture()
+        before.coordinator.onIsPlayingChanged(before.a, true, at(0))
+        before.coordinator.onAudibleStarted(before.b, at(5_000))
+        before.coordinator.onAudibleEnded(
+            before.b,
+            ListeningEndReason.TRANSITION,
+            at(6_500)
+        )
+        before.coordinator.onLogicalHandoff(before.a)
+        before.coordinator.onStopped(at(8_000))
+        assertEquals(listOf(1_500L, 8_000L), before.drafts.map { it.listenedMs })
+
+        val after = fixture()
+        after.coordinator.onIsPlayingChanged(after.a, true, at(0))
+        after.coordinator.onAudibleStarted(after.b, at(5_000))
+        after.coordinator.onLogicalHandoff(after.b)
+        after.coordinator.onAudibleEnded(
+            after.a,
+            ListeningEndReason.TRANSITION,
+            at(8_000)
+        )
+        after.coordinator.onStopped(at(10_000))
+        assertEquals(listOf(8_000L, 5_000L), after.drafts.map { it.listenedMs })
+    }
+
+    @Test
+    fun repeatedOverlapsReuseRecordersWithoutLeakingAttempts() = runBlocking {
+        val fixture = fixture()
+        fixture.coordinator.onIsPlayingChanged(fixture.a, true, at(0))
+        fixture.coordinator.onAudibleStarted(fixture.b, at(5_000))
+        fixture.coordinator.onLogicalHandoff(fixture.b)
+        fixture.coordinator.onAudibleEnded(
+            fixture.a,
+            ListeningEndReason.NATURAL_END,
+            at(10_000)
+        )
+        fixture.coordinator.onAudibleStarted(fixture.a2, at(15_000))
+        fixture.coordinator.onLogicalHandoff(fixture.a2)
+        fixture.coordinator.onAudibleEnded(
+            fixture.b,
+            ListeningEndReason.NATURAL_END,
+            at(20_000)
+        )
+        fixture.coordinator.onStopped(at(25_000))
+
+        assertEquals(3, fixture.drafts.size)
+        assertEquals(listOf(10_000L, 15_000L, 10_000L), fixture.drafts.map { it.listenedMs })
+        assertEquals(3, fixture.drafts.map { it.playbackSessionId }.distinct().size)
+    }
+
     private fun fixture(
         resolve: suspend (ListeningMediaItemEvidence) -> NativeListeningTrack = {
             NativeListeningTrack(trackIdentityId = kotlin.math.abs(it.referenceKey.hashCode().toLong()) + 1L, localTrackBindingId = 9L)
@@ -197,17 +274,19 @@ class PlaybackListeningCoordinatorTest {
         val drafts = mutableListOf<FinalizedListeningEventDraft>()
         var session = 0
         var event = 0
-        val recorder = ListeningSessionRecorder(
+        fun newRecorder() = ListeningSessionRecorder(
             monotonicClock = clock,
             wallClock = clock,
             eventUuidGenerator = ListeningEventUuidGenerator { "event-${++event}" }
         )
+        val recorder = newRecorder()
         val coordinator = PlaybackListeningCoordinator(
             recorder = recorder,
             callbackClock = clock,
             trackResolution = NativeListeningTrackResolution(resolve),
             sessionIdGenerator = PlaybackSessionIdGenerator { "session-${++session}" },
-            onFinalized = { onDraft(it, drafts) }
+            onFinalized = { onDraft(it, drafts) },
+            additionalRecorderFactory = { newRecorder() }
         )
         return Fixture(coordinator, recorder, drafts, evidence("a", "local:a"), evidence("a2", "local:a"), evidence("b", "local:b"))
     }

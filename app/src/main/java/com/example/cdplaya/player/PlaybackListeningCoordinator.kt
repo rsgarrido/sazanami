@@ -30,8 +30,9 @@ enum class ListeningMediaTransitionReason {
 }
 
 /**
- * Serialized, Media3-free callback reducer. Callback timestamps are installed before recorder
- * commands, preserving elapsed time even when identity resolution suspended on Room first.
+ * Serialized, Media3-free callback reducer. Item-instance attempts may overlap, while each
+ * underlying recorder retains its single-attempt invariant. Callback timestamps are installed
+ * before recorder commands, preserving elapsed time even when identity resolution suspended.
  */
 class PlaybackListeningCoordinator(
     private val recorder: ListeningSessionRecorder,
@@ -39,9 +40,14 @@ class PlaybackListeningCoordinator(
     private val trackResolution: NativeListeningTrackResolution,
     private val sessionIdGenerator: PlaybackSessionIdGenerator,
     private val onFinalized: (FinalizedListeningEventDraft) -> Unit,
-    private val onFailure: (Throwable) -> Unit = {}
+    private val onFailure: (Throwable) -> Unit = {},
+    private val additionalRecorderFactory: (() -> ListeningSessionRecorder)? = null
 ) {
-    private data class Attempt(val itemInstanceId: String, val playbackSessionId: String)
+    private data class Attempt(
+        val itemInstanceId: String,
+        val playbackSessionId: String,
+        val recorder: ListeningSessionRecorder
+    )
     private data class TransitionSignature(
         val from: String?,
         val to: String?,
@@ -49,7 +55,9 @@ class PlaybackListeningCoordinator(
         val monotonicMs: Long
     )
 
-    private var attempt: Attempt? = null
+    private val recorders = mutableListOf(recorder)
+    private val attempts = linkedMapOf<String, Attempt>()
+    private var logicalItemInstanceId: String? = null
     private var lastTransition: TransitionSignature? = null
 
     suspend fun onIsPlayingChanged(
@@ -58,20 +66,55 @@ class PlaybackListeningCoordinator(
         timestamp: PlaybackCallbackTimestamp
     ) {
         if (!isPlaying) {
-            val active = attempt ?: return
-            if (evidence != null && evidence.itemInstanceId != active.itemInstanceId) return
-            at(timestamp) { recorder.onPlaybackSuspended(active.playbackSessionId) }
+            val active = if (evidence != null) {
+                attempts[evidence.itemInstanceId]
+            } else {
+                logicalItemInstanceId?.let(attempts::get)
+            }
+                ?: return
+            at(timestamp) {
+                active.recorder.onPlaybackSuspended(active.playbackSessionId)
+            }
             return
         }
 
         val playable = evidence ?: return
-        var active = attempt
-        if (active != null && active.itemInstanceId != playable.itemInstanceId) {
-            finalizeActive(ListeningEndReason.TRANSITION, timestamp)
-            active = null
+        if (
+            logicalItemInstanceId != null &&
+            logicalItemInstanceId != playable.itemInstanceId
+        ) {
+            finalizeAllExcept(
+                preservedItemInstanceId = playable.itemInstanceId,
+                reason = ListeningEndReason.TRANSITION,
+                timestamp = timestamp
+            )
         }
-        if (active == null) active = startAttempt(playable, timestamp) ?: return
-        at(timestamp) { recorder.onPlaybackStarted(active.playbackSessionId) }
+        logicalItemInstanceId = playable.itemInstanceId
+        onAudibleStarted(playable, timestamp)
+    }
+
+    suspend fun onAudibleStarted(
+        evidence: ListeningMediaItemEvidence,
+        timestamp: PlaybackCallbackTimestamp
+    ) {
+        val active = attempts[evidence.itemInstanceId]
+            ?: startAttempt(evidence, timestamp)
+            ?: return
+        at(timestamp) { active.recorder.onPlaybackStarted(active.playbackSessionId) }
+    }
+
+    fun onAudibleEnded(
+        evidence: ListeningMediaItemEvidence?,
+        reason: ListeningEndReason,
+        timestamp: PlaybackCallbackTimestamp
+    ) {
+        val itemInstanceId = evidence?.itemInstanceId ?: return
+        finalizeAttempt(itemInstanceId, reason, timestamp)
+    }
+
+    fun onLogicalHandoff(evidence: ListeningMediaItemEvidence?) {
+        val itemInstanceId = evidence?.itemInstanceId ?: return
+        logicalItemInstanceId = itemInstanceId
     }
 
     suspend fun onMediaItemTransition(
@@ -80,7 +123,7 @@ class PlaybackListeningCoordinator(
         isPlaying: Boolean,
         timestamp: PlaybackCallbackTimestamp
     ) {
-        val active = attempt
+        val active = logicalItemInstanceId?.let(attempts::get)
         val signature = TransitionSignature(
             from = active?.itemInstanceId,
             to = evidence?.itemInstanceId,
@@ -103,7 +146,7 @@ class PlaybackListeningCoordinator(
                 ListeningMediaTransitionReason.SEEK,
                 ListeningMediaTransitionReason.PLAYLIST_CHANGED -> ListeningEndReason.TRANSITION
             }
-            finalizeActive(endReason, timestamp)
+            finalizeAll(endReason, timestamp)
         }
 
         if (isPlaying && evidence != null) {
@@ -115,30 +158,33 @@ class PlaybackListeningCoordinator(
         evidence: ListeningMediaItemEvidence?,
         timestamp: PlaybackCallbackTimestamp
     ) {
-        val active = attempt ?: return
+        val active = evidence?.itemInstanceId?.let(attempts::get)
+            ?: logicalItemInstanceId?.let(attempts::get)
+            ?: return
         if (evidence?.itemInstanceId != active.itemInstanceId) return
-        at(timestamp) { recorder.onPositionDiscontinuity(active.playbackSessionId) }
+        at(timestamp) {
+            active.recorder.onPositionDiscontinuity(active.playbackSessionId)
+        }
     }
 
     fun onNaturalEnd(
         evidence: ListeningMediaItemEvidence?,
         timestamp: PlaybackCallbackTimestamp
     ) {
-        val active = attempt ?: return
-        if (evidence?.itemInstanceId != active.itemInstanceId) return
-        finalizeActive(ListeningEndReason.NATURAL_END, timestamp)
+        onAudibleEnded(evidence, ListeningEndReason.NATURAL_END, timestamp)
     }
 
     fun onError(timestamp: PlaybackCallbackTimestamp) {
-        finalizeActive(ListeningEndReason.ERROR, timestamp)
+        val logical = logicalItemInstanceId ?: return
+        finalizeAttempt(logical, ListeningEndReason.ERROR, timestamp)
     }
 
     fun onStopped(timestamp: PlaybackCallbackTimestamp) {
-        finalizeActive(ListeningEndReason.STOPPED, timestamp)
+        finalizeAll(ListeningEndReason.STOPPED, timestamp)
     }
 
     fun onServiceDestroyed(timestamp: PlaybackCallbackTimestamp) {
-        finalizeActive(ListeningEndReason.STOPPED, timestamp)
+        finalizeAll(ListeningEndReason.STOPPED, timestamp)
     }
 
     private suspend fun startAttempt(
@@ -151,9 +197,10 @@ class PlaybackListeningCoordinator(
             onFailure(error)
             return null
         }
+        val attemptRecorder = acquireRecorder() ?: return null
         val sessionId = sessionIdGenerator.newId()
         at(timestamp) {
-            recorder.startSession(
+            attemptRecorder.startSession(
                 ListeningSessionStart(
                     playbackSessionId = sessionId,
                     trackIdentityId = resolved.trackIdentityId,
@@ -162,15 +209,54 @@ class PlaybackListeningCoordinator(
                 )
             )
         }
-        return Attempt(evidence.itemInstanceId, sessionId).also { attempt = it }
+        return Attempt(evidence.itemInstanceId, sessionId, attemptRecorder).also {
+            attempts[evidence.itemInstanceId] = it
+        }
     }
 
-    private fun finalizeActive(reason: ListeningEndReason, timestamp: PlaybackCallbackTimestamp) {
-        val active = attempt ?: return
-        attempt = null
-        val result = at(timestamp) { recorder.finalizeSession(active.playbackSessionId, reason) }
+    private fun acquireRecorder(): ListeningSessionRecorder? {
+        val activeRecorders = attempts.values.mapTo(mutableSetOf()) { it.recorder }
+        recorders.firstOrNull { it !in activeRecorders }?.let { return it }
+        val created = additionalRecorderFactory?.invoke()
+        if (created == null) {
+            onFailure(IllegalStateException("Overlapping listening requires another recorder."))
+            return null
+        }
+        recorders += created
+        return created
+    }
+
+    private fun finalizeAttempt(
+        itemInstanceId: String,
+        reason: ListeningEndReason,
+        timestamp: PlaybackCallbackTimestamp
+    ) {
+        val active = attempts.remove(itemInstanceId) ?: return
+        if (logicalItemInstanceId == itemInstanceId) logicalItemInstanceId = null
+        val result = at(timestamp) {
+            active.recorder.finalizeSession(active.playbackSessionId, reason)
+        }
         if (result is FinalizeListeningSessionResult.Finalized) {
             runCatching { onFinalized(result.draft) }.onFailure(onFailure)
+        }
+    }
+
+    private fun finalizeAll(
+        reason: ListeningEndReason,
+        timestamp: PlaybackCallbackTimestamp
+    ) {
+        attempts.keys.toList().forEach { itemInstanceId ->
+            finalizeAttempt(itemInstanceId, reason, timestamp)
+        }
+    }
+
+    private fun finalizeAllExcept(
+        preservedItemInstanceId: String,
+        reason: ListeningEndReason,
+        timestamp: PlaybackCallbackTimestamp
+    ) {
+        attempts.keys.filter { it != preservedItemInstanceId }.forEach { itemInstanceId ->
+            finalizeAttempt(itemInstanceId, reason, timestamp)
         }
     }
 

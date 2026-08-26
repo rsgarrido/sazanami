@@ -6,6 +6,7 @@ import androidx.media3.common.MediaItem
 import com.example.cdplaya.data.ListeningEventRepository
 import com.example.cdplaya.data.ListeningNativeTrackResolver
 import com.example.cdplaya.data.listening.FinalizedListeningEventDraft
+import com.example.cdplaya.data.local.ListeningEndReason
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,6 +27,9 @@ class PlaybackServiceListeningAdapter(
         data class Transition(val evidence: ListeningMediaItemEvidence?, val reason: ListeningMediaTransitionReason, val active: Boolean, val at: PlaybackCallbackTimestamp) : Command
         data class Discontinuity(val evidence: ListeningMediaItemEvidence?, val at: PlaybackCallbackTimestamp) : Command
         data class Ended(val evidence: ListeningMediaItemEvidence?, val at: PlaybackCallbackTimestamp) : Command
+        data class AudibleStart(val evidence: ListeningMediaItemEvidence?, val at: PlaybackCallbackTimestamp) : Command
+        data class AudibleEnd(val evidence: ListeningMediaItemEvidence?, val reason: ListeningEndReason, val at: PlaybackCallbackTimestamp) : Command
+        data class LogicalHandoff(val evidence: ListeningMediaItemEvidence?) : Command
         data class Error(val at: PlaybackCallbackTimestamp) : Command
         data class Stopped(val at: PlaybackCallbackTimestamp) : Command
         data class Destroy(val at: PlaybackCallbackTimestamp) : Command
@@ -54,6 +58,16 @@ class PlaybackServiceListeningAdapter(
                     is Command.Transition -> coordinator.onMediaItemTransition(command.evidence, command.reason, command.active, command.at)
                     is Command.Discontinuity -> coordinator.onPositionDiscontinuity(command.evidence, command.at)
                     is Command.Ended -> coordinator.onNaturalEnd(command.evidence, command.at)
+                    is Command.AudibleStart -> command.evidence?.let { evidence ->
+                        coordinator.onAudibleStarted(evidence, command.at)
+                    }
+                    is Command.AudibleEnd -> coordinator.onAudibleEnded(
+                        command.evidence,
+                        command.reason,
+                        command.at
+                    )
+                    is Command.LogicalHandoff ->
+                        coordinator.onLogicalHandoff(command.evidence)
                     is Command.Error -> coordinator.onError(command.at)
                     is Command.Stopped -> coordinator.onStopped(command.at)
                     is Command.Destroy -> {
@@ -82,6 +96,50 @@ class PlaybackServiceListeningAdapter(
 
     fun onNaturalEnd(item: MediaItem?) {
         commands.trySend(Command.Ended(item?.listeningEvidence(), now()))
+    }
+
+    fun onCrossfadeIncomingAudible(item: MediaItem) {
+        commands.trySend(Command.AudibleStart(item.listeningEvidence(), now()))
+    }
+
+    fun onCrossfadeLogicalHandoff(item: MediaItem) {
+        commands.trySend(Command.LogicalHandoff(item.listeningEvidence()))
+    }
+
+    fun onCrossfadeCompleted(outgoingItem: MediaItem?) {
+        commands.trySend(
+            Command.AudibleEnd(
+                outgoingItem?.listeningEvidence(),
+                ListeningEndReason.NATURAL_END,
+                now()
+            )
+        )
+    }
+
+    fun onCrossfadeCancelled(
+        outgoingItem: MediaItem?,
+        incomingItem: MediaItem,
+        survivingItem: MediaItem?
+    ) {
+        val timestamp = now()
+        val survivorId = survivingItem?.listeningEvidence()?.itemInstanceId
+        val outgoingEvidence = outgoingItem?.listeningEvidence()
+        val incomingEvidence = incomingItem.listeningEvidence()
+        listOf(outgoingEvidence, incomingEvidence)
+            .filterNotNull()
+            .filter { evidence -> evidence.itemInstanceId != survivorId }
+            .forEach { evidence ->
+                commands.trySend(
+                    Command.AudibleEnd(
+                        evidence,
+                        ListeningEndReason.TRANSITION,
+                        timestamp
+                    )
+                )
+            }
+        survivingItem?.let { item ->
+            commands.trySend(Command.LogicalHandoff(item.listeningEvidence()))
+        }
     }
 
     fun onError() { commands.trySend(Command.Error(now())) }
@@ -114,18 +172,19 @@ class PlaybackListeningCoordinatorFactory {
         onFailure: (Throwable) -> Unit
     ): PlaybackListeningCoordinator {
         val clock = PlaybackCallbackClock()
-        val recorder = com.example.cdplaya.data.listening.ListeningSessionRecorder(
+        fun recorder() = com.example.cdplaya.data.listening.ListeningSessionRecorder(
             monotonicClock = clock,
             wallClock = clock,
             eventUuidGenerator = { UUID.randomUUID().toString() }
         )
         return PlaybackListeningCoordinator(
-            recorder = recorder,
+            recorder = recorder(),
             callbackClock = clock,
             trackResolution = resolution,
             sessionIdGenerator = { UUID.randomUUID().toString() },
             onFinalized = onFinalized,
-            onFailure = onFailure
+            onFailure = onFailure,
+            additionalRecorderFactory = { recorder() }
         )
     }
 }

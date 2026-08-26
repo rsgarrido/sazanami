@@ -37,3 +37,14 @@ internal object AudioProcessingPolicy {
         }
     }
 }
+
+internal object CrossfadeOffloadPolicy {
+    fun effectivePreference(
+        normalPreference: AudioOffloadPreference,
+        crossfadeEnabled: Boolean
+    ): AudioOffloadPreference = if (crossfadeEnabled) {
+        AudioOffloadPreference.DISABLED
+    } else {
+        normalPreference
+    }
+}

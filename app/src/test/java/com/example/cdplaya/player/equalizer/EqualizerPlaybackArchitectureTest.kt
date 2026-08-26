@@ -1,8 +1,10 @@
 package com.example.cdplaya.player.equalizer
 
 import androidx.media3.exoplayer.ExoPlayer
-import com.example.cdplaya.player.PlaybackService
 import com.example.cdplaya.data.preferences.AppPreferencesRepository
+import com.example.cdplaya.player.DualPlayerPlaybackCoordinator
+import com.example.cdplaya.player.PhysicalPlayerPipeline
+import com.example.cdplaya.player.PlaybackService
 import java.lang.reflect.Modifier
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -10,14 +12,14 @@ import org.junit.Test
 
 class EqualizerPlaybackArchitectureTest {
     @Test
-    fun playbackServiceDeclaresOnePlayerAndOneEqualizerProcessor() {
+    fun playbackServiceOwnsOneDualPlayerCoordinator() {
         val instanceFields = PlaybackService::class.java.declaredFields
             .filterNot { field -> Modifier.isStatic(field.modifiers) }
 
         assertEquals(
             1,
             instanceFields.count { field ->
-                field.type == EqualizerAudioProcessor::class.java
+                field.type == DualPlayerPlaybackCoordinator::class.java
             }
         )
         assertEquals(
@@ -28,11 +30,55 @@ class EqualizerPlaybackArchitectureTest {
             }
         )
         assertEquals(
-            1,
+            0,
             instanceFields.count { field ->
                 field.type == ExoPlayer::class.java
             }
         )
+    }
+
+    @Test
+    fun everyPhysicalPipelineOwnsOnePlayerProcessorAndRuntime() {
+        val instanceFields = PhysicalPlayerPipeline::class.java.declaredFields
+            .filterNot { field -> Modifier.isStatic(field.modifiers) }
+
+        assertEquals(
+            1,
+            instanceFields.count { field -> field.type == ExoPlayer::class.java }
+        )
+        assertEquals(
+            1,
+            instanceFields.count { field ->
+                field.type == EqualizerAudioProcessor::class.java
+            }
+        )
+        assertEquals(
+            1,
+            instanceFields.count { field ->
+                field.type == EqualizerDspRuntime::class.java
+            }
+        )
+    }
+
+    @Test
+    fun dualPlayerCoordinatorOwnsNoUiSessionOrListeningHistoryObjects() {
+        val forbiddenTypeFragments = listOf(
+            "MediaSession",
+            "Listening",
+            "Repository",
+            "ViewModel"
+        )
+
+        DualPlayerPlaybackCoordinator::class.java.declaredFields
+            .filterNot { field -> Modifier.isStatic(field.modifiers) }
+            .forEach { field ->
+                forbiddenTypeFragments.forEach { fragment ->
+                    assertFalse(
+                        "${field.name} exposes $fragment",
+                        field.type.name.contains(fragment)
+                    )
+                }
+            }
     }
 
     @Test
@@ -67,6 +113,15 @@ class EqualizerPlaybackArchitectureTest {
                     )
                 }
             }
+    }
+
+    @Test
+    fun sharedBridgeCannotBeUsedAsAProcessorRuntime() {
+        assertFalse(
+            EqualizerProcessorRuntime::class.java.isAssignableFrom(
+                EqualizerRuntimeBridge::class.java
+            )
+        )
     }
 
     @Test

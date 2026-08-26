@@ -143,14 +143,67 @@ class MusicPlayer(private val context: Context) {
     }
 
     fun setRepeatMode(repeatMode: RepeatMode) {
-        controller?.repeatMode = when (repeatMode) {
-            RepeatMode.OFF -> Player.REPEAT_MODE_OFF
-            RepeatMode.ALL -> Player.REPEAT_MODE_ALL
-            RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+        controller?.repeatMode = repeatMode.toPlayerRepeatMode()
+    }
+
+    internal fun synchronizeNavigationPolicy(
+        shuffleEnabled: Boolean,
+        repeatMode: RepeatMode,
+        origin: ControllerSynchronizationOrigin
+    ) {
+        val playerController = controller ?: return
+        val effectiveShuffleEnabled = false
+        val playerRepeatMode = repeatMode.toPlayerRepeatMode()
+        val transaction = if (
+            origin == ControllerSynchronizationOrigin.CROSSFADE_HANDOFF_INTERNAL
+        ) {
+            currentSong?.let { song ->
+                LogicalNavigationPolicyTransactions.begin(song.id.toString())
+            }
+        } else {
+            null
+        }
+        if (transaction != null) {
+            CrossfadeTrace.log(
+                "NAV_POLICY INTERNAL_BEGIN id=${transaction.id} " +
+                    "requestedShuffle=$shuffleEnabled " +
+                    "effectiveShuffle=$effectiveShuffleEnabled " +
+                    "repeatMode=${navigationRepeatModeTraceValue(playerRepeatMode)}"
+            )
+        }
+
+        try {
+            transaction?.let { token ->
+                LogicalNavigationPolicyTransactions.expectShuffleMode(
+                    token,
+                    effectiveShuffleEnabled
+                )
+            }
+            playerController.shuffleModeEnabled = effectiveShuffleEnabled
+
+            transaction?.let { token ->
+                LogicalNavigationPolicyTransactions.expectRepeatMode(
+                    token,
+                    playerRepeatMode
+                )
+            }
+            playerController.repeatMode = playerRepeatMode
+        } finally {
+            transaction?.let(LogicalNavigationPolicyTransactions::seal)
         }
     }
 
-    fun updateUpcomingPlaylist(upcomingSongs: List<Song>) {
+    private fun RepeatMode.toPlayerRepeatMode(): Int = when (this) {
+        RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+        RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+        RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+    }
+
+    internal fun updateUpcomingPlaylist(
+        upcomingSongs: List<Song>,
+        origin: ControllerSynchronizationOrigin =
+            ControllerSynchronizationOrigin.EXTERNAL
+    ) {
         val playerController = controller ?: return
 
         val currentIndex = playerController.currentMediaItemIndex
@@ -159,31 +212,59 @@ class MusicPlayer(private val context: Context) {
             return
         }
 
-        if (currentIndex > 0) {
-            playerController.removeMediaItems(0, currentIndex)
-        }
-
         val current = currentSong ?: return
-        val existingUpcomingIds = (1 until playerController.mediaItemCount).map { index ->
-            playerController.getMediaItemAt(index).mediaId
-        }
-        val requestedUpcomingIds = upcomingSongs.map { song -> song.id.toString() }
-
-        currentPlaylist = listOf(current) + upcomingSongs
-
-        if (existingUpcomingIds == requestedUpcomingIds) {
-            return
+        val transaction = if (
+            origin == ControllerSynchronizationOrigin.CROSSFADE_HANDOFF_INTERNAL
+        ) {
+            LogicalPlaylistMutationTransactions.begin(current.id.toString())
+        } else {
+            null
         }
 
-        val upcomingMediaItems = upcomingSongs.map { song ->
-            song.toPlayableMediaItem()
-        }
+        try {
+            if (currentIndex > 0) {
+                transaction?.let { token ->
+                    LogicalPlaylistMutationTransactions.expectRemovePrefix(
+                        token = token,
+                        fromIndex = 0,
+                        toIndex = currentIndex
+                    )
+                }
+                playerController.removeMediaItems(0, currentIndex)
+            }
 
-        playerController.replaceMediaItems(
-            1,
-            playerController.mediaItemCount,
-            upcomingMediaItems
-        )
+            val existingUpcomingIds = (1 until playerController.mediaItemCount).map { index ->
+                playerController.getMediaItemAt(index).mediaId
+            }
+            val requestedUpcomingIds = upcomingSongs.map { song -> song.id.toString() }
+
+            currentPlaylist = listOf(current) + upcomingSongs
+
+            if (existingUpcomingIds == requestedUpcomingIds) {
+                return
+            }
+
+            val upcomingMediaItems = upcomingSongs.map { song ->
+                song.toPlayableMediaItem()
+            }
+            val replaceToIndex = playerController.mediaItemCount
+            transaction?.let { token ->
+                LogicalPlaylistMutationTransactions.expectReplaceUpcoming(
+                    token = token,
+                    fromIndex = 1,
+                    toIndex = replaceToIndex,
+                    mediaIds = requestedUpcomingIds
+                )
+            }
+
+            playerController.replaceMediaItems(
+                1,
+                replaceToIndex,
+                upcomingMediaItems
+            )
+        } finally {
+            transaction?.let(LogicalPlaylistMutationTransactions::seal)
+        }
     }
 
     fun updateCurrentSongMetadata(song: Song) {
@@ -206,6 +287,10 @@ class MusicPlayer(private val context: Context) {
 
     fun isPlaying(): Boolean {
         return controller?.isPlaying == true
+    }
+
+    fun isPlayWhenReady(): Boolean {
+        return controller?.playWhenReady == true
     }
 
     fun getCurrentSong(): Song? {

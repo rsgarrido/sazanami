@@ -272,6 +272,22 @@ class MusicViewModel(
             AudioOffloadPreference.DISABLED
         )
 
+    val smoothPlayPauseEnabled = appPreferencesRepository.state
+        .map { preferences -> preferences.smoothPlayPauseEnabled }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    val crossfadeEnabled = appPreferencesRepository.state
+        .map { preferences -> preferences.crossfadeEnabled }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    val crossfadeDurationMs = appPreferencesRepository.state
+        .map { preferences -> preferences.crossfadeDurationMs }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 5_000)
+
+    val preserveAlbumTransitions = appPreferencesRepository.state
+        .map { preferences -> preferences.preserveAlbumTransitions }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
     fun selectPlayerTheme(playerTheme: PlayerTheme) {
         viewModelScope.launch { appPreferencesRepository.setSelectedPlayerTheme(playerTheme) }
     }
@@ -335,6 +351,30 @@ class MusicViewModel(
     fun selectAudioOffloadPreference(preference: AudioOffloadPreference) {
         viewModelScope.launch {
             appPreferencesRepository.setAudioOffloadPreference(preference)
+        }
+    }
+
+    fun setSmoothPlayPauseEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            appPreferencesRepository.setSmoothPlayPauseEnabled(enabled)
+        }
+    }
+
+    fun setCrossfadeEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            appPreferencesRepository.setCrossfadeEnabled(enabled)
+        }
+    }
+
+    fun setCrossfadeDurationMs(durationMs: Int) {
+        viewModelScope.launch {
+            appPreferencesRepository.setCrossfadeDurationMs(durationMs)
+        }
+    }
+
+    fun setPreserveAlbumTransitions(enabled: Boolean) {
+        viewModelScope.launch {
+            appPreferencesRepository.setPreserveAlbumTransitions(enabled)
         }
     }
 

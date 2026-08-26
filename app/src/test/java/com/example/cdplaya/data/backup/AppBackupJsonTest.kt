@@ -64,6 +64,9 @@ class AppBackupJsonTest {
             AudioOffloadPreference.DISABLED,
             AudioOffloadPreference.fromStorageValue(decoded.preferences.audioOffloadPreference)
         )
+        assertFalse(decoded.preferences.crossfadeEnabled)
+        assertEquals(5_000, decoded.preferences.crossfadeDurationMs)
+        assertTrue(decoded.preferences.preserveAlbumTransitions)
     }
 
     @Test
@@ -102,6 +105,10 @@ class AppBackupJsonTest {
             selectedPlayerThemeId = "retro_rack",
             replayGainMode = "TRACK",
             audioOffloadPreference = "AUTOMATIC",
+            smoothPlayPauseEnabled = false,
+            crossfadeEnabled = true,
+            crossfadeDurationMs = 12_000,
+            preserveAlbumTransitions = false,
             modernArtworkTransitionStyle = "cover_flow",
             modernSeekbarStyle = "waveform_glow",
             playerThemeTokenOverrides = mapOf(
@@ -142,6 +149,27 @@ class AppBackupJsonTest {
 
         assertEquals(preferences, decoded.preferences)
         assertEquals(reference, decoded.favorites.single().reference)
+    }
+
+    @Test
+    fun restoredCrossfadeDurationIsClampedToSupportedRange() {
+        val tooShort = emptyBackup().copy(
+            preferences = BackupPreferences(crossfadeDurationMs = -1)
+        )
+        val tooLong = emptyBackup().copy(
+            preferences = BackupPreferences(crossfadeDurationMs = 99_000)
+        )
+
+        assertEquals(
+            1_000,
+            AppBackupJson.decodeBackup(AppBackupJson.encodeBackup(tooShort))
+                .preferences.crossfadeDurationMs
+        )
+        assertEquals(
+            12_000,
+            AppBackupJson.decodeBackup(AppBackupJson.encodeBackup(tooLong))
+                .preferences.crossfadeDurationMs
+        )
     }
 
     @Test
