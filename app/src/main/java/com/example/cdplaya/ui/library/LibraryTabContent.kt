@@ -139,11 +139,16 @@ fun RatedSongsTabContent(
     val ratingUi = LocalSongRatingUi.current
     val quickRateActive = ratingFeaturesEnabled && ratingUi.quickRateMode
     val ratings = ratingUi.state.ratingsByReferenceKey
-    val ratedSongs = remember(songs, selectedFilter, ratings) {
-        filterSongsForRatedCollection(songs, selectedFilter, ratings)
+    val projectedSongs = remember(songs, selectedFilter, ratings, quickRateActive) {
+        projectSongsForRatedCollection(
+            songs = songs,
+            filter = selectedFilter,
+            ratingsByReferenceKey = ratings,
+            quickRateActive = quickRateActive
+        )
     }
-    val searchedSongs = remember(ratedSongs, searchQuery) {
-        filterSongsForSearch(ratedSongs, searchQuery)
+    val searchedSongs = remember(projectedSongs, searchQuery) {
+        filterSongsForSearch(projectedSongs, searchQuery)
     }
     val displayedSongs = remember(searchedSongs, sortOption, ratings) {
         sortSongsForLibrary(searchedSongs, sortOption, ratings)
@@ -166,9 +171,13 @@ fun RatedSongsTabContent(
             quickRatingMode = true,
             modifier = modifier.fillMaxSize()
         )
-    } else if (quickRateActive || ratedSongs.isEmpty() || searchedSongs.isEmpty()) {
+    } else if (quickRateActive || projectedSongs.isEmpty() || searchedSongs.isEmpty()) {
         Text(
-            ratedCollectionEmptyMessage(selectedFilter, searchQuery),
+            ratedCollectionEmptyMessage(
+                filter = selectedFilter,
+                searchQuery = searchQuery,
+                quickRateActive = quickRateActive
+            ),
             modifier = Modifier.padding(16.dp)
         )
     } else {
