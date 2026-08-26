@@ -118,12 +118,16 @@ internal fun Song.toPlayableMediaItem(
         referenceKey = membershipKey(),
         reference = toSongReference()
     )
+    val extras = ListeningMediaItemMetadata.toExtras(evidence).apply {
+        putInt(AlbumTransitionMetadata.RAW_TRACK_NUMBER, trackNumber)
+        putString(AlbumTransitionMetadata.FOLDER_PATH, folderPath)
+    }
     val metadata = MediaMetadata.Builder()
         .setTitle(title)
         .setArtist(artist)
         .setAlbumTitle(album)
         .setArtworkUri(albumArtUri)
-        .setExtras(ListeningMediaItemMetadata.toExtras(evidence))
+        .setExtras(extras)
         .build()
 
     return MediaItem.Builder()

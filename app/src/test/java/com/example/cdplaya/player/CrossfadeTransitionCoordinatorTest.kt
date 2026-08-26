@@ -22,6 +22,11 @@ class CrossfadeTransitionCoordinatorTest {
         assertFalse(
             CrossfadeEligibility.isEligible(eligible.copy(cancelledByInteraction = true))
         )
+        assertFalse(
+            CrossfadeEligibility.isEligible(
+                eligible.copy(preserveNaturalAlbumTransition = true)
+            )
+        )
     }
 
     @Test
@@ -97,6 +102,60 @@ class CrossfadeTransitionCoordinatorTest {
     }
 
     @Test
+    fun preparedIncomingGetsBoundedTimeToStartBeforeCrossfadeIsCancelled() {
+        val harness = Harness(
+            durationMillis = 10_000L,
+            positionMillis = 5_000L,
+            incomingProgressing = false
+        )
+
+        harness.coordinator.reevaluate()
+        assertEquals(CrossfadeTransitionState.CROSSFADING, harness.coordinator.state)
+        assertEquals(0, harness.output.cancelCount)
+        assertTrue(harness.output.envelopes.isEmpty())
+
+        harness.advanceBy(100L)
+        assertEquals(CrossfadeTransitionState.CROSSFADING, harness.coordinator.state)
+        assertEquals(0, harness.output.cancelCount)
+
+        harness.output.snapshot = harness.output.snapshot.copy(
+            positionMillis = 5_100L,
+            incomingProgressing = true
+        )
+        harness.advanceBy(50L)
+
+        assertEquals(CrossfadeTransitionState.CROSSFADING, harness.coordinator.state)
+        assertEquals(0, harness.output.cancelCount)
+        assertTrue(harness.output.envelopes.isNotEmpty())
+    }
+
+    @Test
+    fun incomingThatNeverStartsIsCancelledAfterStartupGracePeriod() {
+        val harness = Harness(
+            durationMillis = 10_000L,
+            positionMillis = 5_000L,
+            incomingProgressing = false
+        )
+
+        harness.coordinator.reevaluate()
+        repeat(
+            (
+                CrossfadeTransitionCoordinator.INCOMING_START_GRACE_MILLIS /
+                    CrossfadeTransitionCoordinator.FRAME_INTERVAL_MILLIS
+                ).toInt()
+        ) {
+            harness.output.snapshot = harness.output.snapshot.copy(
+                positionMillis = harness.output.snapshot.positionMillis +
+                    CrossfadeTransitionCoordinator.FRAME_INTERVAL_MILLIS
+            )
+            harness.advanceBy(CrossfadeTransitionCoordinator.FRAME_INTERVAL_MILLIS)
+        }
+
+        assertEquals(1, harness.output.cancelCount)
+        assertEquals(CrossfadeTransitionState.CANCELLED, harness.coordinator.state)
+    }
+
+    @Test
     fun explicitCancellationPreventsStaleScheduledFrames() {
         val harness = Harness(durationMillis = 20_000L, positionMillis = 1_000L)
         harness.coordinator.reevaluate()
@@ -147,8 +206,52 @@ class CrossfadeTransitionCoordinatorTest {
         assertEquals(0, harness.output.completeCount)
     }
 
+    @Test
+    fun oneAndTwelveSecondDurationsScheduleFromTheirOwnWindows() {
+        val oneSecond = Harness(
+            durationMillis = 10_000L,
+            positionMillis = 8_999L,
+            crossfadeDurationMillis = 1_000L
+        )
+        oneSecond.coordinator.reevaluate()
+        assertEquals(CrossfadeTransitionState.SCHEDULED, oneSecond.coordinator.state)
+        oneSecond.output.snapshot = oneSecond.output.snapshot.copy(positionMillis = 9_000L)
+        oneSecond.advanceBy(1L)
+        assertEquals(CrossfadeTransitionState.CROSSFADING, oneSecond.coordinator.state)
+
+        val twelveSeconds = Harness(
+            durationMillis = 20_000L,
+            positionMillis = 8_000L,
+            crossfadeDurationMillis = 12_000L
+        )
+        twelveSeconds.coordinator.reevaluate()
+        assertEquals(CrossfadeTransitionState.CROSSFADING, twelveSeconds.coordinator.state)
+    }
+
+    @Test
+    fun activeTransitionRetainsCapturedDurationAfterPreferenceChange() {
+        val harness = Harness(
+            durationMillis = 20_000L,
+            positionMillis = 15_000L,
+            crossfadeDurationMillis = 5_000L
+        )
+        harness.coordinator.reevaluate()
+        harness.coordinator.updateDuration(1_000L)
+        assertEquals(5_000L, harness.coordinator.currentDurationMillis)
+
+        harness.output.snapshot = harness.output.snapshot.copy(positionMillis = 17_500L)
+        harness.advanceBy(50L)
+
+        assertEquals(1, harness.output.midpointCount)
+        assertClose(0.5f, harness.output.incomingPhysicalVolume)
+
+        harness.coordinator.cancel(permanent = false)
+        assertEquals(1_000L, harness.coordinator.currentDurationMillis)
+    }
+
     private fun eligibilityInput() = CrossfadeEligibilityInput(
         durationMillis = 10_000L,
+        crossfadeDurationMillis = 5_000L,
         standbyPrepared = true,
         targetMatches = true,
         incomingBaselineExact = true,
@@ -156,14 +259,17 @@ class CrossfadeTransitionCoordinatorTest {
         repeatOne = false,
         shuffleEnabled = false,
         pipelinesValid = true,
-        cancelledByInteraction = false
+        cancelledByInteraction = false,
+        preserveNaturalAlbumTransition = false
     )
 
     private class Harness(
         durationMillis: Long,
         positionMillis: Long,
         outgoingBaseline: Float = 1f,
-        incomingBaseline: Float = 1f
+        incomingBaseline: Float = 1f,
+        crossfadeDurationMillis: Long = 5_000L,
+        incomingProgressing: Boolean = true
     ) {
         private val clock = FakeClock()
         private val scheduler = FakeScheduler(clock)
@@ -173,7 +279,7 @@ class CrossfadeTransitionCoordinatorTest {
                 durationMillis = durationMillis,
                 positionMillis = positionMillis,
                 outgoingProgressing = true,
-                incomingProgressing = true
+                incomingProgressing = incomingProgressing
             ),
             outgoingBaseline = outgoingBaseline,
             incomingBaseline = incomingBaseline
@@ -181,7 +287,8 @@ class CrossfadeTransitionCoordinatorTest {
         val coordinator = CrossfadeTransitionCoordinator(
             output = output,
             clock = clock,
-            scheduler = scheduler
+            scheduler = scheduler,
+            durationMillis = crossfadeDurationMillis
         )
 
         fun advanceBy(millis: Long) {

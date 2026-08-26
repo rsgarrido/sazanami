@@ -39,6 +39,7 @@ import com.example.cdplaya.player.audio.mapAudioRoute
 import com.example.cdplaya.player.audio.mapAudioSourceFormat
 import com.example.cdplaya.player.audio.withAudioOffloadPreference
 import com.example.cdplaya.player.equalizer.AudioProcessingPolicy
+import com.example.cdplaya.player.equalizer.CrossfadeOffloadPolicy
 import com.example.cdplaya.player.equalizer.EqualizerAudioProcessor
 import com.example.cdplaya.player.equalizer.EqualizerDspRuntime
 import com.example.cdplaya.player.equalizer.EqualizerRenderersFactory
@@ -97,6 +98,30 @@ class PlaybackService : MediaLibraryService() {
             transition: AuthoritativeRoleTransition?
         ) {
             bindActivePipeline(pipeline, transition)
+        }
+
+        override fun onCrossfadeIncomingAudible(incomingMediaItem: MediaItem) {
+            listeningAdapter.onCrossfadeIncomingAudible(incomingMediaItem)
+        }
+
+        override fun onCrossfadeLogicalHandoff(incomingMediaItem: MediaItem) {
+            listeningAdapter.onCrossfadeLogicalHandoff(incomingMediaItem)
+        }
+
+        override fun onCrossfadeCompleted(outgoingMediaItem: MediaItem?) {
+            listeningAdapter.onCrossfadeCompleted(outgoingMediaItem)
+        }
+
+        override fun onCrossfadeCancelled(
+            outgoingMediaItem: MediaItem?,
+            incomingMediaItem: MediaItem,
+            survivingMediaItem: MediaItem?
+        ) {
+            listeningAdapter.onCrossfadeCancelled(
+                outgoingItem = outgoingMediaItem,
+                incomingItem = incomingMediaItem,
+                survivingItem = survivingMediaItem
+            )
         }
     }
 
@@ -383,13 +408,16 @@ class PlaybackService : MediaLibraryService() {
             },
             crossfadeScheduler = HandlerCrossfadeScheduler(
                 Handler(activePipeline.player.applicationLooper)
-            )
+            ),
+            initialCrossfadeConfiguration = CrossfadeRuntimeConfiguration.DISABLED
         )
         physicalPlayers.start(serviceScope)
         sessionPlayer = SmoothPlaybackPlayer(
             initialPhysicalPlayer = player,
             onBaselineVolumeChanged = physicalPlayers::updateActiveBaseline,
-            onLogicalCommand = physicalPlayers::onLogicalCommand
+            onLogicalCommand = { event ->
+                physicalPlayers.onLogicalCommand(event)
+            }
         )
         physicalPlayers.attachLogicalPlayer(
             player = sessionPlayer,
@@ -409,7 +437,7 @@ class PlaybackService : MediaLibraryService() {
         AdvancedAudioRuntimeBridge.onPlayerConnected(AudioOffloadPreference.DISABLED)
         isRemotePlayback = player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_REMOTE
         publishAudioRoute()
-        observeAudioOffloadPreference()
+        observePlaybackAudioPreferences()
         observeEqualizerPreferences()
         observeEqualizerRuntimeState()
         observeSmoothPlaybackPreference()
@@ -449,12 +477,11 @@ class PlaybackService : MediaLibraryService() {
         super.onDestroy()
     }
 
-    private fun observeAudioOffloadPreference() {
+    private fun observePlaybackAudioPreferences() {
         serviceScope.launch {
             combine(
                 appPreferencesRepository.state
-                .filter { preferences -> preferences.isLoaded }
-                .map { preferences -> preferences.audioOffloadPreference },
+                    .filter { preferences -> preferences.isLoaded },
                 EqualizerRuntimeBridge.state
                     .map { state ->
                         AudioProcessingRequirements(
@@ -468,20 +495,35 @@ class PlaybackService : MediaLibraryService() {
                                 state.comparisonSessionActive
                         )
                     }
-            ) { preference, requirements ->
-                preference to requirements
+            ) { preferences, requirements ->
+                PlaybackAudioRuntimePreferences(
+                    userOffloadPreference = preferences.audioOffloadPreference,
+                    requirements = requirements,
+                    crossfade = CrossfadeRuntimeConfiguration(
+                        enabled = preferences.crossfadeEnabled,
+                        durationMillis = preferences.crossfadeDurationMs.toLong(),
+                        preserveAlbumTransitions =
+                            preferences.preserveAlbumTransitions
+                    ).normalized()
+                )
             }
                 .distinctUntilChanged()
-                .collectLatest { (preference, requirements) ->
-                    applyAudioProcessingPolicy(
-                        userPreference = preference,
-                        equalizerEffectivelyActive =
-                            requirements.equalizerEffectivelyActive,
-                        limiterEffectivelyActive =
-                            requirements.limiterEffectivelyActive,
-                        comparisonSessionActive =
-                            requirements.comparisonSessionActive
+                .collectLatest { runtime ->
+                    CrossfadeTrace.log(
+                        "PREFERENCES enabled=${runtime.crossfade.enabled} " +
+                            "durationMs=${runtime.crossfade.durationMillis} " +
+                            "preserveAlbumTransitions=" +
+                            runtime.crossfade.preserveAlbumTransitions
                     )
+                    if (runtime.crossfade.enabled) {
+                        // Decode both pipelines before overlap can become eligible.
+                        applyAudioProcessingPolicy(runtime, crossfadeEnabled = true)
+                        physicalPlayers.updateCrossfadeConfiguration(runtime.crossfade)
+                    } else {
+                        // Collapse an active overlap before restoring normal offload policy.
+                        physicalPlayers.updateCrossfadeConfiguration(runtime.crossfade)
+                        applyAudioProcessingPolicy(runtime, crossfadeEnabled = false)
+                    }
                 }
         }
     }
@@ -543,7 +585,24 @@ class PlaybackService : MediaLibraryService() {
             userPreference = preference,
             equalizerEffectivelyActive = false,
             limiterEffectivelyActive = false,
-            comparisonSessionActive = false
+            comparisonSessionActive = false,
+            crossfadeEnabled = false
+        )
+    }
+
+    private fun applyAudioProcessingPolicy(
+        runtime: PlaybackAudioRuntimePreferences,
+        crossfadeEnabled: Boolean
+    ) {
+        applyAudioProcessingPolicy(
+            userPreference = runtime.userOffloadPreference,
+            equalizerEffectivelyActive =
+                runtime.requirements.equalizerEffectivelyActive,
+            limiterEffectivelyActive =
+                runtime.requirements.limiterEffectivelyActive,
+            comparisonSessionActive =
+                runtime.requirements.comparisonSessionActive,
+            crossfadeEnabled = crossfadeEnabled
         )
     }
 
@@ -551,7 +610,8 @@ class PlaybackService : MediaLibraryService() {
         userPreference: AudioOffloadPreference,
         equalizerEffectivelyActive: Boolean,
         limiterEffectivelyActive: Boolean,
-        comparisonSessionActive: Boolean
+        comparisonSessionActive: Boolean,
+        crossfadeEnabled: Boolean
     ) {
         tracePerformance(PerformanceTraceNames.AUDIO_OFFLOAD_PREFERENCE_APPLIED) {
             val decision = AudioProcessingPolicy.evaluate(
@@ -563,13 +623,14 @@ class PlaybackService : MediaLibraryService() {
                 comparisonSessionActive =
                     comparisonSessionActive
             )
-            // The internal Session 6 overlap path requires two independently decoded PCM
-            // pipelines. Offload remains disabled for this crossfade-capable service session.
-            val effectiveOffloadPreference = if (physicalPlayers.crossfadeEnabled) {
-                AudioOffloadPreference.DISABLED
-            } else {
-                decision.effectiveOffloadPreference
-            }
+            val effectiveOffloadPreference = CrossfadeOffloadPolicy.effectivePreference(
+                normalPreference = decision.effectiveOffloadPreference,
+                crossfadeEnabled = crossfadeEnabled
+            )
+            CrossfadeTrace.log(
+                "OFFLOAD crossfadeEnabled=$crossfadeEnabled effectivePreference=" +
+                    effectiveOffloadPreference
+            )
             physicalPlayers.forEachPipeline { pipeline ->
                 val updatedParameters = pipeline.player.trackSelectionParameters
                     .withAudioOffloadPreference(
@@ -591,16 +652,19 @@ class PlaybackService : MediaLibraryService() {
         val comparisonSessionActive: Boolean
     )
 
+    private data class PlaybackAudioRuntimePreferences(
+        val userOffloadPreference: AudioOffloadPreference,
+        val requirements: AudioProcessingRequirements,
+        val crossfade: CrossfadeRuntimeConfiguration
+    )
+
     private fun bindActivePipeline(
         pipeline: PhysicalPlayerPipeline,
         transition: AuthoritativeRoleTransition?
     ) {
         check(physicalPlayers.isActive(pipeline.player))
         activeServiceBinding?.release()
-        if (transition != null) {
-            // Session 6 intentionally keeps one history authority: the outgoing binding owns
-            // the first half, then this single logical transition starts incoming at midpoint.
-            // Exact overlapping audible-time accounting remains for the integration session.
+        if (transition?.affectsListeningHistory == true) {
             listeningAdapter.onMediaItemTransition(
                 transition.incomingMediaItem,
                 ListeningMediaTransitionReason.AUTOMATIC,

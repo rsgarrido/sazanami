@@ -715,8 +715,12 @@ class PlaybackController(
         } ?: return
 
         if (currentSong?.id == newSong.id) {
-            musicPlayer.setRepeatMode(repeatMode)
-            musicPlayer.setShuffleEnabled(shuffleMode.usesDynamicSongShuffle)
+            musicPlayer.synchronizeNavigationPolicy(
+                shuffleEnabled = shuffleMode.usesDynamicSongShuffle,
+                repeatMode = repeatMode,
+                origin =
+                    ControllerSynchronizationOrigin.CROSSFADE_HANDOFF_INTERNAL
+            )
             applyReplayGainForCurrentSong()
             return
         }
@@ -735,7 +739,10 @@ class PlaybackController(
             playbackQueue.removeAt(0)
         }
 
-        syncServicePlaylistKeepingCurrent()
+        syncServicePlaylistKeepingCurrent(
+            playlistSynchronizationOrigin =
+                ControllerSynchronizationOrigin.CROSSFADE_HANDOFF_INTERNAL
+        )
         applyReplayGainForCurrentSong()
 
         startProgressUpdates()
@@ -836,7 +843,9 @@ class PlaybackController(
     }
 
     private fun syncServicePlaylistKeepingCurrent(
-        preserveExistingShuffleOrder: Boolean = true
+        preserveExistingShuffleOrder: Boolean = true,
+        playlistSynchronizationOrigin: ControllerSynchronizationOrigin =
+            ControllerSynchronizationOrigin.EXTERNAL
     ) {
         publishDerivedPlaybackState()
         val song = currentSong ?: return
@@ -847,11 +856,15 @@ class PlaybackController(
         )
 
         musicPlayer.updateUpcomingPlaylist(
-            upcomingSongs = refreshedUpcomingSongs
+            upcomingSongs = refreshedUpcomingSongs,
+            origin = playlistSynchronizationOrigin
         )
 
-        musicPlayer.setShuffleEnabled(shuffleMode.usesDynamicSongShuffle)
-        musicPlayer.setRepeatMode(repeatMode)
+        musicPlayer.synchronizeNavigationPolicy(
+            shuffleEnabled = shuffleMode.usesDynamicSongShuffle,
+            repeatMode = repeatMode,
+            origin = playlistSynchronizationOrigin
+        )
     }
 
     private fun applyReplayGainForCurrentSong() {

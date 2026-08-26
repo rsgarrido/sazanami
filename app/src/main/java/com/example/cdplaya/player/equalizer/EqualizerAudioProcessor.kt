@@ -526,12 +526,6 @@ internal class EqualizerAudioProcessor(
         publishLimiterProcessorState()
     }
     override fun onFlush(streamMetadata: StreamMetadata) {
-        val format = EqualizerProcessorFormat(
-            sampleRateHz = inputAudioFormat.sampleRate,
-            channelCount = inputAudioFormat.channelCount,
-            pcmEncoding = inputAudioFormat.encoding
-        )
-        currentFormat = format
         currentPath?.reset()
         pendingPath?.reset()
         transitionState.cancel()
@@ -539,7 +533,7 @@ internal class EqualizerAudioProcessor(
 
         flushCount++
         flushEventSequence = nextTransitionEventSequence()
-        firstInputPending = true
+        firstInputPending = false
         firstInputEventSequence = 0L
         firstInputProcessingMode =
             EqualizerFirstInputProcessingMode.NONE
@@ -548,6 +542,34 @@ internal class EqualizerAudioProcessor(
         firstInputAppliedVersion = null
         firstInputPlanFormat = null
         framesUntilCompatiblePlanActive = 0L
+        limiterEngine?.reset()
+        limiterEngine = null
+        appliedLimiterConfiguration = null
+        pendingLimiterDisable = false
+        endOfStreamDraining = false
+
+        val format = inputAudioFormat.toProcessorFormatOrNull()
+        if (format == null) {
+            currentFormat = null
+            currentPath = null
+            flushPreparationNanos = 0L
+            runtimeBridge.publishProcessorFormat(null)
+            runtimeBridge.publishAppliedPlan(
+                plan = null,
+                applicationMode =
+                    EqualizerPlanApplicationMode.DIRECT_AFTER_FLUSH
+            )
+            runtimeBridge.publishTransitionInProgress(false)
+            runtimeBridge.publishProcessorConfigured(
+                configured = false,
+                bypassed = true
+            )
+            publishLimiterProcessorState()
+            return
+        }
+
+        currentFormat = format
+        firstInputPending = true
         val preparationStartedNanos = System.nanoTime()
         currentPath =
             runtimeBridge.prepareForProcessorFormat(format)
@@ -566,13 +588,24 @@ internal class EqualizerAudioProcessor(
             configured = true,
             bypassed = currentPath?.bypassed != false
         )
-        limiterEngine?.reset()
-        limiterEngine = null
-        appliedLimiterConfiguration = null
-        pendingLimiterDisable = false
-        endOfStreamDraining = false
         considerLatestLimiterConfiguration(format)
         publishLimiterProcessorState()
+    }
+
+    private fun AudioFormat.toProcessorFormatOrNull():
+        EqualizerProcessorFormat? {
+        if (
+            encoding != C.ENCODING_PCM_16BIT ||
+            sampleRate <= 0 ||
+            channelCount <= 0
+        ) {
+            return null
+        }
+        return EqualizerProcessorFormat(
+            sampleRateHz = sampleRate,
+            channelCount = channelCount,
+            pcmEncoding = encoding
+        )
     }
 
     override fun onReset() {

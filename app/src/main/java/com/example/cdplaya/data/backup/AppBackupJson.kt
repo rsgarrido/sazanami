@@ -4,6 +4,7 @@ import com.example.cdplaya.data.identityNormalized
 import com.example.cdplaya.data.portableMetadataKey
 import com.example.cdplaya.data.PlaylistType
 import com.example.cdplaya.data.SmartPlaylistDraft
+import com.example.cdplaya.data.preferences.CrossfadePreferences
 import com.example.cdplaya.player.equalizer.GraphicEqualizerPresets
 import com.example.cdplaya.player.equalizer.EqualizerMode
 import com.example.cdplaya.player.equalizer.parametric.MAX_PARAMETRIC_FILTER_COUNT
@@ -104,6 +105,13 @@ object AppBackupJson {
         if (migrated.schemaVersion == 13) {
             migrated = migrateV13ToV14(migrated)
         }
+        migrated = migrated.copy(
+            preferences = migrated.preferences.copy(
+                crossfadeDurationMs = CrossfadePreferences.clampDurationMs(
+                    migrated.preferences.crossfadeDurationMs
+                )
+            )
+        )
         validateEqualizerBackup(migrated.preferences.equalizer)
         val history = requireNotNull(migrated.canonicalListeningHistory) {
             "CDPlaya backup schema 10 requires canonical listening history."
@@ -476,6 +484,9 @@ private fun AppBackup.sanitizedForExport(): AppBackup = copy(
     canonicalListeningHistory = canonicalListeningHistory
         ?: BackupListeningHistoryV2(),
     preferences = preferences.copy(
+        crossfadeDurationMs = CrossfadePreferences.clampDurationMs(
+            preferences.crossfadeDurationMs
+        ),
         selectedLibraryFolders = preferences.selectedLibraryFolders
             .map { it.toPortableFolderSelection() }
             .filter { it.isNotBlank() },

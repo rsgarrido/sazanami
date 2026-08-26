@@ -23,6 +23,169 @@ internal enum class LogicalPlaybackCommand {
     PLAYBACK_PARAMETERS
 }
 
+internal enum class LogicalPlaybackCommandOrigin {
+    EXTERNAL,
+    CROSSFADE_HANDOFF_INTERNAL
+}
+
+internal data class LogicalPlaybackCommandEvent(
+    val command: LogicalPlaybackCommand,
+    val origin: LogicalPlaybackCommandOrigin =
+        LogicalPlaybackCommandOrigin.EXTERNAL,
+    val preservesCurrentMediaItem: Boolean = false,
+    val transactionId: Long? = null,
+    val playlistOperation: LogicalPlaylistMutationOperation? = null,
+    val navigationOperation: LogicalNavigationPolicyOperation? = null,
+    val navigationValue: String? = null
+)
+
+internal class CrossfadeHandoffPlaylistMutationClassifier {
+    private data class HandoffScope(
+        val currentMediaId: String,
+        var sourceTransactionId: Long? = null,
+        var crossfadeCompleted: Boolean = false
+    )
+
+    private var handoffScope: HandoffScope? = null
+
+    fun begin(currentMediaId: String) {
+        handoffScope = HandoffScope(currentMediaId)
+    }
+
+    fun transactionId(): Long? = handoffScope?.sourceTransactionId
+
+    fun accept(
+        currentMediaId: String?,
+        claim: ClaimedInternalPlaylistMutation
+    ): Boolean {
+        val scope = handoffScope ?: return false
+        if (
+            currentMediaId != scope.currentMediaId ||
+            claim.currentMediaId != scope.currentMediaId
+        ) {
+            return false
+        }
+        val existingId = scope.sourceTransactionId
+        if (existingId != null && existingId != claim.transactionId) return false
+        scope.sourceTransactionId = claim.transactionId
+        return true
+    }
+
+    fun markCrossfadeCompleted() {
+        val scope = handoffScope ?: return
+        scope.crossfadeCompleted = true
+        if (scope.sourceTransactionId == null) {
+            scope.sourceTransactionId =
+                LogicalPlaylistMutationTransactions.activeTransactionIdFor(
+                    scope.currentMediaId
+                )
+        }
+    }
+
+    fun shouldCloseAfterClaim(): Boolean {
+        val scope = handoffScope ?: return true
+        val transactionId = scope.sourceTransactionId ?: return false
+        return scope.crossfadeCompleted &&
+            !LogicalPlaylistMutationTransactions.isActive(transactionId)
+    }
+
+    fun shouldCloseAtCrossfadeCompletion(): Boolean {
+        val scope = handoffScope ?: return true
+        val transactionId = scope.sourceTransactionId ?: return true
+        return !LogicalPlaylistMutationTransactions.isActive(transactionId)
+    }
+
+    fun end(abortSourceTransaction: Boolean, reason: String): Long? {
+        val scope = handoffScope
+        val transactionId = scope?.sourceTransactionId ?:
+            scope?.currentMediaId?.let(
+                LogicalPlaylistMutationTransactions::activeTransactionIdFor
+            )
+        handoffScope = null
+        if (abortSourceTransaction && transactionId != null) {
+            LogicalPlaylistMutationTransactions.abort(transactionId, reason)
+        }
+        return transactionId
+    }
+}
+
+internal class CrossfadeHandoffNavigationPolicyClassifier {
+    private data class HandoffScope(
+        val currentMediaId: String,
+        val sourceTransactionIds: MutableSet<Long> = linkedSetOf(),
+        var crossfadeCompleted: Boolean = false
+    )
+
+    private var handoffScope: HandoffScope? = null
+
+    fun begin(currentMediaId: String) {
+        handoffScope = HandoffScope(currentMediaId)
+    }
+
+    fun transactionId(): Long? =
+        handoffScope?.sourceTransactionIds?.firstOrNull()
+
+    fun accept(
+        currentMediaId: String?,
+        claim: ClaimedInternalNavigationPolicyCommand
+    ): Boolean {
+        val scope = handoffScope ?: return false
+        if (
+            currentMediaId != scope.currentMediaId ||
+            claim.currentMediaId != scope.currentMediaId
+        ) {
+            return false
+        }
+        scope.sourceTransactionIds += claim.transactionId
+        return true
+    }
+
+    fun markCrossfadeCompleted() {
+        val scope = handoffScope ?: return
+        scope.crossfadeCompleted = true
+        scope.sourceTransactionIds +=
+            LogicalNavigationPolicyTransactions.activeTransactionIdsFor(
+                scope.currentMediaId
+            )
+    }
+
+    fun shouldCloseAfterClaim(): Boolean {
+        val scope = handoffScope ?: return true
+        if (scope.sourceTransactionIds.isEmpty()) return false
+        return scope.crossfadeCompleted &&
+            scope.sourceTransactionIds.none(
+                LogicalNavigationPolicyTransactions::isActive
+            )
+    }
+
+    fun shouldCloseAtCrossfadeCompletion(): Boolean {
+        val scope = handoffScope ?: return true
+        if (scope.sourceTransactionIds.isEmpty()) return true
+        return scope.sourceTransactionIds.none(
+            LogicalNavigationPolicyTransactions::isActive
+        )
+    }
+
+    fun end(abortSourceTransaction: Boolean, reason: String): Long? {
+        val scope = handoffScope
+        val transactionIds = linkedSetOf<Long>()
+        scope?.sourceTransactionIds?.let(transactionIds::addAll)
+        scope?.currentMediaId?.let { currentMediaId ->
+            transactionIds +=
+                LogicalNavigationPolicyTransactions.activeTransactionIdsFor(
+                    currentMediaId
+                )
+        }
+        handoffScope = null
+        if (abortSourceTransaction) {
+            transactionIds.forEach { transactionId ->
+                LogicalNavigationPolicyTransactions.abort(transactionId, reason)
+            }
+        }
+        return transactionIds.firstOrNull()
+    }
+}
+
 /** Narrow role-switch contract so physical A/B authority is testable without replacing Player. */
 internal interface LogicalPlayerRoleBinding {
     val logicalPlayWhenReady: Boolean
@@ -42,6 +205,21 @@ internal interface LogicalPlayerRoleBinding {
     fun setCrossfadeVolumeControlActive(active: Boolean)
     fun finishCrossfadeVolumeControl(baselineVolume: Float)
 
+    fun beginCrossfadeHandoffPlaylistSync(
+        currentMediaId: String,
+        expectedUpcomingMediaIds: List<String>
+    ) = Unit
+
+    fun endCrossfadeHandoffPlaylistSync() = Unit
+
+    fun completeCrossfadeHandoffPlaylistSync() =
+        endCrossfadeHandoffPlaylistSync()
+
+    fun beginCrossfadeHandoffNavigationSync(currentMediaId: String) = Unit
+    fun endCrossfadeHandoffNavigationSync() = Unit
+    fun completeCrossfadeHandoffNavigationSync() =
+        endCrossfadeHandoffNavigationSync()
+
     fun activateReboundPhysicalPlayer()
 }
 
@@ -50,7 +228,7 @@ internal interface LogicalPlayerRoleBinding {
 internal class SmoothPlaybackPlayer(
     initialPhysicalPlayer: Player,
     private val onBaselineVolumeChanged: (Float) -> Unit = {},
-    private val onLogicalCommand: (LogicalPlaybackCommand) -> Unit = {},
+    private val onLogicalCommand: (LogicalPlaybackCommandEvent) -> Unit = {},
     clock: PlaybackTransitionClock = PlaybackTransitionClock {
         SystemClock.elapsedRealtime()
     },
@@ -67,6 +245,10 @@ internal class SmoothPlaybackPlayer(
         initialPhysicalPlayer.volume.takeIf { it > 0f } ?: 1f
     private var releasedTransitionResources = false
     private var crossfadeControlsPhysicalVolume = false
+    private val handoffPlaylistMutationClassifier =
+        CrossfadeHandoffPlaylistMutationClassifier()
+    private val handoffNavigationPolicyClassifier =
+        CrossfadeHandoffNavigationPolicyClassifier()
     private var physicalListener = createPhysicalListener(initialPhysicalPlayer)
     private val transitionCoordinator = SmoothPlaybackTransitionCoordinator(
         output = object : SmoothPlaybackTransitionOutput {
@@ -105,7 +287,7 @@ internal class SmoothPlaybackPlayer(
     }
 
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
-        onLogicalCommand(LogicalPlaybackCommand.PLAY_PAUSE)
+        emitLogicalCommand(LogicalPlaybackCommand.PLAY_PAUSE)
         logicalPlayWhenReadyChangeReason =
             Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
         if (playWhenReady) {
@@ -139,7 +321,7 @@ internal class SmoothPlaybackPlayer(
     }
 
     override fun handleStop(): ListenableFuture<*> {
-        onLogicalCommand(LogicalPlaybackCommand.STOP)
+        emitLogicalCommand(LogicalPlaybackCommand.STOP)
         transitionCoordinator.onImmediateStop()
         return super.handleStop()
     }
@@ -149,7 +331,7 @@ internal class SmoothPlaybackPlayer(
         positionMs: Long,
         seekCommand: @Player.Command Int
     ): ListenableFuture<*> {
-        onLogicalCommand(LogicalPlaybackCommand.SEEK)
+        emitLogicalCommand(LogicalPlaybackCommand.SEEK)
         return super.handleSeek(mediaItemIndex, positionMs, seekCommand)
     }
 
@@ -158,7 +340,9 @@ internal class SmoothPlaybackPlayer(
         startIndex: Int,
         startPositionMs: Long
     ): ListenableFuture<*> {
-        onLogicalCommand(LogicalPlaybackCommand.PLAYLIST_MUTATION)
+        closeHandoffPlaylistTransaction("external_set_media_items")
+        LogicalPlaylistMutationTransactions.abortAll("external_set_media_items")
+        emitPlaylistMutation(preservesCurrentMediaItem = false)
         return super.handleSetMediaItems(mediaItems, startIndex, startPositionMs)
     }
 
@@ -166,7 +350,12 @@ internal class SmoothPlaybackPlayer(
         index: Int,
         mediaItems: List<MediaItem>
     ): ListenableFuture<*> {
-        onLogicalCommand(LogicalPlaybackCommand.PLAYLIST_MUTATION)
+        closeHandoffPlaylistTransaction("external_add_media_items")
+        LogicalPlaylistMutationTransactions.abortAll("external_add_media_items")
+        emitPlaylistMutation(
+            preservesCurrentMediaItem =
+                physicalPlayer.currentMediaItemIndex >= 0
+        )
         return super.handleAddMediaItems(index, mediaItems)
     }
 
@@ -175,7 +364,12 @@ internal class SmoothPlaybackPlayer(
         toIndex: Int,
         newIndex: Int
     ): ListenableFuture<*> {
-        onLogicalCommand(LogicalPlaybackCommand.PLAYLIST_MUTATION)
+        closeHandoffPlaylistTransaction("external_move_media_items")
+        LogicalPlaylistMutationTransactions.abortAll("external_move_media_items")
+        emitPlaylistMutation(
+            preservesCurrentMediaItem =
+                physicalPlayer.currentMediaItemIndex >= 0
+        )
         return super.handleMoveMediaItems(fromIndex, toIndex, newIndex)
     }
 
@@ -184,7 +378,35 @@ internal class SmoothPlaybackPlayer(
         toIndex: Int,
         mediaItems: List<MediaItem>
     ): ListenableFuture<*> {
-        onLogicalCommand(LogicalPlaybackCommand.PLAYLIST_MUTATION)
+        val claim = LogicalPlaylistMutationTransactions.claimReplaceUpcoming(
+            currentMediaId = physicalPlayer.currentMediaItem?.mediaId,
+            fromIndex = fromIndex,
+            toIndex = toIndex,
+            mediaIds = mediaItems.map { item -> item.mediaId }
+        )
+        val internal = claim != null &&
+            handoffPlaylistMutationClassifier.accept(
+                currentMediaId = physicalPlayer.currentMediaItem?.mediaId,
+                claim = claim
+            )
+        if (!internal) {
+            claim?.let { matched ->
+                LogicalPlaylistMutationTransactions.abort(
+                    matched.transactionId,
+                    "handoff_identity_mismatch"
+                )
+            }
+            closeHandoffPlaylistTransaction("external_replace_media_items")
+        }
+        emitPlaylistMutation(
+            preservesCurrentMediaItem = replacementPreservesCurrentMediaItem(
+                fromIndex = fromIndex,
+                toIndex = toIndex,
+                mediaItems = mediaItems
+            ),
+            internalClaim = claim.takeIf { internal }
+        )
+        if (internal) closeCompletedHandoffTransactionAfterClaim()
         return super.handleReplaceMediaItems(fromIndex, toIndex, mediaItems)
     }
 
@@ -192,26 +414,89 @@ internal class SmoothPlaybackPlayer(
         fromIndex: Int,
         toIndex: Int
     ): ListenableFuture<*> {
-        onLogicalCommand(LogicalPlaybackCommand.PLAYLIST_MUTATION)
+        val claim = LogicalPlaylistMutationTransactions.claimRemovePrefix(
+            currentMediaId = physicalPlayer.currentMediaItem?.mediaId,
+            fromIndex = fromIndex,
+            toIndex = toIndex
+        )
+        val internal = claim != null &&
+            handoffPlaylistMutationClassifier.accept(
+                currentMediaId = physicalPlayer.currentMediaItem?.mediaId,
+                claim = claim
+            )
+        if (!internal) {
+            claim?.let { matched ->
+                LogicalPlaylistMutationTransactions.abort(
+                    matched.transactionId,
+                    "handoff_identity_mismatch"
+                )
+            }
+            closeHandoffPlaylistTransaction("external_remove_media_items")
+        }
+        val currentIndex = physicalPlayer.currentMediaItemIndex
+        emitPlaylistMutation(
+            preservesCurrentMediaItem = currentIndex >= 0 &&
+                currentIndex !in fromIndex until toIndex,
+            internalClaim = claim.takeIf { internal }
+        )
+        if (internal) closeCompletedHandoffTransactionAfterClaim()
         return super.handleRemoveMediaItems(fromIndex, toIndex)
     }
 
     override fun handleSetRepeatMode(repeatMode: Int): ListenableFuture<*> {
-        onLogicalCommand(LogicalPlaybackCommand.NAVIGATION_POLICY)
+        val claim = LogicalNavigationPolicyTransactions.claimRepeatMode(
+            currentMediaId = physicalPlayer.currentMediaItem?.mediaId,
+            repeatMode = repeatMode
+        )
+        val internal = acceptSourceOwnedNavigationClaim(claim)
+        if (!internal) {
+            claim?.let { matched ->
+                LogicalNavigationPolicyTransactions.abort(
+                    matched.transactionId,
+                    "handoff_identity_mismatch"
+                )
+            }
+            closeHandoffNavigationTransaction("external_set_repeat_mode")
+        }
+        emitNavigationPolicyCommand(
+            claim = claim.takeIf { internal },
+            operation = LogicalNavigationPolicyOperation.SET_REPEAT_MODE,
+            value = navigationRepeatModeTraceValue(repeatMode)
+        )
+        if (internal) closeCompletedNavigationTransactionAfterClaim()
         return super.handleSetRepeatMode(repeatMode)
     }
 
     override fun handleSetShuffleModeEnabled(
         shuffleModeEnabled: Boolean
     ): ListenableFuture<*> {
-        onLogicalCommand(LogicalPlaybackCommand.NAVIGATION_POLICY)
+        val claim = LogicalNavigationPolicyTransactions.claimShuffleMode(
+            currentMediaId = physicalPlayer.currentMediaItem?.mediaId,
+            enabled = shuffleModeEnabled
+        )
+        val internal = acceptSourceOwnedNavigationClaim(claim)
+        if (!internal) {
+            claim?.let { matched ->
+                LogicalNavigationPolicyTransactions.abort(
+                    matched.transactionId,
+                    "handoff_identity_mismatch"
+                )
+            }
+            closeHandoffNavigationTransaction("external_set_shuffle_mode")
+        }
+        emitNavigationPolicyCommand(
+            claim = claim.takeIf { internal },
+            operation = LogicalNavigationPolicyOperation.SET_SHUFFLE_MODE,
+            value = shuffleModeEnabled.toString()
+        )
+        if (internal) closeCompletedNavigationTransactionAfterClaim()
         return super.handleSetShuffleModeEnabled(shuffleModeEnabled)
     }
 
     override fun handleSetPlaybackParameters(
         playbackParameters: PlaybackParameters
     ): ListenableFuture<*> {
-        onLogicalCommand(LogicalPlaybackCommand.PLAYBACK_PARAMETERS)
+        emitLogicalCommand(LogicalPlaybackCommand.PLAYBACK_PARAMETERS)
         return super.handleSetPlaybackParameters(playbackParameters)
     }
 
@@ -228,6 +513,10 @@ internal class SmoothPlaybackPlayer(
     fun releaseTransitionResources() {
         if (releasedTransitionResources) return
         releasedTransitionResources = true
+        closeHandoffPlaylistTransaction("logical_player_release")
+        LogicalPlaylistMutationTransactions.abortAll("logical_player_release")
+        closeHandoffNavigationTransaction("logical_player_release")
+        LogicalNavigationPolicyTransactions.abortAll("logical_player_release")
         physicalPlayer.removeListener(physicalListener)
         transitionCoordinator.release()
     }
@@ -301,6 +590,174 @@ internal class SmoothPlaybackPlayer(
         logicalUnmuteVolume = baselineVolume.takeIf { it > 0f } ?: logicalUnmuteVolume
         crossfadeControlsPhysicalVolume = false
         invalidateState()
+    }
+
+    override fun beginCrossfadeHandoffPlaylistSync(
+        currentMediaId: String,
+        expectedUpcomingMediaIds: List<String>
+    ) {
+        closeHandoffPlaylistTransaction("superseded_by_new_handoff")
+        handoffPlaylistMutationClassifier.begin(
+            currentMediaId = currentMediaId
+        )
+        CrossfadeTrace.log(
+            "HANDOFF_TX SCOPE_BEGIN incoming=$currentMediaId " +
+                "expectedUpcoming=${expectedUpcomingMediaIds.joinToString(",")}"
+        )
+    }
+
+    override fun endCrossfadeHandoffPlaylistSync() {
+        closeHandoffPlaylistTransaction("handoff_aborted")
+    }
+
+    override fun completeCrossfadeHandoffPlaylistSync() {
+        handoffPlaylistMutationClassifier.markCrossfadeCompleted()
+        if (handoffPlaylistMutationClassifier.shouldCloseAtCrossfadeCompletion()) {
+            val transactionId = handoffPlaylistMutationClassifier.end(
+                abortSourceTransaction = false,
+                reason = "effects_complete"
+            )
+            CrossfadeTrace.log(
+                "HANDOFF_TX COMPLETE id=${transactionId?.toString() ?: "none"}"
+            )
+        } else {
+            CrossfadeTrace.log(
+                "HANDOFF_TX WAITING id=" +
+                    handoffPlaylistMutationClassifier.transactionId()
+            )
+        }
+    }
+
+    override fun beginCrossfadeHandoffNavigationSync(currentMediaId: String) {
+        closeHandoffNavigationTransaction("superseded_by_new_handoff")
+        handoffNavigationPolicyClassifier.begin(currentMediaId)
+        CrossfadeTrace.log("NAV_POLICY_TX SCOPE_BEGIN incoming=$currentMediaId")
+    }
+
+    override fun endCrossfadeHandoffNavigationSync() {
+        closeHandoffNavigationTransaction("handoff_aborted")
+    }
+
+    override fun completeCrossfadeHandoffNavigationSync() {
+        handoffNavigationPolicyClassifier.markCrossfadeCompleted()
+        if (handoffNavigationPolicyClassifier.shouldCloseAtCrossfadeCompletion()) {
+            val transactionId = handoffNavigationPolicyClassifier.end(
+                abortSourceTransaction = false,
+                reason = "effects_complete"
+            )
+            CrossfadeTrace.log(
+                "NAV_POLICY_TX COMPLETE id=${transactionId?.toString() ?: "none"}"
+            )
+        } else {
+            CrossfadeTrace.log(
+                "NAV_POLICY_TX WAITING id=" +
+                    handoffNavigationPolicyClassifier.transactionId()
+            )
+        }
+    }
+
+    private fun emitLogicalCommand(command: LogicalPlaybackCommand) {
+        onLogicalCommand(LogicalPlaybackCommandEvent(command = command))
+    }
+
+    private fun emitPlaylistMutation(
+        preservesCurrentMediaItem: Boolean,
+        internalClaim: ClaimedInternalPlaylistMutation? = null
+    ) {
+        val internal = internalClaim != null
+        onLogicalCommand(
+            LogicalPlaybackCommandEvent(
+                command = LogicalPlaybackCommand.PLAYLIST_MUTATION,
+                origin = if (internal) {
+                    LogicalPlaybackCommandOrigin.CROSSFADE_HANDOFF_INTERNAL
+                } else {
+                    LogicalPlaybackCommandOrigin.EXTERNAL
+                },
+                preservesCurrentMediaItem = preservesCurrentMediaItem,
+                transactionId = internalClaim?.transactionId,
+                playlistOperation = internalClaim?.operation ?:
+                    LogicalPlaylistMutationOperation.OTHER
+            )
+        )
+    }
+
+    private fun emitNavigationPolicyCommand(
+        claim: ClaimedInternalNavigationPolicyCommand?,
+        operation: LogicalNavigationPolicyOperation,
+        value: String
+    ) {
+        onLogicalCommand(
+            LogicalPlaybackCommandEvent(
+                command = LogicalPlaybackCommand.NAVIGATION_POLICY,
+                origin = if (claim != null) {
+                    LogicalPlaybackCommandOrigin.CROSSFADE_HANDOFF_INTERNAL
+                } else {
+                    LogicalPlaybackCommandOrigin.EXTERNAL
+                },
+                transactionId = claim?.transactionId,
+                navigationOperation = operation,
+                navigationValue = value
+            )
+        )
+    }
+
+    private fun acceptSourceOwnedNavigationClaim(
+        claim: ClaimedInternalNavigationPolicyCommand?
+    ): Boolean {
+        claim ?: return false
+        val currentMediaId = physicalPlayer.currentMediaItem?.mediaId
+        if (currentMediaId != claim.currentMediaId) return false
+        // The exact command was registered by handleServiceSongChanged before MediaController
+        // dispatch. The handoff scope owns cleanup when present, but source provenance remains
+        // authoritative for callbacks that arrive just after promotion closes that scope.
+        handoffNavigationPolicyClassifier.accept(currentMediaId, claim)
+        return true
+    }
+
+    private fun closeCompletedHandoffTransactionAfterClaim() {
+        if (!handoffPlaylistMutationClassifier.shouldCloseAfterClaim()) return
+        val transactionId = handoffPlaylistMutationClassifier.end(
+            abortSourceTransaction = false,
+            reason = "effects_complete"
+        )
+        CrossfadeTrace.log("HANDOFF_TX COMPLETE id=$transactionId")
+    }
+
+    private fun closeHandoffPlaylistTransaction(reason: String) {
+        handoffPlaylistMutationClassifier.end(
+            abortSourceTransaction = true,
+            reason = reason
+        )
+    }
+
+    private fun closeCompletedNavigationTransactionAfterClaim() {
+        if (handoffNavigationPolicyClassifier.transactionId() == null) return
+        if (!handoffNavigationPolicyClassifier.shouldCloseAfterClaim()) return
+        val transactionId = handoffNavigationPolicyClassifier.end(
+            abortSourceTransaction = false,
+            reason = "effects_complete"
+        )
+        CrossfadeTrace.log("NAV_POLICY_TX COMPLETE id=$transactionId")
+    }
+
+    private fun closeHandoffNavigationTransaction(reason: String) {
+        handoffNavigationPolicyClassifier.end(
+            abortSourceTransaction = true,
+            reason = reason
+        )
+    }
+
+    private fun replacementPreservesCurrentMediaItem(
+        fromIndex: Int,
+        toIndex: Int,
+        mediaItems: List<MediaItem>
+    ): Boolean {
+        val currentIndex = physicalPlayer.currentMediaItemIndex
+        if (currentIndex < 0) return false
+        if (currentIndex !in fromIndex until toIndex) return true
+        val replacementIndex = currentIndex - fromIndex
+        return mediaItems.getOrNull(replacementIndex)?.mediaId ==
+            physicalPlayer.currentMediaItem?.mediaId
     }
 
     private fun createPhysicalListener(source: Player): Player.Listener =

@@ -6,6 +6,23 @@ import org.junit.Test
 
 class AudioProcessingPolicyTest {
     @Test
+    fun crossfadeForcesDecodedPlaybackOnlyWhileEnabled() {
+        assertEquals(
+            AudioOffloadPreference.AUTOMATIC,
+            CrossfadeOffloadPolicy.effectivePreference(
+                normalPreference = AudioOffloadPreference.AUTOMATIC,
+                crossfadeEnabled = false
+            )
+        )
+        assertEquals(
+            AudioOffloadPreference.DISABLED,
+            CrossfadeOffloadPolicy.effectivePreference(
+                normalPreference = AudioOffloadPreference.AUTOMATIC,
+                crossfadeEnabled = true
+            )
+        )
+    }
+    @Test
     fun bypassPreservesDisabledPreference() {
         val decision = AudioProcessingPolicy.evaluate(
             userOffloadPreference = AudioOffloadPreference.DISABLED,

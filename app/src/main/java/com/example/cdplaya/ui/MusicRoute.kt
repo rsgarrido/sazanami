@@ -59,6 +59,12 @@ internal fun MusicRoute(
     musicViewModel.audioOffloadPreference.collectAsStateWithLifecycle()
     val smoothPlayPauseEnabled by
     musicViewModel.smoothPlayPauseEnabled.collectAsStateWithLifecycle()
+    val crossfadeEnabled by
+    musicViewModel.crossfadeEnabled.collectAsStateWithLifecycle()
+    val crossfadeDurationMs by
+    musicViewModel.crossfadeDurationMs.collectAsStateWithLifecycle()
+    val preserveAlbumTransitions by
+    musicViewModel.preserveAlbumTransitions.collectAsStateWithLifecycle()
     val audioOutputUiState by
     musicViewModel.audioOutputUiState.collectAsStateWithLifecycle()
     val equalizerScreenState by
@@ -430,6 +436,13 @@ internal fun MusicRoute(
             smoothPlayPauseEnabled = smoothPlayPauseEnabled,
             onSmoothPlayPauseEnabledChanged =
                 musicViewModel::setSmoothPlayPauseEnabled,
+            crossfadeEnabled = crossfadeEnabled,
+            onCrossfadeEnabledChanged = musicViewModel::setCrossfadeEnabled,
+            crossfadeDurationMs = crossfadeDurationMs,
+            onCrossfadeDurationMsChanged = musicViewModel::setCrossfadeDurationMs,
+            preserveAlbumTransitions = preserveAlbumTransitions,
+            onPreserveAlbumTransitionsChanged =
+                musicViewModel::setPreserveAlbumTransitions,
             audioOutputUiState = audioOutputUiState,
             equalizerScreenState = equalizerScreenState,
             equalizerActions = EqualizerUiActions(

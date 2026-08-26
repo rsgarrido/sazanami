@@ -241,6 +241,12 @@ internal fun MusicScreenBody(
     onAudioOffloadPreferenceSelected: (AudioOffloadPreference) -> Unit,
     smoothPlayPauseEnabled: Boolean,
     onSmoothPlayPauseEnabledChanged: (Boolean) -> Unit,
+    crossfadeEnabled: Boolean,
+    onCrossfadeEnabledChanged: (Boolean) -> Unit,
+    crossfadeDurationMs: Int,
+    onCrossfadeDurationMsChanged: (Int) -> Unit,
+    preserveAlbumTransitions: Boolean,
+    onPreserveAlbumTransitionsChanged: (Boolean) -> Unit,
     audioOutputUiState: AudioOutputUiState,
     equalizerScreenState: EqualizerScreenState,
     equalizerActions: EqualizerUiActions,
@@ -408,6 +414,13 @@ internal fun MusicScreenBody(
                 onAudioOffloadPreferenceSelected = onAudioOffloadPreferenceSelected,
                 smoothPlayPauseEnabled = smoothPlayPauseEnabled,
                 onSmoothPlayPauseEnabledChanged = onSmoothPlayPauseEnabledChanged,
+                crossfadeEnabled = crossfadeEnabled,
+                onCrossfadeEnabledChanged = onCrossfadeEnabledChanged,
+                crossfadeDurationMs = crossfadeDurationMs,
+                onCrossfadeDurationMsChanged = onCrossfadeDurationMsChanged,
+                preserveAlbumTransitions = preserveAlbumTransitions,
+                onPreserveAlbumTransitionsChanged =
+                    onPreserveAlbumTransitionsChanged,
                 scrollState = settingsScrollState,
                 modifier = modifier
                     .fillMaxSize()

@@ -70,6 +70,34 @@ class EqualizerAudioProcessorTest {
     }
 
     @Test
+    fun repeatedUnsetAndConfiguredFlushesRemainValidAcrossRoleReuse() {
+        val processor = EqualizerAudioProcessor()
+        val format = AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT)
+
+        processor.flush(StreamMetadata.DEFAULT)
+        EqualizerRuntimeBridge.publishStateForTest()
+        assertFalse(EqualizerRuntimeBridge.state.value.processorConfigured)
+        assertTrue(EqualizerRuntimeBridge.state.value.bypassed)
+
+        repeat(4) {
+            assertEquals(format, processor.configure(format))
+            processor.flush(StreamMetadata.DEFAULT)
+            EqualizerRuntimeBridge.publishStateForTest()
+            assertTrue(EqualizerRuntimeBridge.state.value.processorConfigured)
+            assertEquals(
+                format.sampleRate,
+                EqualizerRuntimeBridge.state.value.sampleRateHz
+            )
+
+            processor.reset()
+            processor.flush(StreamMetadata.DEFAULT)
+            EqualizerRuntimeBridge.publishStateForTest()
+            assertFalse(EqualizerRuntimeBridge.state.value.processorConfigured)
+            assertTrue(EqualizerRuntimeBridge.state.value.bypassed)
+        }
+    }
+
+    @Test
     fun exactBypassPreservesBytesAcrossChannelsAndSequentialBuffers() {
         listOf(1, 2, 6).forEach { channelCount ->
             val processor = configuredProcessor(channelCount = channelCount)

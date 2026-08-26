@@ -30,11 +30,16 @@ import org.mockito.Mockito.`when`
 class DualPlayerPlaybackCoordinatorTest {
     @Before
     fun setUp() {
+        LogicalPlaylistMutationTransactions.clearForTest()
+        LogicalNavigationPolicyTransactions.clearForTest()
         EqualizerRuntimeBridge.release()
     }
 
     @After
     fun tearDown() {
+        CrossfadeTrace.sinkForTest = null
+        LogicalPlaylistMutationTransactions.clearForTest()
+        LogicalNavigationPolicyTransactions.clearForTest()
         EqualizerRuntimeBridge.release()
     }
 
@@ -79,6 +84,305 @@ class DualPlayerPlaybackCoordinatorTest {
         assertSame(first, repeatAll?.target)
         assertEquals(listOf(first, second, third), repeatAll?.playlist)
         assertEquals(0, repeatAll?.startIndex)
+    }
+
+    @Test
+    fun handoffTransactionRetainsProvenanceAcrossRemoveAndDelayedReplace() {
+        val classifier = CrossfadeHandoffPlaylistMutationClassifier()
+        classifier.begin(currentMediaId = "second")
+        val token = LogicalPlaylistMutationTransactions.begin("second")
+        LogicalPlaylistMutationTransactions.expectRemovePrefix(token, 0, 1)
+        LogicalPlaylistMutationTransactions.expectReplaceUpcoming(
+            token = token,
+            fromIndex = 1,
+            toIndex = 3,
+            mediaIds = listOf("third", "fourth")
+        )
+        LogicalPlaylistMutationTransactions.seal(token)
+
+        val remove = requireNotNull(
+            LogicalPlaylistMutationTransactions.claimRemovePrefix(
+                currentMediaId = "second",
+                fromIndex = 0,
+                toIndex = 1
+            )
+        )
+        assertTrue(
+            classifier.accept(currentMediaId = "second", claim = remove)
+        )
+        classifier.markCrossfadeCompleted()
+        assertFalse(classifier.shouldCloseAtCrossfadeCompletion())
+
+        val delayedReplace = requireNotNull(
+            LogicalPlaylistMutationTransactions.claimReplaceUpcoming(
+                currentMediaId = "second",
+                fromIndex = 1,
+                toIndex = 3,
+                mediaIds = listOf("third", "fourth")
+            )
+        )
+        assertTrue(
+            classifier.accept(
+                currentMediaId = "second",
+                claim = delayedReplace
+            )
+        )
+        assertTrue(classifier.shouldCloseAfterClaim())
+        assertEquals(token.id, classifier.transactionId())
+        assertEquals(
+            token.id,
+            classifier.end(
+                abortSourceTransaction = false,
+                reason = "effects_complete"
+            )
+        )
+        assertNull(classifier.transactionId())
+    }
+
+    @Test
+    fun malformedInternalOperationFailsClosedAndCannotPoisonLaterExternalEdit() {
+        val classifier = CrossfadeHandoffPlaylistMutationClassifier()
+        classifier.begin("second")
+        val token = LogicalPlaylistMutationTransactions.begin("second")
+        LogicalPlaylistMutationTransactions.expectReplaceUpcoming(
+            token = token,
+            fromIndex = 1,
+            toIndex = 2,
+            mediaIds = listOf("third")
+        )
+        LogicalPlaylistMutationTransactions.seal(token)
+
+        assertNull(
+            LogicalPlaylistMutationTransactions.claimReplaceUpcoming(
+                currentMediaId = "second",
+                fromIndex = 1,
+                toIndex = 2,
+                mediaIds = listOf("user-selected")
+            )
+        )
+        assertFalse(LogicalPlaylistMutationTransactions.isActive(token.id))
+        classifier.end(
+            abortSourceTransaction = true,
+            reason = "external_edit"
+        )
+        assertNull(classifier.transactionId())
+    }
+
+    @Test
+    fun abortedHandoffClosesPendingSourceTransactionAndRejectsDelayedCommand() {
+        val classifier = CrossfadeHandoffPlaylistMutationClassifier()
+        classifier.begin("second")
+        val token = LogicalPlaylistMutationTransactions.begin("second")
+        LogicalPlaylistMutationTransactions.expectRemovePrefix(token, 0, 1)
+        LogicalPlaylistMutationTransactions.expectReplaceUpcoming(
+            token = token,
+            fromIndex = 1,
+            toIndex = 2,
+            mediaIds = listOf("third")
+        )
+        LogicalPlaylistMutationTransactions.seal(token)
+        val remove = requireNotNull(
+            LogicalPlaylistMutationTransactions.claimRemovePrefix(
+                currentMediaId = "second",
+                fromIndex = 0,
+                toIndex = 1
+            )
+        )
+        assertTrue(classifier.accept("second", remove))
+
+        classifier.end(
+            abortSourceTransaction = true,
+            reason = "incoming_player_error"
+        )
+
+        assertFalse(LogicalPlaylistMutationTransactions.isActive(token.id))
+        assertNull(
+            LogicalPlaylistMutationTransactions.claimReplaceUpcoming(
+                currentMediaId = "second",
+                fromIndex = 1,
+                toIndex = 2,
+                mediaIds = listOf("third")
+            )
+        )
+    }
+
+    @Test
+    fun newSourceTransactionInvalidatesAnUnclaimedStaleTransaction() {
+        val stale = LogicalPlaylistMutationTransactions.begin("second")
+        LogicalPlaylistMutationTransactions.expectReplaceUpcoming(
+            token = stale,
+            fromIndex = 1,
+            toIndex = 2,
+            mediaIds = listOf("third")
+        )
+        LogicalPlaylistMutationTransactions.seal(stale)
+
+        val current = LogicalPlaylistMutationTransactions.begin("third")
+
+        assertFalse(LogicalPlaylistMutationTransactions.isActive(stale.id))
+        assertTrue(LogicalPlaylistMutationTransactions.isActive(current.id))
+        LogicalPlaylistMutationTransactions.seal(current)
+        assertFalse(LogicalPlaylistMutationTransactions.isActive(current.id))
+    }
+
+    @Test
+    fun navigationTransactionKeepsShuffleAndDelayedRepeatInternalAfterCompletion() {
+        val classifier = CrossfadeHandoffNavigationPolicyClassifier()
+        classifier.begin("second")
+        val token = LogicalNavigationPolicyTransactions.begin("second")
+        LogicalNavigationPolicyTransactions.expectShuffleMode(token, false)
+        LogicalNavigationPolicyTransactions.expectRepeatMode(
+            token,
+            Player.REPEAT_MODE_ALL
+        )
+        LogicalNavigationPolicyTransactions.seal(token)
+
+        val shuffle = requireNotNull(
+            LogicalNavigationPolicyTransactions.claimShuffleMode(
+                currentMediaId = "second",
+                enabled = false
+            )
+        )
+        assertEquals(
+            LogicalNavigationPolicyOperation.SET_SHUFFLE_MODE,
+            shuffle.operation
+        )
+        assertTrue(classifier.accept("second", shuffle))
+        classifier.markCrossfadeCompleted()
+        assertFalse(classifier.shouldCloseAtCrossfadeCompletion())
+
+        val delayedRepeat = requireNotNull(
+            LogicalNavigationPolicyTransactions.claimRepeatMode(
+                currentMediaId = "second",
+                repeatMode = Player.REPEAT_MODE_ALL
+            )
+        )
+        assertEquals(
+            LogicalNavigationPolicyOperation.SET_REPEAT_MODE,
+            delayedRepeat.operation
+        )
+        assertTrue(classifier.accept("second", delayedRepeat))
+        assertTrue(classifier.shouldCloseAfterClaim())
+        assertEquals(
+            token.id,
+            classifier.end(
+                abortSourceTransaction = false,
+                reason = "effects_complete"
+            )
+        )
+    }
+
+    @Test
+    fun navigationMismatchAndAbortCannotClassifyLaterUserCommandAsInternal() {
+        val classifier = CrossfadeHandoffNavigationPolicyClassifier()
+        classifier.begin("second")
+        val token = LogicalNavigationPolicyTransactions.begin("second")
+        LogicalNavigationPolicyTransactions.expectShuffleMode(token, false)
+        LogicalNavigationPolicyTransactions.expectRepeatMode(
+            token,
+            Player.REPEAT_MODE_OFF
+        )
+        LogicalNavigationPolicyTransactions.seal(token)
+
+        assertNull(
+            LogicalNavigationPolicyTransactions.claimRepeatMode(
+                currentMediaId = "second",
+                repeatMode = Player.REPEAT_MODE_ONE
+            )
+        )
+        assertFalse(LogicalNavigationPolicyTransactions.isActive(token.id))
+        classifier.end(
+            abortSourceTransaction = true,
+            reason = "external_repeat_change"
+        )
+        assertNull(
+            LogicalNavigationPolicyTransactions.claimShuffleMode(
+                currentMediaId = "second",
+                enabled = false
+            )
+        )
+    }
+
+    @Test
+    fun navigationTransactionClosesOnHandoffCancellationOrRelease() {
+        val classifier = CrossfadeHandoffNavigationPolicyClassifier()
+        classifier.begin("second")
+        val token = LogicalNavigationPolicyTransactions.begin("second")
+        LogicalNavigationPolicyTransactions.expectShuffleMode(token, false)
+        LogicalNavigationPolicyTransactions.expectRepeatMode(
+            token,
+            Player.REPEAT_MODE_OFF
+        )
+        LogicalNavigationPolicyTransactions.seal(token)
+        val shuffle = requireNotNull(
+            LogicalNavigationPolicyTransactions.claimShuffleMode(
+                currentMediaId = "second",
+                enabled = false
+            )
+        )
+        assertTrue(classifier.accept("second", shuffle))
+
+        classifier.end(
+            abortSourceTransaction = true,
+            reason = "handoff_cancelled"
+        )
+
+        assertFalse(LogicalNavigationPolicyTransactions.isActive(token.id))
+        assertNull(
+            LogicalNavigationPolicyTransactions.claimRepeatMode(
+                currentMediaId = "second",
+                repeatMode = Player.REPEAT_MODE_OFF
+            )
+        )
+    }
+
+    @Test
+    fun repeatedMediaTransitionNavigationReconciliationsRemainSourceOwned() {
+        val first = LogicalNavigationPolicyTransactions.begin("second")
+        LogicalNavigationPolicyTransactions.expectShuffleMode(first, false)
+        LogicalNavigationPolicyTransactions.expectRepeatMode(
+            first,
+            Player.REPEAT_MODE_OFF
+        )
+        LogicalNavigationPolicyTransactions.seal(first)
+        val duplicate = LogicalNavigationPolicyTransactions.begin("second")
+        LogicalNavigationPolicyTransactions.expectShuffleMode(duplicate, false)
+        LogicalNavigationPolicyTransactions.expectRepeatMode(
+            duplicate,
+            Player.REPEAT_MODE_OFF
+        )
+        LogicalNavigationPolicyTransactions.seal(duplicate)
+
+        assertEquals(
+            first.id,
+            LogicalNavigationPolicyTransactions.claimShuffleMode(
+                "second",
+                false
+            )?.transactionId
+        )
+        assertEquals(
+            first.id,
+            LogicalNavigationPolicyTransactions.claimRepeatMode(
+                "second",
+                Player.REPEAT_MODE_OFF
+            )?.transactionId
+        )
+        assertEquals(
+            duplicate.id,
+            LogicalNavigationPolicyTransactions.claimShuffleMode(
+                "second",
+                false
+            )?.transactionId
+        )
+        assertEquals(
+            duplicate.id,
+            LogicalNavigationPolicyTransactions.claimRepeatMode(
+                "second",
+                Player.REPEAT_MODE_OFF
+            )?.transactionId
+        )
+        assertFalse(LogicalNavigationPolicyTransactions.isActive(first.id))
+        assertFalse(LogicalNavigationPolicyTransactions.isActive(duplicate.id))
     }
 
     @Test
@@ -158,6 +462,9 @@ class DualPlayerPlaybackCoordinatorTest {
         assertEquals(listOf(second), integration.transitions.map {
             it?.incomingMediaItem
         })
+        assertTrue(integration.logicalHandoffs.isEmpty())
+        assertTrue(integration.audibleStarts.isEmpty())
+        assertTrue(integration.completedOutgoing.isEmpty())
         val firstPromotionOrder = inOrder(playerA, playerB)
         firstPromotionOrder.verify(playerA).volume = 0f
         firstPromotionOrder.verify(playerA).playWhenReady = false
@@ -343,21 +650,26 @@ class DualPlayerPlaybackCoordinatorTest {
     }
 
     @Test
-    fun audibleCrossfadeHandsOffAtMidpointAndPromotesOnlyAtCompletion() {
+    fun consecutiveCrossfadesRemainEligibleAcrossInternalHandoffSynchronization() {
         val first = localItem("first")
         val second = localItem("second")
         val third = localItem("third")
+        val fourth = localItem("fourth")
         val playerA = mock(ExoPlayer::class.java)
         val playerB = mock(ExoPlayer::class.java)
         var outgoingPosition = 5_000L
         var incomingPosition = 0L
         var currentItemA = first
         var currentIndexA = 0
-        stubPlaylist(playerA, listOf(first, second, third), 0)
-        stubPlaylist(playerB, listOf(first, second, third), 1)
+        var currentItemB = second
+        var currentIndexB = 1
+        val playlist = listOf(first, second, third, fourth)
+        stubPlaylist(playerA, playlist, 0)
+        stubPlaylist(playerB, playlist, 1)
         `when`(playerA.currentMediaItem).thenAnswer { currentItemA }
         `when`(playerA.currentMediaItemIndex).thenAnswer { currentIndexA }
-        `when`(playerB.currentMediaItem).thenReturn(second)
+        `when`(playerB.currentMediaItem).thenAnswer { currentItemB }
+        `when`(playerB.currentMediaItemIndex).thenAnswer { currentIndexB }
         `when`(playerA.duration).thenReturn(10_000L)
         `when`(playerB.duration).thenReturn(10_000L)
         `when`(playerA.currentPosition).thenAnswer { outgoingPosition }
@@ -374,6 +686,8 @@ class DualPlayerPlaybackCoordinatorTest {
         val pipelineB = pipeline(PhysicalPlayerRole.STANDBY, playerB)
         val clock = ManualCrossfadeClock()
         val scheduler = ManualCrossfadeScheduler(clock)
+        val trace = mutableListOf<String>()
+        CrossfadeTrace.sinkForTest = trace::add
         val coordinator = DualPlayerPlaybackCoordinator(
             initialActive = pipelineA,
             initialStandby = pipelineB,
@@ -396,6 +710,7 @@ class DualPlayerPlaybackCoordinatorTest {
         verify(playerB).playWhenReady = true
         assertSame(pipelineA, coordinator.active)
         assertTrue(integration.transitions.isEmpty())
+        assertTrue(integration.audibleStarts.isEmpty())
 
         outgoingPosition = 7_500L
         scheduler.runNext()
@@ -417,6 +732,33 @@ class DualPlayerPlaybackCoordinatorTest {
         assertEquals(0.2f, lastSetVolume(playerB), 0.0001f)
         verify(playerA, never()).playWhenReady = false
 
+        coordinator.onLogicalCommand(
+            LogicalPlaybackCommandEvent(
+                command = LogicalPlaybackCommand.PLAYLIST_MUTATION,
+                origin =
+                    LogicalPlaybackCommandOrigin.CROSSFADE_HANDOFF_INTERNAL,
+                preservesCurrentMediaItem = true,
+                transactionId = 1L,
+                playlistOperation =
+                    LogicalPlaylistMutationOperation.REMOVE_PREFIX
+            )
+        )
+        coordinator.onLogicalCommand(
+            LogicalPlaybackCommandEvent(
+                command = LogicalPlaybackCommand.NAVIGATION_POLICY,
+                origin =
+                    LogicalPlaybackCommandOrigin.CROSSFADE_HANDOFF_INTERNAL,
+                transactionId = 101L,
+                navigationOperation =
+                    LogicalNavigationPolicyOperation.SET_SHUFFLE_MODE,
+                navigationValue = "false"
+            )
+        )
+        assertEquals(
+            CrossfadeTransitionState.LOGICALLY_HANDED_OFF,
+            coordinator.crossfadeState
+        )
+
         outgoingPosition = 10_000L
         scheduler.runNext()
 
@@ -425,7 +767,36 @@ class DualPlayerPlaybackCoordinatorTest {
         assertSame(pipelineA, coordinator.standby)
         assertEquals(PhysicalPlayerRole.ACTIVE, pipelineB.role)
         assertEquals(PhysicalPlayerRole.STANDBY, pipelineA.role)
-        verify(playerA).setMediaItems(listOf(first, second, third), 2, 0L)
+        verify(playerA).setMediaItems(playlist, 2, 0L)
+        assertTrue(
+            trace.any { entry ->
+                entry ==
+                    "NEW_ACTIVE mediaId=second futureCrossfadeSuppressed=false"
+            }
+        )
+        coordinator.onLogicalCommand(
+            LogicalPlaybackCommandEvent(
+                command = LogicalPlaybackCommand.PLAYLIST_MUTATION,
+                origin =
+                    LogicalPlaybackCommandOrigin.CROSSFADE_HANDOFF_INTERNAL,
+                preservesCurrentMediaItem = true,
+                transactionId = 1L,
+                playlistOperation =
+                    LogicalPlaylistMutationOperation.REPLACE_UPCOMING
+            )
+        )
+        coordinator.onLogicalCommand(
+            LogicalPlaybackCommandEvent(
+                command = LogicalPlaybackCommand.NAVIGATION_POLICY,
+                origin =
+                    LogicalPlaybackCommandOrigin.CROSSFADE_HANDOFF_INTERNAL,
+                transactionId = 101L,
+                navigationOperation =
+                    LogicalNavigationPolicyOperation.SET_REPEAT_MODE,
+                navigationValue = Player.REPEAT_MODE_OFF.toString()
+            )
+        )
+        assertEquals(CrossfadeTransitionState.IDLE, coordinator.crossfadeState)
 
         currentItemA = third
         currentIndexA = 2
@@ -437,6 +808,32 @@ class DualPlayerPlaybackCoordinatorTest {
         incomingPosition = 7_500L
         scheduler.runNext()
         assertSame(playerA, coordinator.logicalPhysicalPlayer)
+        coordinator.onLogicalCommand(
+            LogicalPlaybackCommandEvent(
+                command = LogicalPlaybackCommand.PLAYLIST_MUTATION,
+                origin =
+                    LogicalPlaybackCommandOrigin.CROSSFADE_HANDOFF_INTERNAL,
+                preservesCurrentMediaItem = true,
+                transactionId = 2L,
+                playlistOperation =
+                    LogicalPlaylistMutationOperation.REMOVE_PREFIX
+            )
+        )
+        coordinator.onLogicalCommand(
+            LogicalPlaybackCommandEvent(
+                command = LogicalPlaybackCommand.NAVIGATION_POLICY,
+                origin =
+                    LogicalPlaybackCommandOrigin.CROSSFADE_HANDOFF_INTERNAL,
+                transactionId = 102L,
+                navigationOperation =
+                    LogicalNavigationPolicyOperation.SET_SHUFFLE_MODE,
+                navigationValue = "false"
+            )
+        )
+        assertEquals(
+            CrossfadeTransitionState.LOGICALLY_HANDED_OFF,
+            coordinator.crossfadeState
+        )
         incomingPosition = 10_000L
         scheduler.runNext()
 
@@ -445,7 +842,356 @@ class DualPlayerPlaybackCoordinatorTest {
         assertEquals(listOf(second, third), integration.transitions.map {
             it?.incomingMediaItem
         })
+        assertEquals(listOf(first, second), integration.completedOutgoing)
+        coordinator.onLogicalCommand(
+            LogicalPlaybackCommandEvent(
+                command = LogicalPlaybackCommand.PLAYLIST_MUTATION,
+                origin =
+                    LogicalPlaybackCommandOrigin.CROSSFADE_HANDOFF_INTERNAL,
+                preservesCurrentMediaItem = true,
+                transactionId = 2L,
+                playlistOperation =
+                    LogicalPlaylistMutationOperation.REPLACE_UPCOMING
+            )
+        )
+        coordinator.onLogicalCommand(
+            LogicalPlaybackCommandEvent(
+                command = LogicalPlaybackCommand.NAVIGATION_POLICY,
+                origin =
+                    LogicalPlaybackCommandOrigin.CROSSFADE_HANDOFF_INTERNAL,
+                transactionId = 102L,
+                navigationOperation =
+                    LogicalNavigationPolicyOperation.SET_REPEAT_MODE,
+                navigationValue = Player.REPEAT_MODE_OFF.toString()
+            )
+        )
+        assertEquals(CrossfadeTransitionState.IDLE, coordinator.crossfadeState)
 
+        currentItemB = fourth
+        currentIndexB = 3
+        outgoingPosition = 5_000L
+        incomingPosition = 0L
+        coordinator.markStandbyReadyForTest()
+        coordinator.synchronizeStandby()
+        assertEquals(CrossfadeTransitionState.CROSSFADING, coordinator.crossfadeState)
+
+        outgoingPosition = 7_500L
+        scheduler.runNext()
+        assertSame(playerB, coordinator.logicalPhysicalPlayer)
+        coordinator.onLogicalCommand(
+            LogicalPlaybackCommandEvent(
+                command = LogicalPlaybackCommand.PLAYLIST_MUTATION,
+                origin =
+                    LogicalPlaybackCommandOrigin.CROSSFADE_HANDOFF_INTERNAL,
+                preservesCurrentMediaItem = true,
+                transactionId = 3L,
+                playlistOperation =
+                    LogicalPlaylistMutationOperation.REMOVE_PREFIX
+            )
+        )
+        coordinator.onLogicalCommand(
+            LogicalPlaybackCommandEvent(
+                command = LogicalPlaybackCommand.NAVIGATION_POLICY,
+                origin =
+                    LogicalPlaybackCommandOrigin.CROSSFADE_HANDOFF_INTERNAL,
+                transactionId = 103L,
+                navigationOperation =
+                    LogicalNavigationPolicyOperation.SET_SHUFFLE_MODE,
+                navigationValue = "false"
+            )
+        )
+        assertEquals(
+            CrossfadeTransitionState.LOGICALLY_HANDED_OFF,
+            coordinator.crossfadeState
+        )
+        outgoingPosition = 10_000L
+        scheduler.runNext()
+
+        assertSame(pipelineB, coordinator.active)
+        assertSame(pipelineA, coordinator.standby)
+        assertEquals(listOf(second, third, fourth), integration.transitions.map {
+            it?.incomingMediaItem
+        })
+        assertEquals(listOf(first, second, third), integration.completedOutgoing)
+        assertTrue(
+            trace.any { entry ->
+                entry ==
+                    "NEW_ACTIVE mediaId=fourth futureCrossfadeSuppressed=false"
+            }
+        )
+        coordinator.onLogicalCommand(
+            LogicalPlaybackCommandEvent(
+                command = LogicalPlaybackCommand.PLAYLIST_MUTATION,
+                origin =
+                    LogicalPlaybackCommandOrigin.CROSSFADE_HANDOFF_INTERNAL,
+                preservesCurrentMediaItem = true,
+                transactionId = 3L,
+                playlistOperation =
+                    LogicalPlaylistMutationOperation.REPLACE_UPCOMING
+            )
+        )
+        coordinator.onLogicalCommand(
+            LogicalPlaybackCommandEvent(
+                command = LogicalPlaybackCommand.NAVIGATION_POLICY,
+                origin =
+                    LogicalPlaybackCommandOrigin.CROSSFADE_HANDOFF_INTERNAL,
+                transactionId = 103L,
+                navigationOperation =
+                    LogicalNavigationPolicyOperation.SET_REPEAT_MODE,
+                navigationValue = Player.REPEAT_MODE_OFF.toString()
+            )
+        )
+        assertEquals(CrossfadeTransitionState.IDLE, coordinator.crossfadeState)
+
+        coordinator.release()
+    }
+
+    @Test
+    fun runtimeEnableAffectsFutureOverlapAndDisableCollapsesActiveCrossfade() {
+        val first = localItem("first")
+        val second = localItem("second")
+        val playerA = mock(ExoPlayer::class.java)
+        val playerB = mock(ExoPlayer::class.java)
+        stubPlaylist(playerA, listOf(first, second), 0)
+        stubPlaylist(playerB, listOf(first, second), 1)
+        `when`(playerA.currentMediaItem).thenReturn(first)
+        `when`(playerB.currentMediaItem).thenReturn(second)
+        `when`(playerA.duration).thenReturn(10_000L)
+        `when`(playerA.currentPosition).thenReturn(5_000L)
+        `when`(playerA.playbackState).thenReturn(Player.STATE_READY)
+        `when`(playerB.playbackState).thenReturn(Player.STATE_READY)
+        `when`(playerA.isPlaying).thenReturn(true)
+        `when`(playerB.isPlaying).thenReturn(true)
+        val pipelineA = pipeline(PhysicalPlayerRole.ACTIVE, playerA)
+        val firstKey = checkNotNull(StandbyTargetResolver.key(first))
+        pipelineA.prepareBaseline(firstKey)
+        pipelineA.updateBaseline(firstKey, 1f)
+        val pipelineB = pipeline(PhysicalPlayerRole.STANDBY, playerB)
+        val clock = ManualCrossfadeClock()
+        val scheduler = ManualCrossfadeScheduler(clock)
+        val coordinator = DualPlayerPlaybackCoordinator(
+            initialActive = pipelineA,
+            initialStandby = pipelineB,
+            standbyBaselinePreparer = StandbyBaselinePreparer { _, result ->
+                result(1f)
+                true
+            },
+            crossfadeClock = clock,
+            crossfadeScheduler = scheduler,
+            initialCrossfadeConfiguration = CrossfadeRuntimeConfiguration.DISABLED
+        )
+        val integration = RecordingIntegration()
+        coordinator.attachLogicalPlayer(RecordingLogicalPlayer(playerA), integration)
+        coordinator.markStandbyReadyForTest()
+        coordinator.synchronizeStandby()
+        assertEquals(CrossfadeTransitionState.IDLE, coordinator.crossfadeState)
+
+        coordinator.updateCrossfadeConfiguration(CrossfadeRuntimeConfiguration.TEST_ENABLED)
+        assertEquals(CrossfadeTransitionState.CROSSFADING, coordinator.crossfadeState)
+
+        coordinator.updateCrossfadeConfiguration(
+            CrossfadeRuntimeConfiguration.TEST_ENABLED.copy(
+                durationMillis = 12_000L,
+                preserveAlbumTransitions = false
+            )
+        )
+        assertEquals(CrossfadeTransitionState.CROSSFADING, coordinator.crossfadeState)
+
+        coordinator.updateCrossfadeConfiguration(CrossfadeRuntimeConfiguration.DISABLED)
+        assertEquals(CrossfadeTransitionState.IDLE, coordinator.crossfadeState)
+        assertSame(pipelineA, coordinator.active)
+        assertSame(pipelineB, coordinator.standby)
+        assertEquals(PhysicalPlayerRole.ACTIVE, pipelineA.role)
+        assertEquals(PhysicalPlayerRole.STANDBY, pipelineB.role)
+        assertEquals(listOf(second), integration.cancelledIncoming)
+
+        coordinator.release()
+    }
+
+    @Test
+    fun externalPlaylistMutationStillCancelsAnActiveOverlap() {
+        val first = localItem("first")
+        val second = localItem("second")
+        val playerA = mock(ExoPlayer::class.java)
+        val playerB = mock(ExoPlayer::class.java)
+        stubPlaylist(playerA, listOf(first, second), 0)
+        stubPlaylist(playerB, listOf(first, second), 1)
+        `when`(playerA.currentMediaItem).thenReturn(first)
+        `when`(playerB.currentMediaItem).thenReturn(second)
+        `when`(playerA.duration).thenReturn(10_000L)
+        `when`(playerA.currentPosition).thenReturn(5_000L)
+        `when`(playerA.playbackState).thenReturn(Player.STATE_READY)
+        `when`(playerB.playbackState).thenReturn(Player.STATE_READY)
+        `when`(playerA.isPlaying).thenReturn(true)
+        `when`(playerB.isPlaying).thenReturn(true)
+        val pipelineA = pipeline(PhysicalPlayerRole.ACTIVE, playerA)
+        val firstKey = checkNotNull(StandbyTargetResolver.key(first))
+        pipelineA.prepareBaseline(firstKey)
+        pipelineA.updateBaseline(firstKey, 1f)
+        val pipelineB = pipeline(PhysicalPlayerRole.STANDBY, playerB)
+        val clock = ManualCrossfadeClock()
+        val scheduler = ManualCrossfadeScheduler(clock)
+        val coordinator = DualPlayerPlaybackCoordinator(
+            initialActive = pipelineA,
+            initialStandby = pipelineB,
+            standbyBaselinePreparer = StandbyBaselinePreparer { _, result ->
+                result(1f)
+                true
+            },
+            crossfadeClock = clock,
+            crossfadeScheduler = scheduler
+        )
+        val integration = RecordingIntegration()
+        coordinator.attachLogicalPlayer(RecordingLogicalPlayer(playerA), integration)
+        coordinator.markStandbyReadyForTest()
+        coordinator.synchronizeStandby()
+        assertEquals(CrossfadeTransitionState.CROSSFADING, coordinator.crossfadeState)
+
+        coordinator.onLogicalCommand(
+            LogicalPlaybackCommandEvent(
+                command = LogicalPlaybackCommand.PLAYLIST_MUTATION,
+                origin = LogicalPlaybackCommandOrigin.EXTERNAL,
+                preservesCurrentMediaItem = true
+            )
+        )
+
+        assertEquals(CrossfadeTransitionState.IDLE, coordinator.crossfadeState)
+        assertSame(pipelineA, coordinator.active)
+        assertEquals(listOf(second), integration.cancelledIncoming)
+        assertEquals(0, scheduler.runUntilEmpty())
+        coordinator.synchronizeStandby()
+        assertEquals(CrossfadeTransitionState.IDLE, coordinator.crossfadeState)
+        coordinator.release()
+    }
+
+    @Test
+    fun internalRepeatSynchronizationDoesNotCancelActiveOverlap() {
+        assertNavigationPolicyDuringOverlap(
+            origin = LogicalPlaybackCommandOrigin.CROSSFADE_HANDOFF_INTERNAL,
+            operation = LogicalNavigationPolicyOperation.SET_REPEAT_MODE,
+            value = Player.REPEAT_MODE_ALL.toString(),
+            expectsCancellation = false
+        )
+    }
+
+    @Test
+    fun internalShuffleSynchronizationDoesNotCancelActiveOverlap() {
+        assertNavigationPolicyDuringOverlap(
+            origin = LogicalPlaybackCommandOrigin.CROSSFADE_HANDOFF_INTERNAL,
+            operation = LogicalNavigationPolicyOperation.SET_SHUFFLE_MODE,
+            value = "false",
+            expectsCancellation = false
+        )
+    }
+
+    @Test
+    fun externalRepeatChangeStillCancelsActiveOverlapSafely() {
+        assertNavigationPolicyDuringOverlap(
+            origin = LogicalPlaybackCommandOrigin.EXTERNAL,
+            operation = LogicalNavigationPolicyOperation.SET_REPEAT_MODE,
+            value = Player.REPEAT_MODE_ALL.toString(),
+            expectsCancellation = true
+        )
+    }
+
+    @Test
+    fun externalShuffleChangeStillCancelsActiveOverlapSafely() {
+        assertNavigationPolicyDuringOverlap(
+            origin = LogicalPlaybackCommandOrigin.EXTERNAL,
+            operation = LogicalNavigationPolicyOperation.SET_SHUFFLE_MODE,
+            value = "true",
+            expectsCancellation = true
+        )
+    }
+
+    @Test
+    fun routineStartupCommandsDoNotCancelNaturalFiftyEightSecondNineSecondCrossfade() {
+        val first = localItem("first")
+        val second = localItem("second")
+        val playerA = mock(ExoPlayer::class.java)
+        val playerB = mock(ExoPlayer::class.java)
+        var outgoingPosition = 0L
+        stubPlaylist(playerA, listOf(first, second), 0)
+        stubPlaylist(playerB, listOf(first, second), 1)
+        `when`(playerA.currentMediaItem).thenReturn(first)
+        `when`(playerB.currentMediaItem).thenReturn(second)
+        `when`(playerA.duration).thenReturn(58_000L)
+        `when`(playerA.currentPosition).thenAnswer { outgoingPosition }
+        `when`(playerA.playbackState).thenReturn(Player.STATE_READY)
+        `when`(playerB.playbackState).thenReturn(Player.STATE_READY)
+        `when`(playerA.isPlaying).thenReturn(true)
+        // A prepared standby is intentionally silent until beginCrossfade requests playback.
+        `when`(playerB.isPlaying).thenReturn(false)
+        val pipelineA = pipeline(PhysicalPlayerRole.ACTIVE, playerA)
+        val firstKey = checkNotNull(StandbyTargetResolver.key(first))
+        pipelineA.prepareBaseline(firstKey)
+        pipelineA.updateBaseline(firstKey, 1f)
+        val pipelineB = pipeline(PhysicalPlayerRole.STANDBY, playerB)
+        val clock = ManualCrossfadeClock()
+        val scheduler = ManualCrossfadeScheduler(clock)
+        val trace = mutableListOf<String>()
+        CrossfadeTrace.sinkForTest = trace::add
+        val coordinator = DualPlayerPlaybackCoordinator(
+            initialActive = pipelineA,
+            initialStandby = pipelineB,
+            standbyBaselinePreparer = StandbyBaselinePreparer { _, result ->
+                result(1f)
+                true
+            },
+            crossfadeClock = clock,
+            crossfadeScheduler = scheduler,
+            initialCrossfadeConfiguration = CrossfadeRuntimeConfiguration(
+                enabled = true,
+                durationMillis = 9_000L,
+                preserveAlbumTransitions = false
+            )
+        )
+        coordinator.attachLogicalPlayer(RecordingLogicalPlayer(playerA), RecordingIntegration())
+        coordinator.markStandbyReadyForTest()
+        coordinator.synchronizeStandby()
+        assertEquals(CrossfadeTransitionState.SCHEDULED, coordinator.crossfadeState)
+
+        coordinator.onLogicalCommand(LogicalPlaybackCommand.PLAY_PAUSE)
+        coordinator.onLogicalCommand(LogicalPlaybackCommand.NAVIGATION_POLICY)
+        coordinator.onLogicalCommand(LogicalPlaybackCommand.PLAYBACK_PARAMETERS)
+        outgoingPosition = 49_000L
+        coordinator.synchronizeStandby()
+
+        assertEquals(CrossfadeTransitionState.CROSSFADING, coordinator.crossfadeState)
+        verify(playerB).playWhenReady = true
+        assertTrue(trace.any { it == "COMMAND PLAY_PAUSE action=keep_future_crossfade" })
+        assertTrue(
+            trace.any { it == "COMMAND NAVIGATION_POLICY action=keep_future_crossfade" }
+        )
+        assertTrue(trace.any { it.startsWith("START_REQUESTED durationMs=9000") })
+        assertFalse(trace.any { it.contains("reason=cancelled_by_interaction") })
+        coordinator.release()
+    }
+
+    @Test
+    fun activeReplayGainResultIsRekeyedWhenPhysicalPipelineGetsSelectedItem() {
+        val oldItem = localItem("old")
+        val selectedItem = localItem("selected")
+        val playerA = mock(ExoPlayer::class.java)
+        val playerB = mock(ExoPlayer::class.java)
+        `when`(playerA.currentMediaItem).thenReturn(selectedItem)
+        val pipelineA = pipeline(PhysicalPlayerRole.ACTIVE, playerA)
+        val pipelineB = pipeline(PhysicalPlayerRole.STANDBY, playerB)
+        val oldKey = checkNotNull(StandbyTargetResolver.key(oldItem))
+        val selectedKey = checkNotNull(StandbyTargetResolver.key(selectedItem))
+        pipelineA.prepareBaseline(oldKey)
+        pipelineA.updateBaseline(oldKey, 0.5f)
+        val coordinator = DualPlayerPlaybackCoordinator(
+            initialActive = pipelineA,
+            initialStandby = pipelineB,
+            initialCrossfadeConfiguration = CrossfadeRuntimeConfiguration.DISABLED
+        )
+
+        coordinator.updateActiveBaseline(0.75f)
+
+        assertTrue(pipelineA.hasExactBaselineFor(selectedKey))
+        assertEquals(0.75f, pipelineA.baselineVolume, 0.0001f)
+        assertFalse(pipelineA.hasExactBaselineFor(oldKey))
         coordinator.release()
     }
 
@@ -461,6 +1207,73 @@ class DualPlayerPlaybackCoordinatorTest {
             equalizerAudioProcessor = EqualizerAudioProcessor(runtime),
             audioAttributes = AUDIO_ATTRIBUTES
         )
+    }
+
+    private fun assertNavigationPolicyDuringOverlap(
+        origin: LogicalPlaybackCommandOrigin,
+        operation: LogicalNavigationPolicyOperation,
+        value: String,
+        expectsCancellation: Boolean
+    ) {
+        val first = localItem("navigation-first")
+        val second = localItem("navigation-second")
+        val playerA = mock(ExoPlayer::class.java)
+        val playerB = mock(ExoPlayer::class.java)
+        stubPlaylist(playerA, listOf(first, second), 0)
+        stubPlaylist(playerB, listOf(first, second), 1)
+        `when`(playerA.currentMediaItem).thenReturn(first)
+        `when`(playerB.currentMediaItem).thenReturn(second)
+        `when`(playerA.duration).thenReturn(10_000L)
+        `when`(playerA.currentPosition).thenReturn(5_000L)
+        `when`(playerA.playbackState).thenReturn(Player.STATE_READY)
+        `when`(playerB.playbackState).thenReturn(Player.STATE_READY)
+        `when`(playerA.isPlaying).thenReturn(true)
+        `when`(playerB.isPlaying).thenReturn(true)
+        val pipelineA = pipeline(PhysicalPlayerRole.ACTIVE, playerA)
+        val firstKey = checkNotNull(StandbyTargetResolver.key(first))
+        pipelineA.prepareBaseline(firstKey)
+        pipelineA.updateBaseline(firstKey, 1f)
+        val pipelineB = pipeline(PhysicalPlayerRole.STANDBY, playerB)
+        val coordinator = DualPlayerPlaybackCoordinator(
+            initialActive = pipelineA,
+            initialStandby = pipelineB,
+            standbyBaselinePreparer = StandbyBaselinePreparer { _, result ->
+                result(1f)
+                true
+            }
+        )
+        val integration = RecordingIntegration()
+        coordinator.attachLogicalPlayer(RecordingLogicalPlayer(playerA), integration)
+        coordinator.markStandbyReadyForTest()
+        coordinator.synchronizeStandby()
+        assertEquals(CrossfadeTransitionState.CROSSFADING, coordinator.crossfadeState)
+
+        coordinator.onLogicalCommand(
+            LogicalPlaybackCommandEvent(
+                command = LogicalPlaybackCommand.NAVIGATION_POLICY,
+                origin = origin,
+                transactionId = if (
+                    origin ==
+                    LogicalPlaybackCommandOrigin.CROSSFADE_HANDOFF_INTERNAL
+                ) {
+                    99L
+                } else {
+                    null
+                },
+                navigationOperation = operation,
+                navigationValue = value
+            )
+        )
+
+        if (expectsCancellation) {
+            assertEquals(CrossfadeTransitionState.IDLE, coordinator.crossfadeState)
+            assertSame(pipelineA, coordinator.active)
+            assertEquals(listOf(second), integration.cancelledIncoming)
+        } else {
+            assertEquals(CrossfadeTransitionState.CROSSFADING, coordinator.crossfadeState)
+            assertTrue(integration.cancelledIncoming.isEmpty())
+        }
+        coordinator.release()
     }
 
     private fun stubPlaylist(
@@ -570,6 +1383,10 @@ class DualPlayerPlaybackCoordinatorTest {
         val unbound = mutableListOf<PhysicalPlayerPipeline>()
         val bound = mutableListOf<PhysicalPlayerPipeline>()
         val transitions = mutableListOf<AuthoritativeRoleTransition?>()
+        val audibleStarts = mutableListOf<MediaItem>()
+        val logicalHandoffs = mutableListOf<MediaItem>()
+        val completedOutgoing = mutableListOf<MediaItem>()
+        val cancelledIncoming = mutableListOf<MediaItem>()
 
         override fun unbind(pipeline: PhysicalPlayerPipeline) {
             unbound += pipeline
@@ -581,6 +1398,26 @@ class DualPlayerPlaybackCoordinatorTest {
         ) {
             bound += pipeline
             transitions += transition
+        }
+
+        override fun onCrossfadeIncomingAudible(incomingMediaItem: MediaItem) {
+            audibleStarts += incomingMediaItem
+        }
+
+        override fun onCrossfadeLogicalHandoff(incomingMediaItem: MediaItem) {
+            logicalHandoffs += incomingMediaItem
+        }
+
+        override fun onCrossfadeCompleted(outgoingMediaItem: MediaItem?) {
+            outgoingMediaItem?.let(completedOutgoing::add)
+        }
+
+        override fun onCrossfadeCancelled(
+            outgoingMediaItem: MediaItem?,
+            incomingMediaItem: MediaItem,
+            survivingMediaItem: MediaItem?
+        ) {
+            cancelledIncoming += incomingMediaItem
         }
     }
 
@@ -656,6 +1493,18 @@ class DualPlayerPlaybackCoordinatorTest {
                 return
             }
             error("No crossfade frame was scheduled")
+        }
+
+        fun runUntilEmpty(): Int {
+            var executed = 0
+            while (scheduled.isNotEmpty()) {
+                val task = scheduled.removeFirst()
+                if (task.cancelled) continue
+                clock.nowMillis += task.delayMillis
+                task.action()
+                executed += 1
+            }
+            return executed
         }
     }
 
