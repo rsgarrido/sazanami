@@ -140,15 +140,27 @@ internal object LogicalNavigationPolicyTransactions {
         currentMediaId: String?,
         actual: ExpectedCommand
     ): ClaimedInternalNavigationPolicyCommand? {
-        val current = transactions.values.firstOrNull() ?: return null
-        val expected = current.expectedCommands.firstOrNull()
-        if (
-            currentMediaId != current.token.currentMediaId ||
-            expected != actual
-        ) {
-            abort(current.token.id, "command_mismatch")
+        if (transactions.isEmpty()) return null
+        val current = transactions.values.firstOrNull { transaction ->
+            currentMediaId == transaction.token.currentMediaId &&
+                transaction.expectedCommands.firstOrNull() == actual
+        }
+        if (current == null) {
+            // A genuine controller command supersedes every still-unclaimed handoff command.
+            // Clearing the full set prevents an older media-id transaction from poisoning a
+            // later exact user command.
+            abortAll("command_mismatch")
             return null
         }
+        transactions.values
+            .filter { transaction ->
+                transaction.token.currentMediaId != currentMediaId
+            }
+            .map { transaction -> transaction.token.id }
+            .forEach { transactionId ->
+                abort(transactionId, "media_identity_superseded")
+            }
+        val expected = checkNotNull(current.expectedCommands.firstOrNull())
         current.expectedCommands.removeFirst()
         val claim = ClaimedInternalNavigationPolicyCommand(
             transactionId = current.token.id,

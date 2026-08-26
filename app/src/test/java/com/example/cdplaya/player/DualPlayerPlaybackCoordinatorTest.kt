@@ -304,6 +304,36 @@ class DualPlayerPlaybackCoordinatorTest {
     }
 
     @Test
+    fun staleNavigationTransactionCannotPoisonExactCommandForNewMediaIdentity() {
+        val stale = LogicalNavigationPolicyTransactions.begin("second")
+        LogicalNavigationPolicyTransactions.expectShuffleMode(stale, false)
+        LogicalNavigationPolicyTransactions.seal(stale)
+        val current = LogicalNavigationPolicyTransactions.begin("third")
+        LogicalNavigationPolicyTransactions.expectRepeatMode(
+            current,
+            Player.REPEAT_MODE_ALL
+        )
+        LogicalNavigationPolicyTransactions.seal(current)
+
+        val claim = requireNotNull(
+            LogicalNavigationPolicyTransactions.claimRepeatMode(
+                currentMediaId = "third",
+                repeatMode = Player.REPEAT_MODE_ALL
+            )
+        )
+
+        assertEquals(current.id, claim.transactionId)
+        assertFalse(LogicalNavigationPolicyTransactions.isActive(stale.id))
+        assertFalse(LogicalNavigationPolicyTransactions.isActive(current.id))
+        assertNull(
+            LogicalNavigationPolicyTransactions.claimShuffleMode(
+                currentMediaId = "second",
+                enabled = false
+            )
+        )
+    }
+
+    @Test
     fun navigationTransactionClosesOnHandoffCancellationOrRelease() {
         val classifier = CrossfadeHandoffNavigationPolicyClassifier()
         classifier.begin("second")
@@ -1004,6 +1034,13 @@ class DualPlayerPlaybackCoordinatorTest {
         assertEquals(PhysicalPlayerRole.ACTIVE, pipelineA.role)
         assertEquals(PhysicalPlayerRole.STANDBY, pipelineB.role)
         assertEquals(listOf(second), integration.cancelledIncoming)
+        assertEquals(1f, lastSetVolume(playerA), 0.0001f)
+        assertEquals(0f, lastSetVolume(playerB), 0.0001f)
+        assertEquals(0, scheduler.runUntilEmpty())
+
+        coordinator.markStandbyReadyForTest()
+        coordinator.updateCrossfadeConfiguration(CrossfadeRuntimeConfiguration.TEST_ENABLED)
+        assertEquals(CrossfadeTransitionState.CROSSFADING, coordinator.crossfadeState)
 
         coordinator.release()
     }
@@ -1055,12 +1092,73 @@ class DualPlayerPlaybackCoordinatorTest {
             )
         )
 
-        assertEquals(CrossfadeTransitionState.IDLE, coordinator.crossfadeState)
+        assertEquals(CrossfadeTransitionState.CANCELLED, coordinator.crossfadeState)
         assertSame(pipelineA, coordinator.active)
         assertEquals(listOf(second), integration.cancelledIncoming)
+        assertEquals(1f, lastSetVolume(playerA), 0.0001f)
+        assertEquals(0f, lastSetVolume(playerB), 0.0001f)
         assertEquals(0, scheduler.runUntilEmpty())
         coordinator.synchronizeStandby()
-        assertEquals(CrossfadeTransitionState.IDLE, coordinator.crossfadeState)
+        assertEquals(CrossfadeTransitionState.CANCELLED, coordinator.crossfadeState)
+        coordinator.release()
+    }
+
+    @Test
+    fun cancellationAfterMidpointKeepsIncomingAuthorityAndExactReplayGainBaseline() {
+        val first = localItem("after-midpoint-first")
+        val second = localItem("after-midpoint-second")
+        val playerA = mock(ExoPlayer::class.java)
+        val playerB = mock(ExoPlayer::class.java)
+        var outgoingPosition = 5_000L
+        stubPlaylist(playerA, listOf(first, second), 0)
+        stubPlaylist(playerB, listOf(first, second), 1)
+        `when`(playerA.currentMediaItem).thenReturn(first)
+        `when`(playerB.currentMediaItem).thenReturn(second)
+        `when`(playerA.duration).thenReturn(10_000L)
+        `when`(playerA.currentPosition).thenAnswer { outgoingPosition }
+        `when`(playerA.playbackState).thenReturn(Player.STATE_READY)
+        `when`(playerB.playbackState).thenReturn(Player.STATE_READY)
+        `when`(playerA.isPlaying).thenReturn(true)
+        `when`(playerB.isPlaying).thenReturn(true)
+        val pipelineA = pipeline(PhysicalPlayerRole.ACTIVE, playerA)
+        val firstKey = checkNotNull(StandbyTargetResolver.key(first))
+        pipelineA.prepareBaseline(firstKey)
+        pipelineA.updateBaseline(firstKey, 0.6f)
+        val pipelineB = pipeline(PhysicalPlayerRole.STANDBY, playerB)
+        val clock = ManualCrossfadeClock()
+        val scheduler = ManualCrossfadeScheduler(clock)
+        val coordinator = DualPlayerPlaybackCoordinator(
+            initialActive = pipelineA,
+            initialStandby = pipelineB,
+            standbyBaselinePreparer = StandbyBaselinePreparer { _, result ->
+                result(0.4f)
+                true
+            },
+            crossfadeClock = clock,
+            crossfadeScheduler = scheduler
+        )
+        val logical = RecordingLogicalPlayer(playerA)
+        coordinator.attachLogicalPlayer(logical, RecordingIntegration())
+        coordinator.markStandbyReadyForTest()
+        coordinator.synchronizeStandby()
+
+        outgoingPosition = 7_500L
+        scheduler.runNext()
+        assertEquals(
+            CrossfadeTransitionState.LOGICALLY_HANDED_OFF,
+            coordinator.crossfadeState
+        )
+
+        coordinator.onLogicalCommand(LogicalPlaybackCommand.SEEK)
+
+        assertEquals(CrossfadeTransitionState.CANCELLED, coordinator.crossfadeState)
+        assertSame(pipelineB, coordinator.active)
+        assertSame(playerB, coordinator.logicalPhysicalPlayer)
+        assertEquals(PhysicalPlayerRole.ACTIVE, pipelineB.role)
+        assertEquals(PhysicalPlayerRole.STANDBY, pipelineA.role)
+        assertEquals(0.4f, lastSetVolume(playerB), 0.0001f)
+        assertEquals(0f, lastSetVolume(playerA), 0.0001f)
+        assertEquals(0, scheduler.runUntilEmpty())
         coordinator.release()
     }
 
@@ -1069,7 +1167,7 @@ class DualPlayerPlaybackCoordinatorTest {
         assertNavigationPolicyDuringOverlap(
             origin = LogicalPlaybackCommandOrigin.CROSSFADE_HANDOFF_INTERNAL,
             operation = LogicalNavigationPolicyOperation.SET_REPEAT_MODE,
-            value = Player.REPEAT_MODE_ALL.toString(),
+            value = navigationRepeatModeTraceValue(Player.REPEAT_MODE_ALL),
             expectsCancellation = false
         )
     }
@@ -1089,7 +1187,7 @@ class DualPlayerPlaybackCoordinatorTest {
         assertNavigationPolicyDuringOverlap(
             origin = LogicalPlaybackCommandOrigin.EXTERNAL,
             operation = LogicalNavigationPolicyOperation.SET_REPEAT_MODE,
-            value = Player.REPEAT_MODE_ALL.toString(),
+            value = navigationRepeatModeTraceValue(Player.REPEAT_MODE_ALL),
             expectsCancellation = true
         )
     }
@@ -1157,11 +1255,23 @@ class DualPlayerPlaybackCoordinatorTest {
         outgoingPosition = 49_000L
         coordinator.synchronizeStandby()
 
-        assertEquals(CrossfadeTransitionState.CROSSFADING, coordinator.crossfadeState)
+        assertEquals(
+            trace.joinToString(separator = "\n"),
+            CrossfadeTransitionState.CROSSFADING,
+            coordinator.crossfadeState
+        )
         verify(playerB).playWhenReady = true
-        assertTrue(trace.any { it == "COMMAND PLAY_PAUSE action=keep_future_crossfade" })
         assertTrue(
-            trace.any { it == "COMMAND NAVIGATION_POLICY action=keep_future_crossfade" }
+            trace.any {
+                it == "COMMAND PLAY_PAUSE origin=EXTERNAL operation=NONE " +
+                    "value=none action=keep_future_crossfade"
+            }
+        )
+        assertTrue(
+            trace.any {
+                it == "COMMAND NAVIGATION_POLICY origin=EXTERNAL operation=NONE " +
+                    "value=none action=keep_future_crossfade"
+            }
         )
         assertTrue(trace.any { it.startsWith("START_REQUESTED durationMs=9000") })
         assertFalse(trace.any { it.contains("reason=cancelled_by_interaction") })
@@ -1234,13 +1344,17 @@ class DualPlayerPlaybackCoordinatorTest {
         pipelineA.prepareBaseline(firstKey)
         pipelineA.updateBaseline(firstKey, 1f)
         val pipelineB = pipeline(PhysicalPlayerRole.STANDBY, playerB)
+        val clock = ManualCrossfadeClock()
+        val scheduler = ManualCrossfadeScheduler(clock)
         val coordinator = DualPlayerPlaybackCoordinator(
             initialActive = pipelineA,
             initialStandby = pipelineB,
             standbyBaselinePreparer = StandbyBaselinePreparer { _, result ->
                 result(1f)
                 true
-            }
+            },
+            crossfadeClock = clock,
+            crossfadeScheduler = scheduler
         )
         val integration = RecordingIntegration()
         coordinator.attachLogicalPlayer(RecordingLogicalPlayer(playerA), integration)
@@ -1265,10 +1379,30 @@ class DualPlayerPlaybackCoordinatorTest {
             )
         )
 
+        val activeListener = ArgumentCaptor.forClass(Player.Listener::class.java)
+        verify(playerA, atLeastOnce()).addListener(activeListener.capture())
+        when (operation) {
+            LogicalNavigationPolicyOperation.SET_REPEAT_MODE ->
+                activeListener.allValues.last().onRepeatModeChanged(
+                    when (value) {
+                        navigationRepeatModeTraceValue(Player.REPEAT_MODE_ALL),
+                        Player.REPEAT_MODE_ALL.toString() -> Player.REPEAT_MODE_ALL
+                        navigationRepeatModeTraceValue(Player.REPEAT_MODE_ONE),
+                        Player.REPEAT_MODE_ONE.toString() -> Player.REPEAT_MODE_ONE
+                        else -> Player.REPEAT_MODE_OFF
+                    }
+                )
+            LogicalNavigationPolicyOperation.SET_SHUFFLE_MODE ->
+                activeListener.allValues.last().onShuffleModeEnabledChanged(
+                    value.toBoolean()
+                )
+        }
+
         if (expectsCancellation) {
-            assertEquals(CrossfadeTransitionState.IDLE, coordinator.crossfadeState)
+            assertEquals(CrossfadeTransitionState.CANCELLED, coordinator.crossfadeState)
             assertSame(pipelineA, coordinator.active)
             assertEquals(listOf(second), integration.cancelledIncoming)
+            assertEquals(0, scheduler.runUntilEmpty())
         } else {
             assertEquals(CrossfadeTransitionState.CROSSFADING, coordinator.crossfadeState)
             assertTrue(integration.cancelledIncoming.isEmpty())

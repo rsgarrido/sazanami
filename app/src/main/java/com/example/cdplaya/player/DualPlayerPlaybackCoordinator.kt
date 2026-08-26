@@ -349,6 +349,12 @@ private data class ActiveCrossfade(
     var incomingAudibleSignalled: Boolean = false
 )
 
+private data class PendingInternalNavigationCallback(
+    val mediaId: String,
+    val operation: LogicalNavigationPolicyOperation,
+    val value: String
+)
+
 /** Owns reusable A/B roles, optional controlled overlap, and non-overlap fallback. */
 internal class DualPlayerPlaybackCoordinator(
     initialActive: PhysicalPlayerPipeline,
@@ -382,6 +388,8 @@ internal class DualPlayerPlaybackCoordinator(
     private var crossfadeCancelledMediaKey: StandbyMediaKey? = null
     private var crossfadeConfiguration = initialCrossfadeConfiguration.normalized()
     private var lastEligibilityTraceSignature: String? = null
+    private val pendingInternalNavigationCallbacks =
+        mutableListOf<PendingInternalNavigationCallback>()
 
     private val standbyPreparation = StandbyPreparationController(
         output = object : StandbyPreparationOutput {
@@ -429,7 +437,8 @@ internal class DualPlayerPlaybackCoordinator(
             }
         },
         clock = crossfadeClock,
-        scheduler = crossfadeScheduler
+        scheduler = crossfadeScheduler,
+        durationMillis = crossfadeConfiguration.durationMillis
     )
 
     init {
@@ -559,6 +568,13 @@ internal class DualPlayerPlaybackCoordinator(
             event.origin ==
             LogicalPlaybackCommandOrigin.CROSSFADE_HANDOFF_INTERNAL
         ) {
+            val operation = event.navigationOperation
+            val value = event.navigationValue
+            val currentMediaId = logicalPipeline.player.currentMediaItem?.mediaId
+            if (operation != null && value != null && currentMediaId != null) {
+                pendingInternalNavigationCallbacks +=
+                    PendingInternalNavigationCallback(currentMediaId, operation, value)
+            }
             val logicalMediaKey = logicalPipeline.player.currentMediaItem
                 ?.let(StandbyTargetResolver::key)
             CrossfadeTrace.log(
@@ -572,6 +588,9 @@ internal class DualPlayerPlaybackCoordinator(
                         logicalMediaKey == crossfadeCancelledMediaKey)
             )
             return
+        }
+        if (command == LogicalPlaybackCommand.NAVIGATION_POLICY) {
+            pendingInternalNavigationCallbacks.clear()
         }
         val preservesFutureCrossfade = when (command) {
             LogicalPlaybackCommand.PLAY_PAUSE,
@@ -641,6 +660,11 @@ internal class DualPlayerPlaybackCoordinator(
         val normalized = configuration.normalized()
         val wasEnabled = crossfadeConfiguration.enabled
         crossfadeConfiguration = normalized
+        if (!wasEnabled && normalized.enabled) {
+            // Disabling during an overlap suppresses the abandoned transition for the current
+            // item. A later explicit enable is a fresh policy decision for that same item.
+            crossfadeCancelledMediaKey = null
+        }
         CrossfadeTrace.log(
             "CONFIG enabled=${normalized.enabled} durationMs=${normalized.durationMillis} " +
                 "preserveAlbumTransitions=${normalized.preserveAlbumTransitions}"
@@ -1102,6 +1126,28 @@ internal class DualPlayerPlaybackCoordinator(
         )
     }
 
+    private fun consumeInternalNavigationCallback(
+        mediaId: String?,
+        operation: LogicalNavigationPolicyOperation,
+        value: String
+    ): Boolean {
+        val index = pendingInternalNavigationCallbacks.indexOfFirst { pending ->
+            pending.mediaId == mediaId &&
+                pending.operation == operation &&
+                pending.value == value
+        }
+        if (index < 0) {
+            pendingInternalNavigationCallbacks.clear()
+            return false
+        }
+        pendingInternalNavigationCallbacks.removeAt(index)
+        CrossfadeTrace.log(
+            "NAV_POLICY CALLBACK origin=CROSSFADE_HANDOFF_INTERNAL " +
+                "operation=${operation.name} value=$value action=keep_crossfade"
+        )
+        return true
+    }
+
     private fun attemptNaturalHandoff(): Boolean {
         if (released || handoffInProgress) return false
         val logical = logicalPlayer ?: return resumeActiveFallback()
@@ -1271,12 +1317,28 @@ internal class DualPlayerPlaybackCoordinator(
 
             override fun onRepeatModeChanged(repeatMode: Int) {
                 if (!isCurrent()) return
+                if (
+                    consumeInternalNavigationCallback(
+                        activeAtBinding.player.currentMediaItem?.mediaId,
+                        LogicalNavigationPolicyOperation.SET_REPEAT_MODE,
+                        navigationRepeatModeTraceValue(repeatMode)
+                    )
+                ) {
+                    crossfadeTransition.reevaluate()
+                    return
+                }
+                val currentKey = activeAtBinding.player.currentMediaItem
+                    ?.let(StandbyTargetResolver::key)
                 if (activeCrossfade != null) {
-                    crossfadeCancelledMediaKey = activeAtBinding.player.currentMediaItem
-                        ?.let(StandbyTargetResolver::key)
+                    crossfadeCancelledMediaKey = currentKey
                     crossfadeTransition.cancel(
                         permanent = true,
                         traceReason = "repeat_mode_changed_during_overlap"
+                    )
+                } else if (currentKey == crossfadeCancelledMediaKey) {
+                    crossfadeTransition.cancel(
+                        permanent = true,
+                        traceReason = "repeat_mode_changed_after_overlap_cancel"
                     )
                 } else {
                     crossfadeCancelledMediaKey = null
@@ -1287,12 +1349,28 @@ internal class DualPlayerPlaybackCoordinator(
 
             override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
                 if (!isCurrent()) return
+                if (
+                    consumeInternalNavigationCallback(
+                        activeAtBinding.player.currentMediaItem?.mediaId,
+                        LogicalNavigationPolicyOperation.SET_SHUFFLE_MODE,
+                        shuffleModeEnabled.toString()
+                    )
+                ) {
+                    crossfadeTransition.reevaluate()
+                    return
+                }
+                val currentKey = activeAtBinding.player.currentMediaItem
+                    ?.let(StandbyTargetResolver::key)
                 if (activeCrossfade != null) {
-                    crossfadeCancelledMediaKey = activeAtBinding.player.currentMediaItem
-                        ?.let(StandbyTargetResolver::key)
+                    crossfadeCancelledMediaKey = currentKey
                     crossfadeTransition.cancel(
                         permanent = true,
                         traceReason = "shuffle_mode_changed_during_overlap"
+                    )
+                } else if (currentKey == crossfadeCancelledMediaKey) {
+                    crossfadeTransition.cancel(
+                        permanent = true,
+                        traceReason = "shuffle_mode_changed_after_overlap_cancel"
                     )
                 } else {
                     crossfadeCancelledMediaKey = null
@@ -1434,6 +1512,7 @@ internal class DualPlayerPlaybackCoordinator(
         released = true
         logicalPlayer?.endCrossfadeHandoffPlaylistSync()
         logicalPlayer?.endCrossfadeHandoffNavigationSync()
+        pendingInternalNavigationCallbacks.clear()
         crossfadeTransition.release()
         detachRoleListeners()
         activeIntegration?.unbind(logicalPipeline)

@@ -14,7 +14,10 @@ internal object CrossfadeTrace {
             sink(message)
             return
         }
-        // Local JVM tests use the Android stub implementation of Log.
-        runCatching { Log.d(TAG, message) }
+        // Local JVM tests use the Android stub implementation of Log. Production diagnostics
+        // stay opt-in through Android's normal loggability gate; no envelope frames are logged.
+        runCatching {
+            if (Log.isLoggable(TAG, Log.DEBUG)) Log.d(TAG, message)
+        }
     }
 }
