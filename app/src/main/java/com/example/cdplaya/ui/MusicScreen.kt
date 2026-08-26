@@ -64,8 +64,10 @@ import com.example.cdplaya.ui.player.modern.DefaultPlayerMorphBounds
 import com.example.cdplaya.ui.player.modern.defaultMorphMetadataOwner
 import com.example.cdplaya.ui.player.modern.resolveDefaultPlayerMorphGeometry
 import com.example.cdplaya.ui.player.classicwheel.classicWheelMorphTravelDistance
+import com.example.cdplaya.ui.player.classicwheel.ClassicWheelMenuState
 import com.example.cdplaya.ui.player.classicwheel.resolveClassicWheelMorphGeometry
 import com.example.cdplaya.ui.player.classicwheel.ClassicWheelMorphBounds
+import com.example.cdplaya.ui.player.classicwheel.ownsNowPlayingMorphContent
 import com.example.cdplaya.ui.player.retrorack.resolveRetroRackMorphGeometry
 import com.example.cdplaya.ui.player.retrorack.retroRackMorphTravelDistance
 import com.example.cdplaya.ui.player.retrorack.RetroRackMorphBounds
@@ -561,6 +563,12 @@ internal fun MusicScreen(
         ) { playerEndpointBounds ->
             val defaultMorphBounds = remember { DefaultPlayerMorphBounds() }
             val classicMorphBounds = remember { ClassicWheelMorphBounds() }
+            val classicWheelMenuState = remember(
+                selectedPlayerTheme,
+                playerMorphState.shouldComposeExpanded
+            ) {
+                ClassicWheelMenuState()
+            }
             val retroRackMorphBounds = remember { RetroRackMorphBounds() }
             val pocketFlipMorphBounds = remember { PocketFlipMorphBounds() }
             val pocketCassetteMorphBounds = remember { PocketCassetteMorphBounds() }
@@ -577,6 +585,7 @@ internal fun MusicScreen(
                         ) == DefaultMorphMetadataOwner.Morph
             val classicWheelMorphOwnsVisuals =
                 selectedPlayerTheme == PlayerTheme.CLASSIC_WHEEL &&
+                        classicWheelMenuState.currentScreen.ownsNowPlayingMorphContent() &&
                         !playerMorphState.isCollapsedAndIdle &&
                         resolveClassicWheelMorphGeometry(
                             playerMorphState.progress,
@@ -1258,6 +1267,7 @@ internal fun MusicScreen(
                     playerEndpointBounds = playerEndpointBounds,
                     defaultMorphBounds = defaultMorphBounds,
                     classicMorphBounds = classicMorphBounds,
+                    classicWheelMenuState = classicWheelMenuState,
                     retroRackMorphBounds = retroRackMorphBounds,
                     pocketFlipMorphBounds = pocketFlipMorphBounds,
                     pocketCassetteMorphBounds = pocketCassetteMorphBounds,

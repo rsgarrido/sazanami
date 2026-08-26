@@ -19,7 +19,9 @@ import com.example.cdplaya.data.PlayerTheme
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.player.RepeatMode
 import com.example.cdplaya.ui.player.classicwheel.ClassicWheelExpandedPlayer
+import com.example.cdplaya.ui.player.classicwheel.ClassicWheelMenuState
 import com.example.cdplaya.ui.player.classicwheel.ClassicWheelPlayerMorph
+import com.example.cdplaya.ui.player.classicwheel.ownsNowPlayingMorphContent
 import com.example.cdplaya.ui.player.classicwheel.playerMorphRendererFor
 import com.example.cdplaya.ui.player.classicwheel.PlayerMorphRenderer
 import com.example.cdplaya.ui.player.classicwheel.resolveClassicWheelMorphGeometry
@@ -105,6 +107,7 @@ fun ExpandedPlayerThemeHost(
     endpointBounds: PlayerEndpointBounds,
     defaultMorphBounds: DefaultPlayerMorphBounds,
     classicMorphBounds: ClassicWheelMorphBounds,
+    classicWheelMenuState: ClassicWheelMenuState,
     retroRackMorphBounds: RetroRackMorphBounds,
     pocketFlipMorphBounds: PocketFlipMorphBounds,
     pocketCassetteMorphBounds: PocketCassetteMorphBounds
@@ -247,21 +250,27 @@ fun ExpandedPlayerThemeHost(
             }
 
             PlayerTheme.CLASSIC_WHEEL -> {
+                val ownsNowPlayingMorphContent =
+                    classicWheelMenuState.currentScreen.ownsNowPlayingMorphContent()
                 val geometry = resolveClassicWheelMorphGeometry(
                     playerMorphState.progress, endpointBounds
                 )
                 val sharedGeometry = resolveClassicWheelSharedGeometry(
                     playerMorphState.progress, classicMorphBounds
                 )
+                val ownedSharedGeometry = sharedGeometry.takeIf {
+                    ownsNowPlayingMorphContent
+                }
                 ClassicWheelPlayerMorph(
                     progress = playerMorphState.progress,
                     geometry = geometry,
-                    sharedGeometry = sharedGeometry,
+                    sharedGeometry = ownedSharedGeometry,
                     currentSong = currentSong,
                     isPlaying = isPlaying,
                     tokens = tokens
                 ) { screenAlpha, wheelAlpha, controlsActive -> ClassicWheelExpandedPlayer(
                     currentSong = currentSong,
+                    menuState = classicWheelMenuState,
                     isPlaying = isPlaying,
                     isShuffleEnabled = isShuffleEnabled,
                     repeatMode = repeatMode,
@@ -284,14 +293,14 @@ fun ExpandedPlayerThemeHost(
                     wheelAlpha = wheelAlpha,
                     wheelInputEnabled = controlsActive,
                     morphBounds = classicMorphBounds,
-                    sharedContentVisible = sharedGeometry == null
-                    ,onMorphDragStart = {
+                    sharedContentVisible = ownedSharedGeometry == null,
+                    onMorphDragStart = {
                         playerMorphState.beginDragWithRange(classicWheelMorphTravelDistance(endpointBounds))
-                    }
-                    ,onMorphDragBy = playerMorphState::dragBy
-                    ,onMorphDragEnd = playerMorphState::endDrag
-                    ,onMorphDragCancel = playerMorphState::cancelDrag
-                    ,wheelPlayControlAlpha = if (controlsActive) 1f else 0f
+                    },
+                    onMorphDragBy = playerMorphState::dragBy,
+                    onMorphDragEnd = playerMorphState::endDrag,
+                    onMorphDragCancel = playerMorphState::cancelDrag,
+                    wheelPlayControlAlpha = if (controlsActive) 1f else 0f
                 ) }
             }
 

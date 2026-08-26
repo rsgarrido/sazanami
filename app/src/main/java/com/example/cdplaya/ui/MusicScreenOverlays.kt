@@ -28,6 +28,7 @@ import com.example.cdplaya.ui.player.WarmCurrentSongWaveform
 import com.example.cdplaya.ui.player.shouldLoadExpandedPlayerWaveform
 import com.example.cdplaya.ui.player.modern.DefaultPlayerMorphBounds
 import com.example.cdplaya.ui.player.classicwheel.ClassicWheelMorphBounds
+import com.example.cdplaya.ui.player.classicwheel.ClassicWheelMenuState
 import com.example.cdplaya.ui.player.retrorack.RetroRackMorphBounds
 import com.example.cdplaya.ui.player.pocketflip.PocketFlipMorphBounds
 import com.example.cdplaya.ui.player.pocketcassette.PocketCassetteMorphBounds
@@ -112,6 +113,7 @@ fun MusicScreenOverlays(
     playerEndpointBounds: PlayerEndpointBounds,
     defaultMorphBounds: DefaultPlayerMorphBounds,
     classicMorphBounds: ClassicWheelMorphBounds,
+    classicWheelMenuState: ClassicWheelMenuState,
     retroRackMorphBounds: RetroRackMorphBounds,
     pocketFlipMorphBounds: PocketFlipMorphBounds,
     pocketCassetteMorphBounds: PocketCassetteMorphBounds
@@ -193,6 +195,7 @@ fun MusicScreenOverlays(
                     endpointBounds = playerEndpointBounds,
                     defaultMorphBounds = defaultMorphBounds,
                     classicMorphBounds = classicMorphBounds,
+                    classicWheelMenuState = classicWheelMenuState,
                     retroRackMorphBounds = retroRackMorphBounds,
                     pocketFlipMorphBounds = pocketFlipMorphBounds,
                     pocketCassetteMorphBounds = pocketCassetteMorphBounds

@@ -40,6 +40,7 @@ import kotlinx.coroutines.delay
 fun ClassicWheelExpandedPlayer(
     currentSong: Song?,
     songs: List<Song>,
+    menuState: ClassicWheelMenuState,
     isPlaying: Boolean,
     isShuffleEnabled: Boolean,
     repeatMode: RepeatMode,
@@ -77,10 +78,6 @@ fun ClassicWheelExpandedPlayer(
             .fillMaxSize()
             .padding(horizontal = 14.dp, vertical = 16.dp)
     ) {
-        val menuState = remember {
-            ClassicWheelMenuState()
-        }
-
         val context = androidx.compose.ui.platform.LocalContext.current
 
         val audioManager = remember {
