@@ -7,8 +7,12 @@ import com.example.cdplaya.data.membershipKey
 import com.example.cdplaya.ui.library.LibrarySortOption
 import com.example.cdplaya.ui.library.RatedSongFilter
 import com.example.cdplaya.ui.library.filterSongsForRatedCollection
+import com.example.cdplaya.ui.library.normalizeRatedSongFilterForQuickRateMode
+import com.example.cdplaya.ui.library.projectSongsForRatedCollection
+import com.example.cdplaya.ui.library.visibleRatedSongFilters
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertSame
 import org.junit.Test
 import org.mockito.Mockito.mock
 
@@ -116,6 +120,303 @@ class SongRatingLibraryBehaviorTest {
                 listOf(songs[rating - 1]),
                 filterSongsForRatedCollection(songs, filter, ratings)
             )
+            assertEquals(
+                listOf(songs[rating - 1]),
+                projectSongsForRatedCollection(
+                    songs,
+                    filter,
+                    ratings,
+                    quickRateActive = true
+                )
+            )
+        }
+    }
+
+    @Test
+    fun ratedFilterOptionsIncludeUnratedInTheRequestedOrder() {
+        assertEquals(
+            listOf(
+                "All ratings",
+                "Unrated",
+                "5 stars",
+                "4 stars",
+                "3 stars",
+                "2 stars",
+                "1 star"
+            ),
+            RatedSongFilter.entries.map { filter -> filter.label }
+        )
+    }
+
+    @Test
+    fun unratedFilterVisibilityFollowsQuickRateMode() {
+        assertEquals(
+            listOf(
+                RatedSongFilter.ALL,
+                RatedSongFilter.FIVE,
+                RatedSongFilter.FOUR,
+                RatedSongFilter.THREE,
+                RatedSongFilter.TWO,
+                RatedSongFilter.ONE
+            ),
+            visibleRatedSongFilters(quickRateActive = false)
+        )
+        assertEquals(
+            RatedSongFilter.entries,
+            visibleRatedSongFilters(quickRateActive = true)
+        )
+    }
+
+    @Test
+    fun exitingQuickRateResetsOnlyAnUnratedFilter() {
+        assertEquals(
+            RatedSongFilter.ALL,
+            normalizeRatedSongFilterForQuickRateMode(
+                filter = RatedSongFilter.UNRATED,
+                quickRateActive = false
+            )
+        )
+        assertEquals(
+            RatedSongFilter.FOUR,
+            normalizeRatedSongFilterForQuickRateMode(
+                filter = RatedSongFilter.FOUR,
+                quickRateActive = false
+            )
+        )
+    }
+
+    @Test
+    fun quickRateUnratedShowsOnlySongsWithoutAValidRating() {
+        val absent = song(1, "Absent rating")
+        val five = song(2, "Five")
+        val three = song(3, "Three")
+        val zero = song(4, "Zero rating")
+        val source = listOf(absent, five, three, zero)
+        val ratings = mapOf(
+            five.membershipKey() to 5,
+            three.membershipKey() to 3,
+            zero.membershipKey() to 0
+        )
+
+        assertEquals(
+            listOf(absent, zero),
+            projectSongsForRatedCollection(
+                source,
+                RatedSongFilter.UNRATED,
+                ratings,
+                quickRateActive = true
+            )
+        )
+        assertEquals(
+            emptyList<Song>(),
+            projectSongsForRatedCollection(
+                source,
+                RatedSongFilter.UNRATED,
+                ratings,
+                quickRateActive = false
+            )
+        )
+    }
+
+    @Test
+    fun ratingAnUnratedSongImmediatelyRemovesItFromQuickRateUnrated() {
+        val candidate = song(1, "Needs rating")
+
+        assertEquals(
+            listOf(candidate),
+            projectSongsForRatedCollection(
+                listOf(candidate),
+                RatedSongFilter.UNRATED,
+                emptyMap(),
+                quickRateActive = true
+            )
+        )
+        assertEquals(
+            emptyList<Song>(),
+            projectSongsForRatedCollection(
+                listOf(candidate),
+                RatedSongFilter.UNRATED,
+                mapOf(candidate.membershipKey() to 4),
+                quickRateActive = true
+            )
+        )
+    }
+
+    @Test
+    fun clearingARatingImmediatelyAddsTheSongToQuickRateUnrated() {
+        val candidate = song(1, "Clear rating")
+
+        assertEquals(
+            emptyList<Song>(),
+            projectSongsForRatedCollection(
+                listOf(candidate),
+                RatedSongFilter.UNRATED,
+                mapOf(candidate.membershipKey() to 5),
+                quickRateActive = true
+            )
+        )
+        assertEquals(
+            listOf(candidate),
+            projectSongsForRatedCollection(
+                listOf(candidate),
+                RatedSongFilter.UNRATED,
+                emptyMap(),
+                quickRateActive = true
+            )
+        )
+    }
+
+    @Test
+    fun normalRatedExcludesUnratedWhileQuickRateAllUsesTheFullCatalog() {
+        val unrated = song(1, "Unrated")
+        val five = song(2, "Five")
+        val three = song(3, "Three")
+        val source = listOf(unrated, five, three)
+        val ratings = mapOf(
+            five.membershipKey() to 5,
+            three.membershipKey() to 3
+        )
+
+        assertEquals(
+            listOf(five, three),
+            projectSongsForRatedCollection(
+                source,
+                RatedSongFilter.ALL,
+                ratings,
+                quickRateActive = false
+            )
+        )
+        assertEquals(
+            source,
+            projectSongsForRatedCollection(
+                source,
+                RatedSongFilter.ALL,
+                ratings,
+                quickRateActive = true
+            )
+        )
+    }
+
+    @Test
+    fun assigningAndClearingRatingsKeepsQuickRateAllStableAndUpdatesNormalRated() {
+        val unrated = song(1, "Unrated")
+        val five = song(2, "Five")
+        val three = song(3, "Three")
+        val source = listOf(unrated, five, three)
+        val initialRatings = mapOf(
+            five.membershipKey() to 5,
+            three.membershipKey() to 3
+        )
+        val afterAssign = initialRatings + (unrated.membershipKey() to 4)
+
+        assertEquals(
+            source,
+            projectSongsForRatedCollection(
+                source,
+                RatedSongFilter.ALL,
+                afterAssign,
+                quickRateActive = true
+            )
+        )
+        assertEquals(
+            source,
+            projectSongsForRatedCollection(
+                source,
+                RatedSongFilter.ALL,
+                afterAssign,
+                quickRateActive = false
+            )
+        )
+
+        val afterClear = afterAssign - five.membershipKey()
+        assertEquals(
+            source,
+            projectSongsForRatedCollection(
+                source,
+                RatedSongFilter.ALL,
+                afterClear,
+                quickRateActive = true
+            )
+        )
+        assertEquals(
+            listOf(unrated, three),
+            projectSongsForRatedCollection(
+                source,
+                RatedSongFilter.ALL,
+                afterClear,
+                quickRateActive = false
+            )
+        )
+    }
+
+    @Test
+    fun quickRateExactFilterExcludesUnratedAndReactsImmediatelyToMutation() {
+        val unrated = song(1, "Unrated")
+        val five = song(2, "Five")
+        val source = listOf(unrated, five)
+        val initialRatings = mapOf(five.membershipKey() to 5)
+
+        assertEquals(
+            listOf(five),
+            projectSongsForRatedCollection(
+                source,
+                RatedSongFilter.FIVE,
+                initialRatings,
+                quickRateActive = true
+            )
+        )
+        assertEquals(
+            emptyList<Song>(),
+            projectSongsForRatedCollection(
+                source,
+                RatedSongFilter.FIVE,
+                mapOf(five.membershipKey() to 4),
+                quickRateActive = true
+            )
+        )
+    }
+
+    @Test
+    fun zeroRatedCatalogIsEmptyNormallyAndAvailableInQuickRateAll() {
+        val source = listOf(song(1, "Alpha"), song(2, "Beta"))
+
+        assertEquals(
+            emptyList<Song>(),
+            projectSongsForRatedCollection(
+                source,
+                RatedSongFilter.ALL,
+                emptyMap(),
+                quickRateActive = false
+            )
+        )
+        assertEquals(
+            source,
+            projectSongsForRatedCollection(
+                source,
+                RatedSongFilter.ALL,
+                emptyMap(),
+                quickRateActive = true
+            )
+        )
+    }
+
+    @Test
+    fun quickRateProjectionPreservesStableIdentityAndSourceOrdering() {
+        val source = listOf(song(3, "Gamma"), song(1, "Alpha"), song(2, "Beta"))
+        val projected = projectSongsForRatedCollection(
+            source,
+            RatedSongFilter.ALL,
+            mapOf(source.first().membershipKey() to 5),
+            quickRateActive = true
+        )
+
+        assertEquals(
+            source.map { song -> song.membershipKey() },
+            projected.map { song -> song.membershipKey() }
+        )
+        val projectedByIdentity = projected.associateBy { song -> song.membershipKey() }
+        source.forEach { song ->
+            assertSame(song, projectedByIdentity[song.membershipKey()])
         }
     }
 

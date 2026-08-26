@@ -45,6 +45,7 @@ internal fun ClassicWheelPlayerMorph(
     sharedGeometry: ClassicWheelSharedGeometry?,
     currentSong: Song?,
     isPlaying: Boolean,
+    sharedPlayPauseAlpha: Float,
     tokens: PlayerThemeTokens,
     content: @Composable (screenAlpha: Float, wheelAlpha: Float, controlsActive: Boolean) -> Unit
 ) {
@@ -76,7 +77,13 @@ internal fun ClassicWheelPlayerMorph(
                 classicWheelExpandedControlsActive(safeProgress)
             )
             if (sharedGeometry != null && currentSong != null) {
-                ClassicWheelMorphSharedContent(sharedGeometry, safeProgress, currentSong, isPlaying)
+                ClassicWheelMorphSharedContent(
+                    geometry = sharedGeometry,
+                    progress = safeProgress,
+                    song = currentSong,
+                    isPlaying = isPlaying,
+                    playPauseAlpha = sharedPlayPauseAlpha
+                )
             }
         }
     }
@@ -95,7 +102,11 @@ private fun Modifier.clipClassicWheelShell(
 
 @Composable
 private fun ClassicWheelMorphSharedContent(
-    geometry: ClassicWheelSharedGeometry, progress: Float, song: Song, isPlaying: Boolean
+    geometry: ClassicWheelSharedGeometry,
+    progress: Float,
+    song: Song,
+    isPlaying: Boolean,
+    playPauseAlpha: Float
 ) {
     val density = LocalDensity.current
     val artworkRadius = (8f - 5f * progress).coerceAtLeast(3f).dp
@@ -134,23 +145,25 @@ private fun ClassicWheelMorphSharedContent(
         maxLines = 1,
         overflow = TextOverflow.Ellipsis
     )
-    Box(
-        modifier = Modifier
-            .offset { IntOffset(geometry.playPause.left.roundToInt(), geometry.playPause.top.roundToInt()) }
-            .size(with(density) { geometry.playPause.width.toDp() }, with(density) { geometry.playPause.height.toDp() })
-            .clip(RoundedCornerShape(percent = 50))
-            .background(
-                ClassicWheelColors.wheel.copy(
-                    alpha = (1f - ((progress - .86f) / .14f).coerceIn(0f, 1f)) *
-                        (1f - .30f * progress)
-                )
-            ),
-        contentAlignment = androidx.compose.ui.Alignment.Center
-    ) {
-        Icon(
-            imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-            contentDescription = null,
-            tint = ClassicWheelColors.wheelContent
-        )
+    val safePlayPauseAlpha = playPauseAlpha.coerceIn(0f, 1f)
+    if (safePlayPauseAlpha > 0f) {
+        Box(
+            modifier = Modifier
+                .offset { IntOffset(geometry.playPause.left.roundToInt(), geometry.playPause.top.roundToInt()) }
+                .size(with(density) { geometry.playPause.width.toDp() }, with(density) { geometry.playPause.height.toDp() })
+                .graphicsLayer { alpha = safePlayPauseAlpha }
+                .clip(RoundedCornerShape(percent = 50))
+                .background(
+                    ClassicWheelColors.wheel.copy(alpha = 1f - .30f * progress)
+                ),
+            contentAlignment = androidx.compose.ui.Alignment.Center
+        ) {
+            Icon(
+                imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                contentDescription = null,
+                tint = ClassicWheelColors.wheelContent,
+                modifier = Modifier.size((24f + 18f * progress).dp)
+            )
+        }
     }
 }

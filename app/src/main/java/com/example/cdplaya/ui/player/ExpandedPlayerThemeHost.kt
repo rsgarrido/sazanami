@@ -19,7 +19,11 @@ import com.example.cdplaya.data.PlayerTheme
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.player.RepeatMode
 import com.example.cdplaya.ui.player.classicwheel.ClassicWheelExpandedPlayer
+import com.example.cdplaya.ui.player.classicwheel.ClassicWheelMenuState
 import com.example.cdplaya.ui.player.classicwheel.ClassicWheelPlayerMorph
+import com.example.cdplaya.ui.player.classicwheel.allowsLyricsSwipe
+import com.example.cdplaya.ui.player.classicwheel.classicWheelPlayPauseVisualOwnership
+import com.example.cdplaya.ui.player.classicwheel.ownsNowPlayingMorphContent
 import com.example.cdplaya.ui.player.classicwheel.playerMorphRendererFor
 import com.example.cdplaya.ui.player.classicwheel.PlayerMorphRenderer
 import com.example.cdplaya.ui.player.classicwheel.resolveClassicWheelMorphGeometry
@@ -105,6 +109,7 @@ fun ExpandedPlayerThemeHost(
     endpointBounds: PlayerEndpointBounds,
     defaultMorphBounds: DefaultPlayerMorphBounds,
     classicMorphBounds: ClassicWheelMorphBounds,
+    classicWheelMenuState: ClassicWheelMenuState,
     retroRackMorphBounds: RetroRackMorphBounds,
     pocketFlipMorphBounds: PocketFlipMorphBounds,
     pocketCassetteMorphBounds: PocketCassetteMorphBounds
@@ -153,34 +158,46 @@ fun ExpandedPlayerThemeHost(
         hostDragOffset = (hostDragOffset + delta).coerceAtMost(0f)
         lyricsTransitionState.dragOpeningBy(delta, hostHeightPx)
     }
-    val sharedGestureModifier = if (selectedPlayerTheme == PlayerTheme.DEFAULT) {
+    val openLyricsSemanticsModifier = Modifier.semantics {
+        customActions = listOf(
+            CustomAccessibilityAction("Open lyrics") {
+                lyricsTransitionState.openLyrics()
+                true
+            }
+        )
+    }
+    val lyricsDragModifier = Modifier
+        .onSizeChanged { size -> hostHeightPx = size.height.toFloat().coerceAtLeast(1f) }
+        .draggable(
+            state = hostDragState,
+            orientation = Orientation.Vertical,
+            enabled = !lyricsTransitionState.lyricsInteractive,
+            onDragStarted = { hostDragOffset = 0f },
+            onDragStopped = { velocity ->
+                lyricsTransitionState.settleOpening(velocity)
+                hostDragOffset = 0f
+            }
+        )
+    val sharedGestureModifier = if (
+        selectedPlayerTheme == PlayerTheme.DEFAULT ||
+        selectedPlayerTheme == PlayerTheme.CLASSIC_WHEEL
+    ) {
         Modifier
     } else {
+        lyricsDragModifier
+    }
+    val sharedLyricsSemanticsModifier = if (
+        selectedPlayerTheme == PlayerTheme.CLASSIC_WHEEL
+    ) {
         Modifier
-            .onSizeChanged { size -> hostHeightPx = size.height.toFloat().coerceAtLeast(1f) }
-            .draggable(
-                state = hostDragState,
-                orientation = Orientation.Vertical,
-                enabled = !lyricsTransitionState.lyricsInteractive,
-                onDragStarted = { hostDragOffset = 0f },
-                onDragStopped = { velocity ->
-                    lyricsTransitionState.settleOpening(velocity)
-                    hostDragOffset = 0f
-                }
-            )
+    } else {
+        openLyricsSemanticsModifier
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .semantics {
-                customActions = listOf(
-                    CustomAccessibilityAction("Open lyrics") {
-                        lyricsTransitionState.openLyrics()
-                        true
-                    }
-                )
-            }
+            .then(sharedLyricsSemanticsModifier)
             .then(sharedGestureModifier)
     ) {
         when (selectedPlayerTheme) {
@@ -247,21 +264,38 @@ fun ExpandedPlayerThemeHost(
             }
 
             PlayerTheme.CLASSIC_WHEEL -> {
+                val ownsNowPlayingMorphContent =
+                    classicWheelMenuState.currentScreen.ownsNowPlayingMorphContent()
                 val geometry = resolveClassicWheelMorphGeometry(
                     playerMorphState.progress, endpointBounds
                 )
                 val sharedGeometry = resolveClassicWheelSharedGeometry(
                     playerMorphState.progress, classicMorphBounds
                 )
+                val ownedSharedGeometry = sharedGeometry.takeIf {
+                    ownsNowPlayingMorphContent
+                }
+                val playPauseOwnership = classicWheelPlayPauseVisualOwnership(
+                    playerMorphState.progress
+                )
+                val displayLyricsGestureModifier = if (
+                    classicWheelMenuState.currentScreen.allowsLyricsSwipe()
+                ) {
+                    openLyricsSemanticsModifier.then(lyricsDragModifier)
+                } else {
+                    Modifier
+                }
                 ClassicWheelPlayerMorph(
                     progress = playerMorphState.progress,
                     geometry = geometry,
-                    sharedGeometry = sharedGeometry,
+                    sharedGeometry = ownedSharedGeometry,
                     currentSong = currentSong,
                     isPlaying = isPlaying,
+                    sharedPlayPauseAlpha = playPauseOwnership.sharedAlpha,
                     tokens = tokens
                 ) { screenAlpha, wheelAlpha, controlsActive -> ClassicWheelExpandedPlayer(
                     currentSong = currentSong,
+                    menuState = classicWheelMenuState,
                     isPlaying = isPlaying,
                     isShuffleEnabled = isShuffleEnabled,
                     repeatMode = repeatMode,
@@ -284,14 +318,15 @@ fun ExpandedPlayerThemeHost(
                     wheelAlpha = wheelAlpha,
                     wheelInputEnabled = controlsActive,
                     morphBounds = classicMorphBounds,
-                    sharedContentVisible = sharedGeometry == null
-                    ,onMorphDragStart = {
+                    sharedContentVisible = ownedSharedGeometry == null,
+                    onMorphDragStart = {
                         playerMorphState.beginDragWithRange(classicWheelMorphTravelDistance(endpointBounds))
-                    }
-                    ,onMorphDragBy = playerMorphState::dragBy
-                    ,onMorphDragEnd = playerMorphState::endDrag
-                    ,onMorphDragCancel = playerMorphState::cancelDrag
-                    ,wheelPlayControlAlpha = if (controlsActive) 1f else 0f
+                    },
+                    onMorphDragBy = playerMorphState::dragBy,
+                    onMorphDragEnd = playerMorphState::endDrag,
+                    onMorphDragCancel = playerMorphState::cancelDrag,
+                    wheelPlayControlAlpha = playPauseOwnership.expandedAlpha,
+                    displayLyricsGestureModifier = displayLyricsGestureModifier
                 ) }
             }
 

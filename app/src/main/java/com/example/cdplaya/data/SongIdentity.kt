@@ -65,6 +65,15 @@ internal fun buildSongIdentity(song: Song): SongIdentity = with(song) {
 
 fun Song.membershipKey(): String = songIdentity().membershipKey
 
+/**
+ * Stable identity for a song row/card in a rendered library collection.
+ *
+ * MediaStore row IDs are only local to their volume, so [Song.id] alone is not a safe lazy-item
+ * key. The membership identity is volume-qualified when MediaStore metadata is available and
+ * falls back through the existing durable source/portable identity tiers for cached legacy rows.
+ */
+fun Song.stableUiKey(): String = membershipKey()
+
 internal fun portableMetadataKey(
     title: String,
     artist: String,

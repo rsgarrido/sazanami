@@ -103,6 +103,100 @@ class ListeningHistoryProjectionResolverTest {
     }
 
     @Test
+    fun duplicateHistoryIdentitiesResolvingToOneSongCollapseBeforeUiPublication() {
+        val current = song(1_000_008_183L, title = "Current track")
+        val firstBinding = binding(current).copy(
+            localTrackBindingId = 501L,
+            referenceKey = "binding:501"
+        )
+        val duplicateBinding = binding(current).copy(
+            localTrackBindingId = 502L,
+            referenceKey = "binding:502"
+        )
+        val firstTrack = track(701L, listOf(firstBinding), title = current.title)
+        val duplicateTrack = track(702L, listOf(duplicateBinding), title = current.title)
+        val projections = ProductionListeningHistoryProjections(
+            recentlyPlayed = listOf(firstTrack, duplicateTrack).map(::RecentlyPlayedProjection),
+            mostPlayed = listOf(duplicateTrack, firstTrack).map(::MostPlayedProjection)
+        )
+
+        val result = ListeningHistoryProjectionResolver.resolve(
+            projections = projections,
+            index = SongReferenceIndex.build(listOf(current)),
+            visibleMembershipKeys = setOf(current.membershipKey())
+        )
+
+        assertEquals(listOf(current), result.recentlyPlayed)
+        assertEquals(listOf(current), result.mostPlayed)
+        assertEquals(2, result.duplicateResolutions.size)
+        assertEquals(
+            listOf(
+                ListeningHistoryCollection.RECENTLY_PLAYED to (701L to 702L),
+                ListeningHistoryCollection.MOST_PLAYED to (702L to 701L)
+            ),
+            result.duplicateResolutions.map { duplicate ->
+                duplicate.collection to (
+                        duplicate.retainedTrackIdentityId to duplicate.duplicateTrackIdentityId
+                        )
+            }
+        )
+    }
+
+    @Test
+    fun sameMediaStoreIdOnDifferentVolumesKeepsBothSongsWithDifferentStableUiKeys() {
+        val sharedMediaStoreId = 1_000_008_183L
+        val primary = song(
+            id = sharedMediaStoreId,
+            title = "Primary volume track",
+            volumeName = "external_primary"
+        )
+        val secondary = song(
+            id = sharedMediaStoreId,
+            title = "Secondary volume track",
+            volumeName = "1234-5678"
+        )
+        val projections = ProductionListeningHistoryProjections(
+            recentlyPlayed = listOf(
+                RecentlyPlayedProjection(track(801L, listOf(binding(primary)), primary.title)),
+                RecentlyPlayedProjection(track(802L, listOf(binding(secondary)), secondary.title))
+            ),
+            mostPlayed = emptyList()
+        )
+        val library = listOf(primary, secondary)
+
+        val result = ListeningHistoryProjectionResolver.resolve(
+            projections = projections,
+            index = SongReferenceIndex.build(library),
+            visibleMembershipKeys = library.mapTo(mutableSetOf(), Song::membershipKey)
+        )
+
+        assertEquals(library, result.recentlyPlayed)
+        assertTrue(primary.stableUiKey() != secondary.stableUiKey())
+        assertTrue(result.duplicateResolutions.isEmpty())
+    }
+
+    @Test
+    fun stableUiKeySurvivesCacheRefreshAndDoesNotDependOnCollectionPosition() {
+        val cached = song(41L, title = "Cached")
+        val refreshed = song(41L, title = "Refreshed").copy(
+            fileSizeBytes = cached.fileSizeBytes + 1L,
+            dateModifiedEpochSeconds = cached.dateModifiedEpochSeconds + 1L,
+            artworkEnrichmentVersion = 2
+        )
+        val another = song(42L)
+
+        assertEquals(cached.stableUiKey(), refreshed.stableUiKey())
+        assertEquals(
+            setOf(cached.stableUiKey(), another.stableUiKey()),
+            listOf(another, cached).mapTo(mutableSetOf(), Song::stableUiKey)
+        )
+        assertEquals(
+            cached.stableUiKey(),
+            listOf(another, cached).filter { it.id == cached.id }.single().stableUiKey()
+        )
+    }
+
+    @Test
     fun ambiguousPortableEvidenceIsOmittedInsteadOfChoosingByMetadata() {
         val first = song(21, title = "Duplicate", relativePath = "A/")
         val second = song(22, title = "Duplicate", relativePath = "B/")
@@ -227,10 +321,11 @@ class ListeningHistoryProjectionResolverTest {
     private fun song(
         id: Long,
         title: String = "Track $id",
-        relativePath: String = "Music/"
+        relativePath: String = "Music/",
+        volumeName: String = "external_primary"
     ): Song {
         val uri = mock(Uri::class.java)
-        doReturn("content://media/external/audio/$id").`when`(uri).toString()
+        doReturn("content://media/$volumeName/audio/$id").`when`(uri).toString()
         return Song(
             id = id,
             title = title,
@@ -242,7 +337,7 @@ class ListeningHistoryProjectionResolverTest {
             filePath = "/storage/$relativePath$id.flac",
             folderPath = "/storage/${relativePath.trimEnd('/')}",
             albumArtUri = null,
-            volumeName = "external_primary",
+            volumeName = volumeName,
             displayName = "$id.flac",
             relativePath = relativePath,
             fileSizeBytes = 12_000L,

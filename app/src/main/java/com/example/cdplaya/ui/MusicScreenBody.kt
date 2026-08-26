@@ -61,6 +61,7 @@ import com.example.cdplaya.ui.library.LibraryGridColumns
 import com.example.cdplaya.ui.library.LibraryViewOptionsButton
 import com.example.cdplaya.ui.library.LibraryViewOptionsSheet
 import com.example.cdplaya.ui.library.MusicLibraryContent
+import com.example.cdplaya.ui.library.normalizeRatedSongFilterForQuickRateMode
 import com.example.cdplaya.ui.library.viewCategory
 import com.example.cdplaya.ui.ratings.LocalSongRatingUi
 import com.example.cdplaya.ui.navigation.MainDestination
@@ -275,9 +276,18 @@ internal fun MusicScreenBody(
         else -> selectedSongSortOption
     }
     val ratingUi = LocalSongRatingUi.current
+    val activeRatedFilter = normalizeRatedSongFilterForQuickRateMode(
+        filter = selectedRatedFilter,
+        quickRateActive = ratingUi.quickRateMode
+    )
     LaunchedEffect(selectedLibraryTab) {
         if (selectedLibraryTab != LibraryTab.RATED && ratingUi.quickRateMode) {
             ratingUi.onQuickRateModeChanged(false)
+        }
+    }
+    LaunchedEffect(ratingUi.quickRateMode, selectedRatedFilter) {
+        if (selectedRatedFilter != activeRatedFilter) {
+            selectedRatedFilter = activeRatedFilter
         }
     }
 
@@ -613,7 +623,8 @@ internal fun MusicScreenBody(
                                 )
                                 if (selectedLibraryTab == LibraryTab.RATED) {
                                     RatedSongFilterRow(
-                                        selectedFilter = selectedRatedFilter,
+                                        selectedFilter = activeRatedFilter,
+                                        quickRateActive = ratingUi.quickRateMode,
                                         onFilterSelected = { selectedRatedFilter = it },
                                         modifier = Modifier.padding(bottom = 4.dp)
                                     )
@@ -643,7 +654,7 @@ internal fun MusicScreenBody(
                                     songs = songs,
                                     searchQuery = searchQuery,
                                     selectedSongSortOption = selectedCollectionSortOption,
-                                    selectedRatedFilter = selectedRatedFilter,
+                                    selectedRatedFilter = activeRatedFilter,
                                     selectedArtistSortOption = selectedArtistSortOption,
                                     selectedAlbumSortOption = selectedAlbumSortOption,
                                     selectedFavoriteSortOption = selectedFavoriteSortOption,

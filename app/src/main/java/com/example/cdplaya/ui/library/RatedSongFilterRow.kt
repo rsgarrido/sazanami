@@ -28,6 +28,7 @@ import com.example.cdplaya.ui.AppShellTypography
 @Composable
 fun RatedSongFilterRow(
     selectedFilter: RatedSongFilter,
+    quickRateActive: Boolean,
     onFilterSelected: (RatedSongFilter) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -37,7 +38,10 @@ fun RatedSongFilterRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        items(RatedSongFilter.entries, key = RatedSongFilter::name) { filter ->
+        items(
+            visibleRatedSongFilters(quickRateActive),
+            key = RatedSongFilter::name
+        ) { filter ->
             val selected = filter == selectedFilter
             Surface(
                 modifier = Modifier

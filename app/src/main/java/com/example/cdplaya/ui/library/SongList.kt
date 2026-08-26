@@ -40,6 +40,7 @@ import coil.compose.AsyncImage
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.ui.AppShellAccent
 import com.example.cdplaya.data.membershipKey
+import com.example.cdplaya.data.stableUiKey
 import com.example.cdplaya.ui.getDisplayTrackNumber
 import com.example.cdplaya.R as AppR
 import com.example.cdplaya.ui.ratings.CompactRatingIndicator
@@ -79,7 +80,7 @@ fun SongList(
     ) {
         items(
             items = songs,
-            key = { song -> song.id }
+            key = { song -> song.stableUiKey() }
         ) { song ->
             val isCurrentSong = song.id == currentSongId
             val wasRecentlyAdded = song.id in recentlyAddedSongIds

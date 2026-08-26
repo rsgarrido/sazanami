@@ -20,9 +20,16 @@ internal object ClassicWheelMorphSpec {
     const val WheelRevealEnd = 0.90f
     const val MiniChromeHideStart = 0.08f
     const val MiniChromeHideEnd = 0.38f
+    const val PlayPauseHandoffStart = 0.86f
+    const val PlayPauseHandoffEnd = 1f
     const val ExpandedControlsActiveAt = 0.88f
     const val MinimumDragRangePx = 48f
 }
+
+internal data class ClassicWheelPlayPauseVisualOwnership(
+    val sharedAlpha: Float,
+    val expandedAlpha: Float
+)
 
 internal enum class PlayerMorphRenderer { DEFAULT, CLASSIC_WHEEL, RETRO_RACK, ENDPOINT }
 
@@ -104,6 +111,20 @@ internal fun classicWheelScreenReveal(progress: Float): Float = morphProgressWin
 internal fun classicWheelMiniChromeAlpha(progress: Float): Float = 1f - morphProgressWindow(
     progress, ClassicWheelMorphSpec.MiniChromeHideStart, ClassicWheelMorphSpec.MiniChromeHideEnd
 )
+
+internal fun classicWheelPlayPauseVisualOwnership(
+    progress: Float
+): ClassicWheelPlayPauseVisualOwnership {
+    val expandedAlpha = morphProgressWindow(
+        progress,
+        ClassicWheelMorphSpec.PlayPauseHandoffStart,
+        ClassicWheelMorphSpec.PlayPauseHandoffEnd
+    )
+    return ClassicWheelPlayPauseVisualOwnership(
+        sharedAlpha = 1f - expandedAlpha,
+        expandedAlpha = expandedAlpha
+    )
+}
 
 internal fun classicWheelExpandedControlsActive(progress: Float): Boolean =
     progress >= ClassicWheelMorphSpec.ExpandedControlsActiveAt

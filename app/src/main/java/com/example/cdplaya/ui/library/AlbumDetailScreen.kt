@@ -67,6 +67,7 @@ import coil.compose.AsyncImage
 import com.example.cdplaya.R
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.membershipKey
+import com.example.cdplaya.data.stableUiKey
 import com.example.cdplaya.ui.AppShellAccent
 import com.example.cdplaya.ui.AppShellIcons
 import com.example.cdplaya.ui.formatDuration
@@ -254,7 +255,7 @@ fun AlbumDetailScreen(
 
                 items(
                     items = songs,
-                    key = { song -> song.id }
+                    key = { song -> song.stableUiKey() }
                 ) { song ->
                     val isCurrentSong = song.id == currentSongId
                     val isFavorite = song.membershipKey() in favoriteMembershipKeys
