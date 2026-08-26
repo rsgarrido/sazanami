@@ -26,4 +26,12 @@ object PlaybackLibraryBridge {
     fun playSelectedSong(song: Song, playbackContext: List<Song>) {
         playbackController?.playSelectedSong(song, playbackContext)
     }
+
+    fun prepareReplayGainBaseline(
+        mediaId: String,
+        onPrepared: (Float) -> Unit
+    ): Boolean {
+        val songId = mediaId.toLongOrNull() ?: return false
+        return playbackController?.prepareReplayGainBaseline(songId, onPrepared) == true
+    }
 }

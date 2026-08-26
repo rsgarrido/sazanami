@@ -126,10 +126,13 @@ internal class SmoothPlaybackTransitionCoordinator(
         )
     }
 
-    fun setBaselineVolume(volume: Float) {
+    fun setBaselineVolume(
+        volume: Float,
+        applyPhysicalVolume: Boolean = true
+    ) {
         if (released) return
         baselineVolume = volume.coerceIn(0f, 1f)
-        applyEffectiveVolume()
+        if (applyPhysicalVolume) applyEffectiveVolume()
     }
 
     fun setEnabled(enabled: Boolean) {
@@ -150,7 +153,8 @@ internal class SmoothPlaybackTransitionCoordinator(
         physicalPlayWhenReady: Boolean,
         isAudible: Boolean,
         baselineVolume: Float,
-        logicalPlayWhenReady: Boolean
+        logicalPlayWhenReady: Boolean,
+        applyPhysicalVolume: Boolean = true
     ) {
         if (released) return
         cancelScheduledFrame()
@@ -159,7 +163,7 @@ internal class SmoothPlaybackTransitionCoordinator(
         this.baselineVolume = baselineVolume.coerceIn(0f, 1f)
         this.logicalPlayWhenReady = logicalPlayWhenReady
         envelope = if (logicalPlayWhenReady) 1f else 0f
-        applyEffectiveVolume()
+        if (applyPhysicalVolume) applyEffectiveVolume()
         state = when {
             !logicalPlayWhenReady -> SmoothPlaybackTransitionState.PAUSED_SILENT
             isAudible -> SmoothPlaybackTransitionState.FULLY_AUDIBLE

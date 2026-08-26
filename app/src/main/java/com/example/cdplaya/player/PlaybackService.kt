@@ -109,7 +109,7 @@ class PlaybackService : MediaLibraryService() {
         private fun isAuthoritative(): Boolean =
             !released &&
                 ::physicalPlayers.isInitialized &&
-                physicalPlayers.active === pipeline
+                physicalPlayers.isActive(pipeline.player)
 
         private val playerListener = object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -374,12 +374,22 @@ class PlaybackService : MediaLibraryService() {
         }
         physicalPlayers = DualPlayerPlaybackCoordinator(
             initialActive = activePipeline,
-            initialStandby = standbyPipeline
+            initialStandby = standbyPipeline,
+            standbyBaselinePreparer = StandbyBaselinePreparer { mediaItem, result ->
+                PlaybackLibraryBridge.prepareReplayGainBaseline(
+                    mediaId = mediaItem.mediaId,
+                    onPrepared = result
+                )
+            },
+            crossfadeScheduler = HandlerCrossfadeScheduler(
+                Handler(activePipeline.player.applicationLooper)
+            )
         )
         physicalPlayers.start(serviceScope)
         sessionPlayer = SmoothPlaybackPlayer(
             initialPhysicalPlayer = player,
-            onBaselineVolumeChanged = physicalPlayers::updateActiveBaseline
+            onBaselineVolumeChanged = physicalPlayers::updateActiveBaseline,
+            onLogicalCommand = physicalPlayers::onLogicalCommand
         )
         physicalPlayers.attachLogicalPlayer(
             player = sessionPlayer,
@@ -553,17 +563,24 @@ class PlaybackService : MediaLibraryService() {
                 comparisonSessionActive =
                     comparisonSessionActive
             )
+            // The internal Session 6 overlap path requires two independently decoded PCM
+            // pipelines. Offload remains disabled for this crossfade-capable service session.
+            val effectiveOffloadPreference = if (physicalPlayers.crossfadeEnabled) {
+                AudioOffloadPreference.DISABLED
+            } else {
+                decision.effectiveOffloadPreference
+            }
             physicalPlayers.forEachPipeline { pipeline ->
                 val updatedParameters = pipeline.player.trackSelectionParameters
                     .withAudioOffloadPreference(
-                        decision.effectiveOffloadPreference
+                        effectiveOffloadPreference
                     )
                 if (pipeline.player.trackSelectionParameters != updatedParameters) {
                     pipeline.player.trackSelectionParameters = updatedParameters
                 }
             }
             AdvancedAudioRuntimeBridge.updateOffloadPreference(
-                userPreference
+                effectiveOffloadPreference
             )
         }
     }
@@ -578,13 +595,16 @@ class PlaybackService : MediaLibraryService() {
         pipeline: PhysicalPlayerPipeline,
         transition: AuthoritativeRoleTransition?
     ) {
-        check(physicalPlayers.active === pipeline)
+        check(physicalPlayers.isActive(pipeline.player))
         activeServiceBinding?.release()
         if (transition != null) {
+            // Session 6 intentionally keeps one history authority: the outgoing binding owns
+            // the first half, then this single logical transition starts incoming at midpoint.
+            // Exact overlapping audible-time accounting remains for the integration session.
             listeningAdapter.onMediaItemTransition(
                 transition.incomingMediaItem,
                 ListeningMediaTransitionReason.AUTOMATIC,
-                isPlaying = false
+                isPlaying = pipeline.player.isPlaying
             )
         }
         AdvancedAudioRuntimeBridge.updateSourceFormat(null)

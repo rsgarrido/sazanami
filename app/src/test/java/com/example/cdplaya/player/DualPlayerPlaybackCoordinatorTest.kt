@@ -112,10 +112,12 @@ class DualPlayerPlaybackCoordinatorTest {
         val third = localItem("third")
         val playerA = mock(ExoPlayer::class.java)
         val playerB = mock(ExoPlayer::class.java)
+        var currentItemA = first
+        var currentIndexA = 0
         stubPlaylist(playerA, listOf(first, second, third), 0)
         stubPlaylist(playerB, listOf(first, second, third), 1)
-        `when`(playerA.currentMediaItemIndex).thenReturn(0, 0, 2)
-        `when`(playerA.currentMediaItem).thenReturn(first, first, third)
+        `when`(playerA.currentMediaItemIndex).thenAnswer { currentIndexA }
+        `when`(playerA.currentMediaItem).thenAnswer { currentItemA }
         `when`(playerB.currentMediaItem).thenReturn(second)
         `when`(playerA.currentPosition).thenReturn(111L)
         `when`(playerB.currentPosition).thenReturn(222L)
@@ -126,6 +128,7 @@ class DualPlayerPlaybackCoordinatorTest {
         val coordinator = DualPlayerPlaybackCoordinator(pipelineA, pipelineB)
         val logical = RecordingLogicalPlayer(playerA)
         val integration = RecordingIntegration()
+        coordinator.selectActiveTelemetry()
         coordinator.attachLogicalPlayer(logical, integration)
 
         assertSame(playerA, coordinator.logicalPhysicalPlayer)
@@ -140,6 +143,10 @@ class DualPlayerPlaybackCoordinatorTest {
         assertSame(pipelineB, coordinator.active)
         assertSame(pipelineA, coordinator.standby)
         assertSame(playerB, coordinator.logicalPhysicalPlayer)
+        assertSame(
+            pipelineB.equalizerRuntime,
+            EqualizerRuntimeBridge.selectedTelemetryRuntime()
+        )
         assertSame(second, coordinator.logicalPhysicalPlayer.currentMediaItem)
         assertEquals(222L, coordinator.logicalPhysicalPlayer.currentPosition)
         assertEquals(PhysicalPlayerRole.ACTIVE, pipelineB.role)
@@ -158,6 +165,8 @@ class DualPlayerPlaybackCoordinatorTest {
         firstPromotionOrder.verify(playerB).playWhenReady = true
         verify(playerA).setMediaItems(listOf(first, second, third), 2, 0L)
 
+        currentItemA = third
+        currentIndexA = 2
         coordinator.markStandbyReadyForTest()
         assertTrue(coordinator.attemptNaturalHandoffForTest())
 
@@ -333,6 +342,113 @@ class DualPlayerPlaybackCoordinatorTest {
         assertNull(EqualizerRuntimeBridge.selectedTelemetryRuntime())
     }
 
+    @Test
+    fun audibleCrossfadeHandsOffAtMidpointAndPromotesOnlyAtCompletion() {
+        val first = localItem("first")
+        val second = localItem("second")
+        val third = localItem("third")
+        val playerA = mock(ExoPlayer::class.java)
+        val playerB = mock(ExoPlayer::class.java)
+        var outgoingPosition = 5_000L
+        var incomingPosition = 0L
+        var currentItemA = first
+        var currentIndexA = 0
+        stubPlaylist(playerA, listOf(first, second, third), 0)
+        stubPlaylist(playerB, listOf(first, second, third), 1)
+        `when`(playerA.currentMediaItem).thenAnswer { currentItemA }
+        `when`(playerA.currentMediaItemIndex).thenAnswer { currentIndexA }
+        `when`(playerB.currentMediaItem).thenReturn(second)
+        `when`(playerA.duration).thenReturn(10_000L)
+        `when`(playerB.duration).thenReturn(10_000L)
+        `when`(playerA.currentPosition).thenAnswer { outgoingPosition }
+        `when`(playerB.currentPosition).thenAnswer { incomingPosition }
+        `when`(playerA.playbackState).thenReturn(Player.STATE_READY)
+        `when`(playerB.playbackState).thenReturn(Player.STATE_READY)
+        `when`(playerA.isPlaying).thenReturn(true)
+        `when`(playerB.isPlaying).thenReturn(true)
+        `when`(playerA.playWhenReady).thenReturn(true)
+        val pipelineA = pipeline(PhysicalPlayerRole.ACTIVE, playerA)
+        val firstKey = checkNotNull(StandbyTargetResolver.key(first))
+        pipelineA.prepareBaseline(firstKey)
+        pipelineA.updateBaseline(firstKey, 0.6f)
+        val pipelineB = pipeline(PhysicalPlayerRole.STANDBY, playerB)
+        val clock = ManualCrossfadeClock()
+        val scheduler = ManualCrossfadeScheduler(clock)
+        val coordinator = DualPlayerPlaybackCoordinator(
+            initialActive = pipelineA,
+            initialStandby = pipelineB,
+            standbyBaselinePreparer = StandbyBaselinePreparer { _, result ->
+                result(0.4f)
+                true
+            },
+            crossfadeClock = clock,
+            crossfadeScheduler = scheduler
+        )
+        val logical = RecordingLogicalPlayer(playerA)
+        val integration = RecordingIntegration()
+        coordinator.selectActiveTelemetry()
+        coordinator.attachLogicalPlayer(logical, integration)
+        coordinator.markStandbyReadyForTest()
+        coordinator.synchronizeStandby()
+
+        assertEquals(CrossfadeTransitionState.CROSSFADING, coordinator.crossfadeState)
+        assertVolumeWasZeroBeforePlaybackStart(playerB)
+        verify(playerB).playWhenReady = true
+        assertSame(pipelineA, coordinator.active)
+        assertTrue(integration.transitions.isEmpty())
+
+        outgoingPosition = 7_500L
+        scheduler.runNext()
+
+        assertEquals(
+            CrossfadeTransitionState.LOGICALLY_HANDED_OFF,
+            coordinator.crossfadeState
+        )
+        assertSame(playerB, coordinator.logicalPhysicalPlayer)
+        assertSame(
+            pipelineB.equalizerRuntime,
+            EqualizerRuntimeBridge.selectedTelemetryRuntime()
+        )
+        assertSame(pipelineA, coordinator.active)
+        assertEquals(listOf(second), integration.transitions.map {
+            it?.incomingMediaItem
+        })
+        assertEquals(0.3f, lastSetVolume(playerA), 0.0001f)
+        assertEquals(0.2f, lastSetVolume(playerB), 0.0001f)
+        verify(playerA, never()).playWhenReady = false
+
+        outgoingPosition = 10_000L
+        scheduler.runNext()
+
+        assertEquals(CrossfadeTransitionState.IDLE, coordinator.crossfadeState)
+        assertSame(pipelineB, coordinator.active)
+        assertSame(pipelineA, coordinator.standby)
+        assertEquals(PhysicalPlayerRole.ACTIVE, pipelineB.role)
+        assertEquals(PhysicalPlayerRole.STANDBY, pipelineA.role)
+        verify(playerA).setMediaItems(listOf(first, second, third), 2, 0L)
+
+        currentItemA = third
+        currentIndexA = 2
+        incomingPosition = 5_000L
+        coordinator.markStandbyReadyForTest()
+        coordinator.synchronizeStandby()
+        assertEquals(CrossfadeTransitionState.CROSSFADING, coordinator.crossfadeState)
+
+        incomingPosition = 7_500L
+        scheduler.runNext()
+        assertSame(playerA, coordinator.logicalPhysicalPlayer)
+        incomingPosition = 10_000L
+        scheduler.runNext()
+
+        assertSame(pipelineA, coordinator.active)
+        assertSame(pipelineB, coordinator.standby)
+        assertEquals(listOf(second, third), integration.transitions.map {
+            it?.incomingMediaItem
+        })
+
+        coordinator.release()
+    }
+
     private fun pipeline(
         role: PhysicalPlayerRole,
         player: ExoPlayer
@@ -387,6 +503,28 @@ class DualPlayerPlaybackCoordinatorTest {
             .build()
     }
 
+    private fun lastSetVolume(player: ExoPlayer): Float =
+        org.mockito.Mockito.mockingDetails(player).invocations
+            .filter { invocation -> invocation.method.name == "setVolume" }
+            .last().arguments.single() as Float
+
+    private fun assertVolumeWasZeroBeforePlaybackStart(player: ExoPlayer) {
+        val invocations = org.mockito.Mockito.mockingDetails(player).invocations
+        val playbackStartSequence = invocations
+            .first { invocation ->
+                invocation.method.name == "setPlayWhenReady" &&
+                    invocation.arguments.single() == true
+            }
+            .sequenceNumber
+        assertTrue(
+            invocations.any { invocation ->
+                invocation.sequenceNumber < playbackStartSequence &&
+                    invocation.method.name == "setVolume" &&
+                    invocation.arguments.single() == 0f
+            }
+        )
+    }
+
     private class RecordingLogicalPlayer(
         var physicalPlayer: Player,
         override var logicalPlayWhenReady: Boolean = true
@@ -406,6 +544,21 @@ class DualPlayerPlaybackCoordinatorTest {
             reboundBaselines += baselineVolume
             newPhysicalPlayer.volume = baselineVolume
         }
+
+        override fun rebindPhysicalPlayerForCrossfade(
+            newPhysicalPlayer: Player,
+            baselineVolume: Float,
+            logicalPlayWhenReady: Boolean
+        ) {
+            physicalPlayer = newPhysicalPlayer
+            this.logicalPlayWhenReady = logicalPlayWhenReady
+            reboundPlayers += newPhysicalPlayer
+            reboundBaselines += baselineVolume
+        }
+
+        override fun setCrossfadeVolumeControlActive(active: Boolean) = Unit
+
+        override fun finishCrossfadeVolumeControl(baselineVolume: Float) = Unit
 
         override fun activateReboundPhysicalPlayer() {
             activationCount += 1
@@ -466,6 +619,43 @@ class DualPlayerPlaybackCoordinatorTest {
 
         override fun clear() {
             preparedItem = null
+        }
+    }
+
+    private class ManualCrossfadeClock : CrossfadeClock {
+        var nowMillis = 0L
+        override fun elapsedRealtimeMillis(): Long = nowMillis
+    }
+
+    private class ManualCrossfadeScheduler(
+        private val clock: ManualCrossfadeClock
+    ) : CrossfadeScheduler {
+        private data class Scheduled(
+            val delayMillis: Long,
+            val action: () -> Unit,
+            var cancelled: Boolean = false
+        )
+
+        private val scheduled = ArrayDeque<Scheduled>()
+
+        override fun schedule(
+            delayMillis: Long,
+            action: () -> Unit
+        ): CrossfadeCancellation {
+            val task = Scheduled(delayMillis, action)
+            scheduled.addLast(task)
+            return CrossfadeCancellation { task.cancelled = true }
+        }
+
+        fun runNext() {
+            while (scheduled.isNotEmpty()) {
+                val task = scheduled.removeFirst()
+                if (task.cancelled) continue
+                clock.nowMillis += task.delayMillis
+                task.action()
+                return
+            }
+            error("No crossfade frame was scheduled")
         }
     }
 

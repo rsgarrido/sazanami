@@ -1,7 +1,10 @@
 package com.example.cdplaya.player
 
 import android.content.ContentResolver
+import android.os.Handler
+import android.os.SystemClock
 import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.PlaybackException
@@ -35,6 +38,8 @@ internal class PhysicalPlayerPipeline(
         private set
     var baselineMediaKey: StandbyMediaKey? = null
         private set
+    var baselineExact: Boolean = false
+        private set
 
     private var released = false
 
@@ -52,12 +57,14 @@ internal class PhysicalPlayerPipeline(
         // Standby remains physically muted, and the existing active-track request refines this
         // baseline after promotion if precomputation did not finish.
         baselineVolume = 1f
+        baselineExact = false
     }
 
     fun updateBaseline(mediaKey: StandbyMediaKey?, volume: Float): Boolean {
         if (mediaKey == null) return false
         if (baselineMediaKey != mediaKey) return false
         baselineVolume = volume.coerceIn(0f, 1f)
+        baselineExact = true
         return true
     }
 
@@ -67,6 +74,9 @@ internal class PhysicalPlayerPipeline(
         } else {
             1f
         }
+
+    fun hasExactBaselineFor(mediaKey: StandbyMediaKey?): Boolean =
+        mediaKey != null && baselineMediaKey == mediaKey && baselineExact
 
     fun enforceSilence() {
         player.volume = 0f
@@ -79,6 +89,7 @@ internal class PhysicalPlayerPipeline(
         player.clearMediaItems()
         baselineMediaKey = null
         baselineVolume = 1f
+        baselineExact = false
     }
 
     fun release() {
@@ -89,6 +100,19 @@ internal class PhysicalPlayerPipeline(
         } finally {
             EqualizerRuntimeBridge.releaseRuntime(equalizerRuntime)
         }
+    }
+}
+
+internal class HandlerCrossfadeScheduler(
+    private val handler: Handler
+) : CrossfadeScheduler {
+    override fun schedule(
+        delayMillis: Long,
+        action: () -> Unit
+    ): CrossfadeCancellation {
+        val runnable = Runnable(action)
+        handler.postDelayed(runnable, delayMillis)
+        return CrossfadeCancellation { handler.removeCallbacks(runnable) }
     }
 }
 
@@ -171,7 +195,8 @@ internal enum class StandbyPreparationStatus {
 
 internal data class StandbyPreparationState(
     val plan: StandbyPreparationPlan? = null,
-    val status: StandbyPreparationStatus = StandbyPreparationStatus.EMPTY
+    val status: StandbyPreparationStatus = StandbyPreparationStatus.EMPTY,
+    val generation: Long = 0L
 ) {
     val mediaItem: MediaItem?
         get() = plan?.target
@@ -187,6 +212,7 @@ internal class StandbyPreparationController(
         private set
 
     private var failedTarget: StandbyMediaKey? = null
+    private var nextGeneration = 0L
 
     fun synchronize(snapshot: ActivePlaylistSnapshot) {
         output.enforceSilence()
@@ -205,7 +231,8 @@ internal class StandbyPreparationController(
         output.enforceSilence()
         state = StandbyPreparationState(
             plan = plan,
-            status = StandbyPreparationStatus.PREPARING
+            status = StandbyPreparationStatus.PREPARING,
+            generation = ++nextGeneration
         )
         if (!output.prepare(plan)) {
             failedTarget = targetKey
@@ -258,15 +285,38 @@ internal interface ActivePlayerIntegration {
     )
 }
 
-/** Owns reusable A/B roles and performs only non-overlapping natural-boundary handoff. */
+internal fun interface StandbyBaselinePreparer {
+    fun prepare(mediaItem: MediaItem, onPrepared: (Float) -> Unit): Boolean
+}
+
+private data class ActiveCrossfade(
+    val outgoing: PhysicalPlayerPipeline,
+    val incoming: PhysicalPlayerPipeline,
+    val plan: StandbyPreparationPlan,
+    val outgoingMediaItem: MediaItem?,
+    var logicalHandoffComplete: Boolean = false
+)
+
+/** Owns reusable A/B roles, optional controlled overlap, and non-overlap fallback. */
 internal class DualPlayerPlaybackCoordinator(
     initialActive: PhysicalPlayerPipeline,
-    initialStandby: PhysicalPlayerPipeline
+    initialStandby: PhysicalPlayerPipeline,
+    private val standbyBaselinePreparer: StandbyBaselinePreparer =
+        StandbyBaselinePreparer { _, _ -> false },
+    crossfadeClock: CrossfadeClock = CrossfadeClock {
+        SystemClock.elapsedRealtime()
+    },
+    crossfadeScheduler: CrossfadeScheduler = CrossfadeScheduler { _, _ ->
+        CrossfadeCancellation {}
+    },
+    val crossfadeEnabled: Boolean = true
 ) {
     var active: PhysicalPlayerPipeline = initialActive
         private set
     var standby: PhysicalPlayerPipeline = initialStandby
         private set
+
+    private var logicalPipeline: PhysicalPlayerPipeline = initialActive
 
     private var logicalPlayer: LogicalPlayerRoleBinding? = null
     private var activeIntegration: ActivePlayerIntegration? = null
@@ -274,6 +324,9 @@ internal class DualPlayerPlaybackCoordinator(
     private var handoffInProgress = false
     private var activeListener: Player.Listener? = null
     private var standbyListener: Player.Listener? = null
+    private var activeCrossfade: ActiveCrossfade? = null
+    private var requestedBaselineGeneration = 0L
+    private var crossfadeCancelledMediaKey: StandbyMediaKey? = null
 
     private val standbyPreparation = StandbyPreparationController(
         output = object : StandbyPreparationOutput {
@@ -295,6 +348,35 @@ internal class DualPlayerPlaybackCoordinator(
         }
     )
 
+    private val crossfadeTransition = CrossfadeTransitionCoordinator(
+        output = object : CrossfadeTransitionOutput {
+            override fun snapshot(): CrossfadePlaybackSnapshot =
+                crossfadeSnapshot()
+
+            override fun onCrossfadeStart(): Boolean = beginCrossfade()
+
+            override fun onCrossfadeEnvelope(
+                outgoingEnvelope: Float,
+                incomingEnvelope: Float,
+                progress: Float
+            ) {
+                applyCrossfadeEnvelope(outgoingEnvelope, incomingEnvelope)
+            }
+
+            override fun onLogicalMidpoint(): Boolean =
+                performCrossfadeLogicalHandoff()
+
+            override fun onCrossfadeComplete(): Boolean =
+                completeCrossfadePromotion()
+
+            override fun onCrossfadeCancelled(logicallyHandedOff: Boolean) {
+                resolveCancelledCrossfade(logicallyHandedOff)
+            }
+        },
+        clock = crossfadeClock,
+        scheduler = crossfadeScheduler
+    )
+
     init {
         require(initialActive.role == PhysicalPlayerRole.ACTIVE)
         require(initialStandby.role == PhysicalPlayerRole.STANDBY)
@@ -307,7 +389,10 @@ internal class DualPlayerPlaybackCoordinator(
     }
 
     val logicalPhysicalPlayer: ExoPlayer
-        get() = active.player
+        get() = logicalPipeline.player
+
+    val crossfadeState: CrossfadeTransitionState
+        get() = crossfadeTransition.state
 
     val standbyPreparationState: StandbyPreparationState
         get() = standbyPreparation.state
@@ -319,6 +404,7 @@ internal class DualPlayerPlaybackCoordinator(
         check(logicalPlayer == null)
         logicalPlayer = player
         activeIntegration = integration
+        crossfadeTransition.reevaluate()
     }
 
     fun start(scope: CoroutineScope) {
@@ -328,34 +414,69 @@ internal class DualPlayerPlaybackCoordinator(
     }
 
     fun updateActiveBaseline(volume: Float) {
-        val mediaKey = active.player.currentMediaItem
+        if (activeCrossfade != null) return
+        val mediaKey = logicalPipeline.player.currentMediaItem
             ?.let(StandbyTargetResolver::key)
             ?: return
-        if (active.baselineMediaKey == null) active.prepareBaseline(mediaKey)
-        active.updateBaseline(mediaKey = mediaKey, volume = volume)
+        if (logicalPipeline.baselineMediaKey == null) {
+            logicalPipeline.prepareBaseline(mediaKey)
+        }
+        logicalPipeline.updateBaseline(mediaKey = mediaKey, volume = volume)
+        crossfadeTransition.reevaluate()
     }
 
     fun updateStandbyBaseline(
         mediaKey: StandbyMediaKey,
         volume: Float
-    ): Boolean =
-        standbyPreparation.state.key == mediaKey &&
-            standby.updateBaseline(mediaKey, volume)
+    ): Boolean = updateStandbyBaseline(
+        mediaKey = mediaKey,
+        generation = standbyPreparation.state.generation,
+        volume = volume
+    )
+
+    private fun updateStandbyBaseline(
+        mediaKey: StandbyMediaKey,
+        generation: Long,
+        volume: Float
+    ): Boolean {
+        val updated =
+            standbyPreparation.state.key == mediaKey &&
+                standbyPreparation.state.generation == generation &&
+                standby.updateBaseline(mediaKey, volume)
+        if (updated) crossfadeTransition.reevaluate()
+        return updated
+    }
 
     fun forEachPipeline(action: (PhysicalPlayerPipeline) -> Unit) {
         action(active)
         action(standby)
     }
 
-    fun isActive(player: Player): Boolean = active.player === player
+    fun isActive(player: Player): Boolean = logicalPipeline.player === player
 
     fun synchronizeStandby() {
         if (released || handoffInProgress) return
         standbyPreparation.synchronize(activeSnapshot())
+        requestStandbyBaselineIfNeeded()
+        crossfadeTransition.reevaluate()
+    }
+
+    fun onLogicalCommand(command: LogicalPlaybackCommand) {
+        if (released) return
+        crossfadeCancelledMediaKey = active.player.currentMediaItem
+            ?.let(StandbyTargetResolver::key)
+        crossfadeTransition.cancel(permanent = true)
+        if (command != LogicalPlaybackCommand.PLAY_PAUSE) {
+            synchronizeStandby()
+        }
     }
 
     internal fun selectActiveTelemetry() {
-        EqualizerRuntimeBridge.selectTelemetryRuntime(active.equalizerRuntime)
+        selectTelemetry(logicalPipeline)
+    }
+
+    private fun selectTelemetry(pipeline: PhysicalPlayerPipeline) {
+        EqualizerRuntimeBridge.selectTelemetryRuntime(pipeline.equalizerRuntime)
     }
 
     internal fun attemptNaturalHandoffForTest(): Boolean =
@@ -367,6 +488,278 @@ internal class DualPlayerPlaybackCoordinator(
 
     internal fun markStandbyFailedForTest() {
         standbyPreparation.onError()
+    }
+
+    private fun requestStandbyBaselineIfNeeded() {
+        val state = standbyPreparation.state
+        val plan = state.plan ?: return
+        if (state.generation == 0L || requestedBaselineGeneration == state.generation) return
+        requestedBaselineGeneration = state.generation
+        val generation = state.generation
+        val key = plan.key
+        val accepted = standbyBaselinePreparer.prepare(plan.target) { volume ->
+            if (!released) {
+                updateStandbyBaseline(key, generation, volume)
+            }
+        }
+        if (!accepted) requestedBaselineGeneration = 0L
+    }
+
+    private fun crossfadeSnapshot(): CrossfadePlaybackSnapshot {
+        val context = activeCrossfade
+        val outgoing = context?.outgoing ?: active
+        val incoming = context?.incoming ?: standby
+        val outgoingItemKey = outgoing.player.currentMediaItem
+            ?.let(StandbyTargetResolver::key)
+        val expectedPlan = if (context == null) {
+            StandbyTargetResolver.resolvePlan(activeSnapshot())
+        } else {
+            context.plan
+        }
+        val preparationMatches = if (context == null) {
+            standbyPreparation.state.status == StandbyPreparationStatus.READY &&
+                standbyPreparation.state.plan == expectedPlan
+        } else {
+            true
+        }
+        val incomingKey = incoming.player.currentMediaItem
+            ?.let(StandbyTargetResolver::key)
+        val duration = outgoing.player.duration
+        val targetIsValid = if (context != null) {
+            context.plan == expectedPlan
+        } else {
+            expectedPlan != null &&
+                preparationMatches &&
+                outgoingItemKey != crossfadeCancelledMediaKey
+        }
+        val fullyEligible = crossfadeEnabled &&
+            CrossfadeEligibility.isEligible(
+                CrossfadeEligibilityInput(
+                    durationMillis = duration,
+                    standbyPrepared = preparationMatches,
+                    targetMatches =
+                        targetIsValid &&
+                            expectedPlan != null &&
+                            incomingKey == expectedPlan.key,
+                    incomingBaselineExact = expectedPlan != null &&
+                        incoming.hasExactBaselineFor(expectedPlan.key),
+                    outgoingBaselineExact =
+                        outgoing.hasExactBaselineFor(outgoingItemKey),
+                    repeatOne =
+                        outgoing.player.repeatMode == Player.REPEAT_MODE_ONE,
+                    shuffleEnabled = outgoing.player.shuffleModeEnabled,
+                    pipelinesValid =
+                        duration != C.TIME_UNSET &&
+                            logicalPlayer != null &&
+                            activeIntegration != null &&
+                            outgoing.player.playerError == null &&
+                            incoming.player.playerError == null &&
+                            incoming.player.playbackState == Player.STATE_READY,
+                    cancelledByInteraction =
+                        outgoingItemKey == crossfadeCancelledMediaKey
+                )
+            )
+        return CrossfadePlaybackSnapshot(
+            eligible = fullyEligible,
+            durationMillis = duration,
+            positionMillis = outgoing.player.currentPosition,
+            outgoingProgressing =
+                outgoing.player.isPlaying &&
+                    outgoing.player.playbackState == Player.STATE_READY,
+            incomingProgressing = context == null ||
+                (
+                    incoming.player.isPlaying &&
+                        incoming.player.playbackState == Player.STATE_READY
+                    )
+        )
+    }
+
+    private fun beginCrossfade(): Boolean {
+        if (released || handoffInProgress || activeCrossfade != null) return false
+        val logical = logicalPlayer ?: return false
+        if (!logical.logicalPlayWhenReady) return false
+        val expectedPlan = StandbyTargetResolver.resolvePlan(activeSnapshot())
+            ?: return false
+        val incomingPlan = standbyPreparation.consumeReady(expectedPlan)
+            ?: return false
+        if (
+            !standby.hasExactBaselineFor(incomingPlan.key) ||
+            standby.player.playbackState != Player.STATE_READY ||
+            standby.player.playerError != null ||
+            StandbyTargetResolver.key(standby.player.currentMediaItem ?: return false) !=
+            incomingPlan.key
+        ) {
+            return false
+        }
+
+        val outgoing = active
+        val incoming = standby
+        return try {
+            handoffInProgress = true
+            incoming.player.repeatMode = outgoing.player.repeatMode
+            incoming.player.shuffleModeEnabled = outgoing.player.shuffleModeEnabled
+            incoming.player.playbackParameters = outgoing.player.playbackParameters
+            incoming.player.trackSelectionParameters =
+                outgoing.player.trackSelectionParameters
+            incoming.player.volume = 0f
+            activeCrossfade = ActiveCrossfade(
+                outgoing = outgoing,
+                incoming = incoming,
+                plan = incomingPlan,
+                outgoingMediaItem = outgoing.player.currentMediaItem
+            )
+            logical.setCrossfadeVolumeControlActive(true)
+            incoming.player.playWhenReady = true
+            incoming.player.playerError == null
+        } catch (_: RuntimeException) {
+            activeCrossfade = null
+            handoffInProgress = false
+            incoming.enforceSilence()
+            logical.setCrossfadeVolumeControlActive(false)
+            false
+        }
+    }
+
+    private fun applyCrossfadeEnvelope(
+        outgoingEnvelope: Float,
+        incomingEnvelope: Float
+    ) {
+        val context = activeCrossfade ?: return
+        context.outgoing.player.volume =
+            context.outgoing.baselineVolume * outgoingEnvelope
+        context.incoming.player.volume =
+            context.incoming.baselineVolume * incomingEnvelope
+    }
+
+    private fun performCrossfadeLogicalHandoff(): Boolean {
+        val context = activeCrossfade ?: return false
+        if (context.logicalHandoffComplete) return true
+        val logical = logicalPlayer ?: return false
+        val integration = activeIntegration ?: return false
+        return try {
+            integration.unbind(context.outgoing)
+            logicalPipeline = context.incoming
+            logical.rebindPhysicalPlayerForCrossfade(
+                newPhysicalPlayer = context.incoming.player,
+                baselineVolume = context.incoming.baselineVolume,
+                logicalPlayWhenReady = true
+            )
+            selectTelemetry(context.incoming)
+            integration.bind(
+                context.incoming,
+                AuthoritativeRoleTransition(
+                    outgoingMediaItem = context.outgoingMediaItem,
+                    incomingMediaItem = context.plan.target
+                )
+            )
+            context.logicalHandoffComplete = true
+            true
+        } catch (_: RuntimeException) {
+            runCatching { integration.unbind(context.incoming) }
+            logicalPipeline = context.outgoing
+            runCatching {
+                logical.rebindPhysicalPlayerForCrossfade(
+                    context.outgoing.player,
+                    context.outgoing.baselineVolume,
+                    logicalPlayWhenReady = true
+                )
+                selectTelemetry(context.outgoing)
+                integration.bind(context.outgoing, transition = null)
+            }
+            false
+        }
+    }
+
+    private fun completeCrossfadePromotion(): Boolean {
+        val context = activeCrossfade ?: return false
+        val logical = logicalPlayer ?: return false
+        return try {
+            context.outgoing.player.volume = 0f
+            context.incoming.player.volume = context.incoming.baselineVolume
+            detachRoleListeners()
+            context.outgoing.assignRole(PhysicalPlayerRole.STANDBY)
+            context.incoming.assignRole(PhysicalPlayerRole.ACTIVE)
+            active = context.incoming
+            standby = context.outgoing
+            logicalPipeline = context.incoming
+            attachRoleListeners()
+            context.outgoing.clearForStandbyReuse()
+            logical.finishCrossfadeVolumeControl(context.incoming.baselineVolume)
+            activeCrossfade = null
+            handoffInProgress = false
+            crossfadeCancelledMediaKey = null
+            runCatching {
+                standbyPreparation.synchronize(activeSnapshot())
+                requestStandbyBaselineIfNeeded()
+            }
+            true
+        } catch (_: RuntimeException) {
+            false
+        }
+    }
+
+    private fun resolveCancelledCrossfade(logicallyHandedOff: Boolean) {
+        val context = activeCrossfade ?: return
+        val logical = logicalPlayer ?: return
+        val integration = activeIntegration ?: return
+        crossfadeCancelledMediaKey = context.outgoing.player.currentMediaItem
+            ?.let(StandbyTargetResolver::key)
+        val authoritative = if (logicallyHandedOff) {
+            context.incoming
+        } else {
+            context.outgoing
+        }
+        val nonAuthoritative = if (authoritative === context.incoming) {
+            context.outgoing
+        } else {
+            context.incoming
+        }
+
+        runCatching {
+            integration.unbind(logicalPipeline)
+            detachRoleListeners()
+            nonAuthoritative.enforceSilence()
+            nonAuthoritative.assignRole(PhysicalPlayerRole.STANDBY)
+            authoritative.assignRole(PhysicalPlayerRole.ACTIVE)
+            active = authoritative
+            standby = nonAuthoritative
+            logicalPipeline = authoritative
+            logical.rebindPhysicalPlayerForCrossfade(
+                authoritative.player,
+                authoritative.baselineVolume,
+                logicalPlayWhenReady = logical.logicalPlayWhenReady
+            )
+            selectTelemetry(authoritative)
+            integration.bind(
+                authoritative,
+                when {
+                    authoritative === context.incoming &&
+                        !context.logicalHandoffComplete ->
+                        AuthoritativeRoleTransition(
+                            context.outgoingMediaItem,
+                            context.plan.target
+                        )
+                    authoritative === context.outgoing &&
+                        context.logicalHandoffComplete &&
+                        context.outgoingMediaItem != null ->
+                        AuthoritativeRoleTransition(
+                            context.plan.target,
+                            context.outgoingMediaItem
+                        )
+                    else -> null
+                }
+            )
+            nonAuthoritative.clearForStandbyReuse()
+            authoritative.player.volume = authoritative.baselineVolume
+            logical.finishCrossfadeVolumeControl(authoritative.baselineVolume)
+            attachRoleListeners()
+        }
+        activeCrossfade = null
+        handoffInProgress = false
+        runCatching {
+            standbyPreparation.synchronize(activeSnapshot())
+            requestStandbyBaselineIfNeeded()
+        }
     }
 
     private fun attemptNaturalHandoff(): Boolean {
@@ -407,6 +800,7 @@ internal class DualPlayerPlaybackCoordinator(
             incoming.assignRole(PhysicalPlayerRole.ACTIVE)
             active = incoming
             standby = outgoing
+            logicalPipeline = incoming
             attachRoleListeners()
             selectActiveTelemetry()
 
@@ -427,6 +821,8 @@ internal class DualPlayerPlaybackCoordinator(
                 "Incoming physical player failed during role promotion"
             }
             outgoing.clearForStandbyReuse()
+            crossfadeCancelledMediaKey = null
+            crossfadeTransition.reset()
             synchronizeStandbyAfterHandoff()
             true
         } catch (_: RuntimeException) {
@@ -434,6 +830,7 @@ internal class DualPlayerPlaybackCoordinator(
             detachRoleListeners()
             active = outgoing
             standby = incoming
+            logicalPipeline = outgoing
             incoming.assignRole(PhysicalPlayerRole.STANDBY)
             outgoing.assignRole(PhysicalPlayerRole.ACTIVE)
             attachRoleListeners()
@@ -480,19 +877,54 @@ internal class DualPlayerPlaybackCoordinator(
             private fun isCurrent() = !released && active === activeAtBinding
 
             override fun onTimelineChanged(timeline: Timeline, reason: Int) {
-                if (isCurrent()) synchronizeStandby()
+                if (!isCurrent()) return
+                if (activeCrossfade != null) {
+                    crossfadeTransition.reevaluate()
+                } else {
+                    synchronizeStandby()
+                }
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                if (isCurrent()) synchronizeStandby()
+                if (!isCurrent()) return
+                if (activeCrossfade != null) {
+                    crossfadeTransition.cancel(permanent = true)
+                } else {
+                    crossfadeCancelledMediaKey = null
+                    crossfadeTransition.reset()
+                    synchronizeStandby()
+                }
+            }
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int
+            ) {
+                if (!isCurrent()) return
+                crossfadeCancelledMediaKey = activeAtBinding.player.currentMediaItem
+                    ?.let(StandbyTargetResolver::key)
+                crossfadeTransition.cancel(permanent = true)
             }
 
             override fun onRepeatModeChanged(repeatMode: Int) {
-                if (isCurrent()) synchronizeStandby()
+                if (!isCurrent()) return
+                crossfadeTransition.cancel(permanent = true)
+                synchronizeStandby()
             }
 
             override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
-                if (isCurrent()) synchronizeStandby()
+                if (!isCurrent()) return
+                crossfadeTransition.cancel(permanent = true)
+                synchronizeStandby()
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (isCurrent()) crossfadeTransition.reevaluate()
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isCurrent()) crossfadeTransition.reevaluate()
             }
 
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
@@ -501,8 +933,23 @@ internal class DualPlayerPlaybackCoordinator(
                     !playWhenReady &&
                     reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM
                 ) {
-                    attemptNaturalHandoff()
+                    if (!crossfadeTransition.completeAtNaturalEnd()) {
+                        attemptNaturalHandoff()
+                    }
                 }
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                if (!isCurrent()) return
+                val incomingCanContinue = activeCrossfade?.incoming?.player
+                    ?.let { player ->
+                        player.playbackState == Player.STATE_READY &&
+                            player.playerError == null
+                    } == true
+                crossfadeTransition.cancel(
+                    permanent = true,
+                    resolveAsLogicallyHandedOff = incomingCanContinue
+                )
             }
         }.also(activeAtBinding.player::addListener)
 
@@ -510,26 +957,80 @@ internal class DualPlayerPlaybackCoordinator(
         standbyListener = object : Player.Listener {
             private fun isCurrent() = !released && standby === standbyAtBinding
 
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                if (isCurrent() && playbackState == Player.STATE_READY) {
-                    standbyPreparation.onReady()
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                if (!isCurrent()) return
+                val context = activeCrossfade
+                if (
+                    context?.incoming === standbyAtBinding &&
+                    mediaItem?.let(StandbyTargetResolver::key) != context.plan.key
+                ) {
+                    crossfadeTransition.cancel(
+                        permanent = true,
+                        resolveAsLogicallyHandedOff = false
+                    )
                 }
             }
 
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (!isCurrent()) return
+                if (playbackState == Player.STATE_READY) {
+                    standbyPreparation.onReady()
+                    requestStandbyBaselineIfNeeded()
+                } else if (activeCrossfade?.incoming === standbyAtBinding) {
+                    crossfadeTransition.cancel(
+                        permanent = true,
+                        resolveAsLogicallyHandedOff = false
+                    )
+                    return
+                }
+                crossfadeTransition.reevaluate()
+            }
+
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-                if (isCurrent() && playWhenReady) standbyPreparation.enforceSilence()
+                if (!isCurrent()) return
+                if (activeCrossfade?.incoming !== standbyAtBinding && playWhenReady) {
+                    standbyPreparation.enforceSilence()
+                }
+                crossfadeTransition.reevaluate()
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (isCurrent() && isPlaying) standbyPreparation.enforceSilence()
+                if (!isCurrent()) return
+                if (activeCrossfade?.incoming !== standbyAtBinding && isPlaying) {
+                    standbyPreparation.enforceSilence()
+                } else if (
+                    activeCrossfade?.incoming === standbyAtBinding &&
+                    !isPlaying
+                ) {
+                    crossfadeTransition.cancel(
+                        permanent = true,
+                        resolveAsLogicallyHandedOff = false
+                    )
+                    return
+                }
+                crossfadeTransition.reevaluate()
             }
 
             override fun onVolumeChanged(volume: Float) {
-                if (isCurrent() && volume != 0f) standbyPreparation.enforceSilence()
+                if (
+                    isCurrent() &&
+                    activeCrossfade?.incoming !== standbyAtBinding &&
+                    volume != 0f
+                ) {
+                    standbyPreparation.enforceSilence()
+                }
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                if (isCurrent()) standbyPreparation.onError()
+                if (!isCurrent()) return
+                if (activeCrossfade?.incoming === standbyAtBinding) {
+                    crossfadeTransition.cancel(
+                        permanent = true,
+                        resolveAsLogicallyHandedOff = false
+                    )
+                } else {
+                    standbyPreparation.onError()
+                }
             }
         }.also(standbyAtBinding.player::addListener)
     }
@@ -544,8 +1045,11 @@ internal class DualPlayerPlaybackCoordinator(
     fun release() {
         if (released) return
         released = true
+        crossfadeTransition.release()
         detachRoleListeners()
-        activeIntegration?.unbind(active)
+        activeIntegration?.unbind(logicalPipeline)
+        active.enforceSilence()
+        standby.enforceSilence()
         standbyPreparation.release()
         try {
             standby.release()

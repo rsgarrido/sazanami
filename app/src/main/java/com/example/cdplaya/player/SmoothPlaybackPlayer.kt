@@ -5,12 +5,23 @@ import android.os.SystemClock
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.ForwardingSimpleBasePlayer
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.SimpleBasePlayer
 import androidx.media3.common.util.UnstableApi
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+
+internal enum class LogicalPlaybackCommand {
+    PLAY_PAUSE,
+    STOP,
+    SEEK,
+    PLAYLIST_MUTATION,
+    NAVIGATION_POLICY,
+    PLAYBACK_PARAMETERS
+}
 
 /** Narrow role-switch contract so physical A/B authority is testable without replacing Player. */
 internal interface LogicalPlayerRoleBinding {
@@ -22,6 +33,15 @@ internal interface LogicalPlayerRoleBinding {
         logicalPlayWhenReady: Boolean
     )
 
+    fun rebindPhysicalPlayerForCrossfade(
+        newPhysicalPlayer: Player,
+        baselineVolume: Float,
+        logicalPlayWhenReady: Boolean
+    )
+
+    fun setCrossfadeVolumeControlActive(active: Boolean)
+    fun finishCrossfadeVolumeControl(baselineVolume: Float)
+
     fun activateReboundPhysicalPlayer()
 }
 
@@ -30,6 +50,7 @@ internal interface LogicalPlayerRoleBinding {
 internal class SmoothPlaybackPlayer(
     initialPhysicalPlayer: Player,
     private val onBaselineVolumeChanged: (Float) -> Unit = {},
+    private val onLogicalCommand: (LogicalPlaybackCommand) -> Unit = {},
     clock: PlaybackTransitionClock = PlaybackTransitionClock {
         SystemClock.elapsedRealtime()
     },
@@ -45,6 +66,7 @@ internal class SmoothPlaybackPlayer(
     private var logicalUnmuteVolume =
         initialPhysicalPlayer.volume.takeIf { it > 0f } ?: 1f
     private var releasedTransitionResources = false
+    private var crossfadeControlsPhysicalVolume = false
     private var physicalListener = createPhysicalListener(initialPhysicalPlayer)
     private val transitionCoordinator = SmoothPlaybackTransitionCoordinator(
         output = object : SmoothPlaybackTransitionOutput {
@@ -83,6 +105,7 @@ internal class SmoothPlaybackPlayer(
     }
 
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
+        onLogicalCommand(LogicalPlaybackCommand.PLAY_PAUSE)
         logicalPlayWhenReadyChangeReason =
             Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
         if (playWhenReady) {
@@ -106,15 +129,90 @@ internal class SmoothPlaybackPlayer(
         ) {
             logicalUnmuteVolume = transitionCoordinator.baselineVolume
         }
-        transitionCoordinator.setBaselineVolume(volume)
+        transitionCoordinator.setBaselineVolume(
+            volume = volume,
+            applyPhysicalVolume = !crossfadeControlsPhysicalVolume
+        )
         onBaselineVolumeChanged(volume)
         invalidateState()
         return Futures.immediateVoidFuture()
     }
 
     override fun handleStop(): ListenableFuture<*> {
+        onLogicalCommand(LogicalPlaybackCommand.STOP)
         transitionCoordinator.onImmediateStop()
         return super.handleStop()
+    }
+
+    override fun handleSeek(
+        mediaItemIndex: Int,
+        positionMs: Long,
+        seekCommand: @Player.Command Int
+    ): ListenableFuture<*> {
+        onLogicalCommand(LogicalPlaybackCommand.SEEK)
+        return super.handleSeek(mediaItemIndex, positionMs, seekCommand)
+    }
+
+    override fun handleSetMediaItems(
+        mediaItems: List<MediaItem>,
+        startIndex: Int,
+        startPositionMs: Long
+    ): ListenableFuture<*> {
+        onLogicalCommand(LogicalPlaybackCommand.PLAYLIST_MUTATION)
+        return super.handleSetMediaItems(mediaItems, startIndex, startPositionMs)
+    }
+
+    override fun handleAddMediaItems(
+        index: Int,
+        mediaItems: List<MediaItem>
+    ): ListenableFuture<*> {
+        onLogicalCommand(LogicalPlaybackCommand.PLAYLIST_MUTATION)
+        return super.handleAddMediaItems(index, mediaItems)
+    }
+
+    override fun handleMoveMediaItems(
+        fromIndex: Int,
+        toIndex: Int,
+        newIndex: Int
+    ): ListenableFuture<*> {
+        onLogicalCommand(LogicalPlaybackCommand.PLAYLIST_MUTATION)
+        return super.handleMoveMediaItems(fromIndex, toIndex, newIndex)
+    }
+
+    override fun handleReplaceMediaItems(
+        fromIndex: Int,
+        toIndex: Int,
+        mediaItems: List<MediaItem>
+    ): ListenableFuture<*> {
+        onLogicalCommand(LogicalPlaybackCommand.PLAYLIST_MUTATION)
+        return super.handleReplaceMediaItems(fromIndex, toIndex, mediaItems)
+    }
+
+    override fun handleRemoveMediaItems(
+        fromIndex: Int,
+        toIndex: Int
+    ): ListenableFuture<*> {
+        onLogicalCommand(LogicalPlaybackCommand.PLAYLIST_MUTATION)
+        return super.handleRemoveMediaItems(fromIndex, toIndex)
+    }
+
+    override fun handleSetRepeatMode(repeatMode: Int): ListenableFuture<*> {
+        onLogicalCommand(LogicalPlaybackCommand.NAVIGATION_POLICY)
+        return super.handleSetRepeatMode(repeatMode)
+    }
+
+    override fun handleSetShuffleModeEnabled(
+        shuffleModeEnabled: Boolean
+    ): ListenableFuture<*> {
+        onLogicalCommand(LogicalPlaybackCommand.NAVIGATION_POLICY)
+        return super.handleSetShuffleModeEnabled(shuffleModeEnabled)
+    }
+
+    override fun handleSetPlaybackParameters(
+        playbackParameters: PlaybackParameters
+    ): ListenableFuture<*> {
+        onLogicalCommand(LogicalPlaybackCommand.PLAYBACK_PARAMETERS)
+        return super.handleSetPlaybackParameters(playbackParameters)
     }
 
     override fun handleRelease(): ListenableFuture<*> {
@@ -138,6 +236,29 @@ internal class SmoothPlaybackPlayer(
         newPhysicalPlayer: Player,
         baselineVolume: Float,
         logicalPlayWhenReady: Boolean
+    ) = rebindPhysicalPlayerInternal(
+        newPhysicalPlayer = newPhysicalPlayer,
+        baselineVolume = baselineVolume,
+        logicalPlayWhenReady = logicalPlayWhenReady,
+        applyPhysicalVolume = true
+    )
+
+    override fun rebindPhysicalPlayerForCrossfade(
+        newPhysicalPlayer: Player,
+        baselineVolume: Float,
+        logicalPlayWhenReady: Boolean
+    ) = rebindPhysicalPlayerInternal(
+        newPhysicalPlayer = newPhysicalPlayer,
+        baselineVolume = baselineVolume,
+        logicalPlayWhenReady = logicalPlayWhenReady,
+        applyPhysicalVolume = false
+    )
+
+    private fun rebindPhysicalPlayerInternal(
+        newPhysicalPlayer: Player,
+        baselineVolume: Float,
+        logicalPlayWhenReady: Boolean,
+        applyPhysicalVolume: Boolean
     ) {
         if (releasedTransitionResources) return
         val isPhysicalSwap = newPhysicalPlayer !== physicalPlayer
@@ -150,7 +271,8 @@ internal class SmoothPlaybackPlayer(
             physicalPlayWhenReady = newPhysicalPlayer.playWhenReady,
             isAudible = newPhysicalPlayer.isPlaying,
             baselineVolume = baselineVolume,
-            logicalPlayWhenReady = logicalPlayWhenReady
+            logicalPlayWhenReady = logicalPlayWhenReady,
+            applyPhysicalVolume = applyPhysicalVolume
         )
         if (isPhysicalSwap) {
             // ForwardingSimpleBasePlayer observes one coherent incoming state: its delegate is
@@ -164,6 +286,20 @@ internal class SmoothPlaybackPlayer(
 
     override fun activateReboundPhysicalPlayer() {
         transitionCoordinator.activateReboundPhysicalPlayer()
+        invalidateState()
+    }
+
+    override fun setCrossfadeVolumeControlActive(active: Boolean) {
+        crossfadeControlsPhysicalVolume = active
+    }
+
+    override fun finishCrossfadeVolumeControl(baselineVolume: Float) {
+        transitionCoordinator.setBaselineVolume(
+            volume = baselineVolume,
+            applyPhysicalVolume = false
+        )
+        logicalUnmuteVolume = baselineVolume.takeIf { it > 0f } ?: logicalUnmuteVolume
+        crossfadeControlsPhysicalVolume = false
         invalidateState()
     }
 

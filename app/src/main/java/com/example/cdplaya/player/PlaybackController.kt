@@ -913,6 +913,45 @@ class PlaybackController(
         }
     }
 
+    /** Prepares a target-scoped baseline without changing the current logical player's volume. */
+    internal fun prepareReplayGainBaseline(
+        songId: Long,
+        onPrepared: (Float) -> Unit
+    ): Boolean {
+        val song = sequenceOf(
+            playbackContextSongs,
+            playbackQueue.toList(),
+            upcomingSongsValue,
+            librarySongs
+        ).flatten().firstOrNull { candidate -> candidate.id == songId }
+            ?: return false
+        val requestedMode = replayGainMode
+        val requestedIsAlbumPlaybackContext = isAlbumPlaybackContextForSong(song)
+        if (requestedMode == ReplayGainMode.OFF) {
+            onPrepared(1f)
+            return true
+        }
+
+        coroutineScope.launch {
+            val replayGainInfo = runCatching {
+                replayGainRepository.getReplayGainInfo(song)
+            }.getOrNull() ?: return@launch
+            val volumeMultiplier = replayGainVolumeMultiplier(
+                replayGainInfo = replayGainInfo,
+                replayGainMode = requestedMode,
+                isAlbumPlaybackContext = requestedIsAlbumPlaybackContext
+            )
+            if (
+                replayGainMode == requestedMode &&
+                isAlbumPlaybackContextForSong(song) ==
+                requestedIsAlbumPlaybackContext
+            ) {
+                onPrepared(volumeMultiplier)
+            }
+        }
+        return true
+    }
+
     private fun isAlbumPlaybackContextForSong(song: Song): Boolean {
         if (playbackContextSongs.size <= 1) {
             return false
