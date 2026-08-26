@@ -7,6 +7,7 @@ import android.os.SystemClock
 import android.content.pm.ApplicationInfo
 import androidx.room.withTransaction
 import com.example.cdplaya.data.EditableSongTags
+import com.example.cdplaya.data.DuplicateListeningHistoryResolution
 import com.example.cdplaya.data.FavoritesRepository
 import com.example.cdplaya.data.FolderSelection
 import com.example.cdplaya.data.FolderSelectionMode
@@ -39,6 +40,7 @@ import com.example.cdplaya.data.SongReferenceIndex
 import com.example.cdplaya.data.SongReferenceReconciliationPlanner
 import com.example.cdplaya.data.SongReferenceResolution
 import com.example.cdplaya.data.membershipKey
+import com.example.cdplaya.data.stableUiKey
 import com.example.cdplaya.data.toSongReference
 import com.example.cdplaya.data.sortSongsByDateAddedDescending
 import com.example.cdplaya.data.local.AppDatabase
@@ -190,6 +192,7 @@ class LibraryController(
                 history = listeningStatsRepository.observeProductionHistory(),
                 library = historyLibrarySnapshot
             ) { resolved ->
+                logDuplicateListeningHistoryResolutions(resolved.duplicateResolutions)
                 _uiState.update { current ->
                     current.copy(
                         recentlyPlayedSongs = resolved.recentlyPlayed.toList(),
@@ -197,6 +200,37 @@ class LibraryController(
                     )
                 }
             }
+        }
+    }
+
+    private fun logDuplicateListeningHistoryResolutions(
+        duplicates: List<DuplicateListeningHistoryResolution>
+    ) {
+        if (applicationContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) {
+            return
+        }
+        duplicates.forEach { duplicate ->
+            val retained = duplicate.retainedSong
+            val dropped = duplicate.duplicateSong
+            Log.w(
+                "LibraryIdentity",
+                "collection=${duplicate.collection} duplicateUiKey=${dropped.id} " +
+                        "stableUiKey=${dropped.stableUiKey()} " +
+                        "retainedTrackIdentityId=${duplicate.retainedTrackIdentityId} " +
+                        "duplicateTrackIdentityId=${duplicate.duplicateTrackIdentityId}"
+            )
+            Log.w(
+                "LibraryIdentity",
+                "role=retained mediaId=${retained.id} uri=${retained.uri} " +
+                        "title=${retained.title} artist=${retained.artist} album=${retained.album} " +
+                        "folder=${retained.folderPath} membershipKey=${retained.membershipKey()}"
+            )
+            Log.w(
+                "LibraryIdentity",
+                "role=duplicate mediaId=${dropped.id} uri=${dropped.uri} " +
+                        "title=${dropped.title} artist=${dropped.artist} album=${dropped.album} " +
+                        "folder=${dropped.folderPath} membershipKey=${dropped.membershipKey()}"
+            )
         }
     }
 

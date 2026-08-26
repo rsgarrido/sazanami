@@ -61,6 +61,7 @@ import coil.compose.AsyncImage
 import com.example.cdplaya.R
 import com.example.cdplaya.data.Playlist
 import com.example.cdplaya.data.Song
+import com.example.cdplaya.data.stableUiKey
 import com.example.cdplaya.data.home.HomePin
 import com.example.cdplaya.ui.AppShellAccent
 import com.example.cdplaya.ui.AppShellIcons
@@ -507,7 +508,7 @@ fun HomeRecentlyPlayedShelf(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            item(key = "recent-featured-${songs.first().id}") {
+            item(key = "recent-featured-${songs.first().stableUiKey()}") {
                 HomeFeaturedSongCard(
                     song = songs.first(),
                     onClick = { onSongClick(songs.first()) }
@@ -516,7 +517,7 @@ fun HomeRecentlyPlayedShelf(
 
             items(
                 items = songs.drop(1),
-                key = { song -> song.id }
+                key = { song -> song.stableUiKey() }
             ) { song ->
                 HomeCompactArtworkCard(
                     song = song,
@@ -552,7 +553,7 @@ fun HomeFavoritesShelf(
         ) {
             items(
                 items = songs,
-                key = { song -> song.id }
+                key = { song -> song.stableUiKey() }
             ) { song ->
                 HomeFavoriteRowCard(
                     song = song,
@@ -585,7 +586,7 @@ fun HomeRecentlyAddedShelf(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(items = songs, key = { it.id }) { song ->
+            items(items = songs, key = { it.stableUiKey() }) { song ->
                 HomeCompactArtworkCard(song = song, onClick = { onSongClick(song) })
             }
         }
