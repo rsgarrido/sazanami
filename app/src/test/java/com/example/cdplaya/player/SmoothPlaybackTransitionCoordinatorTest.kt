@@ -7,6 +7,148 @@ import org.junit.Test
 
 class SmoothPlaybackTransitionCoordinatorTest {
     @Test
+    fun ordinaryNewPlaybackStartsAtReplayGainBaselineWithoutFade() {
+        val harness = Harness(
+            initialPlayWhenReady = false,
+            initialAudible = false,
+            baselineVolume = 0.65f
+        )
+
+        harness.coordinator.requestPlay(smoothResume = false)
+
+        assertEquals(listOf(true), harness.output.playWhenReadyCalls)
+        assertClose(1f, harness.coordinator.envelope)
+        assertClose(0.65f, harness.output.volume)
+        harness.coordinator.onAudibilityChanged(true)
+        harness.advanceBy(500)
+        assertClose(0.65f, harness.output.volume)
+        assertEquals(
+            SmoothPlaybackTransitionState.FULLY_AUDIBLE,
+            harness.coordinator.state
+        )
+    }
+
+    @Test
+    fun ordinaryBufferingCycleDoesNotCreateCosmeticFadeIn() {
+        val harness = Harness(
+            initialPlayWhenReady = true,
+            initialAudible = true,
+            baselineVolume = 0.7f
+        )
+
+        harness.coordinator.onAudibilityChanged(false)
+        assertClose(1f, harness.coordinator.envelope)
+        assertClose(0.7f, harness.output.volume)
+
+        harness.coordinator.onAudibilityChanged(true)
+        harness.advanceBy(500)
+        assertClose(1f, harness.coordinator.envelope)
+        assertClose(0.7f, harness.output.volume)
+    }
+
+    @Test
+    fun explicitPauseMarkerAllowsOnlySameIdentityToSmoothResume() {
+        val songA = identity("song-a")
+        val policy = SmoothPlayPauseResumePolicy()
+        val harness = Harness(
+            initialPlayWhenReady = true,
+            initialAudible = true,
+            baselineVolume = 0.6f
+        )
+
+        policy.onExplicitPause(songA, canArmSmoothResume = true)
+        harness.coordinator.requestPause()
+        harness.advanceBy(200)
+        assertClose(0f, harness.output.volume)
+        assertEquals(listOf(false), harness.output.playWhenReadyCalls)
+
+        harness.coordinator.requestPlay(
+            smoothResume = policy.onExplicitPlay(songA)
+        )
+        assertClose(0f, harness.output.volume)
+        assertEquals(listOf(false, true), harness.output.playWhenReadyCalls)
+        harness.coordinator.onAudibilityChanged(true)
+        harness.advanceBy(200)
+
+        assertClose(1f, harness.coordinator.envelope)
+        assertClose(0.6f, harness.output.volume)
+    }
+
+    @Test
+    fun pausedSongMarkerCannotAffectNewSelectionOrNavigationTarget() {
+        val songA = identity("song-a")
+        val songB = identity("song-b")
+        val policy = SmoothPlayPauseResumePolicy()
+        val harness = Harness(
+            initialPlayWhenReady = true,
+            initialAudible = true,
+            baselineVolume = 0.8f
+        )
+
+        policy.onExplicitPause(songA, canArmSmoothResume = true)
+        harness.coordinator.requestPause()
+        harness.advanceBy(200)
+        policy.onNewPlaybackAttempt()
+        harness.coordinator.setBaselineVolume(0.45f)
+        harness.coordinator.onNewPlaybackAttempt()
+        harness.coordinator.requestPlay(
+            smoothResume = policy.onExplicitPlay(songB)
+        )
+
+        assertClose(1f, harness.coordinator.envelope)
+        assertClose(0.45f, harness.output.volume)
+        harness.coordinator.onAudibilityChanged(true)
+        harness.advanceBy(500)
+        assertClose(0.45f, harness.output.volume)
+    }
+
+    @Test
+    fun newSelectionDuringPartialFadeCancelsFramesAndRestoresFullEnvelope() {
+        val policy = SmoothPlayPauseResumePolicy()
+        val harness = Harness(
+            initialPlayWhenReady = true,
+            initialAudible = true,
+            baselineVolume = 0.8f
+        )
+        policy.onExplicitPause(identity("song-a"), canArmSmoothResume = true)
+        harness.coordinator.requestPause()
+        harness.advanceBy(60)
+        assertTrue(harness.coordinator.envelope > 0f)
+        assertTrue(harness.coordinator.envelope < 1f)
+
+        policy.onNewPlaybackAttempt()
+        harness.coordinator.setBaselineVolume(0.5f)
+        harness.coordinator.onNewPlaybackAttempt()
+        harness.advanceBy(500)
+
+        assertClose(1f, harness.coordinator.envelope)
+        assertClose(0.5f, harness.output.volume)
+    }
+
+    @Test
+    fun samePausedIdentityRemainsResumableAcrossSeekButNotNaturalRepeat() {
+        val songA = identity("song-a")
+        val songB = identity("song-b")
+        val policy = SmoothPlayPauseResumePolicy()
+
+        policy.onExplicitPause(songA, canArmSmoothResume = true)
+        // A same-item seek deliberately does not invalidate the marker.
+        assertTrue(policy.onExplicitPlay(songA))
+
+        policy.onExplicitPause(songA, canArmSmoothResume = true)
+        // Media-item transition callbacks invalidate even when Repeat One reports the same id.
+        policy.onNewPlaybackAttempt()
+        assertFalse(policy.onExplicitPlay(songA))
+
+        policy.onExplicitPause(songA, canArmSmoothResume = true)
+        assertFalse(policy.onExplicitPlay(songB))
+        assertFalse(policy.onExplicitPlay(songA))
+
+        policy.onExplicitPause(songA, canArmSmoothResume = false)
+        assertFalse(policy.onExplicitPlay(songA))
+    }
+
+    @Test
     fun pauseFadesFromFullGainToZeroBeforeForwardingPause() {
         val harness = Harness(initialPlayWhenReady = true, initialAudible = true)
 
@@ -31,7 +173,7 @@ class SmoothPlaybackTransitionCoordinatorTest {
     fun playStartsSilentWaitsForAudibleThenFadesToFullGain() {
         val harness = Harness(initialPlayWhenReady = false, initialAudible = false)
 
-        harness.coordinator.requestPlay()
+        harness.coordinator.requestPlay(smoothResume = true)
         assertTrue(harness.coordinator.logicalPlayWhenReady)
         assertEquals(listOf(true), harness.output.playWhenReadyCalls)
         assertClose(0f, harness.output.volume)
@@ -60,7 +202,7 @@ class SmoothPlaybackTransitionCoordinatorTest {
         harness.advanceBy(100)
         val midpoint = harness.coordinator.envelope
 
-        harness.coordinator.requestPlay()
+        harness.coordinator.requestPlay(smoothResume = true)
 
         assertClose(midpoint, harness.coordinator.envelope)
         assertTrue(harness.output.playWhenReadyCalls.isEmpty())
@@ -71,7 +213,7 @@ class SmoothPlaybackTransitionCoordinatorTest {
     @Test
     fun playThenPauseReversesFromCurrentEnvelope() {
         val harness = Harness(initialPlayWhenReady = false, initialAudible = false)
-        harness.coordinator.requestPlay()
+        harness.coordinator.requestPlay(smoothResume = true)
         harness.coordinator.onAudibilityChanged(true)
         harness.advanceBy(100)
         val midpoint = harness.coordinator.envelope
@@ -90,7 +232,7 @@ class SmoothPlaybackTransitionCoordinatorTest {
         harness.coordinator.requestPause()
         harness.advanceBy(60)
         val afterPause = harness.coordinator.envelope
-        harness.coordinator.requestPlay()
+        harness.coordinator.requestPlay(smoothResume = true)
         harness.advanceBy(30)
         val afterPlay = harness.coordinator.envelope
         harness.coordinator.requestPause()
@@ -118,7 +260,7 @@ class SmoothPlaybackTransitionCoordinatorTest {
     @Test
     fun bufferingDuringFadeInReturnsToSilentWaitingState() {
         val harness = Harness(initialPlayWhenReady = false, initialAudible = false)
-        harness.coordinator.requestPlay()
+        harness.coordinator.requestPlay(smoothResume = true)
         harness.coordinator.onAudibilityChanged(true)
         harness.advanceBy(80)
         assertTrue(harness.coordinator.envelope > 0f)
@@ -148,7 +290,7 @@ class SmoothPlaybackTransitionCoordinatorTest {
         assertEquals(listOf(false), harness.output.playWhenReadyCalls)
         assertClose(0.65f, harness.output.volume)
 
-        harness.coordinator.requestPlay()
+        harness.coordinator.requestPlay(smoothResume = true)
 
         assertEquals(listOf(false, true), harness.output.playWhenReadyCalls)
         assertClose(0.65f, harness.output.volume)
@@ -180,7 +322,7 @@ class SmoothPlaybackTransitionCoordinatorTest {
             initialAudible = false,
             baselineVolume = 0.55f
         )
-        harness.coordinator.requestPlay()
+        harness.coordinator.requestPlay(smoothResume = true)
         harness.coordinator.onAudibilityChanged(true)
         harness.advanceBy(80)
 
@@ -237,7 +379,7 @@ class SmoothPlaybackTransitionCoordinatorTest {
     @Test
     fun safetyBypassDuringFadeInCancelsWithoutPausingPlayIntent() {
         val harness = Harness(initialPlayWhenReady = false, initialAudible = false)
-        harness.coordinator.requestPlay()
+        harness.coordinator.requestPlay(smoothResume = true)
         harness.coordinator.onAudibilityChanged(true)
         harness.advanceBy(60)
 
@@ -306,6 +448,8 @@ class SmoothPlaybackTransitionCoordinatorTest {
         harness.coordinator.activateReboundPhysicalPlayer()
         assertEquals(listOf(true), harness.output.playWhenReadyCalls)
         harness.coordinator.onAudibilityChanged(true)
+        assertClose(1f, harness.coordinator.envelope)
+        assertClose(0.35f, harness.output.volume)
         harness.coordinator.requestPause()
         harness.advanceBy(100)
 
@@ -419,6 +563,11 @@ class SmoothPlaybackTransitionCoordinatorTest {
     }
 
     private companion object {
+        fun identity(id: String) = SmoothPlaybackMediaIdentity(
+            mediaId = id,
+            uri = "content://media/$id"
+        )
+
         fun assertClose(expected: Float, actual: Float) {
             assertEquals(expected.toDouble(), actual.toDouble(), 0.0001)
         }

@@ -61,6 +61,9 @@ internal class SmoothPlaybackTransitionCoordinator(
     }
         private set
 
+    val canArmSmoothResume: Boolean
+        get() = enabled && !released
+
     private var enabled = initiallyEnabled
     private var physicalPlayWhenReady = initialPhysicalPlayWhenReady
     private var audible = initialAudible
@@ -69,13 +72,15 @@ internal class SmoothPlaybackTransitionCoordinator(
     private var transitionDurationMillis = 0L
     private var transitionStartEnvelope = envelope
     private var transitionTargetEnvelope = envelope
+    private var resumeFadePending = false
     private var released = false
 
-    fun requestPlay() {
+    fun requestPlay(smoothResume: Boolean) {
         if (released) return
         logicalPlayWhenReady = true
 
         if (!enabled) {
+            resumeFadePending = false
             cancelScheduledFrame()
             setEnvelope(1f)
             setPhysicalPlayWhenReadyIfChanged(true)
@@ -86,6 +91,22 @@ internal class SmoothPlaybackTransitionCoordinator(
             }
             return
         }
+
+        if (!smoothResume && !resumeFadePending) {
+            // Ordinary startup, navigation, buffering recovery, and a new playback attempt are
+            // not cosmetic resume transitions. Install the full envelope before playback can
+            // emit the new item's first audible sample.
+            cancelScheduledFrame()
+            setEnvelope(1f)
+            setPhysicalPlayWhenReadyIfChanged(true)
+            state = if (audible) {
+                SmoothPlaybackTransitionState.FULLY_AUDIBLE
+            } else {
+                SmoothPlaybackTransitionState.WAITING_FOR_AUDIBLE
+            }
+            return
+        }
+        resumeFadePending = true
 
         // Silence is installed before asking ExoPlayer to resume, so a buffered stream cannot
         // briefly escape at the ReplayGain baseline.
@@ -109,6 +130,7 @@ internal class SmoothPlaybackTransitionCoordinator(
     fun requestPause() {
         if (released) return
         logicalPlayWhenReady = false
+        resumeFadePending = false
 
         if (!enabled) {
             resolveDisabledState()
@@ -140,6 +162,7 @@ internal class SmoothPlaybackTransitionCoordinator(
         this.enabled = enabled
 
         if (!enabled) {
+            resumeFadePending = false
             resolveDisabledState()
         } else if (logicalPlayWhenReady && !audible) {
             cancelScheduledFrame()
@@ -162,6 +185,7 @@ internal class SmoothPlaybackTransitionCoordinator(
         audible = isAudible
         this.baselineVolume = baselineVolume.coerceIn(0f, 1f)
         this.logicalPlayWhenReady = logicalPlayWhenReady
+        resumeFadePending = false
         envelope = if (logicalPlayWhenReady) 1f else 0f
         if (applyPhysicalVolume) applyEffectiveVolume()
         state = when {
@@ -207,16 +231,35 @@ internal class SmoothPlaybackTransitionCoordinator(
         if (!isAudible) {
             if (logicalPlayWhenReady) {
                 cancelScheduledFrame()
-                setEnvelope(0f)
+                setEnvelope(if (resumeFadePending) 0f else 1f)
                 state = SmoothPlaybackTransitionState.WAITING_FOR_AUDIBLE
             } else {
                 pauseImmediatelyAtSilence()
             }
-        } else if (logicalPlayWhenReady) {
+        } else if (logicalPlayWhenReady && resumeFadePending) {
             beginFade(
                 targetEnvelope = 1f,
                 transitionState = SmoothPlaybackTransitionState.FADING_IN
             )
+        } else if (logicalPlayWhenReady) {
+            setEnvelope(1f)
+            state = SmoothPlaybackTransitionState.FULLY_AUDIBLE
+        }
+    }
+
+    /** Invalidates cosmetic pause/resume state for a newly selected or restarted media item. */
+    fun onNewPlaybackAttempt(applyPhysicalVolume: Boolean = true) {
+        if (released) return
+        cancelScheduledFrame()
+        resumeFadePending = false
+        envelope = 1f
+        if (applyPhysicalVolume) applyEffectiveVolume()
+        state = if (logicalPlayWhenReady && audible) {
+            SmoothPlaybackTransitionState.FULLY_AUDIBLE
+        } else if (logicalPlayWhenReady) {
+            SmoothPlaybackTransitionState.WAITING_FOR_AUDIBLE
+        } else {
+            SmoothPlaybackTransitionState.PAUSED_SILENT
         }
     }
 
@@ -233,6 +276,7 @@ internal class SmoothPlaybackTransitionCoordinator(
 
         if (playWhenReady) {
             if (enabled) {
+                resumeFadePending = true
                 setEnvelope(0f)
                 state = SmoothPlaybackTransitionState.WAITING_FOR_AUDIBLE
             } else {
@@ -244,6 +288,7 @@ internal class SmoothPlaybackTransitionCoordinator(
                 }
             }
         } else {
+            resumeFadePending = false
             setEnvelope(if (enabled) 0f else 1f)
             state = SmoothPlaybackTransitionState.PAUSED_SILENT
         }
@@ -252,6 +297,7 @@ internal class SmoothPlaybackTransitionCoordinator(
     /** Cancels a cosmetic transition without changing Media3's focus/suppression policy. */
     fun bypassForSafety() {
         if (released) return
+        resumeFadePending = false
         cancelScheduledFrame()
         if (enabled) {
             setEnvelope(0f)
@@ -269,6 +315,7 @@ internal class SmoothPlaybackTransitionCoordinator(
 
     fun onImmediateStop() {
         if (released) return
+        resumeFadePending = false
         cancelScheduledFrame()
         setEnvelope(if (enabled) 0f else 1f)
         state = if (logicalPlayWhenReady) {
@@ -285,6 +332,7 @@ internal class SmoothPlaybackTransitionCoordinator(
     }
 
     private fun resolveDisabledState() {
+        resumeFadePending = false
         cancelScheduledFrame()
         setPhysicalPlayWhenReadyIfChanged(logicalPlayWhenReady)
         setEnvelope(1f)
@@ -357,6 +405,7 @@ internal class SmoothPlaybackTransitionCoordinator(
             setPhysicalPlayWhenReadyIfChanged(false)
             state = SmoothPlaybackTransitionState.PAUSED_SILENT
         } else {
+            resumeFadePending = false
             state = SmoothPlaybackTransitionState.FULLY_AUDIBLE
         }
     }

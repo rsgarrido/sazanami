@@ -39,6 +39,40 @@ internal data class LogicalPlaybackCommandEvent(
     val navigationValue: String? = null
 )
 
+internal data class SmoothPlaybackMediaIdentity(
+    val mediaId: String,
+    val uri: String
+)
+
+/** Logical command policy for session-local, identity-scoped cosmetic Pause/Resume. */
+internal class SmoothPlayPauseResumePolicy {
+    private var resumableIdentity: SmoothPlaybackMediaIdentity? = null
+
+    fun onExplicitPause(
+        identity: SmoothPlaybackMediaIdentity?,
+        canArmSmoothResume: Boolean
+    ) {
+        resumableIdentity = identity.takeIf { canArmSmoothResume }
+    }
+
+    fun onExplicitPlay(identity: SmoothPlaybackMediaIdentity?): Boolean {
+        val matches = identity != null && identity == resumableIdentity
+        resumableIdentity = null
+        return matches
+    }
+
+    fun onNewPlaybackAttempt() {
+        resumableIdentity = null
+    }
+}
+
+internal fun MediaItem?.smoothPlaybackIdentity(): SmoothPlaybackMediaIdentity? {
+    val item = this ?: return null
+    val uri = item.localConfiguration?.uri?.toString().orEmpty()
+    if (item.mediaId.isBlank() && uri.isBlank()) return null
+    return SmoothPlaybackMediaIdentity(item.mediaId, uri)
+}
+
 internal class CrossfadeHandoffPlaylistMutationClassifier {
     private data class HandoffScope(
         val currentMediaId: String,
@@ -245,6 +279,7 @@ internal class SmoothPlaybackPlayer(
         initialPhysicalPlayer.volume.takeIf { it > 0f } ?: 1f
     private var releasedTransitionResources = false
     private var crossfadeControlsPhysicalVolume = false
+    private val smoothResumePolicy = SmoothPlayPauseResumePolicy()
     private val handoffPlaylistMutationClassifier =
         CrossfadeHandoffPlaylistMutationClassifier()
     private val handoffNavigationPolicyClassifier =
@@ -291,8 +326,16 @@ internal class SmoothPlaybackPlayer(
         logicalPlayWhenReadyChangeReason =
             Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
         if (playWhenReady) {
-            transitionCoordinator.requestPlay()
+            transitionCoordinator.requestPlay(
+                smoothResume = smoothResumePolicy.onExplicitPlay(
+                    physicalPlayer.currentMediaItem.smoothPlaybackIdentity()
+                )
+            )
         } else {
+            smoothResumePolicy.onExplicitPause(
+                identity = physicalPlayer.currentMediaItem.smoothPlaybackIdentity(),
+                canArmSmoothResume = transitionCoordinator.canArmSmoothResume
+            )
             transitionCoordinator.requestPause()
         }
         invalidateState()
@@ -322,6 +365,7 @@ internal class SmoothPlaybackPlayer(
 
     override fun handleStop(): ListenableFuture<*> {
         emitLogicalCommand(LogicalPlaybackCommand.STOP)
+        smoothResumePolicy.onNewPlaybackAttempt()
         transitionCoordinator.onImmediateStop()
         return super.handleStop()
     }
@@ -332,6 +376,12 @@ internal class SmoothPlaybackPlayer(
         seekCommand: @Player.Command Int
     ): ListenableFuture<*> {
         emitLogicalCommand(LogicalPlaybackCommand.SEEK)
+        val isSeekWithinCurrentAttempt =
+            mediaItemIndex == physicalPlayer.currentMediaItemIndex &&
+                seekCommand == Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM
+        if (!isSeekWithinCurrentAttempt) {
+            invalidateSmoothResumeForNewPlaybackAttempt()
+        }
         return super.handleSeek(mediaItemIndex, positionMs, seekCommand)
     }
 
@@ -340,6 +390,7 @@ internal class SmoothPlaybackPlayer(
         startIndex: Int,
         startPositionMs: Long
     ): ListenableFuture<*> {
+        invalidateSmoothResumeForNewPlaybackAttempt()
         closeHandoffPlaylistTransaction("external_set_media_items")
         LogicalPlaylistMutationTransactions.abortAll("external_set_media_items")
         emitPlaylistMutation(preservesCurrentMediaItem = false)
@@ -378,6 +429,10 @@ internal class SmoothPlaybackPlayer(
         toIndex: Int,
         mediaItems: List<MediaItem>
     ): ListenableFuture<*> {
+        val currentIndex = physicalPlayer.currentMediaItemIndex
+        if (currentIndex in fromIndex until toIndex) {
+            invalidateSmoothResumeForNewPlaybackAttempt()
+        }
         val claim = LogicalPlaylistMutationTransactions.claimReplaceUpcoming(
             currentMediaId = physicalPlayer.currentMediaItem?.mediaId,
             fromIndex = fromIndex,
@@ -414,6 +469,10 @@ internal class SmoothPlaybackPlayer(
         fromIndex: Int,
         toIndex: Int
     ): ListenableFuture<*> {
+        val currentIndex = physicalPlayer.currentMediaItemIndex
+        if (currentIndex in fromIndex until toIndex) {
+            invalidateSmoothResumeForNewPlaybackAttempt()
+        }
         val claim = LogicalPlaylistMutationTransactions.claimRemovePrefix(
             currentMediaId = physicalPlayer.currentMediaItem?.mediaId,
             fromIndex = fromIndex,
@@ -433,7 +492,6 @@ internal class SmoothPlaybackPlayer(
             }
             closeHandoffPlaylistTransaction("external_remove_media_items")
         }
-        val currentIndex = physicalPlayer.currentMediaItemIndex
         emitPlaylistMutation(
             preservesCurrentMediaItem = currentIndex >= 0 &&
                 currentIndex !in fromIndex until toIndex,
@@ -506,6 +564,7 @@ internal class SmoothPlaybackPlayer(
     }
 
     fun setSmoothPlaybackEnabled(enabled: Boolean) {
+        if (!enabled) smoothResumePolicy.onNewPlaybackAttempt()
         transitionCoordinator.setEnabled(enabled)
         invalidateState()
     }
@@ -513,6 +572,7 @@ internal class SmoothPlaybackPlayer(
     fun releaseTransitionResources() {
         if (releasedTransitionResources) return
         releasedTransitionResources = true
+        smoothResumePolicy.onNewPlaybackAttempt()
         closeHandoffPlaylistTransaction("logical_player_release")
         LogicalPlaylistMutationTransactions.abortAll("logical_player_release")
         closeHandoffNavigationTransaction("logical_player_release")
@@ -550,6 +610,11 @@ internal class SmoothPlaybackPlayer(
         applyPhysicalVolume: Boolean
     ) {
         if (releasedTransitionResources) return
+        val previousIdentity = physicalPlayer.currentMediaItem.smoothPlaybackIdentity()
+        val incomingIdentity = newPhysicalPlayer.currentMediaItem.smoothPlaybackIdentity()
+        if (previousIdentity != incomingIdentity) {
+            smoothResumePolicy.onNewPlaybackAttempt()
+        }
         val isPhysicalSwap = newPhysicalPlayer !== physicalPlayer
         if (isPhysicalSwap) {
             physicalPlayer.removeListener(physicalListener)
@@ -760,6 +825,13 @@ internal class SmoothPlaybackPlayer(
             physicalPlayer.currentMediaItem?.mediaId
     }
 
+    private fun invalidateSmoothResumeForNewPlaybackAttempt() {
+        smoothResumePolicy.onNewPlaybackAttempt()
+        transitionCoordinator.onNewPlaybackAttempt(
+            applyPhysicalVolume = !crossfadeControlsPhysicalVolume
+        )
+    }
+
     private fun createPhysicalListener(source: Player): Player.Listener =
         object : Player.Listener {
             private fun isCurrent(): Boolean =
@@ -769,6 +841,12 @@ internal class SmoothPlaybackPlayer(
                 if (isCurrent()) transitionCoordinator.onAudibilityChanged(isPlaying)
             }
 
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                if (!isCurrent()) return
+                invalidateSmoothResumeForNewPlaybackAttempt()
+                invalidateState()
+            }
+
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 if (!isCurrent()) return
                 transitionCoordinator.onPhysicalPlayWhenReadyChanged(playWhenReady)
@@ -776,6 +854,7 @@ internal class SmoothPlaybackPlayer(
                     reason != Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST &&
                     reason != Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM
                 ) {
+                    if (playWhenReady) smoothResumePolicy.onNewPlaybackAttempt()
                     logicalPlayWhenReadyChangeReason = reason
                     transitionCoordinator.onSystemPlayWhenReadyChanged(playWhenReady)
                     invalidateState()
@@ -795,7 +874,10 @@ internal class SmoothPlaybackPlayer(
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                if (isCurrent()) transitionCoordinator.bypassForSafety()
+                if (isCurrent()) {
+                    smoothResumePolicy.onNewPlaybackAttempt()
+                    transitionCoordinator.bypassForSafety()
+                }
             }
         }
 }
