@@ -3,6 +3,7 @@ package com.example.cdplaya.data
 import android.net.Uri
 import org.jaudiotagger.tag.FieldKey
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
@@ -57,11 +58,17 @@ class BatchMetadataExecutorTest {
         val valid = targetFrom(current)
         val missing = valid.copy(referenceKey = "missing")
         val replaced = valid.copy(fileSizeBytes = valid.fileSizeBytes + 1L)
+        val replacementUri = mock(Uri::class.java)
+        `when`(replacementUri.toString()).thenReturn("content://media/external/audio/replacement")
+        val replacedMediaRow = current.copy(uri = replacementUri)
         val resolver = LibraryBatchTargetResolver()
 
         assertTrue(resolver.resolve(valid, listOf(current)) is BatchTargetResolution.Resolved)
         assertTrue(resolver.resolve(missing, listOf(current)) is BatchTargetResolution.Missing)
         assertTrue(resolver.resolve(replaced, listOf(current)) is BatchTargetResolution.Mismatch)
+        assertTrue(
+            resolver.resolve(valid, listOf(replacedMediaRow)) is BatchTargetResolution.Mismatch
+        )
     }
 
     @Test
@@ -202,6 +209,49 @@ class BatchMetadataExecutorTest {
     }
 
     @Test
+    fun `cancel before start performs no writes`() {
+        val signal = BatchCancellationSignal().apply(BatchCancellationSignal::cancel)
+        var writes = 0
+        val executor = executor(writer = { _, _, _ -> writes++; success() })
+
+        val result = executor.execute(
+            plan(
+                target("one"), target("two"),
+                changes = mapOf(BatchMetadataField.ALBUM to set(text("New")))
+            ),
+            listOf(song("one"), song("two")), null, signal
+        )
+
+        assertEquals(0, writes)
+        assertTrue(result.wasCancelled)
+        assertEquals(2, result.notProcessedCount)
+    }
+
+    @Test
+    fun `cancel while last file completes reports full completion not cancellation`() {
+        val signal = BatchCancellationSignal()
+        val writes = mutableListOf<String>()
+        val executor = executor(writer = { song, _, _ ->
+            writes += song.displayName
+            if (song.displayName == "three") signal.cancel()
+            success()
+        })
+
+        val result = executor.execute(
+            plan(
+                target("one"), target("two"), target("three"),
+                changes = mapOf(BatchMetadataField.ALBUM to set(text("New")))
+            ),
+            listOf(song("one"), song("two"), song("three")), null, signal
+        )
+
+        assertEquals(listOf("one", "two", "three"), writes)
+        assertFalse(result.wasCancelled)
+        assertEquals(3, result.successCount)
+        assertEquals(0, result.notProcessedCount)
+    }
+
+    @Test
     fun `prepared artwork bytes are reused and empty plans perform no writes`() {
         val prepared = PreparedBatchArtwork(byteArrayOf(1, 2), "image/jpeg", 2, 2, "hash")
         val receivedArtwork = mutableListOf<PreparedBatchArtwork>()
@@ -289,6 +339,11 @@ class BatchMetadataExecutorTest {
         filePath = song.filePath,
         volumeName = song.volumeName,
         displayName = song.displayName,
+        title = song.title,
+        artist = song.artist,
+        contentUri = song.uri.toString(),
+        relativePath = song.relativePath,
+        durationMs = song.duration,
         fileSizeBytes = song.fileSizeBytes,
         dateModifiedEpochSeconds = song.dateModifiedEpochSeconds
     )

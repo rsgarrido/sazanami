@@ -22,22 +22,33 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.cdplaya.data.BatchTargetStatus
+import com.example.cdplaya.data.BatchMetadataOperationState
 import com.example.cdplaya.data.BatchMetadataTargetId
+import com.example.cdplaya.data.BatchPostWriteStageResult
+import com.example.cdplaya.data.BatchTargetResult
+import com.example.cdplaya.data.BatchTargetStatus
+import com.example.cdplaya.data.BatchTerminalOutcome
+import com.example.cdplaya.data.isRetryableFailure
 import java.io.File
 
 @Composable
 fun BatchMetadataExecutionScreen(
-    state: BatchExecutionUiState,
+    state: BatchMetadataOperationState,
     onCancel: () -> Unit,
+    onRetryFailed: () -> Unit,
+    onContinueUnprocessed: () -> Unit,
+    onRetryRefresh: () -> Unit,
     onDone: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     BackHandler {
         when (state) {
-            is BatchExecutionUiState.Complete -> onDone()
-            is BatchExecutionUiState.Running -> onCancel()
-            is BatchExecutionUiState.Preparing -> Unit
+            is BatchMetadataOperationState.Complete,
+            is BatchMetadataOperationState.Interrupted -> onDone()
+            is BatchMetadataOperationState.Preparing,
+            is BatchMetadataOperationState.AwaitingPermission,
+            is BatchMetadataOperationState.Running,
+            is BatchMetadataOperationState.PostProcessing -> onCancel()
         }
     }
     Column(
@@ -48,26 +59,59 @@ fun BatchMetadataExecutionScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         when (state) {
-            is BatchExecutionUiState.Preparing -> PreparingContent(state)
-            is BatchExecutionUiState.Running -> RunningContent(state, onCancel)
-            is BatchExecutionUiState.Complete -> CompleteContent(state, onDone)
+            is BatchMetadataOperationState.Interrupted -> InterruptedContent(onDone)
+            is BatchMetadataOperationState.Preparing -> PreparingContent(state)
+            is BatchMetadataOperationState.AwaitingPermission -> PermissionContent(state, onCancel)
+            is BatchMetadataOperationState.Running -> RunningContent(state, onCancel)
+            is BatchMetadataOperationState.PostProcessing -> PostProcessingContent(state, onCancel)
+            is BatchMetadataOperationState.Complete -> CompleteContent(
+                state,
+                onRetryFailed,
+                onContinueUnprocessed,
+                onRetryRefresh,
+                onDone
+            )
         }
     }
 }
 
 @Composable
-private fun PreparingContent(state: BatchExecutionUiState.Preparing) {
+private fun InterruptedContent(onDone: () -> Unit) {
+    Text("Previous batch interrupted", style = MaterialTheme.typography.headlineSmall)
+    Text(
+        "A previous metadata batch ended while its outcome was still uncertain. Some files may " +
+            "have completed. CDPlaya will not replay it automatically. Rescan the library and " +
+            "review the affected files before creating a new batch."
+    )
+    Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text("Acknowledge") }
+}
+
+@Composable
+private fun PreparingContent(state: BatchMetadataOperationState.Preparing) {
     Text("Preparing batch", style = MaterialTheme.typography.headlineSmall)
     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+    Text("Preparing durable inputs for ${state.plan.selectedTrackCount} tracks.")
+}
+
+@Composable
+private fun PermissionContent(
+    state: BatchMetadataOperationState.AwaitingPermission,
+    onCancel: () -> Unit
+) {
+    Text("Requesting write access", style = MaterialTheme.typography.headlineSmall)
+    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
     Text(
-        "Preparing durable inputs for ${state.plan.selectedTrackCount} tracks. No files have been written yet.",
-        color = MaterialTheme.colorScheme.onSurfaceVariant
+        "Permission group ${state.batchIndex + 1} of ${state.permissionBatches.size}. " +
+            "No metadata writes begin until every required group is approved."
     )
+    OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
+        Text("Cancel batch")
+    }
 }
 
 @Composable
 private fun RunningContent(
-    state: BatchExecutionUiState.Running,
+    state: BatchMetadataOperationState.Running,
     onCancel: () -> Unit
 ) {
     val progress = state.progress
@@ -78,26 +122,20 @@ private fun RunningContent(
     )
     Text("${progress.completedCount} of ${progress.totalCount} tracks processed")
     progress.currentTarget?.let { target ->
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-            )
-        ) {
+        Card(colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        )) {
             Column(Modifier.padding(14.dp)) {
                 Text("Current", style = MaterialTheme.typography.labelLarge)
-                Text(
-                    target.displayLabel(),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Text(target.displayLabel(), maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
     }
     Text(
         if (state.cancellationRequested) {
-            "Cancellation requested. The current file will finish and verify safely; remaining files will not start."
+            "Cancellation requested. The active file will finish and verify safely."
         } else {
-            "Cancel stops before the next file. The current file is allowed to finish and verify."
+            "Cancel stops before the next file; it never interrupts a physical file write."
         },
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -106,64 +144,125 @@ private fun RunningContent(
         onClick = onCancel,
         enabled = !state.cancellationRequested,
         modifier = Modifier.fillMaxWidth()
-    ) {
-        Text(if (state.cancellationRequested) "Cancelling…" else "Cancel")
+    ) { Text(if (state.cancellationRequested) "Cancelling…" else "Cancel") }
+}
+
+@Composable
+private fun PostProcessingContent(
+    state: BatchMetadataOperationState.PostProcessing,
+    onCancel: () -> Unit
+) {
+    Text("Refreshing library", style = MaterialTheme.typography.headlineSmall)
+    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+    Text("${state.result.successCount} metadata writes succeeded and were verified.")
+    Text("MediaStore scan: ${state.scan.displayLabel()}")
+    Text("Library refresh: ${state.refresh.displayLabel()}")
+    Text(
+        "Stop waiting records a refresh warning; it does not undo or repeat file writes.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
+        Text("Stop waiting")
     }
 }
 
 @Composable
 private fun CompleteContent(
-    state: BatchExecutionUiState.Complete,
+    state: BatchMetadataOperationState.Complete,
+    onRetryFailed: () -> Unit,
+    onContinueUnprocessed: () -> Unit,
+    onRetryRefresh: () -> Unit,
     onDone: () -> Unit
 ) {
     val result = state.result
-    Text(
-        if (result.wasCancelled) "Batch cancelled" else "Batch complete",
-        style = MaterialTheme.typography.headlineSmall
-    )
+    Text(state.terminalOutcome.displayLabel(), style = MaterialTheme.typography.headlineSmall)
     Text("${result.successCount} of ${state.plan.selectedTrackCount} tracks updated")
-    if (result.failureCount > 0) Text("${result.failureCount} failed or could not be safely updated")
+    if (result.failureCount > 0) Text("${result.failureCount} failed or were safely rejected")
     if (result.notProcessedCount > 0) Text("${result.notProcessedCount} not processed")
-
-    result.targetResults.forEach { targetResult ->
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = if (targetResult.status == BatchTargetStatus.SUCCESS) {
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                } else {
-                    MaterialTheme.colorScheme.errorContainer
-                }
-            )
-        ) {
-            Column(Modifier.padding(12.dp)) {
-                Text(
-                    targetResult.target.displayLabel(),
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(targetResult.status.displayLabel())
-                }
-                targetResult.reason?.let { reason ->
-                    Spacer(Modifier.height(4.dp))
-                    Text(reason, style = MaterialTheme.typography.bodySmall)
-                }
+    if (state.scan.hasWarning || state.refresh.hasWarning) {
+        Card(colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer
+        )) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Metadata writes remain successful", style = MaterialTheme.typography.titleSmall)
+                Text("MediaStore scan: ${state.scan.displayLabel()}")
+                state.scan.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                Text("Library refresh: ${state.refresh.displayLabel()}")
+                state.refresh.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
+        }
+    }
+
+    result.targetResults.forEach { TargetResultCard(it) }
+
+    if (result.targetResults.any(BatchTargetResult::isRetryableFailure)) {
+        Button(onClick = onRetryFailed, modifier = Modifier.fillMaxWidth()) {
+            Text("Retry failed")
+        }
+    }
+    if (result.notProcessedCount > 0) {
+        OutlinedButton(onClick = onContinueUnprocessed, modifier = Modifier.fillMaxWidth()) {
+            Text("Continue unprocessed")
+        }
+    }
+    if (state.scan.hasWarning || state.refresh.hasWarning) {
+        OutlinedButton(onClick = onRetryRefresh, modifier = Modifier.fillMaxWidth()) {
+            Text("Retry library refresh")
         }
     }
     Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text("Done") }
 }
 
+@Composable
+private fun TargetResultCard(targetResult: BatchTargetResult) {
+    Card(colors = CardDefaults.cardColors(
+        containerColor = if (targetResult.status == BatchTargetStatus.SUCCESS) {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        } else {
+            MaterialTheme.colorScheme.errorContainer
+        }
+    )) {
+        Column(Modifier.padding(12.dp)) {
+            Text(
+                targetResult.target.displayLabel(),
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(targetResult.status.displayLabel())
+            }
+            targetResult.reason?.let { reason ->
+                Spacer(Modifier.height(4.dp))
+                Text(reason, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
 private fun BatchTargetStatus.displayLabel(): String = when (this) {
     BatchTargetStatus.SUCCESS -> "Updated and verified"
-    BatchTargetStatus.MISSING -> "Missing"
-    BatchTargetStatus.IDENTITY_MISMATCH -> "File changed after review"
-    BatchTargetStatus.UNSUPPORTED -> "Unsupported"
-    BatchTargetStatus.WRITE_FAILED -> "Write failed"
-    BatchTargetStatus.VERIFICATION_FAILED -> "Verification failed"
+    BatchTargetStatus.MISSING -> "Missing — not retryable"
+    BatchTargetStatus.IDENTITY_MISMATCH -> "File changed — not retryable"
+    BatchTargetStatus.UNSUPPORTED -> "Unsupported — not retryable"
+    BatchTargetStatus.WRITE_FAILED -> "Write failed — retryable"
+    BatchTargetStatus.VERIFICATION_FAILED -> "Verification failed — retryable"
+    BatchTargetStatus.PERMISSION_DENIED -> "Permission denied — retryable"
     BatchTargetStatus.NOT_PROCESSED -> "Not processed"
 }
+
+private fun BatchTerminalOutcome.displayLabel(): String = when (this) {
+    BatchTerminalOutcome.SUCCESS -> "Batch complete"
+    BatchTerminalOutcome.PARTIAL_SUCCESS -> "Batch partially complete"
+    BatchTerminalOutcome.CANCELLED -> "Batch cancelled"
+    BatchTerminalOutcome.FAILED -> "Batch failed"
+    BatchTerminalOutcome.PERMISSION_DENIED -> "Write permission denied"
+    BatchTerminalOutcome.REFRESH_WARNING -> "Metadata updated; refresh incomplete"
+}
+
+private fun BatchPostWriteStageResult.displayLabel(): String =
+    status.name.lowercase().replace('_', ' ')
 
 private fun BatchMetadataTargetId.displayLabel(): String = when {
     title.isNotBlank() && artist.isNotBlank() -> "$title — $artist"

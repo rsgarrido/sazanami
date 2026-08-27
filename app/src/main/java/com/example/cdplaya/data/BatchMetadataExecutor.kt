@@ -24,6 +24,7 @@ enum class BatchTargetStatus {
     UNSUPPORTED,
     WRITE_FAILED,
     VERIFICATION_FAILED,
+    PERMISSION_DENIED,
     NOT_PROCESSED
 }
 
@@ -197,11 +198,16 @@ internal class BatchMetadataExecutor(
                     failureKind = ExplicitPatchFailureKind.WRITE
                 )
             }
+            val postAttemptTarget = target.withCurrentFileEvidence()
             results += if (writeResult.wasSuccessful) {
-                BatchTargetResult(target, BatchTargetStatus.SUCCESS, resolvedSong = resolved.song)
+                BatchTargetResult(
+                    postAttemptTarget,
+                    BatchTargetStatus.SUCCESS,
+                    resolvedSong = resolved.song
+                )
             } else {
                 BatchTargetResult(
-                    target = target,
+                    target = postAttemptTarget,
                     status = if (writeResult.failureKind == ExplicitPatchFailureKind.VERIFICATION) {
                         BatchTargetStatus.VERIFICATION_FAILED
                     } else {
@@ -227,7 +233,12 @@ class LibraryBatchTargetResolver : BatchTargetResolver {
             ?: return BatchTargetResolution.Missing("The track is no longer in the current library.")
         if (song.id != target.mediaStoreId || song.filePath != target.filePath ||
             (target.volumeName.isNotBlank() && song.volumeName != target.volumeName) ||
-            (target.displayName.isNotBlank() && song.displayName != target.displayName)
+            (target.displayName.isNotBlank() && song.displayName != target.displayName) ||
+            (target.contentUri.isNotBlank() && song.uri.toString() != target.contentUri) ||
+            (target.relativePath.isNotBlank() && song.relativePath != target.relativePath) ||
+            (target.durationMs > 0L && song.duration != target.durationMs) ||
+            (target.title.isNotBlank() && song.title != target.title) ||
+            (target.artist.isNotBlank() && song.artist != target.artist)
         ) {
             return BatchTargetResolution.Mismatch("The track identity or path changed after review.")
         }
@@ -243,6 +254,18 @@ class LibraryBatchTargetResolver : BatchTargetResolver {
             return BatchTargetResolution.Mismatch("The audio file was replaced or modified after review.")
         }
         return BatchTargetResolution.Resolved(song)
+    }
+}
+
+private fun BatchMetadataTargetId.withCurrentFileEvidence(): BatchMetadataTargetId {
+    val file = File(filePath)
+    return if (file.isFile) {
+        copy(
+            fileSizeBytes = file.length(),
+            dateModifiedEpochSeconds = file.lastModified() / 1_000L
+        )
+    } else {
+        this
     }
 }
 

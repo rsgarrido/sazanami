@@ -82,6 +82,8 @@ internal fun MusicRoute(
     musicViewModel.listeningHistoryReconciliationUiState.collectAsStateWithLifecycle()
     val homeCustomizationUiState by
     musicViewModel.homeCustomizationUiState.collectAsStateWithLifecycle()
+    val batchMetadataOperationState by
+    musicViewModel.batchMetadataOperationState.collectAsStateWithLifecycle()
     if (!playerAppearanceUiState.isLoaded || !libraryAppearanceUiState.isLoaded ||
         !homeCustomizationUiState.isLoaded
     ) return
@@ -406,7 +408,6 @@ internal fun MusicRoute(
                     editedTags = editedTags
                 )
             },
-            onBatchTagsEdited = musicViewModel::refreshSongsAfterBatchEdit,
             isSleepTimerActive = sleepTimerUiState.isActive,
             sleepTimerDisplayText = sleepTimerUiState.displayText(),
             onStartSleepTimerClick = { minutes ->
@@ -544,8 +545,17 @@ internal fun MusicRoute(
             onReadEditableSongTags = musicViewModel::readEditableSongTags,
             onGetUnsupportedTagEditingMessage = musicViewModel::getUnsupportedTagEditingMessage,
             onWriteTagsAndArtwork = musicViewModel::writeTagsAndArtwork,
-            onPrepareBatchArtwork = musicViewModel::prepareBatchArtwork,
-            onExecuteBatchMetadata = musicViewModel::executeBatchMetadata,
+            batchMetadataOperationState = batchMetadataOperationState,
+            onBeginBatchMetadata = musicViewModel::beginBatchMetadata,
+            onConsumeBatchPermissionRequest =
+                musicViewModel::consumeBatchPermissionRequest,
+            onBatchPermissionResult = musicViewModel::reportBatchPermissionResult,
+            onCancelBatchMetadata = musicViewModel::cancelBatchMetadata,
+            onRetryFailedBatchMetadata = musicViewModel::retryFailedBatchMetadata,
+            onContinueUnprocessedBatchMetadata =
+                musicViewModel::continueUnprocessedBatchMetadata,
+            onRetryBatchMetadataRefresh = musicViewModel::retryBatchMetadataRefresh,
+            onDismissBatchMetadata = musicViewModel::dismissBatchMetadataOperation,
             libraryAppearanceUiState = libraryAppearanceUiState,
             onLibraryViewOptionSelected = musicViewModel::selectLibraryViewOption,
             listeningAnalyticsUiState = listeningAnalyticsUiState,

@@ -60,6 +60,9 @@ data class BatchMetadataTargetId(
     val displayName: String = "",
     val title: String = "",
     val artist: String = "",
+    val contentUri: String = "",
+    val relativePath: String = "",
+    val durationMs: Long = 0L,
     val fileSizeBytes: Long = 0L,
     val dateModifiedEpochSeconds: Long = 0L
 )
@@ -198,6 +201,9 @@ internal fun Song.toBatchMetadataTarget(tags: EditableSongTags): BatchMetadataTa
             displayName = displayName,
             title = title,
             artist = artist,
+            contentUri = uri.toString(),
+            relativePath = relativePath,
+            durationMs = duration,
             fileSizeBytes = fileSizeBytes,
             dateModifiedEpochSeconds = dateModifiedEpochSeconds
         ),

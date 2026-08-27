@@ -32,11 +32,8 @@ import android.net.Uri
 import com.example.cdplaya.data.EditableSongTags
 import com.example.cdplaya.data.BatchArtworkReference
 import com.example.cdplaya.data.BatchMetadataEditorState
-import com.example.cdplaya.data.BatchCancellationSignal
-import com.example.cdplaya.data.BatchMetadataExecutionResult
+import com.example.cdplaya.data.BatchMetadataOperationState
 import com.example.cdplaya.data.BatchMetadataPlan
-import com.example.cdplaya.data.BatchMetadataProgress
-import com.example.cdplaya.data.PreparedBatchArtwork
 import com.example.cdplaya.data.toBatchMetadataTarget
 import com.example.cdplaya.data.LibraryFolder
 import com.example.cdplaya.data.FolderSelectionMode
@@ -107,7 +104,6 @@ import com.example.cdplaya.ui.queue.rememberQueueSnackbarActions
 import com.example.cdplaya.ui.tageditor.DiscardTagChangesDialog
 import com.example.cdplaya.ui.tageditor.BatchMetadataEditorScreen
 import com.example.cdplaya.ui.tageditor.BatchMetadataExecutionScreen
-import com.example.cdplaya.ui.tageditor.BatchExecutionUiState
 import com.example.cdplaya.ui.tageditor.BatchSongSelectionScreen
 import com.example.cdplaya.ui.tageditor.TagEditorScreen
 import com.example.cdplaya.ui.tageditor.rememberTagEditorActions
@@ -220,15 +216,15 @@ internal fun MusicScreen(
     onReadEditableSongTags: (Song) -> EditableSongTags,
     onGetUnsupportedTagEditingMessage: (Song) -> String?,
     onWriteTagsAndArtwork: suspend (Song, EditableSongTags, Uri?) -> TagEditorResult,
-    onPrepareBatchArtwork: (Uri) -> PreparedBatchArtwork?,
-    onExecuteBatchMetadata: (
-        BatchMetadataPlan,
-        List<Song>,
-        PreparedBatchArtwork?,
-        BatchCancellationSignal,
-        (BatchMetadataProgress) -> Unit
-    ) -> BatchMetadataExecutionResult,
-    onBatchTagsEdited: (List<Song>) -> Unit,
+    batchMetadataOperationState: BatchMetadataOperationState?,
+    onBeginBatchMetadata: (BatchMetadataPlan, List<Song>, Uri?, Boolean) -> Unit,
+    onConsumeBatchPermissionRequest: (String, Int) -> List<Uri>?,
+    onBatchPermissionResult: (String, Int, Boolean, String?) -> Unit,
+    onCancelBatchMetadata: () -> Unit,
+    onRetryFailedBatchMetadata: (List<Song>) -> Unit,
+    onContinueUnprocessedBatchMetadata: (List<Song>) -> Unit,
+    onRetryBatchMetadataRefresh: () -> Unit,
+    onDismissBatchMetadata: () -> Unit,
     isSleepTimerActive: Boolean,
     sleepTimerDisplayText: String,
     onStartSleepTimerClick: (Int) -> Unit,
@@ -355,11 +351,16 @@ internal fun MusicScreen(
     )
 
     val batchMetadataActions = rememberBatchMetadataActions(
+        state = batchMetadataOperationState,
         songs = songs,
-        snackbarHostState = snackbarHostState,
-        onPrepareArtwork = onPrepareBatchArtwork,
-        onExecute = onExecuteBatchMetadata,
-        onSuccessfulTargetsScanned = onBatchTagsEdited
+        onBegin = onBeginBatchMetadata,
+        onConsumePermissionRequest = onConsumeBatchPermissionRequest,
+        onPermissionResult = onBatchPermissionResult,
+        onCancel = onCancelBatchMetadata,
+        onRetryFailed = onRetryFailedBatchMetadata,
+        onContinueUnprocessed = onContinueUnprocessedBatchMetadata,
+        onRetryRefresh = onRetryBatchMetadataRefresh,
+        onDismiss = onDismissBatchMetadata
     )
 
     val queueSnackbarActions = rememberQueueSnackbarActions(
@@ -523,7 +524,7 @@ internal fun MusicScreen(
     BackHandler(
         enabled = songPendingTagEdit != null ||
                 batchMetadataEditorState != null ||
-                batchMetadataActions.executionState != null ||
+                batchMetadataOperationState != null ||
                 isExpandedUpNextSheetVisible ||
                 playerMorphState.shouldConsumeBack ||
                 isFolderScreenVisible ||
@@ -539,16 +540,18 @@ internal fun MusicScreen(
                 mainDestination != MainDestination.HOME
     ) {
         when {
-            batchMetadataActions.executionState is BatchExecutionUiState.Running -> {
+            batchMetadataOperationState is BatchMetadataOperationState.Running ||
+                batchMetadataOperationState is BatchMetadataOperationState.Preparing ||
+                batchMetadataOperationState is BatchMetadataOperationState.AwaitingPermission ||
+                batchMetadataOperationState is BatchMetadataOperationState.PostProcessing -> {
                 batchMetadataActions.cancel()
             }
 
-            batchMetadataActions.executionState is BatchExecutionUiState.Complete -> {
+            batchMetadataOperationState is BatchMetadataOperationState.Complete ||
+                batchMetadataOperationState is BatchMetadataOperationState.Interrupted -> {
                 batchMetadataActions.closeResults()
                 batchMetadataEditorState = null
             }
-
-            batchMetadataActions.executionState is BatchExecutionUiState.Preparing -> Unit
 
             batchMetadataEditorState != null -> {
                 batchMetadataEditorState = null
@@ -773,7 +776,7 @@ internal fun MusicScreen(
             }
             val selectedSongForTagEdit = songPendingTagEdit
             val selectedBatchEditorState = batchMetadataEditorState
-            val selectedBatchExecutionState = batchMetadataActions.executionState
+            val selectedBatchExecutionState = batchMetadataOperationState
             val shouldShowBottomMiniPlayer = currentSong != null &&
                     !isFolderScreenVisible &&
                     !isDiagnosticsScreenVisible &&
@@ -823,6 +826,9 @@ internal fun MusicScreen(
                 BatchMetadataExecutionScreen(
                     state = selectedBatchExecutionState,
                     onCancel = batchMetadataActions.cancel,
+                    onRetryFailed = batchMetadataActions.retryFailed,
+                    onContinueUnprocessed = batchMetadataActions.continueUnprocessed,
+                    onRetryRefresh = batchMetadataActions.retryRefresh,
                     onDone = {
                         batchMetadataActions.closeResults()
                         batchMetadataEditorState = null
