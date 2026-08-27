@@ -5,10 +5,14 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import org.jaudiotagger.audio.AudioFileIO
+import org.jaudiotagger.audio.wav.WavOptions
+import org.jaudiotagger.audio.wav.WavSaveOptions
 import org.jaudiotagger.tag.FieldKey
 import org.jaudiotagger.tag.Tag
+import org.jaudiotagger.tag.TagOptionSingleton
 import org.jaudiotagger.tag.flac.FlacTag
 import org.jaudiotagger.tag.images.ArtworkFactory
+import org.jaudiotagger.tag.wav.WavTag
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.security.MessageDigest
@@ -23,55 +27,26 @@ import org.jaudiotagger.tag.TagTextField
 
 class TagEditorRepository {
 
+    private val metadataReader = EmbeddedMetadataReader()
+
     init {
         Logger.getLogger("org.jaudiotagger").level = Level.OFF
+        TagOptionSingleton.getInstance().apply {
+            setWavOptions(WavOptions.READ_ID3_UNLESS_ONLY_INFO)
+            setWavSaveOptions(WavSaveOptions.SAVE_BOTH)
+        }
     }
 
     fun readTags(song: Song): EditableSongTags {
         val file = File(song.filePath)
 
         if (!file.exists()) {
-            return EditableSongTags(
-                title = song.title,
-                artist = song.artist,
-                album = song.album,
-                trackNumber = song.trackNumber.takeIf { trackNumber ->
-                    trackNumber > 0
-                }?.toString() ?: "",
-                year = ""
-            )
+            return AudioMetadata().toEditableSongTags(song)
         }
 
-        return try {
-            val audioFile = AudioFileIO.read(file)
-            val tag = audioFile.tag
-
-            EditableSongTags(
-                title = tag?.getFirst(FieldKey.TITLE).orEmpty()
-                    .ifBlank { song.title },
-                artist = tag?.getFirst(FieldKey.ARTIST).orEmpty()
-                    .ifBlank { song.artist },
-                album = tag?.getFirst(FieldKey.ALBUM).orEmpty()
-                    .ifBlank { song.album },
-                trackNumber = tag?.getFirst(FieldKey.TRACK).orEmpty()
-                    .ifBlank {
-                        song.trackNumber.takeIf { trackNumber ->
-                            trackNumber > 0
-                        }?.toString().orEmpty()
-                    },
-                year = tag?.getFirst(FieldKey.YEAR).orEmpty()
-            )
-        } catch (exception: Exception) {
-            EditableSongTags(
-                title = song.title,
-                artist = song.artist,
-                album = song.album,
-                trackNumber = song.trackNumber.takeIf { trackNumber ->
-                    trackNumber > 0
-                }?.toString() ?: "",
-                year = ""
-            )
-        }
+        return metadataReader.readOrNull(file)?.metadata
+            ?.toEditableSongTags(song)
+            ?: AudioMetadata().toEditableSongTags(song)
     }
 
     fun readReplayGainTags(song: Song): ReplayGainInfo {
@@ -134,13 +109,22 @@ class TagEditorRepository {
         return try {
             val audioFile = AudioFileIO.read(file)
             val tag = audioFile.tagOrCreateAndSetDefault
+            val originalTags = metadataForTag(tag).toEditableSongTags(song)
+            val edits = editedTags.changedFieldsFrom(originalTags)
 
-            writeTextTagsToTag(
+            applyMetadataTextEdits(
                 tag = tag,
-                editedTags = editedTags
+                edits = edits
             )
 
             AudioFileIO.write(audioFile)
+
+            if (!writtenTextEditsMatch(file, edits)) {
+                return TagEditorResult(
+                    wasSuccessful = false,
+                    message = "Tags were written but could not be verified by reading the file back."
+                )
+            }
 
             TagEditorResult(
                 wasSuccessful = true,
@@ -175,16 +159,17 @@ class TagEditorRepository {
         }
 
         var temporaryArtworkFile: File? = null
-        var selectedFlacArtworkHash: String? = null
-        var isFlacArtworkSave = false
+        var selectedArtworkHash: String? = null
 
         return try {
             val audioFile = AudioFileIO.read(audioFileOnDisk)
             val tag = audioFile.tagOrCreateAndSetDefault
+            val originalTags = metadataForTag(tag).toEditableSongTags(song)
+            val edits = editedTags.changedFieldsFrom(originalTags)
 
-            writeTextTagsToTag(
+            applyMetadataTextEdits(
                 tag = tag,
-                editedTags = editedTags
+                edits = edits
             )
 
             if (artworkUri != null) {
@@ -195,11 +180,9 @@ class TagEditorRepository {
                     wasSuccessful = false,
                     message = "The selected artwork could not be read."
                 )
+                selectedArtworkHash = optimizedArtwork.bytes.sha256()
 
                 if (tag is FlacTag) {
-                    selectedFlacArtworkHash = optimizedArtwork.bytes.sha256()
-                    isFlacArtworkSave = true
-
                     setFlacArtwork(
                         flacTag = tag,
                         artworkImageData = optimizedArtwork
@@ -218,25 +201,34 @@ class TagEditorRepository {
                     }
 
                     val artwork = ArtworkFactory.createArtworkFromFile(temporaryArtworkFile)
+                    val artworkTag = if (tag is WavTag) tag.getID3Tag() else tag
 
-                    deleteExistingArtwork(tag)
+                    deleteExistingArtwork(artworkTag)
 
-                    tag.setField(artwork)
+                    artworkTag.setField(artwork)
                 }
             }
 
             AudioFileIO.write(audioFile)
 
-            if (isFlacArtworkSave && selectedFlacArtworkHash != null) {
-                val flacArtworkWasSaved = flacArtworkMatches(
+            if (!writtenTextEditsMatch(audioFileOnDisk, edits)) {
+                return TagEditorResult(
+                    wasSuccessful = false,
+                    message = "Tags were written but could not be verified by reading the file back."
+                )
+            }
+
+            val expectedArtworkHash = selectedArtworkHash
+            if (expectedArtworkHash != null) {
+                val artworkWasSaved = artworkMatches(
                     audioFileOnDisk = audioFileOnDisk,
-                    expectedArtworkHash = selectedFlacArtworkHash
+                    expectedArtworkHash = expectedArtworkHash
                 )
 
-                if (!flacArtworkWasSaved) {
+                if (!artworkWasSaved) {
                     return TagEditorResult(
                         wasSuccessful = false,
-                        message = "FLAC artwork could not be verified after saving."
+                        message = "Artwork could not be verified after saving."
                     )
                 }
             }
@@ -277,42 +269,54 @@ class TagEditorRepository {
             return "This file does not have a recognizable audio extension."
         }
 
-        val supportedExtensions = setOf(
-            "mp3",
-            "flac",
-            "m4a",
-            "mp4",
-            "ogg",
-            "opus",
-            "wav",
-            "aif",
-            "aiff"
-        )
-
-        if (extension !in supportedExtensions) {
+        if (extension !in metadataWritableExtensions) {
             return "Tag editing is not enabled for .$extension files yet."
         }
 
         return null
     }
 
-    private fun writeTextTagsToTag(
+    private fun metadataForTag(tag: Tag): AudioMetadata = if (tag is WavTag) {
+        readWavMetadata(tag).metadata
+    } else {
+        tag.toAudioMetadata()
+    }
+
+    private fun writtenTextEditsMatch(
+        file: File,
+        edits: Map<FieldKey, String?>
+    ): Boolean {
+        if (edits.isEmpty()) return true
+
+        return try {
+            val writtenTag = AudioFileIO.read(file).tag ?: return false
+            edits.all { (fieldKey, expectedValue) ->
+                if (writtenTag is WavTag) {
+                    tagValueMatches(writtenTag.getID3Tag(), fieldKey, expectedValue) &&
+                        (fieldKey !in wavInfoFieldKeys ||
+                            tagValueMatches(writtenTag.getInfoTag(), fieldKey, expectedValue))
+                } else {
+                    tagValueMatches(writtenTag, fieldKey, expectedValue)
+                }
+            }
+        } catch (_: Exception) {
+            false
+        } catch (_: LinkageError) {
+            false
+        }
+    }
+
+    private fun tagValueMatches(
         tag: Tag,
-        editedTags: EditableSongTags
-    ) {
-        tag.setField(FieldKey.TITLE, editedTags.title.trim())
-        tag.setField(FieldKey.ARTIST, editedTags.artist.trim())
-        tag.setField(FieldKey.ALBUM, editedTags.album.trim())
-
-        val cleanedTrackNumber = editedTags.trackNumber.trim()
-        if (cleanedTrackNumber.isNotBlank()) {
-            tag.setField(FieldKey.TRACK, cleanedTrackNumber)
+        fieldKey: FieldKey,
+        expectedValue: String?
+    ): Boolean {
+        val actualValue = try {
+            tag.getFirst(fieldKey).trim().trimEnd('\u0000').trim()
+        } catch (_: Exception) {
+            ""
         }
-
-        val cleanedYear = editedTags.year.trim()
-        if (cleanedYear.isNotBlank()) {
-            tag.setField(FieldKey.YEAR, cleanedYear)
-        }
+        return actualValue == expectedValue.orEmpty()
     }
 
     private fun readReplayGainTagValue(
@@ -565,7 +569,7 @@ class TagEditorRepository {
         return temporaryArtworkFile
     }
 
-    private fun flacArtworkMatches(
+    private fun artworkMatches(
         audioFileOnDisk: File,
         expectedArtworkHash: String
     ): Boolean {
@@ -634,3 +638,62 @@ class TagEditorRepository {
         )
     }
 }
+
+internal val metadataWritableExtensions = setOf(
+    "mp3",
+    "flac",
+    "m4a",
+    "mp4",
+    "ogg",
+    "wav",
+    "aif",
+    "aiff"
+)
+
+internal fun applyMetadataTextEdits(
+    tag: Tag,
+    edits: Map<FieldKey, String?>
+) {
+    if (tag is WavTag) {
+        // An explicit WAV edit intentionally updates both common representations when the field
+        // exists in INFO. Only requested fields are synchronized; unrelated conflicts survive.
+        edits.forEach { (fieldKey, value) ->
+            applyMetadataTextEdit(tag.getID3Tag(), fieldKey, value)
+            if (fieldKey in wavInfoFieldKeys) {
+                applyMetadataTextEdit(tag.getInfoTag(), fieldKey, value)
+            }
+        }
+    } else {
+        edits.forEach { (fieldKey, value) ->
+            applyMetadataTextEdit(tag, fieldKey, value)
+        }
+    }
+}
+
+private fun applyMetadataTextEdit(tag: Tag, fieldKey: FieldKey, value: String?) {
+    if (value == null) {
+        tag.deleteField(fieldKey)
+    } else {
+        tag.setField(fieldKey, value)
+    }
+}
+
+/** FieldKey coverage implemented by jaudiotagger's WavInfoTag in 3.0.1. */
+internal val wavInfoFieldKeys = setOf(
+    FieldKey.ALBUM,
+    FieldKey.ARTIST,
+    FieldKey.ALBUM_ARTIST,
+    FieldKey.TITLE,
+    FieldKey.TRACK,
+    FieldKey.GENRE,
+    FieldKey.COMMENT,
+    FieldKey.YEAR,
+    FieldKey.RECORD_LABEL,
+    FieldKey.ISRC,
+    FieldKey.COMPOSER,
+    FieldKey.LYRICIST,
+    FieldKey.ENCODER,
+    FieldKey.CONDUCTOR,
+    FieldKey.RATING,
+    FieldKey.COPYRIGHT
+)

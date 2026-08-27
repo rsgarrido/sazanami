@@ -14,6 +14,8 @@ import com.example.cdplaya.performance.tracePerformance
 
 
 class MusicRepository(private val context: Context) {
+    private val embeddedMetadataReader = EmbeddedMetadataReader()
+
     fun getLibraryData(selectedFolders: Set<String> = emptySet()): MusicLibraryData {
         return buildMusicLibraryData(
             allSongs = refreshLibrary(emptyList()).songs,
@@ -200,7 +202,7 @@ class MusicRepository(private val context: Context) {
 
                 val albumArtist = ""
 
-                val song = Song(
+                val mediaStoreSong = Song(
                     id = id,
                     title = title,
                     artist = artist,
@@ -220,6 +222,15 @@ class MusicRepository(private val context: Context) {
                     dateModifiedEpochSeconds = dateModifiedEpochSeconds,
                     year = year
                 )
+                val song = if (isWavFile(filePath, displayName)) {
+                    val embeddedMetadata = embeddedMetadataReader
+                        .readOrNull(File(filePath))
+                        ?.takeIf { it.format == AudioMetadataFormat.WAV }
+                        ?.metadata
+                    mergeWavEmbeddedMetadata(mediaStoreSong, embeddedMetadata)
+                } else {
+                    mediaStoreSong
+                }
 
                 songs.add(song)
             }
@@ -278,4 +289,38 @@ private fun android.database.Cursor.intOrNull(columnIndex: Int): Int? {
 internal fun mediaFolderPath(dataPath: String, relativePath: String): String {
     return (File(dataPath).parent ?: "")
         .ifBlank { relativePath.trimEnd('/', '\\') }
+}
+
+internal fun isWavFile(filePath: String, displayName: String): Boolean =
+    sequenceOf(filePath, displayName)
+        .map { it.substringAfterLast('.', missingDelimiterValue = "") }
+        .any { it.equals("wav", ignoreCase = true) }
+
+/**
+ * MediaStore remains the library index, while valid embedded WAV fields take precedence over
+ * MediaStore's often incomplete WAV projection. Missing embedded fields retain MediaStore values.
+ */
+internal fun mergeWavEmbeddedMetadata(
+    mediaStoreSong: Song,
+    embeddedMetadata: AudioMetadata?
+): Song {
+    if (embeddedMetadata == null) return mediaStoreSong
+
+    return mediaStoreSong.copy(
+        title = embeddedMetadata.title ?: mediaStoreSong.title,
+        artist = embeddedMetadata.primaryArtist ?: mediaStoreSong.artist,
+        album = embeddedMetadata.album ?: mediaStoreSong.album,
+        albumArtist = embeddedMetadata.albumArtist ?: mediaStoreSong.albumArtist,
+        trackNumber = embeddedMetadata.trackNumber
+            ?.substringBefore('/')
+            ?.trim()
+            ?.toIntOrNull()
+            ?: mediaStoreSong.trackNumber,
+        year = embeddedMetadata.date
+            ?.trim()
+            ?.take(4)
+            ?.toIntOrNull()
+            ?.takeIf { it in 1000..2999 }
+            ?: mediaStoreSong.year
+    )
 }
