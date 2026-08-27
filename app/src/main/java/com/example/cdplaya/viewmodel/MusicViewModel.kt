@@ -24,6 +24,22 @@ import com.example.cdplaya.data.PlaylistFolder
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.TagEditorRepository
 import com.example.cdplaya.data.TagEditorResult
+import com.example.cdplaya.data.BatchMetadataExecutor
+import com.example.cdplaya.data.BatchMetadataPlan
+import com.example.cdplaya.data.LibraryBatchTargetResolver
+import com.example.cdplaya.data.BatchCapabilityReader
+import com.example.cdplaya.data.BatchTargetPatchWriter
+import com.example.cdplaya.data.BatchMetadataOperationController
+import com.example.cdplaya.data.BatchArtworkPreparer
+import com.example.cdplaya.data.BatchPlanExecutor
+import com.example.cdplaya.data.BatchSuccessfulTargetScanner
+import com.example.cdplaya.data.BatchSuccessfulTargetRefresher
+import com.example.cdplaya.data.BatchPostWriteStageResult
+import com.example.cdplaya.data.BatchPostWriteStageStatus
+import com.example.cdplaya.data.PreferencesBatchInterruptionStore
+import com.example.cdplaya.data.DEFAULT_BATCH_REFRESH_TIMEOUT_MS
+import com.example.cdplaya.data.scanBatchMetadataFiles
+import com.example.cdplaya.data.membershipKey
 import com.example.cdplaya.data.PlayerTheme
 import com.example.cdplaya.data.AnalyticsRangePreset
 import com.example.cdplaya.data.AnalyticsRangeSelection
@@ -75,6 +91,10 @@ import com.example.cdplaya.ui.player.theme.customizationOptions
 import com.example.cdplaya.ui.player.modern.ModernArtworkTransitionStyle
 import com.example.cdplaya.ui.player.modern.ModernSeekbarStyle
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -97,6 +117,7 @@ import com.example.cdplaya.ui.library.viewCategory
 import com.example.cdplaya.ui.home.HomeCustomizationUiState
 import com.example.cdplaya.ui.player.theme.applyOverrides
 import com.example.cdplaya.ui.player.theme.defaultTokens
+import kotlin.coroutines.resume
 
 class MusicViewModel(
     application: Application
@@ -108,6 +129,20 @@ class MusicViewModel(
 
     private val appPreferencesRepository = AppPreferencesRepository.getInstance(appContext)
     private val tagEditorRepository = TagEditorRepository()
+    private val batchMetadataExecutor = BatchMetadataExecutor(
+        resolver = LibraryBatchTargetResolver(),
+        capabilityReader = BatchCapabilityReader { song ->
+            tagEditorRepository.readTags(song).capabilities
+        },
+        writer = BatchTargetPatchWriter { song, edits, artworkEdit ->
+            tagEditorRepository.writeExplicitMetadataPatch(
+                context = appContext,
+                song = song,
+                edits = edits,
+                artworkEdit = artworkEdit
+            )
+        }
+    )
     private val listeningImportRepository = ListeningImportRepository(appDatabase)
     private val spotifyImportSourceProfiles = SpotifyImportSourceProfileService(listeningImportRepository)
     private val spotifyImportParser = SpotifyExtendedStreamingParser()
@@ -424,6 +459,45 @@ class MusicViewModel(
         editedTags = editedTags,
         artworkUri = artworkUri
     )
+
+    fun beginBatchMetadata(
+        plan: BatchMetadataPlan,
+        songs: List<Song>,
+        artworkUri: Uri?,
+        requiresWritePermission: Boolean
+    ) = batchMetadataOperationController.begin(
+        plan,
+        songs,
+        artworkUri,
+        requiresWritePermission
+    )
+
+    fun consumeBatchPermissionRequest(operationId: String, batchIndex: Int): List<Uri>? =
+        batchMetadataOperationController.consumePermissionRequest(operationId, batchIndex)
+
+    fun reportBatchPermissionResult(
+        operationId: String,
+        batchIndex: Int,
+        granted: Boolean,
+        reason: String? = null
+    ) = batchMetadataOperationController.onPermissionResult(
+        operationId,
+        batchIndex,
+        granted,
+        reason
+    )
+
+    fun cancelBatchMetadata() = batchMetadataOperationController.cancel()
+
+    fun retryFailedBatchMetadata(songs: List<Song>) =
+        batchMetadataOperationController.retryFailed(songs)
+
+    fun continueUnprocessedBatchMetadata(songs: List<Song>) =
+        batchMetadataOperationController.continueUnprocessed(songs)
+
+    fun retryBatchMetadataRefresh() = batchMetadataOperationController.retryPostWrite()
+
+    fun dismissBatchMetadataOperation() = batchMetadataOperationController.dismiss()
     private val playbackController = PlaybackController(
         context = appContext,
         coroutineScope = viewModelScope
@@ -457,6 +531,29 @@ class MusicViewModel(
             _mediaAccessFailures.tryEmit(Unit)
         }
     )
+
+    private val batchMetadataOperationController = BatchMetadataOperationController(
+        scope = viewModelScope,
+        artworkPreparer = BatchArtworkPreparer { uri ->
+            withContext(Dispatchers.IO) {
+                tagEditorRepository.prepareBatchArtwork(appContext, uri)
+            }
+        },
+        executor = BatchPlanExecutor { plan, songs, artwork, cancellation, onProgress ->
+            withContext(Dispatchers.IO) {
+                batchMetadataExecutor.execute(plan, songs, artwork, cancellation, onProgress)
+            }
+        },
+        scanner = BatchSuccessfulTargetScanner { songs ->
+            scanBatchMetadataFiles(appContext, songs)
+        },
+        refresher = BatchSuccessfulTargetRefresher { songs ->
+            refreshBatchMetadataLibrary(songs)
+        },
+        interruptionStore = PreferencesBatchInterruptionStore(appContext)
+    )
+
+    val batchMetadataOperationState = batchMetadataOperationController.state
 
     private val listeningHistoryReconciliationController =
         ListeningHistoryReconciliationController(
@@ -1093,6 +1190,43 @@ class MusicViewModel(
             originalSong = originalSong,
             editedTags = editedTags
         )
+    }
+
+    private suspend fun refreshBatchMetadataLibrary(
+        songs: List<Song>
+    ): BatchPostWriteStageResult {
+        val refreshed = try {
+            withContext(Dispatchers.IO) {
+                songs.distinctBy { it.membershipKey() }.map { song ->
+                    song to tagEditorRepository.readTags(song)
+                }
+            }
+        } catch (exception: Exception) {
+            return BatchPostWriteStageResult(
+                BatchPostWriteStageStatus.FAILED,
+                exception.message ?: "Updated metadata could not be reread for library refresh."
+            )
+        }
+        val completion = withTimeoutOrNull(DEFAULT_BATCH_REFRESH_TIMEOUT_MS) {
+            suspendCancellableCoroutine<Result<Unit>> { continuation ->
+                libraryController.refreshSongsAfterBatchEdit(refreshed) { result ->
+                    if (continuation.isActive) continuation.resume(result)
+                }
+            }
+        }
+        return when {
+            completion == null -> BatchPostWriteStageResult(
+                BatchPostWriteStageStatus.TIMED_OUT,
+                "The library refresh did not finish within " +
+                    "${DEFAULT_BATCH_REFRESH_TIMEOUT_MS / 1_000} seconds. " +
+                    "Metadata writes remain verified."
+            )
+            completion.isSuccess -> BatchPostWriteStageResult.Success
+            else -> BatchPostWriteStageResult(
+                BatchPostWriteStageStatus.FAILED,
+                completion.exceptionOrNull()?.message ?: "The library refresh failed."
+            )
+        }
     }
 
     override fun onCleared() {

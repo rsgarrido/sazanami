@@ -1,6 +1,7 @@
 package com.example.cdplaya.ui.library
 
 import com.example.cdplaya.data.Song
+import com.example.cdplaya.data.membershipKey
 import com.example.cdplaya.ui.sortSongsByAlbumOrder
 
 data class LibraryAlbumGroup(
@@ -9,6 +10,16 @@ data class LibraryAlbumGroup(
     val artistText: String,
     val songs: List<Song>
 )
+
+/**
+ * Returns the exact songs owned by this folder-backed album group. Album titles are deliberately
+ * not queried again because titles are not unique and may change during metadata editing.
+ */
+internal fun LibraryAlbumGroup.metadataEditingSongs(): List<Song> =
+    songs.distinctBy(Song::membershipKey)
+
+internal fun isAlbumGroupAvailable(albumKey: String, songs: List<Song>): Boolean =
+    songs.any { song -> song.folderPath == albumKey }
 
 fun buildLibraryAlbumGroups(
     songs: List<Song>

@@ -17,6 +17,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -40,7 +42,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.cdplaya.data.EditableSongTags
+import com.example.cdplaya.data.EditableMetadataField
 import com.example.cdplaya.data.Song
+import com.example.cdplaya.data.isValidMetadataBpm
 
 @Composable
 fun TagEditorScreen(
@@ -56,33 +60,13 @@ fun TagEditorScreen(
     onUnsavedChangesChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var title by remember(song.id, initialTags) {
-        mutableStateOf(initialTags.title)
+    var currentTags by remember(song.id, initialTags) {
+        mutableStateOf(initialTags)
     }
 
-    var artist by remember(song.id, initialTags) {
-        mutableStateOf(initialTags.artist)
+    var isAdvancedMetadataExpanded by remember(song.id) {
+        mutableStateOf(false)
     }
-
-    var album by remember(song.id, initialTags) {
-        mutableStateOf(initialTags.album)
-    }
-
-    var trackNumber by remember(song.id, initialTags) {
-        mutableStateOf(initialTags.trackNumber)
-    }
-
-    var year by remember(song.id, initialTags) {
-        mutableStateOf(initialTags.year)
-    }
-
-    val currentTags = EditableSongTags(
-        title = title,
-        artist = artist,
-        album = album,
-        trackNumber = trackNumber,
-        year = year
-    )
 
     val hasUnsavedTagChanges = currentTags != initialTags
 
@@ -92,11 +76,15 @@ fun TagEditorScreen(
 
     val artworkPreviewUri = selectedArtworkUri ?: song.albumArtUri
 
-    val titleError = title.trim().isBlank()
-    val artistError = artist.trim().isBlank()
-    val albumError = album.trim().isBlank()
+    val titleError = currentTags.title.trim().isBlank()
+    val artistError = currentTags.artist.trim().isBlank()
+    val albumError = currentTags.album.trim().isBlank()
+    val bpmError = hasInvalidChangedBpm(
+        originalBpm = initialTags.bpm,
+        editedBpm = currentTags.bpm
+    )
 
-    val hasValidationError = titleError || artistError || albumError
+    val hasValidationError = titleError || artistError || albumError || bpmError
     val canEditFields = !isSaving && unsupportedMessage == null
     val canSave =
         canEditFields &&
@@ -222,9 +210,9 @@ fun TagEditorScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         OutlinedTextField(
-            value = title,
+            value = currentTags.title,
             onValueChange = { value ->
-                title = value
+                currentTags = currentTags.copy(title = value)
             },
             label = {
                 Text(text = "Title")
@@ -243,9 +231,9 @@ fun TagEditorScreen(
         Spacer(modifier = Modifier.height(12.dp))
 
         OutlinedTextField(
-            value = artist,
+            value = currentTags.artist,
             onValueChange = { value ->
-                artist = value
+                currentTags = currentTags.copy(artist = value)
             },
             label = {
                 Text(text = "Artist")
@@ -256,6 +244,8 @@ fun TagEditorScreen(
             supportingText = {
                 if (artistError) {
                     Text(text = "Artist cannot be empty.")
+                } else {
+                    Text(text = MULTI_VALUE_HELP)
                 }
             },
             modifier = Modifier.fillMaxWidth()
@@ -264,9 +254,9 @@ fun TagEditorScreen(
         Spacer(modifier = Modifier.height(12.dp))
 
         OutlinedTextField(
-            value = album,
+            value = currentTags.album,
             onValueChange = { value ->
-                album = value
+                currentTags = currentTags.copy(album = value)
             },
             label = {
                 Text(text = "Album")
@@ -285,9 +275,9 @@ fun TagEditorScreen(
         Spacer(modifier = Modifier.height(12.dp))
 
         OutlinedTextField(
-            value = trackNumber,
+            value = currentTags.trackNumber,
             onValueChange = { value ->
-                trackNumber = value
+                currentTags = currentTags.copy(trackNumber = value)
             },
             label = {
                 Text(text = "Track number")
@@ -303,20 +293,58 @@ fun TagEditorScreen(
         Spacer(modifier = Modifier.height(12.dp))
 
         OutlinedTextField(
-            value = year,
+            value = currentTags.year,
             onValueChange = { value ->
-                year = value
+                currentTags = currentTags.copy(year = value)
             },
             label = {
-                Text(text = "Year")
+                Text(text = "Date / year")
             },
             singleLine = true,
             enabled = canEditFields,
             keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Number
+                keyboardType = KeyboardType.Text
             ),
             modifier = Modifier.fillMaxWidth()
         )
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        OutlinedButton(
+            onClick = {
+                isAdvancedMetadataExpanded = !isAdvancedMetadataExpanded
+            },
+            enabled = !isSaving,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = "Advanced metadata",
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                imageVector = if (isAdvancedMetadataExpanded) {
+                    Icons.Filled.KeyboardArrowUp
+                } else {
+                    Icons.Filled.KeyboardArrowDown
+                },
+                contentDescription = if (isAdvancedMetadataExpanded) {
+                    "Collapse advanced metadata"
+                } else {
+                    "Expand advanced metadata"
+                }
+            )
+        }
+
+        if (isAdvancedMetadataExpanded) {
+            Spacer(modifier = Modifier.height(16.dp))
+
+            AdvancedMetadataFields(
+                tags = currentTags,
+                canEditFields = canEditFields,
+                bpmError = bpmError,
+                onTagsChanged = { updated -> currentTags = updated }
+            )
+        }
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -354,3 +382,180 @@ fun TagEditorScreen(
         }
     }
 }
+
+@Composable
+private fun AdvancedMetadataFields(
+    tags: EditableSongTags,
+    canEditFields: Boolean,
+    bpmError: Boolean,
+    onTagsChanged: (EditableSongTags) -> Unit
+) {
+    AdvancedMetadataTextField(
+        value = tags.albumArtist,
+        onValueChange = { onTagsChanged(tags.copy(albumArtist = it)) },
+        label = "Album artist",
+        field = EditableMetadataField.ALBUM_ARTIST,
+        tags = tags,
+        canEditFields = canEditFields,
+        supportingMessage = MULTI_VALUE_HELP
+    )
+
+    Spacer(modifier = Modifier.height(12.dp))
+
+    Row(modifier = Modifier.fillMaxWidth()) {
+        AdvancedMetadataTextField(
+            value = tags.trackTotal,
+            onValueChange = { onTagsChanged(tags.copy(trackTotal = it)) },
+            label = "Track total",
+            field = EditableMetadataField.TRACK_TOTAL,
+            tags = tags,
+            canEditFields = canEditFields,
+            keyboardType = KeyboardType.Number,
+            modifier = Modifier.weight(1f)
+        )
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        AdvancedMetadataTextField(
+            value = tags.discNumber,
+            onValueChange = { onTagsChanged(tags.copy(discNumber = it)) },
+            label = "Disc number",
+            field = EditableMetadataField.DISC_NUMBER,
+            tags = tags,
+            canEditFields = canEditFields,
+            keyboardType = KeyboardType.Number,
+            modifier = Modifier.weight(1f)
+        )
+    }
+
+    Spacer(modifier = Modifier.height(12.dp))
+
+    AdvancedMetadataTextField(
+        value = tags.discTotal,
+        onValueChange = { onTagsChanged(tags.copy(discTotal = it)) },
+        label = "Disc total",
+        field = EditableMetadataField.DISC_TOTAL,
+        tags = tags,
+        canEditFields = canEditFields,
+        keyboardType = KeyboardType.Number
+    )
+
+    Spacer(modifier = Modifier.height(12.dp))
+
+    AdvancedMetadataTextField(
+        value = tags.genre,
+        onValueChange = { onTagsChanged(tags.copy(genre = it)) },
+        label = "Genre",
+        field = EditableMetadataField.GENRE,
+        tags = tags,
+        canEditFields = canEditFields,
+        supportingMessage = MULTI_VALUE_HELP
+    )
+
+    Spacer(modifier = Modifier.height(12.dp))
+
+    AdvancedMetadataTextField(
+        value = tags.composer,
+        onValueChange = { onTagsChanged(tags.copy(composer = it)) },
+        label = "Composer",
+        field = EditableMetadataField.COMPOSER,
+        tags = tags,
+        canEditFields = canEditFields,
+        supportingMessage = MULTI_VALUE_HELP
+    )
+
+    Spacer(modifier = Modifier.height(12.dp))
+
+    AdvancedMetadataTextField(
+        value = tags.comment,
+        onValueChange = { onTagsChanged(tags.copy(comment = it)) },
+        label = "Comment",
+        field = EditableMetadataField.COMMENT,
+        tags = tags,
+        canEditFields = canEditFields,
+        singleLine = false,
+        minLines = 3
+    )
+
+    Spacer(modifier = Modifier.height(12.dp))
+
+    AdvancedMetadataTextField(
+        value = tags.publisher,
+        onValueChange = { onTagsChanged(tags.copy(publisher = it)) },
+        label = "Publisher / Label",
+        field = EditableMetadataField.PUBLISHER,
+        tags = tags,
+        canEditFields = canEditFields
+    )
+
+    Spacer(modifier = Modifier.height(12.dp))
+
+    AdvancedMetadataTextField(
+        value = tags.copyright,
+        onValueChange = { onTagsChanged(tags.copy(copyright = it)) },
+        label = "Copyright",
+        field = EditableMetadataField.COPYRIGHT,
+        tags = tags,
+        canEditFields = canEditFields
+    )
+
+    Spacer(modifier = Modifier.height(12.dp))
+
+    AdvancedMetadataTextField(
+        value = tags.bpm,
+        onValueChange = { onTagsChanged(tags.copy(bpm = it)) },
+        label = "BPM",
+        field = EditableMetadataField.BPM,
+        tags = tags,
+        canEditFields = canEditFields,
+        keyboardType = KeyboardType.Number,
+        isError = bpmError,
+        supportingMessage = if (bpmError) BPM_ERROR_MESSAGE else null
+    )
+}
+
+@Composable
+private fun AdvancedMetadataTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    field: EditableMetadataField,
+    tags: EditableSongTags,
+    canEditFields: Boolean,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+    keyboardType: KeyboardType = KeyboardType.Text,
+    singleLine: Boolean = true,
+    minLines: Int = 1,
+    isError: Boolean = false,
+    supportingMessage: String? = null
+) {
+    val isSupported = tags.capabilities.supports(field)
+    val message = if (isSupported) supportingMessage else UNSUPPORTED_FIELD_MESSAGE
+
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(text = label) },
+        enabled = canEditFields && isSupported,
+        singleLine = singleLine,
+        minLines = minLines,
+        isError = isError,
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        supportingText = message?.let { text ->
+            { Text(text = text) }
+        },
+        modifier = modifier
+    )
+}
+
+internal fun isValidEditableBpm(value: String): Boolean {
+    return value.isValidMetadataBpm()
+}
+
+internal fun hasInvalidChangedBpm(originalBpm: String, editedBpm: String): Boolean {
+    return originalBpm.trim() != editedBpm.trim() && !isValidEditableBpm(editedBpm)
+}
+
+private const val MULTI_VALUE_HELP = "Separate multiple values with semicolons."
+private const val BPM_ERROR_MESSAGE = "Enter a whole number from 1 to 999, or leave blank."
+private const val UNSUPPORTED_FIELD_MESSAGE = "This field is not supported for this file format."

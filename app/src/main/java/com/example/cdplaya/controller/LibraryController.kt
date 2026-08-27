@@ -485,6 +485,49 @@ class LibraryController(
         }
     }
 
+    fun refreshSongsAfterBatchEdit(
+        editedSongs: List<Pair<Song, EditableSongTags>>,
+        onComplete: (Result<Unit>) -> Unit = {}
+    ) {
+        if (editedSongs.isEmpty()) {
+            onComplete(Result.success(Unit))
+            return
+        }
+        val activePlaylistId = selectedPlaylistId
+        launchProtectedRefresh(onComplete = onComplete) { scanToken ->
+            val updatedUserData = withContext(Dispatchers.IO) {
+                editedSongs.forEach { (originalSong, editedTags) ->
+                    favoritesRepository.updateSongReferenceAfterTagEdit(originalSong, editedTags)
+                    playlistsRepository.updateSongReferencesAfterTagEdit(originalSong, editedTags)
+                    listeningHistoryRepository.updateSongReferenceAfterTagEdit(originalSong, editedTags)
+                }
+                favoritesRepository.getFavoriteMembershipKeys() to
+                    getPlaylistsWithSmartMembership()
+            }
+            val updatedSelectedPlaylistSongs = if (activePlaylistId != null) {
+                getResolvedPlaylistSongs(activePlaylistId)
+            } else {
+                null
+            }
+            val libraryData = withContext(Dispatchers.IO) {
+                scanFreshLibraryAndUpdateCache(
+                    folderSelection = folderSelection,
+                    forceArtworkRefreshIds = editedSongs.mapTo(mutableSetOf()) { it.first.id },
+                    scanToken = scanToken
+                )
+            }
+            if (!permissionGate.isCurrent(scanToken)) {
+                throw CancellationException("Library access changed during batch refresh.")
+            }
+            favoriteMembershipKeys = updatedUserData.first
+            playlists = updatedUserData.second
+            if (updatedSelectedPlaylistSongs != null && selectedPlaylistId == activePlaylistId) {
+                selectedPlaylistSongs = updatedSelectedPlaylistSongs
+            }
+            publishLibraryData(libraryData, reconcilePlayback = true)
+        }
+    }
+
     fun toggleFavorite(song: Song) {
         val membershipKey = song.membershipKey()
         val shouldFavorite = membershipKey !in favoriteMembershipKeys
@@ -1048,8 +1091,15 @@ class LibraryController(
         }
     }
 
-    private fun launchProtectedRefresh(block: suspend (scanToken: Long) -> Unit) {
-        val scanToken = permissionGate.tokenOrNull() ?: return
+    private fun launchProtectedRefresh(
+        onComplete: ((Result<Unit>) -> Unit)? = null,
+        block: suspend (scanToken: Long) -> Unit
+    ) {
+        val scanToken = permissionGate.tokenOrNull()
+        if (scanToken == null) {
+            onComplete?.invoke(Result.failure(IllegalStateException("Audio access is unavailable.")))
+            return
+        }
         refreshJob?.cancel()
         updateState {
             copy(
@@ -1061,9 +1111,11 @@ class LibraryController(
         refreshJob = coroutineScope.launch {
             try {
                 block(scanToken)
+                onComplete?.invoke(Result.success(Unit))
             } catch (cancellation: CancellationException) {
+                onComplete?.invoke(Result.failure(cancellation))
                 throw cancellation
-            } catch (_: MediaLibraryAccessException) {
+            } catch (exception: MediaLibraryAccessException) {
                 if (permissionGate.isCurrent(scanToken)) {
                     updateState {
                         copy(
@@ -1074,6 +1126,7 @@ class LibraryController(
                     }
                     onMediaAccessFailure()
                 }
+                onComplete?.invoke(Result.failure(exception))
             } catch (exception: Exception) {
                 if (permissionGate.isCurrent(scanToken)) {
                     updateState {
@@ -1086,6 +1139,7 @@ class LibraryController(
                         )
                     }
                 }
+                onComplete?.invoke(Result.failure(exception))
             }
         }
     }

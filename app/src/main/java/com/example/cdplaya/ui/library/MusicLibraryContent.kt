@@ -82,6 +82,7 @@ fun MusicLibraryContent(
     onAddSongsToPlaylistClick: (List<Song>) -> Unit,
     onReorderPlaylistSongs: (Long, List<Long>) -> Unit,
     onAddSongsToCurrentPlaylistClick: (Playlist, List<Song>) -> Unit,
+    onEditAlbumMetadataClick: (LibraryAlbumGroup) -> Unit,
     onEditSongTagsClick: (Song) -> Unit,
     recentlyPlayedSongs: List<Song>,
     recentlyAddedSongs: List<Song>,
@@ -187,6 +188,7 @@ fun MusicLibraryContent(
                 onToggleFavoriteClick = onToggleFavoriteClick,
                 onAddToPlaylistClick = onAddToPlaylistClick,
                 onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
+                onEditAlbumMetadataClick = onEditAlbumMetadataClick,
                 onEditSongTagsClick = onEditSongTagsClick,
                 bottomContentPadding = bottomContentPadding,
                 modifier = modifier
