@@ -485,6 +485,43 @@ class LibraryController(
         }
     }
 
+    fun refreshSongsAfterBatchEdit(
+        editedSongs: List<Pair<Song, EditableSongTags>>
+    ) {
+        if (editedSongs.isEmpty()) return
+        val activePlaylistId = selectedPlaylistId
+        launchProtectedRefresh { scanToken ->
+            val updatedUserData = withContext(Dispatchers.IO) {
+                editedSongs.forEach { (originalSong, editedTags) ->
+                    favoritesRepository.updateSongReferenceAfterTagEdit(originalSong, editedTags)
+                    playlistsRepository.updateSongReferencesAfterTagEdit(originalSong, editedTags)
+                    listeningHistoryRepository.updateSongReferenceAfterTagEdit(originalSong, editedTags)
+                }
+                favoritesRepository.getFavoriteMembershipKeys() to
+                    getPlaylistsWithSmartMembership()
+            }
+            val updatedSelectedPlaylistSongs = if (activePlaylistId != null) {
+                getResolvedPlaylistSongs(activePlaylistId)
+            } else {
+                null
+            }
+            val libraryData = withContext(Dispatchers.IO) {
+                scanFreshLibraryAndUpdateCache(
+                    folderSelection = folderSelection,
+                    forceArtworkRefreshIds = editedSongs.mapTo(mutableSetOf()) { it.first.id },
+                    scanToken = scanToken
+                )
+            }
+            if (!permissionGate.isCurrent(scanToken)) return@launchProtectedRefresh
+            favoriteMembershipKeys = updatedUserData.first
+            playlists = updatedUserData.second
+            if (updatedSelectedPlaylistSongs != null && selectedPlaylistId == activePlaylistId) {
+                selectedPlaylistSongs = updatedSelectedPlaylistSongs
+            }
+            publishLibraryData(libraryData, reconcilePlayback = true)
+        }
+    }
+
     fun toggleFavorite(song: Song) {
         val membershipKey = song.membershipKey()
         val shouldFavorite = membershipKey !in favoriteMembershipKeys

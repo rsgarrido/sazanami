@@ -406,6 +406,7 @@ internal fun MusicRoute(
                     editedTags = editedTags
                 )
             },
+            onBatchTagsEdited = musicViewModel::refreshSongsAfterBatchEdit,
             isSleepTimerActive = sleepTimerUiState.isActive,
             sleepTimerDisplayText = sleepTimerUiState.displayText(),
             onStartSleepTimerClick = { minutes ->
@@ -543,6 +544,8 @@ internal fun MusicRoute(
             onReadEditableSongTags = musicViewModel::readEditableSongTags,
             onGetUnsupportedTagEditingMessage = musicViewModel::getUnsupportedTagEditingMessage,
             onWriteTagsAndArtwork = musicViewModel::writeTagsAndArtwork,
+            onPrepareBatchArtwork = musicViewModel::prepareBatchArtwork,
+            onExecuteBatchMetadata = musicViewModel::executeBatchMetadata,
             libraryAppearanceUiState = libraryAppearanceUiState,
             onLibraryViewOptionSelected = musicViewModel::selectLibraryViewOption,
             listeningAnalyticsUiState = listeningAnalyticsUiState,

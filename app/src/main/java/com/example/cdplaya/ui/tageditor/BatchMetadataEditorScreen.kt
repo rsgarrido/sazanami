@@ -15,6 +15,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -26,6 +27,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
@@ -38,6 +43,7 @@ import com.example.cdplaya.data.BatchFieldState
 import com.example.cdplaya.data.BatchInitialValue
 import com.example.cdplaya.data.BatchMetadataEditorState
 import com.example.cdplaya.data.BatchMetadataField
+import com.example.cdplaya.data.BatchMetadataPlan
 import com.example.cdplaya.data.BatchMetadataValue
 import com.example.cdplaya.data.EditableMetadataField
 import com.example.cdplaya.data.displayText
@@ -48,11 +54,13 @@ fun BatchMetadataEditorScreen(
     state: BatchMetadataEditorState,
     onStateChanged: (BatchMetadataEditorState) -> Unit,
     onChooseArtwork: () -> Unit,
+    onApply: (BatchMetadataPlan) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     BackHandler(onBack = onBack)
     val plan = state.plan()
+    var isApplyConfirmationVisible by remember { mutableStateOf(false) }
     val hasInvalidBpm = state.fields.getValue(BatchMetadataField.BPM).intent
         .let { intent ->
             intent is BatchEditIntent.Set &&
@@ -153,9 +161,41 @@ fun BatchMetadataEditorScreen(
         }
 
         Spacer(Modifier.height(20.dp))
-        Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
-            Text("Done — discard plan")
+        Button(
+            onClick = { isApplyConfirmationVisible = true },
+            enabled = plan.changeCount > 0 && !hasInvalidBpm,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Review and apply")
         }
+        TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
+            Text("Discard plan")
+        }
+    }
+
+    if (isApplyConfirmationVisible) {
+        AlertDialog(
+            onDismissRequest = { isApplyConfirmationVisible = false },
+            title = { Text("Apply metadata changes?") },
+            text = {
+                Text(
+                    "${plan.changeCount} explicit change${if (plan.changeCount == 1) "" else "s"} " +
+                        "will be applied to ${plan.selectedTrackCount} tracks. Each file will be " +
+                        "resolved, written, and verified independently."
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    isApplyConfirmationVisible = false
+                    onApply(plan)
+                }) { Text("Apply") }
+            },
+            dismissButton = {
+                TextButton(onClick = { isApplyConfirmationVisible = false }) {
+                    Text("Keep editing")
+                }
+            }
+        )
     }
 }
 

@@ -322,6 +322,108 @@ class TagEditorRepository {
         }
     }
 
+    internal fun prepareBatchArtwork(
+        context: Context,
+        artworkUri: Uri
+    ): PreparedBatchArtwork? = createOptimizedArtworkImageData(context, artworkUri)?.let { data ->
+        PreparedBatchArtwork(
+            bytes = data.bytes.copyOf(),
+            mimeType = data.mimeType,
+            width = data.width,
+            height = data.height,
+            hash = data.bytes.sha256()
+        )
+    }
+
+    internal fun writeExplicitMetadataPatch(
+        context: Context,
+        song: Song,
+        edits: Map<FieldKey, MetadataTextEdit>,
+        artworkEdit: BatchArtworkExecutionEdit
+    ): ExplicitMetadataPatchResult {
+        val file = File(song.filePath)
+        if (!file.isFile) {
+            return ExplicitMetadataPatchResult(
+                false,
+                "The audio file could not be found.",
+                ExplicitPatchFailureKind.WRITE
+            )
+        }
+        var temporaryArtworkFile: File? = null
+        return try {
+            metadataEditValidationMessage(edits)?.let { message ->
+                return ExplicitMetadataPatchResult(
+                    false,
+                    message,
+                    ExplicitPatchFailureKind.WRITE
+                )
+            }
+            val audioFile = AudioFileIO.read(file)
+            val tag = audioFile.tagOrCreateAndSetDefault
+            applyMetadataTextEdits(tag, edits)
+            val artworkTag = if (tag is WavTag) tag.getID3Tag() else tag
+            when (artworkEdit) {
+                BatchArtworkExecutionEdit.Untouched -> Unit
+                BatchArtworkExecutionEdit.Clear -> deleteExistingArtwork(artworkTag)
+                is BatchArtworkExecutionEdit.Replace -> {
+                    val prepared = artworkEdit.artwork
+                    val data = ArtworkImageData(
+                        prepared.bytes,
+                        prepared.mimeType,
+                        prepared.width,
+                        prepared.height
+                    )
+                    if (tag is FlacTag) {
+                        setFlacArtwork(tag, data)
+                    } else {
+                        val temporaryFile = createTemporaryArtworkFile(context, data)
+                        temporaryArtworkFile = temporaryFile
+                        val artwork = ArtworkFactory.createArtworkFromFile(temporaryFile)
+                        deleteExistingArtwork(artworkTag)
+                        artworkTag.setField(artwork)
+                    }
+                }
+            }
+            AudioFileIO.write(audioFile)
+            if (!writtenTextEditsMatch(file, edits)) {
+                return ExplicitMetadataPatchResult(
+                    false,
+                    "Metadata was written but could not be verified.",
+                    ExplicitPatchFailureKind.VERIFICATION
+                )
+            }
+            val artworkVerified = when (artworkEdit) {
+                BatchArtworkExecutionEdit.Untouched -> true
+                BatchArtworkExecutionEdit.Clear -> artworkIsAbsent(file)
+                is BatchArtworkExecutionEdit.Replace ->
+                    artworkMatches(file, artworkEdit.artwork.hash)
+            }
+            if (!artworkVerified) {
+                ExplicitMetadataPatchResult(
+                    false,
+                    "Artwork was written but could not be verified.",
+                    ExplicitPatchFailureKind.VERIFICATION
+                )
+            } else {
+                ExplicitMetadataPatchResult(true, "Metadata saved and verified.")
+            }
+        } catch (exception: Exception) {
+            ExplicitMetadataPatchResult(
+                false,
+                exception.message ?: "Could not save metadata.",
+                ExplicitPatchFailureKind.WRITE
+            )
+        } catch (error: LinkageError) {
+            ExplicitMetadataPatchResult(
+                false,
+                error.message ?: "Could not save metadata on this device.",
+                ExplicitPatchFailureKind.WRITE
+            )
+        } finally {
+            temporaryArtworkFile?.delete()
+        }
+    }
+
     private fun writtenTextEditsMatch(
         file: File,
         edits: Map<FieldKey, MetadataTextEdit>
@@ -351,14 +453,19 @@ class TagEditorRepository {
         fieldKey: FieldKey,
         expectedValues: List<String>
     ): Boolean {
-        val actualValues = try {
-            tag.getAll(fieldKey).mapNotNull { value ->
-                value.trim().trimEnd('\u0000').trim().takeIf(String::isNotEmpty)
-            }
+        val rawValues = try {
+            tag.getAll(fieldKey).map { value -> value.trim().trimEnd('\u0000').trim() }
         } catch (_: Exception) {
             emptyList()
         }
-        return actualValues == expectedValues
+        if (expectedValues.isEmpty()) {
+            return runCatching { !tag.hasField(fieldKey) }.getOrDefault(rawValues.isEmpty())
+        }
+        if (expectedValues.all(String::isEmpty)) {
+            return runCatching { tag.hasField(fieldKey) }.getOrDefault(false) &&
+                rawValues == expectedValues
+        }
+        return rawValues.filter(String::isNotEmpty) == expectedValues
     }
 
     private fun readReplayGainTagValue(
@@ -611,6 +718,18 @@ class TagEditorRepository {
         return temporaryArtworkFile
     }
 
+    private fun artworkIsAbsent(audioFileOnDisk: File): Boolean {
+        return try {
+            val tag = AudioFileIO.read(audioFileOnDisk).tag ?: return true
+            val artworkTag = if (tag is WavTag) tag.getID3Tag() else tag
+            artworkTag.artworkList.isEmpty()
+        } catch (_: Exception) {
+            false
+        } catch (_: LinkageError) {
+            false
+        }
+    }
+
     private fun artworkMatches(
         audioFileOnDisk: File,
         expectedArtworkHash: String
@@ -710,6 +829,7 @@ internal fun applyMetadataTextEdits(
             applyMetadataTextEdit(tag, fieldKey, value)
         }
     }
+
 }
 
 private fun applyMetadataTextEdit(tag: Tag, fieldKey: FieldKey, edit: MetadataTextEdit) {

@@ -25,11 +25,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import android.content.Intent
 import android.net.Uri
 import com.example.cdplaya.data.EditableSongTags
 import com.example.cdplaya.data.BatchArtworkReference
 import com.example.cdplaya.data.BatchMetadataEditorState
+import com.example.cdplaya.data.BatchCancellationSignal
+import com.example.cdplaya.data.BatchMetadataExecutionResult
+import com.example.cdplaya.data.BatchMetadataPlan
+import com.example.cdplaya.data.BatchMetadataProgress
+import com.example.cdplaya.data.PreparedBatchArtwork
 import com.example.cdplaya.data.toBatchMetadataTarget
 import com.example.cdplaya.data.LibraryFolder
 import com.example.cdplaya.data.FolderSelectionMode
@@ -99,9 +106,12 @@ import com.example.cdplaya.ui.equalizer.EqualizerUiActions
 import com.example.cdplaya.ui.queue.rememberQueueSnackbarActions
 import com.example.cdplaya.ui.tageditor.DiscardTagChangesDialog
 import com.example.cdplaya.ui.tageditor.BatchMetadataEditorScreen
+import com.example.cdplaya.ui.tageditor.BatchMetadataExecutionScreen
+import com.example.cdplaya.ui.tageditor.BatchExecutionUiState
 import com.example.cdplaya.ui.tageditor.BatchSongSelectionScreen
 import com.example.cdplaya.ui.tageditor.TagEditorScreen
 import com.example.cdplaya.ui.tageditor.rememberTagEditorActions
+import com.example.cdplaya.ui.tageditor.rememberBatchMetadataActions
 import com.example.cdplaya.controller.SpotifyImportUiState
 import com.example.cdplaya.ui.settings.SpotifyImportUiActions
 import com.example.cdplaya.ui.settings.ListeningHistoryReconciliationUiActions
@@ -210,6 +220,15 @@ internal fun MusicScreen(
     onReadEditableSongTags: (Song) -> EditableSongTags,
     onGetUnsupportedTagEditingMessage: (Song) -> String?,
     onWriteTagsAndArtwork: suspend (Song, EditableSongTags, Uri?) -> TagEditorResult,
+    onPrepareBatchArtwork: (Uri) -> PreparedBatchArtwork?,
+    onExecuteBatchMetadata: (
+        BatchMetadataPlan,
+        List<Song>,
+        PreparedBatchArtwork?,
+        BatchCancellationSignal,
+        (BatchMetadataProgress) -> Unit
+    ) -> BatchMetadataExecutionResult,
+    onBatchTagsEdited: (List<Song>) -> Unit,
     isSleepTimerActive: Boolean,
     sleepTimerDisplayText: String,
     onStartSleepTimerClick: (Int) -> Unit,
@@ -255,6 +274,7 @@ internal fun MusicScreen(
     reconciliationActions: ListeningHistoryReconciliationUiActions,
     spotifyImportActions: SpotifyImportUiActions
 ) {
+    val context = LocalContext.current
     val navigationState = rememberMusicNavigationState()
     var mainDestination by navigationState.mainDestination
     var selectedLibraryTab by navigationState.selectedLibraryTab
@@ -334,6 +354,14 @@ internal fun MusicScreen(
         }
     )
 
+    val batchMetadataActions = rememberBatchMetadataActions(
+        songs = songs,
+        snackbarHostState = snackbarHostState,
+        onPrepareArtwork = onPrepareBatchArtwork,
+        onExecute = onExecuteBatchMetadata,
+        onSuccessfulTargetsScanned = onBatchTagsEdited
+    )
+
     val queueSnackbarActions = rememberQueueSnackbarActions(
         snackbarHostState = snackbarHostState,
         onAddToQueueClick = onAddToQueueClick,
@@ -373,9 +401,15 @@ internal fun MusicScreen(
     }
 
     val batchArtworkPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
+        contract = ActivityResultContracts.OpenDocument()
     ) { selectedUri ->
         if (selectedUri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    selectedUri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
             batchMetadataEditorState = batchMetadataEditorState?.replaceArtwork(
                 BatchArtworkReference(
                     identity = selectedUri.toString(),
@@ -489,6 +523,7 @@ internal fun MusicScreen(
     BackHandler(
         enabled = songPendingTagEdit != null ||
                 batchMetadataEditorState != null ||
+                batchMetadataActions.executionState != null ||
                 isExpandedUpNextSheetVisible ||
                 playerMorphState.shouldConsumeBack ||
                 isFolderScreenVisible ||
@@ -504,6 +539,17 @@ internal fun MusicScreen(
                 mainDestination != MainDestination.HOME
     ) {
         when {
+            batchMetadataActions.executionState is BatchExecutionUiState.Running -> {
+                batchMetadataActions.cancel()
+            }
+
+            batchMetadataActions.executionState is BatchExecutionUiState.Complete -> {
+                batchMetadataActions.closeResults()
+                batchMetadataEditorState = null
+            }
+
+            batchMetadataActions.executionState is BatchExecutionUiState.Preparing -> Unit
+
             batchMetadataEditorState != null -> {
                 batchMetadataEditorState = null
             }
@@ -727,6 +773,7 @@ internal fun MusicScreen(
             }
             val selectedSongForTagEdit = songPendingTagEdit
             val selectedBatchEditorState = batchMetadataEditorState
+            val selectedBatchExecutionState = batchMetadataActions.executionState
             val shouldShowBottomMiniPlayer = currentSong != null &&
                     !isFolderScreenVisible &&
                     !isDiagnosticsScreenVisible &&
@@ -736,7 +783,8 @@ internal fun MusicScreen(
                     !isListeningHistoryReconciliationVisible &&
                     !isSettingsScreenVisible &&
                     selectedSongForTagEdit == null &&
-                    selectedBatchEditorState == null
+                    selectedBatchEditorState == null &&
+                    selectedBatchExecutionState == null
             val shouldShowBottomNavigation = shouldShowPrimaryBottomNavigation(
                 isPlayerExpanded = isPlayerExpanded,
                 isFolderScreenVisible = isFolderScreenVisible,
@@ -748,7 +796,8 @@ internal fun MusicScreen(
                     isListeningHistoryReconciliationVisible,
                 isSettingsScreenVisible = isSettingsScreenVisible,
                 isTagEditorVisible = selectedSongForTagEdit != null ||
-                    selectedBatchEditorState != null
+                    selectedBatchEditorState != null ||
+                    selectedBatchExecutionState != null
             )
             LaunchedEffect(shouldShowBottomMiniPlayer) {
                 if (!shouldShowBottomMiniPlayer) {
@@ -770,11 +819,27 @@ internal fun MusicScreen(
                         else -> 96.dp
                     }
 
-            if (selectedBatchEditorState != null) {
+            if (selectedBatchExecutionState != null) {
+                BatchMetadataExecutionScreen(
+                    state = selectedBatchExecutionState,
+                    onCancel = batchMetadataActions.cancel,
+                    onDone = {
+                        batchMetadataActions.closeResults()
+                        batchMetadataEditorState = null
+                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                        .navigationBarsPadding()
+                )
+            } else if (selectedBatchEditorState != null) {
                 BatchMetadataEditorScreen(
                     state = selectedBatchEditorState,
                     onStateChanged = { updated -> batchMetadataEditorState = updated },
-                    onChooseArtwork = { batchArtworkPickerLauncher.launch("image/*") },
+                    onChooseArtwork = {
+                        batchArtworkPickerLauncher.launch(arrayOf("image/*"))
+                    },
+                    onApply = batchMetadataActions.apply,
                     onBack = { batchMetadataEditorState = null },
                     modifier = Modifier
                         .fillMaxSize()

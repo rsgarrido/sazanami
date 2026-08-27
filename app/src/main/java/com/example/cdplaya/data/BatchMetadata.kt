@@ -55,7 +55,13 @@ data class BatchFieldState<T>(
 data class BatchMetadataTargetId(
     val referenceKey: String,
     val mediaStoreId: Long,
-    val filePath: String
+    val filePath: String,
+    val volumeName: String = "",
+    val displayName: String = "",
+    val title: String = "",
+    val artist: String = "",
+    val fileSizeBytes: Long = 0L,
+    val dateModifiedEpochSeconds: Long = 0L
 )
 
 data class BatchArtworkReference(
@@ -187,7 +193,13 @@ internal fun Song.toBatchMetadataTarget(tags: EditableSongTags): BatchMetadataTa
         id = BatchMetadataTargetId(
             referenceKey = membershipKey(),
             mediaStoreId = id,
-            filePath = filePath
+            filePath = filePath,
+            volumeName = volumeName,
+            displayName = displayName,
+            title = title,
+            artist = artist,
+            fileSizeBytes = fileSizeBytes,
+            dateModifiedEpochSeconds = dateModifiedEpochSeconds
         ),
         values = mapOf(
             BatchMetadataField.ALBUM to BatchMetadataValue.Text(tags.album.trim()),

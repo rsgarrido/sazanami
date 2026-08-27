@@ -21,9 +21,21 @@ data class EditableSongTags(
     val capabilities: MetadataFormatCapabilities = MetadataFormatCapabilities.ADVANCED_EDITOR
 )
 
-internal data class MetadataTextEdit(val values: List<String>) {
+internal enum class MetadataTextOperation {
+    SET,
+    CLEAR
+}
+
+internal data class MetadataTextEdit(
+    val values: List<String>,
+    val operation: MetadataTextOperation = if (values.isEmpty()) {
+        MetadataTextOperation.CLEAR
+    } else {
+        MetadataTextOperation.SET
+    }
+) {
     val isClear: Boolean
-        get() = values.isEmpty()
+        get() = operation == MetadataTextOperation.CLEAR
 }
 
 internal fun AudioMetadata.toEditableSongTags(

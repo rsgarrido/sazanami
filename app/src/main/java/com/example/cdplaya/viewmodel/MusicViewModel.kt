@@ -24,6 +24,16 @@ import com.example.cdplaya.data.PlaylistFolder
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.TagEditorRepository
 import com.example.cdplaya.data.TagEditorResult
+import com.example.cdplaya.data.BatchMetadataExecutor
+import com.example.cdplaya.data.BatchMetadataPlan
+import com.example.cdplaya.data.BatchMetadataExecutionResult
+import com.example.cdplaya.data.BatchMetadataProgress
+import com.example.cdplaya.data.BatchCancellationSignal
+import com.example.cdplaya.data.PreparedBatchArtwork
+import com.example.cdplaya.data.LibraryBatchTargetResolver
+import com.example.cdplaya.data.BatchCapabilityReader
+import com.example.cdplaya.data.BatchTargetPatchWriter
+import com.example.cdplaya.data.membershipKey
 import com.example.cdplaya.data.PlayerTheme
 import com.example.cdplaya.data.AnalyticsRangePreset
 import com.example.cdplaya.data.AnalyticsRangeSelection
@@ -75,6 +85,8 @@ import com.example.cdplaya.ui.player.theme.customizationOptions
 import com.example.cdplaya.ui.player.modern.ModernArtworkTransitionStyle
 import com.example.cdplaya.ui.player.modern.ModernSeekbarStyle
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -108,6 +120,20 @@ class MusicViewModel(
 
     private val appPreferencesRepository = AppPreferencesRepository.getInstance(appContext)
     private val tagEditorRepository = TagEditorRepository()
+    private val batchMetadataExecutor = BatchMetadataExecutor(
+        resolver = LibraryBatchTargetResolver(),
+        capabilityReader = BatchCapabilityReader { song ->
+            tagEditorRepository.readTags(song).capabilities
+        },
+        writer = BatchTargetPatchWriter { song, edits, artworkEdit ->
+            tagEditorRepository.writeExplicitMetadataPatch(
+                context = appContext,
+                song = song,
+                edits = edits,
+                artworkEdit = artworkEdit
+            )
+        }
+    )
     private val listeningImportRepository = ListeningImportRepository(appDatabase)
     private val spotifyImportSourceProfiles = SpotifyImportSourceProfileService(listeningImportRepository)
     private val spotifyImportParser = SpotifyExtendedStreamingParser()
@@ -423,6 +449,23 @@ class MusicViewModel(
         song = song,
         editedTags = editedTags,
         artworkUri = artworkUri
+    )
+
+    fun prepareBatchArtwork(uri: Uri): PreparedBatchArtwork? =
+        tagEditorRepository.prepareBatchArtwork(appContext, uri)
+
+    fun executeBatchMetadata(
+        plan: BatchMetadataPlan,
+        currentSongs: List<Song>,
+        preparedArtwork: PreparedBatchArtwork?,
+        cancellationSignal: BatchCancellationSignal,
+        onProgress: (BatchMetadataProgress) -> Unit
+    ): BatchMetadataExecutionResult = batchMetadataExecutor.execute(
+        plan = plan,
+        currentSongs = currentSongs,
+        preparedArtwork = preparedArtwork,
+        cancellationSignal = cancellationSignal,
+        onProgress = onProgress
     )
     private val playbackController = PlaybackController(
         context = appContext,
@@ -1093,6 +1136,17 @@ class MusicViewModel(
             originalSong = originalSong,
             editedTags = editedTags
         )
+    }
+
+    fun refreshSongsAfterBatchEdit(songs: List<Song>) {
+        viewModelScope.launch {
+            val refreshed = withContext(Dispatchers.IO) {
+                songs.distinctBy { it.membershipKey() }.map { song ->
+                    song to tagEditorRepository.readTags(song)
+                }
+            }
+            libraryController.refreshSongsAfterBatchEdit(refreshed)
+        }
     }
 
     override fun onCleared() {
