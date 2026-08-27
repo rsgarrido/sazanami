@@ -138,4 +138,9 @@ fun parseMetadataYear(rawValue: String?): Int? {
     return match.value.toIntOrNull()?.takeIf { year -> year in 1000..2999 }
 }
 
+fun parseMetadataBpm(rawValue: String?): Int? {
+    val value = rawValue?.trim().orEmpty()
+    return value.toIntOrNull()?.takeIf { bpm -> bpm in 1..999 }
+}
+
 private val metadataYearPattern = Regex("""(?<!\d)(?:1\d{3}|2\d{3})(?!\d)""")

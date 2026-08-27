@@ -11,7 +11,12 @@ import com.example.cdplaya.data.SmartPlaylistRule
 import com.example.cdplaya.data.SmartPlaylistRuleField
 import com.example.cdplaya.data.SmartPlaylistSortDirection
 import com.example.cdplaya.data.SmartPlaylistSortField
+import com.example.cdplaya.data.UNKNOWN_GENRE_KEY
+import com.example.cdplaya.data.UNKNOWN_GENRE_NAME
+import com.example.cdplaya.data.normalizedGenreKey
 import java.util.Locale
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 internal object SmartPlaylistDependencies {
     const val LIBRARY = 1
@@ -53,7 +58,11 @@ internal object SmartPlaylistDependencies {
         SmartPlaylistRuleField.TITLE,
         SmartPlaylistRuleField.ARTIST,
         SmartPlaylistRuleField.ALBUM,
+        SmartPlaylistRuleField.GENRE,
+        SmartPlaylistRuleField.COMPOSER,
+        SmartPlaylistRuleField.PUBLISHER,
         SmartPlaylistRuleField.YEAR,
+        SmartPlaylistRuleField.BPM,
         SmartPlaylistRuleField.DURATION,
         SmartPlaylistRuleField.DATE_ADDED -> LIBRARY
         else -> ALL
@@ -213,7 +222,9 @@ internal object SmartPlaylistQueries {
             SELECT mediaStoreId, title, artist, album, trackNumber, duration, uriString,
                    filePath, folderPath, albumArtUriString, albumArtist, volumeName,
                    displayName, relativePath, fileSizeBytes, dateAddedEpochSeconds,
-                   dateModifiedEpochSeconds, year, artworkEnrichmentVersion, cachedAt,
+                   dateModifiedEpochSeconds, year, artworkEnrichmentVersion, genresJson,
+                   normalizedGenresJson, composersJson, composerText, publisher, bpm,
+                   embeddedMetadataEnrichmentVersion, cachedAt,
                    totalPlayCount, lastPlayedAt, rating
             FROM library_rows
             WHERE $where
@@ -238,7 +249,11 @@ internal object SmartPlaylistQueries {
             SmartPlaylistRuleField.TITLE -> "library_rows.title"
             SmartPlaylistRuleField.ARTIST -> "library_rows.artist"
             SmartPlaylistRuleField.ALBUM -> "library_rows.album"
+            SmartPlaylistRuleField.GENRE -> "library_rows.normalizedGenresJson"
+            SmartPlaylistRuleField.COMPOSER -> "library_rows.composerText"
+            SmartPlaylistRuleField.PUBLISHER -> "library_rows.publisher"
             SmartPlaylistRuleField.YEAR -> "library_rows.year"
+            SmartPlaylistRuleField.BPM -> "library_rows.bpm"
             SmartPlaylistRuleField.DURATION -> "library_rows.duration"
             SmartPlaylistRuleField.DATE_ADDED -> "library_rows.dateAddedEpochSeconds"
             SmartPlaylistRuleField.RATING -> "library_rows.rating"
@@ -297,12 +312,23 @@ internal object SmartPlaylistQueries {
                 "$column IS NOT NULL AND $column > 0 AND $column < ?"
             }
         }
+        if (rule.field == SmartPlaylistRuleField.GENRE) {
+            return genrePredicate(rule, args)
+        }
+        if (rule.field == SmartPlaylistRuleField.COMPOSER &&
+            rule.operator in setOf(SmartPlaylistOperator.IS, SmartPlaylistOperator.IS_NOT)
+        ) {
+            return composerIdentityPredicate(rule, args)
+        }
         return when (rule.operator) {
             SmartPlaylistOperator.IS,
             SmartPlaylistOperator.IS_NOT,
             SmartPlaylistOperator.CONTAINS,
             SmartPlaylistOperator.DOES_NOT_CONTAIN -> textPredicate(column, rule, args)
             SmartPlaylistOperator.EQUALS -> numericPredicate(column, "=", rule, args)
+            SmartPlaylistOperator.NOT_EQUALS -> numericPredicate(column, "!=", rule, args)
+            SmartPlaylistOperator.GREATER_THAN -> numericPredicate(column, ">", rule, args)
+            SmartPlaylistOperator.LESS_THAN -> numericPredicate(column, "<", rule, args)
             SmartPlaylistOperator.AT_LEAST -> numericPredicate(column, ">=", rule, args)
             SmartPlaylistOperator.AT_MOST -> numericPredicate(column, "<=", rule, args)
             SmartPlaylistOperator.SHORTER_THAN -> {
@@ -344,7 +370,9 @@ internal object SmartPlaylistQueries {
         require(rule.field in setOf(
             SmartPlaylistRuleField.TITLE,
             SmartPlaylistRuleField.ARTIST,
-            SmartPlaylistRuleField.ALBUM
+            SmartPlaylistRuleField.ALBUM,
+            SmartPlaylistRuleField.COMPOSER,
+            SmartPlaylistRuleField.PUBLISHER
         )) { "Text operator ${rule.operator} is not valid for ${rule.field}." }
         val value = requireNotNull(rule.values.firstOrNull()) { "A text value is required." }
         return when (rule.operator) {
@@ -378,6 +406,9 @@ internal object SmartPlaylistQueries {
             SmartPlaylistRuleField.TITLE,
             SmartPlaylistRuleField.ARTIST,
             SmartPlaylistRuleField.ALBUM,
+            SmartPlaylistRuleField.GENRE,
+            SmartPlaylistRuleField.COMPOSER,
+            SmartPlaylistRuleField.PUBLISHER,
             SmartPlaylistRuleField.LAST_PLAYED
         )) { "Numeric operator ${rule.operator} is not valid for ${rule.field}." }
         args += numericValue(requireNotNull(rule.values.firstOrNull()) { "A numeric value is required." })
@@ -387,6 +418,57 @@ internal object SmartPlaylistQueries {
             "$column IS NOT NULL"
         }
         return "$knownValue AND $column $comparison ?"
+    }
+
+    private fun genrePredicate(
+        rule: SmartPlaylistRule,
+        args: MutableList<Any>
+    ): String {
+        require(rule.operator in setOf(
+            SmartPlaylistOperator.IS,
+            SmartPlaylistOperator.IS_NOT,
+            SmartPlaylistOperator.CONTAINS
+        )) { "Genre operator ${rule.operator} is not supported." }
+        val rawValue = requireNotNull(rule.values.firstOrNull()) { "A Genre value is required." }
+        val cleanedValue = rawValue.trim()
+        val isUnknown = cleanedValue.equals(UNKNOWN_GENRE_NAME, ignoreCase = true) ||
+            cleanedValue.equals(UNKNOWN_GENRE_KEY, ignoreCase = true)
+        if (isUnknown) {
+            return if (rule.operator == SmartPlaylistOperator.IS_NOT) {
+                "library_rows.normalizedGenresJson != '[]'"
+            } else {
+                "library_rows.normalizedGenresJson = '[]'"
+            }
+        }
+        val normalized = normalizedGenreKey(cleanedValue)
+        require(normalized.isNotBlank()) { "A Genre value is required." }
+        return when (rule.operator) {
+            SmartPlaylistOperator.IS -> {
+                args += escapeLike(valueJson.encodeToString(normalized).lowercase(Locale.ROOT))
+                "LOWER(library_rows.normalizedGenresJson) LIKE '%' || ? || '%' ESCAPE '\\'"
+            }
+            SmartPlaylistOperator.IS_NOT -> {
+                args += escapeLike(valueJson.encodeToString(normalized).lowercase(Locale.ROOT))
+                "LOWER(library_rows.normalizedGenresJson) NOT LIKE '%' || ? || '%' ESCAPE '\\'"
+            }
+            SmartPlaylistOperator.CONTAINS -> {
+                args += escapeLike(normalized)
+                "LOWER(library_rows.normalizedGenresJson) LIKE '%' || ? || '%' ESCAPE '\\'"
+            }
+            else -> error("Unsupported Genre operator")
+        }
+    }
+
+    private fun composerIdentityPredicate(
+        rule: SmartPlaylistRule,
+        args: MutableList<Any>
+    ): String {
+        val value = requireNotNull(rule.values.firstOrNull()) { "A Composer value is required." }
+            .trim()
+        require(value.isNotBlank()) { "A Composer value is required." }
+        args += escapeLike(valueJson.encodeToString(value.lowercase(Locale.ROOT)))
+        val comparison = if (rule.operator == SmartPlaylistOperator.IS) "LIKE" else "NOT LIKE"
+        return "LOWER(library_rows.composersJson) $comparison '%' || ? || '%' ESCAPE '\\'"
     }
 
     /** Mirrors [FolderSelection.includes] without narrowing the durable reference cache. */
@@ -456,6 +538,7 @@ internal object SmartPlaylistQueries {
 
     private const val MILLIS_PER_DAY = 86_400_000L
     private const val HALF_MINUTE_MILLIS = 30_000L
+    private val valueJson = Json {}
 
     private data class SqlAndArgs(val sql: String, val args: Array<Any>) {
         fun toQuery(): SupportSQLiteQuery = SimpleSQLiteQuery(sql, args)

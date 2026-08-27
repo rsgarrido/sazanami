@@ -50,6 +50,7 @@ class LibraryCacheRepository(
 
 fun CachedSongEntity.toSong(): Song {
     val decodedGenres = decodeCachedGenres(genresJson)
+    val decodedComposers = decodeCachedStringList(composersJson)
     return Song(
         id = mediaStoreId,
         title = title,
@@ -77,7 +78,10 @@ fun CachedSongEntity.toSong(): Song {
         year = year,
         artworkEnrichmentVersion = artworkEnrichmentVersion,
         genres = decodedGenres.orEmpty(),
-        embeddedMetadataEnrichmentVersion = if (decodedGenres != null) {
+        composers = decodedComposers.orEmpty(),
+        publisher = publisher,
+        bpm = bpm,
+        embeddedMetadataEnrichmentVersion = if (decodedGenres != null && decodedComposers != null) {
             embeddedMetadataEnrichmentVersion
         } else {
             0
@@ -107,6 +111,11 @@ fun Song.toCachedSongEntity(cachedAt: Long): CachedSongEntity {
         year = year,
         artworkEnrichmentVersion = artworkEnrichmentVersion,
         genresJson = cachedSongJson.encodeToString(genres),
+        normalizedGenresJson = cachedSongJson.encodeToString(normalizedKnownGenreKeys(genres)),
+        composersJson = cachedSongJson.encodeToString(composers),
+        composerText = composers.joinToString("; ") { it.trim() }.trim(),
+        publisher = publisher.trim(),
+        bpm = bpm,
         embeddedMetadataEnrichmentVersion = embeddedMetadataEnrichmentVersion,
         cachedAt = cachedAt
     )
@@ -115,5 +124,9 @@ fun Song.toCachedSongEntity(cachedAt: Long): CachedSongEntity {
 private val cachedSongJson = Json { ignoreUnknownKeys = true }
 
 private fun decodeCachedGenres(encoded: String): List<String>? = runCatching {
+    cachedSongJson.decodeFromString<List<String>>(encoded)
+}.getOrNull()
+
+private fun decodeCachedStringList(encoded: String): List<String>? = runCatching {
     cachedSongJson.decodeFromString<List<String>>(encoded)
 }.getOrNull()

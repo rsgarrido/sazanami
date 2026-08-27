@@ -30,7 +30,8 @@ class ListeningHistoryMigrationTest {
                 DatabaseProvider.MIGRATION_12_13,
                 DatabaseProvider.MIGRATION_13_14,
                 DatabaseProvider.MIGRATION_14_15,
-                DatabaseProvider.MIGRATION_15_16
+                DatabaseProvider.MIGRATION_15_16,
+                DatabaseProvider.MIGRATION_16_17
             )
             .build()
         try {

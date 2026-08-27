@@ -19,11 +19,23 @@ class SmartPlaylistBackupJsonTest {
             folderId = 3L,
             smartDefinition = BackupSmartPlaylistDefinition(
                 matchMode = "ANY",
-                rules = listOf(SmartPlaylistRule(
-                    SmartPlaylistRuleField.RATING,
-                    SmartPlaylistOperator.AT_LEAST,
-                    listOf("4")
-                )),
+                rules = listOf(
+                    SmartPlaylistRule(
+                        SmartPlaylistRuleField.RATING,
+                        SmartPlaylistOperator.AT_LEAST,
+                        listOf("4")
+                    ),
+                    SmartPlaylistRule(
+                        SmartPlaylistRuleField.GENRE,
+                        SmartPlaylistOperator.IS,
+                        listOf("R&B / Soul")
+                    ),
+                    SmartPlaylistRule(
+                        SmartPlaylistRuleField.BPM,
+                        SmartPlaylistOperator.BETWEEN,
+                        listOf("110", "135")
+                    )
+                ),
                 sortField = "play_count",
                 sortDirection = "DESC",
                 resultLimit = 25,

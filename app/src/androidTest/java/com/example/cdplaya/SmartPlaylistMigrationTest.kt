@@ -57,7 +57,8 @@ class SmartPlaylistMigrationTest {
         val database = Room.databaseBuilder(context, AppDatabase::class.java, name)
             .addMigrations(
                 DatabaseProvider.MIGRATION_14_15,
-                DatabaseProvider.MIGRATION_15_16
+                DatabaseProvider.MIGRATION_15_16,
+                DatabaseProvider.MIGRATION_16_17
             )
             .build()
         try {

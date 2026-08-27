@@ -10,6 +10,7 @@ import com.example.cdplaya.data.SmartPlaylistRuleField
 import com.example.cdplaya.data.SmartPlaylistSortDirection
 import com.example.cdplaya.data.SmartPlaylistSortField
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class SmartPlaylistQueriesTest {
@@ -121,5 +122,53 @@ class SmartPlaylistQueriesTest {
 
         assertTrue(query.sql.contains("library_rows.duration >= ?"))
         assertTrue(query.sql.contains("library_rows.duration < ?"))
+    }
+
+    @Test
+    fun metadataRulesUseNormalizedGenreTextAndNullSafeNumericPredicates() {
+        val query = SmartPlaylistQueries.resolve(
+            SmartPlaylistDraft(rules = listOf(
+                SmartPlaylistRule(SmartPlaylistRuleField.GENRE, SmartPlaylistOperator.IS, listOf(" Rock ")),
+                SmartPlaylistRule(SmartPlaylistRuleField.COMPOSER, SmartPlaylistOperator.CONTAINS, listOf("Jones")),
+                SmartPlaylistRule(SmartPlaylistRuleField.PUBLISHER, SmartPlaylistOperator.IS, listOf("Blue Note")),
+                SmartPlaylistRule(SmartPlaylistRuleField.YEAR, SmartPlaylistOperator.NOT_EQUALS, listOf("2004")),
+                SmartPlaylistRule(SmartPlaylistRuleField.BPM, SmartPlaylistOperator.GREATER_THAN, listOf("150"))
+            )),
+            1_000L
+        )
+
+        assertTrue(query.sql.contains("LOWER(library_rows.normalizedGenresJson) LIKE"))
+        assertTrue(query.sql.contains("LOWER(library_rows.composerText) LIKE"))
+        assertTrue(query.sql.contains("library_rows.publisher = ? COLLATE NOCASE"))
+        assertTrue(query.sql.contains("library_rows.year IS NOT NULL AND library_rows.year != ?"))
+        assertTrue(query.sql.contains("library_rows.bpm IS NOT NULL AND library_rows.bpm > ?"))
+    }
+
+    @Test
+    fun unknownGenreUsesEmptyAuthoritativeNormalizedGenreList() {
+        val query = SmartPlaylistQueries.resolve(
+            SmartPlaylistDraft(rules = listOf(SmartPlaylistRule(
+                SmartPlaylistRuleField.GENRE,
+                SmartPlaylistOperator.IS,
+                listOf("Unknown Genre")
+            ))),
+            1_000L
+        )
+
+        assertTrue(query.sql.contains("library_rows.normalizedGenresJson = '[]'"))
+    }
+
+    @Test
+    fun malformedBpmRuleFailsClosedBeforeEvaluation() {
+        assertThrows(IllegalArgumentException::class.java) {
+            SmartPlaylistQueries.resolve(
+                SmartPlaylistDraft(rules = listOf(SmartPlaylistRule(
+                    SmartPlaylistRuleField.BPM,
+                    SmartPlaylistOperator.GREATER_THAN,
+                    listOf("fast")
+                ))),
+                1_000L
+            )
+        }
     }
 }

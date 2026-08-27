@@ -255,11 +255,14 @@ class MusicRepository(private val context: Context) {
 
 }
 
-internal const val CURRENT_EMBEDDED_METADATA_ENRICHMENT_VERSION = 2
+internal const val CURRENT_EMBEDDED_METADATA_ENRICHMENT_VERSION = 3
 
 internal fun Song.withEmbeddedLibraryMetadata(metadata: AudioMetadata?): Song = copy(
     year = parseMetadataYear(metadata?.date) ?: year,
     genres = metadata?.genres.orEmpty(),
+    composers = metadata?.composers.orEmpty(),
+    publisher = metadata?.publisher?.trim().orEmpty(),
+    bpm = parseMetadataBpm(metadata?.bpm),
     embeddedMetadataEnrichmentVersion = if (metadata != null) {
         CURRENT_EMBEDDED_METADATA_ENRICHMENT_VERSION
     } else {

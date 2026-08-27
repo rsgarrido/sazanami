@@ -1,6 +1,10 @@
 package com.example.cdplaya.ui.playlist
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,24 +20,29 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
@@ -60,10 +69,12 @@ import com.example.cdplaya.data.SmartPlaylistResolution
 import com.example.cdplaya.data.SmartPlaylistRuleField
 import com.example.cdplaya.data.SmartPlaylistSortDirection
 import com.example.cdplaya.data.SmartPlaylistTemplate
+import com.example.cdplaya.data.UNKNOWN_GENRE_NAME
 import kotlinx.coroutines.delay
 
 @Immutable
 data class SmartPlaylistUiEnvironment(
+    val availableGenres: List<String> = emptyList(),
     val onPreview: (SmartPlaylistDraft, (Result<SmartPlaylistResolution>) -> Unit) -> Unit = { _, _ -> },
     val onCreate: (
         String,
@@ -151,13 +162,17 @@ fun SmartPlaylistEditor(
     var previewError by remember(request) { mutableStateOf<String?>(null) }
     var saveError by remember(request) { mutableStateOf<String?>(null) }
     var saving by remember(request) { mutableStateOf(false) }
+    var fieldSelectorRuleId by remember(request) { mutableStateOf<Long?>(null) }
+    var genreSelectorRuleId by remember(request) { mutableStateOf<Long?>(null) }
     val validation = model.validation(existingNames, request.originalName)
+    val previewValidationError = validation.generalError ?: validation.ruleErrors.values.firstOrNull()
+    val canPreview = previewValidationError == null
     val definitionReadOnly = request.template != null
 
-    LaunchedEffect(model, validation.isValid) {
+    LaunchedEffect(model, canPreview) {
         preview = null
         previewError = null
-        if (!validation.isValid) return@LaunchedEffect
+        if (!canPreview) return@LaunchedEffect
         delay(350L)
         smartUi.onPreview(model.toDraft()) { result ->
             result.onSuccess { preview = it }
@@ -228,6 +243,13 @@ fun SmartPlaylistEditor(
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
+                    item {
+                        Text(
+                            "Rules",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                     if (model.showsMatchModeChoice) item {
                         Text("Songs must match:", style = MaterialTheme.typography.titleMedium)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -258,6 +280,8 @@ fun SmartPlaylistEditor(
                             rule = rule,
                             error = validation.ruleErrors[rule.id],
                             readOnly = definitionReadOnly,
+                            onChooseField = { fieldSelectorRuleId = rule.id },
+                            onChooseGenre = { genreSelectorRuleId = rule.id },
                             onChange = { changed ->
                                 model = model.copy(rules = model.rules.map {
                                     if (it.id == changed.id) changed else it
@@ -284,30 +308,33 @@ fun SmartPlaylistEditor(
                     }
                     item {
                         Text("Results", style = MaterialTheme.typography.titleMedium)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            SelectionMenu(
-                                label = "Sort by",
-                                selected = model.sortField,
-                                options = smartSortOptions,
-                                enabled = !definitionReadOnly,
-                                onSelected = { model = model.copy(sortField = it) },
-                                modifier = Modifier.weight(1f)
-                            )
-                            SelectionMenu(
-                                label = "Direction",
-                                selected = model.sortDirection,
-                                options = listOf(
-                                    SmartPlaylistSortDirection.ASCENDING to "Ascending",
-                                    SmartPlaylistSortDirection.DESCENDING to "Descending"
-                                ),
-                                enabled = !definitionReadOnly,
-                                onSelected = { model = model.copy(sortDirection = it) },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
+                        Text(
+                            "Sort field",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                        CompactChoiceRow(
+                            selected = model.sortField,
+                            options = smartSortOptions,
+                            enabled = !definitionReadOnly,
+                            onSelected = { model = model.copy(sortField = it) }
+                        )
+                        Text(
+                            "Direction",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                        CompactChoiceRow(
+                            selected = model.sortDirection,
+                            options = listOf(
+                                SmartPlaylistSortDirection.ASCENDING to "Ascending",
+                                SmartPlaylistSortDirection.DESCENDING to "Descending"
+                            ),
+                            enabled = !definitionReadOnly,
+                            onSelected = { model = model.copy(sortDirection = it) }
+                        )
                         OutlinedTextField(
                             value = model.resultLimit,
                             onValueChange = { if (!definitionReadOnly) model = model.copy(resultLimit = it) },
@@ -322,7 +349,7 @@ fun SmartPlaylistEditor(
                         PreviewCard(
                             preview = preview,
                             error = previewError,
-                            validationError = validation.generalError,
+                            validationError = previewValidationError,
                             usesRecentHistory = model.rules.any { rule ->
                                 rule.field == SmartPlaylistRuleField.RECENT_PLAY_COUNT ||
                                     rule.field == SmartPlaylistRuleField.LAST_PLAYED
@@ -336,6 +363,32 @@ fun SmartPlaylistEditor(
             }
         }
     }
+
+    fieldSelectorRuleId?.let { ruleId ->
+        FieldSelectorSheet(
+            selected = model.rules.firstOrNull { it.id == ruleId }?.field,
+            onDismiss = { fieldSelectorRuleId = null },
+            onSelected = { selected ->
+                model = model.copy(rules = model.rules.map { rule ->
+                    if (rule.id == ruleId) changeSmartRuleField(rule, selected) else rule
+                })
+                fieldSelectorRuleId = null
+            }
+        )
+    }
+    genreSelectorRuleId?.let { ruleId ->
+        GenreSelectorSheet(
+            genres = smartUi.availableGenres,
+            selected = model.rules.firstOrNull { it.id == ruleId }?.value,
+            onDismiss = { genreSelectorRuleId = null },
+            onSelected = { selected ->
+                model = model.copy(rules = model.rules.map { rule ->
+                    if (rule.id == ruleId) rule.copy(value = selected) else rule
+                })
+                genreSelectorRuleId = null
+            }
+        )
+    }
 }
 
 @Composable
@@ -343,31 +396,41 @@ private fun SmartRuleCard(
     rule: SmartPlaylistEditorRule,
     error: String?,
     readOnly: Boolean,
+    onChooseField: () -> Unit,
+    onChooseGenre: () -> Unit,
     onChange: (SmartPlaylistEditorRule) -> Unit,
     onRemove: () -> Unit
 ) {
     val field = smartRuleFieldOptions.firstOrNull { it.storage == rule.field }
-    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 1.dp
+    ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                SelectionMenu(
-                    label = "Field",
-                    selected = rule.field,
-                    options = smartRuleFieldOptions.map { it.storage to it.label },
-                    enabled = !readOnly,
-                    onSelected = { selected ->
-                        val selectedField = smartRuleFieldOptions.first { it.storage == selected }
-                        onChange(
-                            rule.copy(
-                                field = selected,
-                                operator = selectedField.operators.first().storage,
-                                value = "",
-                                secondValue = ""
-                            )
+                Surface(
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    onClick = onChooseField,
+                    enabled = !readOnly
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Field", style = MaterialTheme.typography.labelSmall)
+                            Text(field?.label ?: "Unsupported (${rule.field})", maxLines = 1)
+                        }
+                        if (!readOnly) Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = "Choose rule field"
                         )
-                    },
-                    modifier = Modifier.weight(1f)
-                )
+                    }
+                }
                 if (!readOnly) {
                     IconButton(onClick = onRemove) {
                         Icon(Icons.Filled.Delete, contentDescription = "Remove rule")
@@ -377,15 +440,13 @@ private fun SmartRuleCard(
             if (field == null) {
                 Text("Unsupported field: ${rule.field}", color = MaterialTheme.colorScheme.error)
             } else {
-                SelectionMenu(
-                    label = "Condition",
+                CompactChoiceRow(
                     selected = rule.operator,
                     options = field.operators.map { it.storage to it.label },
                     enabled = !readOnly,
                     onSelected = { onChange(rule.copy(operator = it)) },
-                    modifier = Modifier.fillMaxWidth()
                 )
-                RuleValueInput(rule, field.valueKind, readOnly, onChange)
+                RuleValueInput(rule, field.valueKind, readOnly, onChooseGenre, onChange)
                 Text(
                     naturalRuleText(rule),
                     style = MaterialTheme.typography.bodyMedium,
@@ -402,11 +463,38 @@ private fun RuleValueInput(
     rule: SmartPlaylistEditorRule,
     kind: SmartRuleValueKind,
     readOnly: Boolean,
+    onChooseGenre: () -> Unit,
     onChange: (SmartPlaylistEditorRule) -> Unit
 ) {
     if (rule.operator == SmartPlaylistOperator.UNRATED ||
         rule.operator == SmartPlaylistOperator.NEVER || kind == SmartRuleValueKind.NONE
     ) return
+    if (kind == SmartRuleValueKind.GENRE) {
+        Surface(
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            onClick = onChooseGenre,
+            enabled = !readOnly
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    rule.value.ifBlank { "Choose a genre" },
+                    modifier = Modifier.weight(1f),
+                    color = if (rule.value.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant
+                        else MaterialTheme.colorScheme.onSurface
+                )
+                if (!readOnly) Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = "Choose genre"
+                )
+            }
+        }
+        return
+    }
     if (kind == SmartRuleValueKind.RATING) {
         SelectionMenu(
             label = "Stars",
@@ -419,7 +507,8 @@ private fun RuleValueInput(
         return
     }
     val keyboardType = when (kind) {
-        SmartRuleValueKind.TEXT -> KeyboardType.Text
+        SmartRuleValueKind.TEXT,
+        SmartRuleValueKind.GENRE -> KeyboardType.Text
         SmartRuleValueKind.DURATION_MINUTES -> KeyboardType.Decimal
         else -> KeyboardType.Number
     }
@@ -428,9 +517,11 @@ private fun RuleValueInput(
         onValueChange = { if (!readOnly) onChange(rule.copy(value = it)) },
         enabled = !readOnly,
         label = {
-            Text(when (kind) {
-                SmartRuleValueKind.DURATION_MINUTES -> "Minutes"
-                SmartRuleValueKind.RELATIVE_DAYS -> "Days"
+            Text(when {
+                rule.field == SmartPlaylistRuleField.YEAR -> "Year"
+                rule.field == SmartPlaylistRuleField.BPM -> "BPM"
+                kind == SmartRuleValueKind.DURATION_MINUTES -> "Minutes"
+                kind == SmartRuleValueKind.RELATIVE_DAYS -> "Days"
                 else -> "Value"
             })
         },
@@ -472,6 +563,132 @@ private fun RuleValueInput(
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
+    }
+}
+
+@Composable
+private fun CompactChoiceRow(
+    selected: String,
+    options: List<Pair<String, String>>,
+    enabled: Boolean,
+    onSelected: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        options.forEach { (storage, label) ->
+            FilterChip(
+                selected = selected == storage,
+                onClick = { onSelected(storage) },
+                enabled = enabled,
+                label = { Text(label, maxLines = 1) }
+            )
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun FieldSelectorSheet(
+    selected: String?,
+    onDismiss: () -> Unit,
+    onSelected: (String) -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 10.dp
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)
+        ) {
+            Text(
+                "Choose a field",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+            )
+            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp)) {
+                SmartRuleFieldGroup.entries.forEach { group ->
+                    item(key = "field-group-${group.name}") {
+                        Text(
+                            group.label,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp)
+                        )
+                    }
+                    items(
+                        smartRuleFieldOptions.filter { it.group == group },
+                        key = SmartRuleFieldOption::storage
+                    ) { option ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSelected(option.storage) }
+                                .padding(horizontal = 20.dp, vertical = 13.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(option.label, modifier = Modifier.weight(1f))
+                            if (option.storage == selected) {
+                                Icon(Icons.Filled.Check, contentDescription = "Selected")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun GenreSelectorSheet(
+    genres: List<String>,
+    selected: String?,
+    onDismiss: () -> Unit,
+    onSelected: (String) -> Unit
+) {
+    val options = remember(genres) {
+        (genres + UNKNOWN_GENRE_NAME).distinctBy { it.lowercase() }
+    }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 10.dp
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
+            Text(
+                "Choose a genre",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+            )
+            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp)) {
+                items(options, key = { it.lowercase() }) { genre ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelected(genre) }
+                            .padding(horizontal = 20.dp, vertical = 13.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(genre, modifier = Modifier.weight(1f))
+                        if (genre.equals(selected, ignoreCase = true)) {
+                            Icon(Icons.Filled.Check, contentDescription = "Selected")
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -520,20 +737,20 @@ private fun PreviewCard(
 ) {
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Preview", style = MaterialTheme.typography.titleMedium)
+            Text("Matches", style = MaterialTheme.typography.titleMedium)
             when {
                 validationError != null -> Text(validationError, color = MaterialTheme.colorScheme.error)
                 error != null -> Text(error, color = MaterialTheme.colorScheme.error)
                 preview == null -> Text("Checking matching songs…")
                 preview.songs.isEmpty() -> Text(
                     if (usesRecentHistory) {
-                        "No songs currently match. Recent windows use dated qualified plays; undated legacy totals do not qualify."
+                        "0 songs match. Recent windows use dated qualified plays; undated legacy totals do not qualify."
                     } else {
-                        "No songs currently match these rules."
+                        "0 songs match"
                     }
                 )
                 else -> {
-                    Text("${preview.count} matching song${if (preview.count == 1) "" else "s"}")
+                    Text(if (preview.count == 1) "1 song matches" else "${preview.count} songs match")
                     preview.songs.take(5).forEach { song ->
                         Text("${song.title} — ${song.artist}", maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }

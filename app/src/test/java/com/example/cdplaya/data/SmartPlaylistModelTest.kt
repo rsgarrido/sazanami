@@ -8,6 +8,29 @@ import org.junit.Test
 
 class SmartPlaylistModelTest {
     @Test
+    fun legacyRuleJsonStillDeserializesWithOriginalIdentifiers() {
+        val decoded = SmartPlaylistRuleJson.decode(
+            """[{"field":"artist","operator":"contains","values":["Miles"],"parameters":{}}]"""
+        )
+
+        assertEquals(
+            SmartPlaylistRule(SmartPlaylistRuleField.ARTIST, SmartPlaylistOperator.CONTAINS, listOf("Miles")),
+            decoded.single()
+        )
+    }
+
+    @Test
+    fun legacyAndMetadataRulesRoundTripTogether() {
+        val rules = listOf(
+            SmartPlaylistRule(SmartPlaylistRuleField.TITLE, SmartPlaylistOperator.CONTAINS, listOf("live")),
+            SmartPlaylistRule(SmartPlaylistRuleField.GENRE, SmartPlaylistOperator.IS, listOf("Rock")),
+            SmartPlaylistRule(SmartPlaylistRuleField.BPM, SmartPlaylistOperator.GREATER_THAN, listOf("150"))
+        )
+
+        assertEquals(rules, SmartPlaylistRuleJson.decode(SmartPlaylistRuleJson.encode(rules)))
+    }
+
+    @Test
     fun openStringRulesRoundTripUnknownFutureFieldsAndOperators() {
         val rules = listOf(
             SmartPlaylistRule(

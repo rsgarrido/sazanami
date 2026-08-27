@@ -24,6 +24,11 @@ data class Song(
     val artworkEnrichmentVersion: Int = 0,
     /** Embedded Genre values, kept as distinct tag values rather than reparsed UI text. */
     val genres: List<String> = emptyList(),
+    /** Embedded Composer values, retained separately for metadata-backed Smart Playlists. */
+    val composers: List<String> = emptyList(),
+    val publisher: String = "",
+    /** A validated positive embedded BPM value, or null when unavailable/malformed. */
+    val bpm: Int? = null,
     val embeddedMetadataEnrichmentVersion: Int = 0
 ) {
     /** Warmed by [SongReferenceIndex] off the main thread for cheap UI membership checks. */

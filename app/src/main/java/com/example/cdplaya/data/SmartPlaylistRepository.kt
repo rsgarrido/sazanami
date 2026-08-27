@@ -384,6 +384,13 @@ private fun SmartPlaylistCandidateRow.toSong(): Song = CachedSongEntity(
     dateModifiedEpochSeconds = dateModifiedEpochSeconds,
     year = year,
     artworkEnrichmentVersion = artworkEnrichmentVersion,
+    genresJson = genresJson,
+    normalizedGenresJson = normalizedGenresJson,
+    composersJson = composersJson,
+    composerText = composerText,
+    publisher = publisher,
+    bpm = bpm,
+    embeddedMetadataEnrichmentVersion = embeddedMetadataEnrichmentVersion,
     cachedAt = cachedAt
 ).toSong()
 

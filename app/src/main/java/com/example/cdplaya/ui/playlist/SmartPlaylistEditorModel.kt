@@ -94,14 +94,22 @@ data class SmartRuleFieldOption(
     val storage: String,
     val label: String,
     val operators: List<SmartRuleOperatorOption>,
-    val valueKind: SmartRuleValueKind
+    val valueKind: SmartRuleValueKind,
+    val group: SmartRuleFieldGroup = SmartRuleFieldGroup.METADATA
 )
 
 data class SmartRuleOperatorOption(val storage: String, val label: String)
 
-enum class SmartRuleValueKind { TEXT, NUMBER, RATING, DURATION_MINUTES, RELATIVE_DAYS, RECENT_COUNT, NONE }
+enum class SmartRuleValueKind { TEXT, GENRE, NUMBER, RATING, DURATION_MINUTES, RELATIVE_DAYS, RECENT_COUNT, NONE }
+
+enum class SmartRuleFieldGroup(val label: String) {
+    LISTENING("Listening"),
+    METADATA("Metadata"),
+    LIBRARY_FILE("Library / File")
+}
 
 private val equals = SmartRuleOperatorOption(SmartPlaylistOperator.EQUALS, "equals")
+private val notEquals = SmartRuleOperatorOption(SmartPlaylistOperator.NOT_EQUALS, "is not")
 private val atLeast = SmartRuleOperatorOption(SmartPlaylistOperator.AT_LEAST, "at least")
 private val atMost = SmartRuleOperatorOption(SmartPlaylistOperator.AT_MOST, "at most")
 private val between = SmartRuleOperatorOption(SmartPlaylistOperator.BETWEEN, "between")
@@ -116,19 +124,22 @@ val smartRuleFieldOptions = listOf(
         SmartPlaylistRuleField.RATING,
         "Rating",
         listOf(equals, atLeast, atMost, SmartRuleOperatorOption(SmartPlaylistOperator.UNRATED, "unrated")),
-        SmartRuleValueKind.RATING
+        SmartRuleValueKind.RATING,
+        SmartRuleFieldGroup.LISTENING
     ),
     SmartRuleFieldOption(
         SmartPlaylistRuleField.TOTAL_PLAY_COUNT,
         "Total play count",
         listOf(equals, atLeast, atMost, between),
-        SmartRuleValueKind.NUMBER
+        SmartRuleValueKind.NUMBER,
+        SmartRuleFieldGroup.LISTENING
     ),
     SmartRuleFieldOption(
         SmartPlaylistRuleField.RECENT_PLAY_COUNT,
         "Play count",
         listOf(equals, atLeast, atMost, between),
-        SmartRuleValueKind.RECENT_COUNT
+        SmartRuleValueKind.RECENT_COUNT,
+        SmartRuleFieldGroup.LISTENING
     ),
     SmartRuleFieldOption(
         LISTENING_HISTORY_EDITOR_FIELD,
@@ -138,7 +149,8 @@ val smartRuleFieldOptions = listOf(
             SmartRuleOperatorOption(SmartPlaylistOperator.WITHIN_LAST_DAYS, "Played within last"),
             SmartRuleOperatorOption(SmartPlaylistOperator.MORE_THAN_DAYS_AGO, "Not played for")
         ),
-        SmartRuleValueKind.RELATIVE_DAYS
+        SmartRuleValueKind.RELATIVE_DAYS,
+        SmartRuleFieldGroup.LISTENING
     ),
     SmartRuleFieldOption(
         SmartPlaylistRuleField.TITLE,
@@ -159,12 +171,47 @@ val smartRuleFieldOptions = listOf(
         SmartRuleValueKind.TEXT
     ),
     SmartRuleFieldOption(
+        SmartPlaylistRuleField.GENRE,
+        "Genre",
+        listOf(
+            SmartRuleOperatorOption(SmartPlaylistOperator.IS, "is"),
+            SmartRuleOperatorOption(SmartPlaylistOperator.IS_NOT, "is not"),
+            SmartRuleOperatorOption(SmartPlaylistOperator.CONTAINS, "contains")
+        ),
+        SmartRuleValueKind.GENRE
+    ),
+    SmartRuleFieldOption(
+        SmartPlaylistRuleField.COMPOSER,
+        "Composer",
+        textOperators(),
+        SmartRuleValueKind.TEXT
+    ),
+    SmartRuleFieldOption(
+        SmartPlaylistRuleField.PUBLISHER,
+        "Publisher",
+        textOperators(),
+        SmartRuleValueKind.TEXT
+    ),
+    SmartRuleFieldOption(
         SmartPlaylistRuleField.YEAR,
         "Year",
         listOf(
-            equals,
+            SmartRuleOperatorOption(SmartPlaylistOperator.EQUALS, "is"),
+            notEquals,
             SmartRuleOperatorOption(SmartPlaylistOperator.BEFORE, "before"),
             SmartRuleOperatorOption(SmartPlaylistOperator.AFTER, "after"),
+            between
+        ),
+        SmartRuleValueKind.NUMBER
+    ),
+    SmartRuleFieldOption(
+        SmartPlaylistRuleField.BPM,
+        "BPM",
+        listOf(
+            SmartRuleOperatorOption(SmartPlaylistOperator.EQUALS, "is"),
+            notEquals,
+            SmartRuleOperatorOption(SmartPlaylistOperator.GREATER_THAN, "greater than"),
+            SmartRuleOperatorOption(SmartPlaylistOperator.LESS_THAN, "less than"),
             between
         ),
         SmartRuleValueKind.NUMBER
@@ -178,13 +225,15 @@ val smartRuleFieldOptions = listOf(
             between,
             SmartRuleOperatorOption(SmartPlaylistOperator.ABOUT, "about")
         ),
-        SmartRuleValueKind.DURATION_MINUTES
+        SmartRuleValueKind.DURATION_MINUTES,
+        SmartRuleFieldGroup.LIBRARY_FILE
     ),
     SmartRuleFieldOption(
         SmartPlaylistRuleField.DATE_ADDED,
         "Date added",
         relativeOperators,
-        SmartRuleValueKind.RELATIVE_DAYS
+        SmartRuleValueKind.RELATIVE_DAYS,
+        SmartRuleFieldGroup.LIBRARY_FILE
     )
 )
 
@@ -218,10 +267,12 @@ private fun validateRule(rule: SmartPlaylistEditorRule): String? {
     ) return null
     if (rule.value.isBlank()) return "Enter a value."
     return when (field.valueKind) {
-        SmartRuleValueKind.TEXT -> null
+        SmartRuleValueKind.TEXT,
+        SmartRuleValueKind.GENRE -> null
         SmartRuleValueKind.RATING -> if (rule.value.toIntOrNull() in 1..5) null else "Choose 1 to 5 stars."
         SmartRuleValueKind.NUMBER -> when (rule.field) {
-            SmartPlaylistRuleField.YEAR -> wholeNumberRuleError(rule, minimum = 1)
+            SmartPlaylistRuleField.YEAR -> wholeNumberRuleError(rule, minimum = 1000, maximum = 2999)
+            SmartPlaylistRuleField.BPM -> wholeNumberRuleError(rule, minimum = 1, maximum = 999)
             SmartPlaylistRuleField.TOTAL_PLAY_COUNT -> wholeNumberRuleError(rule, minimum = 0)
             else -> numericRuleError(rule, positive = false)
         }
@@ -236,16 +287,34 @@ private fun validateRule(rule: SmartPlaylistEditorRule): String? {
     }
 }
 
-private fun wholeNumberRuleError(rule: SmartPlaylistEditorRule, minimum: Int): String? {
+private fun wholeNumberRuleError(
+    rule: SmartPlaylistEditorRule,
+    minimum: Int,
+    maximum: Int = Int.MAX_VALUE
+): String? {
     val first = rule.value.toIntOrNull()
-    if (first == null || first < minimum) return "Enter a valid whole number."
+    if (first == null || first !in minimum..maximum) return "Enter a valid whole number."
     if (rule.operator == SmartPlaylistOperator.BETWEEN) {
         val second = rule.secondValue.toIntOrNull()
-        if (second == null || second < first) {
+        if (second == null || second !in first..maximum) {
             return "Enter a whole-number upper value at least as large as the first."
         }
     }
     return null
+}
+
+internal fun changeSmartRuleField(
+    rule: SmartPlaylistEditorRule,
+    selectedFieldStorage: String
+): SmartPlaylistEditorRule {
+    val selectedField = smartRuleFieldOptions.first { it.storage == selectedFieldStorage }
+    return rule.copy(
+        field = selectedFieldStorage,
+        operator = selectedField.operators.first().storage,
+        value = "",
+        secondValue = "",
+        windowDays = "30"
+    )
 }
 
 private fun numericRuleError(rule: SmartPlaylistEditorRule, positive: Boolean): String? {

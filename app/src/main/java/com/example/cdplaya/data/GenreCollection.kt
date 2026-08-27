@@ -66,6 +66,12 @@ fun buildGenreCollections(songs: List<Song>): List<GenreCollection> {
 fun normalizedGenreKey(value: String): String =
     value.trim().lowercase(Locale.ROOT)
 
+/** Authoritative normalized identities used by both Genre browsing and Smart Playlists. */
+fun normalizedKnownGenreKeys(values: List<String>): List<String> = values
+    .mapNotNull(::cleanGenreDisplayValue)
+    .map(::normalizedGenreKey)
+    .distinct()
+
 private fun genreCollectionKey(value: String): String = "known:${normalizedGenreKey(value)}"
 
 private fun preferableGenreDisplayName(current: String, candidate: String): String =
