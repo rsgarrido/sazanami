@@ -14,9 +14,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -41,6 +43,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -72,6 +75,8 @@ import com.example.cdplaya.ui.library.LibraryItemActionSheetTarget
 import com.example.cdplaya.ui.library.libraryItemActions
 import com.example.cdplaya.ui.library.LibraryViewMode
 import com.example.cdplaya.ui.library.LibrarySortDirection
+import com.example.cdplaya.ui.library.ResetLazyGridOnSortChange
+import com.example.cdplaya.ui.library.ResetLazyListOnSortChange
 import com.example.cdplaya.ui.library.compareKnownPositiveLong
 import com.example.cdplaya.ui.library.compareLibraryText
 
@@ -123,6 +128,11 @@ fun PlaylistListScreen(
     }
     val sortField = PlaylistSortField.valueOf(sortFieldName)
     val sortDirection = LibrarySortDirection.valueOf(sortDirectionName)
+    val sortKey = sortField to sortDirection
+    val listState = rememberLazyListState()
+    val gridState = rememberLazyGridState()
+    ResetLazyListOnSortChange(sortKey, listState)
+    ResetLazyGridOnSortChange(sortKey, gridState)
     val currentFolder = folders.firstOrNull { it.folderId == selectedFolderId }
     val visiblePlaylists = remember(playlists, selectedFolderId, sortField, sortDirection) {
         sortField.sort(
@@ -261,25 +271,37 @@ fun PlaylistListScreen(
                             }
                         )
                     }
-                }
-            }
 
-            IconButton(
-                onClick = { sortDirectionName = sortDirection.toggled().name }
-            ) {
-                Icon(
-                    imageVector = if (sortDirection == LibrarySortDirection.ASCENDING) {
-                        Icons.Filled.ArrowUpward
+                    HorizontalDivider()
+
+                    val directionTitle = if (
+                        sortDirection == LibrarySortDirection.ASCENDING
+                    ) {
+                        "Ascending"
                     } else {
-                        Icons.Filled.ArrowDownward
-                    },
-                    contentDescription = if (sortDirection == LibrarySortDirection.ASCENDING) {
-                        "Currently sorting playlists ascending. Change to descending"
-                    } else {
-                        "Currently sorting playlists descending. Change to ascending"
-                    },
-                    tint = AppShellAccent
-                )
+                        "Descending"
+                    }
+                    DropdownMenuItem(
+                        text = { Text(directionTitle) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = if (
+                                    sortDirection == LibrarySortDirection.ASCENDING
+                                ) {
+                                    Icons.Filled.ArrowUpward
+                                } else {
+                                    Icons.Filled.ArrowDownward
+                                },
+                                contentDescription = "$directionTitle playlist sort direction",
+                                tint = AppShellAccent
+                            )
+                        },
+                        onClick = {
+                            sortDirectionName = sortDirection.toggled().name
+                            sortMenuExpanded = false
+                        }
+                    )
+                }
             }
 
             Box {
@@ -323,6 +345,7 @@ fun PlaylistListScreen(
             PlaylistCollectionEmptyState(inFolder = currentFolder != null)
         } else if (viewMode == LibraryViewMode.LIST) {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(bottom = bottomContentPadding + 8.dp)
             ) {
@@ -351,6 +374,7 @@ fun PlaylistListScreen(
             }
         } else {
             LazyVerticalGrid(
+                state = gridState,
                 columns = GridCells.Adaptive(PlaylistGridLayout.minimumTileWidth),
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(

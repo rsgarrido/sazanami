@@ -28,6 +28,40 @@ class SongsRatingIntegrationTest {
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
+    fun sortMenuDirectionTogglePreservesTheSelectedField() {
+        val sortState = mutableStateOf(
+            LibrarySortState(
+                LibrarySortOption.TITLE,
+                LibrarySortDirection.ASCENDING
+            )
+        )
+        composeRule.setContent {
+            MaterialTheme {
+                LibrarySortDropdown(
+                    selectedOption = sortState.value.option,
+                    direction = sortState.value.direction,
+                    options = listOf(LibrarySortOption.TITLE, LibrarySortOption.ARTIST),
+                    onOptionSelected = { option ->
+                        sortState.value = sortState.value.select(option)
+                    },
+                    onDirectionToggle = {
+                        sortState.value = sortState.value.toggleDirection()
+                    }
+                )
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("Sort by Title").performClick()
+        composeRule.onNodeWithText("Ascending").assertIsDisplayed().performClick()
+        composeRule.runOnIdle {
+            assertEquals(LibrarySortOption.TITLE, sortState.value.option)
+            assertEquals(LibrarySortDirection.DESCENDING, sortState.value.direction)
+        }
+        composeRule.onNodeWithContentDescription("Sort by Title").performClick()
+        composeRule.onNodeWithText("Descending").assertIsDisplayed()
+    }
+
+    @Test
     fun quickRateActionIsOnlyVisibleInRatedCollection() {
         val selectedTab = mutableStateOf(LibraryTab.SONGS)
         val quickRateMode = mutableStateOf(false)

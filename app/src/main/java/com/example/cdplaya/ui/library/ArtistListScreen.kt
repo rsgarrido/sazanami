@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
@@ -48,6 +50,7 @@ fun ArtistListScreen(
         LibrarySortOption.NAME,
         LibrarySortDirection.ASCENDING
     ),
+    listState: LazyListState? = null,
     bottomContentPadding: Dp = 0.dp
 ) {
     val artists = sortedLibraryArtistGroups(songs, sortState)
@@ -55,8 +58,10 @@ fun ArtistListScreen(
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
     }
     val homePinUi = LocalHomePinUi.current
+    val rememberedListState = rememberLazyListState()
 
     LazyColumn(
+        state = listState ?: rememberedListState,
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = bottomContentPadding)
     ) {

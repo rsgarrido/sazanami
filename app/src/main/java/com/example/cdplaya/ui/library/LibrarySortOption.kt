@@ -88,8 +88,7 @@ internal fun librarySortOptionsFor(
     LibraryTab.SONGS -> listOf(
         LibrarySortOption.TITLE,
         LibrarySortOption.ARTIST,
-        LibrarySortOption.ALBUM,
-        LibrarySortOption.DATE_ADDED
+        LibrarySortOption.ALBUM
     )
 
     LibraryTab.RATED -> if (ratingFeaturesEnabled) {
@@ -97,8 +96,7 @@ internal fun librarySortOptionsFor(
             LibrarySortOption.RATING,
             LibrarySortOption.TITLE,
             LibrarySortOption.ARTIST,
-            LibrarySortOption.ALBUM,
-            LibrarySortOption.DATE_ADDED
+            LibrarySortOption.ALBUM
         )
     } else {
         emptyList()
@@ -109,8 +107,7 @@ internal fun librarySortOptionsFor(
     LibraryTab.FAVORITES -> listOf(
         LibrarySortOption.TITLE,
         LibrarySortOption.ARTIST,
-        LibrarySortOption.ALBUM,
-        LibrarySortOption.DATE_ADDED
+        LibrarySortOption.ALBUM
     )
 
     LibraryTab.ARTISTS -> listOf(

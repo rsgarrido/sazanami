@@ -3,9 +3,12 @@ package com.example.cdplaya.ui.library
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -20,8 +23,10 @@ import com.example.cdplaya.ui.AppShellAccent
 @Composable
 fun LibrarySortDropdown(
     selectedOption: LibrarySortOption,
+    direction: LibrarySortDirection,
     options: List<LibrarySortOption>,
     onOptionSelected: (LibrarySortOption) -> Unit,
+    onDirectionToggle: () -> Unit,
     optionTitle: (LibrarySortOption) -> String = { option -> option.title },
     modifier: Modifier = Modifier
 ) {
@@ -65,6 +70,32 @@ fun LibrarySortDropdown(
                     }
                 )
             }
+
+            HorizontalDivider()
+
+            val directionTitle = if (direction == LibrarySortDirection.ASCENDING) {
+                "Ascending"
+            } else {
+                "Descending"
+            }
+            DropdownMenuItem(
+                text = { Text(text = directionTitle) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (direction == LibrarySortDirection.ASCENDING) {
+                            Icons.Filled.ArrowUpward
+                        } else {
+                            Icons.Filled.ArrowDownward
+                        },
+                        contentDescription = "$directionTitle sort direction",
+                        tint = AppShellAccent
+                    )
+                },
+                onClick = {
+                    onDirectionToggle()
+                    isExpanded = false
+                }
+            )
         }
     }
 }

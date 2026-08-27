@@ -180,13 +180,6 @@ fun BatchSongSelectionScreen(
                         }
                     }
                 }
-
-                Text(
-                    text = "Session 3 creates a review plan only; it does not edit files.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                )
                 Button(
                     onClick = { onContinue(selectedSongs) },
                     enabled = selectedSongs.size >= 2 && !isPreparing,

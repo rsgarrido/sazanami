@@ -35,10 +35,7 @@ import com.example.cdplaya.ui.library.librarySortOptionsFor
 import com.example.cdplaya.ui.library.showsQuickRateAction
 import com.example.cdplaya.ui.ratings.LocalSongRatingUi
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.outlined.StarOutline
-import com.example.cdplaya.ui.library.LibrarySortDirection
 import com.example.cdplaya.ui.library.LibrarySortState
 import com.example.cdplaya.ui.library.LibraryTab
 import com.example.cdplaya.ui.player.PlayerCard
@@ -326,52 +323,33 @@ fun LibrarySortAction(
                     accented = ratingUi.quickRateMode
                 )
                 selectedSortState?.let { state ->
-                    LibrarySortControls(
-                        state = state,
+                    LibrarySortDropdown(
+                        selectedOption = state.option,
+                        direction = state.direction,
                         options = availableSortOptions,
-                        onStateChanged = onSortStateChanged,
+                        onOptionSelected = { option ->
+                            onSortStateChanged(state.select(option))
+                        },
+                        onDirectionToggle = {
+                            onSortStateChanged(state.toggleDirection())
+                        },
                         optionTitle = { it.displayTitleFor(selectedLibraryTab) }
                     )
                 }
             }
         } else if (selectedSortState != null) {
-            LibrarySortControls(
-                state = selectedSortState,
+            LibrarySortDropdown(
+                selectedOption = selectedSortState.option,
+                direction = selectedSortState.direction,
                 options = availableSortOptions,
-                onStateChanged = onSortStateChanged,
+                onOptionSelected = { option ->
+                    onSortStateChanged(selectedSortState.select(option))
+                },
+                onDirectionToggle = {
+                    onSortStateChanged(selectedSortState.toggleDirection())
+                },
                 optionTitle = { it.displayTitleFor(selectedLibraryTab) }
             )
         }
-    }
-}
-
-@Composable
-private fun LibrarySortControls(
-    state: LibrarySortState,
-    options: List<LibrarySortOption>,
-    onStateChanged: (LibrarySortState) -> Unit,
-    optionTitle: (LibrarySortOption) -> String
-) {
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        LibrarySortDropdown(
-            selectedOption = state.option,
-            options = options,
-            onOptionSelected = { option -> onStateChanged(state.select(option)) },
-            optionTitle = optionTitle
-        )
-        AppShellIconButton(
-            onClick = { onStateChanged(state.toggleDirection()) },
-            imageVector = if (state.direction == LibrarySortDirection.ASCENDING) {
-                Icons.Filled.ArrowUpward
-            } else {
-                Icons.Filled.ArrowDownward
-            },
-            contentDescription = if (state.direction == LibrarySortDirection.ASCENDING) {
-                "Currently sorting ascending. Change to descending"
-            } else {
-                "Currently sorting descending. Change to ascending"
-            },
-            accented = true
-        )
     }
 }

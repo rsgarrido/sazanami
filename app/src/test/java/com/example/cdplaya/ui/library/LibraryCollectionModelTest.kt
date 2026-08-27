@@ -48,8 +48,12 @@ class LibraryCollectionModelTest {
 
         val allOptions = librarySortOptionsFor(LibraryTab.SONGS)
         val ratedOptions = librarySortOptionsFor(LibraryTab.RATED)
+        val favoriteOptions = librarySortOptionsFor(LibraryTab.FAVORITES)
         assertFalse(LibrarySortOption.RATING in allOptions)
         assertTrue(LibrarySortOption.RATING in ratedOptions)
+        assertFalse(LibrarySortOption.DATE_ADDED in allOptions)
+        assertFalse(LibrarySortOption.DATE_ADDED in ratedOptions)
+        assertFalse(LibrarySortOption.DATE_ADDED in favoriteOptions)
         assertEquals(
             listOf(LibrarySortOption.DATE_ADDED),
             librarySortOptionsFor(LibraryTab.RECENTLY_ADDED)
@@ -58,6 +62,34 @@ class LibraryCollectionModelTest {
             "Date added",
             LibrarySortOption.DATE_ADDED.displayTitleFor(LibraryTab.RECENTLY_ADDED)
         )
+    }
+
+    @Test
+    fun sortChangeResetTrackerSkipsInitialAndRestoredStateButDetectsRealChanges() {
+        val initial = LibrarySortState(
+            LibrarySortOption.TITLE,
+            LibrarySortDirection.ASCENDING
+        )
+        val tracker = SortChangeResetTracker(initial)
+
+        assertFalse(tracker.shouldReset(initial))
+        assertTrue(
+            tracker.shouldReset(initial.copy(direction = LibrarySortDirection.DESCENDING))
+        )
+        assertTrue(
+            tracker.shouldReset(
+                LibrarySortState(
+                    LibrarySortOption.ARTIST,
+                    LibrarySortDirection.DESCENDING
+                )
+            )
+        )
+
+        val restoredState = LibrarySortState(
+            LibrarySortOption.ARTIST,
+            LibrarySortDirection.DESCENDING
+        )
+        assertFalse(SortChangeResetTracker(restoredState).shouldReset(restoredState))
     }
 
     @Test

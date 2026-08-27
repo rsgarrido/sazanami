@@ -71,6 +71,7 @@ import com.example.cdplaya.ui.library.LibraryItemAction
 import com.example.cdplaya.ui.library.LibraryItemActionSheet
 import com.example.cdplaya.ui.library.LibraryItemActionSheetTarget
 import com.example.cdplaya.ui.library.LibrarySortDirection
+import com.example.cdplaya.ui.library.ResetLazyListOnSortChange
 
 @Composable
 fun PlaylistDetailScreen(
@@ -124,6 +125,7 @@ fun PlaylistDetailScreen(
     val sortField = PlaylistSongSortField.valueOf(sortFieldName)
     val sortDirection = LibrarySortDirection.valueOf(sortDirectionName)
     val listState = rememberLazyListState()
+    ResetLazyListOnSortChange(sortField to sortDirection, listState)
     val showCompactTitle by remember {
         derivedStateOf { listState.firstVisibleItemIndex > 0 }
     }
@@ -536,28 +538,38 @@ private fun PlaylistDetailHero(
                             }
                         )
                     }
-                }
-            }
-            if (sortField != PlaylistSongSortField.CUSTOM) {
-                IconButton(onClick = onSortDirectionToggle) {
-                    Icon(
-                        imageVector = if (
+                    if (sortField != PlaylistSongSortField.CUSTOM) {
+                        HorizontalDivider()
+
+                        val directionTitle = if (
                             sortDirection == LibrarySortDirection.ASCENDING
                         ) {
-                            Icons.Filled.ArrowUpward
+                            "Ascending"
                         } else {
-                            Icons.Filled.ArrowDownward
-                        },
-                        contentDescription = if (
-                            sortDirection == LibrarySortDirection.ASCENDING
-                        ) {
-                            "Sort ascending"
-                        } else {
-                            "Sort descending"
-                        },
-                        tint = AppShellAccent,
-                        modifier = Modifier.size(20.dp)
-                    )
+                            "Descending"
+                        }
+                        DropdownMenuItem(
+                            text = { Text(directionTitle) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = if (
+                                        sortDirection == LibrarySortDirection.ASCENDING
+                                    ) {
+                                        Icons.Filled.ArrowUpward
+                                    } else {
+                                        Icons.Filled.ArrowDownward
+                                    },
+                                    contentDescription =
+                                        "$directionTitle playlist song sort direction",
+                                    tint = AppShellAccent
+                                )
+                            },
+                            onClick = {
+                                onSortDirectionToggle()
+                                sortMenuExpanded = false
+                            }
+                        )
+                    }
                 }
             }
         }

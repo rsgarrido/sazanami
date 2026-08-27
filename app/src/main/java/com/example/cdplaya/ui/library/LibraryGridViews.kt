@@ -13,8 +13,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -63,7 +65,8 @@ fun SongGrid(
     onEditSongTagsClick: (Song) -> Unit,
     bottomContentPadding: Dp,
     modifier: Modifier = Modifier,
-    ratingValuesByReferenceKey: Map<String, Int> = emptyMap()
+    ratingValuesByReferenceKey: Map<String, Int> = emptyMap(),
+    gridState: LazyGridState? = null
 ) {
     val gridMetrics = libraryGridMetrics(gridColumnCount)
     var actionSheetTarget by remember {
@@ -72,8 +75,10 @@ fun SongGrid(
     val ratingUi = LocalSongRatingUi.current
     val homePinUi = LocalHomePinUi.current
     val rateSongLabel = stringResource(R.string.rate_song)
+    val rememberedGridState = rememberLazyGridState()
 
     LazyVerticalGrid(
+        state = gridState ?: rememberedGridState,
         columns = GridCells.Fixed(gridMetrics.columnCount),
         modifier = modifier.fillMaxSize(),
         contentPadding = libraryGridPadding(bottomContentPadding, gridMetrics),
@@ -142,6 +147,7 @@ fun AlbumGridScreen(
     onAlbumAddToQueueClick: (String, List<Song>) -> Unit,
     onAlbumAddToPlaylistClick: (String, List<Song>) -> Unit,
     bottomContentPadding: Dp,
+    gridState: LazyGridState? = null,
     modifier: Modifier = Modifier
 ) {
     val albums = sortedLibraryAlbumGroups(songs, sortState)
@@ -150,8 +156,10 @@ fun AlbumGridScreen(
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
     }
     val homePinUi = LocalHomePinUi.current
+    val rememberedGridState = rememberLazyGridState()
 
     LazyVerticalGrid(
+        state = gridState ?: rememberedGridState,
         columns = GridCells.Fixed(gridMetrics.columnCount),
         modifier = modifier.fillMaxSize(),
         contentPadding = libraryGridPadding(bottomContentPadding, gridMetrics),
@@ -221,6 +229,7 @@ fun ArtistGridScreen(
     onArtistAddToQueueClick: (String, List<Song>) -> Unit,
     onArtistAddToPlaylistClick: (String, List<Song>) -> Unit,
     bottomContentPadding: Dp,
+    gridState: LazyGridState? = null,
     modifier: Modifier = Modifier
 ) {
     val artists = sortedLibraryArtistGroups(songs, sortState)
@@ -229,8 +238,10 @@ fun ArtistGridScreen(
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
     }
     val homePinUi = LocalHomePinUi.current
+    val rememberedGridState = rememberLazyGridState()
 
     LazyVerticalGrid(
+        state = gridState ?: rememberedGridState,
         columns = GridCells.Fixed(gridMetrics.columnCount),
         modifier = modifier.fillMaxSize(),
         contentPadding = libraryGridPadding(bottomContentPadding, gridMetrics),

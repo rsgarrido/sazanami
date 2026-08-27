@@ -308,6 +308,7 @@ fun MusicLibraryContent(
                 selectedSongSortState.option,
                 selectedSongSortState.direction
             )
+            val scrollStates = rememberLibrarySortScrollStates(selectedSongSortState)
             if (displayedSongs.isEmpty()) {
                 EmptyHistoryMessage(
                     message = stringResource(R.string.recently_added_empty),
@@ -320,6 +321,7 @@ fun MusicLibraryContent(
                     listContent = {
                         SongList(
                             songs = displayedSongs,
+                            listState = scrollStates.list,
                             currentSongId = currentSong?.id,
                             recentlyAddedSongIds = recentlyAddedSongIds,
                             favoriteMembershipKeys = favoriteMembershipKeys,
@@ -336,6 +338,7 @@ fun MusicLibraryContent(
                     gridContent = {
                         SongGrid(
                             songs = displayedSongs,
+                            gridState = scrollStates.grid,
                             currentSongId = currentSong?.id,
                             gridColumnCount = gridColumnCount,
                             recentlyAddedSongIds = recentlyAddedSongIds,

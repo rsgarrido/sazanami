@@ -63,6 +63,7 @@ fun SongsTabContent(
             sortDirection = sortState.direction
         )
     }
+    val scrollStates = rememberLibrarySortScrollStates(sortState)
 
     if (songs.isEmpty()) {
         Text(
@@ -81,6 +82,7 @@ fun SongsTabContent(
             listContent = {
                 SongList(
                     songs = displayedSongs,
+                    listState = scrollStates.list,
                     currentSongId = currentSong?.id,
                     recentlyAddedSongIds = recentlyAddedSongIds,
                     onSongClick = onSongClick,
@@ -98,6 +100,7 @@ fun SongsTabContent(
             gridContent = {
                 SongGrid(
                     songs = displayedSongs,
+                    gridState = scrollStates.grid,
                     currentSongId = currentSong?.id,
                     gridColumnCount = gridColumnCount,
                     recentlyAddedSongIds = recentlyAddedSongIds,
@@ -159,10 +162,12 @@ fun RatedSongsTabContent(
             ratings
         )
     }
+    val scrollStates = rememberLibrarySortScrollStates(sortState)
 
     if (quickRateActive && displayedSongs.isNotEmpty()) {
         SongList(
             songs = displayedSongs,
+            listState = scrollStates.list,
             currentSongId = currentSong?.id,
             recentlyAddedSongIds = recentlyAddedSongIds,
             onSongClick = onSongClick,
@@ -193,6 +198,7 @@ fun RatedSongsTabContent(
             listContent = {
                 SongList(
                     songs = displayedSongs,
+                    listState = scrollStates.list,
                     currentSongId = currentSong?.id,
                     recentlyAddedSongIds = recentlyAddedSongIds,
                     onSongClick = onSongClick,
@@ -210,6 +216,7 @@ fun RatedSongsTabContent(
             gridContent = {
                 SongGrid(
                     songs = displayedSongs,
+                    gridState = scrollStates.grid,
                     currentSongId = currentSong?.id,
                     gridColumnCount = gridColumnCount,
                     recentlyAddedSongIds = recentlyAddedSongIds,
@@ -263,6 +270,7 @@ fun FavoritesTabContent(
         sortOption = sortState.option,
         sortDirection = sortState.direction
     )
+    val scrollStates = rememberLibrarySortScrollStates(sortState)
 
     if (favoriteSongs.isEmpty()) {
         Text(
@@ -294,6 +302,7 @@ fun FavoritesTabContent(
                 listContent = {
                     SongList(
                         songs = displayedSongs,
+                        listState = scrollStates.list,
                         currentSongId = currentSong?.id,
                         recentlyAddedSongIds = recentlyAddedSongIds,
                         favoriteMembershipKeys = favoriteMembershipKeys,
@@ -310,6 +319,7 @@ fun FavoritesTabContent(
                 gridContent = {
                     SongGrid(
                         songs = displayedSongs,
+                        gridState = scrollStates.grid,
                         currentSongId = currentSong?.id,
                         gridColumnCount = gridColumnCount,
                         recentlyAddedSongIds = recentlyAddedSongIds,
@@ -360,6 +370,7 @@ fun ArtistsTabContent(
         songs = songs,
         searchQuery = searchQuery
     )
+    val scrollStates = rememberLibrarySortScrollStates(sortState)
 
     if (songs.isEmpty()) {
         Text(
@@ -400,6 +411,7 @@ fun ArtistsTabContent(
                         songs = artistSearchSongs,
                         onArtistClick = onArtistSelected,
                         sortState = sortState,
+                        listState = scrollStates.list,
                         onArtistPlayClick = onArtistPlay,
                         onArtistShuffleClick = onArtistShuffle,
                         onArtistPlayNextClick = onArtistPlayNext,
@@ -414,6 +426,7 @@ fun ArtistsTabContent(
                         songs = artistSearchSongs,
                         onArtistClick = onArtistSelected,
                         sortState = sortState,
+                        gridState = scrollStates.grid,
                         gridColumnCount = gridColumnCount,
                         onArtistPlayClick = onArtistPlay,
                         onArtistShuffleClick = onArtistShuffle,
@@ -508,6 +521,7 @@ fun AlbumsTabContent(
         songs = songs,
         searchQuery = searchQuery
     )
+    val scrollStates = rememberLibrarySortScrollStates(sortState)
 
     if (songs.isEmpty()) {
         Text(
@@ -548,6 +562,7 @@ fun AlbumsTabContent(
                         songs = albumSearchSongs,
                         onAlbumClick = onAlbumSelected,
                         sortState = sortState,
+                        listState = scrollStates.list,
                         onAlbumPlayClick = onAlbumPlay,
                         onAlbumShuffleClick = onAlbumShuffle,
                         onAlbumPlayNextClick = onAlbumPlayNext,
@@ -562,6 +577,7 @@ fun AlbumsTabContent(
                         songs = albumSearchSongs,
                         onAlbumClick = onAlbumSelected,
                         sortState = sortState,
+                        gridState = scrollStates.grid,
                         gridColumnCount = gridColumnCount,
                         onAlbumPlayClick = onAlbumPlay,
                         onAlbumShuffleClick = onAlbumShuffle,
