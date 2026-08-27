@@ -77,6 +77,47 @@ class AudioMetadataTest {
     }
 
     @Test
+    fun `library enrichment keeps Smart Playlist metadata typed and distinct`() {
+        val enriched = song("Title", "Artist", "Album").withEmbeddedLibraryMetadata(
+            AudioMetadata(
+                date = "2026-03-14",
+                genres = listOf("Rock", "R&B / Soul"),
+                composers = listOf("Composer One", "Composer Two"),
+                publisher = "Label",
+                bpm = "128"
+            )
+        )
+
+        assertEquals(listOf("Rock", "R&B / Soul"), enriched.genres)
+        assertEquals(listOf("Composer One", "Composer Two"), enriched.composers)
+        assertEquals("Label", enriched.publisher)
+        assertEquals(128, enriched.bpm)
+        assertEquals(2026, enriched.year)
+        assertEquals(
+            CURRENT_EMBEDDED_METADATA_ENRICHMENT_VERSION,
+            enriched.embeddedMetadataEnrichmentVersion
+        )
+    }
+
+    @Test
+    fun `metadata year parsing uses one bounded four digit interpretation`() {
+        assertEquals(1994, parseMetadataYear("1994"))
+        assertEquals(2004, parseMetadataYear("2004-09-21"))
+        assertEquals(null, parseMetadataYear("unknown"))
+        assertEquals(null, parseMetadataYear("999"))
+        assertEquals(null, parseMetadataYear("3000"))
+    }
+
+    @Test
+    fun `metadata bpm parsing accepts only bounded whole positive values`() {
+        assertEquals(128, parseMetadataBpm(" 128 "))
+        assertEquals(null, parseMetadataBpm(null))
+        assertEquals(null, parseMetadataBpm("120.5"))
+        assertEquals(null, parseMetadataBpm("0"))
+        assertEquals(null, parseMetadataBpm("1000"))
+    }
+
+    @Test
     fun `writable extensions match formats backed by configured jaudiotagger writers`() {
         assertEquals(
             setOf("mp3", "flac", "m4a", "mp4", "ogg", "wav", "aif", "aiff"),

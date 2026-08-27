@@ -90,6 +90,7 @@ fun LibraryTab.viewCategory(): LibraryViewCategory? {
         LibraryTab.ALBUMS -> LibraryViewCategory.ALBUMS
         LibraryTab.ARTISTS -> LibraryViewCategory.ARTISTS
         LibraryTab.PLAYLISTS -> LibraryViewCategory.PLAYLISTS
+        LibraryTab.GENRES -> null
         else -> null
     }
 }

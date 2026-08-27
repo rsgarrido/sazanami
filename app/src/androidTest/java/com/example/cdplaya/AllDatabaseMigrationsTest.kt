@@ -19,7 +19,7 @@ class AllDatabaseMigrationsTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val migrations = allMigrations()
 
-        for (startVersion in 1..14) {
+        for (startVersion in 1..16) {
             val databaseName = "all-migrations-$startVersion-${System.nanoTime()}.db"
             val configuration = SupportSQLiteOpenHelper.Configuration.builder(context)
                 .name(databaseName)
@@ -57,11 +57,18 @@ class AllDatabaseMigrationsTest {
                     "PRAGMA table_info(cached_songs)"
                 ).use { cursor ->
                     val nameIndex = cursor.getColumnIndexOrThrow("name")
-                    var found = false
+                    val foundColumns = mutableSetOf<String>()
                     while (cursor.moveToNext()) {
-                        if (cursor.getString(nameIndex) == "year") found = true
+                        foundColumns += cursor.getString(nameIndex)
                     }
-                    found
+                    "year" in foundColumns &&
+                        "genresJson" in foundColumns &&
+                        "normalizedGenresJson" in foundColumns &&
+                        "composersJson" in foundColumns &&
+                        "composerText" in foundColumns &&
+                        "publisher" in foundColumns &&
+                        "bpm" in foundColumns &&
+                        "embeddedMetadataEnrichmentVersion" in foundColumns
                 })
             } finally {
                 database.close()
@@ -84,6 +91,8 @@ class AllDatabaseMigrationsTest {
         DatabaseProvider.MIGRATION_11_12,
         DatabaseProvider.MIGRATION_12_13,
         DatabaseProvider.MIGRATION_13_14,
-        DatabaseProvider.MIGRATION_14_15
+        DatabaseProvider.MIGRATION_14_15,
+        DatabaseProvider.MIGRATION_15_16,
+        DatabaseProvider.MIGRATION_16_17
     )
 }

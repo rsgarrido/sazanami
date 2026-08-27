@@ -23,6 +23,7 @@ import com.example.cdplaya.ui.equalizer.rememberEqualizerProfilePlatformActions
 import com.example.cdplaya.mediaaccess.MediaAccessState
 import com.example.cdplaya.mediaaccess.FolderArtworkAccessState
 import com.example.cdplaya.data.home.HomePin
+import com.example.cdplaya.data.buildGenreCollections
 import com.example.cdplaya.ui.home.HomePinReplacementDialog
 import com.example.cdplaya.ui.home.HomePinUiEnvironment
 import com.example.cdplaya.ui.home.LocalHomePinUi
@@ -177,6 +178,9 @@ internal fun MusicRoute(
             onSetDirectRating = musicViewModel::setSongRatingDirect
         ),
         LocalSmartPlaylistUi provides SmartPlaylistUiEnvironment(
+            availableGenres = remember(libraryUiState.songs) {
+                buildGenreCollections(libraryUiState.songs).map { it.name }
+            },
             onPreview = musicViewModel::previewSmartPlaylist,
             onCreate = musicViewModel::createSmartPlaylist,
             onUpdate = musicViewModel::updateSmartPlaylist,

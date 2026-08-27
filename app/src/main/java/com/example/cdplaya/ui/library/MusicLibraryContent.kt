@@ -25,15 +25,17 @@ fun MusicLibraryContent(
     selectedLibraryTab: LibraryTab,
     songs: List<Song>,
     searchQuery: String,
-    selectedSongSortOption: LibrarySortOption,
+    selectedSongFilterState: LibrarySongFilterState,
+    selectedSongSortState: LibrarySortState,
     selectedRatedFilter: RatedSongFilter,
-    selectedArtistSortOption: LibrarySortOption,
-    selectedAlbumSortOption: LibrarySortOption,
-    selectedFavoriteSortOption: LibrarySortOption,
+    selectedArtistSortState: LibrarySortState,
+    selectedAlbumSortState: LibrarySortState,
+    selectedFavoriteSortState: LibrarySortState,
     viewMode: LibraryViewMode,
     gridColumnCount: Int,
     selectedArtistName: String?,
     selectedAlbumFolderPath: String?,
+    selectedGenreKey: String?,
     selectedPlaylistId: Long?,
     playlists: List<Playlist>,
     playlistFolders: List<PlaylistFolder>,
@@ -59,6 +61,8 @@ fun MusicLibraryContent(
     onBackFromArtist: () -> Unit,
     onAlbumSelected: (String) -> Unit,
     onBackFromAlbum: () -> Unit,
+    onGenreSelected: (String) -> Unit,
+    onBackFromGenre: () -> Unit,
     onBackFromQueue: () -> Unit,
     onRemoveFromQueueClick: (Int) -> Unit,
     onMoveQueueItemUpClick: (Int) -> Unit,
@@ -84,6 +88,7 @@ fun MusicLibraryContent(
     onAddSongsToCurrentPlaylistClick: (Playlist, List<Song>) -> Unit,
     onEditAlbumMetadataClick: (LibraryAlbumGroup) -> Unit,
     onEditSongTagsClick: (Song) -> Unit,
+    onClearSongFilters: () -> Unit,
     recentlyPlayedSongs: List<Song>,
     recentlyAddedSongs: List<Song>,
     mostPlayedSongs: List<Song>,
@@ -96,7 +101,8 @@ fun MusicLibraryContent(
             SongsTabContent(
                 songs = songs,
                 searchQuery = searchQuery,
-                sortOption = selectedSongSortOption,
+                filterState = selectedSongFilterState,
+                sortState = selectedSongSortState,
                 currentSong = currentSong,
                 viewMode = viewMode,
                 gridColumnCount = gridColumnCount,
@@ -108,6 +114,7 @@ fun MusicLibraryContent(
                 onToggleFavoriteClick = onToggleFavoriteClick,
                 onAddToPlaylistClick = onAddToPlaylistClick,
                 onEditSongTagsClick = onEditSongTagsClick,
+                onClearFilters = onClearSongFilters,
                 ratingFeaturesEnabled = ratingFeaturesEnabled,
                 bottomContentPadding = bottomContentPadding,
                 modifier = modifier
@@ -118,7 +125,7 @@ fun MusicLibraryContent(
             RatedSongsTabContent(
                 songs = songs,
                 searchQuery = searchQuery,
-                sortOption = selectedSongSortOption,
+                sortState = selectedSongSortState,
                 selectedFilter = selectedRatedFilter,
                 currentSong = currentSong,
                 viewMode = viewMode,
@@ -142,7 +149,7 @@ fun MusicLibraryContent(
                 songs = songs,
                 searchQuery = searchQuery,
                 selectedArtistName = selectedArtistName,
-                sortOption = selectedArtistSortOption,
+                sortState = selectedArtistSortState,
                 currentSong = currentSong,
                 viewMode = viewMode,
                 gridColumnCount = gridColumnCount,
@@ -174,7 +181,7 @@ fun MusicLibraryContent(
                 currentSong = currentSong,
                 viewMode = viewMode,
                 gridColumnCount = gridColumnCount,
-                sortOption = selectedAlbumSortOption,
+                sortState = selectedAlbumSortState,
                 recentlyAddedSongIds = recentlyAddedSongIds,
                 onAlbumSelected = onAlbumSelected,
                 onBackFromAlbum = onBackFromAlbum,
@@ -195,12 +202,35 @@ fun MusicLibraryContent(
             )
         }
 
+        LibraryTab.GENRES -> {
+            GenresTabContent(
+                songs = songs,
+                searchQuery = searchQuery,
+                selectedGenreKey = selectedGenreKey,
+                currentSong = currentSong,
+                recentlyAddedSongIds = recentlyAddedSongIds,
+                favoriteMembershipKeys = favoriteMembershipKeys,
+                onGenreSelected = onGenreSelected,
+                onBackFromGenre = onBackFromGenre,
+                onSongClick = onSongClick,
+                onPlaySongsClick = onPlaySongsClick,
+                onPlayNextClick = onPlayNextClick,
+                onAddToQueueClick = onAddToQueueClick,
+                onToggleFavoriteClick = onToggleFavoriteClick,
+                onAddToPlaylistClick = onAddToPlaylistClick,
+                onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
+                onEditSongTagsClick = onEditSongTagsClick,
+                bottomContentPadding = bottomContentPadding,
+                modifier = modifier
+            )
+        }
+
         LibraryTab.FAVORITES -> {
             FavoritesTabContent(
                 songs = songs,
                 favoriteMembershipKeys = favoriteMembershipKeys,
                 searchQuery = searchQuery,
-                sortOption = selectedFavoriteSortOption,
+                sortState = selectedFavoriteSortState,
                 currentSong = currentSong,
                 viewMode = viewMode,
                 gridColumnCount = gridColumnCount,
@@ -305,8 +335,10 @@ fun MusicLibraryContent(
             )
             val displayedSongs = com.example.cdplaya.ui.sortSongsForLibrary(
                 searchedSongs,
-                selectedSongSortOption
+                selectedSongSortState.option,
+                selectedSongSortState.direction
             )
+            val scrollStates = rememberLibrarySortScrollStates(selectedSongSortState)
             if (displayedSongs.isEmpty()) {
                 EmptyHistoryMessage(
                     message = stringResource(R.string.recently_added_empty),
@@ -319,6 +351,7 @@ fun MusicLibraryContent(
                     listContent = {
                         SongList(
                             songs = displayedSongs,
+                            listState = scrollStates.list,
                             currentSongId = currentSong?.id,
                             recentlyAddedSongIds = recentlyAddedSongIds,
                             favoriteMembershipKeys = favoriteMembershipKeys,
@@ -335,6 +368,7 @@ fun MusicLibraryContent(
                     gridContent = {
                         SongGrid(
                             songs = displayedSongs,
+                            gridState = scrollStates.grid,
                             currentSongId = currentSong?.id,
                             gridColumnCount = gridColumnCount,
                             recentlyAddedSongIds = recentlyAddedSongIds,

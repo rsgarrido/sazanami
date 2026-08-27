@@ -129,3 +129,18 @@ internal fun AudioMetadataFormat.editorCapabilities(): MetadataFormatCapabilitie
 
     AudioMetadataFormat.UNKNOWN -> MetadataFormatCapabilities.NONE
 }
+
+fun parseMetadataYear(rawValue: String?): Int? {
+    val value = rawValue?.trim().orEmpty()
+    if (value.isBlank()) return null
+
+    val match = metadataYearPattern.find(value) ?: return null
+    return match.value.toIntOrNull()?.takeIf { year -> year in 1000..2999 }
+}
+
+fun parseMetadataBpm(rawValue: String?): Int? {
+    val value = rawValue?.trim().orEmpty()
+    return value.toIntOrNull()?.takeIf { bpm -> bpm in 1..999 }
+}
+
+private val metadataYearPattern = Regex("""(?<!\d)(?:1\d{3}|2\d{3})(?!\d)""")

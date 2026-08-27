@@ -3,6 +3,9 @@ package com.example.cdplaya.data
 import android.net.Uri
 import com.example.cdplaya.data.local.CachedSongDao
 import com.example.cdplaya.data.local.CachedSongEntity
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 class LibraryCacheRepository(
     private val cachedSongDao: CachedSongDao
@@ -46,6 +49,8 @@ class LibraryCacheRepository(
 }
 
 fun CachedSongEntity.toSong(): Song {
+    val decodedGenres = decodeCachedGenres(genresJson)
+    val decodedComposers = decodeCachedStringList(composersJson)
     return Song(
         id = mediaStoreId,
         title = title,
@@ -71,7 +76,16 @@ fun CachedSongEntity.toSong(): Song {
         dateAddedEpochSeconds = dateAddedEpochSeconds,
         dateModifiedEpochSeconds = dateModifiedEpochSeconds,
         year = year,
-        artworkEnrichmentVersion = artworkEnrichmentVersion
+        artworkEnrichmentVersion = artworkEnrichmentVersion,
+        genres = decodedGenres.orEmpty(),
+        composers = decodedComposers.orEmpty(),
+        publisher = publisher,
+        bpm = bpm,
+        embeddedMetadataEnrichmentVersion = if (decodedGenres != null && decodedComposers != null) {
+            embeddedMetadataEnrichmentVersion
+        } else {
+            0
+        }
     )
 }
 
@@ -96,6 +110,23 @@ fun Song.toCachedSongEntity(cachedAt: Long): CachedSongEntity {
         dateModifiedEpochSeconds = dateModifiedEpochSeconds,
         year = year,
         artworkEnrichmentVersion = artworkEnrichmentVersion,
+        genresJson = cachedSongJson.encodeToString(genres),
+        normalizedGenresJson = cachedSongJson.encodeToString(normalizedKnownGenreKeys(genres)),
+        composersJson = cachedSongJson.encodeToString(composers),
+        composerText = composers.joinToString("; ") { it.trim() }.trim(),
+        publisher = publisher.trim(),
+        bpm = bpm,
+        embeddedMetadataEnrichmentVersion = embeddedMetadataEnrichmentVersion,
         cachedAt = cachedAt
     )
 }
+
+private val cachedSongJson = Json { ignoreUnknownKeys = true }
+
+private fun decodeCachedGenres(encoded: String): List<String>? = runCatching {
+    cachedSongJson.decodeFromString<List<String>>(encoded)
+}.getOrNull()
+
+private fun decodeCachedStringList(encoded: String): List<String>? = runCatching {
+    cachedSongJson.decodeFromString<List<String>>(encoded)
+}.getOrNull()

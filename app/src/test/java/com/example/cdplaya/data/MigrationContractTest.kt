@@ -8,7 +8,7 @@ import org.junit.Test
 
 class MigrationContractTest {
     @Test
-    fun ratingsMilestoneKeepsRoomAndBackupVersionContracts() {
+    fun databaseAndBackupVersionContractsRemainExplicit() {
         assertEquals(9, DatabaseProvider.MIGRATION_9_10.startVersion)
         assertEquals(10, DatabaseProvider.MIGRATION_9_10.endVersion)
         assertEquals(10, DatabaseProvider.MIGRATION_10_11.startVersion)
@@ -21,6 +21,10 @@ class MigrationContractTest {
         assertEquals(14, DatabaseProvider.MIGRATION_13_14.endVersion)
         assertEquals(14, DatabaseProvider.MIGRATION_14_15.startVersion)
         assertEquals(15, DatabaseProvider.MIGRATION_14_15.endVersion)
+        assertEquals(15, DatabaseProvider.MIGRATION_15_16.startVersion)
+        assertEquals(16, DatabaseProvider.MIGRATION_15_16.endVersion)
+        assertEquals(16, DatabaseProvider.MIGRATION_16_17.startVersion)
+        assertEquals(17, DatabaseProvider.MIGRATION_16_17.endVersion)
         assertEquals(14, AppBackupJson.CURRENT_SCHEMA_VERSION)
         assertEquals(2, com.example.cdplaya.data.backup.BackupListeningHistoryV2.CURRENT_FORMAT_VERSION)
         assertEquals(1, BackupSongRatings.CURRENT_FORMAT_VERSION)

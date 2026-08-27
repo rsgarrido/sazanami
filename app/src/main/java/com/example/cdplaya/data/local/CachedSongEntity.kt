@@ -32,5 +32,12 @@ data class CachedSongEntity(
     val dateModifiedEpochSeconds: Long,
     val year: Int? = null,
     val artworkEnrichmentVersion: Int,
+    val genresJson: String = "[]",
+    val normalizedGenresJson: String = "[]",
+    val composersJson: String = "[]",
+    val composerText: String = "",
+    val publisher: String = "",
+    val bpm: Int? = null,
+    val embeddedMetadataEnrichmentVersion: Int = 0,
     val cachedAt: Long
 )

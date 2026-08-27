@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
@@ -65,7 +67,10 @@ fun SongList(
     showTrackNumbers: Boolean = false,
     bottomContentPadding: Dp = 0.dp,
     ratingValuesByReferenceKey: Map<String, Int> = emptyMap(),
-    quickRatingMode: Boolean = false
+    quickRatingMode: Boolean = false,
+    listState: LazyListState? = null,
+    headerContent: (@Composable () -> Unit)? = null,
+    emptyContent: (@Composable () -> Unit)? = null
 ) {
     var actionSheetTarget by remember {
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
@@ -73,11 +78,27 @@ fun SongList(
     val ratingUi = LocalSongRatingUi.current
     val homePinUi = LocalHomePinUi.current
     val rateSongLabel = stringResource(AppR.string.rate_song)
+    val rememberedListState = rememberLazyListState()
 
     LazyColumn(
+        state = listState ?: rememberedListState,
         modifier = modifier,
         contentPadding = PaddingValues(bottom = bottomContentPadding)
     ) {
+        headerContent?.let { content ->
+            item(key = "library-song-list-header") {
+                content()
+            }
+        }
+
+        if (songs.isEmpty()) {
+            emptyContent?.let { content ->
+                item(key = "library-song-list-empty") {
+                    content()
+                }
+            }
+        }
+
         items(
             items = songs,
             key = { song -> song.stableUiKey() }

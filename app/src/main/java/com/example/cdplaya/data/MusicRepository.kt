@@ -57,19 +57,24 @@ class MusicRepository(private val context: Context) {
                 cachedSongs = cachedSongs,
                 indexSongs = indexSongs,
                 requiresEnrichment = { cached, current ->
-                    val requiresRepair = cached.id in forceArtworkRefreshIds ||
+                    val requiresArtworkRepair = cached.id in forceArtworkRefreshIds ||
                             cached.requiresArtworkRepair(current) ||
                             embeddedArtworkResolver.requiresReconstruction(cached)
-                    if (requiresRepair) artworkRepairKeys += current.uri.toString()
-                    requiresRepair
+                    val requiresMetadataEnrichment = cached.embeddedMetadataEnrichmentVersion <
+                            CURRENT_EMBEDDED_METADATA_ENRICHMENT_VERSION
+                    if (requiresArtworkRepair) artworkRepairKeys += current.uri.toString()
+                    requiresArtworkRepair || requiresMetadataEnrichment
                 },
                 enrich = { indexSong ->
+                    val embeddedMetadata = embeddedMetadataReader
+                        .readOrNull(File(indexSong.filePath))
+                        ?.metadata
                     val embeddedStartedAt = SystemClock.elapsedRealtime()
                     val embeddedArtwork = embeddedArtworkResolver.resolve(indexSong)
                     embeddedArtworkExtractionMs +=
                         SystemClock.elapsedRealtime() - embeddedStartedAt
                     embeddedArtworkExtractionCount += 1
-                    indexSong.copy(
+                    indexSong.withEmbeddedLibraryMetadata(embeddedMetadata).copy(
                         albumArtUri = selectArtwork(
                             embedded = embeddedArtwork,
                             folder = folderArtworkResolver.resolve(indexSong)
@@ -250,6 +255,21 @@ class MusicRepository(private val context: Context) {
 
 }
 
+internal const val CURRENT_EMBEDDED_METADATA_ENRICHMENT_VERSION = 3
+
+internal fun Song.withEmbeddedLibraryMetadata(metadata: AudioMetadata?): Song = copy(
+    year = parseMetadataYear(metadata?.date) ?: year,
+    genres = metadata?.genres.orEmpty(),
+    composers = metadata?.composers.orEmpty(),
+    publisher = metadata?.publisher?.trim().orEmpty(),
+    bpm = parseMetadataBpm(metadata?.bpm),
+    embeddedMetadataEnrichmentVersion = if (metadata != null) {
+        CURRENT_EMBEDDED_METADATA_ENRICHMENT_VERSION
+    } else {
+        0
+    }
+)
+
 internal class MediaLibraryAccessException(cause: SecurityException) :
     RuntimeException("Media library permission is unavailable.", cause)
 
@@ -316,11 +336,6 @@ internal fun mergeWavEmbeddedMetadata(
             ?.trim()
             ?.toIntOrNull()
             ?: mediaStoreSong.trackNumber,
-        year = embeddedMetadata.date
-            ?.trim()
-            ?.take(4)
-            ?.toIntOrNull()
-            ?.takeIf { it in 1000..2999 }
-            ?: mediaStoreSong.year
+        year = parseMetadataYear(embeddedMetadata.date) ?: mediaStoreSong.year
     )
 }

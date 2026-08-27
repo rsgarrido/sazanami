@@ -48,24 +48,86 @@ class LibraryCollectionModelTest {
 
         val allOptions = librarySortOptionsFor(LibraryTab.SONGS)
         val ratedOptions = librarySortOptionsFor(LibraryTab.RATED)
-        assertFalse(LibrarySortOption.RATING_HIGH_TO_LOW in allOptions)
-        assertFalse(LibrarySortOption.RATING_LOW_TO_HIGH in allOptions)
-        assertTrue(LibrarySortOption.RATING_HIGH_TO_LOW in ratedOptions)
-        assertTrue(LibrarySortOption.RATING_LOW_TO_HIGH in ratedOptions)
+        val favoriteOptions = librarySortOptionsFor(LibraryTab.FAVORITES)
+        assertFalse(LibrarySortOption.RATING in allOptions)
+        assertTrue(LibrarySortOption.RATING in ratedOptions)
+        assertFalse(LibrarySortOption.DATE_ADDED in allOptions)
+        assertTrue(LibrarySortOption.YEAR in allOptions)
+        assertFalse(LibrarySortOption.DATE_ADDED in ratedOptions)
+        assertFalse(LibrarySortOption.YEAR in ratedOptions)
+        assertFalse(LibrarySortOption.DATE_ADDED in favoriteOptions)
         assertEquals(
-            listOf(
-                LibrarySortOption.DATE_ADDED_NEWEST,
-                LibrarySortOption.DATE_ADDED_OLDEST
-            ),
+            listOf(LibrarySortOption.DATE_ADDED),
             librarySortOptionsFor(LibraryTab.RECENTLY_ADDED)
         )
         assertEquals(
-            "Newest first",
-            LibrarySortOption.DATE_ADDED_NEWEST.displayTitleFor(LibraryTab.RECENTLY_ADDED)
+            "Date added",
+            LibrarySortOption.DATE_ADDED.displayTitleFor(LibraryTab.RECENTLY_ADDED)
+        )
+    }
+
+    @Test
+    fun genresAreAPrimaryListOnlyCategoryWithoutSortControls() {
+        assertEquals(
+            listOf(
+                LibraryTab.SONGS,
+                LibraryTab.ALBUMS,
+                LibraryTab.ARTISTS,
+                LibraryTab.PLAYLISTS,
+                LibraryTab.GENRES
+            ),
+            primaryLibraryTabs
+        )
+        assertEquals(LibraryTab.GENRES, LibraryTab.GENRES.primaryBrowseTab())
+        assertEquals(null, LibraryTab.GENRES.viewCategory())
+        assertTrue(librarySortOptionsFor(LibraryTab.GENRES).isEmpty())
+    }
+
+    @Test
+    fun sortChangeResetTrackerSkipsInitialAndRestoredStateButDetectsRealChanges() {
+        val initial = LibrarySortState(
+            LibrarySortOption.TITLE,
+            LibrarySortDirection.ASCENDING
+        )
+        val tracker = SortChangeResetTracker(initial)
+
+        assertFalse(tracker.shouldReset(initial))
+        assertTrue(
+            tracker.shouldReset(initial.copy(direction = LibrarySortDirection.DESCENDING))
+        )
+        assertTrue(
+            tracker.shouldReset(
+                LibrarySortState(
+                    LibrarySortOption.ARTIST,
+                    LibrarySortDirection.DESCENDING
+                )
+            )
+        )
+
+        val restoredState = LibrarySortState(
+            LibrarySortOption.ARTIST,
+            LibrarySortDirection.DESCENDING
+        )
+        assertFalse(SortChangeResetTracker(restoredState).shouldReset(restoredState))
+    }
+
+    @Test
+    fun changingDirectionDoesNotChangeTheSelectedSortField() {
+        val titleAscending = LibrarySortState(
+            option = LibrarySortOption.TITLE,
+            direction = LibrarySortDirection.ASCENDING
+        )
+
+        assertEquals(
+            LibrarySortState(
+                option = LibrarySortOption.TITLE,
+                direction = LibrarySortDirection.DESCENDING
+            ),
+            titleAscending.toggleDirection()
         )
         assertEquals(
-            "Oldest first",
-            LibrarySortOption.DATE_ADDED_OLDEST.displayTitleFor(LibraryTab.RECENTLY_ADDED)
+            LibrarySortDirection.ASCENDING,
+            titleAscending.select(LibrarySortOption.ARTIST).direction
         )
     }
 

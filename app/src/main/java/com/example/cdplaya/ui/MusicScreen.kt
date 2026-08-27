@@ -43,12 +43,12 @@ import com.example.cdplaya.data.Playlist
 import com.example.cdplaya.data.PlaylistFolder
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.TagEditorResult
+import com.example.cdplaya.data.buildGenreCollections
 import com.example.cdplaya.player.RepeatMode
 import com.example.cdplaya.player.audio.AudioOffloadPreference
 import com.example.cdplaya.player.audio.AudioOutputUiState
 import com.example.cdplaya.player.replaygain.ReplayGainMode
 import com.example.cdplaya.player.PlaybackShuffleMode
-import com.example.cdplaya.ui.library.LibrarySortOption
 import com.example.cdplaya.ui.library.LibraryTab
 import com.example.cdplaya.ui.library.LibraryAlbumGroup
 import com.example.cdplaya.ui.library.isAlbumGroupAvailable
@@ -281,12 +281,14 @@ internal fun MusicScreen(
     var playbackLaunchContext by navigationState.playbackLaunchContext
     var selectedArtistName by navigationState.selectedArtistName
     var selectedAlbumFolderPath by navigationState.selectedAlbumFolderPath
+    var selectedGenreKey by navigationState.selectedGenreKey
     var selectedPlaylistId by navigationState.selectedPlaylistId
     var searchQuery by navigationState.searchQuery
-    var selectedSongSortOption by navigationState.selectedSongSortOption
-    var selectedArtistSortOption by navigationState.selectedArtistSortOption
-    var selectedAlbumSortOption by navigationState.selectedAlbumSortOption
-    var selectedFavoriteSortOption by navigationState.selectedFavoriteSortOption
+    var selectedSongFilterState by navigationState.selectedSongFilterState
+    var selectedSongSortState by navigationState.selectedSongSortState
+    var selectedArtistSortState by navigationState.selectedArtistSortState
+    var selectedAlbumSortState by navigationState.selectedAlbumSortState
+    var selectedFavoriteSortState by navigationState.selectedFavoriteSortState
 
     val overlayState = rememberMusicOverlayState()
     val settingsScrollState = rememberScrollState()
@@ -494,6 +496,7 @@ internal fun MusicScreen(
             selectedLibraryTab = selectedLibraryTab,
             selectedAlbumFolderPath = selectedAlbumFolderPath,
             selectedArtistName = selectedArtistName,
+            selectedGenreKey = selectedGenreKey,
             selectedPlaylistId = selectedPlaylistId,
             searchQuery = searchQuery
         )
@@ -513,12 +516,16 @@ internal fun MusicScreen(
             artistNames = songs.mapTo(mutableSetOf()) { song ->
                 song.artist.ifBlank { "Unknown Artist" }
             },
+            genreKeys = buildGenreCollections(songs).mapTo(mutableSetOf()) { genre ->
+                genre.key
+            },
             playlistIds = playlists.mapTo(mutableSetOf()) { playlist -> playlist.playlistId }
         )
 
         lyricsTransitionState.snapToExpanded()
         selectedArtistName = null
         selectedAlbumFolderPath = null
+        selectedGenreKey = null
         clearPlaylistSelection()
 
         when (validContext) {
@@ -542,6 +549,13 @@ internal fun MusicScreen(
             is PlaybackLaunchContext.ArtistDetail -> {
                 selectedLibraryTab = LibraryTab.ARTISTS
                 selectedArtistName = validContext.artistName
+                searchQuery = ""
+                mainDestination = MainDestination.LIBRARY
+            }
+
+            is PlaybackLaunchContext.GenreDetail -> {
+                selectedLibraryTab = LibraryTab.GENRES
+                selectedGenreKey = validContext.genreKey
                 searchQuery = ""
                 mainDestination = MainDestination.LIBRARY
             }
@@ -581,6 +595,7 @@ internal fun MusicScreen(
                 isSettingsScreenVisible ||
                 selectedArtistName != null ||
                 selectedAlbumFolderPath != null ||
+                selectedGenreKey != null ||
                 selectedPlaylistId != null ||
                 mainDestination != MainDestination.HOME
     ) {
@@ -662,6 +677,10 @@ internal fun MusicScreen(
 
             selectedArtistName != null -> {
                 selectedArtistName = null
+            }
+
+            selectedGenreKey != null -> {
+                selectedGenreKey = null
             }
 
             selectedPlaylistId != null -> {
@@ -980,12 +999,14 @@ internal fun MusicScreen(
                     selectedLibraryTab = selectedLibraryTab,
                     selectedArtistName = selectedArtistName,
                     selectedAlbumFolderPath = selectedAlbumFolderPath,
+                    selectedGenreKey = selectedGenreKey,
                     selectedPlaylistId = selectedPlaylistId,
                     searchQuery = searchQuery,
-                    selectedSongSortOption = selectedSongSortOption,
-                    selectedArtistSortOption = selectedArtistSortOption,
-                    selectedAlbumSortOption = selectedAlbumSortOption,
-                    selectedFavoriteSortOption = selectedFavoriteSortOption,
+                    selectedSongFilterState = selectedSongFilterState,
+                    selectedSongSortState = selectedSongSortState,
+                    selectedArtistSortState = selectedArtistSortState,
+                    selectedAlbumSortState = selectedAlbumSortState,
+                    selectedFavoriteSortState = selectedFavoriteSortState,
                     recentlyAddedSongIds = recentlyAddedSongIds,
                     isPlayerExpanded = isPlayerExpanded,
                     isFolderScreenVisible = isFolderScreenVisible,
@@ -1036,6 +1057,7 @@ internal fun MusicScreen(
                         selectedLibraryTab = tab
                         selectedArtistName = null
                         selectedAlbumFolderPath = null
+                        selectedGenreKey = null
                         clearPlaylistSelection()
                         searchQuery = ""
                         mainDestination = MainDestination.LIBRARY
@@ -1087,17 +1109,20 @@ internal fun MusicScreen(
                     onSearchQueryChange = { query ->
                         searchQuery = query
                     },
-                    onSongSortOptionSelected = { option ->
-                        selectedSongSortOption = option
+                    onSongFilterStateChanged = { state ->
+                        selectedSongFilterState = state
                     },
-                    onArtistSortOptionSelected = { option ->
-                        selectedArtistSortOption = option
+                    onSongSortStateChanged = { state ->
+                        selectedSongSortState = state
                     },
-                    onAlbumSortOptionSelected = { option ->
-                        selectedAlbumSortOption = option
+                    onArtistSortStateChanged = { state ->
+                        selectedArtistSortState = state
                     },
-                    onFavoriteSortOptionSelected = { option ->
-                        selectedFavoriteSortOption = option
+                    onAlbumSortStateChanged = { state ->
+                        selectedAlbumSortState = state
+                    },
+                    onFavoriteSortStateChanged = { state ->
+                        selectedFavoriteSortState = state
                     },
                     onExpandPlayerClick = {
                         playerMorphState.expand()
@@ -1106,6 +1131,7 @@ internal fun MusicScreen(
                         selectedLibraryTab = LibraryTab.QUEUE
                         selectedArtistName = null
                         selectedAlbumFolderPath = null
+                        selectedGenreKey = null
                         clearPlaylistSelection()
                         mainDestination = MainDestination.LIBRARY
                     },
@@ -1145,6 +1171,12 @@ internal fun MusicScreen(
                         if (selectedArtistName != null) {
                             selectedLibraryTab = LibraryTab.ARTISTS
                         }
+                    },
+                    onGenreSelected = { genreKey ->
+                        selectedGenreKey = genreKey
+                    },
+                    onBackFromGenre = {
+                        selectedGenreKey = null
                     },
                     onBackFromQueue = {
                         selectedLibraryTab = LibraryTab.SONGS
@@ -1320,6 +1352,7 @@ internal fun MusicScreen(
                     onDestinationSelected = { destination ->
                         selectedArtistName = null
                         selectedAlbumFolderPath = null
+                        selectedGenreKey = null
                         clearPlaylistSelection()
                         if (destination == MainDestination.SEARCH) {
                             selectedLibraryTab = LibraryTab.SONGS

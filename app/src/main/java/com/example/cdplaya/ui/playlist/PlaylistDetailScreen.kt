@@ -70,6 +70,8 @@ import com.example.cdplaya.ui.library.LibraryDetailTopBar
 import com.example.cdplaya.ui.library.LibraryItemAction
 import com.example.cdplaya.ui.library.LibraryItemActionSheet
 import com.example.cdplaya.ui.library.LibraryItemActionSheetTarget
+import com.example.cdplaya.ui.library.LibrarySortDirection
+import com.example.cdplaya.ui.library.ResetLazyListOnSortChange
 
 @Composable
 fun PlaylistDetailScreen(
@@ -118,11 +120,12 @@ fun PlaylistDetailScreen(
         mutableStateOf(PlaylistSongSortField.CUSTOM.name)
     }
     var sortDirectionName by rememberSaveable(playlist.playlistId) {
-        mutableStateOf(PlaylistSongSortDirection.ASCENDING.name)
+        mutableStateOf(LibrarySortDirection.ASCENDING.name)
     }
     val sortField = PlaylistSongSortField.valueOf(sortFieldName)
-    val sortDirection = PlaylistSongSortDirection.valueOf(sortDirectionName)
+    val sortDirection = LibrarySortDirection.valueOf(sortDirectionName)
     val listState = rememberLazyListState()
+    ResetLazyListOnSortChange(sortField to sortDirection, listState)
     val showCompactTitle by remember {
         derivedStateOf { listState.firstVisibleItemIndex > 0 }
     }
@@ -419,7 +422,7 @@ private fun PlaylistDetailHero(
     playlist: Playlist,
     hasSongs: Boolean,
     sortField: PlaylistSongSortField,
-    sortDirection: PlaylistSongSortDirection,
+    sortDirection: LibrarySortDirection,
     onSortFieldSelected: (PlaylistSongSortField) -> Unit,
     onSortDirectionToggle: () -> Unit,
     onPlayClick: () -> Unit,
@@ -535,28 +538,38 @@ private fun PlaylistDetailHero(
                             }
                         )
                     }
-                }
-            }
-            if (sortField != PlaylistSongSortField.CUSTOM) {
-                IconButton(onClick = onSortDirectionToggle) {
-                    Icon(
-                        imageVector = if (
-                            sortDirection == PlaylistSongSortDirection.ASCENDING
+                    if (sortField != PlaylistSongSortField.CUSTOM) {
+                        HorizontalDivider()
+
+                        val directionTitle = if (
+                            sortDirection == LibrarySortDirection.ASCENDING
                         ) {
-                            Icons.Filled.ArrowUpward
+                            "Ascending"
                         } else {
-                            Icons.Filled.ArrowDownward
-                        },
-                        contentDescription = if (
-                            sortDirection == PlaylistSongSortDirection.ASCENDING
-                        ) {
-                            "Sort ascending"
-                        } else {
-                            "Sort descending"
-                        },
-                        tint = AppShellAccent,
-                        modifier = Modifier.size(20.dp)
-                    )
+                            "Descending"
+                        }
+                        DropdownMenuItem(
+                            text = { Text(directionTitle) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = if (
+                                        sortDirection == LibrarySortDirection.ASCENDING
+                                    ) {
+                                        Icons.Filled.ArrowUpward
+                                    } else {
+                                        Icons.Filled.ArrowDownward
+                                    },
+                                    contentDescription =
+                                        "$directionTitle playlist song sort direction",
+                                    tint = AppShellAccent
+                                )
+                            },
+                            onClick = {
+                                onSortDirectionToggle()
+                                sortMenuExpanded = false
+                            }
+                        )
+                    }
                 }
             }
         }

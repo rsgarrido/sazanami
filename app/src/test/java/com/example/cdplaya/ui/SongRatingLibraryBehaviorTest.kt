@@ -5,6 +5,7 @@ import com.example.cdplaya.ui.library.SongRatingFilter
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.membershipKey
 import com.example.cdplaya.ui.library.LibrarySortOption
+import com.example.cdplaya.ui.library.LibrarySortDirection
 import com.example.cdplaya.ui.library.RatedSongFilter
 import com.example.cdplaya.ui.library.filterSongsForRatedCollection
 import com.example.cdplaya.ui.library.normalizeRatedSongFilterForQuickRateMode
@@ -36,7 +37,8 @@ class SongRatingLibraryBehaviorTest {
 
         val sorted = sortSongsForLibrary(
             source,
-            LibrarySortOption.RATING_HIGH_TO_LOW,
+            LibrarySortOption.RATING,
+            LibrarySortDirection.DESCENDING,
             ratings
         )
 
@@ -63,7 +65,8 @@ class SongRatingLibraryBehaviorTest {
 
         val sorted = sortSongsForLibrary(
             listOf(unrated, high, low, middle),
-            LibrarySortOption.RATING_LOW_TO_HIGH,
+            LibrarySortOption.RATING,
+            LibrarySortDirection.ASCENDING,
             ratings
         )
 
@@ -439,7 +442,8 @@ class SongRatingLibraryBehaviorTest {
             listOf(alpha),
             sortSongsForLibrary(
                 initiallyFiltered,
-                LibrarySortOption.RATING_HIGH_TO_LOW,
+                LibrarySortOption.RATING,
+                LibrarySortDirection.DESCENDING,
                 initialRatings
             )
         )

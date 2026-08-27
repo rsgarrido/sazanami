@@ -14,9 +14,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -24,6 +26,8 @@ import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
@@ -39,6 +43,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -69,6 +74,11 @@ import com.example.cdplaya.ui.library.LibraryItemActionSheet
 import com.example.cdplaya.ui.library.LibraryItemActionSheetTarget
 import com.example.cdplaya.ui.library.libraryItemActions
 import com.example.cdplaya.ui.library.LibraryViewMode
+import com.example.cdplaya.ui.library.LibrarySortDirection
+import com.example.cdplaya.ui.library.ResetLazyGridOnSortChange
+import com.example.cdplaya.ui.library.ResetLazyListOnSortChange
+import com.example.cdplaya.ui.library.compareKnownPositiveLong
+import com.example.cdplaya.ui.library.compareLibraryText
 
 internal object PlaylistGridLayout {
     val minimumTileWidth = 148.dp
@@ -110,13 +120,25 @@ fun PlaylistListScreen(
     var actionSheetTarget by remember { mutableStateOf<LibraryItemActionSheetTarget?>(null) }
     var sortMenuExpanded by remember { mutableStateOf(false) }
     var overflowExpanded by remember { mutableStateOf(false) }
-    var sortOptionName by rememberSaveable {
-        mutableStateOf(PlaylistSortOption.RECENTLY_MODIFIED.name)
+    var sortFieldName by rememberSaveable {
+        mutableStateOf(PlaylistSortField.MODIFIED.name)
     }
-    val sortOption = PlaylistSortOption.valueOf(sortOptionName)
+    var sortDirectionName by rememberSaveable {
+        mutableStateOf(LibrarySortDirection.DESCENDING.name)
+    }
+    val sortField = PlaylistSortField.valueOf(sortFieldName)
+    val sortDirection = LibrarySortDirection.valueOf(sortDirectionName)
+    val sortKey = sortField to sortDirection
+    val listState = rememberLazyListState()
+    val gridState = rememberLazyGridState()
+    ResetLazyListOnSortChange(sortKey, listState)
+    ResetLazyGridOnSortChange(sortKey, gridState)
     val currentFolder = folders.firstOrNull { it.folderId == selectedFolderId }
-    val visiblePlaylists = remember(playlists, selectedFolderId, sortOption) {
-        playlists.filter { it.folderId == selectedFolderId }.sortedWith(sortOption.comparator)
+    val visiblePlaylists = remember(playlists, selectedFolderId, sortField, sortDirection) {
+        sortField.sort(
+            playlists.filter { it.folderId == selectedFolderId },
+            sortDirection
+        )
     }
 
     LaunchedEffect(selectedFolderId, currentFolder) {
@@ -230,25 +252,55 @@ fun PlaylistListScreen(
                 IconButton(onClick = { sortMenuExpanded = true }) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.Sort,
-                        contentDescription = "Sort playlists: ${sortOption.label}",
+                        contentDescription = "Sort playlists by ${sortField.label}",
                         tint = AppShellAccent
                     )
                 }
                 DropdownMenu(sortMenuExpanded, { sortMenuExpanded = false }) {
-                    PlaylistSortOption.entries.forEach { option ->
+                    PlaylistSortField.entries.forEach { field ->
                         DropdownMenuItem(
-                            text = { Text(option.label) },
+                            text = { Text(field.label) },
                             leadingIcon = {
-                                if (option == sortOption) {
+                                if (field == sortField) {
                                     Icon(Icons.Filled.Check, contentDescription = "Selected")
                                 }
                             },
                             onClick = {
-                                sortOptionName = option.name
+                                sortFieldName = field.name
                                 sortMenuExpanded = false
                             }
                         )
                     }
+
+                    HorizontalDivider()
+
+                    val directionTitle = if (
+                        sortDirection == LibrarySortDirection.ASCENDING
+                    ) {
+                        "Ascending"
+                    } else {
+                        "Descending"
+                    }
+                    DropdownMenuItem(
+                        text = { Text(directionTitle) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = if (
+                                    sortDirection == LibrarySortDirection.ASCENDING
+                                ) {
+                                    Icons.Filled.ArrowUpward
+                                } else {
+                                    Icons.Filled.ArrowDownward
+                                },
+                                contentDescription = "$directionTitle playlist sort direction",
+                                tint = AppShellAccent
+                            )
+                        },
+                        onClick = {
+                            sortDirectionName = sortDirection.toggled().name
+                            sortMenuExpanded = false
+                        }
+                    )
                 }
             }
 
@@ -293,6 +345,7 @@ fun PlaylistListScreen(
             PlaylistCollectionEmptyState(inFolder = currentFolder != null)
         } else if (viewMode == LibraryViewMode.LIST) {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(bottom = bottomContentPadding + 8.dp)
             ) {
@@ -321,6 +374,7 @@ fun PlaylistListScreen(
             }
         } else {
             LazyVerticalGrid(
+                state = gridState,
                 columns = GridCells.Adaptive(PlaylistGridLayout.minimumTileWidth),
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(
@@ -740,24 +794,23 @@ internal fun compactRelativeUpdatedText(timestamp: Long, now: Long = System.curr
     }
 }
 
-private enum class PlaylistSortOption(
-    val label: String,
-    val comparator: Comparator<Playlist>
+internal enum class PlaylistSortField(
+    val label: String
 ) {
-    NAME_ASCENDING(
-        "Name (A–Z)",
-        compareBy<Playlist> { it.name.lowercase() }.thenBy(Playlist::playlistId)
-    ),
-    NAME_DESCENDING(
-        "Name (Z–A)",
-        compareByDescending<Playlist> { it.name.lowercase() }.thenBy(Playlist::playlistId)
-    ),
-    RECENTLY_CREATED(
-        "Recently created",
-        compareByDescending<Playlist> { it.createdAt }.thenByDescending(Playlist::playlistId)
-    ),
-    RECENTLY_MODIFIED(
-        "Recently modified",
-        compareByDescending<Playlist> { it.modifiedAt }.thenByDescending(Playlist::playlistId)
-    )
+    NAME("Name"),
+    CREATED("Created"),
+    MODIFIED("Modified");
+
+    fun sort(
+        playlists: List<Playlist>,
+        direction: LibrarySortDirection
+    ): List<Playlist> = playlists.sortedWith { left, right ->
+        val fieldComparison = when (this) {
+            NAME -> compareLibraryText(left.name, right.name, direction)
+            CREATED -> compareKnownPositiveLong(left.createdAt, right.createdAt, direction)
+            MODIFIED -> compareKnownPositiveLong(left.modifiedAt, right.modifiedAt, direction)
+        }
+        fieldComparison.takeUnless { it == 0 }
+            ?: left.playlistId.compareTo(right.playlistId)
+    }
 }

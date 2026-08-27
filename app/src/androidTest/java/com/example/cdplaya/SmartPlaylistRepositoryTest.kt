@@ -130,6 +130,115 @@ class SmartPlaylistRepositoryTest {
     }
 
     @Test
+    fun metadataRulesHandleGenresNumbersTextAndMissingValues() = runBlocking {
+        seedSong(
+            4L, "Delta", "Four", "Fourth", 2004, 180_000L, null, 0,
+            genresJson = "[\" Rock \",\"Punk\",\"R&B / Soul\"]",
+            normalizedGenresJson = "[\"rock\",\"punk\",\"r&b / soul\"]",
+            composersJson = "[\"Quincy Jones\",\"Rod Temperton\"]",
+            composerText = "Quincy Jones; Rod Temperton",
+            publisher = "Blue Note",
+            bpm = 165
+        )
+        seedSong(
+            5L, "Epsilon", "Five", "Fifth", null, 180_000L, null, 0,
+            genresJson = "[\"rock\"]",
+            normalizedGenresJson = "[\"rock\"]",
+            bpm = null
+        )
+        val repository = SmartPlaylistRepository(database) { now }
+        suspend fun titles(field: String, operator: String, vararg values: String) =
+            repository.previewMatchingSongs(SmartPlaylistDraft(
+                rules = listOf(SmartPlaylistRule(field, operator, values.toList())),
+                sortField = SmartPlaylistSortField.TITLE
+            )).songs.map { it.title }
+
+        assertEquals(listOf("Delta", "Epsilon"), titles(
+            SmartPlaylistRuleField.GENRE, SmartPlaylistOperator.IS, "  ROCK "
+        ))
+        assertEquals(listOf("Alpha", "Beta", "Gamma"), titles(
+            SmartPlaylistRuleField.GENRE, SmartPlaylistOperator.IS_NOT, "rock"
+        ))
+        assertEquals(listOf("Delta"), titles(
+            SmartPlaylistRuleField.GENRE, SmartPlaylistOperator.CONTAINS, "un"
+        ))
+        assertEquals(listOf("Delta"), titles(
+            SmartPlaylistRuleField.GENRE, SmartPlaylistOperator.IS, "R&B / SOUL"
+        ))
+        assertEquals(listOf("Alpha", "Beta", "Gamma"), titles(
+            SmartPlaylistRuleField.GENRE, SmartPlaylistOperator.IS, "Unknown Genre"
+        ))
+        assertEquals(listOf("Delta"), titles(
+            SmartPlaylistRuleField.YEAR, SmartPlaylistOperator.EQUALS, "2004"
+        ))
+        assertEquals(listOf("Alpha", "Delta"), titles(
+            SmartPlaylistRuleField.YEAR, SmartPlaylistOperator.BEFORE, "2021"
+        ))
+        assertEquals(listOf("Beta", "Gamma"), titles(
+            SmartPlaylistRuleField.YEAR, SmartPlaylistOperator.AFTER, "2020"
+        ))
+        assertEquals(listOf("Alpha", "Beta", "Gamma"), titles(
+            SmartPlaylistRuleField.YEAR, SmartPlaylistOperator.BETWEEN, "2020", "2021"
+        ))
+        assertEquals(listOf("Alpha", "Beta", "Gamma"), titles(
+            SmartPlaylistRuleField.YEAR, SmartPlaylistOperator.NOT_EQUALS, "2004"
+        ))
+        assertEquals(listOf("Delta"), titles(
+            SmartPlaylistRuleField.BPM, SmartPlaylistOperator.EQUALS, "165"
+        ))
+        assertEquals(listOf("Delta"), titles(
+            SmartPlaylistRuleField.BPM, SmartPlaylistOperator.GREATER_THAN, "150"
+        ))
+        assertEquals(listOf("Delta"), titles(
+            SmartPlaylistRuleField.BPM, SmartPlaylistOperator.BETWEEN, "160", "170"
+        ))
+        assertEquals(listOf("Delta"), titles(
+            SmartPlaylistRuleField.BPM, SmartPlaylistOperator.LESS_THAN, "170"
+        ))
+        assertEquals(listOf("Delta"), titles(
+            SmartPlaylistRuleField.BPM, SmartPlaylistOperator.NOT_EQUALS, "120"
+        ))
+        assertEquals(listOf("Delta"), titles(
+            SmartPlaylistRuleField.COMPOSER, SmartPlaylistOperator.CONTAINS, "jones"
+        ))
+        assertEquals(listOf("Delta"), titles(
+            SmartPlaylistRuleField.COMPOSER, SmartPlaylistOperator.IS, "rod temperton"
+        ))
+        assertEquals(listOf("Delta"), titles(
+            SmartPlaylistRuleField.PUBLISHER, SmartPlaylistOperator.IS, "blue note"
+        ))
+    }
+
+    @Test
+    fun cachedMetadataChangeInvalidatesLiveMembership() = runBlocking {
+        seedSong(
+            4L, "Delta", "Four", "Fourth", 2004, 180_000L, null, 0,
+            genresJson = "[\"Rock\"]",
+            normalizedGenresJson = "[\"rock\"]"
+        )
+        val repository = SmartPlaylistRepository(database) { now }
+        val definition = requireNotNull(repository.createSmartPlaylist(
+            "Rock",
+            SmartPlaylistDraft(rules = listOf(SmartPlaylistRule(
+                SmartPlaylistRuleField.GENRE,
+                SmartPlaylistOperator.IS,
+                listOf("Rock")
+            )))
+        ))
+        assertEquals(listOf("Delta"), repository.resolveFinalMembership(definition.playlistId)
+            .songs.map { it.title })
+
+        val cached = database.cachedSongDao().getAllCachedSongs().single { it.mediaStoreId == 4L }
+        database.cachedSongDao().insertCachedSongs(listOf(cached.copy(
+            genresJson = "[\"Punk\"]",
+            normalizedGenresJson = "[\"punk\"]"
+        )))
+
+        assertEquals(emptyList<String>(), repository.resolveFinalMembership(definition.playlistId)
+            .songs.map { it.title })
+    }
+
+    @Test
     fun recentPlayCountUsesQualifiedEventWindow() = runBlocking {
         seedQualifiedPlay(1L, now - 10L * 86_400_000L)
         seedQualifiedPlay(3L, now - 40L * 86_400_000L)
@@ -311,11 +420,17 @@ class SmartPlaylistRepositoryTest {
         title: String,
         artist: String,
         album: String,
-        year: Int,
+        year: Int?,
         duration: Long,
         rating: Int?,
         plays: Int,
-        folderPath: String = "/music"
+        folderPath: String = "/music",
+        genresJson: String = "[]",
+        normalizedGenresJson: String = "[]",
+        composersJson: String = "[]",
+        composerText: String = "",
+        publisher: String = "",
+        bpm: Int? = null
     ) {
         database.cachedSongDao().insertCachedSongs(listOf(CachedSongEntity(
             mediaStoreId = mediaStoreId,
@@ -337,6 +452,13 @@ class SmartPlaylistRepositoryTest {
             dateModifiedEpochSeconds = 1_700_000_000L,
             year = year,
             artworkEnrichmentVersion = 1,
+            genresJson = genresJson,
+            normalizedGenresJson = normalizedGenresJson,
+            composersJson = composersJson,
+            composerText = composerText,
+            publisher = publisher,
+            bpm = bpm,
+            embeddedMetadataEnrichmentVersion = 3,
             cachedAt = now
         )))
         val identityId = database.listeningTrackIdentityDao().insert(

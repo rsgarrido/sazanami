@@ -17,7 +17,7 @@ import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.membershipKey
 import com.example.cdplaya.ui.ratings.LocalSongRatingUi
 import com.example.cdplaya.ui.ratings.SongRatingUiEnvironment
-import com.example.cdplaya.ui.LibrarySortAction
+import com.example.cdplaya.ui.LibraryOrganizeAction
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -26,6 +26,103 @@ import org.junit.Test
 class SongsRatingIntegrationTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun organizeSheetReplacesSortDropdownAndKeepsSortFieldAndDirectionIndependent() {
+        val sortState = mutableStateOf(
+            LibrarySortState(
+                LibrarySortOption.TITLE,
+                LibrarySortDirection.ASCENDING
+            )
+        )
+        composeRule.setContent {
+            MaterialTheme {
+                LibraryOrganizeButton(
+                    songs = emptyList(),
+                    sortState = sortState.value,
+                    sortOptions = listOf(LibrarySortOption.TITLE, LibrarySortOption.ARTIST),
+                    onSortStateChanged = { state -> sortState.value = state }
+                )
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("Organize library").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Sort by Title").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Filter songs").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Organize library").performClick()
+        composeRule.onNodeWithText("Artist").assertIsDisplayed().performClick()
+        composeRule.runOnIdle {
+            assertEquals(LibrarySortOption.ARTIST, sortState.value.option)
+            assertEquals(LibrarySortDirection.ASCENDING, sortState.value.direction)
+        }
+        composeRule.onNodeWithText("Descending").assertIsDisplayed().performClick()
+        composeRule.runOnIdle {
+            assertEquals(LibrarySortOption.ARTIST, sortState.value.option)
+            assertEquals(LibrarySortDirection.DESCENDING, sortState.value.direction)
+        }
+    }
+
+    @Test
+    fun organizeSheetSelectsGenreAndYearAndClearsFiltersWithoutChangingSort() {
+        val sortState = mutableStateOf(
+            LibrarySortState(
+                LibrarySortOption.YEAR,
+                LibrarySortDirection.DESCENDING
+            )
+        )
+        val filterState = mutableStateOf(LibrarySongFilterState())
+        val songs = listOf(
+            song(1, "Punk song", genres = listOf("Punk"), year = 1994),
+            song(2, "Rock song", genres = listOf("Rock"), year = 2004)
+        )
+        composeRule.setContent {
+            MaterialTheme {
+                LibraryOrganizeButton(
+                    songs = songs,
+                    sortState = sortState.value,
+                    sortOptions = listOf(
+                        LibrarySortOption.TITLE,
+                        LibrarySortOption.ARTIST,
+                        LibrarySortOption.ALBUM,
+                        LibrarySortOption.YEAR
+                    ),
+                    onSortStateChanged = { state -> sortState.value = state },
+                    filterState = filterState.value,
+                    onFilterStateChanged = { state -> filterState.value = state }
+                )
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("Organize library").performClick()
+        composeRule.onNodeWithContentDescription(
+            "Filter by Genre, currently All genres"
+        ).performClick()
+        composeRule.onNodeWithText("Rock").assertIsDisplayed().performClick()
+        composeRule.runOnIdle {
+            assertEquals("known:rock", filterState.value.genre?.key)
+            assertEquals(LibrarySortOption.YEAR, sortState.value.option)
+            assertEquals(LibrarySortDirection.DESCENDING, sortState.value.direction)
+        }
+
+        composeRule.onNodeWithContentDescription(
+            "Filter by Year, currently All years"
+        ).performClick()
+        composeRule.onNodeWithText("2004").assertIsDisplayed().performClick()
+        composeRule.runOnIdle {
+            assertEquals(LibraryYearFilter.Exact(2004), filterState.value.year)
+            assertEquals(2, filterState.value.activeFilterCount)
+        }
+        composeRule.onNodeWithContentDescription(
+            "Organize library, 2 active filters"
+        ).assertExists()
+
+        composeRule.onNodeWithText("Clear filters").assertIsDisplayed().performClick()
+        composeRule.runOnIdle {
+            assertEquals(LibrarySongFilterState(), filterState.value)
+            assertEquals(LibrarySortOption.YEAR, sortState.value.option)
+            assertEquals(LibrarySortDirection.DESCENDING, sortState.value.direction)
+        }
+    }
 
     @Test
     fun quickRateActionIsOnlyVisibleInRatedCollection() {
@@ -39,22 +136,40 @@ class SongsRatingIntegrationTest {
                         onQuickRateModeChanged = { quickRateMode.value = it }
                     )
                 ) {
-                    LibrarySortAction(
+                    LibraryOrganizeAction(
+                        songs = emptyList(),
                         selectedLibraryTab = selectedTab.value,
                         selectedArtistName = null,
                         selectedAlbumFolderPath = null,
-                        selectedSongSortOption = if (selectedTab.value == LibraryTab.RATED) {
-                            LibrarySortOption.RATING_HIGH_TO_LOW
+                        selectedSongSortState = if (selectedTab.value == LibraryTab.RATED) {
+                            LibrarySortState(
+                                LibrarySortOption.RATING,
+                                LibrarySortDirection.DESCENDING
+                            )
                         } else {
-                            LibrarySortOption.TITLE
+                            LibrarySortState(
+                                LibrarySortOption.TITLE,
+                                LibrarySortDirection.ASCENDING
+                            )
                         },
-                        selectedArtistSortOption = LibrarySortOption.NAME,
-                        selectedAlbumSortOption = LibrarySortOption.TITLE,
-                        selectedFavoriteSortOption = LibrarySortOption.TITLE,
-                        onSongSortOptionSelected = {},
-                        onArtistSortOptionSelected = {},
-                        onAlbumSortOptionSelected = {},
-                        onFavoriteSortOptionSelected = {}
+                        selectedArtistSortState = LibrarySortState(
+                            LibrarySortOption.NAME,
+                            LibrarySortDirection.ASCENDING
+                        ),
+                        selectedAlbumSortState = LibrarySortState(
+                            LibrarySortOption.TITLE,
+                            LibrarySortDirection.ASCENDING
+                        ),
+                        selectedFavoriteSortState = LibrarySortState(
+                            LibrarySortOption.TITLE,
+                            LibrarySortDirection.ASCENDING
+                        ),
+                        selectedSongFilterState = LibrarySongFilterState(),
+                        onSongSortStateChanged = {},
+                        onArtistSortStateChanged = {},
+                        onAlbumSortStateChanged = {},
+                        onFavoriteSortStateChanged = {},
+                        onSongFilterStateChanged = {}
                     )
                 }
             }
@@ -114,7 +229,10 @@ class SongsRatingIntegrationTest {
                     RatedSongsTabContent(
                         songs = listOf(low, high, unrated),
                         searchQuery = "",
-                        sortOption = LibrarySortOption.RATING_HIGH_TO_LOW,
+                        sortState = LibrarySortState(
+                            LibrarySortOption.RATING,
+                            LibrarySortDirection.DESCENDING
+                        ),
                         currentSong = null,
                         viewMode = LibraryViewMode.LIST,
                         gridColumnCount = 2,
@@ -172,7 +290,10 @@ class SongsRatingIntegrationTest {
                     RatedSongsTabContent(
                         songs = listOf(five, four),
                         searchQuery = "",
-                        sortOption = LibrarySortOption.RATING_HIGH_TO_LOW,
+                        sortState = LibrarySortState(
+                            LibrarySortOption.RATING,
+                            LibrarySortDirection.DESCENDING
+                        ),
                         selectedFilter = RatedSongFilter.FOUR,
                         currentSong = null,
                         viewMode = viewMode.value,
@@ -216,7 +337,10 @@ class SongsRatingIntegrationTest {
                     SongsTabContent(
                         songs = listOf(song),
                         searchQuery = "Search",
-                        sortOption = LibrarySortOption.RATING_HIGH_TO_LOW,
+                        sortState = LibrarySortState(
+                            LibrarySortOption.RATING,
+                            LibrarySortDirection.DESCENDING
+                        ),
                         currentSong = null,
                         viewMode = LibraryViewMode.LIST,
                         gridColumnCount = 2,
@@ -237,7 +361,12 @@ class SongsRatingIntegrationTest {
         composeRule.onNodeWithContentDescription("Rated 5 out of 5").assertDoesNotExist()
     }
 
-    private fun song(id: Long, title: String) = Song(
+    private fun song(
+        id: Long,
+        title: String,
+        genres: List<String> = emptyList(),
+        year: Int? = null
+    ) = Song(
         id = id,
         title = title,
         artist = "Artist",
@@ -248,7 +377,9 @@ class SongsRatingIntegrationTest {
         filePath = "/music/$id.mp3",
         folderPath = "/music",
         albumArtUri = null,
-        displayName = "$id.mp3"
+        displayName = "$id.mp3",
+        genres = genres,
+        year = year
     )
 
 }

@@ -1,6 +1,7 @@
 package com.example.cdplaya.ui.library
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
@@ -28,7 +29,8 @@ import androidx.compose.ui.res.stringResource
 fun SongsTabContent(
     songs: List<Song>,
     searchQuery: String,
-    sortOption: LibrarySortOption,
+    filterState: LibrarySongFilterState = LibrarySongFilterState(),
+    sortState: LibrarySortState,
     currentSong: Song?,
     viewMode: LibraryViewMode,
     gridColumnCount: Int,
@@ -40,34 +42,52 @@ fun SongsTabContent(
     onToggleFavoriteClick: (Song) -> Unit,
     onAddToPlaylistClick: (Song) -> Unit,
     onEditSongTagsClick: (Song) -> Unit,
+    onClearFilters: () -> Unit = {},
     ratingFeaturesEnabled: Boolean = true,
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
-    val filteredSongs = remember(songs, searchQuery) {
+    val metadataFilteredSongs = remember(songs, filterState) {
+        filterSongsForLibraryMetadata(songs, filterState)
+    }
+    val filteredSongs = remember(metadataFilteredSongs, searchQuery) {
         filterSongsForSearch(
-            songs = songs,
+            songs = metadataFilteredSongs,
             searchQuery = searchQuery
         )
     }
 
-    val effectiveSortOption = sortOption.takeIf {
+    val effectiveSortOption = sortState.option.takeIf {
         it in librarySortOptionsFor(LibraryTab.SONGS, ratingFeaturesEnabled)
     } ?: LibrarySortOption.TITLE
     // The normal Songs collection stays visually and semantically uncluttered. Rating management
     // and rating-specific sorting belong to the Rated collection.
-    val displayedSongs = remember(filteredSongs, effectiveSortOption) {
+    val displayedSongs = remember(filteredSongs, effectiveSortOption, sortState.direction) {
         sortSongsForLibrary(
             songs = filteredSongs,
-            sortOption = effectiveSortOption
+            sortOption = effectiveSortOption,
+            sortDirection = sortState.direction
         )
     }
+    val scrollStates = rememberLibrarySortScrollStates(
+        LibrarySongsCollectionKey(sortState, filterState)
+    )
 
     if (songs.isEmpty()) {
         Text(
             text = "No songs found.",
             modifier = Modifier.padding(16.dp)
         )
+    } else if (metadataFilteredSongs.isEmpty() && filterState.isActive) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(text = "No songs match these filters.")
+            Button(onClick = onClearFilters) {
+                Text(text = "Clear filters")
+            }
+        }
     } else if (filteredSongs.isEmpty()) {
         Text(
             text = "No songs match your search.",
@@ -80,6 +100,7 @@ fun SongsTabContent(
             listContent = {
                 SongList(
                     songs = displayedSongs,
+                    listState = scrollStates.list,
                     currentSongId = currentSong?.id,
                     recentlyAddedSongIds = recentlyAddedSongIds,
                     onSongClick = onSongClick,
@@ -97,6 +118,7 @@ fun SongsTabContent(
             gridContent = {
                 SongGrid(
                     songs = displayedSongs,
+                    gridState = scrollStates.grid,
                     currentSongId = currentSong?.id,
                     gridColumnCount = gridColumnCount,
                     recentlyAddedSongIds = recentlyAddedSongIds,
@@ -119,7 +141,7 @@ fun SongsTabContent(
 fun RatedSongsTabContent(
     songs: List<Song>,
     searchQuery: String,
-    sortOption: LibrarySortOption,
+    sortState: LibrarySortState,
     selectedFilter: RatedSongFilter = RatedSongFilter.ALL,
     currentSong: Song?,
     viewMode: LibraryViewMode,
@@ -150,13 +172,20 @@ fun RatedSongsTabContent(
     val searchedSongs = remember(projectedSongs, searchQuery) {
         filterSongsForSearch(projectedSongs, searchQuery)
     }
-    val displayedSongs = remember(searchedSongs, sortOption, ratings) {
-        sortSongsForLibrary(searchedSongs, sortOption, ratings)
+    val displayedSongs = remember(searchedSongs, sortState, ratings) {
+        sortSongsForLibrary(
+            searchedSongs,
+            sortState.option,
+            sortState.direction,
+            ratings
+        )
     }
+    val scrollStates = rememberLibrarySortScrollStates(sortState)
 
     if (quickRateActive && displayedSongs.isNotEmpty()) {
         SongList(
             songs = displayedSongs,
+            listState = scrollStates.list,
             currentSongId = currentSong?.id,
             recentlyAddedSongIds = recentlyAddedSongIds,
             onSongClick = onSongClick,
@@ -187,6 +216,7 @@ fun RatedSongsTabContent(
             listContent = {
                 SongList(
                     songs = displayedSongs,
+                    listState = scrollStates.list,
                     currentSongId = currentSong?.id,
                     recentlyAddedSongIds = recentlyAddedSongIds,
                     onSongClick = onSongClick,
@@ -204,6 +234,7 @@ fun RatedSongsTabContent(
             gridContent = {
                 SongGrid(
                     songs = displayedSongs,
+                    gridState = scrollStates.grid,
                     currentSongId = currentSong?.id,
                     gridColumnCount = gridColumnCount,
                     recentlyAddedSongIds = recentlyAddedSongIds,
@@ -228,7 +259,7 @@ fun FavoritesTabContent(
     songs: List<Song>,
     favoriteMembershipKeys: Set<String>,
     searchQuery: String,
-    sortOption: LibrarySortOption,
+    sortState: LibrarySortState,
     currentSong: Song?,
     viewMode: LibraryViewMode,
     gridColumnCount: Int,
@@ -254,8 +285,10 @@ fun FavoritesTabContent(
 
     val displayedSongs = sortSongsForLibrary(
         songs = filteredSongs,
-        sortOption = sortOption
+        sortOption = sortState.option,
+        sortDirection = sortState.direction
     )
+    val scrollStates = rememberLibrarySortScrollStates(sortState)
 
     if (favoriteSongs.isEmpty()) {
         Text(
@@ -287,6 +320,7 @@ fun FavoritesTabContent(
                 listContent = {
                     SongList(
                         songs = displayedSongs,
+                        listState = scrollStates.list,
                         currentSongId = currentSong?.id,
                         recentlyAddedSongIds = recentlyAddedSongIds,
                         favoriteMembershipKeys = favoriteMembershipKeys,
@@ -303,6 +337,7 @@ fun FavoritesTabContent(
                 gridContent = {
                     SongGrid(
                         songs = displayedSongs,
+                        gridState = scrollStates.grid,
                         currentSongId = currentSong?.id,
                         gridColumnCount = gridColumnCount,
                         recentlyAddedSongIds = recentlyAddedSongIds,
@@ -330,7 +365,7 @@ fun ArtistsTabContent(
     currentSong: Song?,
     viewMode: LibraryViewMode,
     gridColumnCount: Int,
-    sortOption: LibrarySortOption,
+    sortState: LibrarySortState,
     recentlyAddedSongIds: Set<Long>,
     onArtistSelected: (String) -> Unit,
     onAlbumSelected: (String) -> Unit,
@@ -353,6 +388,7 @@ fun ArtistsTabContent(
         songs = songs,
         searchQuery = searchQuery
     )
+    val scrollStates = rememberLibrarySortScrollStates(sortState)
 
     if (songs.isEmpty()) {
         Text(
@@ -392,7 +428,8 @@ fun ArtistsTabContent(
                     ArtistListScreen(
                         songs = artistSearchSongs,
                         onArtistClick = onArtistSelected,
-                        sortOption = sortOption,
+                        sortState = sortState,
+                        listState = scrollStates.list,
                         onArtistPlayClick = onArtistPlay,
                         onArtistShuffleClick = onArtistShuffle,
                         onArtistPlayNextClick = onArtistPlayNext,
@@ -406,7 +443,8 @@ fun ArtistsTabContent(
                     ArtistGridScreen(
                         songs = artistSearchSongs,
                         onArtistClick = onArtistSelected,
-                        sortOption = sortOption,
+                        sortState = sortState,
+                        gridState = scrollStates.grid,
                         gridColumnCount = gridColumnCount,
                         onArtistPlayClick = onArtistPlay,
                         onArtistShuffleClick = onArtistShuffle,
@@ -478,7 +516,7 @@ fun AlbumsTabContent(
     currentSong: Song?,
     viewMode: LibraryViewMode,
     gridColumnCount: Int,
-    sortOption: LibrarySortOption,
+    sortState: LibrarySortState,
     recentlyAddedSongIds: Set<Long>,
     onAlbumSelected: (String) -> Unit,
     onBackFromAlbum: () -> Unit,
@@ -501,6 +539,7 @@ fun AlbumsTabContent(
         songs = songs,
         searchQuery = searchQuery
     )
+    val scrollStates = rememberLibrarySortScrollStates(sortState)
 
     if (songs.isEmpty()) {
         Text(
@@ -540,7 +579,8 @@ fun AlbumsTabContent(
                     AlbumListScreen(
                         songs = albumSearchSongs,
                         onAlbumClick = onAlbumSelected,
-                        sortOption = sortOption,
+                        sortState = sortState,
+                        listState = scrollStates.list,
                         onAlbumPlayClick = onAlbumPlay,
                         onAlbumShuffleClick = onAlbumShuffle,
                         onAlbumPlayNextClick = onAlbumPlayNext,
@@ -554,7 +594,8 @@ fun AlbumsTabContent(
                     AlbumGridScreen(
                         songs = albumSearchSongs,
                         onAlbumClick = onAlbumSelected,
-                        sortOption = sortOption,
+                        sortState = sortState,
+                        gridState = scrollStates.grid,
                         gridColumnCount = gridColumnCount,
                         onAlbumPlayClick = onAlbumPlay,
                         onAlbumShuffleClick = onAlbumShuffle,

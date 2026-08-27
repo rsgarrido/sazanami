@@ -72,12 +72,88 @@ class SmartPlaylistEditorModelTest {
         assertEquals(
             listOf(
                 SmartPlaylistOperator.EQUALS,
+                SmartPlaylistOperator.NOT_EQUALS,
                 SmartPlaylistOperator.BEFORE,
                 SmartPlaylistOperator.AFTER,
                 SmartPlaylistOperator.BETWEEN
             ),
             year.operators.map { it.storage }
         )
+    }
+
+    @Test
+    fun metadataFieldsExposeOnlyCompatibleOperators() {
+        val genre = smartRuleFieldOptions.single { it.storage == SmartPlaylistRuleField.GENRE }
+        val bpm = smartRuleFieldOptions.single { it.storage == SmartPlaylistRuleField.BPM }
+
+        assertEquals(
+            listOf(SmartPlaylistOperator.IS, SmartPlaylistOperator.IS_NOT, SmartPlaylistOperator.CONTAINS),
+            genre.operators.map { it.storage }
+        )
+        assertEquals(
+            listOf(
+                SmartPlaylistOperator.EQUALS,
+                SmartPlaylistOperator.NOT_EQUALS,
+                SmartPlaylistOperator.GREATER_THAN,
+                SmartPlaylistOperator.LESS_THAN,
+                SmartPlaylistOperator.BETWEEN
+            ),
+            bpm.operators.map { it.storage }
+        )
+    }
+
+    @Test
+    fun changingFieldClearsIncompatibleOperatorAndValues() {
+        val changed = changeSmartRuleField(
+            SmartPlaylistEditorRule(
+                id = 1,
+                field = SmartPlaylistRuleField.GENRE,
+                operator = SmartPlaylistOperator.CONTAINS,
+                value = "Rock",
+                secondValue = "Punk"
+            ),
+            SmartPlaylistRuleField.BPM
+        )
+
+        assertEquals(SmartPlaylistRuleField.BPM, changed.field)
+        assertEquals(SmartPlaylistOperator.EQUALS, changed.operator)
+        assertEquals("", changed.value)
+        assertEquals("", changed.secondValue)
+    }
+
+    @Test
+    fun yearAndBpmValidationRejectsMissingMalformedAndReversedRanges() {
+        fun valid(field: String, value: String, second: String = "", operator: String = SmartPlaylistOperator.EQUALS) =
+            SmartPlaylistEditorModel(
+                name = "Numbers",
+                rules = listOf(SmartPlaylistEditorRule(1, field, operator, value, second))
+            ).validation(emptyList()).isValid
+
+        assertFalse(valid(SmartPlaylistRuleField.YEAR, "99"))
+        assertFalse(valid(SmartPlaylistRuleField.BPM, "fast"))
+        assertFalse(valid(SmartPlaylistRuleField.BPM, "170", "120", SmartPlaylistOperator.BETWEEN))
+        assertTrue(valid(SmartPlaylistRuleField.YEAR, "2004"))
+        assertTrue(valid(SmartPlaylistRuleField.BPM, "120", "170", SmartPlaylistOperator.BETWEEN))
+    }
+
+    @Test
+    fun newMetadataRulesPreserveMatchAndIndependentResultOrderingRoundTrip() {
+        val model = SmartPlaylistEditorModel(
+            name = "Metadata",
+            matchMode = SmartPlaylistMatchMode.ANY,
+            rules = listOf(
+                SmartPlaylistEditorRule(1, SmartPlaylistRuleField.COMPOSER, SmartPlaylistOperator.CONTAINS, "Eno"),
+                SmartPlaylistEditorRule(2, SmartPlaylistRuleField.BPM, SmartPlaylistOperator.BETWEEN, "110", "130")
+            ),
+            sortField = SmartPlaylistSortField.YEAR,
+            sortDirection = SmartPlaylistSortDirection.DESCENDING
+        )
+        val reopened = SmartPlaylistEditorModel.fromDraft(model.name, model.toDraft())
+
+        assertEquals(SmartPlaylistMatchMode.ANY, reopened.matchMode)
+        assertEquals(SmartPlaylistSortField.YEAR, reopened.sortField)
+        assertEquals(SmartPlaylistSortDirection.DESCENDING, reopened.sortDirection)
+        assertEquals(model.rules.map { it.field to it.operator }, reopened.rules.map { it.field to it.operator })
     }
 
     @Test

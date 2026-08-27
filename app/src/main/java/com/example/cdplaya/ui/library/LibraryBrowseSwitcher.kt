@@ -1,6 +1,9 @@
 package com.example.cdplaya.ui.library
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
@@ -8,9 +11,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -33,7 +40,22 @@ val primaryLibraryTabs = listOf(
     LibraryTab.SONGS,
     LibraryTab.ALBUMS,
     LibraryTab.ARTISTS,
-    LibraryTab.PLAYLISTS
+    LibraryTab.PLAYLISTS,
+    LibraryTab.GENRES
+)
+
+internal data class LibraryTabOverflowAffordances(
+    val showStart: Boolean,
+    val showEnd: Boolean
+)
+
+internal fun libraryTabOverflowAffordances(
+    hasMeasuredContent: Boolean,
+    canScrollBackward: Boolean,
+    canScrollForward: Boolean
+): LibraryTabOverflowAffordances = LibraryTabOverflowAffordances(
+    showStart = hasMeasuredContent && canScrollBackward,
+    showEnd = hasMeasuredContent && canScrollForward
 )
 
 val songCollectionTabs = listOf(
@@ -65,6 +87,13 @@ fun LibraryBrowseSwitcher(
     modifier: Modifier = Modifier
 ) {
     val selectedPrimaryTab = selectedTab.primaryBrowseTab() ?: return
+    val primaryTabScrollState = rememberScrollState()
+    val primaryTabContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val overflowAffordances = libraryTabOverflowAffordances(
+        hasMeasuredContent = primaryTabScrollState.maxValue != Int.MAX_VALUE,
+        canScrollBackward = primaryTabScrollState.canScrollBackward,
+        canScrollForward = primaryTabScrollState.canScrollForward
+    )
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -74,25 +103,52 @@ fun LibraryBrowseSwitcher(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = primaryTabContainerColor,
             shape = RoundedCornerShape(22.dp),
             border = BorderStroke(
                 1.dp,
                 MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
             )
         ) {
-            Row(
+            Box(
                 modifier = Modifier
-                    .padding(4.dp)
-                    .selectableGroup(),
-                verticalAlignment = Alignment.CenterVertically
+                    .fillMaxWidth()
+                    .height(50.dp)
             ) {
-                primaryLibraryTabs.forEach { tab ->
-                    LibraryPrimaryTab(
-                        tab = tab,
-                        selected = tab == selectedPrimaryTab,
-                        onClick = { onTabSelected(tab) },
-                        modifier = Modifier.weight(1f)
+                Row(
+                    modifier = Modifier
+                        .padding(4.dp)
+                        .horizontalScroll(primaryTabScrollState)
+                        .selectableGroup(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    primaryLibraryTabs.forEach { tab ->
+                        LibraryPrimaryTab(
+                            tab = tab,
+                            selected = tab == selectedPrimaryTab,
+                            onClick = { onTabSelected(tab) },
+                            modifier = Modifier.widthIn(min = 84.dp)
+                        )
+                    }
+                }
+
+                if (overflowAffordances.showStart) {
+                    LibraryTabOverflowFade(
+                        modifier = Modifier.align(Alignment.CenterStart),
+                        colors = listOf(
+                            primaryTabContainerColor,
+                            Color.Transparent
+                        )
+                    )
+                }
+
+                if (overflowAffordances.showEnd) {
+                    LibraryTabOverflowFade(
+                        modifier = Modifier.align(Alignment.CenterEnd),
+                        colors = listOf(
+                            Color.Transparent,
+                            primaryTabContainerColor
+                        )
                     )
                 }
             }
@@ -116,6 +172,19 @@ fun LibraryBrowseSwitcher(
             }
         }
     }
+}
+
+@Composable
+private fun LibraryTabOverflowFade(
+    colors: List<Color>,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .width(28.dp)
+            .background(Brush.horizontalGradient(colors = colors))
+    )
 }
 
 @Composable
