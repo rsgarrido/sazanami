@@ -81,6 +81,9 @@ data class EmbeddedMetadataReadResult(
 )
 
 enum class EditableMetadataField {
+    ALBUM,
+    DATE,
+    ARTWORK,
     ALBUM_ARTIST,
     TRACK_TOTAL,
     DISC_NUMBER,
@@ -98,9 +101,21 @@ data class MetadataFormatCapabilities(
 ) {
     fun supports(field: EditableMetadataField): Boolean = field in supportedFields
 
+    fun intersect(other: MetadataFormatCapabilities): MetadataFormatCapabilities =
+        MetadataFormatCapabilities(supportedFields intersect other.supportedFields)
+
     companion object {
         val NONE = MetadataFormatCapabilities(emptySet())
-        val ADVANCED_EDITOR = MetadataFormatCapabilities(EditableMetadataField.entries.toSet())
+        val ALL_EDITABLE = MetadataFormatCapabilities(EditableMetadataField.entries.toSet())
+
+        // Kept for source compatibility with the Session 2 single-track editor.
+        val ADVANCED_EDITOR = ALL_EDITABLE
+
+        fun intersection(
+            capabilities: Collection<MetadataFormatCapabilities>
+        ): MetadataFormatCapabilities = capabilities
+            .reduceOrNull(MetadataFormatCapabilities::intersect)
+            ?: NONE
     }
 }
 
@@ -110,7 +125,7 @@ internal fun AudioMetadataFormat.editorCapabilities(): MetadataFormatCapabilitie
     AudioMetadataFormat.MP4,
     AudioMetadataFormat.OGG,
     AudioMetadataFormat.WAV,
-    AudioMetadataFormat.AIFF -> MetadataFormatCapabilities.ADVANCED_EDITOR
+    AudioMetadataFormat.AIFF -> MetadataFormatCapabilities.ALL_EDITABLE
 
     AudioMetadataFormat.UNKNOWN -> MetadataFormatCapabilities.NONE
 }

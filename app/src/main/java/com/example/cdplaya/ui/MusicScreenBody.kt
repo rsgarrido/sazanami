@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -222,6 +224,7 @@ internal fun MusicScreenBody(
     onReorderPlaylistSongs: (Long, List<Long>) -> Unit,
     onAddSongsToCurrentPlaylistClick: (Playlist, List<Song>) -> Unit,
     onEditSongTagsClick: (Song) -> Unit,
+    onBatchMetadataClick: () -> Unit,
     isSleepTimerActive: Boolean,
     sleepTimerDisplayText: String,
     onSleepTimerClick: () -> Unit,
@@ -557,6 +560,21 @@ internal fun MusicScreenBody(
                                 onBackClick = null,
                                 onSettingsClick = onSettingsClick,
                                 modifier = Modifier.statusBarsPadding(),
+                                batchMetadataAction = if (!isSearchDestination &&
+                                    !isLibraryDetail &&
+                                    selectedLibraryTab == LibraryTab.SONGS &&
+                                    songs.size >= 2
+                                ) {
+                                    {
+                                        AppShellIconButton(
+                                            onClick = onBatchMetadataClick,
+                                            imageVector = Icons.Filled.EditNote,
+                                            contentDescription = "Select tracks to edit metadata"
+                                        )
+                                    }
+                                } else {
+                                    null
+                                },
                                 viewModeAction = if (!isSearchDestination &&
                                     !isLibraryDetail &&
                                     selectedLibraryTab.viewCategory() != null

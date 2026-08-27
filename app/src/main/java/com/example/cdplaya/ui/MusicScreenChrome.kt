@@ -55,6 +55,7 @@ fun MusicScreenHeader(
     onSettingsClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
     backContentDescription: String = "Back to Home",
+    batchMetadataAction: (@Composable () -> Unit)? = null,
     viewModeAction: (@Composable () -> Unit)? = null,
     sortAction: (@Composable () -> Unit)? = null
 ) {
@@ -90,6 +91,8 @@ fun MusicScreenHeader(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            batchMetadataAction?.invoke()
+
             viewModeAction?.invoke()
 
             sortAction?.invoke()
