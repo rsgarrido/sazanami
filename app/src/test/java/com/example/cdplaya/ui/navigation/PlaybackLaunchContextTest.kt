@@ -69,6 +69,21 @@ class PlaybackLaunchContextTest {
     }
 
     @Test
+    fun existingGenreDetailRemainsValidForPlaybackReturn() {
+        val genreContext = PlaybackLaunchContext.GenreDetail("known:rock")
+
+        assertEquals(
+            genreContext,
+            genreContext.withValidDetails(
+                albumFolderPaths = emptySet(),
+                artistNames = emptySet(),
+                genreKeys = setOf("known:rock"),
+                playlistIds = emptySet()
+            )
+        )
+    }
+
+    @Test
     fun missingDetailsFallBackToTheirParentSections() {
         val albumContext = PlaybackLaunchContext.AlbumDetail("missing")
             .withValidDetails(emptySet(), emptySet(), emptySet(), emptySet())

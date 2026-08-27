@@ -495,7 +495,8 @@ internal fun LibraryDetailAction(
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    trailingIcon: ImageVector? = null
+    trailingIcon: ImageVector? = null,
+    contentDescription: String = label
 ) {
     Column(
         modifier = modifier,
@@ -517,7 +518,7 @@ internal fun LibraryDetailAction(
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = icon,
-                    contentDescription = label,
+                    contentDescription = contentDescription,
                     modifier = Modifier.size(23.dp),
                     tint = if (enabled) {
                         MaterialTheme.colorScheme.onPrimaryContainer

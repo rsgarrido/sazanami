@@ -86,7 +86,6 @@ fun GenresTabContent(
         SongGroupDetailScreen(
             title = selectedGenre.name,
             subtitle = songCountText,
-            artworkUri = null,
             songs = selectedGenre.songs,
             currentSongId = currentSong?.id,
             recentlyAddedSongIds = recentlyAddedSongIds,

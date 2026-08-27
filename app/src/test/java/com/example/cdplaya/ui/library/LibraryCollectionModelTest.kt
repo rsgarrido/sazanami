@@ -71,8 +71,8 @@ class LibraryCollectionModelTest {
                 LibraryTab.SONGS,
                 LibraryTab.ALBUMS,
                 LibraryTab.ARTISTS,
-                LibraryTab.GENRES,
-                LibraryTab.PLAYLISTS
+                LibraryTab.PLAYLISTS,
+                LibraryTab.GENRES
             ),
             primaryLibraryTabs
         )

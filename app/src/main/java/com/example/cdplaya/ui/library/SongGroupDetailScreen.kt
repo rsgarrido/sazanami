@@ -1,7 +1,6 @@
 package com.example.cdplaya.ui.library
 
-import android.R
-import android.net.Uri
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,34 +8,25 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
-import coil.compose.AsyncImage
 import com.example.cdplaya.data.Song
 
 @Composable
 fun SongGroupDetailScreen(
     title: String,
     subtitle: String,
-    artworkUri: Uri?,
     songs: List<Song>,
     currentSongId: Long?,
     recentlyAddedSongIds: Set<Long>,
@@ -59,111 +49,60 @@ fun SongGroupDetailScreen(
     Column(
         modifier = modifier.fillMaxSize()
     ) {
-        Row(
+        LibraryDetailTopBar(
+            title = title,
+            showTitle = false,
+            onBackClick = onBackClick,
+            onMoreClick = {},
+            trailingContent = {}
+        )
+
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            IconButton(onClick = onBackClick) {
-                Icon(
-                    imageVector = Icons.Filled.ArrowBack,
-                    contentDescription = "Back"
-                )
-            }
-
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleLarge,
-                maxLines = 1
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            AsyncImage(
-                model = artworkUri,
-                contentDescription = "Artwork for $title",
-                modifier = Modifier
-                    .size(104.dp)
-                    .clip(RoundedCornerShape(16.dp)),
-                contentScale = ContentScale.Crop,
-                error = painterResource(R.drawable.ic_media_play),
-                placeholder = painterResource(R.drawable.ic_media_play)
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
 
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
-            Column(
-                modifier = Modifier.weight(1f)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(18.dp),
+                verticalAlignment = Alignment.Top
             ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 2
+                LibraryDetailAction(
+                    icon = Icons.Filled.PlayArrow,
+                    label = "Play",
+                    enabled = songs.isNotEmpty(),
+                    onClick = onPlayAllClick
                 )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 2
+                LibraryDetailAction(
+                    icon = Icons.Filled.Shuffle,
+                    label = "Shuffle",
+                    enabled = songs.isNotEmpty(),
+                    onClick = onShuffleAllClick
                 )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Button(
-                            onClick = onPlayAllClick,
-                            enabled = songs.isNotEmpty(),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.PlayArrow,
-                                contentDescription = "Play"
-                            )
-
-                            Spacer(modifier = Modifier.width(6.dp))
-
-                            Text(text = "Play")
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        Button(
-                            onClick = onShuffleAllClick,
-                            enabled = songs.isNotEmpty(),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Shuffle,
-                                contentDescription = "Shuffle"
-                            )
-
-                            Spacer(modifier = Modifier.width(6.dp))
-
-                            Text(text = "Shuffle")
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Button(
-                        onClick = onAddAllToPlaylistClick,
-                        enabled = songs.isNotEmpty(),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(text = "Add to playlist")
-                    }
-                }
+                LibraryDetailAction(
+                    icon = Icons.AutoMirrored.Filled.PlaylistAdd,
+                    label = "Add",
+                    enabled = songs.isNotEmpty(),
+                    onClick = onAddAllToPlaylistClick,
+                    contentDescription = "Add to playlist"
+                )
             }
         }
 
