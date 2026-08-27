@@ -19,6 +19,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -176,25 +180,43 @@ private fun CompleteContent(
     onDone: () -> Unit
 ) {
     val result = state.result
+    var detailsExpanded by remember(state.operationId) { mutableStateOf(false) }
     Text(state.terminalOutcome.displayLabel(), style = MaterialTheme.typography.headlineSmall)
-    Text("${result.successCount} of ${state.plan.selectedTrackCount} tracks updated")
-    if (result.failureCount > 0) Text("${result.failureCount} failed or were safely rejected")
-    if (result.notProcessedCount > 0) Text("${result.notProcessedCount} not processed")
+    if (result.successCount > 0) {
+        Text("${result.successCount} ${trackWord(result.successCount)} updated")
+    }
+    if (result.failureCount > 0) {
+        Text("${result.failureCount} could not be updated")
+    }
+    if (result.notProcessedCount > 0) {
+        Text("${result.notProcessedCount} ${trackWord(result.notProcessedCount)} not processed")
+    }
     if (state.scan.hasWarning || state.refresh.hasWarning) {
         Card(colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.errorContainer
         )) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Metadata writes remain successful", style = MaterialTheme.typography.titleSmall)
-                Text("MediaStore scan: ${state.scan.displayLabel()}")
-                state.scan.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                Text("Library refresh: ${state.refresh.displayLabel()}")
-                state.refresh.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                Text("Library refresh is still pending", style = MaterialTheme.typography.titleSmall)
+                Text("Completed file updates remain successful and will not be repeated.")
             }
         }
     }
 
-    result.targetResults.forEach { TargetResultCard(it) }
+    OutlinedButton(
+        onClick = { detailsExpanded = !detailsExpanded },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(if (detailsExpanded) "Hide details" else "Show details")
+    }
+    if (detailsExpanded) {
+        if (state.scan.hasWarning || state.refresh.hasWarning) {
+            Text("MediaStore scan: ${state.scan.displayLabel()}")
+            state.scan.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            Text("Library refresh: ${state.refresh.displayLabel()}")
+            state.refresh.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        }
+        result.targetResults.forEach { TargetResultCard(it) }
+    }
 
     if (result.targetResults.any(BatchTargetResult::isRetryableFailure)) {
         Button(onClick = onRetryFailed, modifier = Modifier.fillMaxWidth()) {
@@ -253,13 +275,15 @@ private fun BatchTargetStatus.displayLabel(): String = when (this) {
 }
 
 private fun BatchTerminalOutcome.displayLabel(): String = when (this) {
-    BatchTerminalOutcome.SUCCESS -> "Batch complete"
-    BatchTerminalOutcome.PARTIAL_SUCCESS -> "Batch partially complete"
-    BatchTerminalOutcome.CANCELLED -> "Batch cancelled"
-    BatchTerminalOutcome.FAILED -> "Batch failed"
+    BatchTerminalOutcome.SUCCESS -> "Metadata updated"
+    BatchTerminalOutcome.PARTIAL_SUCCESS -> "Some tracks were not updated"
+    BatchTerminalOutcome.CANCELLED -> "Update cancelled"
+    BatchTerminalOutcome.FAILED -> "Tracks could not be updated"
     BatchTerminalOutcome.PERMISSION_DENIED -> "Write permission denied"
-    BatchTerminalOutcome.REFRESH_WARNING -> "Metadata updated; refresh incomplete"
+    BatchTerminalOutcome.REFRESH_WARNING -> "Metadata updated"
 }
+
+private fun trackWord(count: Int): String = if (count == 1) "track" else "tracks"
 
 private fun BatchPostWriteStageResult.displayLabel(): String =
     status.name.lowercase().replace('_', ' ')

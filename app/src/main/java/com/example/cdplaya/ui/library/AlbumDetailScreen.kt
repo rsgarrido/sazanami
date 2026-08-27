@@ -93,6 +93,7 @@ fun AlbumDetailScreen(
     onToggleFavoriteClick: (Song) -> Unit,
     onAddToPlaylistClick: (Song) -> Unit,
     onAddAllToPlaylistClick: () -> Unit,
+    onEditAlbumMetadataClick: (LibraryAlbumGroup) -> Unit,
     onEditSongTagsClick: (Song) -> Unit,
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
@@ -228,6 +229,7 @@ fun AlbumDetailScreen(
                         onPlayNextClick = onPlayNextSongsClick,
                         onAddToQueueClick = onAddSongsToQueueClick,
                         onAddToPlaylistClick = { _, _ -> onAddAllToPlaylistClick() },
+                        onEditMetadataClick = { onEditAlbumMetadataClick(album) },
                         homePinAction = homePinUi.actionForAlbum(album)
                     )
                 }

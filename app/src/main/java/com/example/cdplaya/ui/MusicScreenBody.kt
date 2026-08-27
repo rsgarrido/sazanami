@@ -224,6 +224,7 @@ internal fun MusicScreenBody(
     onReorderPlaylistSongs: (Long, List<Long>) -> Unit,
     onAddSongsToCurrentPlaylistClick: (Playlist, List<Song>) -> Unit,
     onEditSongTagsClick: (Song) -> Unit,
+    onEditAlbumMetadataClick: (com.example.cdplaya.ui.library.LibraryAlbumGroup) -> Unit,
     onBatchMetadataClick: () -> Unit,
     isSleepTimerActive: Boolean,
     sleepTimerDisplayText: String,
@@ -737,6 +738,7 @@ internal fun MusicScreenBody(
                                     onAddSongsToCurrentPlaylistClick =
                                         onAddSongsToCurrentPlaylistClick,
                                     onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
+                                    onEditAlbumMetadataClick = onEditAlbumMetadataClick,
                                     onEditSongTagsClick = onEditSongTagsClick,
                                     ratingFeaturesEnabled = !isSearchDestination,
                                     recentlyPlayedSongs = recentlyPlayedSongs,

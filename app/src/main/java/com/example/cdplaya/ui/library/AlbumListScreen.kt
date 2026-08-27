@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.ListItem
@@ -173,6 +174,7 @@ internal fun albumActionSheetTarget(
     onPlayNextClick: (String, List<Song>) -> Unit,
     onAddToQueueClick: (String, List<Song>) -> Unit,
     onAddToPlaylistClick: (String, List<Song>) -> Unit,
+    onEditMetadataClick: (() -> Unit)? = null,
     homePinAction: LibraryItemAction? = null
 ): LibraryItemActionSheetTarget {
     return LibraryItemActionSheetTarget(
@@ -206,6 +208,13 @@ internal fun albumActionSheetTarget(
                 icon = Icons.AutoMirrored.Filled.PlaylistAdd,
                 onClick = { onAddToPlaylistClick(albumTitle, albumSongs) }
             ))
+            onEditMetadataClick?.let { onClick ->
+                add(LibraryItemAction(
+                    label = "Edit album metadata",
+                    icon = Icons.Filled.EditNote,
+                    onClick = onClick
+                ))
+            }
             homePinAction?.let(::add)
         }
     )

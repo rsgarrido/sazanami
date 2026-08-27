@@ -492,6 +492,7 @@ fun AlbumsTabContent(
     onToggleFavoriteClick: (Song) -> Unit,
     onAddToPlaylistClick: (Song) -> Unit,
     onAddSongsToPlaylistClick: (List<Song>) -> Unit,
+    onEditAlbumMetadataClick: (LibraryAlbumGroup) -> Unit,
     onEditSongTagsClick: (Song) -> Unit,
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
@@ -610,6 +611,7 @@ fun AlbumsTabContent(
                 onAddAllToPlaylistClick = {
                     onAddSongsToPlaylistClick(albumSongs)
                 },
+                onEditAlbumMetadataClick = onEditAlbumMetadataClick,
                 onEditSongTagsClick = onEditSongTagsClick,
                 bottomContentPadding = bottomContentPadding,
                 modifier = modifier

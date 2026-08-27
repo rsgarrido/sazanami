@@ -52,15 +52,24 @@ import com.example.cdplaya.data.isValidMetadataBpm
 @Composable
 fun BatchMetadataEditorScreen(
     state: BatchMetadataEditorState,
+    context: BatchMetadataEditorContext = BatchMetadataEditorContext.SongSelection,
     onStateChanged: (BatchMetadataEditorState) -> Unit,
     onChooseArtwork: () -> Unit,
     onApply: (BatchMetadataPlan) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    BackHandler(onBack = onBack)
     val plan = state.plan()
     var isApplyConfirmationVisible by remember { mutableStateOf(false) }
+    var isDiscardConfirmationVisible by remember { mutableStateOf(false) }
+    val requestBack = {
+        if (plan.changeCount > 0) {
+            isDiscardConfirmationVisible = true
+        } else {
+            onBack()
+        }
+    }
+    BackHandler(onBack = requestBack)
     val hasInvalidBpm = state.fields.getValue(BatchMetadataField.BPM).intent
         .let { intent ->
             intent is BatchEditIntent.Set &&
@@ -74,15 +83,34 @@ fun BatchMetadataEditorScreen(
             .padding(16.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) {
+            IconButton(onClick = requestBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
+            val albumContext = context as? BatchMetadataEditorContext.Album
+            albumContext?.artworkUri?.let { artworkUri ->
+                AsyncImage(
+                    model = artworkUri,
+                    contentDescription = "Album art for ${albumContext.title}",
+                    modifier = Modifier
+                        .padding(end = 10.dp)
+                        .size(48.dp)
+                )
+            }
             Column(modifier = Modifier.weight(1f)) {
-                Text("Edit metadata", style = MaterialTheme.typography.headlineSmall)
                 Text(
-                    "${state.selectedTrackCount} tracks • planning only",
+                    if (albumContext == null) "Edit metadata" else "Edit album metadata",
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                Text(
+                    if (albumContext == null) {
+                        "${state.selectedTrackCount} tracks • planning only"
+                    } else {
+                        "${state.selectedTrackCount} tracks from ${albumContext.title}"
+                    },
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -95,25 +123,48 @@ fun BatchMetadataEditorScreen(
         )
         Spacer(Modifier.height(20.dp))
 
-        BatchMetadataField.entries.forEach { field ->
-            BatchFieldEditor(
-                field = field,
-                state = state.fields.getValue(field),
-                supported = state.supports(field),
-                onSet = { value -> onStateChanged(state.set(field, value)) },
-                onClear = { onStateChanged(state.clear(field)) },
-                onReset = { onStateChanged(state.reset(field)) }
+        if (context is BatchMetadataEditorContext.Album) {
+            Text("Album fields", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(10.dp))
+            BatchFieldEditors(
+                fields = albumPrimaryFields,
+                state = state,
+                onStateChanged = onStateChanged
             )
-            Spacer(Modifier.height(14.dp))
+            BatchArtworkEditor(
+                state = state.artwork,
+                supported = state.capabilities.supports(EditableMetadataField.ARTWORK),
+                onChooseArtwork = onChooseArtwork,
+                onClear = { onStateChanged(state.clearArtwork()) },
+                onReset = { onStateChanged(state.resetArtwork()) }
+            )
+            Spacer(Modifier.height(20.dp))
+            Text("Additional fields", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Disc number and BPM are preserved unless you explicitly replace them.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(10.dp))
+            BatchFieldEditors(
+                fields = albumAdditionalFields,
+                state = state,
+                onStateChanged = onStateChanged
+            )
+        } else {
+            BatchFieldEditors(
+                fields = BatchMetadataField.entries,
+                state = state,
+                onStateChanged = onStateChanged
+            )
+            BatchArtworkEditor(
+                state = state.artwork,
+                supported = state.capabilities.supports(EditableMetadataField.ARTWORK),
+                onChooseArtwork = onChooseArtwork,
+                onClear = { onStateChanged(state.clearArtwork()) },
+                onReset = { onStateChanged(state.resetArtwork()) }
+            )
         }
-
-        BatchArtworkEditor(
-            state = state.artwork,
-            supported = state.capabilities.supports(EditableMetadataField.ARTWORK),
-            onChooseArtwork = onChooseArtwork,
-            onClear = { onStateChanged(state.clearArtwork()) },
-            onReset = { onStateChanged(state.resetArtwork()) }
-        )
 
         Spacer(Modifier.height(22.dp))
         Text("Planned changes", style = MaterialTheme.typography.titleMedium)
@@ -168,8 +219,8 @@ fun BatchMetadataEditorScreen(
         ) {
             Text("Review and apply")
         }
-        TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
-            Text("Discard plan")
+        TextButton(onClick = requestBack, modifier = Modifier.fillMaxWidth()) {
+            Text(if (plan.changeCount == 0) "Cancel" else "Discard changes")
         }
     }
 
@@ -197,6 +248,44 @@ fun BatchMetadataEditorScreen(
             }
         )
     }
+
+    if (isDiscardConfirmationVisible) {
+        AlertDialog(
+            onDismissRequest = { isDiscardConfirmationVisible = false },
+            title = { Text("Discard changes?") },
+            text = { Text("Your planned metadata changes have not been applied.") },
+            confirmButton = {
+                Button(onClick = {
+                    isDiscardConfirmationVisible = false
+                    onBack()
+                }) { Text("Discard") }
+            },
+            dismissButton = {
+                TextButton(onClick = { isDiscardConfirmationVisible = false }) {
+                    Text("Keep editing")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun BatchFieldEditors(
+    fields: List<BatchMetadataField>,
+    state: BatchMetadataEditorState,
+    onStateChanged: (BatchMetadataEditorState) -> Unit
+) {
+    fields.forEach { field ->
+        BatchFieldEditor(
+            field = field,
+            state = state.fields.getValue(field),
+            supported = state.supports(field),
+            onSet = { value -> onStateChanged(state.set(field, value)) },
+            onClear = { onStateChanged(state.clear(field)) },
+            onReset = { onStateChanged(state.reset(field)) }
+        )
+        Spacer(Modifier.height(14.dp))
+    }
 }
 
 @Composable
@@ -223,13 +312,19 @@ private fun BatchFieldEditor(
     val bpmError = field == BatchMetadataField.BPM &&
         state.intent is BatchEditIntent.Set &&
         !state.intent.value.displayText().isValidMetadataBpm()
+    val hasNoInitialValue = state.intent == BatchEditIntent.Untouched &&
+        (state.initial as? BatchInitialValue.Common)?.value?.displayText().isNullOrEmpty()
 
     Column {
         OutlinedTextField(
             value = displayValue,
             onValueChange = onSet,
             label = { Text(field.label) },
-            placeholder = if (isMixed) ({ Text("Multiple values") }) else null,
+            placeholder = when {
+                isMixed -> ({ Text("Multiple values") })
+                hasNoInitialValue -> ({ Text("No value") })
+                else -> null
+            },
             enabled = supported && !isClear,
             isError = bpmError,
             supportingText = {
@@ -344,8 +439,8 @@ private fun BatchInitialValue<BatchMetadataValue>.describeInitial(): String = wh
 }
 
 private fun BatchEditIntent<BatchMetadataValue>.describeIntent(): String = when (this) {
-    BatchEditIntent.Clear -> "Clear"
-    is BatchEditIntent.Set -> "Set to ${value.displayText().ifBlank { "empty" }}"
+    BatchEditIntent.Clear -> "Cleared"
+    is BatchEditIntent.Set -> value.displayText().ifBlank { "Empty value" }
     BatchEditIntent.Untouched -> "Unchanged"
 }
 
@@ -355,7 +450,24 @@ private fun BatchInitialValue<BatchArtworkValue>.describeArtworkInitial(): Strin
 }
 
 private fun BatchEditIntent<BatchArtworkValue>.describeArtworkIntent(): String = when (this) {
-    BatchEditIntent.Clear -> "Clear"
-    is BatchEditIntent.Set -> "Replace artwork"
+    BatchEditIntent.Clear -> "Cleared"
+    is BatchEditIntent.Set -> "New artwork"
     BatchEditIntent.Untouched -> "Unchanged"
 }
+
+private val albumPrimaryFields = listOf(
+    BatchMetadataField.ALBUM,
+    BatchMetadataField.ALBUM_ARTIST,
+    BatchMetadataField.DATE,
+    BatchMetadataField.GENRE,
+    BatchMetadataField.COMPOSER,
+    BatchMetadataField.PUBLISHER,
+    BatchMetadataField.COPYRIGHT,
+    BatchMetadataField.DISC_TOTAL
+)
+
+private val albumAdditionalFields = listOf(
+    BatchMetadataField.COMMENT,
+    BatchMetadataField.DISC_NUMBER,
+    BatchMetadataField.BPM
+)

@@ -191,6 +191,16 @@ data class BatchMetadataEditorState(
     }
 }
 
+internal fun deriveBatchMetadataEditorState(
+    songs: List<Song>,
+    readTags: (Song) -> EditableSongTags
+): BatchMetadataEditorState {
+    val targets = songs
+        .distinctBy(Song::membershipKey)
+        .map { song -> song.toBatchMetadataTarget(readTags(song)) }
+    return BatchMetadataEditorState.derive(targets)
+}
+
 internal fun Song.toBatchMetadataTarget(tags: EditableSongTags): BatchMetadataTarget =
     BatchMetadataTarget(
         id = BatchMetadataTargetId(
