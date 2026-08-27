@@ -136,6 +136,7 @@ internal fun MusicScreenBody(
     selectedLibraryTab: LibraryTab,
     selectedArtistName: String?,
     selectedAlbumFolderPath: String?,
+    selectedGenreKey: String?,
     selectedPlaylistId: Long?,
     searchQuery: String,
     selectedSongSortState: LibrarySortState,
@@ -203,6 +204,8 @@ internal fun MusicScreenBody(
     onBackFromArtist: () -> Unit,
     onAlbumSelected: (String) -> Unit,
     onBackFromAlbum: () -> Unit,
+    onGenreSelected: (String) -> Unit,
+    onBackFromGenre: () -> Unit,
     onBackFromQueue: () -> Unit,
     onRemoveFromQueueClick: (Int) -> Unit,
     onMoveQueueItemUpClick: (Int) -> Unit,
@@ -538,9 +541,10 @@ internal fun MusicScreenBody(
                     )
                 } else {
                     val isSearchDestination = destination == MainDestination.SEARCH
-                    val isArtistOrAlbumDetail = selectedArtistName != null ||
-                            selectedAlbumFolderPath != null
-                    val isLibraryDetail = isArtistOrAlbumDetail ||
+                    val isGroupedLibraryDetail = selectedArtistName != null ||
+                            selectedAlbumFolderPath != null ||
+                            selectedGenreKey != null
+                    val isLibraryDetail = isGroupedLibraryDetail ||
                             selectedPlaylistId != null
                     val selectedViewMode = if (isSearchDestination) {
                         LibraryViewMode.LIST
@@ -688,6 +692,7 @@ internal fun MusicScreenBody(
                                     gridColumnCount = selectedGridColumnCount,
                                     selectedArtistName = selectedArtistName,
                                     selectedAlbumFolderPath = selectedAlbumFolderPath,
+                                    selectedGenreKey = selectedGenreKey,
                                     selectedPlaylistId = selectedPlaylistId,
                                     playlists = playlists,
                                     playlistFolders = playlistFolders,
@@ -721,6 +726,8 @@ internal fun MusicScreenBody(
                                     onBackFromArtist = onBackFromArtist,
                                     onAlbumSelected = onAlbumSelected,
                                     onBackFromAlbum = onBackFromAlbum,
+                                    onGenreSelected = onGenreSelected,
+                                    onBackFromGenre = onBackFromGenre,
                                     onBackFromQueue = onBackFromQueue,
                                     onRemoveFromQueueClick = onRemoveFromQueueClick,
                                     onMoveQueueItemUpClick = onMoveQueueItemUpClick,

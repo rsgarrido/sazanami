@@ -55,7 +55,10 @@ class SmartPlaylistMigrationTest {
         }
 
         val database = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(DatabaseProvider.MIGRATION_14_15)
+            .addMigrations(
+                DatabaseProvider.MIGRATION_14_15,
+                DatabaseProvider.MIGRATION_15_16
+            )
             .build()
         try {
             val sqlite = database.openHelper.writableDatabase

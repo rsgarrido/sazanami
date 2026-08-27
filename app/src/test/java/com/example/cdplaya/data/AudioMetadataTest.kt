@@ -77,6 +77,19 @@ class AudioMetadataTest {
     }
 
     @Test
+    fun `library enrichment keeps embedded genre values distinct`() {
+        val enriched = song("Title", "Artist", "Album").withEmbeddedLibraryMetadata(
+            AudioMetadata(genres = listOf("Rock", "R&B / Soul"))
+        )
+
+        assertEquals(listOf("Rock", "R&B / Soul"), enriched.genres)
+        assertEquals(
+            CURRENT_EMBEDDED_METADATA_ENRICHMENT_VERSION,
+            enriched.embeddedMetadataEnrichmentVersion
+        )
+    }
+
+    @Test
     fun `writable extensions match formats backed by configured jaudiotagger writers`() {
         assertEquals(
             setOf("mp3", "flac", "m4a", "mp4", "ogg", "wav", "aif", "aiff"),

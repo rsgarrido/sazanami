@@ -65,6 +65,23 @@ class LibraryCollectionModelTest {
     }
 
     @Test
+    fun genresAreAPrimaryListOnlyCategoryWithoutSortControls() {
+        assertEquals(
+            listOf(
+                LibraryTab.SONGS,
+                LibraryTab.ALBUMS,
+                LibraryTab.ARTISTS,
+                LibraryTab.GENRES,
+                LibraryTab.PLAYLISTS
+            ),
+            primaryLibraryTabs
+        )
+        assertEquals(LibraryTab.GENRES, LibraryTab.GENRES.primaryBrowseTab())
+        assertEquals(null, LibraryTab.GENRES.viewCategory())
+        assertTrue(librarySortOptionsFor(LibraryTab.GENRES).isEmpty())
+    }
+
+    @Test
     fun sortChangeResetTrackerSkipsInitialAndRestoredStateButDetectsRealChanges() {
         val initial = LibrarySortState(
             LibrarySortOption.TITLE,

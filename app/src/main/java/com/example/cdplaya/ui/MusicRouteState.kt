@@ -24,6 +24,7 @@ class MusicNavigationState internal constructor(
     val playbackLaunchContext: MutableState<PlaybackLaunchContext>,
     val selectedArtistName: MutableState<String?>,
     val selectedAlbumFolderPath: MutableState<String?>,
+    val selectedGenreKey: MutableState<String?>,
     val selectedPlaylistId: MutableState<Long?>,
     val searchQuery: MutableState<String>,
     val selectedSongSortState: MutableState<LibrarySortState>,
@@ -41,6 +42,7 @@ fun rememberMusicNavigationState(): MusicNavigationState {
     }
     val selectedArtistName = rememberSaveable { mutableStateOf<String?>(null) }
     val selectedAlbumFolderPath = rememberSaveable { mutableStateOf<String?>(null) }
+    val selectedGenreKey = rememberSaveable { mutableStateOf<String?>(null) }
     val selectedPlaylistId = rememberSaveable { mutableStateOf<Long?>(null) }
     val searchQuery = rememberSaveable { mutableStateOf("") }
     val selectedSongSortState = rememberSaveable(stateSaver = LibrarySortStateSaver) {
@@ -69,6 +71,7 @@ fun rememberMusicNavigationState(): MusicNavigationState {
         playbackLaunchContext,
         selectedArtistName,
         selectedAlbumFolderPath,
+        selectedGenreKey,
         selectedPlaylistId,
         searchQuery,
         selectedSongSortState,
@@ -82,6 +85,7 @@ fun rememberMusicNavigationState(): MusicNavigationState {
             playbackLaunchContext,
             selectedArtistName,
             selectedAlbumFolderPath,
+            selectedGenreKey,
             selectedPlaylistId,
             searchQuery,
             selectedSongSortState,

@@ -34,6 +34,7 @@ fun MusicLibraryContent(
     gridColumnCount: Int,
     selectedArtistName: String?,
     selectedAlbumFolderPath: String?,
+    selectedGenreKey: String?,
     selectedPlaylistId: Long?,
     playlists: List<Playlist>,
     playlistFolders: List<PlaylistFolder>,
@@ -59,6 +60,8 @@ fun MusicLibraryContent(
     onBackFromArtist: () -> Unit,
     onAlbumSelected: (String) -> Unit,
     onBackFromAlbum: () -> Unit,
+    onGenreSelected: (String) -> Unit,
+    onBackFromGenre: () -> Unit,
     onBackFromQueue: () -> Unit,
     onRemoveFromQueueClick: (Int) -> Unit,
     onMoveQueueItemUpClick: (Int) -> Unit,
@@ -189,6 +192,29 @@ fun MusicLibraryContent(
                 onAddToPlaylistClick = onAddToPlaylistClick,
                 onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
                 onEditAlbumMetadataClick = onEditAlbumMetadataClick,
+                onEditSongTagsClick = onEditSongTagsClick,
+                bottomContentPadding = bottomContentPadding,
+                modifier = modifier
+            )
+        }
+
+        LibraryTab.GENRES -> {
+            GenresTabContent(
+                songs = songs,
+                searchQuery = searchQuery,
+                selectedGenreKey = selectedGenreKey,
+                currentSong = currentSong,
+                recentlyAddedSongIds = recentlyAddedSongIds,
+                favoriteMembershipKeys = favoriteMembershipKeys,
+                onGenreSelected = onGenreSelected,
+                onBackFromGenre = onBackFromGenre,
+                onSongClick = onSongClick,
+                onPlaySongsClick = onPlaySongsClick,
+                onPlayNextClick = onPlayNextClick,
+                onAddToQueueClick = onAddToQueueClick,
+                onToggleFavoriteClick = onToggleFavoriteClick,
+                onAddToPlaylistClick = onAddToPlaylistClick,
+                onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
                 onEditSongTagsClick = onEditSongTagsClick,
                 bottomContentPadding = bottomContentPadding,
                 modifier = modifier

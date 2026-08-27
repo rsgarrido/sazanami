@@ -1,6 +1,8 @@
 package com.example.cdplaya.ui.library
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
@@ -11,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +36,7 @@ val primaryLibraryTabs = listOf(
     LibraryTab.SONGS,
     LibraryTab.ALBUMS,
     LibraryTab.ARTISTS,
+    LibraryTab.GENRES,
     LibraryTab.PLAYLISTS
 )
 
@@ -84,6 +88,7 @@ fun LibraryBrowseSwitcher(
             Row(
                 modifier = Modifier
                     .padding(4.dp)
+                    .horizontalScroll(rememberScrollState())
                     .selectableGroup(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -92,7 +97,7 @@ fun LibraryBrowseSwitcher(
                         tab = tab,
                         selected = tab == selectedPrimaryTab,
                         onClick = { onTabSelected(tab) },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.widthIn(min = 84.dp)
                     )
                 }
             }

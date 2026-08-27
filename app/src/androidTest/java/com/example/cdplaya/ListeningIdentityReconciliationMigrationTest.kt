@@ -45,7 +45,8 @@ class ListeningIdentityReconciliationMigrationTest {
                 DatabaseProvider.MIGRATION_11_12,
                 DatabaseProvider.MIGRATION_12_13,
                 DatabaseProvider.MIGRATION_13_14,
-                DatabaseProvider.MIGRATION_14_15
+                DatabaseProvider.MIGRATION_14_15,
+                DatabaseProvider.MIGRATION_15_16
             )
             .build()
         try {

@@ -122,6 +122,7 @@ internal fun librarySortOptionsFor(
     )
 
     LibraryTab.PLAYLISTS,
+    LibraryTab.GENRES,
     LibraryTab.RECENTLY_PLAYED,
     LibraryTab.MOST_PLAYED,
     LibraryTab.QUEUE -> emptyList()

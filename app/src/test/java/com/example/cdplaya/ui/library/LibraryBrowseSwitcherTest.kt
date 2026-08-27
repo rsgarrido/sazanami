@@ -17,6 +17,7 @@ class LibraryBrowseSwitcherTest {
     fun primaryCategoriesRemainSelected() {
         assertEquals(LibraryTab.ALBUMS, LibraryTab.ALBUMS.primaryBrowseTab())
         assertEquals(LibraryTab.ARTISTS, LibraryTab.ARTISTS.primaryBrowseTab())
+        assertEquals(LibraryTab.GENRES, LibraryTab.GENRES.primaryBrowseTab())
         assertEquals(LibraryTab.PLAYLISTS, LibraryTab.PLAYLISTS.primaryBrowseTab())
     }
 

@@ -3,6 +3,9 @@ package com.example.cdplaya.data
 import android.net.Uri
 import com.example.cdplaya.data.local.CachedSongDao
 import com.example.cdplaya.data.local.CachedSongEntity
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 class LibraryCacheRepository(
     private val cachedSongDao: CachedSongDao
@@ -46,6 +49,7 @@ class LibraryCacheRepository(
 }
 
 fun CachedSongEntity.toSong(): Song {
+    val decodedGenres = decodeCachedGenres(genresJson)
     return Song(
         id = mediaStoreId,
         title = title,
@@ -71,7 +75,13 @@ fun CachedSongEntity.toSong(): Song {
         dateAddedEpochSeconds = dateAddedEpochSeconds,
         dateModifiedEpochSeconds = dateModifiedEpochSeconds,
         year = year,
-        artworkEnrichmentVersion = artworkEnrichmentVersion
+        artworkEnrichmentVersion = artworkEnrichmentVersion,
+        genres = decodedGenres.orEmpty(),
+        embeddedMetadataEnrichmentVersion = if (decodedGenres != null) {
+            embeddedMetadataEnrichmentVersion
+        } else {
+            0
+        }
     )
 }
 
@@ -96,6 +106,14 @@ fun Song.toCachedSongEntity(cachedAt: Long): CachedSongEntity {
         dateModifiedEpochSeconds = dateModifiedEpochSeconds,
         year = year,
         artworkEnrichmentVersion = artworkEnrichmentVersion,
+        genresJson = cachedSongJson.encodeToString(genres),
+        embeddedMetadataEnrichmentVersion = embeddedMetadataEnrichmentVersion,
         cachedAt = cachedAt
     )
 }
+
+private val cachedSongJson = Json { ignoreUnknownKeys = true }
+
+private fun decodeCachedGenres(encoded: String): List<String>? = runCatching {
+    cachedSongJson.decodeFromString<List<String>>(encoded)
+}.getOrNull()

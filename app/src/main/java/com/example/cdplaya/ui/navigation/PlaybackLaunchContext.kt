@@ -18,6 +18,10 @@ sealed interface PlaybackLaunchContext {
         val artistName: String
     ) : PlaybackLaunchContext
 
+    data class GenreDetail(
+        val genreKey: String
+    ) : PlaybackLaunchContext
+
     data class PlaylistDetail(
         val playlistId: Long
     ) : PlaybackLaunchContext
@@ -43,6 +47,10 @@ val playbackLaunchContextSaver = listSaver<PlaybackLaunchContext, String>(
                 listOf("artist", context.artistName)
             }
 
+            is PlaybackLaunchContext.GenreDetail -> {
+                listOf("genre", context.genreKey)
+            }
+
             is PlaybackLaunchContext.PlaylistDetail -> {
                 listOf("playlist", context.playlistId.toString())
             }
@@ -63,6 +71,9 @@ val playbackLaunchContextSaver = listSaver<PlaybackLaunchContext, String>(
             "artist" -> saved.getOrNull(1)
                 ?.let { artistName -> PlaybackLaunchContext.ArtistDetail(artistName) }
 
+            "genre" -> saved.getOrNull(1)
+                ?.let { genreKey -> PlaybackLaunchContext.GenreDetail(genreKey) }
+
             "playlist" -> saved.getOrNull(1)
                 ?.toLongOrNull()
                 ?.let { playlistId -> PlaybackLaunchContext.PlaylistDetail(playlistId) }
@@ -79,6 +90,7 @@ fun capturePlaybackLaunchContext(
     selectedLibraryTab: LibraryTab,
     selectedAlbumFolderPath: String?,
     selectedArtistName: String?,
+    selectedGenreKey: String?,
     selectedPlaylistId: Long?,
     searchQuery: String
 ): PlaybackLaunchContext {
@@ -94,6 +106,7 @@ fun capturePlaybackLaunchContext(
         }
 
         selectedArtistName != null -> PlaybackLaunchContext.ArtistDetail(selectedArtistName)
+        selectedGenreKey != null -> PlaybackLaunchContext.GenreDetail(selectedGenreKey)
         selectedPlaylistId != null -> PlaybackLaunchContext.PlaylistDetail(selectedPlaylistId)
         searchQuery.isNotBlank() -> PlaybackLaunchContext.Search(searchQuery)
         else -> PlaybackLaunchContext.LibrarySection(selectedLibraryTab)
@@ -103,6 +116,7 @@ fun capturePlaybackLaunchContext(
 fun PlaybackLaunchContext.withValidDetails(
     albumFolderPaths: Set<String>,
     artistNames: Set<String>,
+    genreKeys: Set<String>,
     playlistIds: Set<Long>
 ): PlaybackLaunchContext {
     return when (this) {
@@ -119,6 +133,14 @@ fun PlaybackLaunchContext.withValidDetails(
                 this
             } else {
                 PlaybackLaunchContext.LibrarySection(LibraryTab.ARTISTS)
+            }
+        }
+
+        is PlaybackLaunchContext.GenreDetail -> {
+            if (genreKey in genreKeys) {
+                this
+            } else {
+                PlaybackLaunchContext.LibrarySection(LibraryTab.GENRES)
             }
         }
 
