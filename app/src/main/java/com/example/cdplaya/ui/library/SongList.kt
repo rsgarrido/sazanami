@@ -68,7 +68,9 @@ fun SongList(
     bottomContentPadding: Dp = 0.dp,
     ratingValuesByReferenceKey: Map<String, Int> = emptyMap(),
     quickRatingMode: Boolean = false,
-    listState: LazyListState? = null
+    listState: LazyListState? = null,
+    headerContent: (@Composable () -> Unit)? = null,
+    emptyContent: (@Composable () -> Unit)? = null
 ) {
     var actionSheetTarget by remember {
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
@@ -83,6 +85,20 @@ fun SongList(
         modifier = modifier,
         contentPadding = PaddingValues(bottom = bottomContentPadding)
     ) {
+        headerContent?.let { content ->
+            item(key = "library-song-list-header") {
+                content()
+            }
+        }
+
+        if (songs.isEmpty()) {
+            emptyContent?.let { content ->
+                item(key = "library-song-list-empty") {
+                    content()
+                }
+            }
+        }
+
         items(
             items = songs,
             key = { song -> song.stableUiKey() }

@@ -120,7 +120,7 @@ fun ArtistDetailScreen(
     val gridState = rememberLazyGridState()
     val showCompactTitle by remember {
         derivedStateOf {
-            gridState.firstVisibleItemIndex > 0
+            shouldShowCompactLibraryDetailTitle(gridState.firstVisibleItemIndex)
         }
     }
     var shuffleMenuExpanded by remember { mutableStateOf(false) }
@@ -435,6 +435,9 @@ private fun ArtistAlbumCard(
         }
     }
 }
+
+internal fun shouldShowCompactLibraryDetailTitle(firstVisibleItemIndex: Int): Boolean =
+    firstVisibleItemIndex > 0
 
 @Composable
 internal fun LibraryDetailTopBar(

@@ -44,6 +44,20 @@ val primaryLibraryTabs = listOf(
     LibraryTab.GENRES
 )
 
+internal data class LibraryTabOverflowAffordances(
+    val showStart: Boolean,
+    val showEnd: Boolean
+)
+
+internal fun libraryTabOverflowAffordances(
+    hasMeasuredContent: Boolean,
+    canScrollBackward: Boolean,
+    canScrollForward: Boolean
+): LibraryTabOverflowAffordances = LibraryTabOverflowAffordances(
+    showStart = hasMeasuredContent && canScrollBackward,
+    showEnd = hasMeasuredContent && canScrollForward
+)
+
 val songCollectionTabs = listOf(
     LibraryTab.SONGS,
     LibraryTab.FAVORITES,
@@ -75,6 +89,11 @@ fun LibraryBrowseSwitcher(
     val selectedPrimaryTab = selectedTab.primaryBrowseTab() ?: return
     val primaryTabScrollState = rememberScrollState()
     val primaryTabContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val overflowAffordances = libraryTabOverflowAffordances(
+        hasMeasuredContent = primaryTabScrollState.maxValue != Int.MAX_VALUE,
+        canScrollBackward = primaryTabScrollState.canScrollBackward,
+        canScrollForward = primaryTabScrollState.canScrollForward
+    )
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -113,22 +132,23 @@ fun LibraryBrowseSwitcher(
                     }
                 }
 
-                if (primaryTabScrollState.maxValue != Int.MAX_VALUE &&
-                    primaryTabScrollState.canScrollForward
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .fillMaxHeight()
-                            .width(28.dp)
-                            .background(
-                                Brush.horizontalGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        primaryTabContainerColor
-                                    )
-                                )
-                            )
+                if (overflowAffordances.showStart) {
+                    LibraryTabOverflowFade(
+                        modifier = Modifier.align(Alignment.CenterStart),
+                        colors = listOf(
+                            primaryTabContainerColor,
+                            Color.Transparent
+                        )
+                    )
+                }
+
+                if (overflowAffordances.showEnd) {
+                    LibraryTabOverflowFade(
+                        modifier = Modifier.align(Alignment.CenterEnd),
+                        colors = listOf(
+                            Color.Transparent,
+                            primaryTabContainerColor
+                        )
                     )
                 }
             }
@@ -152,6 +172,19 @@ fun LibraryBrowseSwitcher(
             }
         }
     }
+}
+
+@Composable
+private fun LibraryTabOverflowFade(
+    colors: List<Color>,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .width(28.dp)
+            .background(Brush.horizontalGradient(colors = colors))
+    )
 }
 
 @Composable
