@@ -192,6 +192,43 @@ class LibrarySongFilterTest {
         assertEquals(UNKNOWN_GENRE_KEY, availableLibraryGenreFilters(songs).last().key)
     }
 
+    @Test
+    fun organizeSelectorsKeepMissingSelectionsVisibleInDeterministicOrder() {
+        val unknown = LibraryGenreFilter(UNKNOWN_GENRE_KEY, "Unknown Genre")
+        val missing = LibraryGenreFilter("known:shoegaze", "Shoegaze")
+
+        assertEquals(
+            listOf("known:rock", "known:shoegaze", UNKNOWN_GENRE_KEY),
+            organizeGenreOptions(
+                availableOptions = listOf(
+                    LibraryGenreFilter("known:rock", "Rock"),
+                    unknown
+                ),
+                selectedGenre = missing
+            ).map(LibraryGenreFilter::key)
+        )
+        assertEquals(
+            listOf(2026, 2004, 1994),
+            organizeYearOptions(
+                availableYears = listOf(2026, 1994),
+                selectedYear = LibraryYearFilter.Exact(2004)
+            )
+        )
+    }
+
+    @Test
+    fun organizeButtonDescriptionReflectsOnlyActiveFilterCount() {
+        assertEquals("Organize library", organizeButtonContentDescription(0))
+        assertEquals(
+            "Organize library, 1 active filter",
+            organizeButtonContentDescription(1)
+        )
+        assertEquals(
+            "Organize library, 2 active filters",
+            organizeButtonContentDescription(2)
+        )
+    }
+
     private fun song(
         id: Long,
         genres: List<String> = emptyList(),

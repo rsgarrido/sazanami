@@ -27,9 +27,10 @@ import com.example.cdplaya.data.PlayerTheme
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.membershipKey
 import com.example.cdplaya.player.RepeatMode
+import com.example.cdplaya.ui.library.LibraryOrganizeButton
 import com.example.cdplaya.ui.library.LibrarySearchBar
-import com.example.cdplaya.ui.library.LibrarySortDropdown
 import com.example.cdplaya.ui.library.LibrarySortOption
+import com.example.cdplaya.ui.library.LibrarySongFilterState
 import com.example.cdplaya.ui.library.displayTitleFor
 import com.example.cdplaya.ui.library.librarySortOptionsFor
 import com.example.cdplaya.ui.library.showsQuickRateAction
@@ -58,8 +59,7 @@ fun MusicScreenHeader(
     backContentDescription: String = "Back to Home",
     batchMetadataAction: (@Composable () -> Unit)? = null,
     viewModeAction: (@Composable () -> Unit)? = null,
-    filterAction: (@Composable () -> Unit)? = null,
-    sortAction: (@Composable () -> Unit)? = null
+    organizeAction: (@Composable () -> Unit)? = null
 ) {
     Row(
         modifier = modifier
@@ -97,9 +97,7 @@ fun MusicScreenHeader(
 
             viewModeAction?.invoke()
 
-            filterAction?.invoke()
-
-            sortAction?.invoke()
+            organizeAction?.invoke()
 
             if (onSettingsClick != null) {
                 AppShellIconButton(
@@ -248,7 +246,8 @@ fun LibrarySearchControl(
 }
 
 @Composable
-fun LibrarySortAction(
+fun LibraryOrganizeAction(
+    songs: List<Song>,
     selectedLibraryTab: LibraryTab,
     selectedArtistName: String?,
     selectedAlbumFolderPath: String?,
@@ -256,13 +255,16 @@ fun LibrarySortAction(
     selectedArtistSortState: LibrarySortState,
     selectedAlbumSortState: LibrarySortState,
     selectedFavoriteSortState: LibrarySortState,
+    selectedSongFilterState: LibrarySongFilterState,
     onSongSortStateChanged: (LibrarySortState) -> Unit,
     onArtistSortStateChanged: (LibrarySortState) -> Unit,
     onAlbumSortStateChanged: (LibrarySortState) -> Unit,
     onFavoriteSortStateChanged: (LibrarySortState) -> Unit,
+    onSongFilterStateChanged: (LibrarySongFilterState) -> Unit,
+    songFiltersEnabled: Boolean = true,
     ratingFeaturesEnabled: Boolean = true
 ) {
-    val shouldShowSortDropdown =
+    val shouldShowOrganizeAction =
         selectedLibraryTab == LibraryTab.SONGS ||
                 selectedLibraryTab == LibraryTab.RATED ||
                 selectedLibraryTab == LibraryTab.FAVORITES ||
@@ -270,7 +272,7 @@ fun LibrarySortAction(
                 selectedLibraryTab == LibraryTab.ARTISTS && selectedArtistName == null ||
                 selectedLibraryTab == LibraryTab.ALBUMS && selectedAlbumFolderPath == null
 
-    if (shouldShowSortDropdown) {
+    if (shouldShowOrganizeAction) {
         val requestedSortState = when (selectedLibraryTab) {
             LibraryTab.SONGS,
             LibraryTab.RATED,
@@ -328,30 +330,32 @@ fun LibrarySortAction(
                     accented = ratingUi.quickRateMode
                 )
                 selectedSortState?.let { state ->
-                    LibrarySortDropdown(
-                        selectedOption = state.option,
-                        direction = state.direction,
-                        options = availableSortOptions,
-                        onOptionSelected = { option ->
-                            onSortStateChanged(state.select(option))
+                    LibraryOrganizeButton(
+                        songs = songs,
+                        sortState = state,
+                        sortOptions = availableSortOptions,
+                        onSortStateChanged = onSortStateChanged,
+                        filterState = selectedSongFilterState.takeIf {
+                            selectedLibraryTab == LibraryTab.SONGS && songFiltersEnabled
                         },
-                        onDirectionToggle = {
-                            onSortStateChanged(state.toggleDirection())
+                        onFilterStateChanged = onSongFilterStateChanged.takeIf {
+                            selectedLibraryTab == LibraryTab.SONGS && songFiltersEnabled
                         },
                         optionTitle = { it.displayTitleFor(selectedLibraryTab) }
                     )
                 }
             }
         } else if (selectedSortState != null) {
-            LibrarySortDropdown(
-                selectedOption = selectedSortState.option,
-                direction = selectedSortState.direction,
-                options = availableSortOptions,
-                onOptionSelected = { option ->
-                    onSortStateChanged(selectedSortState.select(option))
+            LibraryOrganizeButton(
+                songs = songs,
+                sortState = selectedSortState,
+                sortOptions = availableSortOptions,
+                onSortStateChanged = onSortStateChanged,
+                filterState = selectedSongFilterState.takeIf {
+                    selectedLibraryTab == LibraryTab.SONGS && songFiltersEnabled
                 },
-                onDirectionToggle = {
-                    onSortStateChanged(selectedSortState.toggleDirection())
+                onFilterStateChanged = onSongFilterStateChanged.takeIf {
+                    selectedLibraryTab == LibraryTab.SONGS && songFiltersEnabled
                 },
                 optionTitle = { it.displayTitleFor(selectedLibraryTab) }
             )

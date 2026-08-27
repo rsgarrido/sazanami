@@ -58,7 +58,6 @@ import com.example.cdplaya.ui.library.LibrarySortDirection
 import com.example.cdplaya.ui.library.LibrarySortOption
 import com.example.cdplaya.ui.library.LibrarySortState
 import com.example.cdplaya.ui.library.LibrarySortStateSaver
-import com.example.cdplaya.ui.library.LibrarySongFilterButton
 import com.example.cdplaya.ui.library.LibrarySongFilterState
 import com.example.cdplaya.ui.library.LibraryTab
 import com.example.cdplaya.ui.library.RatedSongFilter
@@ -609,22 +608,9 @@ internal fun MusicScreenBody(
                                 } else {
                                     null
                                 },
-                                filterAction = if (!isSearchDestination &&
-                                    !isLibraryDetail &&
-                                    selectedLibraryTab == LibraryTab.SONGS
-                                ) {
-                                    {
-                                        LibrarySongFilterButton(
-                                            songs = songs,
-                                            state = selectedSongFilterState,
-                                            onStateChanged = onSongFilterStateChanged
-                                        )
-                                    }
-                                } else {
-                                    null
-                                },
-                                sortAction = {
-                                    LibrarySortAction(
+                                organizeAction = {
+                                    LibraryOrganizeAction(
+                                        songs = songs,
                                         selectedLibraryTab = selectedLibraryTab,
                                         selectedArtistName = selectedArtistName,
                                         selectedAlbumFolderPath = selectedAlbumFolderPath,
@@ -632,6 +618,7 @@ internal fun MusicScreenBody(
                                         selectedArtistSortState = selectedArtistSortState,
                                         selectedAlbumSortState = selectedAlbumSortState,
                                         selectedFavoriteSortState = selectedFavoriteSortState,
+                                        selectedSongFilterState = selectedSongFilterState,
                                         onSongSortStateChanged = { state ->
                                             when (selectedLibraryTab) {
                                                 LibraryTab.RATED -> selectedRatedSortState = state
@@ -643,6 +630,8 @@ internal fun MusicScreenBody(
                                         onArtistSortStateChanged = onArtistSortStateChanged,
                                         onAlbumSortStateChanged = onAlbumSortStateChanged,
                                         onFavoriteSortStateChanged = onFavoriteSortStateChanged,
+                                        onSongFilterStateChanged = onSongFilterStateChanged,
+                                        songFiltersEnabled = !isSearchDestination,
                                         ratingFeaturesEnabled = !isSearchDestination
                                     )
                                 }
