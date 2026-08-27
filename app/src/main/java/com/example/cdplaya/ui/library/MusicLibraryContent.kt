@@ -25,11 +25,11 @@ fun MusicLibraryContent(
     selectedLibraryTab: LibraryTab,
     songs: List<Song>,
     searchQuery: String,
-    selectedSongSortOption: LibrarySortOption,
+    selectedSongSortState: LibrarySortState,
     selectedRatedFilter: RatedSongFilter,
-    selectedArtistSortOption: LibrarySortOption,
-    selectedAlbumSortOption: LibrarySortOption,
-    selectedFavoriteSortOption: LibrarySortOption,
+    selectedArtistSortState: LibrarySortState,
+    selectedAlbumSortState: LibrarySortState,
+    selectedFavoriteSortState: LibrarySortState,
     viewMode: LibraryViewMode,
     gridColumnCount: Int,
     selectedArtistName: String?,
@@ -96,7 +96,7 @@ fun MusicLibraryContent(
             SongsTabContent(
                 songs = songs,
                 searchQuery = searchQuery,
-                sortOption = selectedSongSortOption,
+                sortState = selectedSongSortState,
                 currentSong = currentSong,
                 viewMode = viewMode,
                 gridColumnCount = gridColumnCount,
@@ -118,7 +118,7 @@ fun MusicLibraryContent(
             RatedSongsTabContent(
                 songs = songs,
                 searchQuery = searchQuery,
-                sortOption = selectedSongSortOption,
+                sortState = selectedSongSortState,
                 selectedFilter = selectedRatedFilter,
                 currentSong = currentSong,
                 viewMode = viewMode,
@@ -142,7 +142,7 @@ fun MusicLibraryContent(
                 songs = songs,
                 searchQuery = searchQuery,
                 selectedArtistName = selectedArtistName,
-                sortOption = selectedArtistSortOption,
+                sortState = selectedArtistSortState,
                 currentSong = currentSong,
                 viewMode = viewMode,
                 gridColumnCount = gridColumnCount,
@@ -174,7 +174,7 @@ fun MusicLibraryContent(
                 currentSong = currentSong,
                 viewMode = viewMode,
                 gridColumnCount = gridColumnCount,
-                sortOption = selectedAlbumSortOption,
+                sortState = selectedAlbumSortState,
                 recentlyAddedSongIds = recentlyAddedSongIds,
                 onAlbumSelected = onAlbumSelected,
                 onBackFromAlbum = onBackFromAlbum,
@@ -200,7 +200,7 @@ fun MusicLibraryContent(
                 songs = songs,
                 favoriteMembershipKeys = favoriteMembershipKeys,
                 searchQuery = searchQuery,
-                sortOption = selectedFavoriteSortOption,
+                sortState = selectedFavoriteSortState,
                 currentSong = currentSong,
                 viewMode = viewMode,
                 gridColumnCount = gridColumnCount,
@@ -305,7 +305,8 @@ fun MusicLibraryContent(
             )
             val displayedSongs = com.example.cdplaya.ui.sortSongsForLibrary(
                 searchedSongs,
-                selectedSongSortOption
+                selectedSongSortState.option,
+                selectedSongSortState.direction
             )
             if (displayedSongs.isEmpty()) {
                 EmptyHistoryMessage(

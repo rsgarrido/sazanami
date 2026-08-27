@@ -28,7 +28,7 @@ import androidx.compose.ui.res.stringResource
 fun SongsTabContent(
     songs: List<Song>,
     searchQuery: String,
-    sortOption: LibrarySortOption,
+    sortState: LibrarySortState,
     currentSong: Song?,
     viewMode: LibraryViewMode,
     gridColumnCount: Int,
@@ -51,15 +51,16 @@ fun SongsTabContent(
         )
     }
 
-    val effectiveSortOption = sortOption.takeIf {
+    val effectiveSortOption = sortState.option.takeIf {
         it in librarySortOptionsFor(LibraryTab.SONGS, ratingFeaturesEnabled)
     } ?: LibrarySortOption.TITLE
     // The normal Songs collection stays visually and semantically uncluttered. Rating management
     // and rating-specific sorting belong to the Rated collection.
-    val displayedSongs = remember(filteredSongs, effectiveSortOption) {
+    val displayedSongs = remember(filteredSongs, effectiveSortOption, sortState.direction) {
         sortSongsForLibrary(
             songs = filteredSongs,
-            sortOption = effectiveSortOption
+            sortOption = effectiveSortOption,
+            sortDirection = sortState.direction
         )
     }
 
@@ -119,7 +120,7 @@ fun SongsTabContent(
 fun RatedSongsTabContent(
     songs: List<Song>,
     searchQuery: String,
-    sortOption: LibrarySortOption,
+    sortState: LibrarySortState,
     selectedFilter: RatedSongFilter = RatedSongFilter.ALL,
     currentSong: Song?,
     viewMode: LibraryViewMode,
@@ -150,8 +151,13 @@ fun RatedSongsTabContent(
     val searchedSongs = remember(projectedSongs, searchQuery) {
         filterSongsForSearch(projectedSongs, searchQuery)
     }
-    val displayedSongs = remember(searchedSongs, sortOption, ratings) {
-        sortSongsForLibrary(searchedSongs, sortOption, ratings)
+    val displayedSongs = remember(searchedSongs, sortState, ratings) {
+        sortSongsForLibrary(
+            searchedSongs,
+            sortState.option,
+            sortState.direction,
+            ratings
+        )
     }
 
     if (quickRateActive && displayedSongs.isNotEmpty()) {
@@ -228,7 +234,7 @@ fun FavoritesTabContent(
     songs: List<Song>,
     favoriteMembershipKeys: Set<String>,
     searchQuery: String,
-    sortOption: LibrarySortOption,
+    sortState: LibrarySortState,
     currentSong: Song?,
     viewMode: LibraryViewMode,
     gridColumnCount: Int,
@@ -254,7 +260,8 @@ fun FavoritesTabContent(
 
     val displayedSongs = sortSongsForLibrary(
         songs = filteredSongs,
-        sortOption = sortOption
+        sortOption = sortState.option,
+        sortDirection = sortState.direction
     )
 
     if (favoriteSongs.isEmpty()) {
@@ -330,7 +337,7 @@ fun ArtistsTabContent(
     currentSong: Song?,
     viewMode: LibraryViewMode,
     gridColumnCount: Int,
-    sortOption: LibrarySortOption,
+    sortState: LibrarySortState,
     recentlyAddedSongIds: Set<Long>,
     onArtistSelected: (String) -> Unit,
     onAlbumSelected: (String) -> Unit,
@@ -392,7 +399,7 @@ fun ArtistsTabContent(
                     ArtistListScreen(
                         songs = artistSearchSongs,
                         onArtistClick = onArtistSelected,
-                        sortOption = sortOption,
+                        sortState = sortState,
                         onArtistPlayClick = onArtistPlay,
                         onArtistShuffleClick = onArtistShuffle,
                         onArtistPlayNextClick = onArtistPlayNext,
@@ -406,7 +413,7 @@ fun ArtistsTabContent(
                     ArtistGridScreen(
                         songs = artistSearchSongs,
                         onArtistClick = onArtistSelected,
-                        sortOption = sortOption,
+                        sortState = sortState,
                         gridColumnCount = gridColumnCount,
                         onArtistPlayClick = onArtistPlay,
                         onArtistShuffleClick = onArtistShuffle,
@@ -478,7 +485,7 @@ fun AlbumsTabContent(
     currentSong: Song?,
     viewMode: LibraryViewMode,
     gridColumnCount: Int,
-    sortOption: LibrarySortOption,
+    sortState: LibrarySortState,
     recentlyAddedSongIds: Set<Long>,
     onAlbumSelected: (String) -> Unit,
     onBackFromAlbum: () -> Unit,
@@ -540,7 +547,7 @@ fun AlbumsTabContent(
                     AlbumListScreen(
                         songs = albumSearchSongs,
                         onAlbumClick = onAlbumSelected,
-                        sortOption = sortOption,
+                        sortState = sortState,
                         onAlbumPlayClick = onAlbumPlay,
                         onAlbumShuffleClick = onAlbumShuffle,
                         onAlbumPlayNextClick = onAlbumPlayNext,
@@ -554,7 +561,7 @@ fun AlbumsTabContent(
                     AlbumGridScreen(
                         songs = albumSearchSongs,
                         onAlbumClick = onAlbumSelected,
-                        sortOption = sortOption,
+                        sortState = sortState,
                         gridColumnCount = gridColumnCount,
                         onAlbumPlayClick = onAlbumPlay,
                         onAlbumShuffleClick = onAlbumShuffle,

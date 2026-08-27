@@ -45,10 +45,13 @@ fun AlbumListScreen(
     onAlbumAddToQueueClick: (String, List<Song>) -> Unit,
     onAlbumAddToPlaylistClick: (String, List<Song>) -> Unit,
     modifier: Modifier = Modifier,
-    sortOption: LibrarySortOption = LibrarySortOption.TITLE,
+    sortState: LibrarySortState = LibrarySortState(
+        LibrarySortOption.TITLE,
+        LibrarySortDirection.ASCENDING
+    ),
     bottomContentPadding: Dp = 0.dp
 ) {
-    val albums = sortedLibraryAlbumGroups(songs, sortOption)
+    val albums = sortedLibraryAlbumGroups(songs, sortState)
     var actionSheetTarget by remember {
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
     }
@@ -131,38 +134,55 @@ fun AlbumListScreen(
 
 internal fun sortedLibraryAlbumGroups(
     songs: List<Song>,
-    sortOption: LibrarySortOption
+    sortState: LibrarySortState
 ): List<LibraryAlbumGroup> {
     val albumGroups = buildLibraryAlbumGroups(songs)
 
-    return when (sortOption) {
+    return when (sortState.option) {
         LibrarySortOption.ARTIST -> {
-            albumGroups.sortedWith(
-                compareBy<LibraryAlbumGroup> { album ->
-                    album.artistText.lowercase()
-                }.thenBy { album ->
-                    album.title.lowercase()
-                }
-            )
+            albumGroups.sortedWith { left, right ->
+                compareLibraryText(
+                    left.artistText.takeIf { left.songs.any { song -> song.artist.isNotBlank() } }
+                        .orEmpty(),
+                    right.artistText.takeIf { right.songs.any { song -> song.artist.isNotBlank() } }
+                        .orEmpty(),
+                    sortState.direction
+                ).takeUnless { it == 0 }
+                    ?: compareLibraryText(
+                        left.sortableTitle(),
+                        right.sortableTitle(),
+                        LibrarySortDirection.ASCENDING
+                    )
+            }
         }
 
         LibrarySortOption.SONG_COUNT -> {
-            albumGroups.sortedWith(
-                compareBy<LibraryAlbumGroup> { album ->
-                    album.songs.size
-                }.thenBy { album ->
-                    album.title.lowercase()
-                }
-            )
+            albumGroups.sortedWith { left, right ->
+                sortState.direction.applyTo(left.songs.size.compareTo(right.songs.size))
+                    .takeUnless { it == 0 }
+                    ?: compareLibraryText(
+                        left.sortableTitle(),
+                        right.sortableTitle(),
+                        LibrarySortDirection.ASCENDING
+                    )
+            }
         }
 
         else -> {
-            albumGroups.sortedBy { album ->
-                album.title.lowercase()
+            albumGroups.sortedWith { left, right ->
+                compareLibraryText(
+                    left.sortableTitle(),
+                    right.sortableTitle(),
+                    sortState.direction
+                )
             }
         }
     }
 }
+
+private fun LibraryAlbumGroup.sortableTitle(): String = title.takeIf {
+    songs.any { song -> song.album.isNotBlank() }
+}.orEmpty()
 
 internal fun albumActionSheetTarget(
     albumTitle: String,

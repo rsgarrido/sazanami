@@ -48,7 +48,6 @@ import com.example.cdplaya.player.audio.AudioOffloadPreference
 import com.example.cdplaya.player.audio.AudioOutputUiState
 import com.example.cdplaya.player.replaygain.ReplayGainMode
 import com.example.cdplaya.player.PlaybackShuffleMode
-import com.example.cdplaya.ui.library.LibrarySortOption
 import com.example.cdplaya.ui.library.LibraryTab
 import com.example.cdplaya.ui.library.LibraryAlbumGroup
 import com.example.cdplaya.ui.library.isAlbumGroupAvailable
@@ -283,10 +282,10 @@ internal fun MusicScreen(
     var selectedAlbumFolderPath by navigationState.selectedAlbumFolderPath
     var selectedPlaylistId by navigationState.selectedPlaylistId
     var searchQuery by navigationState.searchQuery
-    var selectedSongSortOption by navigationState.selectedSongSortOption
-    var selectedArtistSortOption by navigationState.selectedArtistSortOption
-    var selectedAlbumSortOption by navigationState.selectedAlbumSortOption
-    var selectedFavoriteSortOption by navigationState.selectedFavoriteSortOption
+    var selectedSongSortState by navigationState.selectedSongSortState
+    var selectedArtistSortState by navigationState.selectedArtistSortState
+    var selectedAlbumSortState by navigationState.selectedAlbumSortState
+    var selectedFavoriteSortState by navigationState.selectedFavoriteSortState
 
     val overlayState = rememberMusicOverlayState()
     val settingsScrollState = rememberScrollState()
@@ -982,10 +981,10 @@ internal fun MusicScreen(
                     selectedAlbumFolderPath = selectedAlbumFolderPath,
                     selectedPlaylistId = selectedPlaylistId,
                     searchQuery = searchQuery,
-                    selectedSongSortOption = selectedSongSortOption,
-                    selectedArtistSortOption = selectedArtistSortOption,
-                    selectedAlbumSortOption = selectedAlbumSortOption,
-                    selectedFavoriteSortOption = selectedFavoriteSortOption,
+                    selectedSongSortState = selectedSongSortState,
+                    selectedArtistSortState = selectedArtistSortState,
+                    selectedAlbumSortState = selectedAlbumSortState,
+                    selectedFavoriteSortState = selectedFavoriteSortState,
                     recentlyAddedSongIds = recentlyAddedSongIds,
                     isPlayerExpanded = isPlayerExpanded,
                     isFolderScreenVisible = isFolderScreenVisible,
@@ -1087,17 +1086,17 @@ internal fun MusicScreen(
                     onSearchQueryChange = { query ->
                         searchQuery = query
                     },
-                    onSongSortOptionSelected = { option ->
-                        selectedSongSortOption = option
+                    onSongSortStateChanged = { state ->
+                        selectedSongSortState = state
                     },
-                    onArtistSortOptionSelected = { option ->
-                        selectedArtistSortOption = option
+                    onArtistSortStateChanged = { state ->
+                        selectedArtistSortState = state
                     },
-                    onAlbumSortOptionSelected = { option ->
-                        selectedAlbumSortOption = option
+                    onAlbumSortStateChanged = { state ->
+                        selectedAlbumSortState = state
                     },
-                    onFavoriteSortOptionSelected = { option ->
-                        selectedFavoriteSortOption = option
+                    onFavoriteSortStateChanged = { state ->
+                        selectedFavoriteSortState = state
                     },
                     onExpandPlayerClick = {
                         playerMorphState.expand()

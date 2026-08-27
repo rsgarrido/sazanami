@@ -35,7 +35,11 @@ import com.example.cdplaya.ui.library.librarySortOptionsFor
 import com.example.cdplaya.ui.library.showsQuickRateAction
 import com.example.cdplaya.ui.ratings.LocalSongRatingUi
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.outlined.StarOutline
+import com.example.cdplaya.ui.library.LibrarySortDirection
+import com.example.cdplaya.ui.library.LibrarySortState
 import com.example.cdplaya.ui.library.LibraryTab
 import com.example.cdplaya.ui.player.PlayerCard
 import com.example.cdplaya.ui.player.PlayerMorphState
@@ -248,14 +252,14 @@ fun LibrarySortAction(
     selectedLibraryTab: LibraryTab,
     selectedArtistName: String?,
     selectedAlbumFolderPath: String?,
-    selectedSongSortOption: LibrarySortOption,
-    selectedArtistSortOption: LibrarySortOption,
-    selectedAlbumSortOption: LibrarySortOption,
-    selectedFavoriteSortOption: LibrarySortOption,
-    onSongSortOptionSelected: (LibrarySortOption) -> Unit,
-    onArtistSortOptionSelected: (LibrarySortOption) -> Unit,
-    onAlbumSortOptionSelected: (LibrarySortOption) -> Unit,
-    onFavoriteSortOptionSelected: (LibrarySortOption) -> Unit,
+    selectedSongSortState: LibrarySortState,
+    selectedArtistSortState: LibrarySortState,
+    selectedAlbumSortState: LibrarySortState,
+    selectedFavoriteSortState: LibrarySortState,
+    onSongSortStateChanged: (LibrarySortState) -> Unit,
+    onArtistSortStateChanged: (LibrarySortState) -> Unit,
+    onAlbumSortStateChanged: (LibrarySortState) -> Unit,
+    onFavoriteSortStateChanged: (LibrarySortState) -> Unit,
     ratingFeaturesEnabled: Boolean = true
 ) {
     val shouldShowSortDropdown =
@@ -267,43 +271,44 @@ fun LibrarySortAction(
                 selectedLibraryTab == LibraryTab.ALBUMS && selectedAlbumFolderPath == null
 
     if (shouldShowSortDropdown) {
-        val requestedSortOption = when (selectedLibraryTab) {
+        val requestedSortState = when (selectedLibraryTab) {
             LibraryTab.SONGS,
             LibraryTab.RATED,
-            LibraryTab.RECENTLY_ADDED -> selectedSongSortOption
-            LibraryTab.FAVORITES -> selectedFavoriteSortOption
-            LibraryTab.ARTISTS -> selectedArtistSortOption
-            LibraryTab.ALBUMS -> selectedAlbumSortOption
-            LibraryTab.PLAYLISTS -> selectedSongSortOption
-            LibraryTab.RECENTLY_PLAYED -> selectedSongSortOption
-            LibraryTab.MOST_PLAYED -> selectedSongSortOption
-            LibraryTab.QUEUE -> selectedSongSortOption
+            LibraryTab.RECENTLY_ADDED -> selectedSongSortState
+            LibraryTab.FAVORITES -> selectedFavoriteSortState
+            LibraryTab.ARTISTS -> selectedArtistSortState
+            LibraryTab.ALBUMS -> selectedAlbumSortState
+            LibraryTab.PLAYLISTS -> selectedSongSortState
+            LibraryTab.RECENTLY_PLAYED -> selectedSongSortState
+            LibraryTab.MOST_PLAYED -> selectedSongSortState
+            LibraryTab.QUEUE -> selectedSongSortState
         }
 
         val availableSortOptions = librarySortOptionsFor(
             tab = selectedLibraryTab,
             ratingFeaturesEnabled = ratingFeaturesEnabled
         )
-        val selectedSortOption = requestedSortOption.takeIf(availableSortOptions::contains)
-            ?: availableSortOptions.firstOrNull()
+        val selectedSortState = requestedSortState.takeIf {
+            it.option in availableSortOptions
+        } ?: availableSortOptions.firstOrNull()?.let(requestedSortState::select)
 
-        val onOptionSelected: (LibrarySortOption) -> Unit = { option ->
-                when (selectedLibraryTab) {
-                    LibraryTab.SONGS -> onSongSortOptionSelected(option)
-                    LibraryTab.RATED -> onSongSortOptionSelected(option)
-                    LibraryTab.FAVORITES -> onFavoriteSortOptionSelected(option)
-                    LibraryTab.RECENTLY_ADDED -> onSongSortOptionSelected(option)
-                    LibraryTab.ARTISTS -> onArtistSortOptionSelected(option)
-                    LibraryTab.ALBUMS -> onAlbumSortOptionSelected(option)
-                    LibraryTab.PLAYLISTS -> Unit
-                    LibraryTab.RECENTLY_PLAYED -> Unit
-                    LibraryTab.MOST_PLAYED -> Unit
-                    LibraryTab.QUEUE -> Unit
-                }
+        val onSortStateChanged: (LibrarySortState) -> Unit = { state ->
+            when (selectedLibraryTab) {
+                LibraryTab.SONGS -> onSongSortStateChanged(state)
+                LibraryTab.RATED -> onSongSortStateChanged(state)
+                LibraryTab.FAVORITES -> onFavoriteSortStateChanged(state)
+                LibraryTab.RECENTLY_ADDED -> onSongSortStateChanged(state)
+                LibraryTab.ARTISTS -> onArtistSortStateChanged(state)
+                LibraryTab.ALBUMS -> onAlbumSortStateChanged(state)
+                LibraryTab.PLAYLISTS -> Unit
+                LibraryTab.RECENTLY_PLAYED -> Unit
+                LibraryTab.MOST_PLAYED -> Unit
+                LibraryTab.QUEUE -> Unit
+            }
         }
         if (selectedLibraryTab.showsQuickRateAction(ratingFeaturesEnabled)) {
             val ratingUi = LocalSongRatingUi.current
-            Row {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 AppShellIconButton(
                     onClick = {
                         ratingUi.onQuickRateModeChanged(!ratingUi.quickRateMode)
@@ -320,22 +325,53 @@ fun LibrarySortAction(
                     },
                     accented = ratingUi.quickRateMode
                 )
-                selectedSortOption?.let { option ->
-                    LibrarySortDropdown(
-                        selectedOption = option,
+                selectedSortState?.let { state ->
+                    LibrarySortControls(
+                        state = state,
                         options = availableSortOptions,
-                        onOptionSelected = onOptionSelected,
+                        onStateChanged = onSortStateChanged,
                         optionTitle = { it.displayTitleFor(selectedLibraryTab) }
                     )
                 }
             }
-        } else if (selectedSortOption != null) {
-            LibrarySortDropdown(
-                selectedOption = selectedSortOption,
+        } else if (selectedSortState != null) {
+            LibrarySortControls(
+                state = selectedSortState,
                 options = availableSortOptions,
-                onOptionSelected = onOptionSelected,
+                onStateChanged = onSortStateChanged,
                 optionTitle = { it.displayTitleFor(selectedLibraryTab) }
             )
         }
+    }
+}
+
+@Composable
+private fun LibrarySortControls(
+    state: LibrarySortState,
+    options: List<LibrarySortOption>,
+    onStateChanged: (LibrarySortState) -> Unit,
+    optionTitle: (LibrarySortOption) -> String
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        LibrarySortDropdown(
+            selectedOption = state.option,
+            options = options,
+            onOptionSelected = { option -> onStateChanged(state.select(option)) },
+            optionTitle = optionTitle
+        )
+        AppShellIconButton(
+            onClick = { onStateChanged(state.toggleDirection()) },
+            imageVector = if (state.direction == LibrarySortDirection.ASCENDING) {
+                Icons.Filled.ArrowUpward
+            } else {
+                Icons.Filled.ArrowDownward
+            },
+            contentDescription = if (state.direction == LibrarySortDirection.ASCENDING) {
+                "Currently sorting ascending. Change to descending"
+            } else {
+                "Currently sorting descending. Change to ascending"
+            },
+            accented = true
+        )
     }
 }

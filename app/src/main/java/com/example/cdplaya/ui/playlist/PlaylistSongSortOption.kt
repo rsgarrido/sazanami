@@ -1,7 +1,8 @@
 package com.example.cdplaya.ui.playlist
 
 import com.example.cdplaya.data.PlaylistSong
-import java.util.Locale
+import com.example.cdplaya.ui.library.LibrarySortDirection
+import com.example.cdplaya.ui.library.compareLibraryText
 
 internal enum class PlaylistSongSortField(
     val label: String
@@ -13,18 +14,19 @@ internal enum class PlaylistSongSortField(
 
     fun sort(
         rows: List<PlaylistSong>,
-        direction: PlaylistSongSortDirection
+        direction: LibrarySortDirection
     ): List<PlaylistSong> {
         if (this == CUSTOM) return rows.sortedWith(manualOrderComparator)
 
         return rows.sortedWith { left, right ->
-            val leftValue = left.sortValue().lowercase(Locale.ROOT)
-            val rightValue = right.sortValue().lowercase(Locale.ROOT)
-            val metadataComparison = leftValue.compareTo(rightValue)
+            val metadataComparison = compareLibraryText(
+                left.sortValue(),
+                right.sortValue(),
+                direction
+            )
             when {
                 metadataComparison == 0 -> manualOrderComparator.compare(left, right)
-                direction == PlaylistSongSortDirection.ASCENDING -> metadataComparison
-                else -> -metadataComparison
+                else -> metadataComparison
             }
         }
     }
@@ -41,15 +43,5 @@ internal enum class PlaylistSongSortField(
             PlaylistSong::position,
             PlaylistSong::playlistSongId
         )
-    }
-}
-
-internal enum class PlaylistSongSortDirection {
-    ASCENDING,
-    DESCENDING;
-
-    fun toggled(): PlaylistSongSortDirection = when (this) {
-        ASCENDING -> DESCENDING
-        DESCENDING -> ASCENDING
     }
 }

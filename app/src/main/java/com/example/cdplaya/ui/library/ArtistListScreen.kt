@@ -44,10 +44,13 @@ fun ArtistListScreen(
     onArtistAddToQueueClick: (String, List<Song>) -> Unit,
     onArtistAddToPlaylistClick: (String, List<Song>) -> Unit,
     modifier: Modifier = Modifier,
-    sortOption: LibrarySortOption = LibrarySortOption.NAME,
+    sortState: LibrarySortState = LibrarySortState(
+        LibrarySortOption.NAME,
+        LibrarySortDirection.ASCENDING
+    ),
     bottomContentPadding: Dp = 0.dp
 ) {
-    val artists = sortedLibraryArtistGroups(songs, sortOption)
+    val artists = sortedLibraryArtistGroups(songs, sortState)
     var actionSheetTarget by remember {
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
     }
@@ -130,24 +133,34 @@ fun ArtistListScreen(
 
 internal fun sortedLibraryArtistGroups(
     songs: List<Song>,
-    sortOption: LibrarySortOption
+    sortState: LibrarySortState
 ): List<LibraryArtistGroup> {
     val artistGroups = buildLibraryArtistGroups(songs)
 
-    return when (sortOption) {
+    return when (sortState.option) {
         LibrarySortOption.SONG_COUNT -> {
-            artistGroups.sortedWith(
-                compareByDescending<LibraryArtistGroup> { artist ->
-                    artist.songs.size
-                }.thenBy { artist ->
-                    artist.name.lowercase()
-                }
-            )
+            artistGroups.sortedWith { left, right ->
+                sortState.direction.applyTo(left.songs.size.compareTo(right.songs.size))
+                    .takeUnless { it == 0 }
+                    ?: compareLibraryText(
+                        left.name,
+                        right.name,
+                        LibrarySortDirection.ASCENDING
+                    )
+            }
         }
 
         else -> {
-            artistGroups.sortedBy { artist ->
-                artist.name.lowercase()
+            artistGroups.sortedWith { left, right ->
+                compareLibraryText(
+                    left.name.takeIf {
+                        left.songs.any { song -> song.artist.isNotBlank() }
+                    }.orEmpty(),
+                    right.name.takeIf {
+                        right.songs.any { song -> song.artist.isNotBlank() }
+                    }.orEmpty(),
+                    sortState.direction
+                )
             }
         }
     }

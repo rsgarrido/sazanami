@@ -43,18 +43,33 @@ class SongsRatingIntegrationTest {
                         selectedLibraryTab = selectedTab.value,
                         selectedArtistName = null,
                         selectedAlbumFolderPath = null,
-                        selectedSongSortOption = if (selectedTab.value == LibraryTab.RATED) {
-                            LibrarySortOption.RATING_HIGH_TO_LOW
+                        selectedSongSortState = if (selectedTab.value == LibraryTab.RATED) {
+                            LibrarySortState(
+                                LibrarySortOption.RATING,
+                                LibrarySortDirection.DESCENDING
+                            )
                         } else {
-                            LibrarySortOption.TITLE
+                            LibrarySortState(
+                                LibrarySortOption.TITLE,
+                                LibrarySortDirection.ASCENDING
+                            )
                         },
-                        selectedArtistSortOption = LibrarySortOption.NAME,
-                        selectedAlbumSortOption = LibrarySortOption.TITLE,
-                        selectedFavoriteSortOption = LibrarySortOption.TITLE,
-                        onSongSortOptionSelected = {},
-                        onArtistSortOptionSelected = {},
-                        onAlbumSortOptionSelected = {},
-                        onFavoriteSortOptionSelected = {}
+                        selectedArtistSortState = LibrarySortState(
+                            LibrarySortOption.NAME,
+                            LibrarySortDirection.ASCENDING
+                        ),
+                        selectedAlbumSortState = LibrarySortState(
+                            LibrarySortOption.TITLE,
+                            LibrarySortDirection.ASCENDING
+                        ),
+                        selectedFavoriteSortState = LibrarySortState(
+                            LibrarySortOption.TITLE,
+                            LibrarySortDirection.ASCENDING
+                        ),
+                        onSongSortStateChanged = {},
+                        onArtistSortStateChanged = {},
+                        onAlbumSortStateChanged = {},
+                        onFavoriteSortStateChanged = {}
                     )
                 }
             }
@@ -114,7 +129,10 @@ class SongsRatingIntegrationTest {
                     RatedSongsTabContent(
                         songs = listOf(low, high, unrated),
                         searchQuery = "",
-                        sortOption = LibrarySortOption.RATING_HIGH_TO_LOW,
+                        sortState = LibrarySortState(
+                            LibrarySortOption.RATING,
+                            LibrarySortDirection.DESCENDING
+                        ),
                         currentSong = null,
                         viewMode = LibraryViewMode.LIST,
                         gridColumnCount = 2,
@@ -172,7 +190,10 @@ class SongsRatingIntegrationTest {
                     RatedSongsTabContent(
                         songs = listOf(five, four),
                         searchQuery = "",
-                        sortOption = LibrarySortOption.RATING_HIGH_TO_LOW,
+                        sortState = LibrarySortState(
+                            LibrarySortOption.RATING,
+                            LibrarySortDirection.DESCENDING
+                        ),
                         selectedFilter = RatedSongFilter.FOUR,
                         currentSong = null,
                         viewMode = viewMode.value,
@@ -216,7 +237,10 @@ class SongsRatingIntegrationTest {
                     SongsTabContent(
                         songs = listOf(song),
                         searchQuery = "Search",
-                        sortOption = LibrarySortOption.RATING_HIGH_TO_LOW,
+                        sortState = LibrarySortState(
+                            LibrarySortOption.RATING,
+                            LibrarySortDirection.DESCENDING
+                        ),
                         currentSong = null,
                         viewMode = LibraryViewMode.LIST,
                         gridColumnCount = 2,

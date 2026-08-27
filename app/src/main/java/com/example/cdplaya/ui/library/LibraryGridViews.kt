@@ -133,7 +133,7 @@ fun SongGrid(
 @Composable
 fun AlbumGridScreen(
     songs: List<Song>,
-    sortOption: LibrarySortOption,
+    sortState: LibrarySortState,
     gridColumnCount: Int,
     onAlbumClick: (String) -> Unit,
     onAlbumPlayClick: (String, List<Song>) -> Unit,
@@ -144,7 +144,7 @@ fun AlbumGridScreen(
     bottomContentPadding: Dp,
     modifier: Modifier = Modifier
 ) {
-    val albums = sortedLibraryAlbumGroups(songs, sortOption)
+    val albums = sortedLibraryAlbumGroups(songs, sortState)
     val gridMetrics = libraryGridMetrics(gridColumnCount)
     var actionSheetTarget by remember {
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
@@ -212,7 +212,7 @@ fun AlbumGridScreen(
 @Composable
 fun ArtistGridScreen(
     songs: List<Song>,
-    sortOption: LibrarySortOption,
+    sortState: LibrarySortState,
     gridColumnCount: Int,
     onArtistClick: (String) -> Unit,
     onArtistPlayClick: (String, List<Song>) -> Unit,
@@ -223,7 +223,7 @@ fun ArtistGridScreen(
     bottomContentPadding: Dp,
     modifier: Modifier = Modifier
 ) {
-    val artists = sortedLibraryArtistGroups(songs, sortOption)
+    val artists = sortedLibraryArtistGroups(songs, sortState)
     val gridMetrics = libraryGridMetrics(gridColumnCount)
     var actionSheetTarget by remember {
         mutableStateOf<LibraryItemActionSheetTarget?>(null)

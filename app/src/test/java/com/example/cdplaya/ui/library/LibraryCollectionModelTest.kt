@@ -48,24 +48,35 @@ class LibraryCollectionModelTest {
 
         val allOptions = librarySortOptionsFor(LibraryTab.SONGS)
         val ratedOptions = librarySortOptionsFor(LibraryTab.RATED)
-        assertFalse(LibrarySortOption.RATING_HIGH_TO_LOW in allOptions)
-        assertFalse(LibrarySortOption.RATING_LOW_TO_HIGH in allOptions)
-        assertTrue(LibrarySortOption.RATING_HIGH_TO_LOW in ratedOptions)
-        assertTrue(LibrarySortOption.RATING_LOW_TO_HIGH in ratedOptions)
+        assertFalse(LibrarySortOption.RATING in allOptions)
+        assertTrue(LibrarySortOption.RATING in ratedOptions)
         assertEquals(
-            listOf(
-                LibrarySortOption.DATE_ADDED_NEWEST,
-                LibrarySortOption.DATE_ADDED_OLDEST
-            ),
+            listOf(LibrarySortOption.DATE_ADDED),
             librarySortOptionsFor(LibraryTab.RECENTLY_ADDED)
         )
         assertEquals(
-            "Newest first",
-            LibrarySortOption.DATE_ADDED_NEWEST.displayTitleFor(LibraryTab.RECENTLY_ADDED)
+            "Date added",
+            LibrarySortOption.DATE_ADDED.displayTitleFor(LibraryTab.RECENTLY_ADDED)
+        )
+    }
+
+    @Test
+    fun changingDirectionDoesNotChangeTheSelectedSortField() {
+        val titleAscending = LibrarySortState(
+            option = LibrarySortOption.TITLE,
+            direction = LibrarySortDirection.ASCENDING
+        )
+
+        assertEquals(
+            LibrarySortState(
+                option = LibrarySortOption.TITLE,
+                direction = LibrarySortDirection.DESCENDING
+            ),
+            titleAscending.toggleDirection()
         )
         assertEquals(
-            "Oldest first",
-            LibrarySortOption.DATE_ADDED_OLDEST.displayTitleFor(LibraryTab.RECENTLY_ADDED)
+            LibrarySortDirection.ASCENDING,
+            titleAscending.select(LibrarySortOption.ARTIST).direction
         )
     }
 

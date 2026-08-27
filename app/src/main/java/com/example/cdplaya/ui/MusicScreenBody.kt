@@ -54,7 +54,10 @@ import com.example.cdplaya.ui.equalizer.EqualizerUiActions
 import com.example.cdplaya.ui.home.HomeScreen
 import com.example.cdplaya.ui.library.FolderSelectionScreen
 import com.example.cdplaya.ui.library.LibraryBrowseSwitcher
+import com.example.cdplaya.ui.library.LibrarySortDirection
 import com.example.cdplaya.ui.library.LibrarySortOption
+import com.example.cdplaya.ui.library.LibrarySortState
+import com.example.cdplaya.ui.library.LibrarySortStateSaver
 import com.example.cdplaya.ui.library.LibraryTab
 import com.example.cdplaya.ui.library.RatedSongFilter
 import com.example.cdplaya.ui.library.RatedSongFilterRow
@@ -135,10 +138,10 @@ internal fun MusicScreenBody(
     selectedAlbumFolderPath: String?,
     selectedPlaylistId: Long?,
     searchQuery: String,
-    selectedSongSortOption: LibrarySortOption,
-    selectedArtistSortOption: LibrarySortOption,
-    selectedAlbumSortOption: LibrarySortOption,
-    selectedFavoriteSortOption: LibrarySortOption,
+    selectedSongSortState: LibrarySortState,
+    selectedArtistSortState: LibrarySortState,
+    selectedAlbumSortState: LibrarySortState,
+    selectedFavoriteSortState: LibrarySortState,
     recentlyAddedLibrarySongs: List<Song>,
     recentlyAddedSongIds: Set<Long>,
     isPlayerExpanded: Boolean,
@@ -180,10 +183,10 @@ internal fun MusicScreenBody(
     onSelectAllLibraryFolders: () -> Unit,
     onClearSelectedLibraryFolders: () -> Unit,
     onSearchQueryChange: (String) -> Unit,
-    onSongSortOptionSelected: (LibrarySortOption) -> Unit,
-    onArtistSortOptionSelected: (LibrarySortOption) -> Unit,
-    onAlbumSortOptionSelected: (LibrarySortOption) -> Unit,
-    onFavoriteSortOptionSelected: (LibrarySortOption) -> Unit,
+    onSongSortStateChanged: (LibrarySortState) -> Unit,
+    onArtistSortStateChanged: (LibrarySortState) -> Unit,
+    onAlbumSortStateChanged: (LibrarySortState) -> Unit,
+    onFavoriteSortStateChanged: (LibrarySortState) -> Unit,
     onExpandPlayerClick: () -> Unit,
     onMiniPlayerUpNextClick: () -> Unit,
     onSongClick: (Song, List<Song>) -> Unit,
@@ -265,19 +268,23 @@ internal fun MusicScreenBody(
     var isLibraryViewOptionsVisible by rememberSaveable {
         mutableStateOf(false)
     }
-    var selectedRatedSortOption by rememberSaveable {
-        mutableStateOf(LibrarySortOption.RATING_HIGH_TO_LOW)
+    var selectedRatedSortState by rememberSaveable(stateSaver = LibrarySortStateSaver) {
+        mutableStateOf(
+            LibrarySortState(LibrarySortOption.RATING, LibrarySortDirection.DESCENDING)
+        )
     }
-    var selectedAddedSortOption by rememberSaveable {
-        mutableStateOf(LibrarySortOption.DATE_ADDED_NEWEST)
+    var selectedAddedSortState by rememberSaveable(stateSaver = LibrarySortStateSaver) {
+        mutableStateOf(
+            LibrarySortState(LibrarySortOption.DATE_ADDED, LibrarySortDirection.DESCENDING)
+        )
     }
     var selectedRatedFilter by rememberSaveable {
         mutableStateOf(RatedSongFilter.ALL)
     }
-    val selectedCollectionSortOption = when (selectedLibraryTab) {
-        LibraryTab.RATED -> selectedRatedSortOption
-        LibraryTab.RECENTLY_ADDED -> selectedAddedSortOption
-        else -> selectedSongSortOption
+    val selectedCollectionSortState = when (selectedLibraryTab) {
+        LibraryTab.RATED -> selectedRatedSortState
+        LibraryTab.RECENTLY_ADDED -> selectedAddedSortState
+        else -> selectedSongSortState
     }
     val ratingUi = LocalSongRatingUi.current
     val activeRatedFilter = normalizeRatedSongFilterForQuickRateMode(
@@ -599,21 +606,21 @@ internal fun MusicScreenBody(
                                         selectedLibraryTab = selectedLibraryTab,
                                         selectedArtistName = selectedArtistName,
                                         selectedAlbumFolderPath = selectedAlbumFolderPath,
-                                        selectedSongSortOption = selectedCollectionSortOption,
-                                        selectedArtistSortOption = selectedArtistSortOption,
-                                        selectedAlbumSortOption = selectedAlbumSortOption,
-                                        selectedFavoriteSortOption = selectedFavoriteSortOption,
-                                        onSongSortOptionSelected = { option ->
+                                        selectedSongSortState = selectedCollectionSortState,
+                                        selectedArtistSortState = selectedArtistSortState,
+                                        selectedAlbumSortState = selectedAlbumSortState,
+                                        selectedFavoriteSortState = selectedFavoriteSortState,
+                                        onSongSortStateChanged = { state ->
                                             when (selectedLibraryTab) {
-                                                LibraryTab.RATED -> selectedRatedSortOption = option
+                                                LibraryTab.RATED -> selectedRatedSortState = state
                                                 LibraryTab.RECENTLY_ADDED ->
-                                                    selectedAddedSortOption = option
-                                                else -> onSongSortOptionSelected(option)
+                                                    selectedAddedSortState = state
+                                                else -> onSongSortStateChanged(state)
                                             }
                                         },
-                                        onArtistSortOptionSelected = onArtistSortOptionSelected,
-                                        onAlbumSortOptionSelected = onAlbumSortOptionSelected,
-                                        onFavoriteSortOptionSelected = onFavoriteSortOptionSelected,
+                                        onArtistSortStateChanged = onArtistSortStateChanged,
+                                        onAlbumSortStateChanged = onAlbumSortStateChanged,
+                                        onFavoriteSortStateChanged = onFavoriteSortStateChanged,
                                         ratingFeaturesEnabled = !isSearchDestination
                                     )
                                 }
@@ -672,11 +679,11 @@ internal fun MusicScreenBody(
                                     selectedLibraryTab = selectedLibraryTab,
                                     songs = songs,
                                     searchQuery = searchQuery,
-                                    selectedSongSortOption = selectedCollectionSortOption,
+                                    selectedSongSortState = selectedCollectionSortState,
                                     selectedRatedFilter = activeRatedFilter,
-                                    selectedArtistSortOption = selectedArtistSortOption,
-                                    selectedAlbumSortOption = selectedAlbumSortOption,
-                                    selectedFavoriteSortOption = selectedFavoriteSortOption,
+                                    selectedArtistSortState = selectedArtistSortState,
+                                    selectedAlbumSortState = selectedAlbumSortState,
+                                    selectedFavoriteSortState = selectedFavoriteSortState,
                                     viewMode = selectedViewMode,
                                     gridColumnCount = selectedGridColumnCount,
                                     selectedArtistName = selectedArtistName,

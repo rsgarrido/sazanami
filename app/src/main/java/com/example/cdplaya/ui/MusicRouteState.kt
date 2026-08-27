@@ -6,7 +6,10 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import com.example.cdplaya.ui.library.LibrarySortDirection
 import com.example.cdplaya.ui.library.LibrarySortOption
+import com.example.cdplaya.ui.library.LibrarySortState
+import com.example.cdplaya.ui.library.LibrarySortStateSaver
 import com.example.cdplaya.ui.library.LibraryTab
 import com.example.cdplaya.ui.navigation.MainDestination
 import com.example.cdplaya.ui.navigation.PlaybackLaunchContext
@@ -23,10 +26,10 @@ class MusicNavigationState internal constructor(
     val selectedAlbumFolderPath: MutableState<String?>,
     val selectedPlaylistId: MutableState<Long?>,
     val searchQuery: MutableState<String>,
-    val selectedSongSortOption: MutableState<LibrarySortOption>,
-    val selectedArtistSortOption: MutableState<LibrarySortOption>,
-    val selectedAlbumSortOption: MutableState<LibrarySortOption>,
-    val selectedFavoriteSortOption: MutableState<LibrarySortOption>
+    val selectedSongSortState: MutableState<LibrarySortState>,
+    val selectedArtistSortState: MutableState<LibrarySortState>,
+    val selectedAlbumSortState: MutableState<LibrarySortState>,
+    val selectedFavoriteSortState: MutableState<LibrarySortState>
 )
 
 @Composable
@@ -40,17 +43,25 @@ fun rememberMusicNavigationState(): MusicNavigationState {
     val selectedAlbumFolderPath = rememberSaveable { mutableStateOf<String?>(null) }
     val selectedPlaylistId = rememberSaveable { mutableStateOf<Long?>(null) }
     val searchQuery = rememberSaveable { mutableStateOf("") }
-    val selectedSongSortOption = rememberSaveable {
-        mutableStateOf(LibrarySortOption.TITLE)
+    val selectedSongSortState = rememberSaveable(stateSaver = LibrarySortStateSaver) {
+        mutableStateOf(
+            LibrarySortState(LibrarySortOption.TITLE, LibrarySortDirection.ASCENDING)
+        )
     }
-    val selectedArtistSortOption = rememberSaveable {
-        mutableStateOf(LibrarySortOption.NAME)
+    val selectedArtistSortState = rememberSaveable(stateSaver = LibrarySortStateSaver) {
+        mutableStateOf(
+            LibrarySortState(LibrarySortOption.NAME, LibrarySortDirection.ASCENDING)
+        )
     }
-    val selectedAlbumSortOption = rememberSaveable {
-        mutableStateOf(LibrarySortOption.TITLE)
+    val selectedAlbumSortState = rememberSaveable(stateSaver = LibrarySortStateSaver) {
+        mutableStateOf(
+            LibrarySortState(LibrarySortOption.TITLE, LibrarySortDirection.ASCENDING)
+        )
     }
-    val selectedFavoriteSortOption = rememberSaveable {
-        mutableStateOf(LibrarySortOption.TITLE)
+    val selectedFavoriteSortState = rememberSaveable(stateSaver = LibrarySortStateSaver) {
+        mutableStateOf(
+            LibrarySortState(LibrarySortOption.TITLE, LibrarySortDirection.ASCENDING)
+        )
     }
     return remember(
         mainDestination,
@@ -60,10 +71,10 @@ fun rememberMusicNavigationState(): MusicNavigationState {
         selectedAlbumFolderPath,
         selectedPlaylistId,
         searchQuery,
-        selectedSongSortOption,
-        selectedArtistSortOption,
-        selectedAlbumSortOption,
-        selectedFavoriteSortOption
+        selectedSongSortState,
+        selectedArtistSortState,
+        selectedAlbumSortState,
+        selectedFavoriteSortState
     ) {
         MusicNavigationState(
             mainDestination,
@@ -73,10 +84,10 @@ fun rememberMusicNavigationState(): MusicNavigationState {
             selectedAlbumFolderPath,
             selectedPlaylistId,
             searchQuery,
-            selectedSongSortOption,
-            selectedArtistSortOption,
-            selectedAlbumSortOption,
-            selectedFavoriteSortOption
+            selectedSongSortState,
+            selectedArtistSortState,
+            selectedAlbumSortState,
+            selectedFavoriteSortState
         )
     }
 }
