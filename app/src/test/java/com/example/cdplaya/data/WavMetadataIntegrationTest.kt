@@ -153,6 +153,91 @@ class WavMetadataIntegrationTest {
         assertEquals("CAT-001", clean(updated.getFirst(FieldKey.CATALOG_NO)))
     }
 
+    @Test
+    fun `advanced WAV edit preserves rich ID3 metadata and unrelated RIFF chunks`() {
+        val file = minimalWav("advanced.wav")
+        TagOptionSingleton.getInstance().apply {
+            setWavOptions(WavOptions.READ_ID3_ONLY)
+            setWavSaveOptions(WavSaveOptions.SAVE_BOTH)
+        }
+        val initial = AudioFileIO.read(file)
+        val initialTag = initial.tag as WavTag
+        initialTag.getID3Tag().apply {
+            setField(FieldKey.TITLE, "Keep title")
+            setField(FieldKey.ARTIST, "Keep artist")
+            setField(FieldKey.GENRE, "Rock")
+            addField(FieldKey.GENRE, "Alternative")
+            setField(FieldKey.COMPOSER, "Old composer")
+            setField(FieldKey.CATALOG_NO, "CAT-KEEP")
+        }
+        initialTag.getInfoTag().apply {
+            setField(FieldKey.TITLE, "Keep title")
+            setField(FieldKey.ARTIST, "Keep artist")
+            setField(FieldKey.GENRE, "Rock")
+            addField(FieldKey.GENRE, "Alternative")
+            setField(FieldKey.COMPOSER, "Old composer")
+        }
+        AudioFileIO.write(initial)
+        val before = file.readBytes()
+        val originalAudio = requireChunk(before, "data")
+        val originalBext = requireChunk(before, "bext")
+        val originalIXml = requireChunk(before, "iXML")
+        val originalUnknown = requireChunk(before, "Xtra")
+
+        val repository = TagEditorRepository()
+        val song = song(file).copy(title = "Keep title", artist = "Keep artist")
+        val edited = repository.readTags(song).copy(
+            composer = "New composer",
+            bpm = "123"
+        )
+        val result = repository.writeTags(song, edited)
+
+        assertTrue(result.message, result.wasSuccessful)
+        val updated = AudioFileIO.read(file).tag as WavTag
+        assertEquals("Keep title", clean(updated.getID3Tag().getFirst(FieldKey.TITLE)))
+        assertEquals(listOf("Rock", "Alternative"), updated.getID3Tag().getAll(FieldKey.GENRE))
+        assertEquals("New composer", clean(updated.getID3Tag().getFirst(FieldKey.COMPOSER)))
+        assertEquals("New composer", clean(updated.getInfoTag().getFirst(FieldKey.COMPOSER)))
+        assertEquals("123", clean(updated.getID3Tag().getFirst(FieldKey.BPM)))
+        assertTrue(runCatching { updated.getInfoTag().getFirst(FieldKey.BPM) }.getOrDefault("").isBlank())
+        assertEquals("CAT-KEEP", clean(updated.getID3Tag().getFirst(FieldKey.CATALOG_NO)))
+        val after = file.readBytes()
+        assertArrayEquals(originalAudio, requireChunk(after, "data"))
+        assertArrayEquals(originalBext, requireChunk(after, "bext"))
+        assertArrayEquals(originalIXml, requireChunk(after, "iXML"))
+        assertArrayEquals(originalUnknown, requireChunk(after, "Xtra"))
+    }
+
+    @Test
+    fun `no-op repository save leaves WAV byte-for-byte unchanged`() {
+        val file = minimalWav("no-op.wav")
+        val repository = TagEditorRepository()
+        val song = song(file)
+        val unchangedTags = repository.readTags(song)
+        val before = file.readBytes()
+
+        val result = repository.writeTags(song, unchangedTags)
+
+        assertTrue(result.message, result.wasSuccessful)
+        assertEquals("No metadata changes to save.", result.message)
+        assertArrayEquals(before, file.readBytes())
+    }
+
+    @Test
+    fun `invalid BPM is rejected before WAV is written`() {
+        val file = minimalWav("invalid-bpm.wav")
+        val repository = TagEditorRepository()
+        val song = song(file)
+        val invalidTags = repository.readTags(song).copy(bpm = "0")
+        val before = file.readBytes()
+
+        val result = repository.writeTags(song, invalidTags)
+
+        assertTrue(!result.wasSuccessful)
+        assertEquals("BPM must be a whole number from 1 to 999.", result.message)
+        assertArrayEquals(before, file.readBytes())
+    }
+
     private fun song(file: File) = Song(
         id = 1L,
         title = "untagged",

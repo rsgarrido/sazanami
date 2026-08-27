@@ -11,14 +11,14 @@ data class AudioMetadata(
     val title: String? = null,
     val artists: List<String> = emptyList(),
     val album: String? = null,
-    val albumArtist: String? = null,
+    val albumArtists: List<String> = emptyList(),
     val trackNumber: String? = null,
     val trackTotal: String? = null,
     val discNumber: String? = null,
     val discTotal: String? = null,
     val date: String? = null,
-    val genre: String? = null,
-    val composer: String? = null,
+    val genres: List<String> = emptyList(),
+    val composers: List<String> = emptyList(),
     val comment: String? = null,
     val publisher: String? = null,
     val copyright: String? = null,
@@ -28,19 +28,22 @@ data class AudioMetadata(
     val primaryArtist: String?
         get() = artists.firstOrNull { it.isNotBlank() }
 
+    val primaryAlbumArtist: String?
+        get() = albumArtists.firstOrNull { it.isNotBlank() }
+
     /** Keep values from this instance and fill only missing values from [fallback]. */
     fun mergeMissingFrom(fallback: AudioMetadata): AudioMetadata = copy(
         title = title ?: fallback.title,
         artists = artists.ifEmpty { fallback.artists },
         album = album ?: fallback.album,
-        albumArtist = albumArtist ?: fallback.albumArtist,
+        albumArtists = albumArtists.ifEmpty { fallback.albumArtists },
         trackNumber = trackNumber ?: fallback.trackNumber,
         trackTotal = trackTotal ?: fallback.trackTotal,
         discNumber = discNumber ?: fallback.discNumber,
         discTotal = discTotal ?: fallback.discTotal,
         date = date ?: fallback.date,
-        genre = genre ?: fallback.genre,
-        composer = composer ?: fallback.composer,
+        genres = genres.ifEmpty { fallback.genres },
+        composers = composers.ifEmpty { fallback.composers },
         comment = comment ?: fallback.comment,
         publisher = publisher ?: fallback.publisher,
         copyright = copyright ?: fallback.copyright,
@@ -76,3 +79,38 @@ data class EmbeddedMetadataReadResult(
     val format: AudioMetadataFormat,
     val wavRepresentations: Set<WavMetadataRepresentation> = emptySet()
 )
+
+enum class EditableMetadataField {
+    ALBUM_ARTIST,
+    TRACK_TOTAL,
+    DISC_NUMBER,
+    DISC_TOTAL,
+    GENRE,
+    COMPOSER,
+    COMMENT,
+    PUBLISHER,
+    COPYRIGHT,
+    BPM
+}
+
+data class MetadataFormatCapabilities(
+    val supportedFields: Set<EditableMetadataField>
+) {
+    fun supports(field: EditableMetadataField): Boolean = field in supportedFields
+
+    companion object {
+        val NONE = MetadataFormatCapabilities(emptySet())
+        val ADVANCED_EDITOR = MetadataFormatCapabilities(EditableMetadataField.entries.toSet())
+    }
+}
+
+internal fun AudioMetadataFormat.editorCapabilities(): MetadataFormatCapabilities = when (this) {
+    AudioMetadataFormat.MP3,
+    AudioMetadataFormat.FLAC,
+    AudioMetadataFormat.MP4,
+    AudioMetadataFormat.OGG,
+    AudioMetadataFormat.WAV,
+    AudioMetadataFormat.AIFF -> MetadataFormatCapabilities.ADVANCED_EDITOR
+
+    AudioMetadataFormat.UNKNOWN -> MetadataFormatCapabilities.NONE
+}

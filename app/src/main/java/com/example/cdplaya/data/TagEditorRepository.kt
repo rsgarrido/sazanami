@@ -44,9 +44,14 @@ class TagEditorRepository {
             return AudioMetadata().toEditableSongTags(song)
         }
 
-        return metadataReader.readOrNull(file)?.metadata
-            ?.toEditableSongTags(song)
-            ?: AudioMetadata().toEditableSongTags(song)
+        val result = metadataReader.readOrNull(file)
+        return result?.metadata?.toEditableSongTags(
+            song = song,
+            capabilities = result.format.editorCapabilities()
+        ) ?: AudioMetadata().toEditableSongTags(
+            song = song,
+            capabilities = file.extension.toAudioMetadataFormat().editorCapabilities()
+        )
     }
 
     fun readReplayGainTags(song: Song): ReplayGainInfo {
@@ -112,6 +117,17 @@ class TagEditorRepository {
             val originalTags = metadataForTag(tag).toEditableSongTags(song)
             val edits = editedTags.changedFieldsFrom(originalTags)
 
+            metadataEditValidationMessage(edits)?.let { message ->
+                return TagEditorResult(wasSuccessful = false, message = message)
+            }
+
+            if (edits.isEmpty()) {
+                return TagEditorResult(
+                    wasSuccessful = true,
+                    message = "No metadata changes to save."
+                )
+            }
+
             applyMetadataTextEdits(
                 tag = tag,
                 edits = edits
@@ -166,6 +182,17 @@ class TagEditorRepository {
             val tag = audioFile.tagOrCreateAndSetDefault
             val originalTags = metadataForTag(tag).toEditableSongTags(song)
             val edits = editedTags.changedFieldsFrom(originalTags)
+
+            metadataEditValidationMessage(edits)?.let { message ->
+                return TagEditorResult(wasSuccessful = false, message = message)
+            }
+
+            if (edits.isEmpty() && artworkUri == null) {
+                return TagEditorResult(
+                    wasSuccessful = true,
+                    message = "No metadata changes to save."
+                )
+            }
 
             applyMetadataTextEdits(
                 tag = tag,
@@ -282,21 +309,34 @@ class TagEditorRepository {
         tag.toAudioMetadata()
     }
 
+    private fun metadataEditValidationMessage(
+        edits: Map<FieldKey, MetadataTextEdit>
+    ): String? {
+        val bpmEdit = edits[FieldKey.BPM] ?: return null
+        if (bpmEdit.isClear) return null
+        val bpm = bpmEdit.values.singleOrNull()
+        return if (bpm != null && bpm.isValidMetadataBpm()) {
+            null
+        } else {
+            "BPM must be a whole number from 1 to 999."
+        }
+    }
+
     private fun writtenTextEditsMatch(
         file: File,
-        edits: Map<FieldKey, String?>
+        edits: Map<FieldKey, MetadataTextEdit>
     ): Boolean {
         if (edits.isEmpty()) return true
 
         return try {
             val writtenTag = AudioFileIO.read(file).tag ?: return false
-            edits.all { (fieldKey, expectedValue) ->
+            edits.all { (fieldKey, edit) ->
                 if (writtenTag is WavTag) {
-                    tagValueMatches(writtenTag.getID3Tag(), fieldKey, expectedValue) &&
+                    tagValuesMatch(writtenTag.getID3Tag(), fieldKey, edit.values) &&
                         (fieldKey !in wavInfoFieldKeys ||
-                            tagValueMatches(writtenTag.getInfoTag(), fieldKey, expectedValue))
+                            tagValuesMatch(writtenTag.getInfoTag(), fieldKey, edit.values))
                 } else {
-                    tagValueMatches(writtenTag, fieldKey, expectedValue)
+                    tagValuesMatch(writtenTag, fieldKey, edit.values)
                 }
             }
         } catch (_: Exception) {
@@ -306,17 +346,19 @@ class TagEditorRepository {
         }
     }
 
-    private fun tagValueMatches(
+    private fun tagValuesMatch(
         tag: Tag,
         fieldKey: FieldKey,
-        expectedValue: String?
+        expectedValues: List<String>
     ): Boolean {
-        val actualValue = try {
-            tag.getFirst(fieldKey).trim().trimEnd('\u0000').trim()
+        val actualValues = try {
+            tag.getAll(fieldKey).mapNotNull { value ->
+                value.trim().trimEnd('\u0000').trim().takeIf(String::isNotEmpty)
+            }
         } catch (_: Exception) {
-            ""
+            emptyList()
         }
-        return actualValue == expectedValue.orEmpty()
+        return actualValues == expectedValues
     }
 
     private fun readReplayGainTagValue(
@@ -652,7 +694,7 @@ internal val metadataWritableExtensions = setOf(
 
 internal fun applyMetadataTextEdits(
     tag: Tag,
-    edits: Map<FieldKey, String?>
+    edits: Map<FieldKey, MetadataTextEdit>
 ) {
     if (tag is WavTag) {
         // An explicit WAV edit intentionally updates both common representations when the field
@@ -670,13 +712,31 @@ internal fun applyMetadataTextEdits(
     }
 }
 
-private fun applyMetadataTextEdit(tag: Tag, fieldKey: FieldKey, value: String?) {
-    if (value == null) {
+private fun applyMetadataTextEdit(tag: Tag, fieldKey: FieldKey, edit: MetadataTextEdit) {
+    if (edit.isClear) {
         tag.deleteField(fieldKey)
-    } else {
-        tag.setField(fieldKey, value)
+        return
+    }
+
+    if (fieldKey !in multiValueFieldKeys) {
+        tag.deleteField(fieldKey)
+        tag.setField(fieldKey, edit.values.single())
+        return
+    }
+
+    tag.deleteField(fieldKey)
+    tag.setField(fieldKey, edit.values.first())
+    edit.values.drop(1).forEach { value ->
+        tag.addField(fieldKey, value)
     }
 }
+
+private val multiValueFieldKeys = setOf(
+    FieldKey.ARTIST,
+    FieldKey.ALBUM_ARTIST,
+    FieldKey.GENRE,
+    FieldKey.COMPOSER
+)
 
 /** FieldKey coverage implemented by jaudiotagger's WavInfoTag in 3.0.1. */
 internal val wavInfoFieldKeys = setOf(

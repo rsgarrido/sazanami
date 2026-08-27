@@ -310,7 +310,7 @@ internal fun mergeWavEmbeddedMetadata(
         title = embeddedMetadata.title ?: mediaStoreSong.title,
         artist = embeddedMetadata.primaryArtist ?: mediaStoreSong.artist,
         album = embeddedMetadata.album ?: mediaStoreSong.album,
-        albumArtist = embeddedMetadata.albumArtist ?: mediaStoreSong.albumArtist,
+        albumArtist = embeddedMetadata.primaryAlbumArtist ?: mediaStoreSong.albumArtist,
         trackNumber = embeddedMetadata.trackNumber
             ?.substringBefore('/')
             ?.trim()

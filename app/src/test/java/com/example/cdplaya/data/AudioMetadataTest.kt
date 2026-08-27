@@ -8,7 +8,7 @@ import org.jaudiotagger.tag.id3.ID3v24Tag
 import org.jaudiotagger.tag.mp4.Mp4Tag
 import org.jaudiotagger.tag.vorbiscomment.VorbisCommentTag
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.mock
 
@@ -44,8 +44,8 @@ class AudioMetadataTest {
             .changedFieldsFrom(original)
 
         assertEquals(setOf(FieldKey.TRACK, FieldKey.YEAR), edits.keys)
-        assertNull(edits[FieldKey.TRACK])
-        assertEquals("2026", edits[FieldKey.YEAR])
+        assertTrue(requireNotNull(edits[FieldKey.TRACK]).isClear)
+        assertEquals(listOf("2026"), edits[FieldKey.YEAR]?.values)
     }
 
     @Test
@@ -90,7 +90,10 @@ class AudioMetadataTest {
         tag.setField(tag.createField("REPLAYGAIN_TRACK_GAIN", "-7.25 dB"))
         tag.setField(tag.createField("REPLAYGAIN_TRACK_PEAK", "0.9123"))
 
-        applyMetadataTextEdits(tag, mapOf(FieldKey.GENRE to "Jazz"))
+        applyMetadataTextEdits(
+            tag,
+            mapOf(FieldKey.GENRE to MetadataTextEdit(listOf("Jazz")))
+        )
 
         assertEquals("Jazz", tag.getFirst(FieldKey.GENRE))
         assertEquals("-7.25 dB", tag.getFirst("REPLAYGAIN_TRACK_GAIN"))
@@ -110,7 +113,10 @@ class AudioMetadataTest {
             tag.setField(FieldKey.TITLE, "Keep title")
             tag.setField(FieldKey.COMMENT, "Keep comment")
 
-            applyMetadataTextEdits(tag, mapOf(FieldKey.GENRE to "Jazz"))
+            applyMetadataTextEdits(
+                tag,
+                mapOf(FieldKey.GENRE to MetadataTextEdit(listOf("Jazz")))
+            )
 
             assertEquals("Jazz", tag.getFirst(FieldKey.GENRE))
             assertEquals("Keep title", tag.getFirst(FieldKey.TITLE))

@@ -65,14 +65,14 @@ internal fun Tag.toAudioMetadata(): AudioMetadata = AudioMetadata(
     title = firstOrNull(FieldKey.TITLE),
     artists = allNonBlank(FieldKey.ARTIST),
     album = firstOrNull(FieldKey.ALBUM),
-    albumArtist = firstOrNull(FieldKey.ALBUM_ARTIST),
+    albumArtists = allNonBlank(FieldKey.ALBUM_ARTIST),
     trackNumber = firstOrNull(FieldKey.TRACK),
     trackTotal = firstOrNull(FieldKey.TRACK_TOTAL),
     discNumber = firstOrNull(FieldKey.DISC_NO),
     discTotal = firstOrNull(FieldKey.DISC_TOTAL),
     date = firstOrNull(FieldKey.YEAR),
-    genre = firstOrNull(FieldKey.GENRE),
-    composer = firstOrNull(FieldKey.COMPOSER),
+    genres = allNonBlank(FieldKey.GENRE),
+    composers = allNonBlank(FieldKey.COMPOSER),
     comment = firstOrNull(FieldKey.COMMENT),
     publisher = firstOrNull(FieldKey.RECORD_LABEL),
     copyright = firstOrNull(FieldKey.COPYRIGHT),
@@ -104,7 +104,7 @@ private fun Tag.allNonBlank(fieldKey: FieldKey): List<String> = try {
 private fun String.cleanMetadataValue(): String? =
     trim().trimEnd('\u0000').trim().takeIf { it.isNotEmpty() }
 
-private fun String.toAudioMetadataFormat(): AudioMetadataFormat = when (this) {
+internal fun String.toAudioMetadataFormat(): AudioMetadataFormat = when (lowercase()) {
     "mp3" -> AudioMetadataFormat.MP3
     "flac" -> AudioMetadataFormat.FLAC
     "m4a", "mp4", "m4b", "m4p" -> AudioMetadataFormat.MP4
