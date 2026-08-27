@@ -79,14 +79,27 @@ class AudioMetadataTest {
     @Test
     fun `library enrichment keeps embedded genre values distinct`() {
         val enriched = song("Title", "Artist", "Album").withEmbeddedLibraryMetadata(
-            AudioMetadata(genres = listOf("Rock", "R&B / Soul"))
+            AudioMetadata(
+                date = "2026-03-14",
+                genres = listOf("Rock", "R&B / Soul")
+            )
         )
 
         assertEquals(listOf("Rock", "R&B / Soul"), enriched.genres)
+        assertEquals(2026, enriched.year)
         assertEquals(
             CURRENT_EMBEDDED_METADATA_ENRICHMENT_VERSION,
             enriched.embeddedMetadataEnrichmentVersion
         )
+    }
+
+    @Test
+    fun `metadata year parsing uses one bounded four digit interpretation`() {
+        assertEquals(1994, parseMetadataYear("1994"))
+        assertEquals(2004, parseMetadataYear("2004-09-21"))
+        assertEquals(null, parseMetadataYear("unknown"))
+        assertEquals(null, parseMetadataYear("999"))
+        assertEquals(null, parseMetadataYear("3000"))
     }
 
     @Test

@@ -52,7 +52,9 @@ class LibraryCollectionModelTest {
         assertFalse(LibrarySortOption.RATING in allOptions)
         assertTrue(LibrarySortOption.RATING in ratedOptions)
         assertFalse(LibrarySortOption.DATE_ADDED in allOptions)
+        assertTrue(LibrarySortOption.YEAR in allOptions)
         assertFalse(LibrarySortOption.DATE_ADDED in ratedOptions)
+        assertFalse(LibrarySortOption.YEAR in ratedOptions)
         assertFalse(LibrarySortOption.DATE_ADDED in favoriteOptions)
         assertEquals(
             listOf(LibrarySortOption.DATE_ADDED),

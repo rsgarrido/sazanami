@@ -58,6 +58,8 @@ import com.example.cdplaya.ui.library.LibrarySortDirection
 import com.example.cdplaya.ui.library.LibrarySortOption
 import com.example.cdplaya.ui.library.LibrarySortState
 import com.example.cdplaya.ui.library.LibrarySortStateSaver
+import com.example.cdplaya.ui.library.LibrarySongFilterButton
+import com.example.cdplaya.ui.library.LibrarySongFilterState
 import com.example.cdplaya.ui.library.LibraryTab
 import com.example.cdplaya.ui.library.RatedSongFilter
 import com.example.cdplaya.ui.library.RatedSongFilterRow
@@ -139,6 +141,7 @@ internal fun MusicScreenBody(
     selectedGenreKey: String?,
     selectedPlaylistId: Long?,
     searchQuery: String,
+    selectedSongFilterState: LibrarySongFilterState,
     selectedSongSortState: LibrarySortState,
     selectedArtistSortState: LibrarySortState,
     selectedAlbumSortState: LibrarySortState,
@@ -184,6 +187,7 @@ internal fun MusicScreenBody(
     onSelectAllLibraryFolders: () -> Unit,
     onClearSelectedLibraryFolders: () -> Unit,
     onSearchQueryChange: (String) -> Unit,
+    onSongFilterStateChanged: (LibrarySongFilterState) -> Unit,
     onSongSortStateChanged: (LibrarySortState) -> Unit,
     onArtistSortStateChanged: (LibrarySortState) -> Unit,
     onAlbumSortStateChanged: (LibrarySortState) -> Unit,
@@ -605,6 +609,20 @@ internal fun MusicScreenBody(
                                 } else {
                                     null
                                 },
+                                filterAction = if (!isSearchDestination &&
+                                    !isLibraryDetail &&
+                                    selectedLibraryTab == LibraryTab.SONGS
+                                ) {
+                                    {
+                                        LibrarySongFilterButton(
+                                            songs = songs,
+                                            state = selectedSongFilterState,
+                                            onStateChanged = onSongFilterStateChanged
+                                        )
+                                    }
+                                } else {
+                                    null
+                                },
                                 sortAction = {
                                     LibrarySortAction(
                                         selectedLibraryTab = selectedLibraryTab,
@@ -683,6 +701,11 @@ internal fun MusicScreenBody(
                                     selectedLibraryTab = selectedLibraryTab,
                                     songs = songs,
                                     searchQuery = searchQuery,
+                                    selectedSongFilterState = if (isSearchDestination) {
+                                        LibrarySongFilterState()
+                                    } else {
+                                        selectedSongFilterState
+                                    },
                                     selectedSongSortState = selectedCollectionSortState,
                                     selectedRatedFilter = activeRatedFilter,
                                     selectedArtistSortState = selectedArtistSortState,
@@ -754,6 +777,9 @@ internal fun MusicScreenBody(
                                     onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
                                     onEditAlbumMetadataClick = onEditAlbumMetadataClick,
                                     onEditSongTagsClick = onEditSongTagsClick,
+                                    onClearSongFilters = {
+                                        onSongFilterStateChanged(selectedSongFilterState.clear())
+                                    },
                                     ratingFeaturesEnabled = !isSearchDestination,
                                     recentlyPlayedSongs = recentlyPlayedSongs,
                                     recentlyAddedSongs = recentlyAddedLibrarySongs,

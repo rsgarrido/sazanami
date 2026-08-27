@@ -12,6 +12,7 @@ import coil.request.ImageRequest
 import coil.request.SuccessResult
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.TagEditorRepository
+import com.example.cdplaya.data.parseMetadataYear
 import com.example.cdplaya.player.audioquality.AudioQualityInfo
 import com.example.cdplaya.player.audioquality.AudioQualityRepository
 import com.example.cdplaya.player.audioquality.normalizeAudioFormat
@@ -73,6 +74,8 @@ internal class AlbumPresentationMetadataRepository(context: Context) {
     }
 
     private suspend fun getReleaseYear(song: Song): Int? = withContext(Dispatchers.IO) {
+        song.year?.let { year -> return@withContext year }
+
         val cacheKey = songMetadataCacheKey(song)
         synchronized(releaseYearCache) {
             releaseYearCache[cacheKey]
@@ -100,9 +103,9 @@ internal class AlbumPresentationMetadataRepository(context: Context) {
                 val retriever = MediaMetadataRetriever()
                 try {
                     retriever.setDataSource(appContext, song.uri)
-                    parseReleaseYear(
+                    parseMetadataYear(
                         retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR)
-                    ) ?: parseReleaseYear(
+                    ) ?: parseMetadataYear(
                         retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE)
                     )
                 } finally {
@@ -114,7 +117,7 @@ internal class AlbumPresentationMetadataRepository(context: Context) {
         }
 
         val resolvedYear = mediaStoreYear ?: retrieverYear ?: runCatching {
-            parseReleaseYear(tagEditorRepository.readTags(song).year)
+            parseMetadataYear(tagEditorRepository.readTags(song).year)
         }.getOrNull()
 
         synchronized(releaseYearCache) {
@@ -246,14 +249,6 @@ internal fun summarizeAlbumAudioQuality(
     )
 }
 
-internal fun parseReleaseYear(rawValue: String?): Int? {
-    val value = rawValue?.trim().orEmpty()
-    if (value.isBlank()) return null
-
-    val match = releaseYearPattern.find(value) ?: return null
-    return match.value.toIntOrNull()?.takeIf { year -> year in 1000..2999 }
-}
-
 private fun formatSampleRate(sampleRateHz: Int): String {
     val kilohertz = sampleRateHz / 1_000.0
     val displayValue = if (sampleRateHz % 1_000 == 0) {
@@ -349,5 +344,3 @@ private fun extractArtworkAccent(bitmap: Bitmap): Int? {
         (fallbackBlue / fallbackCount).toInt()
     )
 }
-
-private val releaseYearPattern = Regex("""(?<!\d)(?:1\d{3}|2\d{3})(?!\d)""")

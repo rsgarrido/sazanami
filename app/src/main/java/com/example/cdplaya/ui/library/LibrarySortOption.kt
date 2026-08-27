@@ -8,6 +8,7 @@ enum class LibrarySortOption(val title: String) {
     TITLE("Title"),
     ARTIST("Artist"),
     ALBUM("Album"),
+    YEAR("Year"),
     RATING("Rating"),
     DATE_ADDED("Date added"),
     NAME("Name"),
@@ -88,7 +89,8 @@ internal fun librarySortOptionsFor(
     LibraryTab.SONGS -> listOf(
         LibrarySortOption.TITLE,
         LibrarySortOption.ARTIST,
-        LibrarySortOption.ALBUM
+        LibrarySortOption.ALBUM,
+        LibrarySortOption.YEAR
     )
 
     LibraryTab.RATED -> if (ratingFeaturesEnabled) {

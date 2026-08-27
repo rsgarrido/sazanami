@@ -1,6 +1,7 @@
 package com.example.cdplaya.ui.library
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
@@ -28,6 +29,7 @@ import androidx.compose.ui.res.stringResource
 fun SongsTabContent(
     songs: List<Song>,
     searchQuery: String,
+    filterState: LibrarySongFilterState = LibrarySongFilterState(),
     sortState: LibrarySortState,
     currentSong: Song?,
     viewMode: LibraryViewMode,
@@ -40,13 +42,17 @@ fun SongsTabContent(
     onToggleFavoriteClick: (Song) -> Unit,
     onAddToPlaylistClick: (Song) -> Unit,
     onEditSongTagsClick: (Song) -> Unit,
+    onClearFilters: () -> Unit = {},
     ratingFeaturesEnabled: Boolean = true,
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
-    val filteredSongs = remember(songs, searchQuery) {
+    val metadataFilteredSongs = remember(songs, filterState) {
+        filterSongsForLibraryMetadata(songs, filterState)
+    }
+    val filteredSongs = remember(metadataFilteredSongs, searchQuery) {
         filterSongsForSearch(
-            songs = songs,
+            songs = metadataFilteredSongs,
             searchQuery = searchQuery
         )
     }
@@ -63,13 +69,25 @@ fun SongsTabContent(
             sortDirection = sortState.direction
         )
     }
-    val scrollStates = rememberLibrarySortScrollStates(sortState)
+    val scrollStates = rememberLibrarySortScrollStates(
+        LibrarySongsCollectionKey(sortState, filterState)
+    )
 
     if (songs.isEmpty()) {
         Text(
             text = "No songs found.",
             modifier = Modifier.padding(16.dp)
         )
+    } else if (metadataFilteredSongs.isEmpty() && filterState.isActive) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(text = "No songs match these filters.")
+            Button(onClick = onClearFilters) {
+                Text(text = "Clear filters")
+            }
+        }
     } else if (filteredSongs.isEmpty()) {
         Text(
             text = "No songs match your search.",

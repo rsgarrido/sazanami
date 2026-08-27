@@ -58,6 +58,7 @@ fun MusicScreenHeader(
     backContentDescription: String = "Back to Home",
     batchMetadataAction: (@Composable () -> Unit)? = null,
     viewModeAction: (@Composable () -> Unit)? = null,
+    filterAction: (@Composable () -> Unit)? = null,
     sortAction: (@Composable () -> Unit)? = null
 ) {
     Row(
@@ -95,6 +96,8 @@ fun MusicScreenHeader(
             batchMetadataAction?.invoke()
 
             viewModeAction?.invoke()
+
+            filterAction?.invoke()
 
             sortAction?.invoke()
 

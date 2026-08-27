@@ -10,6 +10,8 @@ import com.example.cdplaya.ui.library.LibrarySortDirection
 import com.example.cdplaya.ui.library.LibrarySortOption
 import com.example.cdplaya.ui.library.LibrarySortState
 import com.example.cdplaya.ui.library.LibrarySortStateSaver
+import com.example.cdplaya.ui.library.LibrarySongFilterState
+import com.example.cdplaya.ui.library.LibrarySongFilterStateSaver
 import com.example.cdplaya.ui.library.LibraryTab
 import com.example.cdplaya.ui.navigation.MainDestination
 import com.example.cdplaya.ui.navigation.PlaybackLaunchContext
@@ -27,6 +29,7 @@ class MusicNavigationState internal constructor(
     val selectedGenreKey: MutableState<String?>,
     val selectedPlaylistId: MutableState<Long?>,
     val searchQuery: MutableState<String>,
+    val selectedSongFilterState: MutableState<LibrarySongFilterState>,
     val selectedSongSortState: MutableState<LibrarySortState>,
     val selectedArtistSortState: MutableState<LibrarySortState>,
     val selectedAlbumSortState: MutableState<LibrarySortState>,
@@ -45,6 +48,9 @@ fun rememberMusicNavigationState(): MusicNavigationState {
     val selectedGenreKey = rememberSaveable { mutableStateOf<String?>(null) }
     val selectedPlaylistId = rememberSaveable { mutableStateOf<Long?>(null) }
     val searchQuery = rememberSaveable { mutableStateOf("") }
+    val selectedSongFilterState = rememberSaveable(stateSaver = LibrarySongFilterStateSaver) {
+        mutableStateOf(LibrarySongFilterState())
+    }
     val selectedSongSortState = rememberSaveable(stateSaver = LibrarySortStateSaver) {
         mutableStateOf(
             LibrarySortState(LibrarySortOption.TITLE, LibrarySortDirection.ASCENDING)
@@ -74,6 +80,7 @@ fun rememberMusicNavigationState(): MusicNavigationState {
         selectedGenreKey,
         selectedPlaylistId,
         searchQuery,
+        selectedSongFilterState,
         selectedSongSortState,
         selectedArtistSortState,
         selectedAlbumSortState,
@@ -88,6 +95,7 @@ fun rememberMusicNavigationState(): MusicNavigationState {
             selectedGenreKey,
             selectedPlaylistId,
             searchQuery,
+            selectedSongFilterState,
             selectedSongSortState,
             selectedArtistSortState,
             selectedAlbumSortState,

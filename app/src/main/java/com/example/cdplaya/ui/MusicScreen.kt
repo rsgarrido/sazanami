@@ -284,6 +284,7 @@ internal fun MusicScreen(
     var selectedGenreKey by navigationState.selectedGenreKey
     var selectedPlaylistId by navigationState.selectedPlaylistId
     var searchQuery by navigationState.searchQuery
+    var selectedSongFilterState by navigationState.selectedSongFilterState
     var selectedSongSortState by navigationState.selectedSongSortState
     var selectedArtistSortState by navigationState.selectedArtistSortState
     var selectedAlbumSortState by navigationState.selectedAlbumSortState
@@ -1001,6 +1002,7 @@ internal fun MusicScreen(
                     selectedGenreKey = selectedGenreKey,
                     selectedPlaylistId = selectedPlaylistId,
                     searchQuery = searchQuery,
+                    selectedSongFilterState = selectedSongFilterState,
                     selectedSongSortState = selectedSongSortState,
                     selectedArtistSortState = selectedArtistSortState,
                     selectedAlbumSortState = selectedAlbumSortState,
@@ -1106,6 +1108,9 @@ internal fun MusicScreen(
                     onClearSelectedLibraryFolders = onClearSelectedLibraryFolders,
                     onSearchQueryChange = { query ->
                         searchQuery = query
+                    },
+                    onSongFilterStateChanged = { state ->
+                        selectedSongFilterState = state
                     },
                     onSongSortStateChanged = { state ->
                         selectedSongSortState = state

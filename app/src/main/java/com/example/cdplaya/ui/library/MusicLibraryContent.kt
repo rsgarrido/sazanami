@@ -25,6 +25,7 @@ fun MusicLibraryContent(
     selectedLibraryTab: LibraryTab,
     songs: List<Song>,
     searchQuery: String,
+    selectedSongFilterState: LibrarySongFilterState,
     selectedSongSortState: LibrarySortState,
     selectedRatedFilter: RatedSongFilter,
     selectedArtistSortState: LibrarySortState,
@@ -87,6 +88,7 @@ fun MusicLibraryContent(
     onAddSongsToCurrentPlaylistClick: (Playlist, List<Song>) -> Unit,
     onEditAlbumMetadataClick: (LibraryAlbumGroup) -> Unit,
     onEditSongTagsClick: (Song) -> Unit,
+    onClearSongFilters: () -> Unit,
     recentlyPlayedSongs: List<Song>,
     recentlyAddedSongs: List<Song>,
     mostPlayedSongs: List<Song>,
@@ -99,6 +101,7 @@ fun MusicLibraryContent(
             SongsTabContent(
                 songs = songs,
                 searchQuery = searchQuery,
+                filterState = selectedSongFilterState,
                 sortState = selectedSongSortState,
                 currentSong = currentSong,
                 viewMode = viewMode,
@@ -111,6 +114,7 @@ fun MusicLibraryContent(
                 onToggleFavoriteClick = onToggleFavoriteClick,
                 onAddToPlaylistClick = onAddToPlaylistClick,
                 onEditSongTagsClick = onEditSongTagsClick,
+                onClearFilters = onClearSongFilters,
                 ratingFeaturesEnabled = ratingFeaturesEnabled,
                 bottomContentPadding = bottomContentPadding,
                 modifier = modifier

@@ -175,6 +175,17 @@ fun sortSongsForLibrary(
             }
         }
 
+        LibrarySortOption.YEAR -> songs.sortedWith { left, right ->
+            compareKnownInts(left.year, right.year, sortDirection)
+                .takeUnless { it == 0 }
+                ?: compareLibraryText(
+                    left.title,
+                    right.title,
+                    LibrarySortDirection.ASCENDING
+                ).takeUnless { it == 0 }
+                ?: left.membershipKey().compareTo(right.membershipKey())
+        }
+
         LibrarySortOption.RATING -> songs.sortedWith { left, right ->
             compareKnownInts(
                 ratingsByReferenceKey[left.membershipKey()],

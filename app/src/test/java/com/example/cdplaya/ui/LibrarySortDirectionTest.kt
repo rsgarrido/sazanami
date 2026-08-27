@@ -87,6 +87,32 @@ class LibrarySortDirectionTest {
     }
 
     @Test
+    fun yearSortSupportsBothDirectionsWithUnknownYearsLast() {
+        val unknown = song(1, title = "Unknown", year = null)
+        val older = song(2, title = "Older", year = 1995)
+        val middle = song(3, title = "Middle", year = 2004)
+        val newer = song(4, title = "Newer", year = 2026)
+        val songs = listOf(unknown, newer, older, middle)
+
+        assertEquals(
+            listOf(older, middle, newer, unknown),
+            sortSongsForLibrary(
+                songs,
+                LibrarySortOption.YEAR,
+                LibrarySortDirection.ASCENDING
+            )
+        )
+        assertEquals(
+            listOf(newer, middle, older, unknown),
+            sortSongsForLibrary(
+                songs,
+                LibrarySortOption.YEAR,
+                LibrarySortDirection.DESCENDING
+            )
+        )
+    }
+
+    @Test
     fun albumTitleSortKeepsUnknownAlbumsLastWhenDescending() {
         val alpha = song(1, title = "One", album = "Alpha")
         val zulu = song(2, title = "Two", album = "Zulu")
@@ -108,7 +134,8 @@ class LibrarySortDirectionTest {
         title: String,
         artist: String = "Artist",
         album: String = "Album",
-        dateAdded: Long = 1L
+        dateAdded: Long = 1L,
+        year: Int? = null
     ) = Song(
         id = id,
         title = title,
@@ -120,6 +147,7 @@ class LibrarySortDirectionTest {
         filePath = "/music/$id.mp3",
         folderPath = "/music/$id",
         albumArtUri = null,
-        dateAddedEpochSeconds = dateAdded
+        dateAddedEpochSeconds = dateAdded,
+        year = year
     )
 }
