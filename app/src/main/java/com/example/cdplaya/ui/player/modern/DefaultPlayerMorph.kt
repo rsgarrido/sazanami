@@ -1,5 +1,7 @@
 package com.example.cdplaya.ui.player.modern
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -19,6 +21,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -309,7 +312,11 @@ private fun DefaultMorphPlayPause(
 ) {
     val expandedSurfaceAlpha = morphProgressWindow(progress, 0.20f, 0.72f)
     val shape = RoundedCornerShape(percent = 50)
-    val accentColor = resolveModernControlAccentColor(appearance, artworkPalette, style)
+    val accentColor by animateColorAsState(
+        targetValue = resolveModernControlAccentColor(appearance, artworkPalette, style),
+        animationSpec = tween(ModernPlayerDefaults.BackgroundTransitionDurationMillis),
+        label = "defaultMorphControlAccent"
+    )
     val decoratedModifier = when (appearance.style) {
         ModernControlStyle.MINIMAL -> Modifier
         ModernControlStyle.GLASS -> Modifier

@@ -27,7 +27,6 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -289,7 +288,8 @@ internal fun modernArtworkFrameInsetDp(
 internal data class ModernArtworkRequestPolicy(
     val targetSizePx: Int?,
     val exactSize: Boolean,
-    val sourceMemoryCachePlaceholderKey: String?
+    val sourceMemoryCachePlaceholderKey: String?,
+    val expandedMemoryCacheKey: String?
 )
 
 internal fun modernArtworkRequestPolicy(
@@ -301,7 +301,15 @@ internal fun modernArtworkRequestPolicy(
         targetSizePx = target,
         exactSize = target != null,
         sourceMemoryCachePlaceholderKey = artworkIdentity
+            ?.takeIf { target != null && it.isNotBlank() },
+        expandedMemoryCacheKey = artworkIdentity
             ?.takeIf { target != null && it.isNotBlank() }
+            ?.let { identity ->
+                modernExpandedArtworkMemoryCacheKey(
+                    artworkIdentity = identity,
+                    targetSizePx = requireNotNull(target)
+                )
+            }
     )
 }
 
@@ -350,23 +358,33 @@ internal fun ModernPlayerAlbumImage(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
     transitionDurationMillis: Int = ModernPlayerDefaults.SongTransitionDurationMillis,
-    retainPreviousPainter: Boolean = true,
+    retainCurrentPainterDuringRefinement: Boolean = true,
     requestSizePx: Int? = null
 ) {
     val context = LocalContext.current
-    val fallbackPainter = painterResource(R.drawable.ic_media_play)
-    val painterRetentionKey = if (retainPreviousPainter) Unit else currentSong.id
-    var retainedPainter by remember(painterRetentionKey) {
-        mutableStateOf<Painter?>(null)
-    }
+    val artworkIdentity = currentSong.albumArtUri?.toString()?.takeIf(String::isNotBlank)
     val requestPolicy = modernArtworkRequestPolicy(
         expandedTargetSizePx = requestSizePx,
-        artworkIdentity = currentSong.albumArtUri?.toString()
+        artworkIdentity = artworkIdentity
     )
+    var readinessState by remember(artworkIdentity) {
+        mutableStateOf(
+            ModernArtworkReadinessState<Painter>(
+                currentArtworkIdentity = artworkIdentity
+            )
+        )
+    }
+    val requestQuality = if (requestPolicy.exactSize) {
+        ModernArtworkQuality.Expanded
+    } else {
+        ModernArtworkQuality.Temporary
+    }
     val request = remember(currentSong.id, currentSong.albumArtUri, requestPolicy) {
         ImageRequest.Builder(context)
             .data(currentSong.albumArtUri)
             .crossfade(transitionDurationMillis)
+            .placeholder(R.drawable.ic_media_play)
+            .error(R.drawable.ic_media_play)
             .apply {
                 requestPolicy.targetSizePx?.let { targetSize ->
                     size(targetSize)
@@ -377,6 +395,9 @@ internal fun ModernPlayerAlbumImage(
                 requestPolicy.sourceMemoryCachePlaceholderKey?.let { key ->
                     placeholderMemoryCacheKey(key)
                 }
+                requestPolicy.expandedMemoryCacheKey?.let { key ->
+                    memoryCacheKey(key)
+                }
             }
             .build()
     }
@@ -386,20 +407,36 @@ internal fun ModernPlayerAlbumImage(
         contentDescription = contentDescription,
         modifier = modifier,
         transform = { state ->
+            val readyPainter = if (retainCurrentPainterDuringRefinement) {
+                preferredModernArtworkReadyLayer(readinessState)?.value
+            } else {
+                null
+            }
             when (state) {
-                is AsyncImagePainter.State.Loading -> state.copy(
-                    painter = retainedPainter ?: fallbackPainter
-                )
-                is AsyncImagePainter.State.Error -> state.copy(
-                    painter = fallbackPainter
-                )
+                is AsyncImagePainter.State.Loading -> readyPainter?.let { painter ->
+                    state.copy(painter = painter)
+                } ?: state
+                is AsyncImagePainter.State.Error -> readyPainter?.let { painter ->
+                    state.copy(painter = painter)
+                } ?: state
                 else -> state
             }
         },
         onState = { state ->
             when (state) {
-                is AsyncImagePainter.State.Success -> retainedPainter = state.painter
-                is AsyncImagePainter.State.Error -> retainedPainter = fallbackPainter
+                is AsyncImagePainter.State.Success -> {
+                    val identity = artworkIdentity
+                    if (identity != null) {
+                        readinessState = acceptModernArtworkReadyLayer(
+                            state = readinessState,
+                            layer = ModernArtworkReadyLayer(
+                                artworkIdentity = identity,
+                                quality = requestQuality,
+                                value = state.painter
+                            )
+                        )
+                    }
+                }
                 else -> Unit
             }
         },

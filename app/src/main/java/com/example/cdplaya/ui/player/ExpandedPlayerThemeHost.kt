@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
@@ -74,6 +75,8 @@ import com.example.cdplaya.ui.player.modern.rememberModernArtworkCarouselPresent
 import com.example.cdplaya.ui.player.modern.shouldRunDefaultExpandedWork
 import com.example.cdplaya.ui.player.modern.defaultMorphTravelDistance
 import com.example.cdplaya.ui.player.modern.rememberModernArtworkPalette
+import com.example.cdplaya.ui.player.modern.ModernExpandedArtworkPreloader
+import com.example.cdplaya.ui.player.modern.modernArtworkPreloadPolicy
 import kotlin.math.roundToInt
 
 @Composable
@@ -151,6 +154,8 @@ fun ExpandedPlayerThemeHost(
         prefetchSongs = nearbyWaveformSongs
     )
 
+    val hostDensity = LocalDensity.current.density
+    var hostWidthPx by remember { mutableFloatStateOf(1f) }
     var hostHeightPx by remember { mutableFloatStateOf(1f) }
     var hostDragOffset by remember { mutableFloatStateOf(0f) }
     val hostDragState = rememberDraggableState { delta ->
@@ -168,9 +173,7 @@ fun ExpandedPlayerThemeHost(
             }
         )
     }
-    val lyricsDragModifier = Modifier
-        .onSizeChanged { size -> hostHeightPx = size.height.toFloat().coerceAtLeast(1f) }
-        .draggable(
+    val lyricsDragModifier = Modifier.draggable(
             state = hostDragState,
             orientation = Orientation.Vertical,
             enabled = !lyricsTransitionState.lyricsInteractive,
@@ -199,6 +202,10 @@ fun ExpandedPlayerThemeHost(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .onSizeChanged { size ->
+                hostWidthPx = size.width.toFloat().coerceAtLeast(1f)
+                hostHeightPx = size.height.toFloat().coerceAtLeast(1f)
+            }
             .then(sharedLyricsSemanticsModifier)
             .then(sharedGestureModifier)
     ) {
@@ -206,6 +213,24 @@ fun ExpandedPlayerThemeHost(
             PlayerTheme.DEFAULT -> {
                 if (currentSong != null) {
                     val modernStyle = ModernPlayerDefaults.style()
+                    val geometry = resolveDefaultPlayerMorphGeometry(
+                        progress = playerMorphState.progress,
+                        endpointBounds = endpointBounds,
+                        elementBounds = defaultMorphBounds
+                    )
+                    val artworkPreloadPolicy = remember(
+                        hostWidthPx,
+                        hostHeightPx,
+                        hostDensity,
+                        modernPlayerAppearance
+                    ) {
+                        modernArtworkPreloadPolicy(
+                            viewportWidthPx = hostWidthPx.roundToInt(),
+                            viewportHeightPx = hostHeightPx.roundToInt(),
+                            density = hostDensity,
+                            appearance = modernPlayerAppearance
+                        )
+                    }
                     val artworkPalette = rememberModernArtworkPalette(
                         song = currentSong,
                         fallbackAccent = modernStyle.accentColor
@@ -213,11 +238,13 @@ fun ExpandedPlayerThemeHost(
                     val expandedArtworkRequestSizePx =
                         defaultMorphBounds.expandedArtwork?.let { bounds ->
                             maxOf(bounds.width, bounds.height).roundToInt().coerceAtLeast(1)
-                        }
-                    val geometry = resolveDefaultPlayerMorphGeometry(
-                        progress = playerMorphState.progress,
-                        endpointBounds = endpointBounds,
-                        elementBounds = defaultMorphBounds
+                        } ?: artworkPreloadPolicy.targetSizePx
+                    ModernExpandedArtworkPreloader(
+                        currentSong = currentSong,
+                        previousSong = previousPreviewSong,
+                        nextSong = nextPreviewSong,
+                        targetSizePx = expandedArtworkRequestSizePx,
+                        includeCurrentSong = geometry == null
                     )
                     val carouselPresentation =
                         rememberModernArtworkCarouselPresentation(

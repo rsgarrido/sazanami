@@ -1,5 +1,7 @@
 package com.example.cdplaya.ui.player.modern
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +21,7 @@ import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,10 +52,14 @@ internal fun ModernPlayerControls(
     controlScale: Float = 1f
 ) {
     val safeControlScale = controlScale.coerceIn(0.01f, 1f)
-    val accentColor = resolveModernControlAccentColor(
-        appearance = appearance,
-        artworkPalette = artworkPalette,
-        style = style
+    val accentColor by animateColorAsState(
+        targetValue = resolveModernControlAccentColor(
+            appearance = appearance,
+            artworkPalette = artworkPalette,
+            style = style
+        ),
+        animationSpec = tween(ModernPlayerDefaults.BackgroundTransitionDurationMillis),
+        label = "modernControlAccent"
     )
     Row(
         verticalAlignment = Alignment.CenterVertically,

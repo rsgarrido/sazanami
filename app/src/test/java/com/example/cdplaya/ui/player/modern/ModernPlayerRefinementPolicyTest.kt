@@ -1,6 +1,7 @@
 package com.example.cdplaya.ui.player.modern
 
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Color
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -69,12 +70,17 @@ class ModernPlayerRefinementPolicyTest {
         assertNull(automatic.targetSizePx)
         assertFalse(automatic.exactSize)
         assertNull(automatic.sourceMemoryCachePlaceholderKey)
+        assertNull(automatic.expandedMemoryCacheKey)
         assertEquals(1080, expanded.targetSizePx)
         assertTrue(expanded.targetSizePx != 52)
         assertTrue(expanded.exactSize)
         assertEquals(
             "content://album-art/42",
             expanded.sourceMemoryCachePlaceholderKey
+        )
+        assertEquals(
+            modernExpandedArtworkMemoryCacheKey("content://album-art/42", 1080),
+            expanded.expandedMemoryCacheKey
         )
     }
 
@@ -85,6 +91,7 @@ class ModernPlayerRefinementPolicyTest {
             assertNull(policy.targetSizePx)
             assertFalse(policy.exactSize)
             assertNull(policy.sourceMemoryCachePlaceholderKey)
+            assertNull(policy.expandedMemoryCacheKey)
         }
     }
 
@@ -96,7 +103,22 @@ class ModernPlayerRefinementPolicyTest {
 
         assertEquals(first, second)
         assertNull(missing.sourceMemoryCachePlaceholderKey)
+        assertNull(missing.expandedMemoryCacheKey)
         assertTrue(missing.exactSize)
+    }
+
+    @Test
+    fun paletteAnimationFramesCannotChangeArtworkRequestIdentity() {
+        val paletteFrames = listOf(Color.Red, Color.Magenta, Color.Blue)
+        val requestPolicies = paletteFrames.map {
+            modernArtworkRequestPolicy(1080, "content://album-art/42")
+        }
+
+        assertEquals(1, requestPolicies.distinct().size)
+        assertEquals(
+            requestPolicies.first().expandedMemoryCacheKey,
+            requestPolicies.last().expandedMemoryCacheKey
+        )
     }
 
     @Test

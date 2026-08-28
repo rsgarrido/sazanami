@@ -2,8 +2,6 @@ package com.example.cdplaya.ui.player.modern
 
 import android.content.Context
 import android.graphics.Bitmap
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -249,69 +247,7 @@ internal fun rememberModernArtworkPalette(
         }
     }
 
-    return animateModernArtworkPalette(
-        targetPalette = loadState.displayedPalette,
-        fallbackAccent = fallbackAccent
-    )
-}
-
-@Composable
-private fun animateModernArtworkPalette(
-    targetPalette: ModernArtworkPalette,
-    fallbackAccent: Color
-): ModernArtworkPalette {
-    val animationTarget = remember(targetPalette, fallbackAccent) {
-        if (targetPalette.isFallback) {
-            targetPalette.copy(accent = fallbackAccent)
-        } else {
-            targetPalette
-        }
-    }
-    val animationSpec = remember {
-        tween<Color>(ModernPlayerDefaults.BackgroundTransitionDurationMillis)
-    }
-    val dominant by animateColorAsState(
-        targetValue = animationTarget.dominant,
-        animationSpec = animationSpec,
-        label = "modernPaletteDominant"
-    )
-    val primary by animateColorAsState(
-        targetValue = animationTarget.primary,
-        animationSpec = animationSpec,
-        label = "modernPalettePrimary"
-    )
-    val secondary by animateColorAsState(
-        targetValue = animationTarget.secondary,
-        animationSpec = animationSpec,
-        label = "modernPaletteSecondary"
-    )
-    val accent by animateColorAsState(
-        targetValue = animationTarget.accent,
-        animationSpec = animationSpec,
-        label = "modernPaletteAccent"
-    )
-    val animationSettled = dominant == animationTarget.dominant &&
-        primary == animationTarget.primary &&
-        secondary == animationTarget.secondary &&
-        accent == animationTarget.accent
-    val isFallback = animationTarget.isFallback && animationSettled
-    return remember(
-        dominant,
-        primary,
-        secondary,
-        accent,
-        animationTarget.readableForeground,
-        isFallback
-    ) {
-        ModernArtworkPalette(
-            dominant = dominant,
-            primary = primary,
-            secondary = secondary,
-            accent = accent,
-            readableForeground = animationTarget.readableForeground,
-            isFallback = isFallback
-        )
-    }
+    return loadState.displayedPalette
 }
 
 internal fun extractModernArtworkPalette(

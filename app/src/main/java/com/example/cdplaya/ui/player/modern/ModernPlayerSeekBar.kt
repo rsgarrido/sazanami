@@ -1,5 +1,6 @@
 package com.example.cdplaya.ui.player.modern
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -18,6 +19,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -58,7 +60,7 @@ internal fun ModernPlayerSeekBar(
 
     Column(modifier = modifier.fillMaxWidth()) {
     val seekbarStyle = appearance.style
-    val activeColor = when (appearance.colorMode) {
+    val activeColorTarget = when (appearance.colorMode) {
         ModernSeekbarColorMode.WHITE -> style.contentColor
         ModernSeekbarColorMode.APP_ACCENT -> style.accentColor
         ModernSeekbarColorMode.ALBUM_DERIVED -> resolveModernAlbumAccent(
@@ -71,7 +73,7 @@ internal fun ModernPlayerSeekBar(
             safePosition = values.sliderPosition,
             safeDuration = values.sliderDuration,
             onSeekChange = onSeekChange,
-            activeColor = activeColor,
+            activeColor = activeColorTarget,
             style = style
         )
 
@@ -80,12 +82,12 @@ internal fun ModernPlayerSeekBar(
             safeDuration = values.sliderDuration,
             onSeekChange = onSeekChange,
             thumbSize = 8.dp,
-            thumbColor = activeColor
+            thumbColor = activeColorTarget
         ) { sliderProgress ->
             RoundedTrack(
                 progress = sliderProgress,
                 height = 2.dp,
-                activeColor = activeColor,
+                activeColor = activeColorTarget,
                 inactiveColor = style.inactiveTrackColor
             )
         }
@@ -95,12 +97,12 @@ internal fun ModernPlayerSeekBar(
             safeDuration = values.sliderDuration,
             onSeekChange = onSeekChange,
             thumbSize = 20.dp,
-            thumbColor = activeColor
+            thumbColor = activeColorTarget
         ) { sliderProgress ->
             RoundedTrack(
                 progress = sliderProgress,
                 height = 12.dp,
-                activeColor = activeColor,
+                activeColor = activeColorTarget,
                 inactiveColor = style.inactiveTrackColor
             )
         }
@@ -114,7 +116,7 @@ internal fun ModernPlayerSeekBar(
         ) { sliderProgress ->
             SegmentedTrack(
                 progress = sliderProgress,
-                activeColor = activeColor,
+                activeColor = activeColorTarget,
                 inactiveColor = style.inactiveTrackColor
             )
         }
@@ -140,7 +142,7 @@ internal fun ModernPlayerSeekBar(
                 WaveformPreviewTrack(
                     progress = sliderProgress,
                     bars = bars,
-                    activeColor = activeColor,
+                    activeColor = activeColorTarget,
                     inactiveColor = style.inactiveTrackColor,
                     waveformSize = appearance.waveformSize,
                     density = appearance.waveformDensity
@@ -169,7 +171,7 @@ internal fun ModernPlayerSeekBar(
                 WaveformPeaksTrack(
                     progress = sliderProgress,
                     bars = bars,
-                    activeColor = activeColor,
+                    activeColor = activeColorTarget,
                     inactiveColor = style.inactiveTrackColor,
                     waveformSize = appearance.waveformSize,
                     density = appearance.waveformDensity
@@ -198,7 +200,7 @@ internal fun ModernPlayerSeekBar(
                 WaveformGlowTrack(
                     progress = sliderProgress,
                     bars = bars,
-                    activeColor = activeColor,
+                    activeColor = activeColorTarget,
                     inactiveColor = style.inactiveTrackColor,
                     waveformSize = appearance.waveformSize,
                     density = appearance.waveformDensity
@@ -227,7 +229,7 @@ internal fun ModernPlayerSeekBar(
                 ContinuousWaveformTrack(
                     progress = sliderProgress,
                     samples = bars,
-                    activeColor = activeColor,
+                    activeColor = activeColorTarget,
                     inactiveColor = style.inactiveTrackColor,
                     waveformSize = appearance.waveformSize
                 )
@@ -255,7 +257,7 @@ internal fun ModernPlayerSeekBar(
                 WaveLineTrack(
                     progress = sliderProgress,
                     samples = bars,
-                    activeColor = activeColor,
+                    activeColor = activeColorTarget,
                     inactiveColor = style.inactiveTrackColor,
                     waveformSize = appearance.waveformSize
                 )
@@ -356,6 +358,16 @@ private fun rememberAnimatedWaveformBars(
 }
 
 @Composable
+private fun rememberAnimatedModernSeekbarColor(
+    targetColor: Color,
+    label: String
+): State<Color> = animateColorAsState(
+    targetValue = targetColor,
+    animationSpec = tween(ModernPlayerDefaults.BackgroundTransitionDurationMillis),
+    label = label
+)
+
+@Composable
 private fun ClassicSeekbar(
     safePosition: Int,
     safeDuration: Int,
@@ -363,6 +375,10 @@ private fun ClassicSeekbar(
     activeColor: Color,
     style: ModernPlayerStyle
 ) {
+    val animatedActiveColor = rememberAnimatedModernSeekbarColor(
+        activeColor,
+        "modernClassicSeekbarColor"
+    )
     Slider(
         value = safePosition.toFloat(),
         onValueChange = { newPosition ->
@@ -370,8 +386,8 @@ private fun ClassicSeekbar(
         },
         valueRange = 0f..safeDuration.toFloat(),
         colors = SliderDefaults.colors(
-            thumbColor = activeColor,
-            activeTrackColor = activeColor,
+            thumbColor = animatedActiveColor.value,
+            activeTrackColor = animatedActiveColor.value,
             inactiveTrackColor = style.inactiveTrackColor
         ),
         modifier = Modifier.fillMaxWidth()
@@ -388,6 +404,10 @@ private fun VisualSeekbar(
     thumbColor: Color,
     track: @Composable (Float) -> Unit
 ) {
+    val animatedThumbColor = rememberAnimatedModernSeekbarColor(
+        thumbColor,
+        "modernVisualSeekbarThumbColor"
+    )
     Slider(
         value = safePosition.toFloat(),
         onValueChange = { newPosition ->
@@ -398,7 +418,7 @@ private fun VisualSeekbar(
             Box(
                 modifier = Modifier
                     .size(thumbSize)
-                    .background(thumbColor, CircleShape)
+                    .background(animatedThumbColor.value, CircleShape)
             )
         },
         track = { sliderState ->
@@ -415,6 +435,10 @@ private fun RoundedTrack(
     activeColor: Color,
     inactiveColor: Color
 ) {
+    val animatedActiveColor = rememberAnimatedModernSeekbarColor(
+        activeColor,
+        "modernRoundedTrackColor"
+    )
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
@@ -426,7 +450,7 @@ private fun RoundedTrack(
             cornerRadius = CornerRadius(radius, radius)
         )
         drawRoundRect(
-            color = activeColor,
+            color = animatedActiveColor.value,
             size = Size(size.width * progress, size.height),
             cornerRadius = CornerRadius(radius, radius)
         )
@@ -441,6 +465,10 @@ private fun SegmentedTrack(
     segmentCount: Int = 24
 ) {
     val fills = segmentedFillFractions(progress, segmentCount)
+    val animatedActiveColor = rememberAnimatedModernSeekbarColor(
+        activeColor,
+        "modernSegmentedTrackColor"
+    )
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
@@ -460,7 +488,7 @@ private fun SegmentedTrack(
             )
             if (fill > 0f) {
                 drawRoundRect(
-                    color = activeColor,
+                    color = animatedActiveColor.value,
                     topLeft = androidx.compose.ui.geometry.Offset(left, 0f),
                     size = Size(segmentWidth * fill, size.height),
                     cornerRadius = CornerRadius(radius, radius)
@@ -479,6 +507,10 @@ private fun WaveformPreviewTrack(
     waveformSize: ModernWaveformSize,
     density: ModernWaveformDensity
 ) {
+    val animatedActiveColor = rememberAnimatedModernSeekbarColor(
+        activeColor,
+        "modernWaveformPreviewColor"
+    )
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
@@ -489,7 +521,7 @@ private fun WaveformPreviewTrack(
         val gap = density.gapDp.dp.toPx()
         drawCenteredWaveformBars(bars, gap, inactiveColor)
         clipRect(right = size.width * progress) {
-            drawCenteredWaveformBars(bars, gap, activeColor)
+            drawCenteredWaveformBars(bars, gap, animatedActiveColor.value)
         }
     }
 }
@@ -503,6 +535,10 @@ private fun WaveformPeaksTrack(
     waveformSize: ModernWaveformSize,
     density: ModernWaveformDensity
 ) {
+    val animatedActiveColor = rememberAnimatedModernSeekbarColor(
+        activeColor,
+        "modernWaveformPeaksColor"
+    )
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
@@ -529,7 +565,7 @@ private fun WaveformPeaksTrack(
                 bars = bars,
                 gap = gap,
                 centerGap = centerGap,
-                color = activeColor
+                color = animatedActiveColor.value
             )
         }
     }
@@ -544,6 +580,10 @@ private fun WaveformGlowTrack(
     waveformSize: ModernWaveformSize,
     density: ModernWaveformDensity
 ) {
+    val animatedActiveColor = rememberAnimatedModernSeekbarColor(
+        activeColor,
+        "modernWaveformGlowColor"
+    )
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
@@ -561,14 +601,14 @@ private fun WaveformGlowTrack(
             drawCenteredWaveformBars(
                 bars = bars,
                 gap = gap,
-                color = activeColor.copy(alpha = 0.16f),
+                color = animatedActiveColor.value.copy(alpha = 0.16f),
                 widthExpansion = 1.5.dp.toPx(),
                 heightExpansion = 2.dp.toPx()
             )
             drawCenteredWaveformBars(
                 bars = bars,
                 gap = gap,
-                color = activeColor.copy(alpha = 0.88f)
+                color = animatedActiveColor.value.copy(alpha = 0.88f)
             )
         }
     }
@@ -583,6 +623,10 @@ private fun ContinuousWaveformTrack(
     waveformSize: ModernWaveformSize
 ) {
     val latestProgress by rememberUpdatedState(progress)
+    val animatedActiveColor = rememberAnimatedModernSeekbarColor(
+        activeColor,
+        "modernContinuousWaveformColor"
+    )
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -593,7 +637,7 @@ private fun ContinuousWaveformTrack(
                     if (samples.isEmpty()) return@onDrawBehind
                     drawPath(path, inactiveColor.copy(alpha = inactiveColor.alpha * 0.8f))
                     clipRect(right = size.width * latestProgress.coerceIn(0f, 1f)) {
-                        drawPath(path, activeColor)
+                        drawPath(path, animatedActiveColor.value)
                     }
                 }
             }
@@ -609,6 +653,10 @@ private fun WaveLineTrack(
     waveformSize: ModernWaveformSize
 ) {
     val latestProgress by rememberUpdatedState(progress)
+    val animatedActiveColor = rememberAnimatedModernSeekbarColor(
+        activeColor,
+        "modernWaveLineColor"
+    )
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -635,7 +683,7 @@ private fun WaveLineTrack(
                         style = stroke
                     )
                     clipRect(right = size.width * latestProgress.coerceIn(0f, 1f)) {
-                        drawPath(path, activeColor, style = stroke)
+                        drawPath(path, animatedActiveColor.value, style = stroke)
                     }
                 }
             }

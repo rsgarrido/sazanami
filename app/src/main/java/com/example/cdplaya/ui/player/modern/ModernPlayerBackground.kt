@@ -1,12 +1,16 @@
 package com.example.cdplaya.ui.player.modern
 
 import android.os.Build
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -47,15 +51,10 @@ internal fun BoxScope.ModernPlayerBackground(
         }
 
         ModernBackgroundStyle.ALBUM_GRADIENT -> {
-            val gradient = resolveModernAlbumGradient(artworkPalette, style.accentColor)
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(gradient.top, gradient.center, gradient.bottom)
-                        )
-                    )
+            ModernAnimatedAlbumGradientBackground(
+                artworkPalette = artworkPalette,
+                fallbackAccent = style.accentColor,
+                modifier = Modifier.matchParentSize()
             )
         }
 
@@ -119,6 +118,43 @@ internal fun BoxScope.ModernPlayerBackground(
                 )
         )
     }
+}
+
+@Composable
+private fun ModernAnimatedAlbumGradientBackground(
+    artworkPalette: ModernArtworkPalette,
+    fallbackAccent: Color,
+    modifier: Modifier = Modifier
+) {
+    val target = remember(artworkPalette, fallbackAccent) {
+        resolveModernAlbumGradient(artworkPalette, fallbackAccent)
+    }
+    val animationSpec = remember {
+        tween<Color>(ModernPlayerDefaults.BackgroundTransitionDurationMillis)
+    }
+    val top = animateColorAsState(
+        targetValue = target.top,
+        animationSpec = animationSpec,
+        label = "modernAlbumGradientTop"
+    )
+    val center = animateColorAsState(
+        targetValue = target.center,
+        animationSpec = animationSpec,
+        label = "modernAlbumGradientCenter"
+    )
+    val bottom = animateColorAsState(
+        targetValue = target.bottom,
+        animationSpec = animationSpec,
+        label = "modernAlbumGradientBottom"
+    )
+    Box(
+        modifier = modifier.drawWithCache {
+            val brush = Brush.verticalGradient(
+                listOf(top.value, center.value, bottom.value)
+            )
+            onDrawBehind { drawRect(brush) }
+        }
+    )
 }
 
 internal data class ModernBackgroundPolicy(
