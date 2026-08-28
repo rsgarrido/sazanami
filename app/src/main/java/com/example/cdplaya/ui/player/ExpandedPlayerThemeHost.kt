@@ -74,6 +74,7 @@ import com.example.cdplaya.ui.player.modern.rememberModernArtworkCarouselPresent
 import com.example.cdplaya.ui.player.modern.shouldRunDefaultExpandedWork
 import com.example.cdplaya.ui.player.modern.defaultMorphTravelDistance
 import com.example.cdplaya.ui.player.modern.rememberModernArtworkPalette
+import kotlin.math.roundToInt
 
 @Composable
 fun ExpandedPlayerThemeHost(
@@ -209,6 +210,10 @@ fun ExpandedPlayerThemeHost(
                         song = currentSong,
                         fallbackAccent = modernStyle.accentColor
                     )
+                    val expandedArtworkRequestSizePx =
+                        defaultMorphBounds.expandedArtwork?.let { bounds ->
+                            maxOf(bounds.width, bounds.height).roundToInt().coerceAtLeast(1)
+                        }
                     val geometry = resolveDefaultPlayerMorphGeometry(
                         progress = playerMorphState.progress,
                         endpointBounds = endpointBounds,
@@ -231,7 +236,8 @@ fun ExpandedPlayerThemeHost(
                         onPlayPauseClick = onPlayPauseClick,
                         style = modernStyle,
                         appearance = modernPlayerAppearance,
-                        artworkPalette = artworkPalette
+                        artworkPalette = artworkPalette,
+                        expandedArtworkRequestSizePx = expandedArtworkRequestSizePx
                     ) { visualState ->
                         ModernExpandedPlayer(
                             currentSong = currentSong,

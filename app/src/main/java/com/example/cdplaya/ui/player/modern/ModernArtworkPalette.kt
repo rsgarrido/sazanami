@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sqrt
 
 data class ModernArtworkPalette(
     val dominant: Color,
@@ -188,19 +189,23 @@ internal fun extractModernArtworkPalette(
     }
     if (buckets.isEmpty()) return ModernArtworkPalette.fallback(fallbackAccent)
 
-    val candidates = buckets.values.map(PaletteBucket::averageArgb)
-    val dominant = buckets.values.maxBy(PaletteBucket::count).averageArgb()
-    val primary = candidates.maxBy { color ->
-        val saturation = colorSaturation(color)
-        val population = buckets.values.first { it.averageArgb() == color }.count
-        population * (0.35f + saturation)
+    val candidates = buckets.values.map { bucket ->
+        PaletteCandidate(color = bucket.averageArgb(), population = bucket.count)
     }
+    val dominant = candidates.maxBy { candidate -> candidate.population }.color
+    val primary = candidates.maxBy { candidate ->
+        val saturation = colorSaturation(candidate.color)
+        val luminance = colorLuminance(candidate.color)
+        val midtoneBonus = 1f - kotlin.math.abs(luminance - 0.5f) * 0.35f
+        sqrt(candidate.population.toFloat()) * (0.28f + saturation * 1.35f) * midtoneBonus
+    }.color
     val secondary = candidates
         .asSequence()
-        .filter { colorDistanceSquared(it, primary) >= MIN_SECONDARY_DISTANCE_SQUARED }
+        .map(PaletteCandidate::color)
+        .filter { color -> colorDistanceSquared(color, primary) >= MIN_SECONDARY_DISTANCE_SQUARED }
         .maxByOrNull { color -> colorSaturation(color) + colorLuminance(color) * 0.25f }
         ?: blendArgb(primary, dominant, 0.5f)
-    val accent = ensureReadableModernAccent(primary.asColor(), fallbackAccent)
+    val accent = primary.asColor()
     val foreground = if (colorLuminance(dominant) > 0.56f) Color.Black else Color.White
 
     return ModernArtworkPalette(
@@ -217,9 +222,10 @@ internal fun resolveModernAlbumGradient(
     fallbackAccent: Color
 ): ModernAlbumGradientColors {
     val resolved = palette ?: ModernArtworkPalette.fallback(fallbackAccent)
+    val accent = resolveModernAlbumAccent(palette, fallbackAccent)
     return ModernAlbumGradientColors(
-        top = blendColors(resolved.primary, Color.Black, 0.20f),
-        center = blendColors(resolved.secondary, resolved.primary, 0.38f),
+        top = blendColors(accent, Color.Black, 0.20f),
+        center = blendColors(resolved.secondary, accent, 0.38f),
         bottom = blendColors(resolved.dominant, Color.Black, 0.72f),
         usedArtworkPalette = !resolved.isFallback
     )
@@ -228,21 +234,35 @@ internal fun resolveModernAlbumGradient(
 internal fun resolveModernAlbumAccent(
     palette: ModernArtworkPalette?,
     fallbackAccent: Color
-): Color = ensureReadableModernAccent(palette?.accent ?: fallbackAccent, fallbackAccent)
+): Color = if (palette == null || palette.isFallback) {
+    fallbackAccent
+} else {
+    adjustModernArtworkDerivedAccent(palette.accent)
+}
 
 internal fun ensureReadableModernAccent(color: Color, fallback: Color): Color {
-    if (colorSaturation(color.toArgb()) < 0.10f) return fallback
-    var argb = color.toArgb()
-    var luminance = colorLuminance(argb)
-    if (luminance < 0.24f) {
-        val amount = ((0.34f - luminance) / 0.34f).coerceIn(0.18f, 0.58f)
-        argb = blendArgb(argb, 0xFFFFFFFF.toInt(), amount)
-    } else if (luminance > 0.86f) {
-        val amount = ((luminance - 0.72f) / luminance).coerceIn(0.10f, 0.32f)
-        argb = blendArgb(argb, 0xFF000000.toInt(), amount)
+    if (color == Color.Unspecified || color.alpha < 0.5f) return fallback
+    return adjustModernArtworkDerivedAccent(color)
+}
+
+internal fun adjustModernArtworkDerivedAccent(color: Color): Color {
+    val hsv = modernArgbToHsv(color.toArgb().toUInt().toLong())
+    val adjustedSaturation = when {
+        hsv.saturation < 0.04f -> hsv.saturation
+        hsv.saturation < 0.18f -> (hsv.saturation + 0.10f).coerceAtMost(0.24f)
+        else -> hsv.saturation.coerceAtMost(0.88f)
     }
-    luminance = colorLuminance(argb)
-    return if (luminance in 0.20f..0.88f) argb.asColor() else fallback
+    val adjustedValue = when {
+        hsv.value < 0.28f -> 0.42f
+        hsv.value > 0.88f -> 0.78f
+        else -> hsv.value.coerceIn(0.34f, 0.84f)
+    }
+    return modernHsvToArgb(
+        hsv.copy(
+            saturation = adjustedSaturation,
+            value = adjustedValue
+        )
+    ).toInt().asColor()
 }
 
 internal fun modernContrastingForeground(background: Color): Color =
@@ -279,6 +299,11 @@ private data class PaletteBucket(
                 (blueTotal / divisor).toInt()
     }
 }
+
+private data class PaletteCandidate(
+    val color: Int,
+    val population: Int
+)
 
 private fun colorDistanceSquared(first: Int, second: Int): Int {
     val red = (first ushr 16 and 0xFF) - (second ushr 16 and 0xFF)

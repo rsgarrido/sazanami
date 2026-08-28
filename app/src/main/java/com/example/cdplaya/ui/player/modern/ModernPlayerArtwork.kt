@@ -6,6 +6,7 @@ import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
@@ -30,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
+import coil.size.Precision
 import com.example.cdplaya.data.Song
 
 internal enum class ModernArtworkRenderingPolicy {
@@ -110,6 +113,8 @@ internal fun ModernPlayerArtworkPages(
     artworkSize: Dp,
     decoratePages: Boolean,
     appearance: ModernArtworkAppearance = ModernArtworkAppearance(),
+    fitFrameProgress: Float = 1f,
+    artworkRequestSizePx: Int? = null,
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -150,6 +155,8 @@ internal fun ModernPlayerArtworkPages(
                         artworkSize = artworkSize,
                         style = style,
                         appearance = appearance,
+                        fitFrameProgress = fitFrameProgress,
+                        artworkRequestSizePx = artworkRequestSizePx,
                         contentDescription = contentDescription,
                         elevation = if (item.isCurrent) {
                             appearance.shadow.elevationDp.dp
@@ -165,11 +172,14 @@ internal fun ModernPlayerArtworkPages(
                             .then(pageModifier)
                             .background(style.artworkContainerColor)
                     ) {
-                        ModernPlayerAlbumImage(
+                        ModernPlayerFramedAlbumImage(
                             currentSong = item.song,
                             contentDescription = contentDescription,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = appearance.fit.contentScale()
+                            artworkSize = artworkSize,
+                            appearance = appearance,
+                            fitFrameProgress = fitFrameProgress,
+                            requestSizePx = artworkRequestSizePx,
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
                 }
@@ -184,6 +194,8 @@ private fun ModernPlayerArtworkCard(
     artworkSize: Dp,
     style: ModernPlayerStyle,
     appearance: ModernArtworkAppearance,
+    fitFrameProgress: Float,
+    artworkRequestSizePx: Int?,
     contentDescription: String?,
     elevation: Dp,
     modifier: Modifier = Modifier
@@ -198,18 +210,98 @@ private fun ModernPlayerArtworkCard(
             containerColor = style.artworkContainerColor
         )
     ) {
-        ModernPlayerAlbumImage(
+        ModernPlayerFramedAlbumImage(
             currentSong = song,
             contentDescription = contentDescription,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = appearance.fit.contentScale()
+            artworkSize = artworkSize,
+            appearance = appearance,
+            fitFrameProgress = fitFrameProgress,
+            requestSizePx = artworkRequestSizePx,
+            modifier = Modifier.fillMaxSize()
         )
     }
 }
 
-private fun ModernArtworkFit.contentScale(): ContentScale = when (this) {
-    ModernArtworkFit.CROP -> ContentScale.Crop
-    ModernArtworkFit.SHOW_FULL -> ContentScale.Fit
+internal data class ModernArtworkFitLayout(
+    val contentScale: ContentScale,
+    val frameInsetFraction: Float
+)
+
+internal fun modernArtworkFitLayout(fit: ModernArtworkFit): ModernArtworkFitLayout =
+    when (fit) {
+        ModernArtworkFit.CROP -> ModernArtworkFitLayout(
+            contentScale = ContentScale.Crop,
+            frameInsetFraction = 0f
+        )
+        ModernArtworkFit.SHOW_FULL -> ModernArtworkFitLayout(
+            contentScale = ContentScale.Fit,
+            frameInsetFraction = 0.055f
+        )
+    }
+
+internal fun modernArtworkFrameInsetDp(
+    fit: ModernArtworkFit,
+    artworkSizeDp: Float,
+    transitionProgress: Float = 1f
+): Float = (
+        artworkSizeDp.coerceAtLeast(0f) *
+                modernArtworkFitLayout(fit).frameInsetFraction *
+                transitionProgress.coerceIn(0f, 1f)
+        ).coerceIn(0f, MAX_CONTAINED_ARTWORK_INSET_DP)
+
+internal data class ModernArtworkRequestPolicy(
+    val targetSizePx: Int?,
+    val exactSize: Boolean,
+    val sourceMemoryCachePlaceholderKey: String?
+)
+
+internal fun modernArtworkRequestPolicy(
+    expandedTargetSizePx: Int?,
+    artworkIdentity: String? = null
+): ModernArtworkRequestPolicy {
+    val target = expandedTargetSizePx?.takeIf { it > 0 }
+    return ModernArtworkRequestPolicy(
+        targetSizePx = target,
+        exactSize = target != null,
+        sourceMemoryCachePlaceholderKey = artworkIdentity
+            ?.takeIf { target != null && it.isNotBlank() }
+    )
+}
+
+@Composable
+internal fun ModernPlayerFramedAlbumImage(
+    currentSong: Song,
+    contentDescription: String?,
+    artworkSize: Dp,
+    appearance: ModernArtworkAppearance,
+    modifier: Modifier = Modifier,
+    fitFrameProgress: Float = 1f,
+    requestSizePx: Int? = null
+) {
+    val fitLayout = modernArtworkFitLayout(appearance.fit)
+    val inset = modernArtworkFrameInsetDp(
+        fit = appearance.fit,
+        artworkSizeDp = artworkSize.value,
+        transitionProgress = fitFrameProgress
+    ).dp
+    val innerRadius = (
+            appearance.shape.cornerRadiusDp.toFloat() - inset.value
+            ).coerceAtLeast(0f).dp
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        ModernPlayerAlbumImage(
+            currentSong = currentSong,
+            contentDescription = contentDescription,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(inset)
+                .clip(RoundedCornerShape(innerRadius)),
+            contentScale = fitLayout.contentScale,
+            requestSizePx = requestSizePx
+        )
+    }
 }
 
 @Composable
@@ -219,7 +311,8 @@ internal fun ModernPlayerAlbumImage(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
     transitionDurationMillis: Int = ModernPlayerDefaults.SongTransitionDurationMillis,
-    retainPreviousPainter: Boolean = true
+    retainPreviousPainter: Boolean = true,
+    requestSizePx: Int? = null
 ) {
     val context = LocalContext.current
     val fallbackPainter = painterResource(R.drawable.ic_media_play)
@@ -227,10 +320,25 @@ internal fun ModernPlayerAlbumImage(
     var retainedPainter by remember(painterRetentionKey) {
         mutableStateOf<Painter?>(null)
     }
-    val request = remember(currentSong.id, currentSong.albumArtUri) {
+    val requestPolicy = modernArtworkRequestPolicy(
+        expandedTargetSizePx = requestSizePx,
+        artworkIdentity = currentSong.albumArtUri?.toString()
+    )
+    val request = remember(currentSong.id, currentSong.albumArtUri, requestPolicy) {
         ImageRequest.Builder(context)
             .data(currentSong.albumArtUri)
             .crossfade(transitionDurationMillis)
+            .apply {
+                requestPolicy.targetSizePx?.let { targetSize ->
+                    size(targetSize)
+                    if (requestPolicy.exactSize) {
+                        precision(Precision.EXACT)
+                    }
+                }
+                requestPolicy.sourceMemoryCachePlaceholderKey?.let { key ->
+                    placeholderMemoryCacheKey(key)
+                }
+            }
             .build()
     }
 
@@ -243,11 +351,9 @@ internal fun ModernPlayerAlbumImage(
                 is AsyncImagePainter.State.Loading -> state.copy(
                     painter = retainedPainter ?: fallbackPainter
                 )
-
                 is AsyncImagePainter.State.Error -> state.copy(
                     painter = fallbackPainter
                 )
-
                 else -> state
             }
         },
@@ -261,3 +367,5 @@ internal fun ModernPlayerAlbumImage(
         contentScale = contentScale
     )
 }
+
+private const val MAX_CONTAINED_ARTWORK_INSET_DP = 16f

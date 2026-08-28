@@ -221,6 +221,10 @@ class ModernPlayerCustomizationTest {
         )
         assertEquals(ModernBlurStrength.MEDIUM, ModernBlurStrength.fromStorageValue(null))
         assertEquals(ModernDimmingStrength.MEDIUM, ModernDimmingStrength.fromStorageValue(""))
+        assertEquals("Fill Frame", ModernArtworkFit.CROP.displayName)
+        assertEquals("Fit / Contained", ModernArtworkFit.SHOW_FULL.displayName)
+        assertEquals(ModernArtworkFit.CROP, ModernArtworkFit.fromStorageValue("crop"))
+        assertEquals(ModernArtworkFit.SHOW_FULL, ModernArtworkFit.fromStorageValue("show_full"))
     }
 
     @Test

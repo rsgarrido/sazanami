@@ -60,6 +60,7 @@ internal fun DefaultPlayerMorph(
     style: ModernPlayerStyle,
     appearance: ModernPlayerAppearance,
     artworkPalette: ModernArtworkPalette,
+    expandedArtworkRequestSizePx: Int?,
     modifier: Modifier = Modifier,
     expandedContent: @Composable (DefaultPlayerMorphVisualState) -> Unit
 ) {
@@ -143,7 +144,8 @@ internal fun DefaultPlayerMorph(
                 bounds = geometry.artwork,
                 progress = safeProgress,
                 style = style,
-                appearance = appearance.artwork
+                appearance = appearance.artwork,
+                expandedArtworkRequestSizePx = expandedArtworkRequestSizePx
             )
             DefaultMorphTitleArtist(
                 carouselPresentation = carouselPresentation,
@@ -173,7 +175,8 @@ private fun DefaultMorphArtwork(
     bounds: androidx.compose.ui.geometry.Rect,
     progress: Float,
     style: ModernPlayerStyle,
-    appearance: ModernArtworkAppearance
+    appearance: ModernArtworkAppearance,
+    expandedArtworkRequestSizePx: Int?
 ) {
     val density = LocalDensity.current
     val radius = interpolateMorphCornerRadius(
@@ -206,7 +209,9 @@ private fun DefaultMorphArtwork(
                 bounds.width.coerceAtLeast(1f).toDp()
             },
             decoratePages = false,
-            appearance = appearance
+            appearance = appearance,
+            fitFrameProgress = progress,
+            artworkRequestSizePx = expandedArtworkRequestSizePx
         )
     }
 }

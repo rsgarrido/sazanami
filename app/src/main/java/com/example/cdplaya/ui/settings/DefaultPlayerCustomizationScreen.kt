@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -45,7 +46,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -69,7 +69,7 @@ import com.example.cdplaya.ui.player.modern.ModernControlStyle
 import com.example.cdplaya.ui.player.modern.ModernLayoutDensity
 import com.example.cdplaya.ui.player.modern.ModernMetadataAlignment
 import com.example.cdplaya.ui.player.modern.ModernPlayerControls
-import com.example.cdplaya.ui.player.modern.ModernPlayerAlbumImage
+import com.example.cdplaya.ui.player.modern.ModernPlayerFramedAlbumImage
 import com.example.cdplaya.ui.player.modern.ModernPlayerAppearance
 import com.example.cdplaya.ui.player.modern.ModernPlayerBackground
 import com.example.cdplaya.ui.player.modern.ModernPlayerDefaults
@@ -83,6 +83,7 @@ import com.example.cdplaya.ui.player.modern.ModernSolidColorSwatches
 import com.example.cdplaya.ui.player.modern.modernArgbToHsv
 import com.example.cdplaya.ui.player.modern.modernHsvToArgb
 import com.example.cdplaya.ui.player.modern.rememberModernArtworkPalette
+import com.example.cdplaya.ui.player.modern.resolveModernControlRowLayout
 import com.example.cdplaya.ui.player.modern.sanitizeModernSolidColorArgb
 import com.example.cdplaya.ui.player.modern.modernSolidColorReadabilityScrimAlpha
 import com.example.cdplaya.ui.player.modern.resolveModernAlbumGradient
@@ -489,15 +490,12 @@ private fun ModernPlayerAppearancePreview(
                         )
                 ) {
                     if (previewSong != null) {
-                        ModernPlayerAlbumImage(
+                        ModernPlayerFramedAlbumImage(
                             currentSong = previewSong,
                             contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = if (appearance.artwork.fit == ModernArtworkFit.CROP) {
-                                ContentScale.Crop
-                            } else {
-                                ContentScale.Fit
-                            }
+                            artworkSize = artworkSize,
+                            appearance = appearance.artwork,
+                            modifier = Modifier.fillMaxSize()
                         )
                     } else {
                         Box(contentAlignment = Alignment.Center) {
@@ -586,20 +584,27 @@ private fun ModernPlayerAppearancePreview(
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
-                ModernPlayerControls(
-                    isPlaying = true,
-                    isShuffleEnabled = false,
-                    repeatMode = RepeatMode.OFF,
-                    onPlayPauseClick = {},
-                    onPreviousClick = {},
-                    onNextClick = {},
-                    onShuffleClick = {},
-                    onRepeatClick = {},
-                    style = style,
-                    appearance = appearance.controls,
-                    artworkPalette = artworkPalette,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val controlLayout = resolveModernControlRowLayout(
+                        size = appearance.controls.size,
+                        availableWidthDp = maxWidth.value
+                    )
+                    ModernPlayerControls(
+                        isPlaying = true,
+                        isShuffleEnabled = false,
+                        repeatMode = RepeatMode.OFF,
+                        onPlayPauseClick = {},
+                        onPreviousClick = {},
+                        onNextClick = {},
+                        onShuffleClick = {},
+                        onRepeatClick = {},
+                        style = style,
+                        appearance = appearance.controls,
+                        artworkPalette = artworkPalette,
+                        controlScale = controlLayout.scale,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         }
     }

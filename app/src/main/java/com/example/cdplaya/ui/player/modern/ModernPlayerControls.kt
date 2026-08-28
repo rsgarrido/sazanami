@@ -45,8 +45,10 @@ internal fun ModernPlayerControls(
     modifier: Modifier = Modifier,
     primaryControlModifier: Modifier = Modifier,
     expandedControlsAlpha: Float = 1f,
-    controlsEnabled: Boolean = true
+    controlsEnabled: Boolean = true,
+    controlScale: Float = 1f
 ) {
+    val safeControlScale = controlScale.coerceIn(0.01f, 1f)
     val accentColor = resolveModernControlAccentColor(
         appearance = appearance,
         artworkPalette = artworkPalette,
@@ -62,7 +64,8 @@ internal fun ModernPlayerControls(
             modifier = Modifier.graphicsLayer { alpha = expandedControlsAlpha },
             style = style,
             appearance = appearance,
-            accentColor = accentColor
+            accentColor = accentColor,
+            controlScale = safeControlScale
         ) {
             Icon(
                 imageVector = Icons.Filled.Shuffle,
@@ -80,13 +83,16 @@ internal fun ModernPlayerControls(
             modifier = Modifier.graphicsLayer { alpha = expandedControlsAlpha },
             appearance = appearance,
             accentColor = accentColor,
-            style = style
+            style = style,
+            controlScale = safeControlScale
         ) {
             Icon(
                 imageVector = Icons.Filled.SkipPrevious,
                 contentDescription = "Previous song",
                 tint = style.contentColor,
-                modifier = Modifier.size(appearance.size.navigationIconSizeDp.dp)
+                modifier = Modifier.size(
+                    (appearance.size.navigationIconSizeDp * safeControlScale).dp
+                )
             )
         }
 
@@ -96,6 +102,7 @@ internal fun ModernPlayerControls(
             style = style,
             appearance = appearance,
             accentColor = accentColor,
+            controlScale = safeControlScale,
             modifier = primaryControlModifier
         )
 
@@ -104,13 +111,16 @@ internal fun ModernPlayerControls(
             modifier = Modifier.graphicsLayer { alpha = expandedControlsAlpha },
             appearance = appearance,
             accentColor = accentColor,
-            style = style
+            style = style,
+            controlScale = safeControlScale
         ) {
             Icon(
                 imageVector = Icons.Filled.SkipNext,
                 contentDescription = "Next song",
                 tint = style.contentColor,
-                modifier = Modifier.size(appearance.size.navigationIconSizeDp.dp)
+                modifier = Modifier.size(
+                    (appearance.size.navigationIconSizeDp * safeControlScale).dp
+                )
             )
         }
 
@@ -119,7 +129,8 @@ internal fun ModernPlayerControls(
             modifier = Modifier.graphicsLayer { alpha = expandedControlsAlpha },
             style = style,
             appearance = appearance,
-            accentColor = accentColor
+            accentColor = accentColor,
+            controlScale = safeControlScale
         ) {
             Icon(
                 imageVector = if (repeatMode == RepeatMode.ONE) {
@@ -149,6 +160,7 @@ private fun ModernPlayerPlayPauseButton(
     style: ModernPlayerStyle,
     appearance: ModernControlAppearance,
     accentColor: Color,
+    controlScale: Float,
     modifier: Modifier = Modifier,
 ) {
     val containerModifier = when (appearance.style) {
@@ -192,7 +204,7 @@ private fun ModernPlayerPlayPauseButton(
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
-            .size(appearance.size.primarySizeDp.dp)
+            .size((appearance.size.primarySizeDp * controlScale).dp)
             .then(containerModifier)
     ) {
         IconButton(
@@ -207,7 +219,9 @@ private fun ModernPlayerPlayPauseButton(
                 },
                 contentDescription = if (isPlaying) "Pause" else "Play",
                 tint = iconColor,
-                modifier = Modifier.size((appearance.size.primarySizeDp * 0.61f).dp)
+                modifier = Modifier.size(
+                    (appearance.size.primarySizeDp * 0.61f * controlScale).dp
+                )
             )
         }
     }
@@ -219,12 +233,13 @@ private fun ModernPlayerModeIconButton(
     style: ModernPlayerStyle,
     appearance: ModernControlAppearance,
     accentColor: Color,
+    controlScale: Float,
     modifier: Modifier = Modifier,
     icon: @Composable () -> Unit
 ) {
     Box(
         modifier = modifier
-            .size(appearance.size.modeContainerSizeDp.dp)
+            .size((appearance.size.modeContainerSizeDp * controlScale).dp)
             .then(modernSecondaryControlContainer(appearance, accentColor, style)),
         contentAlignment = Alignment.Center
     ) {
@@ -240,12 +255,13 @@ private fun ModernPlayerNavigationIconButton(
     appearance: ModernControlAppearance,
     accentColor: Color,
     style: ModernPlayerStyle,
+    controlScale: Float,
     modifier: Modifier = Modifier,
     icon: @Composable () -> Unit
 ) {
     Box(
         modifier = modifier
-            .size(appearance.size.modeContainerSizeDp.dp)
+            .size((appearance.size.modeContainerSizeDp * controlScale).dp)
             .then(modernSecondaryControlContainer(appearance, accentColor, style)),
         contentAlignment = Alignment.Center
     ) {
@@ -280,5 +296,29 @@ internal fun resolveModernControlAccentColor(
     ModernControlAccent.ALBUM_DERIVED -> resolveModernAlbumAccent(
         palette = artworkPalette,
         fallbackAccent = style.accentColor
+    )
+}
+
+internal data class ModernControlRowLayout(
+    val scale: Float,
+    val primarySizeDp: Float,
+    val secondarySizeDp: Float,
+    val requiredWidthDp: Float
+)
+
+internal fun resolveModernControlRowLayout(
+    size: ModernControlSize,
+    availableWidthDp: Float
+): ModernControlRowLayout {
+    val baseWidth = size.primarySizeDp + size.modeContainerSizeDp * 4f
+    val safeWidth = availableWidthDp.coerceAtLeast(0f)
+    val scale = if (baseWidth <= 0f) 1f else (safeWidth / baseWidth).coerceIn(0f, 1f)
+    val primary = size.primarySizeDp * scale
+    val secondary = size.modeContainerSizeDp * scale
+    return ModernControlRowLayout(
+        scale = scale,
+        primarySizeDp = primary,
+        secondarySizeDp = secondary,
+        requiredWidthDp = primary + secondary * 4f
     )
 }

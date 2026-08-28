@@ -282,8 +282,8 @@ enum class ModernArtworkSize(
 }
 
 enum class ModernArtworkFit(val storageValue: String, val displayName: String) {
-    CROP("crop", "Crop"),
-    SHOW_FULL("show_full", "Show Full Artwork");
+    CROP("crop", "Fill Frame"),
+    SHOW_FULL("show_full", "Fit / Contained");
 
     companion object {
         fun fromStorageValue(storageValue: String?): ModernArtworkFit =
