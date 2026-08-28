@@ -26,8 +26,6 @@ class DefaultMorphHardeningTest {
                     ModernArtworkRenderingPolicy.Slide,
                 ModernArtworkTransitionStyle.DEPTH_SCALE to
                     ModernArtworkRenderingPolicy.DepthScale,
-                ModernArtworkTransitionStyle.PARALLAX to
-                    ModernArtworkRenderingPolicy.Parallax,
                 ModernArtworkTransitionStyle.COVER_FLOW to
                     ModernArtworkRenderingPolicy.CoverFlow,
                 ModernArtworkTransitionStyle.STACK_REVEAL to

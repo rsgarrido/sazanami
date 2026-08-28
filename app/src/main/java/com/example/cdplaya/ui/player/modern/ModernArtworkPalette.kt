@@ -2,6 +2,8 @@ package com.example.cdplaya.ui.player.modern
 
 import android.content.Context
 import android.graphics.Bitmap
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -95,6 +97,16 @@ internal class ModernArtworkPaletteRepository private constructor(
     private val context: Context,
     private val cache: BoundedArtworkPaletteCache = BoundedArtworkPaletteCache(MAX_CACHE_SIZE)
 ) {
+    fun cachedOrFailedPalette(
+        artworkKey: String,
+        fallbackAccent: Color
+    ): ModernArtworkPalette? = cache.get(artworkKey)
+        ?: if (cache.hasFailed(artworkKey)) {
+            ModernArtworkPalette.fallback(fallbackAccent)
+        } else {
+            null
+        }
+
     suspend fun load(song: Song, fallbackAccent: Color): ModernArtworkPalette {
         val key = modernArtworkPaletteCacheKey(song)
             ?: return ModernArtworkPalette.fallback(fallbackAccent)
@@ -142,6 +154,54 @@ internal class ModernArtworkPaletteRepository private constructor(
     }
 }
 
+internal data class ModernArtworkPaletteRequest(
+    val id: Long,
+    val artworkKey: String?
+)
+
+internal data class ModernArtworkPaletteLoadState(
+    val request: ModernArtworkPaletteRequest?,
+    val displayedPalette: ModernArtworkPalette,
+    val isLoading: Boolean
+)
+
+internal fun beginModernArtworkPaletteRequest(
+    previousState: ModernArtworkPaletteLoadState,
+    request: ModernArtworkPaletteRequest,
+    immediatePalette: ModernArtworkPalette?,
+    fallbackPalette: ModernArtworkPalette
+): ModernArtworkPaletteLoadState = when {
+    request.artworkKey == null -> ModernArtworkPaletteLoadState(
+        request = request,
+        displayedPalette = fallbackPalette,
+        isLoading = false
+    )
+    immediatePalette != null -> ModernArtworkPaletteLoadState(
+        request = request,
+        displayedPalette = immediatePalette,
+        isLoading = false
+    )
+    else -> ModernArtworkPaletteLoadState(
+        request = request,
+        displayedPalette = previousState.displayedPalette,
+        isLoading = true
+    )
+}
+
+internal fun completeModernArtworkPaletteRequest(
+    currentState: ModernArtworkPaletteLoadState,
+    request: ModernArtworkPaletteRequest,
+    resolvedPalette: ModernArtworkPalette
+): ModernArtworkPaletteLoadState = if (currentState.request == request) {
+    ModernArtworkPaletteLoadState(
+        request = request,
+        displayedPalette = resolvedPalette,
+        isLoading = false
+    )
+} else {
+    currentState
+}
+
 @Composable
 internal fun rememberModernArtworkPalette(
     song: Song?,
@@ -150,18 +210,108 @@ internal fun rememberModernArtworkPalette(
     val context = LocalContext.current.applicationContext
     val repository = remember(context) { ModernArtworkPaletteRepository.shared(context) }
     val cacheKey = song?.let(::modernArtworkPaletteCacheKey)
-    var palette by remember(cacheKey, fallbackAccent) {
-        mutableStateOf(ModernArtworkPalette.fallback(fallbackAccent))
+    val fallbackPalette = remember(fallbackAccent) {
+        ModernArtworkPalette.fallback(fallbackAccent)
+    }
+    val requestCounter = remember { longArrayOf(0L) }
+    var loadState by remember(fallbackAccent) {
+        mutableStateOf(
+            ModernArtworkPaletteLoadState(
+                request = null,
+                displayedPalette = fallbackPalette,
+                isLoading = false
+            )
+        )
     }
 
     LaunchedEffect(cacheKey, fallbackAccent) {
-        palette = if (song == null) {
-            ModernArtworkPalette.fallback(fallbackAccent)
-        } else {
-            repository.load(song, fallbackAccent)
+        requestCounter[0] += 1L
+        val request = ModernArtworkPaletteRequest(
+            id = requestCounter[0],
+            artworkKey = cacheKey
+        )
+        val immediatePalette = cacheKey?.let { artworkKey ->
+            repository.cachedOrFailedPalette(artworkKey, fallbackAccent)
+        }
+        loadState = beginModernArtworkPaletteRequest(
+            previousState = loadState,
+            request = request,
+            immediatePalette = immediatePalette,
+            fallbackPalette = fallbackPalette
+        )
+        if (song != null && cacheKey != null && immediatePalette == null) {
+            val resolvedPalette = repository.load(song, fallbackAccent)
+            loadState = completeModernArtworkPaletteRequest(
+                currentState = loadState,
+                request = request,
+                resolvedPalette = resolvedPalette
+            )
         }
     }
-    return palette
+
+    return animateModernArtworkPalette(
+        targetPalette = loadState.displayedPalette,
+        fallbackAccent = fallbackAccent
+    )
+}
+
+@Composable
+private fun animateModernArtworkPalette(
+    targetPalette: ModernArtworkPalette,
+    fallbackAccent: Color
+): ModernArtworkPalette {
+    val animationTarget = remember(targetPalette, fallbackAccent) {
+        if (targetPalette.isFallback) {
+            targetPalette.copy(accent = fallbackAccent)
+        } else {
+            targetPalette
+        }
+    }
+    val animationSpec = remember {
+        tween<Color>(ModernPlayerDefaults.BackgroundTransitionDurationMillis)
+    }
+    val dominant by animateColorAsState(
+        targetValue = animationTarget.dominant,
+        animationSpec = animationSpec,
+        label = "modernPaletteDominant"
+    )
+    val primary by animateColorAsState(
+        targetValue = animationTarget.primary,
+        animationSpec = animationSpec,
+        label = "modernPalettePrimary"
+    )
+    val secondary by animateColorAsState(
+        targetValue = animationTarget.secondary,
+        animationSpec = animationSpec,
+        label = "modernPaletteSecondary"
+    )
+    val accent by animateColorAsState(
+        targetValue = animationTarget.accent,
+        animationSpec = animationSpec,
+        label = "modernPaletteAccent"
+    )
+    val animationSettled = dominant == animationTarget.dominant &&
+        primary == animationTarget.primary &&
+        secondary == animationTarget.secondary &&
+        accent == animationTarget.accent
+    val isFallback = animationTarget.isFallback && animationSettled
+    return remember(
+        dominant,
+        primary,
+        secondary,
+        accent,
+        animationTarget.readableForeground,
+        isFallback
+    ) {
+        ModernArtworkPalette(
+            dominant = dominant,
+            primary = primary,
+            secondary = secondary,
+            accent = accent,
+            readableForeground = animationTarget.readableForeground,
+            isFallback = isFallback
+        )
+    }
 }
 
 internal fun extractModernArtworkPalette(

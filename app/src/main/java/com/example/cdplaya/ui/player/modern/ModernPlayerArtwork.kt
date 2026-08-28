@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
@@ -38,7 +39,6 @@ import com.example.cdplaya.data.Song
 internal enum class ModernArtworkRenderingPolicy {
     Slide,
     DepthScale,
-    Parallax,
     CoverFlow,
     StackReveal
 }
@@ -48,7 +48,6 @@ internal fun modernArtworkRenderingPolicy(
 ): ModernArtworkRenderingPolicy = when (style) {
     ModernArtworkTransitionStyle.SLIDE -> ModernArtworkRenderingPolicy.Slide
     ModernArtworkTransitionStyle.DEPTH_SCALE -> ModernArtworkRenderingPolicy.DepthScale
-    ModernArtworkTransitionStyle.PARALLAX -> ModernArtworkRenderingPolicy.Parallax
     ModernArtworkTransitionStyle.COVER_FLOW -> ModernArtworkRenderingPolicy.CoverFlow
     ModernArtworkTransitionStyle.STACK_REVEAL -> ModernArtworkRenderingPolicy.StackReveal
 }
@@ -134,8 +133,10 @@ internal fun ModernPlayerArtworkPages(
                         restingOffset = item.restingOffsetMultiplier,
                         isCurrent = item.isCurrent
                     )
-                    translationX = transform.translationMultiplier *
-                        carouselState.artworkWidthPx
+                    translationX = modernArtworkTranslationPx(
+                        translationMultiplier = transform.translationMultiplier,
+                        artworkWidthPx = carouselState.artworkWidthPx
+                    )
                     scaleX = transform.scale
                     scaleY = transform.scale
                     alpha = transform.alpha
@@ -166,11 +167,25 @@ internal fun ModernPlayerArtworkPages(
                         modifier = pageModifier
                     )
                 } else {
+                    val clippingPolicy = modernArtworkTransitionClippingPolicy()
+                    val pageShape = RoundedCornerShape(
+                        modernArtworkMorphCornerRadiusDp(
+                            appearance = appearance,
+                            transitionProgress = fitFrameProgress
+                        ).dp
+                    )
+                    val pageElevation = appearance.shadow.elevationDp *
+                        fitFrameProgress.coerceIn(0f, 1f) *
+                        (if (item.isCurrent) 1f else 0.55f)
                     Box(
-                        modifier = Modifier
+                        modifier = pageModifier
                             .size(artworkSize)
-                            .then(pageModifier)
-                            .background(style.artworkContainerColor)
+                            .shadow(pageElevation.dp, pageShape, clip = false)
+                            .background(style.artworkContainerColor, pageShape)
+                            .graphicsLayer {
+                                shape = pageShape
+                                clip = clippingPolicy.clipArtworkCardToShape
+                            }
                     ) {
                         ModernPlayerFramedAlbumImage(
                             currentSong = item.song,
@@ -225,6 +240,28 @@ private fun ModernPlayerArtworkCard(
 internal data class ModernArtworkFitLayout(
     val contentScale: ContentScale,
     val frameInsetFraction: Float
+)
+
+internal data class ModernArtworkTransitionClippingPolicy(
+    val clipTransitionViewportToRestingBounds: Boolean,
+    val clipArtworkCardToShape: Boolean
+)
+
+internal fun modernArtworkTransitionClippingPolicy() =
+    MODERN_ARTWORK_TRANSITION_CLIPPING_POLICY
+
+internal fun modernArtworkTranslationPx(
+    translationMultiplier: Float,
+    artworkWidthPx: Float
+): Float = translationMultiplier * artworkWidthPx.coerceAtLeast(0f)
+
+internal fun modernArtworkMorphCornerRadiusDp(
+    appearance: ModernArtworkAppearance,
+    transitionProgress: Float
+): Float = interpolateMorphCornerRadius(
+    collapsedRadius = 10f,
+    expandedRadius = appearance.shape.cornerRadiusDp.toFloat(),
+    progress = transitionProgress
 )
 
 internal fun modernArtworkFitLayout(fit: ModernArtworkFit): ModernArtworkFitLayout =
@@ -284,9 +321,11 @@ internal fun ModernPlayerFramedAlbumImage(
         artworkSizeDp = artworkSize.value,
         transitionProgress = fitFrameProgress
     ).dp
-    val innerRadius = (
-            appearance.shape.cornerRadiusDp.toFloat() - inset.value
-            ).coerceAtLeast(0f).dp
+    val outerRadius = modernArtworkMorphCornerRadiusDp(
+        appearance = appearance,
+        transitionProgress = fitFrameProgress
+    )
+    val innerRadius = (outerRadius - inset.value).coerceAtLeast(0f).dp
     Box(
         modifier = modifier,
         contentAlignment = Alignment.Center
@@ -369,3 +408,9 @@ internal fun ModernPlayerAlbumImage(
 }
 
 private const val MAX_CONTAINED_ARTWORK_INSET_DP = 16f
+
+private val MODERN_ARTWORK_TRANSITION_CLIPPING_POLICY =
+    ModernArtworkTransitionClippingPolicy(
+        clipTransitionViewportToRestingBounds = false,
+        clipArtworkCardToShape = true
+    )

@@ -179,25 +179,12 @@ private fun DefaultMorphArtwork(
     expandedArtworkRequestSizePx: Int?
 ) {
     val density = LocalDensity.current
-    val radius = interpolateMorphCornerRadius(
-        collapsedRadius = 10f,
-        expandedRadius = appearance.shape.cornerRadiusDp.toFloat(),
-        progress = progress
-    )
+    val clippingPolicy = modernArtworkTransitionClippingPolicy()
     Box(
         modifier = Modifier
             .placeInRootBounds(bounds)
-            .shadow(
-                elevation = (appearance.shadow.elevationDp * progress).dp,
-                shape = RoundedCornerShape(radius.dp)
-            )
-            .background(
-                color = style.artworkContainerColor,
-                shape = RoundedCornerShape(radius.dp)
-            )
             .graphicsLayer {
-                shape = RoundedCornerShape(radius.dp)
-                clip = true
+                clip = clippingPolicy.clipTransitionViewportToRestingBounds
             }
     ) {
         ModernPlayerArtworkPages(

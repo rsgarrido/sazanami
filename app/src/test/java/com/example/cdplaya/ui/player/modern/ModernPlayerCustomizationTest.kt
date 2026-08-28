@@ -19,19 +19,13 @@ class ModernPlayerCustomizationTest {
                 style = ModernArtworkTransitionStyle.DEPTH_SCALE,
                 storageValue = "depth_scale",
                 displayName = "Depth & Scale",
-                description = "Covers shrink and fade slightly as they move, creating depth."
-            ),
-            StyleExpectation(
-                style = ModernArtworkTransitionStyle.PARALLAX,
-                storageValue = "parallax",
-                displayName = "Parallax",
-                description = "Artwork and text move at different speeds."
+                description = "Covers recede and fade as they move, then grow back into view."
             ),
             StyleExpectation(
                 style = ModernArtworkTransitionStyle.COVER_FLOW,
                 storageValue = "cover_flow",
                 displayName = "Cover Flow",
-                description = "Covers tilt slightly as they move off-center."
+                description = "Covers turn with pronounced perspective as they move off-center."
             ),
             StyleExpectation(
                 style = ModernArtworkTransitionStyle.STACK_REVEAL,
@@ -50,6 +44,16 @@ class ModernPlayerCustomizationTest {
         assertTrue(ModernArtworkTransitionStyle.values().all { style ->
             style.displayName.isNotBlank() && style.description.isNotBlank()
         })
+        assertTrue(ModernArtworkTransitionStyle.values().none { style ->
+            style.storageValue == "parallax"
+        })
+        assertEquals(
+            ModernArtworkTransitionStyle.SLIDE,
+            ModernArtworkTransitionStyle.fromStorageValue("parallax")
+        )
+        ModernArtworkTransitionStyle.values().forEach { style ->
+            assertEquals(style, ModernArtworkTransitionStyle.fromStorageValue(style.storageValue))
+        }
     }
 
     @Test

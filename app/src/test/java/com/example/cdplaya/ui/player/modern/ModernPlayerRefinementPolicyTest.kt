@@ -98,4 +98,34 @@ class ModernPlayerRefinementPolicyTest {
         assertNull(missing.sourceMemoryCachePlaceholderKey)
         assertTrue(missing.exactSize)
     }
+
+    @Test
+    fun artworkTransitionViewportAllowsOverflowWhileCardsKeepShapeClipping() {
+        val policy = modernArtworkTransitionClippingPolicy()
+
+        assertFalse(policy.clipTransitionViewportToRestingBounds)
+        assertTrue(policy.clipArtworkCardToShape)
+    }
+
+    @Test
+    fun artworkTranslationCanLeaveRestingBoundsSymmetricallyAndReturnToCenter() {
+        val left = modernArtworkTranslationPx(-0.6f, 300f)
+        val right = modernArtworkTranslationPx(0.6f, 300f)
+
+        assertEquals(-180f, left)
+        assertEquals(180f, right)
+        assertEquals(-left, right)
+        assertEquals(0f, modernArtworkTranslationPx(0f, 300f))
+    }
+
+    @Test
+    fun morphCardShapeMovesFromMiniRadiusToConfiguredArtworkRadius() {
+        val appearance = ModernArtworkAppearance(shape = ModernArtworkShape.EXTRA_ROUNDED)
+
+        assertEquals(10f, modernArtworkMorphCornerRadiusDp(appearance, 0f))
+        assertEquals(
+            appearance.shape.cornerRadiusDp.toFloat(),
+            modernArtworkMorphCornerRadiusDp(appearance, 1f)
+        )
+    }
 }

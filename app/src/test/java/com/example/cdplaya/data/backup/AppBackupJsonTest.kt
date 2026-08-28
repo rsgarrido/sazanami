@@ -4,10 +4,27 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import com.example.cdplaya.player.audio.AudioOffloadPreference
+import com.example.cdplaya.ui.player.modern.ModernArtworkTransitionStyle
 import org.junit.Assert.fail
 import org.junit.Test
 
 class AppBackupJsonTest {
+    @Test
+    fun legacyParallaxBackupDecodesAndResolvesToDefaultSlide() {
+        val backup = emptyBackup().copy(
+            preferences = BackupPreferences(modernArtworkTransitionStyle = "parallax")
+        )
+        val decoded = AppBackupJson.decodeBackup(AppBackupJson.encodeBackup(backup))
+
+        assertEquals("parallax", decoded.preferences.modernArtworkTransitionStyle)
+        assertEquals(
+            ModernArtworkTransitionStyle.SLIDE,
+            ModernArtworkTransitionStyle.fromStorageValue(
+                decoded.preferences.modernArtworkTransitionStyle
+            )
+        )
+    }
+
     @Test
     fun encodeBackup_includesCurrentSchemaVersion() {
         val encoded = AppBackupJson.encodeBackup(emptyBackup())

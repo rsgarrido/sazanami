@@ -13,17 +13,12 @@ enum class ModernArtworkTransitionStyle(
     DEPTH_SCALE(
         storageValue = "depth_scale",
         displayName = "Depth & Scale",
-        description = "Covers shrink and fade slightly as they move, creating depth."
-    ),
-    PARALLAX(
-        storageValue = "parallax",
-        displayName = "Parallax",
-        description = "Artwork and text move at different speeds."
+        description = "Covers recede and fade as they move, then grow back into view."
     ),
     COVER_FLOW(
         storageValue = "cover_flow",
         displayName = "Cover Flow",
-        description = "Covers tilt slightly as they move off-center."
+        description = "Covers turn with pronounced perspective as they move off-center."
     ),
     STACK_REVEAL(
         storageValue = "stack_reveal",
@@ -33,10 +28,13 @@ enum class ModernArtworkTransitionStyle(
 
     companion object {
         fun fromStorageValue(storageValue: String?): ModernArtworkTransitionStyle {
+            if (storageValue == LEGACY_PARALLAX_STORAGE_VALUE) return SLIDE
             return values().firstOrNull { style ->
                 style.storageValue == storageValue
             } ?: SLIDE
         }
+
+        private const val LEGACY_PARALLAX_STORAGE_VALUE = "parallax"
     }
 }
 
