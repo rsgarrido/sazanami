@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
@@ -32,7 +33,7 @@ import com.example.cdplaya.ui.player.classicwheel.resolveClassicWheelSharedGeome
 import com.example.cdplaya.ui.player.classicwheel.classicWheelMorphTravelDistance
 import com.example.cdplaya.ui.player.modern.ModernExpandedPlayer
 import com.example.cdplaya.ui.player.modern.ModernArtworkTransitionStyle
-import com.example.cdplaya.ui.player.modern.ModernSeekbarStyle
+import com.example.cdplaya.ui.player.modern.ModernPlayerAppearance
 import com.example.cdplaya.ui.player.modern.selectNearbyWaveformSongs
 import com.example.cdplaya.ui.player.pocketcassette.PocketCassetteExpandedPlayer
 import com.example.cdplaya.ui.player.pocketcassette.PocketCassettePlayerMorph
@@ -73,6 +74,10 @@ import com.example.cdplaya.ui.player.modern.resolveDefaultPlayerMorphGeometry
 import com.example.cdplaya.ui.player.modern.rememberModernArtworkCarouselPresentation
 import com.example.cdplaya.ui.player.modern.shouldRunDefaultExpandedWork
 import com.example.cdplaya.ui.player.modern.defaultMorphTravelDistance
+import com.example.cdplaya.ui.player.modern.rememberModernArtworkPalette
+import com.example.cdplaya.ui.player.modern.ModernExpandedArtworkPreloader
+import com.example.cdplaya.ui.player.modern.modernArtworkPreloadPolicy
+import kotlin.math.roundToInt
 
 @Composable
 fun ExpandedPlayerThemeHost(
@@ -82,7 +87,7 @@ fun ExpandedPlayerThemeHost(
     previousPreviewSong: Song?,
     nextPreviewSong: Song?,
     modernArtworkTransitionStyle: ModernArtworkTransitionStyle,
-    modernSeekbarStyle: ModernSeekbarStyle,
+    modernPlayerAppearance: ModernPlayerAppearance,
     isVisualizerWorkAllowed: Boolean,
     isPlaying: Boolean,
     isShuffleEnabled: Boolean,
@@ -116,14 +121,14 @@ fun ExpandedPlayerThemeHost(
 ) {
     val shouldLoadWaveform = shouldLoadExpandedPlayerWaveform(
         selectedPlayerTheme = selectedPlayerTheme,
-        modernSeekbarStyle = modernSeekbarStyle
+        modernSeekbarStyle = modernPlayerAppearance.seekbar.style
     ) && when (selectedPlayerTheme) {
         PlayerTheme.DEFAULT -> shouldRunDefaultExpandedWork(playerMorphState.progress)
         PlayerTheme.POCKET_FLIP -> shouldRunPocketFlipExpandedWork(playerMorphState.progress)
         else -> true
     }
     val shouldPrefetchWaveforms = selectedPlayerTheme == PlayerTheme.DEFAULT &&
-            modernSeekbarStyle.usesWaveformData
+            modernPlayerAppearance.seekbar.style.usesWaveformData
     val nearbyWaveformSongs = remember(
         shouldPrefetchWaveforms,
         currentSong?.id,
@@ -149,6 +154,8 @@ fun ExpandedPlayerThemeHost(
         prefetchSongs = nearbyWaveformSongs
     )
 
+    val hostDensity = LocalDensity.current.density
+    var hostWidthPx by remember { mutableFloatStateOf(1f) }
     var hostHeightPx by remember { mutableFloatStateOf(1f) }
     var hostDragOffset by remember { mutableFloatStateOf(0f) }
     val hostDragState = rememberDraggableState { delta ->
@@ -166,9 +173,7 @@ fun ExpandedPlayerThemeHost(
             }
         )
     }
-    val lyricsDragModifier = Modifier
-        .onSizeChanged { size -> hostHeightPx = size.height.toFloat().coerceAtLeast(1f) }
-        .draggable(
+    val lyricsDragModifier = Modifier.draggable(
             state = hostDragState,
             orientation = Orientation.Vertical,
             enabled = !lyricsTransitionState.lyricsInteractive,
@@ -197,6 +202,10 @@ fun ExpandedPlayerThemeHost(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .onSizeChanged { size ->
+                hostWidthPx = size.width.toFloat().coerceAtLeast(1f)
+                hostHeightPx = size.height.toFloat().coerceAtLeast(1f)
+            }
             .then(sharedLyricsSemanticsModifier)
             .then(sharedGestureModifier)
     ) {
@@ -208,6 +217,34 @@ fun ExpandedPlayerThemeHost(
                         progress = playerMorphState.progress,
                         endpointBounds = endpointBounds,
                         elementBounds = defaultMorphBounds
+                    )
+                    val artworkPreloadPolicy = remember(
+                        hostWidthPx,
+                        hostHeightPx,
+                        hostDensity,
+                        modernPlayerAppearance
+                    ) {
+                        modernArtworkPreloadPolicy(
+                            viewportWidthPx = hostWidthPx.roundToInt(),
+                            viewportHeightPx = hostHeightPx.roundToInt(),
+                            density = hostDensity,
+                            appearance = modernPlayerAppearance
+                        )
+                    }
+                    val artworkPalette = rememberModernArtworkPalette(
+                        song = currentSong,
+                        fallbackAccent = modernStyle.accentColor
+                    )
+                    val expandedArtworkRequestSizePx =
+                        defaultMorphBounds.expandedArtwork?.let { bounds ->
+                            maxOf(bounds.width, bounds.height).roundToInt().coerceAtLeast(1)
+                        } ?: artworkPreloadPolicy.targetSizePx
+                    ModernExpandedArtworkPreloader(
+                        currentSong = currentSong,
+                        previousSong = previousPreviewSong,
+                        nextSong = nextPreviewSong,
+                        targetSizePx = expandedArtworkRequestSizePx,
+                        includeCurrentSong = geometry == null
                     )
                     val carouselPresentation =
                         rememberModernArtworkCarouselPresentation(
@@ -224,15 +261,19 @@ fun ExpandedPlayerThemeHost(
                         artworkTransitionStyle = modernArtworkTransitionStyle,
                         isPlaying = isPlaying,
                         onPlayPauseClick = onPlayPauseClick,
-                        style = modernStyle
+                        style = modernStyle,
+                        appearance = modernPlayerAppearance,
+                        artworkPalette = artworkPalette,
+                        expandedArtworkRequestSizePx = expandedArtworkRequestSizePx
                     ) { visualState ->
                         ModernExpandedPlayer(
                             currentSong = currentSong,
                             previousPreviewSong = previousPreviewSong,
                             nextPreviewSong = nextPreviewSong,
                             artworkTransitionStyle = modernArtworkTransitionStyle,
-                            seekbarStyle = modernSeekbarStyle,
+                            appearance = modernPlayerAppearance,
                             waveformData = waveformData,
+                            artworkPalette = artworkPalette,
                             isPlaying = isPlaying,
                             isShuffleEnabled = isShuffleEnabled,
                             repeatMode = repeatMode,

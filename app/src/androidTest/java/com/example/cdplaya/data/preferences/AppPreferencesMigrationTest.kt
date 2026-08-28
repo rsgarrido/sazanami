@@ -60,7 +60,7 @@ class AppPreferencesMigrationTest {
 
         val migrated = withTimeout(5_000) { repository.awaitLoadedState() }
         assertEquals(PlayerTheme.RETRO_RACK, migrated.selectedPlayerTheme)
-        assertEquals(ModernArtworkTransitionStyle.PARALLAX, migrated.modernArtworkTransitionStyle)
+        assertEquals(ModernArtworkTransitionStyle.SLIDE, migrated.modernArtworkTransitionStyle)
         assertEquals(ModernSeekbarStyle.THICK_CAPSULE, migrated.modernSeekbarStyle)
         assertEquals(ReplayGainMode.TRACK, migrated.replayGainMode)
         assertEquals(AudioOffloadPreference.DISABLED, migrated.audioOffloadPreference)

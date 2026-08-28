@@ -7,6 +7,18 @@ import kotlin.math.abs
 
 class ModernArtworkCarouselTransformsTest {
     @Test
+    fun translationCompressionPeaksMidGestureAndClearsAtSettledEndpoints() {
+        assertEquals(0f, modernArtworkTranslationCompression(0f), FLOAT_TOLERANCE)
+        assertEquals(1f, modernArtworkTranslationCompression(0.5f), FLOAT_TOLERANCE)
+        assertEquals(0f, modernArtworkTranslationCompression(1f), FLOAT_TOLERANCE)
+        assertEquals(
+            modernArtworkTranslationCompression(0.25f),
+            modernArtworkTranslationCompression(0.75f),
+            FLOAT_TOLERANCE
+        )
+    }
+
+    @Test
     fun slide_centeredArtworkKeepsFullScaleAndNaturalTranslation() {
         val centered = modernArtworkPageTransform(
             style = ModernArtworkTransitionStyle.SLIDE,
@@ -69,9 +81,11 @@ class ModernArtworkCarouselTransformsTest {
         )
 
         assertEquals(1f, centered.scale, FLOAT_TOLERANCE)
-        assertEquals(0.74f, outgoing.scale, FLOAT_TOLERANCE)
-        assertEquals(0.74f, incomingAtStart.scale, FLOAT_TOLERANCE)
+        assertEquals(0.76f, outgoing.scale, FLOAT_TOLERANCE)
+        assertEquals(0.76f, incomingAtStart.scale, FLOAT_TOLERANCE)
         assertEquals(1f, incomingAtCenter.scale, FLOAT_TOLERANCE)
+        assertEquals(-1f, outgoing.translationMultiplier, FLOAT_TOLERANCE)
+        assertEquals(1f, incomingAtStart.translationMultiplier, FLOAT_TOLERANCE)
         assertEquals(0f, incomingAtStart.alpha, FLOAT_TOLERANCE)
         assertEquals(1f, incomingAtCenter.alpha, FLOAT_TOLERANCE)
         assertTrue(outgoing.alpha < centered.alpha)
@@ -126,13 +140,16 @@ class ModernArtworkCarouselTransformsTest {
         )
 
         assertEquals(0f, centered.rotationY, FLOAT_TOLERANCE)
-        assertEquals(30f, COVER_FLOW_MAX_ROTATION_DEGREES, FLOAT_TOLERANCE)
+        assertEquals(1f, centered.scale, FLOAT_TOLERANCE)
+        assertEquals(32f, COVER_FLOW_MAX_ROTATION_DEGREES, FLOAT_TOLERANCE)
         assertEquals(
             COVER_FLOW_MAX_ROTATION_DEGREES,
             abs(draggedLeft.rotationY),
             FLOAT_TOLERANCE
         )
         assertEquals(-draggedLeft.rotationY, draggedRight.rotationY, FLOAT_TOLERANCE)
+        assertTrue(draggedLeft.scale in 0.88f..1f)
+        assertTrue(draggedLeft.alpha in 0f..1f)
     }
 
     @Test
@@ -158,36 +175,65 @@ class ModernArtworkCarouselTransformsTest {
             metadata.rotationY,
             FLOAT_TOLERANCE
         )
-        assertEquals(21f, abs(metadata.rotationY), FLOAT_TOLERANCE)
+        assertEquals(22.4f, abs(metadata.rotationY), FLOAT_TOLERANCE)
         assertEquals(0.93f, metadata.scale, FLOAT_TOLERANCE)
         assertTrue(metadata.alpha < 1f)
     }
 
     @Test
-    fun parallax_currentMetadataMovesSlowerThanArtwork() {
-        val gestureOffset = -0.5f
-        val artwork = modernArtworkPageTransform(
-            style = ModernArtworkTransitionStyle.PARALLAX,
-            gestureOffset = gestureOffset,
+    fun coverFlow_midDragEmphasizesTurningAndPerspective() {
+        val left = modernArtworkPageTransform(
+            style = ModernArtworkTransitionStyle.COVER_FLOW,
+            gestureOffset = -0.5f,
             restingOffset = 0f,
             isCurrent = true
         )
-        val metadata = modernMetadataPageTransform(
-            style = ModernArtworkTransitionStyle.PARALLAX,
-            gestureOffset = gestureOffset,
+        val right = modernArtworkPageTransform(
+            style = ModernArtworkTransitionStyle.COVER_FLOW,
+            gestureOffset = 0.5f,
             restingOffset = 0f,
             isCurrent = true
         )
 
-        assertEquals(
-            gestureOffset * PARALLAX_METADATA_TRANSLATION_MULTIPLIER,
-            metadata.translationMultiplier,
-            FLOAT_TOLERANCE
+        assertEquals(24f, abs(left.rotationY), FLOAT_TOLERANCE)
+        assertTrue(abs(left.rotationY) > 20f)
+        assertEquals(-left.rotationY, right.rotationY, FLOAT_TOLERANCE)
+        assertEquals(left.scale, right.scale, FLOAT_TOLERANCE)
+        assertEquals(0.925f, left.scale, FLOAT_TOLERANCE)
+        assertEquals(10f, COVER_FLOW_CAMERA_DISTANCE_MULTIPLIER, FLOAT_TOLERANCE)
+    }
+
+    @Test
+    fun depthScale_midDragRecedesWithoutCoverFlowRotation() {
+        val left = modernArtworkPageTransform(
+            style = ModernArtworkTransitionStyle.DEPTH_SCALE,
+            gestureOffset = -0.5f,
+            restingOffset = 0f,
+            isCurrent = true
         )
-        assertEquals(0.32f, PARALLAX_METADATA_TRANSLATION_MULTIPLIER, FLOAT_TOLERANCE)
-        assertTrue(
-            abs(metadata.translationMultiplier) < abs(artwork.translationMultiplier)
+        val right = modernArtworkPageTransform(
+            style = ModernArtworkTransitionStyle.DEPTH_SCALE,
+            gestureOffset = 0.5f,
+            restingOffset = 0f,
+            isCurrent = true
         )
+        val coverFlow = modernArtworkPageTransform(
+            style = ModernArtworkTransitionStyle.COVER_FLOW,
+            gestureOffset = -0.5f,
+            restingOffset = 0f,
+            isCurrent = true
+        )
+
+        assertEquals(0f, left.rotationY, FLOAT_TOLERANCE)
+        assertEquals(0.82f, left.scale, FLOAT_TOLERANCE)
+        assertEquals(0.745f, left.alpha, FLOAT_TOLERANCE)
+        assertTrue(left.scale in 0.7f..1f)
+        assertTrue(left.alpha in 0f..1f)
+        assertEquals(-left.translationMultiplier, right.translationMultiplier, FLOAT_TOLERANCE)
+        assertEquals(left.scale, right.scale, FLOAT_TOLERANCE)
+        assertTrue(left.scale < coverFlow.scale - 0.08f)
+        assertTrue(left.alpha < coverFlow.alpha)
+        assertTrue(abs(left.translationMultiplier) < abs(coverFlow.translationMultiplier))
     }
 
     @Test

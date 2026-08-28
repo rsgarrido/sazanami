@@ -1,13 +1,18 @@
 package com.example.cdplaya.ui.player.modern
 
+import android.os.Build
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.Composable
-import android.os.Build
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.example.cdplaya.data.Song
@@ -15,72 +20,163 @@ import com.example.cdplaya.data.Song
 @Composable
 internal fun BoxScope.ModernPlayerBackground(
     currentSong: Song,
-    style: ModernPlayerStyle
+    style: ModernPlayerStyle,
+    appearance: ModernBackgroundAppearance,
+    artworkPalette: ModernArtworkPalette
 ) {
-    val backgroundPolicy = modernBackgroundPolicy(Build.VERSION.SDK_INT)
-    ModernPlayerAlbumImage(
-        currentSong = currentSong,
-        contentDescription = null,
-        modifier = Modifier
-            .matchParentSize()
-            .then(
-                if (backgroundPolicy.usePlatformBlur) {
-                    Modifier.blur(42.dp)
-                } else {
-                    Modifier
-                }
-            ),
-        contentScale = ContentScale.Crop,
-        transitionDurationMillis = ModernPlayerDefaults.BackgroundTransitionDurationMillis
+    val policy = modernBackgroundPolicy(
+        sdkInt = Build.VERSION.SDK_INT,
+        backgroundStyle = appearance.style,
+        blurStrength = appearance.blurStrength
     )
 
-    Box(
-        modifier = Modifier
-            .matchParentSize()
-            .background(style.backgroundOverlayColor)
-    )
+    when (appearance.style) {
+        ModernBackgroundStyle.BLURRED_ARTWORK,
+        ModernBackgroundStyle.DETAILED_ARTWORK -> {
+            ModernPlayerAlbumImage(
+                currentSong = currentSong,
+                contentDescription = null,
+                modifier = Modifier
+                    .matchParentSize()
+                    .then(
+                        if (policy.usePlatformBlur && policy.blurRadiusDp > 0) {
+                            Modifier.blur(policy.blurRadiusDp.dp)
+                        } else {
+                            Modifier
+                        }
+                    ),
+                contentScale = ContentScale.Crop,
+                transitionDurationMillis = ModernPlayerDefaults.BackgroundTransitionDurationMillis
+            )
+        }
 
-    if (backgroundPolicy.legacyScrimAlpha > 0f) {
+        ModernBackgroundStyle.ALBUM_GRADIENT -> {
+            ModernAnimatedAlbumGradientBackground(
+                artworkPalette = artworkPalette,
+                fallbackAccent = style.accentColor,
+                modifier = Modifier.matchParentSize()
+            )
+        }
+
+        ModernBackgroundStyle.SOLID_COLOR -> Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(Color(sanitizeModernSolidColorArgb(appearance.solidColorArgb).toInt()))
+        )
+
+        ModernBackgroundStyle.PURE_BLACK -> Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(Color.Black)
+        )
+    }
+
+    if (appearance.style.supportsDimming) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(Color.Black.copy(alpha = appearance.dimmingStrength.overlayAlpha))
+        )
+    }
+
+    if (appearance.style == ModernBackgroundStyle.SOLID_COLOR) {
         Box(
             modifier = Modifier
                 .matchParentSize()
                 .background(
-                    style.backgroundOverlayColor.copy(
-                        alpha = backgroundPolicy.legacyScrimAlpha
+                    Color.Black.copy(
+                        alpha = modernSolidColorReadabilityScrimAlpha(
+                            appearance.solidColorArgb
+                        )
                     )
                 )
         )
     }
 
-    Box(
-        modifier = Modifier
-            .matchParentSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        style.gradientTopColor,
-                        style.gradientCenterColor,
-                        style.gradientBottomColor
+    if (policy.legacyScrimAlpha > 0f) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(Color.Black.copy(alpha = policy.legacyScrimAlpha))
+        )
+    }
+
+    if (appearance.style == ModernBackgroundStyle.BLURRED_ARTWORK ||
+        appearance.style == ModernBackgroundStyle.DETAILED_ARTWORK
+    ) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            style.gradientTopColor,
+                            Color.Transparent,
+                            style.gradientBottomColor
+                        )
                     )
                 )
+        )
+    }
+}
+
+@Composable
+private fun ModernAnimatedAlbumGradientBackground(
+    artworkPalette: ModernArtworkPalette,
+    fallbackAccent: Color,
+    modifier: Modifier = Modifier
+) {
+    val target = remember(artworkPalette, fallbackAccent) {
+        resolveModernAlbumGradient(artworkPalette, fallbackAccent)
+    }
+    val animationSpec = remember {
+        tween<Color>(ModernPlayerDefaults.BackgroundTransitionDurationMillis)
+    }
+    val top = animateColorAsState(
+        targetValue = target.top,
+        animationSpec = animationSpec,
+        label = "modernAlbumGradientTop"
+    )
+    val center = animateColorAsState(
+        targetValue = target.center,
+        animationSpec = animationSpec,
+        label = "modernAlbumGradientCenter"
+    )
+    val bottom = animateColorAsState(
+        targetValue = target.bottom,
+        animationSpec = animationSpec,
+        label = "modernAlbumGradientBottom"
+    )
+    Box(
+        modifier = modifier.drawWithCache {
+            val brush = Brush.verticalGradient(
+                listOf(top.value, center.value, bottom.value)
             )
+            onDrawBehind { drawRect(brush) }
+        }
     )
 }
 
 internal data class ModernBackgroundPolicy(
     val usePlatformBlur: Boolean,
-    val legacyScrimAlpha: Float
+    val legacyScrimAlpha: Float,
+    val blurRadiusDp: Int
 )
 
-internal fun modernBackgroundPolicy(sdkInt: Int): ModernBackgroundPolicy =
-    if (sdkInt >= Build.VERSION_CODES.S) {
-        ModernBackgroundPolicy(
-            usePlatformBlur = true,
-            legacyScrimAlpha = 0f
-        )
-    } else {
-        ModernBackgroundPolicy(
-            usePlatformBlur = false,
-            legacyScrimAlpha = 0.38f
-        )
+internal fun modernBackgroundPolicy(
+    sdkInt: Int,
+    backgroundStyle: ModernBackgroundStyle = ModernBackgroundStyle.BLURRED_ARTWORK,
+    blurStrength: ModernBlurStrength = ModernBlurStrength.MEDIUM
+): ModernBackgroundPolicy {
+    val requestsBlur = backgroundStyle.supportsBlur
+    val blurRadius = when (backgroundStyle) {
+        ModernBackgroundStyle.BLURRED_ARTWORK -> blurStrength.blurredArtworkRadiusDp
+        ModernBackgroundStyle.DETAILED_ARTWORK -> blurStrength.detailedArtworkRadiusDp
+        else -> 0
     }
+    return ModernBackgroundPolicy(
+        usePlatformBlur = requestsBlur && sdkInt >= Build.VERSION_CODES.S,
+        legacyScrimAlpha = if (requestsBlur && sdkInt < Build.VERSION_CODES.S) 0.30f else 0f,
+        blurRadiusDp = blurRadius
+    )
+}

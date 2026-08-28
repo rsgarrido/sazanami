@@ -31,7 +31,29 @@ import com.example.cdplaya.player.equalizer.parametric.slopeOrNull
 import com.example.cdplaya.ui.library.LibraryViewCategory
 import com.example.cdplaya.ui.library.LibraryViewMode
 import com.example.cdplaya.ui.player.modern.ModernArtworkTransitionStyle
+import com.example.cdplaya.ui.player.modern.ModernArtworkAppearance
+import com.example.cdplaya.ui.player.modern.ModernArtworkFit
+import com.example.cdplaya.ui.player.modern.ModernArtworkShadow
+import com.example.cdplaya.ui.player.modern.ModernArtworkShape
+import com.example.cdplaya.ui.player.modern.ModernArtworkSize
+import com.example.cdplaya.ui.player.modern.ModernBackgroundAppearance
+import com.example.cdplaya.ui.player.modern.ModernBackgroundStyle
+import com.example.cdplaya.ui.player.modern.ModernBlurStrength
+import com.example.cdplaya.ui.player.modern.ModernDimmingStrength
+import com.example.cdplaya.ui.player.modern.ModernControlAccent
+import com.example.cdplaya.ui.player.modern.ModernControlAppearance
+import com.example.cdplaya.ui.player.modern.ModernControlSize
+import com.example.cdplaya.ui.player.modern.ModernControlStyle
+import com.example.cdplaya.ui.player.modern.ModernLayoutAppearance
+import com.example.cdplaya.ui.player.modern.ModernLayoutDensity
+import com.example.cdplaya.ui.player.modern.ModernMetadataAlignment
+import com.example.cdplaya.ui.player.modern.ModernPlayerAppearance
+import com.example.cdplaya.ui.player.modern.ModernSeekbarAppearance
+import com.example.cdplaya.ui.player.modern.ModernSeekbarColorMode
 import com.example.cdplaya.ui.player.modern.ModernSeekbarStyle
+import com.example.cdplaya.ui.player.modern.ModernWaveformDensity
+import com.example.cdplaya.ui.player.modern.ModernWaveformSize
+import com.example.cdplaya.ui.player.modern.sanitizeModernSolidColorArgb
 import com.example.cdplaya.ui.player.theme.PlayerThemeTokenField
 import com.example.cdplaya.ui.player.theme.PlayerThemeTokenOverrides
 import com.example.cdplaya.ui.player.theme.customizationOptions
@@ -83,6 +105,42 @@ class BackupRepository(
                 modernArtworkTransitionStyle =
                     appPreferences.modernArtworkTransitionStyle.storageValue,
                 modernSeekbarStyle = appPreferences.modernSeekbarStyle.storageValue,
+                modernWaveformSize =
+                    appPreferences.modernPlayerAppearance.seekbar.waveformSize.storageValue,
+                modernWaveformDensity =
+                    appPreferences.modernPlayerAppearance.seekbar.waveformDensity.storageValue,
+                modernSeekbarColorMode =
+                    appPreferences.modernPlayerAppearance.seekbar.colorMode.storageValue,
+                modernBackgroundStyle =
+                    appPreferences.modernPlayerAppearance.background.style.storageValue,
+                modernBlurStrength =
+                    appPreferences.modernPlayerAppearance.background.blurStrength.storageValue,
+                modernDimmingStrength =
+                    appPreferences.modernPlayerAppearance.background.dimmingStrength.storageValue,
+                modernSolidColorArgb =
+                    sanitizeModernSolidColorArgb(
+                        appPreferences.modernPlayerAppearance.background.solidColorArgb
+                    ),
+                modernArtworkShape =
+                    appPreferences.modernPlayerAppearance.artwork.shape.storageValue,
+                modernArtworkSize =
+                    appPreferences.modernPlayerAppearance.artwork.size.storageValue,
+                modernArtworkFit =
+                    appPreferences.modernPlayerAppearance.artwork.fit.storageValue,
+                modernArtworkShadow =
+                    appPreferences.modernPlayerAppearance.artwork.shadow.storageValue,
+                modernControlStyle =
+                    appPreferences.modernPlayerAppearance.controls.style.storageValue,
+                modernControlSize =
+                    appPreferences.modernPlayerAppearance.controls.size.storageValue,
+                modernControlAccent =
+                    appPreferences.modernPlayerAppearance.controls.accent.storageValue,
+                modernLayoutDensity =
+                    appPreferences.modernPlayerAppearance.layout.density.storageValue,
+                modernMetadataAlignment =
+                    appPreferences.modernPlayerAppearance.layout.metadataAlignment.storageValue,
+                modernShowAudioQualityBadge =
+                    appPreferences.modernPlayerAppearance.layout.showAudioQualityBadge,
                 playerThemeTokenOverrides = createThemeTokenBackup(appPreferences),
                 songsViewMode = appPreferences.songsViewMode.storageValue,
                 albumsViewMode = appPreferences.albumsViewMode.storageValue,
@@ -239,8 +297,69 @@ class BackupRepository(
                 modernArtworkTransitionStyle = ModernArtworkTransitionStyle.fromStorageValue(
                     preferences.modernArtworkTransitionStyle
                 ),
-                modernSeekbarStyle = ModernSeekbarStyle.fromStorageValue(
-                    preferences.modernSeekbarStyle
+                modernPlayerAppearance = ModernPlayerAppearance(
+                    seekbar = ModernSeekbarAppearance(
+                        style = ModernSeekbarStyle.fromStorageValue(
+                            preferences.modernSeekbarStyle
+                        ),
+                        waveformSize = ModernWaveformSize.fromStorageValue(
+                            preferences.modernWaveformSize
+                        ),
+                        waveformDensity = ModernWaveformDensity.fromStorageValue(
+                            preferences.modernWaveformDensity
+                        ),
+                        colorMode = ModernSeekbarColorMode.fromStorageValue(
+                            preferences.modernSeekbarColorMode
+                        )
+                    ),
+                    background = ModernBackgroundAppearance(
+                        style = ModernBackgroundStyle.fromStorageValue(
+                            preferences.modernBackgroundStyle
+                        ),
+                        blurStrength = ModernBlurStrength.fromStorageValue(
+                            preferences.modernBlurStrength
+                        ),
+                        dimmingStrength = ModernDimmingStrength.fromStorageValue(
+                            preferences.modernDimmingStrength
+                        ),
+                        solidColorArgb = sanitizeModernSolidColorArgb(
+                            preferences.modernSolidColorArgb
+                        )
+                    ),
+                    artwork = ModernArtworkAppearance(
+                        shape = ModernArtworkShape.fromStorageValue(
+                            preferences.modernArtworkShape
+                        ),
+                        size = ModernArtworkSize.fromStorageValue(
+                            preferences.modernArtworkSize
+                        ),
+                        fit = ModernArtworkFit.fromStorageValue(
+                            preferences.modernArtworkFit
+                        ),
+                        shadow = ModernArtworkShadow.fromStorageValue(
+                            preferences.modernArtworkShadow
+                        )
+                    ),
+                    controls = ModernControlAppearance(
+                        style = ModernControlStyle.fromStorageValue(
+                            preferences.modernControlStyle
+                        ),
+                        size = ModernControlSize.fromStorageValue(
+                            preferences.modernControlSize
+                        ),
+                        accent = ModernControlAccent.fromStorageValue(
+                            preferences.modernControlAccent
+                        )
+                    ),
+                    layout = ModernLayoutAppearance(
+                        density = ModernLayoutDensity.fromStorageValue(
+                            preferences.modernLayoutDensity
+                        ),
+                        metadataAlignment = ModernMetadataAlignment.fromStorageValue(
+                            preferences.modernMetadataAlignment
+                        ),
+                        showAudioQualityBadge = preferences.modernShowAudioQualityBadge
+                    )
                 ),
                 replayGainMode = runCatching { ReplayGainMode.valueOf(preferences.replayGainMode) }
                     .getOrDefault(ReplayGainMode.OFF),

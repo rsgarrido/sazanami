@@ -23,4 +23,37 @@ class ModernPlayerBackgroundPolicyTest {
             assertEquals(0f, policy.legacyScrimAlpha)
         }
     }
+
+    @Test
+    fun detailedArtworkAlwaysUsesLessBlurThanBlurredArtwork() {
+        ModernBlurStrength.entries.forEach { strength ->
+            val blurred = modernBackgroundPolicy(
+                sdkInt = 36,
+                backgroundStyle = ModernBackgroundStyle.BLURRED_ARTWORK,
+                blurStrength = strength
+            )
+            val detailed = modernBackgroundPolicy(
+                sdkInt = 36,
+                backgroundStyle = ModernBackgroundStyle.DETAILED_ARTWORK,
+                blurStrength = strength
+            )
+
+            assertTrue(detailed.blurRadiusDp < blurred.blurRadiusDp)
+        }
+    }
+
+    @Test
+    fun nonArtworkBackgroundsNeverRequestBlurOrLegacyFallbackScrim() {
+        listOf(
+            ModernBackgroundStyle.ALBUM_GRADIENT,
+            ModernBackgroundStyle.SOLID_COLOR,
+            ModernBackgroundStyle.PURE_BLACK
+        ).forEach { style ->
+            val policy = modernBackgroundPolicy(29, style, ModernBlurStrength.HIGH)
+
+            assertFalse(policy.usePlatformBlur)
+            assertEquals(0, policy.blurRadiusDp)
+            assertEquals(0f, policy.legacyScrimAlpha)
+        }
+    }
 }

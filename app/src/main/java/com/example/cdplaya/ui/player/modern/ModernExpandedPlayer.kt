@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -46,8 +47,9 @@ internal fun ModernExpandedPlayer(
     previousPreviewSong: Song? = null,
     nextPreviewSong: Song? = null,
     artworkTransitionStyle: ModernArtworkTransitionStyle = ModernArtworkTransitionStyle.SLIDE,
-    seekbarStyle: ModernSeekbarStyle = ModernSeekbarStyle.CLASSIC_BAR,
+    appearance: ModernPlayerAppearance = ModernPlayerAppearance.Default,
     waveformData: WaveformData? = null,
+    artworkPalette: ModernArtworkPalette? = null,
     isPlaying: Boolean,
     isShuffleEnabled: Boolean,
     repeatMode: RepeatMode,
@@ -79,6 +81,12 @@ internal fun ModernExpandedPlayer(
     }
 
     val context = LocalContext.current
+    val rememberedArtworkPalette = if (artworkPalette == null) {
+        rememberModernArtworkPalette(currentSong, style.accentColor)
+    } else {
+        null
+    }
+    val resolvedArtworkPalette = artworkPalette ?: requireNotNull(rememberedArtworkPalette)
     val audioQualityRepository = remember(context) { AudioQualityRepository(context) }
     val ownedCarouselPresentation =
         if (carouselPresentation == null) {
@@ -135,10 +143,22 @@ internal fun ModernExpandedPlayer(
                 containerHeightPx = size.height.toFloat().coerceAtLeast(1f)
             }
     ) {
+        val seekbarHeightBudget = if (appearance.seekbar.style.usesWaveformData) {
+            (appearance.seekbar.waveformSize.trackHeightDp + 36).dp
+        } else {
+            64.dp
+        }
+        val reservedContentHeight = 210.dp +
+                appearance.controls.size.primarySizeDp.dp +
+                seekbarHeightBudget +
+                appearance.layout.density.minimumFlexibleGapDp.dp +
+                (if (appearance.layout.showAudioQualityBadge) 36.dp else 0.dp)
+        val artworkHeightBudget = (maxHeight - reservedContentHeight).coerceAtLeast(112.dp)
         val foregroundAlbumArtSize = minOf(
-            albumArtSize,
+            albumArtSize * appearance.artwork.size.maximumScale,
             maxWidth - 32.dp,
-            maxHeight * 0.42f
+            maxHeight * appearance.artwork.size.maximumHeightFraction,
+            artworkHeightBudget
         )
 
         Box(
@@ -204,7 +224,9 @@ internal fun ModernExpandedPlayer(
                 ) {
                     ModernPlayerBackground(
                         currentSong = currentSong,
-                        style = style
+                        style = style,
+                        appearance = appearance.background,
+                        artworkPalette = resolvedArtworkPalette
                     )
                 }
             }
@@ -232,6 +254,7 @@ internal fun ModernExpandedPlayer(
                     artworkSize = foregroundAlbumArtSize,
                     transitionStyle = artworkTransitionStyle,
                     style = style,
+                    appearance = appearance.artwork,
                     modifier = Modifier
                         .onGloballyPositioned { coordinates ->
                             defaultMorphBounds?.updateExpandedArtwork(
@@ -251,6 +274,7 @@ internal fun ModernExpandedPlayer(
                     audioQualityRepository = audioQualityRepository,
                     transitionStyle = artworkTransitionStyle,
                     style = style,
+                    layoutAppearance = appearance.layout,
                     modifier = Modifier.fillMaxWidth(),
                     onPersistentContentBoundsChanged = { bounds ->
                         defaultMorphBounds?.updateExpandedText(bounds)
@@ -264,7 +288,19 @@ internal fun ModernExpandedPlayer(
 
                 lyricsContent()
 
-                Spacer(modifier = Modifier.weight(1f))
+                when (appearance.layout.density) {
+                    ModernLayoutDensity.COMPACT -> Spacer(modifier = Modifier.height(16.dp))
+                    ModernLayoutDensity.BALANCED -> Spacer(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .heightIn(min = 18.dp, max = 72.dp)
+                    )
+                    ModernLayoutDensity.RELAXED -> Spacer(
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 24.dp)
+                    )
+                }
 
                 ModernPlayerSeekBar(
                     currentPosition = currentPosition,
@@ -277,9 +313,10 @@ internal fun ModernExpandedPlayer(
                     } else {
                         {}
                     },
-                    seekbarStyle = seekbarStyle,
+                    appearance = appearance.seekbar,
                     waveformSeed = "${currentSong.id}|${currentSong.filePath}|${currentSong.title}",
                     waveformData = waveformData,
+                    artworkPalette = resolvedArtworkPalette,
                     style = style,
                     modifier = Modifier
                         .graphicsLayer {
@@ -304,6 +341,8 @@ internal fun ModernExpandedPlayer(
                     onShuffleClick = onShuffleClick,
                     onRepeatClick = onRepeatClick,
                     style = style,
+                    appearance = appearance.controls,
+                    artworkPalette = resolvedArtworkPalette,
                     modifier = Modifier.suppressDefaultMorphSemantics(
                         defaultMorphVisualState != null &&
                                 playerMorphState.settledPresentation !=

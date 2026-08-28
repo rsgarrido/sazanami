@@ -4,10 +4,27 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import com.example.cdplaya.player.audio.AudioOffloadPreference
+import com.example.cdplaya.ui.player.modern.ModernArtworkTransitionStyle
 import org.junit.Assert.fail
 import org.junit.Test
 
 class AppBackupJsonTest {
+    @Test
+    fun legacyParallaxBackupDecodesAndResolvesToDefaultSlide() {
+        val backup = emptyBackup().copy(
+            preferences = BackupPreferences(modernArtworkTransitionStyle = "parallax")
+        )
+        val decoded = AppBackupJson.decodeBackup(AppBackupJson.encodeBackup(backup))
+
+        assertEquals("parallax", decoded.preferences.modernArtworkTransitionStyle)
+        assertEquals(
+            ModernArtworkTransitionStyle.SLIDE,
+            ModernArtworkTransitionStyle.fromStorageValue(
+                decoded.preferences.modernArtworkTransitionStyle
+            )
+        )
+    }
+
     @Test
     fun encodeBackup_includesCurrentSchemaVersion() {
         val encoded = AppBackupJson.encodeBackup(emptyBackup())
@@ -88,6 +105,23 @@ class AppBackupJsonTest {
         assertEquals(AppBackupJson.CURRENT_SCHEMA_VERSION, decoded.schemaVersion)
         assertEquals("slide", decoded.preferences.modernArtworkTransitionStyle)
         assertEquals("classic_bar", decoded.preferences.modernSeekbarStyle)
+        assertEquals("standard", decoded.preferences.modernWaveformSize)
+        assertEquals("balanced", decoded.preferences.modernWaveformDensity)
+        assertEquals("white", decoded.preferences.modernSeekbarColorMode)
+        assertEquals("blurred_artwork", decoded.preferences.modernBackgroundStyle)
+        assertEquals("medium", decoded.preferences.modernBlurStrength)
+        assertEquals("medium", decoded.preferences.modernDimmingStrength)
+        assertEquals(0xFF17191F, decoded.preferences.modernSolidColorArgb)
+        assertEquals("rounded", decoded.preferences.modernArtworkShape)
+        assertEquals("standard", decoded.preferences.modernArtworkSize)
+        assertEquals("crop", decoded.preferences.modernArtworkFit)
+        assertEquals("soft", decoded.preferences.modernArtworkShadow)
+        assertEquals("glass", decoded.preferences.modernControlStyle)
+        assertEquals("standard", decoded.preferences.modernControlSize)
+        assertEquals("white", decoded.preferences.modernControlAccent)
+        assertEquals("balanced", decoded.preferences.modernLayoutDensity)
+        assertEquals("left", decoded.preferences.modernMetadataAlignment)
+        assertTrue(decoded.preferences.modernShowAudioQualityBadge)
         assertEquals(emptyMap<String, BackupPlayerThemeTokenOverrides>(), decoded.preferences.playerThemeTokenOverrides)
         assertEquals("list", decoded.preferences.songsViewMode)
         assertEquals(2, decoded.preferences.songsGridColumnCount)
@@ -111,6 +145,23 @@ class AppBackupJsonTest {
             preserveAlbumTransitions = false,
             modernArtworkTransitionStyle = "cover_flow",
             modernSeekbarStyle = "waveform_glow",
+            modernWaveformSize = "tall",
+            modernWaveformDensity = "detailed",
+            modernSeekbarColorMode = "app_accent",
+            modernBackgroundStyle = "pure_black",
+            modernBlurStrength = "high",
+            modernDimmingStrength = "low",
+            modernSolidColorArgb = 0xFF345678,
+            modernArtworkShape = "extra_rounded",
+            modernArtworkSize = "large",
+            modernArtworkFit = "show_full",
+            modernArtworkShadow = "strong",
+            modernControlStyle = "tonal",
+            modernControlSize = "large",
+            modernControlAccent = "album_derived",
+            modernLayoutDensity = "relaxed",
+            modernMetadataAlignment = "center",
+            modernShowAudioQualityBadge = false,
             playerThemeTokenOverrides = mapOf(
                 "retro_rack" to BackupPlayerThemeTokenOverrides(
                     shellArgb = 0xFF010203L,
@@ -502,11 +553,35 @@ class AppBackupJsonTest {
     }
 
     @Test
-    fun encodedBackup_doesNotContainWaveformOrDerivedCacheData() {
+    fun encodedBackup_containsAppearanceButNotWaveformAnalysisOrDerivedCacheData() {
         val encoded = AppBackupJson.encodeBackup(emptyBackup())
 
-        assertTrue(!encoded.contains("waveform", ignoreCase = true))
+        assertTrue(encoded.contains("modernWaveformSize"))
+        assertTrue(!encoded.contains("waveformData", ignoreCase = true))
+        assertTrue(!encoded.contains("amplitudes", ignoreCase = true))
+        assertTrue(!encoded.contains("sourceKey", ignoreCase = true))
         assertTrue(!encoded.contains("cache", ignoreCase = true))
+    }
+
+    @Test
+    fun encodeBackupIncludesAllModernAppearanceFields() {
+        val encoded = AppBackupJson.encodeBackup(emptyBackup())
+
+        listOf(
+            "modernSolidColorArgb",
+            "modernArtworkShape",
+            "modernArtworkSize",
+            "modernArtworkFit",
+            "modernArtworkShadow",
+            "modernControlStyle",
+            "modernControlSize",
+            "modernControlAccent",
+            "modernLayoutDensity",
+            "modernMetadataAlignment",
+            "modernShowAudioQualityBadge"
+        ).forEach { key ->
+            assertTrue("Missing Modern appearance backup key: $key", encoded.contains("\"$key\""))
+        }
     }
 
     @Test

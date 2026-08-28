@@ -25,20 +25,22 @@ internal fun modernArtworkPageTransform(
     val progress = abs(gestureOffset).coerceIn(0f, 1f)
     val pageOffset = gestureOffset + restingOffset
     val distanceFromCenter = abs(pageOffset).coerceIn(0f, 1f)
+    val effectDistance = emphasizedModernArtworkDistance(distanceFromCenter)
+    val translationCompression = modernArtworkTranslationCompression(distanceFromCenter)
 
     return when (modernArtworkRenderingPolicy(style)) {
-        ModernArtworkRenderingPolicy.Slide,
-        ModernArtworkRenderingPolicy.Parallax -> slideArtworkTransform(
+        ModernArtworkRenderingPolicy.Slide -> slideArtworkTransform(
             pageOffset = pageOffset,
             progress = progress,
             isCurrent = isCurrent
         )
 
         ModernArtworkRenderingPolicy.DepthScale -> {
-            val pageAlpha = 1f - DEPTH_ALPHA_REDUCTION * distanceFromCenter
+            val pageAlpha = 1f - DEPTH_ALPHA_REDUCTION * effectDistance
             ModernArtworkPageTransform(
-                translationMultiplier = pageOffset,
-                scale = 1f - DEPTH_SCALE_REDUCTION * distanceFromCenter,
+                translationMultiplier = pageOffset *
+                    (1f - DEPTH_TRANSLATION_REDUCTION * translationCompression),
+                scale = 1f - DEPTH_SCALE_REDUCTION * effectDistance,
                 alpha = visiblePageAlpha(
                     pageAlpha = pageAlpha,
                     progress = progress,
@@ -48,16 +50,17 @@ internal fun modernArtworkPageTransform(
         }
 
         ModernArtworkRenderingPolicy.CoverFlow -> {
-            val pageAlpha = 1f - COVER_FLOW_ALPHA_REDUCTION * distanceFromCenter
+            val pageAlpha = 1f - COVER_FLOW_ALPHA_REDUCTION * effectDistance
             ModernArtworkPageTransform(
-                translationMultiplier = pageOffset,
-                scale = 1f - COVER_FLOW_SCALE_REDUCTION * distanceFromCenter,
+                translationMultiplier = pageOffset *
+                    (1f - COVER_FLOW_TRANSLATION_REDUCTION * translationCompression),
+                scale = 1f - COVER_FLOW_SCALE_REDUCTION * effectDistance,
                 alpha = visiblePageAlpha(
                     pageAlpha = pageAlpha,
                     progress = progress,
                     isCurrent = isCurrent
                 ),
-                rotationY = -pageOffset.coerceIn(-1f, 1f) *
+                rotationY = -pageOffset.signOrZero() * effectDistance *
                     COVER_FLOW_MAX_ROTATION_DEGREES
             )
         }
@@ -81,6 +84,7 @@ internal fun modernMetadataPageTransform(
     val progress = abs(gestureOffset).coerceIn(0f, 1f)
     val pageOffset = gestureOffset + restingOffset
     val distanceFromCenter = abs(pageOffset).coerceIn(0f, 1f)
+    val effectDistance = emphasizedModernArtworkDistance(distanceFromCenter)
 
     return when (style) {
         ModernArtworkTransitionStyle.SLIDE -> ModernMetadataPageTransform(
@@ -89,10 +93,10 @@ internal fun modernMetadataPageTransform(
         )
 
         ModernArtworkTransitionStyle.DEPTH_SCALE -> {
-            val pageAlpha = 1f - DEPTH_METADATA_ALPHA_REDUCTION * distanceFromCenter
+            val pageAlpha = 1f - DEPTH_METADATA_ALPHA_REDUCTION * effectDistance
             ModernMetadataPageTransform(
                 translationMultiplier = pageOffset,
-                scale = 1f - DEPTH_METADATA_SCALE_REDUCTION * distanceFromCenter,
+                scale = 1f - DEPTH_METADATA_SCALE_REDUCTION * effectDistance,
                 alpha = visiblePageAlpha(
                     pageAlpha = pageAlpha,
                     progress = progress,
@@ -101,34 +105,19 @@ internal fun modernMetadataPageTransform(
             )
         }
 
-        ModernArtworkTransitionStyle.PARALLAX -> ModernMetadataPageTransform(
-            translationMultiplier = if (isCurrent) {
-                gestureOffset * PARALLAX_METADATA_TRANSLATION_MULTIPLIER
-            } else {
-                pageOffset
-            },
-            alpha = if (isCurrent) {
-                (1f - progress * PARALLAX_METADATA_CROSSFADE_MULTIPLIER)
-                    .coerceAtLeast(0f)
-            } else {
-                (progress * PARALLAX_METADATA_CROSSFADE_MULTIPLIER)
-                    .coerceAtMost(1f)
-            }
-        )
-
         ModernArtworkTransitionStyle.COVER_FLOW -> {
             val pageAlpha = 1f -
-                COVER_FLOW_METADATA_ALPHA_REDUCTION * distanceFromCenter
+                COVER_FLOW_METADATA_ALPHA_REDUCTION * effectDistance
             ModernMetadataPageTransform(
                 translationMultiplier = pageOffset,
                 scale = 1f -
-                    COVER_FLOW_METADATA_SCALE_REDUCTION * distanceFromCenter,
+                    COVER_FLOW_METADATA_SCALE_REDUCTION * effectDistance,
                 alpha = visiblePageAlpha(
                     pageAlpha = pageAlpha,
                     progress = progress,
                     isCurrent = isCurrent
                 ),
-                rotationY = -pageOffset.coerceIn(-1f, 1f) *
+                rotationY = -pageOffset.signOrZero() * effectDistance *
                     COVER_FLOW_MAX_ROTATION_DEGREES *
                     COVER_FLOW_METADATA_ROTATION_MULTIPLIER
             )
@@ -161,6 +150,22 @@ internal fun modernMetadataPageTransform(
             }
         }
     }
+}
+
+internal fun emphasizedModernArtworkDistance(distanceFromCenter: Float): Float {
+    val distance = distanceFromCenter.coerceIn(0f, 1f)
+    return 1f - (1f - distance) * (1f - distance)
+}
+
+internal fun modernArtworkTranslationCompression(distanceFromCenter: Float): Float {
+    val distance = distanceFromCenter.coerceIn(0f, 1f)
+    return 4f * distance * (1f - distance)
+}
+
+private fun Float.signOrZero(): Float = when {
+    this < 0f -> -1f
+    this > 0f -> 1f
+    else -> 0f
 }
 
 private fun slideArtworkTransform(
@@ -245,10 +250,9 @@ private fun visiblePageAlpha(
     return pageAlpha * neighborReveal
 }
 
-internal const val PARALLAX_METADATA_TRANSLATION_MULTIPLIER = 0.32f
-internal const val COVER_FLOW_MAX_ROTATION_DEGREES = 30f
+internal const val COVER_FLOW_MAX_ROTATION_DEGREES = 32f
 internal const val COVER_FLOW_METADATA_ROTATION_MULTIPLIER = 0.70f
-internal const val COVER_FLOW_CAMERA_DISTANCE_MULTIPLIER = 16f
+internal const val COVER_FLOW_CAMERA_DISTANCE_MULTIPLIER = 10f
 internal const val COVER_FLOW_METADATA_CAMERA_DISTANCE_MULTIPLIER = 13f
 
 private const val SLIDE_CURRENT_SCALE_REDUCTION = 0.035f
@@ -258,17 +262,18 @@ private const val SLIDE_CURRENT_ALPHA_REDUCTION = 0.08f
 private const val SLIDE_NEIGHBOR_ALPHA_MULTIPLIER = 1.8f
 private const val SLIDE_NEIGHBOR_MAX_ALPHA = 0.9f
 
-private const val DEPTH_SCALE_REDUCTION = 0.26f
-private const val DEPTH_ALPHA_REDUCTION = 0.28f
+internal const val DEPTH_SCALE_REDUCTION = 0.24f
+internal const val DEPTH_ALPHA_REDUCTION = 0.34f
+internal const val DEPTH_TRANSLATION_REDUCTION = 0.18f
 private const val DEPTH_METADATA_SCALE_REDUCTION = 0.16f
 private const val DEPTH_METADATA_ALPHA_REDUCTION = 0.28f
 
-private const val COVER_FLOW_SCALE_REDUCTION = 0.08f
-private const val COVER_FLOW_ALPHA_REDUCTION = 0.18f
+internal const val COVER_FLOW_SCALE_REDUCTION = 0.10f
+internal const val COVER_FLOW_ALPHA_REDUCTION = 0.22f
+internal const val COVER_FLOW_TRANSLATION_REDUCTION = 0.06f
 private const val COVER_FLOW_METADATA_SCALE_REDUCTION = 0.07f
 private const val COVER_FLOW_METADATA_ALPHA_REDUCTION = 0.22f
 
-private const val PARALLAX_METADATA_CROSSFADE_MULTIPLIER = 1.50f
 private const val NEIGHBOR_REVEAL_MULTIPLIER = 3f
 
 private const val STACK_CURRENT_SCALE_REDUCTION = 0.08f

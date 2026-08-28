@@ -7,11 +7,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.dp
 
 @Immutable
 data class ModernPlayerStyle(
     val backgroundColor: Color,
+    val solidBackgroundColor: Color,
     val backgroundOverlayColor: Color,
     val gradientTopColor: Color,
     val gradientCenterColor: Color,
@@ -47,6 +49,11 @@ object ModernPlayerDefaults {
     fun style(): ModernPlayerStyle {
         return ModernPlayerStyle(
             backgroundColor = Color.Black,
+            solidBackgroundColor = lerp(
+                MaterialTheme.colorScheme.surface,
+                Color.Black,
+                0.65f
+            ),
             backgroundOverlayColor = Color.Black.copy(alpha = 0.42f),
             gradientTopColor = Color.Black.copy(alpha = 0.70f),
             gradientCenterColor = Color.Black.copy(alpha = 0.16f),

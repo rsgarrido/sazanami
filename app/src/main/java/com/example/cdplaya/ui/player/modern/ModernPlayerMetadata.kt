@@ -25,6 +25,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.example.cdplaya.data.Song
@@ -38,6 +39,7 @@ internal fun ModernPlayerMetadataCarousel(
     audioQualityRepository: AudioQualityRepository,
     transitionStyle: ModernArtworkTransitionStyle,
     style: ModernPlayerStyle,
+    layoutAppearance: ModernLayoutAppearance = ModernLayoutAppearance(),
     modifier: Modifier = Modifier,
     onPersistentContentBoundsChanged: (Rect) -> Unit = {},
     hidePersistentContent: Boolean = false,
@@ -67,7 +69,11 @@ internal fun ModernPlayerMetadataCarousel(
                 stableAnchorBounds = coordinates.boundsInRoot()
                 publishStableDestination()
             },
-        contentAlignment = Alignment.TopStart
+        contentAlignment = if (layoutAppearance.metadataAlignment == ModernMetadataAlignment.CENTER) {
+            Alignment.TopCenter
+        } else {
+            Alignment.TopStart
+        }
     ) {
         carouselSongs.items().forEach { item ->
             key(item.song.id) {
@@ -96,12 +102,15 @@ internal fun ModernPlayerMetadataCarousel(
                                     COVER_FLOW_METADATA_CAMERA_DISTANCE_MULTIPLIER * density
                             }
                         },
-                    contentAlignment = Alignment.TopStart
+                    contentAlignment = if (
+                        layoutAppearance.metadataAlignment == ModernMetadataAlignment.CENTER
+                    ) Alignment.TopCenter else Alignment.TopStart
                 ) {
                     ModernPlayerMetadataPage(
                         song = item.song,
                         audioQualityRepository = audioQualityRepository,
                         style = style,
+                        layoutAppearance = layoutAppearance,
                         onPersistentContentSizeChanged = if (item.isCurrent) {
                             { size ->
                                 persistentContentSize = size
@@ -125,6 +134,7 @@ private fun ModernPlayerMetadataPage(
     song: Song,
     audioQualityRepository: AudioQualityRepository,
     style: ModernPlayerStyle,
+    layoutAppearance: ModernLayoutAppearance,
     onPersistentContentSizeChanged: (IntSize) -> Unit,
     hidePersistentContent: Boolean,
     expandedContentAlpha: Float,
@@ -134,8 +144,15 @@ private fun ModernPlayerMetadataPage(
         mutableStateOf<AudioQualityInfo?>(null)
     }
 
-    LaunchedEffect(song.id, song.filePath, loadExpandedMetadata) {
-        audioQualityInfo = if (loadExpandedMetadata) {
+    LaunchedEffect(
+        song.id,
+        song.filePath,
+        loadExpandedMetadata,
+        layoutAppearance.showAudioQualityBadge
+    ) {
+        audioQualityInfo = if (
+            loadExpandedMetadata && layoutAppearance.showAudioQualityBadge
+        ) {
             audioQualityRepository.getAudioQualityInfo(song)
         } else {
             null
@@ -146,19 +163,28 @@ private fun ModernPlayerMetadataPage(
         ModernPlayerMetadata(
             currentSong = song,
             style = style,
+            alignment = layoutAppearance.metadataAlignment,
             onPersistentContentSizeChanged = onPersistentContentSizeChanged,
             hidePersistentContent = hidePersistentContent,
             expandedContentAlpha = expandedContentAlpha
         )
 
-        ModernPlayerAudioQualityBadge(
-            audioQualityInfo = audioQualityInfo,
-            style = style,
-            modifier = Modifier
-                .align(Alignment.Start)
-                .padding(top = 12.dp)
-                .graphicsLayer { alpha = expandedContentAlpha }
-        )
+        if (layoutAppearance.showAudioQualityBadge) {
+            ModernPlayerAudioQualityBadge(
+                audioQualityInfo = audioQualityInfo,
+                style = style,
+                modifier = Modifier
+                    .align(
+                        if (layoutAppearance.metadataAlignment == ModernMetadataAlignment.CENTER) {
+                            Alignment.CenterHorizontally
+                        } else {
+                            Alignment.Start
+                        }
+                    )
+                    .padding(top = 12.dp)
+                    .graphicsLayer { alpha = expandedContentAlpha }
+            )
+        }
     }
 }
 
@@ -166,13 +192,18 @@ private fun ModernPlayerMetadataPage(
 internal fun ModernPlayerMetadata(
     currentSong: Song,
     style: ModernPlayerStyle,
+    alignment: ModernMetadataAlignment = ModernMetadataAlignment.LEFT,
     onPersistentContentSizeChanged: (IntSize) -> Unit = {},
     hidePersistentContent: Boolean = false,
     expandedContentAlpha: Float = 1f
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.Start
+        horizontalAlignment = if (alignment == ModernMetadataAlignment.CENTER) {
+            Alignment.CenterHorizontally
+        } else {
+            Alignment.Start
+        }
     ) {
         Column(
             modifier = Modifier
@@ -185,7 +216,9 @@ internal fun ModernPlayerMetadata(
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = style.contentColor,
-                maxLines = 2
+                maxLines = 2,
+                textAlign = alignment.textAlign(),
+                modifier = Modifier.fillMaxWidth()
             )
 
             Spacer(modifier = Modifier.height(6.dp))
@@ -194,7 +227,9 @@ internal fun ModernPlayerMetadata(
                 text = currentSong.artist.ifBlank { "Unknown Artist" },
                 style = MaterialTheme.typography.titleMedium,
                 color = style.secondaryContentColor,
-                maxLines = 1
+                maxLines = 1,
+                textAlign = alignment.textAlign(),
+                modifier = Modifier.fillMaxWidth()
             )
         }
 
@@ -205,9 +240,17 @@ internal fun ModernPlayerMetadata(
             style = MaterialTheme.typography.bodyMedium,
             color = style.tertiaryContentColor,
             maxLines = 1,
-            modifier = Modifier.graphicsLayer { alpha = expandedContentAlpha }
+            textAlign = alignment.textAlign(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer { alpha = expandedContentAlpha }
         )
     }
+}
+
+private fun ModernMetadataAlignment.textAlign(): TextAlign = when (this) {
+    ModernMetadataAlignment.LEFT -> TextAlign.Start
+    ModernMetadataAlignment.CENTER -> TextAlign.Center
 }
 
 internal fun resolveStableMetadataDestination(

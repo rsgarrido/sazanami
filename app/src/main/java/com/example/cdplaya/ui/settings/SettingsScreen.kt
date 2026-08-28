@@ -41,6 +41,7 @@ import com.example.cdplaya.data.preferences.CrossfadePreferences
 import com.example.cdplaya.R
 import com.example.cdplaya.data.FolderSelectionMode
 import com.example.cdplaya.data.PlayerTheme
+import com.example.cdplaya.data.Song
 import com.example.cdplaya.player.audio.AudioOffloadPreference
 import com.example.cdplaya.player.replaygain.ReplayGainMode
 import com.example.cdplaya.ui.AppShellIcons
@@ -50,7 +51,7 @@ import com.example.cdplaya.mediaaccess.folderArtworkLocationLabel
 import com.example.cdplaya.ui.home.LocalHomePinUi
 import com.example.cdplaya.ui.state.LibraryRefreshSummary
 import com.example.cdplaya.ui.player.modern.ModernArtworkTransitionStyle
-import com.example.cdplaya.ui.player.modern.ModernSeekbarStyle
+import com.example.cdplaya.ui.player.modern.ModernPlayerAppearance
 import com.example.cdplaya.ui.player.theme.PlayerThemeTokenField
 import com.example.cdplaya.ui.player.theme.PlayerThemeTokens
 import com.example.cdplaya.ui.player.theme.customizationOptions
@@ -86,8 +87,10 @@ fun SettingsScreen(
     onResetPlayerThemeTokenOverrides: (PlayerTheme) -> Unit,
     selectedModernArtworkTransitionStyle: ModernArtworkTransitionStyle,
     onModernArtworkTransitionStyleSelected: (ModernArtworkTransitionStyle) -> Unit,
-    selectedModernSeekbarStyle: ModernSeekbarStyle,
-    onModernSeekbarStyleSelected: (ModernSeekbarStyle) -> Unit,
+    selectedModernPlayerAppearance: ModernPlayerAppearance,
+    onModernPlayerAppearanceChanged: (ModernPlayerAppearance) -> Unit,
+    onResetModernPlayerAppearance: () -> Unit,
+    previewSong: Song?,
     selectedReplayGainMode: ReplayGainMode,
     onReplayGainModeSelected: (ReplayGainMode) -> Unit,
     selectedAudioOffloadPreference: AudioOffloadPreference,
@@ -108,10 +111,22 @@ fun SettingsScreen(
     var isAudioOffloadDialogVisible by remember { mutableStateOf(false) }
     var isThemeCustomizationDialogVisible by remember { mutableStateOf(false) }
     var isArtworkTransitionDialogVisible by remember { mutableStateOf(false) }
-    var isSeekbarStyleDialogVisible by remember { mutableStateOf(false) }
+    var isDefaultPlayerCustomizationVisible by remember { mutableStateOf(false) }
     var isEmbeddedArtworkOnlyDialogVisible by remember { mutableStateOf(false) }
     val homePinUi = LocalHomePinUi.current
     val folderArtworkUi = LocalFolderArtworkUi.current
+
+    if (isDefaultPlayerCustomizationVisible) {
+        DefaultPlayerCustomizationScreen(
+            appearance = selectedModernPlayerAppearance,
+            previewSong = previewSong,
+            onAppearanceChanged = onModernPlayerAppearanceChanged,
+            onReset = onResetModernPlayerAppearance,
+            onBackClick = { isDefaultPlayerCustomizationVisible = false },
+            modifier = modifier
+        )
+        return
+    }
 
     val themeCustomizationOptions = selectedPlayerTheme.customizationOptions()
     val folderSelectionText = when {
@@ -418,12 +433,11 @@ fun SettingsScreen(
                 SettingsDivider()
 
                 SettingsRow(
-                    title = "Modern player seekbar style",
-                    summary = selectedModernSeekbarStyle.displayName,
-                    icon = AppShellIcons.Seekbar,
-                    onClick = { isSeekbarStyleDialogVisible = true },
-                    emphasizeSummary = true,
-                    navigationContentDescription = "Choose modern player seekbar style"
+                    title = "Customize Default Player",
+                    summary = "Seekbar, waveform, background, blur, and dimming",
+                    icon = AppShellIcons.Palette,
+                    onClick = { isDefaultPlayerCustomizationVisible = true },
+                    navigationContentDescription = "Customize Default Player"
                 )
             }
 
@@ -708,64 +722,6 @@ fun SettingsScreen(
                 TextButton(
                     onClick = {
                         isArtworkTransitionDialogVisible = false
-                    }
-                ) {
-                    Text(text = "Close")
-                }
-            }
-        )
-    }
-
-    if (
-        isSeekbarStyleDialogVisible &&
-        selectedPlayerTheme == PlayerTheme.DEFAULT
-    ) {
-        AlertDialog(
-            onDismissRequest = {
-                isSeekbarStyleDialogVisible = false
-            },
-            title = {
-                Text(text = "Modern player seekbar style")
-            },
-            text = {
-                Column {
-                    ModernSeekbarStyle.values().forEach { seekbarStyle ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    onModernSeekbarStyleSelected(seekbarStyle)
-                                    isSeekbarStyleDialogVisible = false
-                                }
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = selectedModernSeekbarStyle == seekbarStyle,
-                                onClick = {
-                                    onModernSeekbarStyleSelected(seekbarStyle)
-                                    isSeekbarStyleDialogVisible = false
-                                }
-                            )
-
-                            Column(
-                                modifier = Modifier.padding(start = 4.dp)
-                            ) {
-                                Text(text = seekbarStyle.displayName)
-
-                                Text(
-                                    text = seekbarStyle.description,
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        isSeekbarStyleDialogVisible = false
                     }
                 ) {
                     Text(text = "Close")

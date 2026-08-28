@@ -36,7 +36,7 @@ import com.example.cdplaya.ui.player.lyricsVisualAlpha
 import com.example.cdplaya.ui.player.playerVisualAlpha
 import com.example.cdplaya.ui.player.ImmersiveSystemBarsEffect
 import com.example.cdplaya.ui.player.modern.ModernArtworkTransitionStyle
-import com.example.cdplaya.ui.player.modern.ModernSeekbarStyle
+import com.example.cdplaya.ui.player.modern.ModernPlayerAppearance
 import com.example.cdplaya.ui.player.theme.PlayerThemeTokens
 import com.example.cdplaya.ui.playlist.AddToPlaylistDialog
 import com.example.cdplaya.ui.playlist.PlaylistNameDialog
@@ -109,7 +109,7 @@ fun MusicScreenOverlays(
     selectedPlayerTheme: PlayerTheme,
     selectedPlayerThemeTokens: PlayerThemeTokens,
     selectedModernArtworkTransitionStyle: ModernArtworkTransitionStyle,
-    selectedModernSeekbarStyle: ModernSeekbarStyle,
+    selectedModernPlayerAppearance: ModernPlayerAppearance,
     playerEndpointBounds: PlayerEndpointBounds,
     defaultMorphBounds: DefaultPlayerMorphBounds,
     classicMorphBounds: ClassicWheelMorphBounds,
@@ -121,7 +121,7 @@ fun MusicScreenOverlays(
     val isPlayerExpanded = playerMorphState.shouldComposeExpanded
     val shouldWarmCurrentWaveform = shouldLoadExpandedPlayerWaveform(
         selectedPlayerTheme = selectedPlayerTheme,
-        modernSeekbarStyle = selectedModernSeekbarStyle
+        modernSeekbarStyle = selectedModernPlayerAppearance.seekbar.style
     )
     WarmCurrentSongWaveform(
         currentSong = currentSong,
@@ -160,7 +160,7 @@ fun MusicScreenOverlays(
                     selectedPlayerTheme = selectedPlayerTheme,
                     tokens = selectedPlayerThemeTokens,
                     modernArtworkTransitionStyle = selectedModernArtworkTransitionStyle,
-                    modernSeekbarStyle = selectedModernSeekbarStyle,
+                    modernPlayerAppearance = selectedModernPlayerAppearance,
                     isVisualizerWorkAllowed = !isLyricsVisible &&
                             !isExpandedUpNextSheetVisible &&
                             !isSleepTimerDialogVisible &&

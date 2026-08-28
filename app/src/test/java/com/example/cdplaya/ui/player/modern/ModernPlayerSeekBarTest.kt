@@ -45,6 +45,48 @@ class ModernPlayerSeekBarTest {
     }
 
     @Test
+    fun waveformDensityControlsRendererBarCount() {
+        ModernWaveformDensity.entries.forEach { density ->
+            assertEquals(
+                density.barCount,
+                generateWaveformPreviewBars("density", density.barCount).size
+            )
+            assertEquals(
+                density.barCount,
+                generateWaveformPeaksBars("density", density.barCount).size
+            )
+            assertEquals(
+                density.barCount,
+                generateWaveformGlowBars("density", density.barCount).size
+            )
+            assertEquals(
+                density.barCount,
+                generateContinuousWaveformSamples("density", density.barCount).size
+            )
+            assertEquals(
+                density.barCount,
+                generateWaveLineSamples("density", density.barCount).size
+            )
+        }
+    }
+
+    @Test
+    fun waveformSizeUsesOrderedMeaningfulTrackHeights() {
+        assertTrue(
+            ModernWaveformSize.COMPACT.trackHeightDp <
+                    ModernWaveformSize.STANDARD.trackHeightDp
+        )
+        assertTrue(
+            ModernWaveformSize.STANDARD.trackHeightDp <
+                    ModernWaveformSize.TALL.trackHeightDp
+        )
+        assertTrue(
+            ModernWaveformSize.TALL.trackHeightDp >=
+                    ModernWaveformSize.STANDARD.trackHeightDp * 1.5f
+        )
+    }
+
+    @Test
     fun segmentedFillFractions_fillsWholeAndPartialSegments() {
         assertEquals(
             listOf(1f, 1f, 0.5f, 0f),
@@ -90,7 +132,9 @@ class ModernPlayerSeekBarTest {
             val trackHeight = when (style) {
                 ModernSeekbarStyle.WAVEFORM_PEAKS -> 36f
                 ModernSeekbarStyle.WAVEFORM_PREVIEW,
-                ModernSeekbarStyle.WAVEFORM_GLOW -> 32f
+                ModernSeekbarStyle.WAVEFORM_GLOW,
+                ModernSeekbarStyle.CONTINUOUS_WAVEFORM,
+                ModernSeekbarStyle.WAVE_LINE -> 32f
                 else -> 48f
             }
             val layout = resolveModernSeekbarVerticalLayout(

@@ -263,7 +263,7 @@ class MusicViewModel(
             selectedTheme = selectedTheme,
             themeTokens = selectedTheme.defaultTokens().applyOverrides(overrides),
             modernArtworkTransitionStyle = preferences.modernArtworkTransitionStyle,
-            modernSeekbarStyle = preferences.modernSeekbarStyle,
+            modernPlayerAppearance = preferences.modernPlayerAppearance,
             replayGainMode = preferences.replayGainMode,
             isLoaded = preferences.isLoaded
         )
@@ -335,6 +335,52 @@ class MusicViewModel(
 
     fun selectModernSeekbarStyle(style: ModernSeekbarStyle) {
         viewModelScope.launch { appPreferencesRepository.setModernSeekbarStyle(style) }
+    }
+
+    fun updateModernPlayerAppearance(
+        appearance: com.example.cdplaya.ui.player.modern.ModernPlayerAppearance
+    ) {
+        viewModelScope.launch {
+            appPreferencesRepository.setModernPlayerAppearance(appearance)
+        }
+    }
+
+    fun selectModernWaveformSize(size: com.example.cdplaya.ui.player.modern.ModernWaveformSize) {
+        viewModelScope.launch { appPreferencesRepository.setModernWaveformSize(size) }
+    }
+
+    fun selectModernWaveformDensity(
+        density: com.example.cdplaya.ui.player.modern.ModernWaveformDensity
+    ) {
+        viewModelScope.launch { appPreferencesRepository.setModernWaveformDensity(density) }
+    }
+
+    fun selectModernSeekbarColorMode(
+        mode: com.example.cdplaya.ui.player.modern.ModernSeekbarColorMode
+    ) {
+        viewModelScope.launch { appPreferencesRepository.setModernSeekbarColorMode(mode) }
+    }
+
+    fun selectModernBackgroundStyle(
+        style: com.example.cdplaya.ui.player.modern.ModernBackgroundStyle
+    ) {
+        viewModelScope.launch { appPreferencesRepository.setModernBackgroundStyle(style) }
+    }
+
+    fun selectModernBlurStrength(
+        strength: com.example.cdplaya.ui.player.modern.ModernBlurStrength
+    ) {
+        viewModelScope.launch { appPreferencesRepository.setModernBlurStrength(strength) }
+    }
+
+    fun selectModernDimmingStrength(
+        strength: com.example.cdplaya.ui.player.modern.ModernDimmingStrength
+    ) {
+        viewModelScope.launch { appPreferencesRepository.setModernDimmingStrength(strength) }
+    }
+
+    fun resetModernPlayerAppearance() {
+        viewModelScope.launch { appPreferencesRepository.resetModernPlayerAppearance() }
     }
 
     fun updatePlayerThemeTokenOverride(
