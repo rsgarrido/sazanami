@@ -19,7 +19,6 @@ import com.example.cdplaya.player.PlaybackShuffleMode
 import com.example.cdplaya.ui.filterSongsByAlbumSearch
 import com.example.cdplaya.ui.filterSongsByArtistSearch
 import com.example.cdplaya.ui.filterSongsForSearch
-import com.example.cdplaya.ui.sortSongsByAlbumOrder
 import com.example.cdplaya.ui.sortSongsForArtistDetail
 import com.example.cdplaya.ui.sortSongsForLibrary
 import com.example.cdplaya.ui.ratings.LocalSongRatingUi
@@ -467,6 +466,7 @@ fun ArtistsTabContent(
         ArtistDetailScreen(
             artistName = selectedArtistName,
             artistSongs = artistSongs,
+            librarySongs = songs,
             onBackClick = onBackFromArtist,
             onAlbumClick = onAlbumSelected,
             onPlayAllClick = {
@@ -512,7 +512,7 @@ fun ArtistsTabContent(
 fun AlbumsTabContent(
     songs: List<Song>,
     searchQuery: String,
-    selectedAlbumFolderPath: String?,
+    selectedAlbumKey: String?,
     currentSong: Song?,
     viewMode: LibraryViewMode,
     gridColumnCount: Int,
@@ -546,7 +546,7 @@ fun AlbumsTabContent(
             text = "No albums found.",
             modifier = Modifier.padding(16.dp)
         )
-    } else if (selectedAlbumFolderPath == null) {
+    } else if (selectedAlbumKey == null) {
         if (albumSearchSongs.isEmpty()) {
             Text(
                 text = "No albums match your search.",
@@ -609,20 +609,10 @@ fun AlbumsTabContent(
             )
         }
     } else {
-        val albumSongs = sortSongsByAlbumOrder(
-            songs.filter { song ->
-                song.folderPath == selectedAlbumFolderPath
-            }
-        )
-        val firstSong = albumSongs.firstOrNull()
-        val album = firstSong?.let { song ->
-            LibraryAlbumGroup(
-                key = selectedAlbumFolderPath,
-                title = song.album.ifBlank { "Unknown Album" },
-                artistText = buildLibraryAlbumArtistText(albumSongs),
-                songs = albumSongs
-            )
+        val album = buildLibraryAlbumGroups(songs).firstOrNull { candidate ->
+            candidate.key == selectedAlbumKey
         }
+        val albumSongs = album?.songs.orEmpty()
 
         if (album == null) {
             Text(

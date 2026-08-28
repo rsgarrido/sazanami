@@ -35,6 +35,8 @@ data class SmartPlaylistCandidateRow(
     val composerText: String,
     val publisher: String,
     val bpm: Int?,
+    val discNumber: Int?,
+    val discTotal: Int?,
     val embeddedMetadataEnrichmentVersion: Int,
     val cachedAt: Long,
     val totalPlayCount: Long,

@@ -44,7 +44,9 @@ class LibrarySourceMetadataTest {
             composers = listOf("Composer One", "Composer; Two"),
             publisher = "Independent Records",
             bpm = 128,
-            embeddedMetadataEnrichmentVersion = 1
+            embeddedMetadataEnrichmentVersion = 1,
+            discNumber = 2,
+            discTotal = 3
         )
 
         assertEquals(song, song.toCachedSongEntity(cachedAt = 999L).toSong())
@@ -54,8 +56,8 @@ class LibrarySourceMetadataTest {
     fun cachedSongRoundTripPreservesEmbeddedArtworkReference() {
         val embeddedArtworkUri = Uri.parse(
             "content://com.example.cdplaya.embeddedartwork/v2/source/art.jpg" +
-                "?source=content%3A%2F%2Fmedia%2Fexternal%2Faudio%2Fmedia%2F41" +
-                "&name=Track.flac&modified=10&size=20"
+                    "?source=content%3A%2F%2Fmedia%2Fexternal%2Faudio%2Fmedia%2F41" +
+                    "&name=Track.flac&modified=10&size=20"
         )
         val song = Song(
             id = 41L,
@@ -152,12 +154,13 @@ class LibrarySourceMetadataTest {
                 DatabaseProvider.MIGRATION_13_14,
                 DatabaseProvider.MIGRATION_14_15,
                 DatabaseProvider.MIGRATION_15_16,
-                DatabaseProvider.MIGRATION_16_17
+                DatabaseProvider.MIGRATION_16_17,
+                DatabaseProvider.MIGRATION_17_18
             )
             .build()
         try {
             val cursor = database.openHelper.writableDatabase.query(
-                "SELECT title, volumeName, displayName, fileSizeBytes, dateAddedEpochSeconds, dateModifiedEpochSeconds, artworkEnrichmentVersion, year, genresJson, embeddedMetadataEnrichmentVersion FROM cached_songs WHERE mediaStoreId = 7"
+                "SELECT title, volumeName, displayName, fileSizeBytes, dateAddedEpochSeconds, dateModifiedEpochSeconds, artworkEnrichmentVersion, year, genresJson, embeddedMetadataEnrichmentVersion, discNumber, discTotal FROM cached_songs WHERE mediaStoreId = 7"
             )
             cursor.use {
                 assertTrue(it.moveToFirst())
@@ -171,6 +174,8 @@ class LibrarySourceMetadataTest {
                 assertTrue(it.isNull(7))
                 assertEquals("[]", it.getString(8))
                 assertEquals(0, it.getInt(9))
+                assertTrue(it.isNull(10))
+                assertTrue(it.isNull(11))
             }
             database.openHelper.writableDatabase.query(
                 "SELECT referenceKey, songKey, createdAt FROM favorite_songs"

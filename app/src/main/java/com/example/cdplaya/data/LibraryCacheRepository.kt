@@ -81,6 +81,8 @@ fun CachedSongEntity.toSong(): Song {
         composers = decodedComposers.orEmpty(),
         publisher = publisher,
         bpm = bpm,
+        discNumber = discNumber,
+        discTotal = discTotal,
         embeddedMetadataEnrichmentVersion = if (decodedGenres != null && decodedComposers != null) {
             embeddedMetadataEnrichmentVersion
         } else {
@@ -116,6 +118,8 @@ fun Song.toCachedSongEntity(cachedAt: Long): CachedSongEntity {
         composerText = composers.joinToString("; ") { it.trim() }.trim(),
         publisher = publisher.trim(),
         bpm = bpm,
+        discNumber = discNumber,
+        discTotal = discTotal,
         embeddedMetadataEnrichmentVersion = embeddedMetadataEnrichmentVersion,
         cachedAt = cachedAt
     )

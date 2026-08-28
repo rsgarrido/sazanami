@@ -140,7 +140,7 @@ class SongsRatingIntegrationTest {
                         songs = emptyList(),
                         selectedLibraryTab = selectedTab.value,
                         selectedArtistName = null,
-                        selectedAlbumFolderPath = null,
+                        selectedAlbumKey = null,
                         selectedSongSortState = if (selectedTab.value == LibraryTab.RATED) {
                             LibrarySortState(
                                 LibrarySortOption.RATING,
@@ -259,7 +259,7 @@ class SongsRatingIntegrationTest {
         composeRule.runOnIdle {
             state.value = state.value.copy(
                 ratingsByReferenceKey = state.value.ratingsByReferenceKey +
-                    (unrated.membershipKey() to 4)
+                        (unrated.membershipKey() to 4)
             )
         }
         val updatedHighY = composeRule.onNodeWithText("High").fetchSemanticsNode().positionInRoot.y

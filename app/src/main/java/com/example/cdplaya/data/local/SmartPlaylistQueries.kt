@@ -45,8 +45,8 @@ internal object SmartPlaylistDependencies {
 
     fun isTimeSensitive(draft: SmartPlaylistDraft): Boolean = draft.rules.any { rule ->
         rule.field == SmartPlaylistRuleField.RECENT_PLAY_COUNT ||
-            rule.operator == SmartPlaylistOperator.WITHIN_LAST_DAYS ||
-            rule.operator == SmartPlaylistOperator.MORE_THAN_DAYS_AGO
+                rule.operator == SmartPlaylistOperator.WITHIN_LAST_DAYS ||
+                rule.operator == SmartPlaylistOperator.MORE_THAN_DAYS_AGO
     }
 
     private fun forField(field: String): Int = when (field) {
@@ -147,8 +147,8 @@ internal object SmartPlaylistQueries {
             }
             SmartPlaylistSortField.FORGOTTEN_FAVORITES_RANK ->
                 "library_rows.totalPlayCount DESC, " +
-                    "CASE WHEN library_rows.rating IS NULL THEN 1 ELSE 0 END ASC, " +
-                    "library_rows.rating DESC, library_rows.lastPlayedAt ASC"
+                        "CASE WHEN library_rows.rating IS NULL THEN 1 ELSE 0 END ASC, " +
+                        "library_rows.rating DESC, library_rows.lastPlayedAt ASC"
             SmartPlaylistSortField.LAST_PLAYED -> if (
                 direction == SmartPlaylistSortDirection.ASCENDING
             ) {
@@ -224,7 +224,7 @@ internal object SmartPlaylistQueries {
                    displayName, relativePath, fileSizeBytes, dateAddedEpochSeconds,
                    dateModifiedEpochSeconds, year, artworkEnrichmentVersion, genresJson,
                    normalizedGenresJson, composersJson, composerText, publisher, bpm,
-                   embeddedMetadataEnrichmentVersion, cachedAt,
+                   discNumber, discTotal, embeddedMetadataEnrichmentVersion, cachedAt,
                    totalPlayCount, lastPlayedAt, rating
             FROM library_rows
             WHERE $where
@@ -300,11 +300,11 @@ internal object SmartPlaylistQueries {
             rule.operator == SmartPlaylistOperator.MORE_THAN_DAYS_AGO
         ) {
             require(rule.field == SmartPlaylistRuleField.LAST_PLAYED ||
-                rule.field == SmartPlaylistRuleField.DATE_ADDED)
+                    rule.field == SmartPlaylistRuleField.DATE_ADDED)
             val days = positiveInt(rule.values.firstOrNull(), "relative days")
             val cutoffMillis = nowMillis - daysToMillis(days)
             val cutoff = if (rule.field == SmartPlaylistRuleField.DATE_ADDED) cutoffMillis / 1000L
-                else cutoffMillis
+            else cutoffMillis
             args += cutoff
             return if (rule.operator == SmartPlaylistOperator.WITHIN_LAST_DAYS) {
                 "$column IS NOT NULL AND $column > 0 AND $column >= ?"
@@ -432,7 +432,7 @@ internal object SmartPlaylistQueries {
         val rawValue = requireNotNull(rule.values.firstOrNull()) { "A Genre value is required." }
         val cleanedValue = rawValue.trim()
         val isUnknown = cleanedValue.equals(UNKNOWN_GENRE_NAME, ignoreCase = true) ||
-            cleanedValue.equals(UNKNOWN_GENRE_KEY, ignoreCase = true)
+                cleanedValue.equals(UNKNOWN_GENRE_KEY, ignoreCase = true)
         if (isUnknown) {
             return if (rule.operator == SmartPlaylistOperator.IS_NOT) {
                 "library_rows.normalizedGenresJson != '[]'"

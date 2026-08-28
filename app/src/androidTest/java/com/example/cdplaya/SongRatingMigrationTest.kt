@@ -48,35 +48,35 @@ class SongRatingMigrationTest {
                     )
                     db.execSQL(
                         "INSERT INTO local_track_bindings VALUES " +
-                            "(1, 1, 'local:one', 1, 'external', 'content://one', 'Music/', " +
-                            "'one.flac', NULL, 100, 1, 1000, NULL, 'portable:one', 1, 10, 20, NULL)"
+                                "(1, 1, 'local:one', 1, 'external', 'content://one', 'Music/', " +
+                                "'one.flac', NULL, 100, 1, 1000, NULL, 'portable:one', 1, 10, 20, NULL)"
                     )
                     db.execSQL(
                         "INSERT INTO legacy_listening_baselines VALUES " +
-                            "(1, 4, 10, 20, 'legacy:one', 30)"
+                                "(1, 4, 10, 20, 'legacy:one', 30)"
                     )
                     db.execSQL(
                         "INSERT INTO listening_events VALUES " +
-                            "(1, 'event-one', 'cdplaya', 1, 1, 'session-one', 40, 50, 10, " +
-                            "1000, 1, 'time_threshold', 1, 'stopped', NULL, NULL, 50)"
+                                "(1, 'event-one', 'cdplaya', 1, 1, 'session-one', 40, 50, 10, " +
+                                "1000, 1, 'time_threshold', 1, 'stopped', NULL, NULL, 50)"
                     )
                     db.execSQL(
                         "INSERT INTO favorite_songs VALUES " +
-                            "('favorite:one', 'one', 'Title', 'Artist', 'Album', 1000, 1, 1, " +
-                            "'external', 'content://one', 'Music/', 'one.flac', 100, 1, " +
-                            "'Artist', 'portable:one', 1)"
+                                "('favorite:one', 'one', 'Title', 'Artist', 'Album', 1000, 1, 1, " +
+                                "'external', 'content://one', 'Music/', 'one.flac', 100, 1, " +
+                                "'Artist', 'portable:one', 1)"
                     )
                     db.execSQL("INSERT INTO playlists VALUES (1, 'Preserved playlist', 1, 2)")
                     db.execSQL(
                         "INSERT INTO playlist_songs " +
-                            "(playlistSongId, playlistId, songKey, position, title, artist, album, duration, addedAt) " +
-                            "VALUES (1, 1, 'one', 0, 'Title', 'Artist', 'Album', 1000, 3)"
+                                "(playlistSongId, playlistId, songKey, position, title, artist, album, duration, addedAt) " +
+                                "VALUES (1, 1, 'one', 0, 'Title', 'Artist', 'Album', 1000, 3)"
                     )
                     db.execSQL(
                         "INSERT INTO cached_songs VALUES " +
-                            "(1, 'Title', 'Artist', 'Album', 1, 1000, 'content://one', " +
-                            "'/music/one.flac', '/music', NULL, 'Artist', 'external', 'one.flac', " +
-                            "'Music/', 100, 1, 1, 1, 99)"
+                                "(1, 'Title', 'Artist', 'Album', 1, 1000, 'content://one', " +
+                                "'/music/one.flac', '/music', NULL, 'Artist', 'external', 'one.flac', " +
+                                "'Music/', 100, 1, 1, 1, 99)"
                     )
                 }
 
@@ -94,7 +94,8 @@ class SongRatingMigrationTest {
                 DatabaseProvider.MIGRATION_13_14,
                 DatabaseProvider.MIGRATION_14_15,
                 DatabaseProvider.MIGRATION_15_16,
-                DatabaseProvider.MIGRATION_16_17
+                DatabaseProvider.MIGRATION_16_17,
+                DatabaseProvider.MIGRATION_17_18
             )
             .build()
         try {
@@ -120,8 +121,8 @@ class SongRatingMigrationTest {
             }
             sqlite.execSQL(
                 "INSERT INTO listening_track_identities VALUES " +
-                    "(2, 'Cascade', 'Artist', 'Album', NULL, 1000, 'cascade', 'artist', " +
-                    "'album', NULL, 1, 10, 10)"
+                        "(2, 'Cascade', 'Artist', 'Album', NULL, 1000, 'cascade', 'artist', " +
+                        "'album', NULL, 1, 10, 10)"
             )
             sqlite.execSQL("INSERT INTO song_ratings VALUES (2, 5, 20, 20)")
             sqlite.execSQL("DELETE FROM listening_track_identities WHERE id = 2")

@@ -142,6 +142,10 @@ fun AlbumDetailScreen(
     var actionSheetTarget by remember {
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
     }
+    val discSections = remember(songs) {
+        buildLibraryAlbumDiscSections(songs)
+    }
+    val showDiscHeaders = discSections.size > 1
 
     val songCountText = pluralStringResource(
         R.plurals.song_count,
@@ -255,39 +259,47 @@ fun AlbumDetailScreen(
                     )
                 }
 
-                items(
-                    items = songs,
-                    key = { song -> song.stableUiKey() }
-                ) { song ->
-                    val isCurrentSong = song.id == currentSongId
-                    val isFavorite = song.membershipKey() in favoriteMembershipKeys
-                    val wasRecentlyAdded = song.id in recentlyAddedSongIds
-                    val rating = ratingValues[song.membershipKey()]
-
-                    AlbumTrackRow(
-                        song = song,
-                        albumArtist = album.artistText,
-                        isCurrentSong = isCurrentSong,
-                        rating = rating,
-                        onClick = {
-                            onSongClick(song, songs)
-                        },
-                        onShowActions = {
-                            actionSheetTarget = songActionSheetTarget(
-                                song = song,
-                                wasRecentlyAdded = wasRecentlyAdded,
-                                isFavorite = isFavorite,
-                                onPlayNextClick = onPlayNextClick,
-                                onAddToQueueClick = onAddToQueueClick,
-                                onToggleFavoriteClick = onToggleFavoriteClick,
-                                onAddToPlaylistClick = onAddToPlaylistClick,
-                                onEditSongTagsClick = onEditSongTagsClick,
-                                rateSongLabel = rateSongLabel,
-                                onRateSongClick = ratingUi.onOpen,
-                                homePinAction = homePinUi.actionForSong(song)
-                            )
+                discSections.forEachIndexed { sectionIndex, section ->
+                    if (showDiscHeaders) {
+                        item(key = "album-disc-header-$sectionIndex") {
+                            AlbumDiscHeader(discNumber = section.discNumber)
                         }
-                    )
+                    }
+
+                    items(
+                        items = section.songs,
+                        key = { song -> song.stableUiKey() }
+                    ) { song ->
+                        val isCurrentSong = song.id == currentSongId
+                        val isFavorite = song.membershipKey() in favoriteMembershipKeys
+                        val wasRecentlyAdded = song.id in recentlyAddedSongIds
+                        val rating = ratingValues[song.membershipKey()]
+
+                        AlbumTrackRow(
+                            song = song,
+                            albumArtist = album.artistText,
+                            isCurrentSong = isCurrentSong,
+                            rating = rating,
+                            onClick = {
+                                onSongClick(song, songs)
+                            },
+                            onShowActions = {
+                                actionSheetTarget = songActionSheetTarget(
+                                    song = song,
+                                    wasRecentlyAdded = wasRecentlyAdded,
+                                    isFavorite = isFavorite,
+                                    onPlayNextClick = onPlayNextClick,
+                                    onAddToQueueClick = onAddToQueueClick,
+                                    onToggleFavoriteClick = onToggleFavoriteClick,
+                                    onAddToPlaylistClick = onAddToPlaylistClick,
+                                    onEditSongTagsClick = onEditSongTagsClick,
+                                    rateSongLabel = rateSongLabel,
+                                    onRateSongClick = ratingUi.onOpen,
+                                    homePinAction = homePinUi.actionForSong(song)
+                                )
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -301,6 +313,21 @@ fun AlbumDetailScreen(
             }
         )
     }
+}
+
+@Composable
+private fun AlbumDiscHeader(
+    discNumber: Int?
+) {
+    Text(
+        text = discNumber?.let { number -> "Disc $number" } ?: "Other tracks",
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 8.dp),
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 }
 
 @Composable

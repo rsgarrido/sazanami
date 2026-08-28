@@ -147,7 +147,7 @@ class SmartPlaylistRepository(
         val now = nowMillis()
         val state = dao.getResolutionState(playlistId)
         val cacheIsFresh = state != null && !state.isDirty &&
-            (state.validUntil == null || now < state.validUntil)
+                (state.validUntil == null || now < state.validUntil)
         if (cacheIsFresh) {
             val selection = eligibleFolderSelection()
             return SmartPlaylistResolution(
@@ -390,6 +390,8 @@ private fun SmartPlaylistCandidateRow.toSong(): Song = CachedSongEntity(
     composerText = composerText,
     publisher = publisher,
     bpm = bpm,
+    discNumber = discNumber,
+    discTotal = discTotal,
     embeddedMetadataEnrichmentVersion = embeddedMetadataEnrichmentVersion,
     cachedAt = cachedAt
 ).toSong()

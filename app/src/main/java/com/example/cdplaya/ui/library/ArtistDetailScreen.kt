@@ -67,6 +67,7 @@ import com.example.cdplaya.ui.home.LocalHomePinUi
 fun ArtistDetailScreen(
     artistName: String,
     artistSongs: List<Song>,
+    librarySongs: List<Song>,
     onBackClick: () -> Unit,
     onAlbumClick: (String) -> Unit,
     onPlayAllClick: () -> Unit,
@@ -82,8 +83,20 @@ fun ArtistDetailScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val rawAlbums = remember(artistSongs) {
-        buildLibraryAlbumGroups(artistSongs)
+    val libraryAlbums = remember(librarySongs) {
+        buildLibraryAlbumGroups(librarySongs)
+    }
+    val rawAlbums = remember(artistSongs, libraryAlbums) {
+        buildLibraryAlbumGroups(artistSongs).map { partialAlbum ->
+            val fullAlbum = partialAlbum.songs.firstOrNull()?.let { song ->
+                findLibraryAlbumGroupForSong(song, libraryAlbums)
+            }
+            if (fullAlbum == null || fullAlbum.key == partialAlbum.key) {
+                partialAlbum
+            } else {
+                partialAlbum.copy(key = fullAlbum.key)
+            }
+        }
     }
     val metadataRepository = remember(context) {
         AlbumPresentationMetadataRepository(context)

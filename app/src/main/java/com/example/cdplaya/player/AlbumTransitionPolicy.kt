@@ -8,7 +8,8 @@ internal data class AlbumTransitionTrack(
     val albumArtist: String,
     val trackArtist: String,
     val folderPath: String,
-    val rawTrackNumber: Int
+    val rawTrackNumber: Int,
+    val discNumber: Int? = null
 )
 
 internal data class AlbumTransitionDecision(
@@ -19,6 +20,7 @@ internal data class AlbumTransitionDecision(
 internal object AlbumTransitionMetadata {
     const val RAW_TRACK_NUMBER = "com.example.cdplaya.transition.raw_track_number"
     const val FOLDER_PATH = "com.example.cdplaya.transition.folder_path"
+    const val DISC_NUMBER = "com.example.cdplaya.transition.disc_number"
 
     fun from(item: MediaItem): AlbumTransitionTrack? {
         val evidence = item.listeningEvidence() ?: return null
@@ -29,7 +31,8 @@ internal object AlbumTransitionMetadata {
             albumArtist = evidence.reference.albumArtist,
             trackArtist = evidence.reference.artist,
             folderPath = extras.getString(FOLDER_PATH).orEmpty(),
-            rawTrackNumber = extras.getInt(RAW_TRACK_NUMBER)
+            rawTrackNumber = extras.getInt(RAW_TRACK_NUMBER),
+            discNumber = extras.getInt(DISC_NUMBER).takeIf { it > 0 }
         )
     }
 }
@@ -81,17 +84,17 @@ internal object NaturalAlbumTransitionPolicy {
             return AlbumTransitionDecision(false, reason)
         }
 
-        val from = decodeTrackNumber(outgoing.rawTrackNumber)
+        val from = decodeTrackNumber(outgoing)
             ?: return AlbumTransitionDecision(false, "outgoing_track_number_invalid")
-        val to = decodeTrackNumber(incoming.rawTrackNumber)
+        val to = decodeTrackNumber(incoming)
             ?: return AlbumTransitionDecision(false, "incoming_track_number_invalid")
-        if (from.encoded != to.encoded) {
+        if (from.discAware != to.discAware) {
             return AlbumTransitionDecision(false, "track_number_encoding_mismatch")
         }
         val albumNumbers = playlist.asSequence()
             .filterNotNull()
             .filter { candidate -> strongAlbumIdentityConflict(outgoing, candidate) == null }
-            .mapNotNull { candidate -> decodeTrackNumber(candidate.rawTrackNumber) }
+            .mapNotNull(::decodeTrackNumber)
             .toList()
         if (albumNumbers.count { it == from } != 1 || albumNumbers.count { it == to } != 1) {
             return AlbumTransitionDecision(false, "duplicate_track_number")
@@ -103,12 +106,12 @@ internal object NaturalAlbumTransitionPolicy {
                 AlbumTransitionDecision(false, "non_sequential_track")
             }
         }
-        if (!from.encoded || to.disc != from.disc + 1 || to.track != 1) {
+        if (!from.discAware || to.disc != from.disc + 1 || to.track != 1) {
             return AlbumTransitionDecision(false, "multi_disc_sequence_not_confident")
         }
 
         val outgoingDiscTracks = albumNumbers.asSequence()
-            .filter { number -> number.encoded && number.disc == from.disc }
+            .filter { number -> number.discAware && number.disc == from.disc }
             .map { number -> number.track }
             .toList()
         if (outgoingDiscTracks.size < 2 || from.track != outgoingDiscTracks.maxOrNull()) {
@@ -128,9 +131,23 @@ internal object NaturalAlbumTransitionPolicy {
             return "strong_identity_missing"
         }
         if (album != second.album.normalized()) return "different_album"
-        if (folder != second.folderPath.normalizedPath()) return "different_folder"
         if (artist != second.albumArtist.ifBlank { second.trackArtist }.normalized()) {
             return "different_artist"
+        }
+
+        val secondFolder = second.folderPath.normalizedPath()
+        if (folder != secondFolder) {
+            val firstDisc = knownDiscNumber(first)
+            val secondDisc = knownDiscNumber(second)
+            val sameParent = folder.parentPath() == secondFolder.parentPath()
+            if (
+                firstDisc == null ||
+                secondDisc == null ||
+                firstDisc == secondDisc ||
+                !sameParent
+            ) {
+                return "different_folder"
+            }
         }
         return null
     }
@@ -138,20 +155,40 @@ internal object NaturalAlbumTransitionPolicy {
     private data class TrackNumber(
         val disc: Int,
         val track: Int,
-        val encoded: Boolean
+        val discAware: Boolean
     )
 
-    private fun decodeTrackNumber(raw: Int): TrackNumber? {
+    private fun decodeTrackNumber(track: AlbumTransitionTrack): TrackNumber? {
+        val raw = track.rawTrackNumber
         if (raw <= 0) return null
-        if (raw < 1_000) return TrackNumber(disc = 1, track = raw, encoded = false)
-        val disc = raw / 1_000
-        val track = raw % 1_000
-        if (disc <= 0 || track <= 0) return null
-        return TrackNumber(disc = disc, track = track, encoded = true)
+
+        val encodedDisc = if (raw >= 1_000) raw / 1_000 else null
+        val encodedTrack = if (raw >= 1_000) raw % 1_000 else raw
+        if (encodedTrack <= 0) return null
+
+        val explicitDisc = track.discNumber?.takeIf { it > 0 }
+        if (explicitDisc != null && encodedDisc != null && explicitDisc != encodedDisc) return null
+        val resolvedDisc = explicitDisc ?: encodedDisc ?: 1
+        if (resolvedDisc <= 0) return null
+        return TrackNumber(
+            disc = resolvedDisc,
+            track = encodedTrack,
+            discAware = explicitDisc != null || encodedDisc != null
+        )
+    }
+
+    private fun knownDiscNumber(track: AlbumTransitionTrack): Int? {
+        track.discNumber?.takeIf { it > 0 }?.let { return it }
+        val raw = track.rawTrackNumber
+        if (raw < 1_000 || raw % 1_000 <= 0) return null
+        return (raw / 1_000).takeIf { it > 0 }
     }
 
     private fun String.normalized(): String = trim().lowercase(Locale.ROOT)
 
     private fun String.normalizedPath(): String =
         trim().replace('\\', '/').trimEnd('/').lowercase(Locale.ROOT)
+
+    private fun String.parentPath(): String =
+        substringBeforeLast('/', missingDelimiterValue = "")
 }

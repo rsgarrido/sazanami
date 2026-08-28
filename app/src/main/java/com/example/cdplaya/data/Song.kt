@@ -29,7 +29,11 @@ data class Song(
     val publisher: String = "",
     /** A validated positive embedded BPM value, or null when unavailable/malformed. */
     val bpm: Int? = null,
-    val embeddedMetadataEnrichmentVersion: Int = 0
+    val embeddedMetadataEnrichmentVersion: Int = 0,
+    /** Embedded disc number when available. MediaStore track-number encoding remains supported. */
+    val discNumber: Int? = null,
+    /** Embedded total disc count when available. */
+    val discTotal: Int? = null
 ) {
     /** Warmed by [SongReferenceIndex] off the main thread for cheap UI membership checks. */
     internal val cachedIdentity: SongIdentity by lazy(LazyThreadSafetyMode.PUBLICATION) {
