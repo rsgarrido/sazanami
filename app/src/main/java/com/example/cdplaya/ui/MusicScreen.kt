@@ -63,7 +63,7 @@ import com.example.cdplaya.ui.playlist.rememberPlaylistSnackbarActions
 import com.example.cdplaya.ui.player.theme.PlayerThemeTokenField
 import com.example.cdplaya.ui.player.theme.PlayerThemeTokens
 import com.example.cdplaya.ui.player.modern.ModernArtworkTransitionStyle
-import com.example.cdplaya.ui.player.modern.ModernSeekbarStyle
+import com.example.cdplaya.ui.player.modern.ModernPlayerAppearance
 import com.example.cdplaya.ui.player.rememberPlayerLyricsTransitionState
 import com.example.cdplaya.ui.player.PlayerMorphHost
 import com.example.cdplaya.ui.player.playerEndpointInput
@@ -243,8 +243,9 @@ internal fun MusicScreen(
     onResetPlayerThemeTokenOverrides: (PlayerTheme) -> Unit,
     selectedModernArtworkTransitionStyle: ModernArtworkTransitionStyle,
     onModernArtworkTransitionStyleSelected: (ModernArtworkTransitionStyle) -> Unit,
-    selectedModernSeekbarStyle: ModernSeekbarStyle,
-    onModernSeekbarStyleSelected: (ModernSeekbarStyle) -> Unit,
+    selectedModernPlayerAppearance: ModernPlayerAppearance,
+    onModernPlayerAppearanceChanged: (ModernPlayerAppearance) -> Unit,
+    onResetModernPlayerAppearance: () -> Unit,
     selectedReplayGainMode: ReplayGainMode,
     onReplayGainModeSelected: (ReplayGainMode) -> Unit,
     selectedAudioOffloadPreference: AudioOffloadPreference,
@@ -1251,8 +1252,9 @@ internal fun MusicScreen(
                     onResetPlayerThemeTokenOverrides = onResetPlayerThemeTokenOverrides,
                     selectedModernArtworkTransitionStyle = selectedModernArtworkTransitionStyle,
                     onModernArtworkTransitionStyleSelected = onModernArtworkTransitionStyleSelected,
-                    selectedModernSeekbarStyle = selectedModernSeekbarStyle,
-                    onModernSeekbarStyleSelected = onModernSeekbarStyleSelected,
+                    selectedModernPlayerAppearance = selectedModernPlayerAppearance,
+                    onModernPlayerAppearanceChanged = onModernPlayerAppearanceChanged,
+                    onResetModernPlayerAppearance = onResetModernPlayerAppearance,
                     selectedReplayGainMode = selectedReplayGainMode,
                     onReplayGainModeSelected = onReplayGainModeSelected,
                     selectedAudioOffloadPreference = selectedAudioOffloadPreference,
@@ -1489,7 +1491,7 @@ internal fun MusicScreen(
                     selectedPlayerTheme = selectedPlayerTheme,
                     selectedPlayerThemeTokens = selectedPlayerThemeTokens,
                     selectedModernArtworkTransitionStyle = selectedModernArtworkTransitionStyle,
-                    selectedModernSeekbarStyle = selectedModernSeekbarStyle,
+                    selectedModernPlayerAppearance = selectedModernPlayerAppearance,
                     playerEndpointBounds = playerEndpointBounds,
                     defaultMorphBounds = defaultMorphBounds,
                     classicMorphBounds = classicMorphBounds,

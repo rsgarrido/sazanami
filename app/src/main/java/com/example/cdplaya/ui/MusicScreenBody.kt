@@ -75,7 +75,7 @@ import com.example.cdplaya.ui.queue.QueueSnackbarActions
 import com.example.cdplaya.ui.player.theme.PlayerThemeTokenField
 import com.example.cdplaya.ui.player.theme.PlayerThemeTokens
 import com.example.cdplaya.ui.player.modern.ModernArtworkTransitionStyle
-import com.example.cdplaya.ui.player.modern.ModernSeekbarStyle
+import com.example.cdplaya.ui.player.modern.ModernPlayerAppearance
 import com.example.cdplaya.ui.settings.SettingsScreen
 import com.example.cdplaya.ui.settings.DiagnosticsScreen
 import com.example.cdplaya.ui.settings.ListeningHistoryImportScreen
@@ -247,8 +247,9 @@ internal fun MusicScreenBody(
     onResetPlayerThemeTokenOverrides: (PlayerTheme) -> Unit,
     selectedModernArtworkTransitionStyle: ModernArtworkTransitionStyle,
     onModernArtworkTransitionStyleSelected: (ModernArtworkTransitionStyle) -> Unit,
-    selectedModernSeekbarStyle: ModernSeekbarStyle,
-    onModernSeekbarStyleSelected: (ModernSeekbarStyle) -> Unit,
+    selectedModernPlayerAppearance: ModernPlayerAppearance,
+    onModernPlayerAppearanceChanged: (ModernPlayerAppearance) -> Unit,
+    onResetModernPlayerAppearance: () -> Unit,
     selectedReplayGainMode: ReplayGainMode,
     onReplayGainModeSelected: (ReplayGainMode) -> Unit,
     selectedAudioOffloadPreference: AudioOffloadPreference,
@@ -433,8 +434,10 @@ internal fun MusicScreenBody(
                 onResetPlayerThemeTokenOverrides = onResetPlayerThemeTokenOverrides,
                 selectedModernArtworkTransitionStyle = selectedModernArtworkTransitionStyle,
                 onModernArtworkTransitionStyleSelected = onModernArtworkTransitionStyleSelected,
-                selectedModernSeekbarStyle = selectedModernSeekbarStyle,
-                onModernSeekbarStyleSelected = onModernSeekbarStyleSelected,
+                selectedModernPlayerAppearance = selectedModernPlayerAppearance,
+                onModernPlayerAppearanceChanged = onModernPlayerAppearanceChanged,
+                onResetModernPlayerAppearance = onResetModernPlayerAppearance,
+                previewSong = currentSong,
                 selectedReplayGainMode = selectedReplayGainMode,
                 onReplayGainModeSelected = onReplayGainModeSelected,
                 selectedAudioOffloadPreference = selectedAudioOffloadPreference,

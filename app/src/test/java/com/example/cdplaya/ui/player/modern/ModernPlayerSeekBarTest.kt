@@ -45,6 +45,36 @@ class ModernPlayerSeekBarTest {
     }
 
     @Test
+    fun waveformDensityControlsRendererBarCount() {
+        ModernWaveformDensity.entries.forEach { density ->
+            assertEquals(
+                density.barCount,
+                generateWaveformPreviewBars("density", density.barCount).size
+            )
+            assertEquals(
+                density.barCount,
+                generateWaveformPeaksBars("density", density.barCount).size
+            )
+            assertEquals(
+                density.barCount,
+                generateWaveformGlowBars("density", density.barCount).size
+            )
+        }
+    }
+
+    @Test
+    fun waveformSizeUsesOrderedMeaningfulTrackHeights() {
+        assertTrue(
+            ModernWaveformSize.COMPACT.trackHeightDp <
+                    ModernWaveformSize.STANDARD.trackHeightDp
+        )
+        assertTrue(
+            ModernWaveformSize.STANDARD.trackHeightDp <
+                    ModernWaveformSize.TALL.trackHeightDp
+        )
+    }
+
+    @Test
     fun segmentedFillFractions_fillsWholeAndPartialSegments() {
         assertEquals(
             listOf(1f, 1f, 0.5f, 0f),

@@ -1,6 +1,7 @@
 package com.example.cdplaya.ui.player.modern
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -114,6 +115,65 @@ class ModernPlayerCustomizationTest {
                 .filterNot { style -> style.name.startsWith("WAVEFORM") }
                 .none { style -> style.usesWaveformData }
         )
+    }
+
+    @Test
+    fun modernAppearanceDefaultsMatchTheIntendedCdPlayaBaseline() {
+        val defaults = ModernPlayerAppearance.Default
+
+        assertEquals(ModernSeekbarStyle.WAVEFORM_PREVIEW, defaults.seekbar.style)
+        assertEquals(ModernWaveformSize.STANDARD, defaults.seekbar.waveformSize)
+        assertEquals(ModernWaveformDensity.BALANCED, defaults.seekbar.waveformDensity)
+        assertEquals(ModernSeekbarColorMode.WHITE, defaults.seekbar.colorMode)
+        assertEquals(ModernBackgroundStyle.BLURRED_ARTWORK, defaults.background.style)
+        assertEquals(ModernBlurStrength.MEDIUM, defaults.background.blurStrength)
+        assertEquals(ModernDimmingStrength.MEDIUM, defaults.background.dimmingStrength)
+    }
+
+    @Test
+    fun newAppearanceEnumsUseStableStorageValuesAndSafeFallbacks() {
+        ModernWaveformSize.entries.forEach { value ->
+            assertEquals(value, ModernWaveformSize.fromStorageValue(value.storageValue))
+        }
+        ModernWaveformDensity.entries.forEach { value ->
+            assertEquals(value, ModernWaveformDensity.fromStorageValue(value.storageValue))
+        }
+        ModernSeekbarColorMode.entries.forEach { value ->
+            assertEquals(value, ModernSeekbarColorMode.fromStorageValue(value.storageValue))
+        }
+        ModernBackgroundStyle.entries.forEach { value ->
+            assertEquals(value, ModernBackgroundStyle.fromStorageValue(value.storageValue))
+        }
+        ModernBlurStrength.entries.forEach { value ->
+            assertEquals(value, ModernBlurStrength.fromStorageValue(value.storageValue))
+        }
+        ModernDimmingStrength.entries.forEach { value ->
+            assertEquals(value, ModernDimmingStrength.fromStorageValue(value.storageValue))
+        }
+
+        assertEquals(ModernWaveformSize.STANDARD, ModernWaveformSize.fromStorageValue("future"))
+        assertEquals(
+            ModernWaveformDensity.BALANCED,
+            ModernWaveformDensity.fromStorageValue(null)
+        )
+        assertEquals(ModernSeekbarColorMode.WHITE, ModernSeekbarColorMode.fromStorageValue(""))
+        assertEquals(
+            ModernBackgroundStyle.BLURRED_ARTWORK,
+            ModernBackgroundStyle.fromStorageValue("future")
+        )
+        assertEquals(ModernBlurStrength.MEDIUM, ModernBlurStrength.fromStorageValue(null))
+        assertEquals(ModernDimmingStrength.MEDIUM, ModernDimmingStrength.fromStorageValue(""))
+    }
+
+    @Test
+    fun backgroundCapabilitiesHideControlsThatWouldHaveNoEffect() {
+        assertTrue(ModernBackgroundStyle.BLURRED_ARTWORK.supportsBlur)
+        assertTrue(ModernBackgroundStyle.DETAILED_ARTWORK.supportsBlur)
+        assertTrue(ModernBackgroundStyle.ALBUM_GRADIENT.supportsDimming)
+        assertFalse(ModernBackgroundStyle.PURE_BLACK.supportsBlur)
+        assertFalse(ModernBackgroundStyle.PURE_BLACK.supportsDimming)
+        assertFalse(ModernBackgroundStyle.SOLID_COLOR.supportsBlur)
+        assertFalse(ModernBackgroundStyle.SOLID_COLOR.supportsDimming)
     }
 
     private data class StyleExpectation(

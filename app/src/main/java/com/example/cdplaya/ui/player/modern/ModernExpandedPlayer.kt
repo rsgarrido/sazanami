@@ -46,7 +46,7 @@ internal fun ModernExpandedPlayer(
     previousPreviewSong: Song? = null,
     nextPreviewSong: Song? = null,
     artworkTransitionStyle: ModernArtworkTransitionStyle = ModernArtworkTransitionStyle.SLIDE,
-    seekbarStyle: ModernSeekbarStyle = ModernSeekbarStyle.CLASSIC_BAR,
+    appearance: ModernPlayerAppearance = ModernPlayerAppearance.Default,
     waveformData: WaveformData? = null,
     isPlaying: Boolean,
     isShuffleEnabled: Boolean,
@@ -204,7 +204,8 @@ internal fun ModernExpandedPlayer(
                 ) {
                     ModernPlayerBackground(
                         currentSong = currentSong,
-                        style = style
+                        style = style,
+                        appearance = appearance.background
                     )
                 }
             }
@@ -277,7 +278,7 @@ internal fun ModernExpandedPlayer(
                     } else {
                         {}
                     },
-                    seekbarStyle = seekbarStyle,
+                    appearance = appearance.seekbar,
                     waveformSeed = "${currentSong.id}|${currentSong.filePath}|${currentSong.title}",
                     waveformData = waveformData,
                     style = style,

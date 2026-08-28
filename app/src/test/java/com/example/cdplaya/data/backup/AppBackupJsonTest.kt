@@ -88,6 +88,12 @@ class AppBackupJsonTest {
         assertEquals(AppBackupJson.CURRENT_SCHEMA_VERSION, decoded.schemaVersion)
         assertEquals("slide", decoded.preferences.modernArtworkTransitionStyle)
         assertEquals("classic_bar", decoded.preferences.modernSeekbarStyle)
+        assertEquals("standard", decoded.preferences.modernWaveformSize)
+        assertEquals("balanced", decoded.preferences.modernWaveformDensity)
+        assertEquals("white", decoded.preferences.modernSeekbarColorMode)
+        assertEquals("blurred_artwork", decoded.preferences.modernBackgroundStyle)
+        assertEquals("medium", decoded.preferences.modernBlurStrength)
+        assertEquals("medium", decoded.preferences.modernDimmingStrength)
         assertEquals(emptyMap<String, BackupPlayerThemeTokenOverrides>(), decoded.preferences.playerThemeTokenOverrides)
         assertEquals("list", decoded.preferences.songsViewMode)
         assertEquals(2, decoded.preferences.songsGridColumnCount)
@@ -111,6 +117,12 @@ class AppBackupJsonTest {
             preserveAlbumTransitions = false,
             modernArtworkTransitionStyle = "cover_flow",
             modernSeekbarStyle = "waveform_glow",
+            modernWaveformSize = "tall",
+            modernWaveformDensity = "detailed",
+            modernSeekbarColorMode = "app_accent",
+            modernBackgroundStyle = "pure_black",
+            modernBlurStrength = "high",
+            modernDimmingStrength = "low",
             playerThemeTokenOverrides = mapOf(
                 "retro_rack" to BackupPlayerThemeTokenOverrides(
                     shellArgb = 0xFF010203L,
@@ -502,10 +514,13 @@ class AppBackupJsonTest {
     }
 
     @Test
-    fun encodedBackup_doesNotContainWaveformOrDerivedCacheData() {
+    fun encodedBackup_containsAppearanceButNotWaveformAnalysisOrDerivedCacheData() {
         val encoded = AppBackupJson.encodeBackup(emptyBackup())
 
-        assertTrue(!encoded.contains("waveform", ignoreCase = true))
+        assertTrue(encoded.contains("modernWaveformSize"))
+        assertTrue(!encoded.contains("waveformData", ignoreCase = true))
+        assertTrue(!encoded.contains("amplitudes", ignoreCase = true))
+        assertTrue(!encoded.contains("sourceKey", ignoreCase = true))
         assertTrue(!encoded.contains("cache", ignoreCase = true))
     }
 

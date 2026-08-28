@@ -39,7 +39,7 @@ internal fun ModernPlayerSeekBar(
     currentPosition: Int,
     duration: Int,
     onSeekChange: (Int) -> Unit,
-    seekbarStyle: ModernSeekbarStyle,
+    appearance: ModernSeekbarAppearance,
     waveformSeed: String,
     modifier: Modifier = Modifier,
     waveformData: WaveformData? = null,
@@ -51,11 +51,17 @@ internal fun ModernPlayerSeekBar(
     )
 
     Column(modifier = modifier.fillMaxWidth()) {
+    val seekbarStyle = appearance.style
+    val activeColor = when (appearance.colorMode) {
+        ModernSeekbarColorMode.WHITE -> style.contentColor
+        ModernSeekbarColorMode.APP_ACCENT -> style.accentColor
+    }
     when (seekbarStyle) {
         ModernSeekbarStyle.CLASSIC_BAR -> ClassicSeekbar(
             safePosition = values.sliderPosition,
             safeDuration = values.sliderDuration,
             onSeekChange = onSeekChange,
+            activeColor = activeColor,
             style = style
         )
 
@@ -64,12 +70,12 @@ internal fun ModernPlayerSeekBar(
             safeDuration = values.sliderDuration,
             onSeekChange = onSeekChange,
             thumbSize = 8.dp,
-            thumbColor = style.contentColor
+            thumbColor = activeColor
         ) { sliderProgress ->
             RoundedTrack(
                 progress = sliderProgress,
                 height = 2.dp,
-                activeColor = style.contentColor,
+                activeColor = activeColor,
                 inactiveColor = style.inactiveTrackColor
             )
         }
@@ -79,12 +85,12 @@ internal fun ModernPlayerSeekBar(
             safeDuration = values.sliderDuration,
             onSeekChange = onSeekChange,
             thumbSize = 20.dp,
-            thumbColor = style.contentColor
+            thumbColor = activeColor
         ) { sliderProgress ->
             RoundedTrack(
                 progress = sliderProgress,
                 height = 12.dp,
-                activeColor = style.contentColor,
+                activeColor = activeColor,
                 inactiveColor = style.inactiveTrackColor
             )
         }
@@ -98,14 +104,17 @@ internal fun ModernPlayerSeekBar(
         ) { sliderProgress ->
             SegmentedTrack(
                 progress = sliderProgress,
-                activeColor = style.contentColor,
+                activeColor = activeColor,
                 inactiveColor = style.inactiveTrackColor
             )
         }
 
         ModernSeekbarStyle.WAVEFORM_PREVIEW -> {
-            val fallbackBars = remember(waveformSeed) {
-                generateWaveformPreviewBars(waveformSeed)
+            val fallbackBars = remember(waveformSeed, appearance.waveformDensity) {
+                generateWaveformPreviewBars(
+                    waveformSeed,
+                    appearance.waveformDensity.barCount
+                )
             }
             val bars = rememberAnimatedWaveformBars(
                 fallbackBars = fallbackBars,
@@ -121,15 +130,20 @@ internal fun ModernPlayerSeekBar(
                 WaveformPreviewTrack(
                     progress = sliderProgress,
                     bars = bars,
-                    activeColor = style.contentColor,
-                    inactiveColor = style.inactiveTrackColor
+                    activeColor = activeColor,
+                    inactiveColor = style.inactiveTrackColor,
+                    waveformSize = appearance.waveformSize,
+                    density = appearance.waveformDensity
                 )
             }
         }
 
         ModernSeekbarStyle.WAVEFORM_PEAKS -> {
-            val fallbackBars = remember(waveformSeed) {
-                generateWaveformPeaksBars(waveformSeed)
+            val fallbackBars = remember(waveformSeed, appearance.waveformDensity) {
+                generateWaveformPeaksBars(
+                    waveformSeed,
+                    appearance.waveformDensity.barCount
+                )
             }
             val bars = rememberAnimatedWaveformBars(
                 fallbackBars = fallbackBars,
@@ -145,15 +159,20 @@ internal fun ModernPlayerSeekBar(
                 WaveformPeaksTrack(
                     progress = sliderProgress,
                     bars = bars,
-                    activeColor = style.contentColor,
-                    inactiveColor = style.inactiveTrackColor
+                    activeColor = activeColor,
+                    inactiveColor = style.inactiveTrackColor,
+                    waveformSize = appearance.waveformSize,
+                    density = appearance.waveformDensity
                 )
             }
         }
 
         ModernSeekbarStyle.WAVEFORM_GLOW -> {
-            val fallbackBars = remember(waveformSeed) {
-                generateWaveformGlowBars(waveformSeed)
+            val fallbackBars = remember(waveformSeed, appearance.waveformDensity) {
+                generateWaveformGlowBars(
+                    waveformSeed,
+                    appearance.waveformDensity.barCount
+                )
             }
             val bars = rememberAnimatedWaveformBars(
                 fallbackBars = fallbackBars,
@@ -169,8 +188,10 @@ internal fun ModernPlayerSeekBar(
                 WaveformGlowTrack(
                     progress = sliderProgress,
                     bars = bars,
-                    activeColor = style.contentColor,
-                    inactiveColor = style.inactiveTrackColor
+                    activeColor = activeColor,
+                    inactiveColor = style.inactiveTrackColor,
+                    waveformSize = appearance.waveformSize,
+                    density = appearance.waveformDensity
                 )
             }
         }
@@ -273,6 +294,7 @@ private fun ClassicSeekbar(
     safePosition: Int,
     safeDuration: Int,
     onSeekChange: (Int) -> Unit,
+    activeColor: Color,
     style: ModernPlayerStyle
 ) {
     Slider(
@@ -282,8 +304,8 @@ private fun ClassicSeekbar(
         },
         valueRange = 0f..safeDuration.toFloat(),
         colors = SliderDefaults.colors(
-            thumbColor = style.contentColor,
-            activeTrackColor = style.contentColor,
+            thumbColor = activeColor,
+            activeTrackColor = activeColor,
             inactiveTrackColor = style.inactiveTrackColor
         ),
         modifier = Modifier.fillMaxWidth()
@@ -387,16 +409,18 @@ private fun WaveformPreviewTrack(
     progress: Float,
     bars: List<Float>,
     activeColor: Color,
-    inactiveColor: Color
+    inactiveColor: Color,
+    waveformSize: ModernWaveformSize,
+    density: ModernWaveformDensity
 ) {
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
-            .height(32.dp)
+            .height(waveformSize.trackHeightDp.dp)
     ) {
         if (bars.isEmpty()) return@Canvas
 
-        val gap = 2.dp.toPx()
+        val gap = density.gapDp.dp.toPx()
         drawCenteredWaveformBars(bars, gap, inactiveColor)
         clipRect(right = size.width * progress) {
             drawCenteredWaveformBars(bars, gap, activeColor)
@@ -409,16 +433,18 @@ private fun WaveformPeaksTrack(
     progress: Float,
     bars: List<Float>,
     activeColor: Color,
-    inactiveColor: Color
+    inactiveColor: Color,
+    waveformSize: ModernWaveformSize,
+    density: ModernWaveformDensity
 ) {
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
-            .height(36.dp)
+            .height(waveformSize.trackHeightDp.dp)
     ) {
         if (bars.isEmpty()) return@Canvas
 
-        val gap = 2.dp.toPx()
+        val gap = density.gapDp.dp.toPx()
         val centerGap = 1.dp.toPx()
         drawRoundRect(
             color = inactiveColor.copy(alpha = inactiveColor.alpha * 0.55f),
@@ -448,16 +474,18 @@ private fun WaveformGlowTrack(
     progress: Float,
     bars: List<Float>,
     activeColor: Color,
-    inactiveColor: Color
+    inactiveColor: Color,
+    waveformSize: ModernWaveformSize,
+    density: ModernWaveformDensity
 ) {
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
-            .height(32.dp)
+            .height(waveformSize.trackHeightDp.dp)
     ) {
         if (bars.isEmpty()) return@Canvas
 
-        val gap = 1.dp.toPx()
+        val gap = density.gapDp.dp.toPx()
         drawCenteredWaveformBars(
             bars = bars,
             gap = gap,
@@ -569,20 +597,20 @@ internal fun generateWaveformPreviewBars(
     )
 }
 
-internal fun generateWaveformPeaksBars(seed: String): List<Float> {
+internal fun generateWaveformPeaksBars(seed: String, barCount: Int = 42): List<Float> {
     return generateDeterministicWaveformBars(
         seed = "$seed|peaks",
-        barCount = 42,
+        barCount = barCount,
         minimumAmplitude = 0.12f,
         maximumAmplitude = 1f,
         contourDepth = 0.12f
     )
 }
 
-internal fun generateWaveformGlowBars(seed: String): List<Float> {
+internal fun generateWaveformGlowBars(seed: String, barCount: Int = 72): List<Float> {
     return generateDeterministicWaveformBars(
         seed = "$seed|glow",
-        barCount = 72,
+        barCount = barCount,
         minimumAmplitude = 0.2f,
         maximumAmplitude = 0.78f,
         contourDepth = 0.22f

@@ -32,7 +32,7 @@ import com.example.cdplaya.ui.player.classicwheel.resolveClassicWheelSharedGeome
 import com.example.cdplaya.ui.player.classicwheel.classicWheelMorphTravelDistance
 import com.example.cdplaya.ui.player.modern.ModernExpandedPlayer
 import com.example.cdplaya.ui.player.modern.ModernArtworkTransitionStyle
-import com.example.cdplaya.ui.player.modern.ModernSeekbarStyle
+import com.example.cdplaya.ui.player.modern.ModernPlayerAppearance
 import com.example.cdplaya.ui.player.modern.selectNearbyWaveformSongs
 import com.example.cdplaya.ui.player.pocketcassette.PocketCassetteExpandedPlayer
 import com.example.cdplaya.ui.player.pocketcassette.PocketCassettePlayerMorph
@@ -82,7 +82,7 @@ fun ExpandedPlayerThemeHost(
     previousPreviewSong: Song?,
     nextPreviewSong: Song?,
     modernArtworkTransitionStyle: ModernArtworkTransitionStyle,
-    modernSeekbarStyle: ModernSeekbarStyle,
+    modernPlayerAppearance: ModernPlayerAppearance,
     isVisualizerWorkAllowed: Boolean,
     isPlaying: Boolean,
     isShuffleEnabled: Boolean,
@@ -116,14 +116,14 @@ fun ExpandedPlayerThemeHost(
 ) {
     val shouldLoadWaveform = shouldLoadExpandedPlayerWaveform(
         selectedPlayerTheme = selectedPlayerTheme,
-        modernSeekbarStyle = modernSeekbarStyle
+        modernSeekbarStyle = modernPlayerAppearance.seekbar.style
     ) && when (selectedPlayerTheme) {
         PlayerTheme.DEFAULT -> shouldRunDefaultExpandedWork(playerMorphState.progress)
         PlayerTheme.POCKET_FLIP -> shouldRunPocketFlipExpandedWork(playerMorphState.progress)
         else -> true
     }
     val shouldPrefetchWaveforms = selectedPlayerTheme == PlayerTheme.DEFAULT &&
-            modernSeekbarStyle.usesWaveformData
+            modernPlayerAppearance.seekbar.style.usesWaveformData
     val nearbyWaveformSongs = remember(
         shouldPrefetchWaveforms,
         currentSong?.id,
@@ -231,7 +231,7 @@ fun ExpandedPlayerThemeHost(
                             previousPreviewSong = previousPreviewSong,
                             nextPreviewSong = nextPreviewSong,
                             artworkTransitionStyle = modernArtworkTransitionStyle,
-                            seekbarStyle = modernSeekbarStyle,
+                            appearance = modernPlayerAppearance,
                             waveformData = waveformData,
                             isPlaying = isPlaying,
                             isShuffleEnabled = isShuffleEnabled,

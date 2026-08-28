@@ -91,7 +91,153 @@ enum class ModernSeekbarStyle(
         fun fromStorageValue(storageValue: String?): ModernSeekbarStyle {
             return values().firstOrNull { style ->
                 style.storageValue == storageValue
-            } ?: CLASSIC_BAR
+            } ?: WAVEFORM_PREVIEW
         }
+    }
+}
+
+enum class ModernWaveformSize(
+    val storageValue: String,
+    val displayName: String,
+    internal val trackHeightDp: Int
+) {
+    COMPACT("compact", "Compact", 24),
+    STANDARD("standard", "Standard", 32),
+    TALL("tall", "Tall", 44);
+
+    companion object {
+        fun fromStorageValue(storageValue: String?): ModernWaveformSize =
+            entries.firstOrNull { it.storageValue == storageValue } ?: STANDARD
+    }
+}
+
+enum class ModernWaveformDensity(
+    val storageValue: String,
+    val displayName: String,
+    internal val barCount: Int,
+    internal val gapDp: Int
+) {
+    SPARSE("sparse", "Sparse", 32, 3),
+    BALANCED("balanced", "Balanced", 48, 2),
+    DETAILED("detailed", "Detailed", 72, 1);
+
+    companion object {
+        fun fromStorageValue(storageValue: String?): ModernWaveformDensity =
+            entries.firstOrNull { it.storageValue == storageValue } ?: BALANCED
+    }
+}
+
+enum class ModernSeekbarColorMode(
+    val storageValue: String,
+    val displayName: String
+) {
+    WHITE("white", "White"),
+    APP_ACCENT("app_accent", "App Accent");
+
+    companion object {
+        fun fromStorageValue(storageValue: String?): ModernSeekbarColorMode =
+            entries.firstOrNull { it.storageValue == storageValue } ?: WHITE
+    }
+}
+
+enum class ModernBackgroundStyle(
+    val storageValue: String,
+    val displayName: String,
+    val description: String,
+    val supportsBlur: Boolean,
+    val supportsDimming: Boolean
+) {
+    BLURRED_ARTWORK(
+        "blurred_artwork",
+        "Blurred Artwork",
+        "Immersive album artwork with a soft cinematic blur.",
+        supportsBlur = true,
+        supportsDimming = true
+    ),
+    DETAILED_ARTWORK(
+        "detailed_artwork",
+        "Detailed Artwork",
+        "Sharper album artwork with a readability overlay.",
+        supportsBlur = true,
+        supportsDimming = true
+    ),
+    ALBUM_GRADIENT(
+        "album_gradient",
+        "Album Gradient",
+        "A restrained gradient based on the current app accent.",
+        supportsBlur = false,
+        supportsDimming = true
+    ),
+    SOLID_COLOR(
+        "solid_color",
+        "Solid Color",
+        "The current app surface color without artwork.",
+        supportsBlur = false,
+        supportsDimming = false
+    ),
+    PURE_BLACK(
+        "pure_black",
+        "Pure Black",
+        "True black for a focused OLED-friendly background.",
+        supportsBlur = false,
+        supportsDimming = false
+    );
+
+    companion object {
+        fun fromStorageValue(storageValue: String?): ModernBackgroundStyle =
+            entries.firstOrNull { it.storageValue == storageValue } ?: BLURRED_ARTWORK
+    }
+}
+
+enum class ModernBlurStrength(
+    val storageValue: String,
+    val displayName: String,
+    internal val blurredArtworkRadiusDp: Int,
+    internal val detailedArtworkRadiusDp: Int
+) {
+    LOW("low", "Low", 24, 2),
+    MEDIUM("medium", "Medium", 42, 6),
+    HIGH("high", "High", 64, 10);
+
+    companion object {
+        fun fromStorageValue(storageValue: String?): ModernBlurStrength =
+            entries.firstOrNull { it.storageValue == storageValue } ?: MEDIUM
+    }
+}
+
+enum class ModernDimmingStrength(
+    val storageValue: String,
+    val displayName: String,
+    internal val overlayAlpha: Float
+) {
+    LOW("low", "Low", 0.30f),
+    MEDIUM("medium", "Medium", 0.44f),
+    HIGH("high", "High", 0.58f);
+
+    companion object {
+        fun fromStorageValue(storageValue: String?): ModernDimmingStrength =
+            entries.firstOrNull { it.storageValue == storageValue } ?: MEDIUM
+    }
+}
+
+data class ModernSeekbarAppearance(
+    val style: ModernSeekbarStyle = ModernSeekbarStyle.WAVEFORM_PREVIEW,
+    val waveformSize: ModernWaveformSize = ModernWaveformSize.STANDARD,
+    val waveformDensity: ModernWaveformDensity = ModernWaveformDensity.BALANCED,
+    val colorMode: ModernSeekbarColorMode = ModernSeekbarColorMode.WHITE
+)
+
+data class ModernBackgroundAppearance(
+    val style: ModernBackgroundStyle = ModernBackgroundStyle.BLURRED_ARTWORK,
+    val blurStrength: ModernBlurStrength = ModernBlurStrength.MEDIUM,
+    val dimmingStrength: ModernDimmingStrength = ModernDimmingStrength.MEDIUM
+)
+
+data class ModernPlayerAppearance(
+    val seekbar: ModernSeekbarAppearance = ModernSeekbarAppearance(),
+    val background: ModernBackgroundAppearance = ModernBackgroundAppearance()
+) {
+    companion object {
+        val Default = ModernPlayerAppearance()
     }
 }

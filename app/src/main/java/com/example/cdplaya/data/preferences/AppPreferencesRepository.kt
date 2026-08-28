@@ -40,7 +40,16 @@ import com.example.cdplaya.ui.library.LibraryGridColumns
 import com.example.cdplaya.ui.library.LibraryViewCategory
 import com.example.cdplaya.ui.library.LibraryViewMode
 import com.example.cdplaya.ui.player.modern.ModernArtworkTransitionStyle
+import com.example.cdplaya.ui.player.modern.ModernBackgroundAppearance
+import com.example.cdplaya.ui.player.modern.ModernBackgroundStyle
+import com.example.cdplaya.ui.player.modern.ModernBlurStrength
+import com.example.cdplaya.ui.player.modern.ModernDimmingStrength
+import com.example.cdplaya.ui.player.modern.ModernPlayerAppearance
+import com.example.cdplaya.ui.player.modern.ModernSeekbarAppearance
+import com.example.cdplaya.ui.player.modern.ModernSeekbarColorMode
 import com.example.cdplaya.ui.player.modern.ModernSeekbarStyle
+import com.example.cdplaya.ui.player.modern.ModernWaveformDensity
+import com.example.cdplaya.ui.player.modern.ModernWaveformSize
 import com.example.cdplaya.ui.player.theme.PlayerThemeTokenOverrides
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
@@ -62,7 +71,7 @@ data class AppPreferencesState(
     val playerThemeTokenOverrides: Map<PlayerTheme, PlayerThemeTokenOverrides> = emptyMap(),
     val modernArtworkTransitionStyle: ModernArtworkTransitionStyle =
         ModernArtworkTransitionStyle.SLIDE,
-    val modernSeekbarStyle: ModernSeekbarStyle = ModernSeekbarStyle.CLASSIC_BAR,
+    val modernPlayerAppearance: ModernPlayerAppearance = ModernPlayerAppearance.Default,
     val replayGainMode: ReplayGainMode = ReplayGainMode.OFF,
     val audioOffloadPreference: AudioOffloadPreference = AudioOffloadPreference.DISABLED,
     val smoothPlayPauseEnabled: Boolean = true,
@@ -84,7 +93,10 @@ data class AppPreferencesState(
     val homePins: List<HomePin> = emptyList(),
     val showRecentlyAddedOnHome: Boolean = true,
     val isLoaded: Boolean = false
-)
+) {
+    val modernSeekbarStyle: ModernSeekbarStyle
+        get() = modernPlayerAppearance.seekbar.style
+}
 
 class AppPreferencesRepository private constructor(
     private val dataStore: DataStore<Preferences>,
@@ -109,6 +121,38 @@ class AppPreferencesRepository private constructor(
 
     suspend fun setModernSeekbarStyle(style: ModernSeekbarStyle) = edit {
         it[Keys.modernSeekbarStyle] = style.storageValue
+    }
+
+    suspend fun setModernPlayerAppearance(appearance: ModernPlayerAppearance) = edit {
+        it.writeModernPlayerAppearance(appearance)
+    }
+
+    suspend fun setModernWaveformSize(size: ModernWaveformSize) = edit {
+        it[Keys.modernWaveformSize] = size.storageValue
+    }
+
+    suspend fun setModernWaveformDensity(density: ModernWaveformDensity) = edit {
+        it[Keys.modernWaveformDensity] = density.storageValue
+    }
+
+    suspend fun setModernSeekbarColorMode(mode: ModernSeekbarColorMode) = edit {
+        it[Keys.modernSeekbarColorMode] = mode.storageValue
+    }
+
+    suspend fun setModernBackgroundStyle(style: ModernBackgroundStyle) = edit {
+        it[Keys.modernBackgroundStyle] = style.storageValue
+    }
+
+    suspend fun setModernBlurStrength(strength: ModernBlurStrength) = edit {
+        it[Keys.modernBlurStrength] = strength.storageValue
+    }
+
+    suspend fun setModernDimmingStrength(strength: ModernDimmingStrength) = edit {
+        it[Keys.modernDimmingStrength] = strength.storageValue
+    }
+
+    suspend fun resetModernPlayerAppearance() = edit { preferences ->
+        preferences.clearModernPlayerAppearance()
     }
 
     suspend fun setReplayGainMode(mode: ReplayGainMode) = edit {
@@ -484,7 +528,7 @@ class AppPreferencesRepository private constructor(
         preferences[Keys.selectedPlayerTheme] = restored.selectedPlayerTheme.id
         preferences[Keys.modernArtworkTransitionStyle] =
             restored.modernArtworkTransitionStyle.storageValue
-        preferences[Keys.modernSeekbarStyle] = restored.modernSeekbarStyle.storageValue
+        preferences.writeModernPlayerAppearance(restored.modernPlayerAppearance)
         preferences[Keys.replayGainMode] = restored.replayGainMode.name
         preferences[Keys.audioOffloadPreference] = restored.audioOffloadPreference.name
         preferences[Keys.smoothPlayPauseEnabled] = restored.smoothPlayPauseEnabled
@@ -576,7 +620,33 @@ internal fun decodeAppPreferences(preferences: Preferences): AppPreferencesState
         modernArtworkTransitionStyle = ModernArtworkTransitionStyle.fromStorageValue(
             preferences[Keys.modernArtworkTransitionStyle]
         ),
-        modernSeekbarStyle = ModernSeekbarStyle.fromStorageValue(preferences[Keys.modernSeekbarStyle]),
+        modernPlayerAppearance = ModernPlayerAppearance(
+            seekbar = ModernSeekbarAppearance(
+                style = ModernSeekbarStyle.fromStorageValue(
+                    preferences[Keys.modernSeekbarStyle]
+                ),
+                waveformSize = ModernWaveformSize.fromStorageValue(
+                    preferences[Keys.modernWaveformSize]
+                ),
+                waveformDensity = ModernWaveformDensity.fromStorageValue(
+                    preferences[Keys.modernWaveformDensity]
+                ),
+                colorMode = ModernSeekbarColorMode.fromStorageValue(
+                    preferences[Keys.modernSeekbarColorMode]
+                )
+            ),
+            background = ModernBackgroundAppearance(
+                style = ModernBackgroundStyle.fromStorageValue(
+                    preferences[Keys.modernBackgroundStyle]
+                ),
+                blurStrength = ModernBlurStrength.fromStorageValue(
+                    preferences[Keys.modernBlurStrength]
+                ),
+                dimmingStrength = ModernDimmingStrength.fromStorageValue(
+                    preferences[Keys.modernDimmingStrength]
+                )
+            )
+        ),
         replayGainMode = runCatching {
             ReplayGainMode.valueOf(preferences[Keys.replayGainMode].orEmpty())
         }.getOrDefault(ReplayGainMode.OFF),
@@ -631,6 +701,33 @@ private fun MutablePreferences.writeHomePins(pins: List<HomePin>) {
         this[Keys.homePins] = preferencesJson.encodeToString(sanitized)
     }
 }
+
+internal fun MutablePreferences.writeModernPlayerAppearance(
+    appearance: ModernPlayerAppearance
+) {
+    this[Keys.modernSeekbarStyle] = appearance.seekbar.style.storageValue
+    this[Keys.modernWaveformSize] = appearance.seekbar.waveformSize.storageValue
+    this[Keys.modernWaveformDensity] = appearance.seekbar.waveformDensity.storageValue
+    this[Keys.modernSeekbarColorMode] = appearance.seekbar.colorMode.storageValue
+    this[Keys.modernBackgroundStyle] = appearance.background.style.storageValue
+    this[Keys.modernBlurStrength] = appearance.background.blurStrength.storageValue
+    this[Keys.modernDimmingStrength] = appearance.background.dimmingStrength.storageValue
+}
+
+internal fun MutablePreferences.clearModernPlayerAppearance() {
+    modernAppearanceKeys.forEach(::remove)
+}
+
+private val modernAppearanceKeys: List<Preferences.Key<String>>
+    get() = listOf(
+        Keys.modernSeekbarStyle,
+        Keys.modernWaveformSize,
+        Keys.modernWaveformDensity,
+        Keys.modernSeekbarColorMode,
+        Keys.modernBackgroundStyle,
+        Keys.modernBlurStrength,
+        Keys.modernDimmingStrength
+    )
 
 private fun emptyOverrides() = PlayerThemeTokenOverrides()
 
@@ -986,6 +1083,12 @@ private object Keys {
     val selectedPlayerTheme = stringPreferencesKey("selected_player_theme")
     val modernArtworkTransitionStyle = stringPreferencesKey("artwork_transition_style")
     val modernSeekbarStyle = stringPreferencesKey("seekbar_style")
+    val modernWaveformSize = stringPreferencesKey("modern_waveform_size")
+    val modernWaveformDensity = stringPreferencesKey("modern_waveform_density")
+    val modernSeekbarColorMode = stringPreferencesKey("modern_seekbar_color_mode")
+    val modernBackgroundStyle = stringPreferencesKey("modern_background_style")
+    val modernBlurStrength = stringPreferencesKey("modern_blur_strength")
+    val modernDimmingStrength = stringPreferencesKey("modern_dimming_strength")
     val replayGainMode = stringPreferencesKey("replay_gain_mode")
     val audioOffloadPreference = stringPreferencesKey("audio_offload_preference")
     val smoothPlayPauseEnabled = booleanPreferencesKey("smooth_play_pause_enabled")

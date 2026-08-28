@@ -31,7 +31,16 @@ import com.example.cdplaya.player.equalizer.parametric.slopeOrNull
 import com.example.cdplaya.ui.library.LibraryViewCategory
 import com.example.cdplaya.ui.library.LibraryViewMode
 import com.example.cdplaya.ui.player.modern.ModernArtworkTransitionStyle
+import com.example.cdplaya.ui.player.modern.ModernBackgroundAppearance
+import com.example.cdplaya.ui.player.modern.ModernBackgroundStyle
+import com.example.cdplaya.ui.player.modern.ModernBlurStrength
+import com.example.cdplaya.ui.player.modern.ModernDimmingStrength
+import com.example.cdplaya.ui.player.modern.ModernPlayerAppearance
+import com.example.cdplaya.ui.player.modern.ModernSeekbarAppearance
+import com.example.cdplaya.ui.player.modern.ModernSeekbarColorMode
 import com.example.cdplaya.ui.player.modern.ModernSeekbarStyle
+import com.example.cdplaya.ui.player.modern.ModernWaveformDensity
+import com.example.cdplaya.ui.player.modern.ModernWaveformSize
 import com.example.cdplaya.ui.player.theme.PlayerThemeTokenField
 import com.example.cdplaya.ui.player.theme.PlayerThemeTokenOverrides
 import com.example.cdplaya.ui.player.theme.customizationOptions
@@ -83,6 +92,18 @@ class BackupRepository(
                 modernArtworkTransitionStyle =
                     appPreferences.modernArtworkTransitionStyle.storageValue,
                 modernSeekbarStyle = appPreferences.modernSeekbarStyle.storageValue,
+                modernWaveformSize =
+                    appPreferences.modernPlayerAppearance.seekbar.waveformSize.storageValue,
+                modernWaveformDensity =
+                    appPreferences.modernPlayerAppearance.seekbar.waveformDensity.storageValue,
+                modernSeekbarColorMode =
+                    appPreferences.modernPlayerAppearance.seekbar.colorMode.storageValue,
+                modernBackgroundStyle =
+                    appPreferences.modernPlayerAppearance.background.style.storageValue,
+                modernBlurStrength =
+                    appPreferences.modernPlayerAppearance.background.blurStrength.storageValue,
+                modernDimmingStrength =
+                    appPreferences.modernPlayerAppearance.background.dimmingStrength.storageValue,
                 playerThemeTokenOverrides = createThemeTokenBackup(appPreferences),
                 songsViewMode = appPreferences.songsViewMode.storageValue,
                 albumsViewMode = appPreferences.albumsViewMode.storageValue,
@@ -239,8 +260,32 @@ class BackupRepository(
                 modernArtworkTransitionStyle = ModernArtworkTransitionStyle.fromStorageValue(
                     preferences.modernArtworkTransitionStyle
                 ),
-                modernSeekbarStyle = ModernSeekbarStyle.fromStorageValue(
-                    preferences.modernSeekbarStyle
+                modernPlayerAppearance = ModernPlayerAppearance(
+                    seekbar = ModernSeekbarAppearance(
+                        style = ModernSeekbarStyle.fromStorageValue(
+                            preferences.modernSeekbarStyle
+                        ),
+                        waveformSize = ModernWaveformSize.fromStorageValue(
+                            preferences.modernWaveformSize
+                        ),
+                        waveformDensity = ModernWaveformDensity.fromStorageValue(
+                            preferences.modernWaveformDensity
+                        ),
+                        colorMode = ModernSeekbarColorMode.fromStorageValue(
+                            preferences.modernSeekbarColorMode
+                        )
+                    ),
+                    background = ModernBackgroundAppearance(
+                        style = ModernBackgroundStyle.fromStorageValue(
+                            preferences.modernBackgroundStyle
+                        ),
+                        blurStrength = ModernBlurStrength.fromStorageValue(
+                            preferences.modernBlurStrength
+                        ),
+                        dimmingStrength = ModernDimmingStrength.fromStorageValue(
+                            preferences.modernDimmingStrength
+                        )
+                    )
                 ),
                 replayGainMode = runCatching { ReplayGainMode.valueOf(preferences.replayGainMode) }
                     .getOrDefault(ReplayGainMode.OFF),
