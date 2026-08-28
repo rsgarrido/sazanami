@@ -73,6 +73,7 @@ import com.example.cdplaya.ui.player.modern.resolveDefaultPlayerMorphGeometry
 import com.example.cdplaya.ui.player.modern.rememberModernArtworkCarouselPresentation
 import com.example.cdplaya.ui.player.modern.shouldRunDefaultExpandedWork
 import com.example.cdplaya.ui.player.modern.defaultMorphTravelDistance
+import com.example.cdplaya.ui.player.modern.rememberModernArtworkPalette
 
 @Composable
 fun ExpandedPlayerThemeHost(
@@ -204,6 +205,10 @@ fun ExpandedPlayerThemeHost(
             PlayerTheme.DEFAULT -> {
                 if (currentSong != null) {
                     val modernStyle = ModernPlayerDefaults.style()
+                    val artworkPalette = rememberModernArtworkPalette(
+                        song = currentSong,
+                        fallbackAccent = modernStyle.accentColor
+                    )
                     val geometry = resolveDefaultPlayerMorphGeometry(
                         progress = playerMorphState.progress,
                         endpointBounds = endpointBounds,
@@ -224,7 +229,9 @@ fun ExpandedPlayerThemeHost(
                         artworkTransitionStyle = modernArtworkTransitionStyle,
                         isPlaying = isPlaying,
                         onPlayPauseClick = onPlayPauseClick,
-                        style = modernStyle
+                        style = modernStyle,
+                        appearance = modernPlayerAppearance,
+                        artworkPalette = artworkPalette
                     ) { visualState ->
                         ModernExpandedPlayer(
                             currentSong = currentSong,
@@ -233,6 +240,7 @@ fun ExpandedPlayerThemeHost(
                             artworkTransitionStyle = modernArtworkTransitionStyle,
                             appearance = modernPlayerAppearance,
                             waveformData = waveformData,
+                            artworkPalette = artworkPalette,
                             isPlaying = isPlaying,
                             isShuffleEnabled = isShuffleEnabled,
                             repeatMode = repeatMode,

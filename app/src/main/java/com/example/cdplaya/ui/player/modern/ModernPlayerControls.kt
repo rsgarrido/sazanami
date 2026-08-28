@@ -40,11 +40,18 @@ internal fun ModernPlayerControls(
     onShuffleClick: () -> Unit,
     onRepeatClick: () -> Unit,
     style: ModernPlayerStyle,
+    appearance: ModernControlAppearance = ModernControlAppearance(),
+    artworkPalette: ModernArtworkPalette? = null,
     modifier: Modifier = Modifier,
     primaryControlModifier: Modifier = Modifier,
     expandedControlsAlpha: Float = 1f,
     controlsEnabled: Boolean = true
 ) {
+    val accentColor = resolveModernControlAccentColor(
+        appearance = appearance,
+        artworkPalette = artworkPalette,
+        style = style
+    )
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -53,28 +60,33 @@ internal fun ModernPlayerControls(
         ModernPlayerModeIconButton(
             onClick = { if (controlsEnabled) onShuffleClick() },
             modifier = Modifier.graphicsLayer { alpha = expandedControlsAlpha },
-            style = style
+            style = style,
+            appearance = appearance,
+            accentColor = accentColor
         ) {
             Icon(
                 imageVector = Icons.Filled.Shuffle,
                 contentDescription = if (isShuffleEnabled) "Shuffle on" else "Shuffle off",
                 tint = if (isShuffleEnabled) {
-                    style.accentColor
+                    accentColor
                 } else {
                     style.inactiveControlColor
                 }
             )
         }
 
-        IconButton(
+        ModernPlayerNavigationIconButton(
             onClick = { if (controlsEnabled) onPreviousClick() },
-            modifier = Modifier.graphicsLayer { alpha = expandedControlsAlpha }
+            modifier = Modifier.graphicsLayer { alpha = expandedControlsAlpha },
+            appearance = appearance,
+            accentColor = accentColor,
+            style = style
         ) {
             Icon(
                 imageVector = Icons.Filled.SkipPrevious,
                 contentDescription = "Previous song",
                 tint = style.contentColor,
-                modifier = Modifier.size(38.dp)
+                modifier = Modifier.size(appearance.size.navigationIconSizeDp.dp)
             )
         }
 
@@ -82,25 +94,32 @@ internal fun ModernPlayerControls(
             isPlaying = isPlaying,
             onClick = { if (controlsEnabled) onPlayPauseClick() },
             style = style,
+            appearance = appearance,
+            accentColor = accentColor,
             modifier = primaryControlModifier
         )
 
-        IconButton(
+        ModernPlayerNavigationIconButton(
             onClick = { if (controlsEnabled) onNextClick() },
-            modifier = Modifier.graphicsLayer { alpha = expandedControlsAlpha }
+            modifier = Modifier.graphicsLayer { alpha = expandedControlsAlpha },
+            appearance = appearance,
+            accentColor = accentColor,
+            style = style
         ) {
             Icon(
                 imageVector = Icons.Filled.SkipNext,
                 contentDescription = "Next song",
                 tint = style.contentColor,
-                modifier = Modifier.size(38.dp)
+                modifier = Modifier.size(appearance.size.navigationIconSizeDp.dp)
             )
         }
 
         ModernPlayerModeIconButton(
             onClick = { if (controlsEnabled) onRepeatClick() },
             modifier = Modifier.graphicsLayer { alpha = expandedControlsAlpha },
-            style = style
+            style = style,
+            appearance = appearance,
+            accentColor = accentColor
         ) {
             Icon(
                 imageVector = if (repeatMode == RepeatMode.ONE) {
@@ -116,7 +135,7 @@ internal fun ModernPlayerControls(
                 tint = if (repeatMode == RepeatMode.OFF) {
                     style.inactiveControlColor
                 } else {
-                    style.accentColor
+                    accentColor
                 }
             )
         }
@@ -128,12 +147,13 @@ private fun ModernPlayerPlayPauseButton(
     isPlaying: Boolean,
     onClick: () -> Unit,
     style: ModernPlayerStyle,
+    appearance: ModernControlAppearance,
+    accentColor: Color,
     modifier: Modifier = Modifier,
 ) {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = modifier
-            .size(82.dp)
+    val containerModifier = when (appearance.style) {
+        ModernControlStyle.MINIMAL -> Modifier.clip(style.primaryControlShape)
+        ModernControlStyle.GLASS -> Modifier
             .shadow(
                 elevation = 14.dp,
                 shape = style.primaryControlShape,
@@ -154,6 +174,26 @@ private fun ModernPlayerPlayPauseButton(
                 color = style.primaryControlSurfaceBorderColor,
                 shape = style.primaryControlShape
             )
+        ModernControlStyle.TONAL -> Modifier
+            .shadow(8.dp, style.primaryControlShape)
+            .clip(style.primaryControlShape)
+            .background(accentColor.copy(alpha = 0.88f))
+            .border(1.dp, accentColor, style.primaryControlShape)
+        ModernControlStyle.OUTLINE -> Modifier
+            .clip(style.primaryControlShape)
+            .border(1.5.dp, accentColor.copy(alpha = 0.9f), style.primaryControlShape)
+    }
+    val iconColor = when (appearance.style) {
+        ModernControlStyle.TONAL -> modernContrastingForeground(accentColor)
+        ModernControlStyle.MINIMAL,
+        ModernControlStyle.GLASS,
+        ModernControlStyle.OUTLINE -> accentColor
+    }
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .size(appearance.size.primarySizeDp.dp)
+            .then(containerModifier)
     ) {
         IconButton(
             onClick = onClick,
@@ -166,8 +206,8 @@ private fun ModernPlayerPlayPauseButton(
                     Icons.Filled.PlayArrow
                 },
                 contentDescription = if (isPlaying) "Pause" else "Play",
-                tint = style.contentColor,
-                modifier = Modifier.size(50.dp)
+                tint = iconColor,
+                modifier = Modifier.size((appearance.size.primarySizeDp * 0.61f).dp)
             )
         }
     }
@@ -177,17 +217,68 @@ private fun ModernPlayerPlayPauseButton(
 private fun ModernPlayerModeIconButton(
     onClick: () -> Unit,
     style: ModernPlayerStyle,
+    appearance: ModernControlAppearance,
+    accentColor: Color,
     modifier: Modifier = Modifier,
     icon: @Composable () -> Unit
 ) {
     Box(
         modifier = modifier
-            .size(48.dp)
-            .clip(style.modeControlShape),
+            .size(appearance.size.modeContainerSizeDp.dp)
+            .then(modernSecondaryControlContainer(appearance, accentColor, style)),
         contentAlignment = Alignment.Center
     ) {
         IconButton(onClick = onClick) {
             icon()
         }
     }
+}
+
+@Composable
+private fun ModernPlayerNavigationIconButton(
+    onClick: () -> Unit,
+    appearance: ModernControlAppearance,
+    accentColor: Color,
+    style: ModernPlayerStyle,
+    modifier: Modifier = Modifier,
+    icon: @Composable () -> Unit
+) {
+    Box(
+        modifier = modifier
+            .size(appearance.size.modeContainerSizeDp.dp)
+            .then(modernSecondaryControlContainer(appearance, accentColor, style)),
+        contentAlignment = Alignment.Center
+    ) {
+        IconButton(onClick = onClick) { icon() }
+    }
+}
+
+private fun modernSecondaryControlContainer(
+    appearance: ModernControlAppearance,
+    accentColor: Color,
+    style: ModernPlayerStyle
+): Modifier = when (appearance.style) {
+    ModernControlStyle.MINIMAL -> Modifier.clip(style.modeControlShape)
+    ModernControlStyle.GLASS -> Modifier
+        .clip(style.modeControlShape)
+        .background(style.primaryControlSurfaceBottomColor.copy(alpha = 0.34f))
+    ModernControlStyle.TONAL -> Modifier
+        .clip(style.modeControlShape)
+        .background(accentColor.copy(alpha = 0.18f))
+    ModernControlStyle.OUTLINE -> Modifier
+        .clip(style.modeControlShape)
+        .border(1.dp, accentColor.copy(alpha = 0.58f), style.modeControlShape)
+}
+
+internal fun resolveModernControlAccentColor(
+    appearance: ModernControlAppearance,
+    artworkPalette: ModernArtworkPalette?,
+    style: ModernPlayerStyle
+): Color = when (appearance.accent) {
+    ModernControlAccent.WHITE -> style.contentColor
+    ModernControlAccent.APP_ACCENT -> style.accentColor
+    ModernControlAccent.ALBUM_DERIVED -> resolveModernAlbumAccent(
+        palette = artworkPalette,
+        fallbackAccent = style.accentColor
+    )
 }

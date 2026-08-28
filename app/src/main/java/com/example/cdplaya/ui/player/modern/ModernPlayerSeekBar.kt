@@ -20,12 +20,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -43,6 +48,7 @@ internal fun ModernPlayerSeekBar(
     waveformSeed: String,
     modifier: Modifier = Modifier,
     waveformData: WaveformData? = null,
+    artworkPalette: ModernArtworkPalette? = null,
     style: ModernPlayerStyle
 ) {
     val values = resolveModernSeekbarValues(
@@ -55,6 +61,10 @@ internal fun ModernPlayerSeekBar(
     val activeColor = when (appearance.colorMode) {
         ModernSeekbarColorMode.WHITE -> style.contentColor
         ModernSeekbarColorMode.APP_ACCENT -> style.accentColor
+        ModernSeekbarColorMode.ALBUM_DERIVED -> resolveModernAlbumAccent(
+            palette = artworkPalette,
+            fallbackAccent = style.accentColor
+        )
     }
     when (seekbarStyle) {
         ModernSeekbarStyle.CLASSIC_BAR -> ClassicSeekbar(
@@ -192,6 +202,62 @@ internal fun ModernPlayerSeekBar(
                     inactiveColor = style.inactiveTrackColor,
                     waveformSize = appearance.waveformSize,
                     density = appearance.waveformDensity
+                )
+            }
+        }
+
+        ModernSeekbarStyle.CONTINUOUS_WAVEFORM -> {
+            val fallbackBars = remember(waveformSeed, appearance.waveformDensity) {
+                generateContinuousWaveformSamples(
+                    seed = waveformSeed,
+                    sampleCount = appearance.waveformDensity.barCount
+                )
+            }
+            val bars = rememberAnimatedWaveformBars(
+                fallbackBars = fallbackBars,
+                waveformData = waveformData
+            )
+            VisualSeekbar(
+                safePosition = values.sliderPosition,
+                safeDuration = values.sliderDuration,
+                onSeekChange = onSeekChange,
+                thumbSize = 1.dp,
+                thumbColor = Color.Transparent
+            ) { sliderProgress ->
+                ContinuousWaveformTrack(
+                    progress = sliderProgress,
+                    samples = bars,
+                    activeColor = activeColor,
+                    inactiveColor = style.inactiveTrackColor,
+                    waveformSize = appearance.waveformSize
+                )
+            }
+        }
+
+        ModernSeekbarStyle.WAVE_LINE -> {
+            val fallbackBars = remember(waveformSeed, appearance.waveformDensity) {
+                generateWaveLineSamples(
+                    seed = waveformSeed,
+                    sampleCount = appearance.waveformDensity.barCount
+                )
+            }
+            val bars = rememberAnimatedWaveformBars(
+                fallbackBars = fallbackBars,
+                waveformData = waveformData
+            )
+            VisualSeekbar(
+                safePosition = values.sliderPosition,
+                safeDuration = values.sliderDuration,
+                onSeekChange = onSeekChange,
+                thumbSize = 1.dp,
+                thumbColor = Color.Transparent
+            ) { sliderProgress ->
+                WaveLineTrack(
+                    progress = sliderProgress,
+                    samples = bars,
+                    activeColor = activeColor,
+                    inactiveColor = style.inactiveTrackColor,
+                    waveformSize = appearance.waveformSize
                 )
             }
         }
@@ -508,6 +574,128 @@ private fun WaveformGlowTrack(
     }
 }
 
+@Composable
+private fun ContinuousWaveformTrack(
+    progress: Float,
+    samples: List<Float>,
+    activeColor: Color,
+    inactiveColor: Color,
+    waveformSize: ModernWaveformSize
+) {
+    val latestProgress by rememberUpdatedState(progress)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(waveformSize.trackHeightDp.dp)
+            .drawWithCache {
+                val path = createContinuousWaveformPath(samples, size.width, size.height)
+                onDrawBehind {
+                    if (samples.isEmpty()) return@onDrawBehind
+                    drawPath(path, inactiveColor.copy(alpha = inactiveColor.alpha * 0.8f))
+                    clipRect(right = size.width * latestProgress.coerceIn(0f, 1f)) {
+                        drawPath(path, activeColor)
+                    }
+                }
+            }
+    )
+}
+
+@Composable
+private fun WaveLineTrack(
+    progress: Float,
+    samples: List<Float>,
+    activeColor: Color,
+    inactiveColor: Color,
+    waveformSize: ModernWaveformSize
+) {
+    val latestProgress by rememberUpdatedState(progress)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(waveformSize.trackHeightDp.dp)
+            .drawWithCache {
+                val path = createWaveLinePath(samples, size.width, size.height)
+                val strokeWidth = when (waveformSize) {
+                    ModernWaveformSize.COMPACT -> 1.5.dp.toPx()
+                    ModernWaveformSize.STANDARD -> 2.dp.toPx()
+                    ModernWaveformSize.TALL -> 2.5.dp.toPx()
+                }
+                val stroke = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                onDrawBehind {
+                    if (samples.isEmpty()) return@onDrawBehind
+                    drawLine(
+                        color = inactiveColor.copy(alpha = inactiveColor.alpha * 0.42f),
+                        start = Offset(0f, size.height / 2f),
+                        end = Offset(size.width, size.height / 2f),
+                        strokeWidth = 1.dp.toPx()
+                    )
+                    drawPath(
+                        path,
+                        inactiveColor.copy(alpha = inactiveColor.alpha * 0.9f),
+                        style = stroke
+                    )
+                    clipRect(right = size.width * latestProgress.coerceIn(0f, 1f)) {
+                        drawPath(path, activeColor, style = stroke)
+                    }
+                }
+            }
+    )
+}
+
+private fun createContinuousWaveformPath(
+    samples: List<Float>,
+    width: Float,
+    height: Float
+): Path {
+    val centerY = height / 2f
+    val maximumHalfHeight = height * 0.46f
+    val lastIndex = samples.lastIndex.coerceAtLeast(1)
+    val path = Path()
+
+    samples.forEachIndexed { index, sample ->
+        val x = width * index / lastIndex
+        val y = centerY - maximumHalfHeight * sample.coerceIn(0.08f, 1f)
+        if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+    }
+    for (index in samples.lastIndex downTo 0) {
+        val x = width * index / lastIndex
+        val y = centerY + maximumHalfHeight * samples[index].coerceIn(0.08f, 1f)
+        path.lineTo(x, y)
+    }
+    path.close()
+    return path
+}
+
+private fun createWaveLinePath(
+    samples: List<Float>,
+    width: Float,
+    height: Float
+): Path {
+    val centerY = height / 2f
+    val amplitude = height * 0.42f
+    val lastIndex = samples.lastIndex.coerceAtLeast(1)
+    val path = Path()
+    if (samples.isEmpty()) return path
+    val firstY = centerY - (samples.first().coerceIn(0f, 1f) - 0.5f) * amplitude * 2f
+    path.moveTo(0f, firstY)
+
+    for (index in 1..samples.lastIndex) {
+        val previousX = width * (index - 1) / lastIndex
+        val currentX = width * index / lastIndex
+        val previousY = centerY -
+                (samples[index - 1].coerceIn(0f, 1f) - 0.5f) * amplitude * 2f
+        val currentY = centerY -
+                (samples[index].coerceIn(0f, 1f) - 0.5f) * amplitude * 2f
+        path.quadraticBezierTo(
+            (previousX + currentX) / 2f,
+            previousY,
+            currentX,
+            currentY
+        )
+    }
+    return path
+}
+
 private fun DrawScope.drawCenteredWaveformBars(
     bars: List<Float>,
     gap: Float,
@@ -616,6 +804,28 @@ internal fun generateWaveformGlowBars(seed: String, barCount: Int = 72): List<Fl
         contourDepth = 0.22f
     )
 }
+
+internal fun generateContinuousWaveformSamples(
+    seed: String,
+    sampleCount: Int = 56
+): List<Float> = generateDeterministicWaveformBars(
+    seed = "$seed|continuous",
+    barCount = sampleCount,
+    minimumAmplitude = 0.14f,
+    maximumAmplitude = 0.96f,
+    contourDepth = 0.2f
+)
+
+internal fun generateWaveLineSamples(
+    seed: String,
+    sampleCount: Int = 56
+): List<Float> = generateDeterministicWaveformBars(
+    seed = "$seed|line",
+    barCount = sampleCount,
+    minimumAmplitude = 0.08f,
+    maximumAmplitude = 0.92f,
+    contourDepth = 0.28f
+)
 
 private fun generateDeterministicWaveformBars(
     seed: String,

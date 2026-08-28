@@ -2,6 +2,7 @@ package com.example.cdplaya.data.preferences
 
 import androidx.compose.ui.graphics.Color
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.mutablePreferencesOf
@@ -16,10 +17,22 @@ import com.example.cdplaya.player.audio.AudioOffloadPreference
 import com.example.cdplaya.player.replaygain.ReplayGainMode
 import com.example.cdplaya.ui.library.LibraryViewMode
 import com.example.cdplaya.ui.player.modern.ModernArtworkTransitionStyle
+import com.example.cdplaya.ui.player.modern.ModernArtworkAppearance
+import com.example.cdplaya.ui.player.modern.ModernArtworkFit
+import com.example.cdplaya.ui.player.modern.ModernArtworkShape
+import com.example.cdplaya.ui.player.modern.ModernArtworkShadow
+import com.example.cdplaya.ui.player.modern.ModernArtworkSize
 import com.example.cdplaya.ui.player.modern.ModernBackgroundAppearance
 import com.example.cdplaya.ui.player.modern.ModernBackgroundStyle
 import com.example.cdplaya.ui.player.modern.ModernBlurStrength
 import com.example.cdplaya.ui.player.modern.ModernDimmingStrength
+import com.example.cdplaya.ui.player.modern.ModernControlAccent
+import com.example.cdplaya.ui.player.modern.ModernControlAppearance
+import com.example.cdplaya.ui.player.modern.ModernControlSize
+import com.example.cdplaya.ui.player.modern.ModernControlStyle
+import com.example.cdplaya.ui.player.modern.ModernLayoutAppearance
+import com.example.cdplaya.ui.player.modern.ModernLayoutDensity
+import com.example.cdplaya.ui.player.modern.ModernMetadataAlignment
 import com.example.cdplaya.ui.player.modern.ModernPlayerAppearance
 import com.example.cdplaya.ui.player.modern.ModernSeekbarAppearance
 import com.example.cdplaya.ui.player.modern.ModernSeekbarColorMode
@@ -48,6 +61,16 @@ class AppPreferencesStateTest {
             stringPreferencesKey("modern_background_style") to "transparent",
             stringPreferencesKey("modern_blur_strength") to "extreme",
             stringPreferencesKey("modern_dimming_strength") to "opaque",
+            longPreferencesKey("modern_solid_color_argb") to -1L,
+            stringPreferencesKey("modern_artwork_shape") to "circle",
+            stringPreferencesKey("modern_artwork_size") to "giant",
+            stringPreferencesKey("modern_artwork_fit") to "stretch",
+            stringPreferencesKey("modern_artwork_shadow") to "neon",
+            stringPreferencesKey("modern_control_style") to "skeuomorphic",
+            stringPreferencesKey("modern_control_size") to "tiny",
+            stringPreferencesKey("modern_control_accent") to "rainbow",
+            stringPreferencesKey("modern_layout_density") to "packed",
+            stringPreferencesKey("modern_metadata_alignment") to "diagonal",
             intPreferencesKey("songs_view_mode_columns") to 99
         )
 
@@ -95,7 +118,24 @@ class AppPreferencesStateTest {
             background = ModernBackgroundAppearance(
                 style = ModernBackgroundStyle.DETAILED_ARTWORK,
                 blurStrength = ModernBlurStrength.LOW,
-                dimmingStrength = ModernDimmingStrength.HIGH
+                dimmingStrength = ModernDimmingStrength.HIGH,
+                solidColorArgb = 0xFF204060
+            ),
+            artwork = ModernArtworkAppearance(
+                shape = ModernArtworkShape.EXTRA_ROUNDED,
+                size = ModernArtworkSize.LARGE,
+                fit = ModernArtworkFit.SHOW_FULL,
+                shadow = ModernArtworkShadow.STRONG
+            ),
+            controls = ModernControlAppearance(
+                style = ModernControlStyle.TONAL,
+                size = ModernControlSize.LARGE,
+                accent = ModernControlAccent.ALBUM_DERIVED
+            ),
+            layout = ModernLayoutAppearance(
+                density = ModernLayoutDensity.RELAXED,
+                metadataAlignment = ModernMetadataAlignment.CENTER,
+                showAudioQualityBadge = false
             )
         )
         val preferences = mutablePreferencesOf(

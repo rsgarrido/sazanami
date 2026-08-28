@@ -7,6 +7,8 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.runtime.Composable
@@ -55,6 +57,7 @@ internal fun ModernPlayerArtwork(
     artworkSize: Dp,
     transitionStyle: ModernArtworkTransitionStyle,
     style: ModernPlayerStyle,
+    appearance: ModernArtworkAppearance = ModernArtworkAppearance(),
     modifier: Modifier = Modifier,
     gesturesEnabled: Boolean = true,
     renderArtwork: Boolean = true
@@ -90,6 +93,7 @@ internal fun ModernPlayerArtwork(
                 carouselState = carouselState,
                 transitionStyle = transitionStyle,
                 style = style,
+                appearance = appearance,
                 artworkSize = artworkSize,
                 decoratePages = true
             )
@@ -105,6 +109,7 @@ internal fun ModernPlayerArtworkPages(
     style: ModernPlayerStyle,
     artworkSize: Dp,
     decoratePages: Boolean,
+    appearance: ModernArtworkAppearance = ModernArtworkAppearance(),
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -144,8 +149,13 @@ internal fun ModernPlayerArtworkPages(
                         song = item.song,
                         artworkSize = artworkSize,
                         style = style,
+                        appearance = appearance,
                         contentDescription = contentDescription,
-                        elevation = if (item.isCurrent) 18.dp else 10.dp,
+                        elevation = if (item.isCurrent) {
+                            appearance.shadow.elevationDp.dp
+                        } else {
+                            (appearance.shadow.elevationDp * 0.55f).dp
+                        },
                         modifier = pageModifier
                     )
                 } else {
@@ -153,12 +163,13 @@ internal fun ModernPlayerArtworkPages(
                         modifier = Modifier
                             .size(artworkSize)
                             .then(pageModifier)
+                            .background(style.artworkContainerColor)
                     ) {
                         ModernPlayerAlbumImage(
                             currentSong = item.song,
                             contentDescription = contentDescription,
                             modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
+                            contentScale = appearance.fit.contentScale()
                         )
                     }
                 }
@@ -172,6 +183,7 @@ private fun ModernPlayerArtworkCard(
     song: Song,
     artworkSize: Dp,
     style: ModernPlayerStyle,
+    appearance: ModernArtworkAppearance,
     contentDescription: String?,
     elevation: Dp,
     modifier: Modifier = Modifier
@@ -180,7 +192,7 @@ private fun ModernPlayerArtworkCard(
         modifier = Modifier
             .size(artworkSize)
             .then(modifier),
-        shape = style.artworkShape,
+        shape = RoundedCornerShape(appearance.shape.cornerRadiusDp.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = elevation),
         colors = CardDefaults.cardColors(
             containerColor = style.artworkContainerColor
@@ -190,9 +202,14 @@ private fun ModernPlayerArtworkCard(
             currentSong = song,
             contentDescription = contentDescription,
             modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
+            contentScale = appearance.fit.contentScale()
         )
     }
+}
+
+private fun ModernArtworkFit.contentScale(): ContentScale = when (this) {
+    ModernArtworkFit.CROP -> ContentScale.Crop
+    ModernArtworkFit.SHOW_FULL -> ContentScale.Fit
 }
 
 @Composable

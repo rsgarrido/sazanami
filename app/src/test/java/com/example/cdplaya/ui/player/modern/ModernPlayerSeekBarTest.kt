@@ -59,6 +59,14 @@ class ModernPlayerSeekBarTest {
                 density.barCount,
                 generateWaveformGlowBars("density", density.barCount).size
             )
+            assertEquals(
+                density.barCount,
+                generateContinuousWaveformSamples("density", density.barCount).size
+            )
+            assertEquals(
+                density.barCount,
+                generateWaveLineSamples("density", density.barCount).size
+            )
         }
     }
 
@@ -71,6 +79,10 @@ class ModernPlayerSeekBarTest {
         assertTrue(
             ModernWaveformSize.STANDARD.trackHeightDp <
                     ModernWaveformSize.TALL.trackHeightDp
+        )
+        assertTrue(
+            ModernWaveformSize.TALL.trackHeightDp >=
+                    ModernWaveformSize.STANDARD.trackHeightDp * 1.5f
         )
     }
 
@@ -120,7 +132,9 @@ class ModernPlayerSeekBarTest {
             val trackHeight = when (style) {
                 ModernSeekbarStyle.WAVEFORM_PEAKS -> 36f
                 ModernSeekbarStyle.WAVEFORM_PREVIEW,
-                ModernSeekbarStyle.WAVEFORM_GLOW -> 32f
+                ModernSeekbarStyle.WAVEFORM_GLOW,
+                ModernSeekbarStyle.CONTINUOUS_WAVEFORM,
+                ModernSeekbarStyle.WAVE_LINE -> 32f
                 else -> 48f
             }
             val layout = resolveModernSeekbarVerticalLayout(

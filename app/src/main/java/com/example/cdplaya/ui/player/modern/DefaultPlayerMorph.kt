@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.height
@@ -33,6 +34,7 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.lerp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -56,6 +58,8 @@ internal fun DefaultPlayerMorph(
     isPlaying: Boolean,
     onPlayPauseClick: () -> Unit,
     style: ModernPlayerStyle,
+    appearance: ModernPlayerAppearance,
+    artworkPalette: ModernArtworkPalette,
     modifier: Modifier = Modifier,
     expandedContent: @Composable (DefaultPlayerMorphVisualState) -> Unit
 ) {
@@ -138,21 +142,25 @@ internal fun DefaultPlayerMorph(
                 transitionStyle = artworkTransitionStyle,
                 bounds = geometry.artwork,
                 progress = safeProgress,
-                style = style
+                style = style,
+                appearance = appearance.artwork
             )
             DefaultMorphTitleArtist(
                 carouselPresentation = carouselPresentation,
                 transitionStyle = artworkTransitionStyle,
                 bounds = geometry.text,
                 progress = safeProgress,
-                style = style
+                style = style,
+                layoutAppearance = appearance.layout
             )
             DefaultMorphPlayPause(
                 isPlaying = isPlaying,
                 bounds = geometry.playPause,
                 progress = safeProgress,
                 onClick = onPlayPauseClick,
-                style = style
+                style = style,
+                appearance = appearance.controls,
+                artworkPalette = artworkPalette
             )
         }
     }
@@ -164,19 +172,20 @@ private fun DefaultMorphArtwork(
     transitionStyle: ModernArtworkTransitionStyle,
     bounds: androidx.compose.ui.geometry.Rect,
     progress: Float,
-    style: ModernPlayerStyle
+    style: ModernPlayerStyle,
+    appearance: ModernArtworkAppearance
 ) {
     val density = LocalDensity.current
     val radius = interpolateMorphCornerRadius(
         collapsedRadius = 10f,
-        expandedRadius = 30f,
+        expandedRadius = appearance.shape.cornerRadiusDp.toFloat(),
         progress = progress
     )
     Box(
         modifier = Modifier
             .placeInRootBounds(bounds)
             .shadow(
-                elevation = (18f * progress).dp,
+                elevation = (appearance.shadow.elevationDp * progress).dp,
                 shape = RoundedCornerShape(radius.dp)
             )
             .background(
@@ -196,7 +205,8 @@ private fun DefaultMorphArtwork(
             artworkSize = with(density) {
                 bounds.width.coerceAtLeast(1f).toDp()
             },
-            decoratePages = false
+            decoratePages = false,
+            appearance = appearance
         )
     }
 }
@@ -207,8 +217,11 @@ private fun DefaultMorphTitleArtist(
     transitionStyle: ModernArtworkTransitionStyle,
     bounds: androidx.compose.ui.geometry.Rect,
     progress: Float,
-    style: ModernPlayerStyle
+    style: ModernPlayerStyle,
+    layoutAppearance: ModernLayoutAppearance
 ) {
+    val useCenteredAlignment =
+        layoutAppearance.metadataAlignment == ModernMetadataAlignment.CENTER && progress >= 0.72f
     val titleStyle = lerp(
         MaterialTheme.typography.titleMedium,
         MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
@@ -221,7 +234,7 @@ private fun DefaultMorphTitleArtist(
     )
     Box(
         modifier = Modifier.placeInRootBounds(bounds),
-        contentAlignment = Alignment.TopStart
+        contentAlignment = if (useCenteredAlignment) Alignment.TopCenter else Alignment.TopStart
     ) {
         carouselPresentation.songs.items().forEach { item ->
             key(item.song.id) {
@@ -254,7 +267,12 @@ private fun DefaultMorphTitleArtist(
                                         density
                             }
                         }
-                        .suppressDefaultMorphSemantics(!item.isCurrent)
+                        .suppressDefaultMorphSemantics(!item.isCurrent),
+                    horizontalAlignment = if (useCenteredAlignment) {
+                        Alignment.CenterHorizontally
+                    } else {
+                        Alignment.Start
+                    }
                 ) {
                     Text(
                         text = item.song.title.ifBlank { "Unknown Title" },
@@ -264,7 +282,9 @@ private fun DefaultMorphTitleArtist(
                             style.contentColor,
                             progress
                         ),
-                        maxLines = if (progress < 0.55f) 1 else 2
+                        maxLines = if (progress < 0.55f) 1 else 2,
+                        textAlign = if (useCenteredAlignment) TextAlign.Center else TextAlign.Start,
+                        modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(modifier = Modifier.height((6f * progress).dp))
                     Text(
@@ -275,7 +295,9 @@ private fun DefaultMorphTitleArtist(
                             style.secondaryContentColor,
                             progress
                         ),
-                        maxLines = 1
+                        maxLines = 1,
+                        textAlign = if (useCenteredAlignment) TextAlign.Center else TextAlign.Start,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
@@ -289,13 +311,16 @@ private fun DefaultMorphPlayPause(
     bounds: androidx.compose.ui.geometry.Rect,
     progress: Float,
     onClick: () -> Unit,
-    style: ModernPlayerStyle
+    style: ModernPlayerStyle,
+    appearance: ModernControlAppearance,
+    artworkPalette: ModernArtworkPalette
 ) {
     val expandedSurfaceAlpha = morphProgressWindow(progress, 0.20f, 0.72f)
     val shape = RoundedCornerShape(percent = 50)
-    Box(
-        modifier = Modifier
-            .placeInRootBounds(bounds)
+    val accentColor = resolveModernControlAccentColor(appearance, artworkPalette, style)
+    val decoratedModifier = when (appearance.style) {
+        ModernControlStyle.MINIMAL -> Modifier
+        ModernControlStyle.GLASS -> Modifier
             .shadow(
                 elevation = (14f * expandedSurfaceAlpha).dp,
                 shape = shape
@@ -322,7 +347,23 @@ private fun DefaultMorphPlayPause(
                             expandedSurfaceAlpha
                 ),
                 shape = shape
-            ),
+            )
+        ModernControlStyle.TONAL -> Modifier
+            .shadow((8f * expandedSurfaceAlpha).dp, shape)
+            .background(
+                accentColor.copy(alpha = 0.88f * expandedSurfaceAlpha),
+                shape
+            )
+        ModernControlStyle.OUTLINE -> Modifier.border(
+            width = (1.5f * expandedSurfaceAlpha).dp,
+            color = accentColor.copy(alpha = 0.9f * expandedSurfaceAlpha),
+            shape = shape
+        )
+    }
+    Box(
+        modifier = Modifier
+            .placeInRootBounds(bounds)
+            .then(decoratedModifier),
         contentAlignment = Alignment.Center
     ) {
         IconButton(
@@ -334,7 +375,11 @@ private fun DefaultMorphPlayPause(
                 contentDescription = if (isPlaying) "Pause" else "Play",
                 tint = lerpColor(
                     MaterialTheme.colorScheme.onSurface,
-                    style.contentColor,
+                    if (appearance.style == ModernControlStyle.TONAL) {
+                        modernContrastingForeground(accentColor)
+                    } else {
+                        accentColor
+                    },
                     progress
                 ),
                 modifier = Modifier.size((24f + 26f * progress).dp)

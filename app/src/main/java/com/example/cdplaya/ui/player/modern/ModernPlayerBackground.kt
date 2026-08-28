@@ -17,7 +17,8 @@ import com.example.cdplaya.data.Song
 internal fun BoxScope.ModernPlayerBackground(
     currentSong: Song,
     style: ModernPlayerStyle,
-    appearance: ModernBackgroundAppearance
+    appearance: ModernBackgroundAppearance,
+    artworkPalette: ModernArtworkPalette
 ) {
     val policy = modernBackgroundPolicy(
         sdkInt = Build.VERSION.SDK_INT,
@@ -45,24 +46,23 @@ internal fun BoxScope.ModernPlayerBackground(
             )
         }
 
-        ModernBackgroundStyle.ALBUM_GRADIENT -> Box(
-            modifier = Modifier
-                .matchParentSize()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            style.accentColor.copy(alpha = 0.78f),
-                            style.accentColor.copy(alpha = 0.28f),
-                            style.backgroundColor
+        ModernBackgroundStyle.ALBUM_GRADIENT -> {
+            val gradient = resolveModernAlbumGradient(artworkPalette, style.accentColor)
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(gradient.top, gradient.center, gradient.bottom)
                         )
                     )
-                )
-        )
+            )
+        }
 
         ModernBackgroundStyle.SOLID_COLOR -> Box(
             modifier = Modifier
                 .matchParentSize()
-                .background(style.solidBackgroundColor)
+                .background(Color(sanitizeModernSolidColorArgb(appearance.solidColorArgb).toInt()))
         )
 
         ModernBackgroundStyle.PURE_BLACK -> Box(
@@ -77,6 +77,20 @@ internal fun BoxScope.ModernPlayerBackground(
             modifier = Modifier
                 .matchParentSize()
                 .background(Color.Black.copy(alpha = appearance.dimmingStrength.overlayAlpha))
+        )
+    }
+
+    if (appearance.style == ModernBackgroundStyle.SOLID_COLOR) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(
+                    Color.Black.copy(
+                        alpha = modernSolidColorReadabilityScrimAlpha(
+                            appearance.solidColorArgb
+                        )
+                    )
+                )
         )
     }
 

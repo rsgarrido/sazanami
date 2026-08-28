@@ -12,6 +12,7 @@ import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
@@ -40,16 +41,29 @@ import com.example.cdplaya.ui.library.LibraryGridColumns
 import com.example.cdplaya.ui.library.LibraryViewCategory
 import com.example.cdplaya.ui.library.LibraryViewMode
 import com.example.cdplaya.ui.player.modern.ModernArtworkTransitionStyle
+import com.example.cdplaya.ui.player.modern.ModernArtworkAppearance
+import com.example.cdplaya.ui.player.modern.ModernArtworkFit
+import com.example.cdplaya.ui.player.modern.ModernArtworkShadow
+import com.example.cdplaya.ui.player.modern.ModernArtworkShape
+import com.example.cdplaya.ui.player.modern.ModernArtworkSize
 import com.example.cdplaya.ui.player.modern.ModernBackgroundAppearance
 import com.example.cdplaya.ui.player.modern.ModernBackgroundStyle
 import com.example.cdplaya.ui.player.modern.ModernBlurStrength
 import com.example.cdplaya.ui.player.modern.ModernDimmingStrength
+import com.example.cdplaya.ui.player.modern.ModernControlAccent
+import com.example.cdplaya.ui.player.modern.ModernControlAppearance
+import com.example.cdplaya.ui.player.modern.ModernControlSize
+import com.example.cdplaya.ui.player.modern.ModernControlStyle
+import com.example.cdplaya.ui.player.modern.ModernLayoutAppearance
+import com.example.cdplaya.ui.player.modern.ModernLayoutDensity
+import com.example.cdplaya.ui.player.modern.ModernMetadataAlignment
 import com.example.cdplaya.ui.player.modern.ModernPlayerAppearance
 import com.example.cdplaya.ui.player.modern.ModernSeekbarAppearance
 import com.example.cdplaya.ui.player.modern.ModernSeekbarColorMode
 import com.example.cdplaya.ui.player.modern.ModernSeekbarStyle
 import com.example.cdplaya.ui.player.modern.ModernWaveformDensity
 import com.example.cdplaya.ui.player.modern.ModernWaveformSize
+import com.example.cdplaya.ui.player.modern.sanitizeModernSolidColorArgb
 import com.example.cdplaya.ui.player.theme.PlayerThemeTokenOverrides
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
@@ -644,7 +658,44 @@ internal fun decodeAppPreferences(preferences: Preferences): AppPreferencesState
                 ),
                 dimmingStrength = ModernDimmingStrength.fromStorageValue(
                     preferences[Keys.modernDimmingStrength]
+                ),
+                solidColorArgb = sanitizeModernSolidColorArgb(
+                    preferences[Keys.modernSolidColorArgb]
                 )
+            ),
+            artwork = ModernArtworkAppearance(
+                shape = ModernArtworkShape.fromStorageValue(
+                    preferences[Keys.modernArtworkShape]
+                ),
+                size = ModernArtworkSize.fromStorageValue(
+                    preferences[Keys.modernArtworkSize]
+                ),
+                fit = ModernArtworkFit.fromStorageValue(
+                    preferences[Keys.modernArtworkFit]
+                ),
+                shadow = ModernArtworkShadow.fromStorageValue(
+                    preferences[Keys.modernArtworkShadow]
+                )
+            ),
+            controls = ModernControlAppearance(
+                style = ModernControlStyle.fromStorageValue(
+                    preferences[Keys.modernControlStyle]
+                ),
+                size = ModernControlSize.fromStorageValue(
+                    preferences[Keys.modernControlSize]
+                ),
+                accent = ModernControlAccent.fromStorageValue(
+                    preferences[Keys.modernControlAccent]
+                )
+            ),
+            layout = ModernLayoutAppearance(
+                density = ModernLayoutDensity.fromStorageValue(
+                    preferences[Keys.modernLayoutDensity]
+                ),
+                metadataAlignment = ModernMetadataAlignment.fromStorageValue(
+                    preferences[Keys.modernMetadataAlignment]
+                ),
+                showAudioQualityBadge = preferences[Keys.modernShowAudioQualityBadge] ?: true
             )
         ),
         replayGainMode = runCatching {
@@ -712,14 +763,23 @@ internal fun MutablePreferences.writeModernPlayerAppearance(
     this[Keys.modernBackgroundStyle] = appearance.background.style.storageValue
     this[Keys.modernBlurStrength] = appearance.background.blurStrength.storageValue
     this[Keys.modernDimmingStrength] = appearance.background.dimmingStrength.storageValue
+    this[Keys.modernSolidColorArgb] = sanitizeModernSolidColorArgb(
+        appearance.background.solidColorArgb
+    )
+    this[Keys.modernArtworkShape] = appearance.artwork.shape.storageValue
+    this[Keys.modernArtworkSize] = appearance.artwork.size.storageValue
+    this[Keys.modernArtworkFit] = appearance.artwork.fit.storageValue
+    this[Keys.modernArtworkShadow] = appearance.artwork.shadow.storageValue
+    this[Keys.modernControlStyle] = appearance.controls.style.storageValue
+    this[Keys.modernControlSize] = appearance.controls.size.storageValue
+    this[Keys.modernControlAccent] = appearance.controls.accent.storageValue
+    this[Keys.modernLayoutDensity] = appearance.layout.density.storageValue
+    this[Keys.modernMetadataAlignment] = appearance.layout.metadataAlignment.storageValue
+    this[Keys.modernShowAudioQualityBadge] = appearance.layout.showAudioQualityBadge
 }
 
 internal fun MutablePreferences.clearModernPlayerAppearance() {
-    modernAppearanceKeys.forEach(::remove)
-}
-
-private val modernAppearanceKeys: List<Preferences.Key<String>>
-    get() = listOf(
+    listOf(
         Keys.modernSeekbarStyle,
         Keys.modernWaveformSize,
         Keys.modernWaveformDensity,
@@ -727,7 +787,19 @@ private val modernAppearanceKeys: List<Preferences.Key<String>>
         Keys.modernBackgroundStyle,
         Keys.modernBlurStrength,
         Keys.modernDimmingStrength
-    )
+    ).forEach(::remove)
+    remove(Keys.modernSolidColorArgb)
+    remove(Keys.modernArtworkShape)
+    remove(Keys.modernArtworkSize)
+    remove(Keys.modernArtworkFit)
+    remove(Keys.modernArtworkShadow)
+    remove(Keys.modernControlStyle)
+    remove(Keys.modernControlSize)
+    remove(Keys.modernControlAccent)
+    remove(Keys.modernLayoutDensity)
+    remove(Keys.modernMetadataAlignment)
+    remove(Keys.modernShowAudioQualityBadge)
+}
 
 private fun emptyOverrides() = PlayerThemeTokenOverrides()
 
@@ -1089,6 +1161,17 @@ private object Keys {
     val modernBackgroundStyle = stringPreferencesKey("modern_background_style")
     val modernBlurStrength = stringPreferencesKey("modern_blur_strength")
     val modernDimmingStrength = stringPreferencesKey("modern_dimming_strength")
+    val modernSolidColorArgb = longPreferencesKey("modern_solid_color_argb")
+    val modernArtworkShape = stringPreferencesKey("modern_artwork_shape")
+    val modernArtworkSize = stringPreferencesKey("modern_artwork_size")
+    val modernArtworkFit = stringPreferencesKey("modern_artwork_fit")
+    val modernArtworkShadow = stringPreferencesKey("modern_artwork_shadow")
+    val modernControlStyle = stringPreferencesKey("modern_control_style")
+    val modernControlSize = stringPreferencesKey("modern_control_size")
+    val modernControlAccent = stringPreferencesKey("modern_control_accent")
+    val modernLayoutDensity = stringPreferencesKey("modern_layout_density")
+    val modernMetadataAlignment = stringPreferencesKey("modern_metadata_alignment")
+    val modernShowAudioQualityBadge = booleanPreferencesKey("modern_show_audio_quality_badge")
     val replayGainMode = stringPreferencesKey("replay_gain_mode")
     val audioOffloadPreference = stringPreferencesKey("audio_offload_preference")
     val smoothPlayPauseEnabled = booleanPreferencesKey("smooth_play_pause_enabled")
