@@ -10,7 +10,7 @@ class PlaybackLaunchContextTest {
         val context = capturePlaybackLaunchContext(
             mainDestination = MainDestination.LIBRARY,
             selectedLibraryTab = LibraryTab.ALBUMS,
-            selectedAlbumFolderPath = "/music/album",
+            selectedAlbumKey = "/music/album",
             selectedArtistName = null,
             selectedGenreKey = null,
             selectedPlaylistId = null,
@@ -28,7 +28,7 @@ class PlaybackLaunchContextTest {
         val context = capturePlaybackLaunchContext(
             mainDestination = MainDestination.SEARCH,
             selectedLibraryTab = LibraryTab.SONGS,
-            selectedAlbumFolderPath = null,
+            selectedAlbumKey = null,
             selectedArtistName = null,
             selectedGenreKey = null,
             selectedPlaylistId = null,
@@ -43,7 +43,7 @@ class PlaybackLaunchContextTest {
         val context = capturePlaybackLaunchContext(
             mainDestination = MainDestination.SEARCH,
             selectedLibraryTab = LibraryTab.SONGS,
-            selectedAlbumFolderPath = null,
+            selectedAlbumKey = null,
             selectedArtistName = null,
             selectedGenreKey = null,
             selectedPlaylistId = null,
@@ -58,7 +58,7 @@ class PlaybackLaunchContextTest {
         val context = capturePlaybackLaunchContext(
             mainDestination = MainDestination.LIBRARY,
             selectedLibraryTab = LibraryTab.GENRES,
-            selectedAlbumFolderPath = null,
+            selectedAlbumKey = null,
             selectedArtistName = null,
             selectedGenreKey = "known:rock",
             selectedPlaylistId = null,
@@ -75,7 +75,7 @@ class PlaybackLaunchContextTest {
         assertEquals(
             genreContext,
             genreContext.withValidDetails(
-                albumFolderPaths = emptySet(),
+                albumKeys = emptySet(),
                 artistNames = emptySet(),
                 genreKeys = setOf("known:rock"),
                 playlistIds = emptySet()

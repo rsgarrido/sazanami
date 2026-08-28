@@ -34,7 +34,7 @@ fun MusicLibraryContent(
     viewMode: LibraryViewMode,
     gridColumnCount: Int,
     selectedArtistName: String?,
-    selectedAlbumFolderPath: String?,
+    selectedAlbumKey: String?,
     selectedGenreKey: String?,
     selectedPlaylistId: Long?,
     playlists: List<Playlist>,
@@ -177,7 +177,7 @@ fun MusicLibraryContent(
             AlbumsTabContent(
                 songs = songs,
                 searchQuery = searchQuery,
-                selectedAlbumFolderPath = selectedAlbumFolderPath,
+                selectedAlbumKey = selectedAlbumKey,
                 currentSong = currentSong,
                 viewMode = viewMode,
                 gridColumnCount = gridColumnCount,

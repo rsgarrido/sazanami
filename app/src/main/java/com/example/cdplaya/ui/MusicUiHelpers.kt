@@ -1,7 +1,10 @@
 package com.example.cdplaya.ui
 
 import com.example.cdplaya.data.Song
+import com.example.cdplaya.data.resolveAlbumDiscNumbers
+import com.example.cdplaya.data.trackNumberWithinDisc
 import com.example.cdplaya.ui.library.LibrarySortDirection
+import com.example.cdplaya.ui.library.buildLibraryAlbumGroups
 import com.example.cdplaya.ui.library.LibrarySortOption
 import com.example.cdplaya.ui.library.compareKnownPositiveLong
 import com.example.cdplaya.ui.library.compareKnownPresence
@@ -61,27 +64,26 @@ fun filterSongsByAlbumSearch(
         return songs
     }
 
-    val matchingAlbumFolders = songs
-        .filter { song ->
-            song.album.ifBlank { "Unknown Album" }
-                .contains(query, ignoreCase = true) ||
-                    song.artist.ifBlank { "Unknown Artist" }
-                        .contains(query, ignoreCase = true)
+    return buildLibraryAlbumGroups(songs)
+        .filter { album ->
+            album.title.contains(query, ignoreCase = true) ||
+                    album.artistText.contains(query, ignoreCase = true) ||
+                    album.songs.any { song ->
+                        song.artist.ifBlank { "Unknown Artist" }
+                            .contains(query, ignoreCase = true)
+                    }
         }
-        .map { song ->
-            song.folderPath
-        }
-        .toSet()
-
-    return songs.filter { song ->
-        song.folderPath in matchingAlbumFolders
-    }
+        .flatMap { album -> album.songs }
+        .distinctBy(Song::membershipKey)
 }
 
 fun sortSongsByAlbumOrder(songs: List<Song>): List<Song> {
+    val resolvedDiscNumbers = resolveAlbumDiscNumbers(songs)
     return songs.sortedWith(
         compareBy<Song> { song ->
-            if (song.trackNumber > 0) song.trackNumber else Int.MAX_VALUE
+            resolvedDiscNumbers[song.membershipKey()] ?: Int.MAX_VALUE
+        }.thenBy { song ->
+            song.trackNumberWithinDisc() ?: Int.MAX_VALUE
         }.thenBy { song ->
             song.title.lowercase()
         }
@@ -116,6 +118,14 @@ fun sortSongsForLibrary(
     sortDirection: LibrarySortDirection = LibrarySortDirection.ASCENDING,
     ratingsByReferenceKey: Map<String, Int> = emptyMap()
 ): List<Song> {
+    val resolvedDiscNumbers = if (
+        sortOption == LibrarySortOption.ARTIST || sortOption == LibrarySortOption.ALBUM
+    ) {
+        resolveAlbumDiscNumbers(songs)
+    } else {
+        emptyMap()
+    }
+
     return when (sortOption) {
         LibrarySortOption.TITLE,
         LibrarySortOption.NAME -> {
@@ -145,9 +155,14 @@ fun sortSongsForLibrary(
                         right.album,
                         LibrarySortDirection.ASCENDING
                     ).takeUnless { it == 0 }
-                    ?: compareKnownPositiveInt(
-                        left.trackNumber,
-                        right.trackNumber,
+                    ?: compareKnownInts(
+                        resolvedDiscNumbers[left.membershipKey()],
+                        resolvedDiscNumbers[right.membershipKey()],
+                        LibrarySortDirection.ASCENDING
+                    ).takeUnless { it == 0 }
+                    ?: compareKnownInts(
+                        left.trackNumberWithinDisc(),
+                        right.trackNumberWithinDisc(),
                         LibrarySortDirection.ASCENDING
                     ).takeUnless { it == 0 }
                     ?: compareLibraryText(
@@ -162,9 +177,14 @@ fun sortSongsForLibrary(
             songs.sortedWith { left, right ->
                 compareLibraryText(left.album, right.album, sortDirection)
                     .takeUnless { it == 0 }
-                    ?: compareKnownPositiveInt(
-                        left.trackNumber,
-                        right.trackNumber,
+                    ?: compareKnownInts(
+                        resolvedDiscNumbers[left.membershipKey()],
+                        resolvedDiscNumbers[right.membershipKey()],
+                        LibrarySortDirection.ASCENDING
+                    ).takeUnless { it == 0 }
+                    ?: compareKnownInts(
+                        left.trackNumberWithinDisc(),
+                        right.trackNumberWithinDisc(),
                         LibrarySortDirection.ASCENDING
                     ).takeUnless { it == 0 }
                     ?: compareLibraryText(
@@ -230,16 +250,6 @@ private fun compareKnownInts(
     return direction.applyTo(left.compareTo(requireNotNull(right)))
 }
 
-private fun compareKnownPositiveInt(
-    left: Int,
-    right: Int,
-    direction: LibrarySortDirection
-): Int {
-    val knownComparison = compareKnownPresence(left > 0, right > 0)
-    if (knownComparison != 0 || left <= 0) return knownComparison
-    return direction.applyTo(left.compareTo(right))
-}
-
 fun filterSongsByRating(
     songs: List<Song>,
     filter: SongRatingFilter,
@@ -255,11 +265,14 @@ fun filterSongsByRating(
 }
 
 fun sortSongsForArtistDetail(songs: List<Song>): List<Song> {
+    val resolvedDiscNumbers = resolveAlbumDiscNumbers(songs)
     return songs.sortedWith(
         compareBy<Song> { song ->
             song.album.ifBlank { "Unknown Album" }.lowercase()
         }.thenBy { song ->
-            if (song.trackNumber > 0) song.trackNumber else Int.MAX_VALUE
+            resolvedDiscNumbers[song.membershipKey()] ?: Int.MAX_VALUE
+        }.thenBy { song ->
+            song.trackNumberWithinDisc() ?: Int.MAX_VALUE
         }.thenBy { song ->
             song.title.lowercase()
         }

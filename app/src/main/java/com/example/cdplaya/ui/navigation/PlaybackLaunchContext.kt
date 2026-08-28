@@ -11,7 +11,7 @@ sealed interface PlaybackLaunchContext {
     ) : PlaybackLaunchContext
 
     data class AlbumDetail(
-        val folderPath: String
+        val albumKey: String
     ) : PlaybackLaunchContext
 
     data class ArtistDetail(
@@ -40,7 +40,7 @@ val playbackLaunchContextSaver = listSaver<PlaybackLaunchContext, String>(
             }
 
             is PlaybackLaunchContext.AlbumDetail -> {
-                listOf("album", context.folderPath)
+                listOf("album", context.albumKey)
             }
 
             is PlaybackLaunchContext.ArtistDetail -> {
@@ -66,7 +66,7 @@ val playbackLaunchContextSaver = listSaver<PlaybackLaunchContext, String>(
                 ?.let { tab -> PlaybackLaunchContext.LibrarySection(tab) }
 
             "album" -> saved.getOrNull(1)
-                ?.let { folderPath -> PlaybackLaunchContext.AlbumDetail(folderPath) }
+                ?.let { albumKey -> PlaybackLaunchContext.AlbumDetail(albumKey) }
 
             "artist" -> saved.getOrNull(1)
                 ?.let { artistName -> PlaybackLaunchContext.ArtistDetail(artistName) }
@@ -88,7 +88,7 @@ val playbackLaunchContextSaver = listSaver<PlaybackLaunchContext, String>(
 fun capturePlaybackLaunchContext(
     mainDestination: MainDestination,
     selectedLibraryTab: LibraryTab,
-    selectedAlbumFolderPath: String?,
+    selectedAlbumKey: String?,
     selectedArtistName: String?,
     selectedGenreKey: String?,
     selectedPlaylistId: Long?,
@@ -101,8 +101,8 @@ fun capturePlaybackLaunchContext(
     }
 
     return when {
-        selectedAlbumFolderPath != null -> {
-            PlaybackLaunchContext.AlbumDetail(selectedAlbumFolderPath)
+        selectedAlbumKey != null -> {
+            PlaybackLaunchContext.AlbumDetail(selectedAlbumKey)
         }
 
         selectedArtistName != null -> PlaybackLaunchContext.ArtistDetail(selectedArtistName)
@@ -114,14 +114,14 @@ fun capturePlaybackLaunchContext(
 }
 
 fun PlaybackLaunchContext.withValidDetails(
-    albumFolderPaths: Set<String>,
+    albumKeys: Set<String>,
     artistNames: Set<String>,
     genreKeys: Set<String>,
     playlistIds: Set<Long>
 ): PlaybackLaunchContext {
     return when (this) {
         is PlaybackLaunchContext.AlbumDetail -> {
-            if (folderPath in albumFolderPaths) {
+            if (albumKey in albumKeys) {
                 this
             } else {
                 PlaybackLaunchContext.LibrarySection(LibraryTab.ALBUMS)

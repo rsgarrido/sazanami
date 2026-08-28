@@ -51,6 +51,7 @@ import com.example.cdplaya.player.replaygain.ReplayGainMode
 import com.example.cdplaya.player.PlaybackShuffleMode
 import com.example.cdplaya.ui.library.LibraryTab
 import com.example.cdplaya.ui.library.LibraryAlbumGroup
+import com.example.cdplaya.ui.library.buildLibraryAlbumGroups
 import com.example.cdplaya.ui.library.isAlbumGroupAvailable
 import com.example.cdplaya.ui.library.metadataEditingSongs
 import com.example.cdplaya.ui.navigation.MainDestination
@@ -280,7 +281,7 @@ internal fun MusicScreen(
     var selectedLibraryTab by navigationState.selectedLibraryTab
     var playbackLaunchContext by navigationState.playbackLaunchContext
     var selectedArtistName by navigationState.selectedArtistName
-    var selectedAlbumFolderPath by navigationState.selectedAlbumFolderPath
+    var selectedAlbumKey by navigationState.selectedAlbumKey
     var selectedGenreKey by navigationState.selectedGenreKey
     var selectedPlaylistId by navigationState.selectedPlaylistId
     var searchQuery by navigationState.searchQuery
@@ -477,7 +478,7 @@ internal fun MusicScreen(
         batchMetadataEditorState = null
         val albumContext = batchMetadataEditorContext as? BatchMetadataEditorContext.Album
         if (albumContext != null && !isAlbumGroupAvailable(albumContext.albumKey, songs)) {
-            selectedAlbumFolderPath = null
+            selectedAlbumKey = null
             selectedLibraryTab = LibraryTab.ALBUMS
         }
         batchMetadataEditorContext = BatchMetadataEditorContext.SongSelection
@@ -494,7 +495,7 @@ internal fun MusicScreen(
         playbackLaunchContext = capturePlaybackLaunchContext(
             mainDestination = mainDestination,
             selectedLibraryTab = selectedLibraryTab,
-            selectedAlbumFolderPath = selectedAlbumFolderPath,
+            selectedAlbumKey = selectedAlbumKey,
             selectedArtistName = selectedArtistName,
             selectedGenreKey = selectedGenreKey,
             selectedPlaylistId = selectedPlaylistId,
@@ -512,7 +513,7 @@ internal fun MusicScreen(
 
     fun restorePlaybackLaunchContext() {
         val validContext = playbackLaunchContext.withValidDetails(
-            albumFolderPaths = songs.mapTo(mutableSetOf()) { song -> song.folderPath },
+            albumKeys = buildLibraryAlbumGroups(songs).mapTo(mutableSetOf()) { album -> album.key },
             artistNames = songs.mapTo(mutableSetOf()) { song ->
                 song.artist.ifBlank { "Unknown Artist" }
             },
@@ -524,7 +525,7 @@ internal fun MusicScreen(
 
         lyricsTransitionState.snapToExpanded()
         selectedArtistName = null
-        selectedAlbumFolderPath = null
+        selectedAlbumKey = null
         selectedGenreKey = null
         clearPlaylistSelection()
 
@@ -541,7 +542,7 @@ internal fun MusicScreen(
 
             is PlaybackLaunchContext.AlbumDetail -> {
                 selectedLibraryTab = LibraryTab.ALBUMS
-                selectedAlbumFolderPath = validContext.folderPath
+                selectedAlbumKey = validContext.albumKey
                 searchQuery = ""
                 mainDestination = MainDestination.LIBRARY
             }
@@ -594,21 +595,21 @@ internal fun MusicScreen(
                 isListeningHistoryReconciliationVisible ||
                 isSettingsScreenVisible ||
                 selectedArtistName != null ||
-                selectedAlbumFolderPath != null ||
+                selectedAlbumKey != null ||
                 selectedGenreKey != null ||
                 selectedPlaylistId != null ||
                 mainDestination != MainDestination.HOME
     ) {
         when {
             batchMetadataOperationState is BatchMetadataOperationState.Running ||
-                batchMetadataOperationState is BatchMetadataOperationState.Preparing ||
-                batchMetadataOperationState is BatchMetadataOperationState.AwaitingPermission ||
-                batchMetadataOperationState is BatchMetadataOperationState.PostProcessing -> {
+                    batchMetadataOperationState is BatchMetadataOperationState.Preparing ||
+                    batchMetadataOperationState is BatchMetadataOperationState.AwaitingPermission ||
+                    batchMetadataOperationState is BatchMetadataOperationState.PostProcessing -> {
                 batchMetadataActions.cancel()
             }
 
             batchMetadataOperationState is BatchMetadataOperationState.Complete ||
-                batchMetadataOperationState is BatchMetadataOperationState.Interrupted -> {
+                    batchMetadataOperationState is BatchMetadataOperationState.Interrupted -> {
                 closeBatchMetadataResults()
             }
 
@@ -668,8 +669,8 @@ internal fun MusicScreen(
                 closeSettings()
             }
 
-            selectedAlbumFolderPath != null -> {
-                selectedAlbumFolderPath = null
+            selectedAlbumKey != null -> {
+                selectedAlbumKey = null
                 if (selectedArtistName != null) {
                     selectedLibraryTab = LibraryTab.ARTISTS
                 }
@@ -863,8 +864,8 @@ internal fun MusicScreen(
                     isListeningHistoryReconciliationVisible,
                 isSettingsScreenVisible = isSettingsScreenVisible,
                 isTagEditorVisible = selectedSongForTagEdit != null ||
-                    selectedBatchEditorState != null ||
-                    selectedBatchExecutionState != null
+                        selectedBatchEditorState != null ||
+                        selectedBatchExecutionState != null
             )
             LaunchedEffect(shouldShowBottomMiniPlayer) {
                 if (!shouldShowBottomMiniPlayer) {
@@ -998,7 +999,7 @@ internal fun MusicScreen(
                     mainDestination = mainDestination,
                     selectedLibraryTab = selectedLibraryTab,
                     selectedArtistName = selectedArtistName,
-                    selectedAlbumFolderPath = selectedAlbumFolderPath,
+                    selectedAlbumKey = selectedAlbumKey,
                     selectedGenreKey = selectedGenreKey,
                     selectedPlaylistId = selectedPlaylistId,
                     searchQuery = searchQuery,
@@ -1056,7 +1057,7 @@ internal fun MusicScreen(
                     onOpenLibrary = { tab ->
                         selectedLibraryTab = tab
                         selectedArtistName = null
-                        selectedAlbumFolderPath = null
+                        selectedAlbumKey = null
                         selectedGenreKey = null
                         clearPlaylistSelection()
                         searchQuery = ""
@@ -1130,7 +1131,7 @@ internal fun MusicScreen(
                     onMiniPlayerUpNextClick = {
                         selectedLibraryTab = LibraryTab.QUEUE
                         selectedArtistName = null
-                        selectedAlbumFolderPath = null
+                        selectedAlbumKey = null
                         selectedGenreKey = null
                         clearPlaylistSelection()
                         mainDestination = MainDestination.LIBRARY
@@ -1162,12 +1163,12 @@ internal fun MusicScreen(
                     onBackFromArtist = {
                         selectedArtistName = null
                     },
-                    onAlbumSelected = { albumFolderPath ->
-                        selectedAlbumFolderPath = albumFolderPath
+                    onAlbumSelected = { albumKey ->
+                        selectedAlbumKey = albumKey
                         selectedLibraryTab = LibraryTab.ALBUMS
                     },
                     onBackFromAlbum = {
-                        selectedAlbumFolderPath = null
+                        selectedAlbumKey = null
                         if (selectedArtistName != null) {
                             selectedLibraryTab = LibraryTab.ARTISTS
                         }
@@ -1308,7 +1309,7 @@ internal fun MusicScreen(
                         onOpenUpNextClick = {
                             selectedLibraryTab = LibraryTab.QUEUE
                             selectedArtistName = null
-                            selectedAlbumFolderPath = null
+                            selectedAlbumKey = null
                             clearPlaylistSelection()
                             mainDestination = MainDestination.LIBRARY
                         },
@@ -1351,7 +1352,7 @@ internal fun MusicScreen(
                     selectedDestination = mainDestination,
                     onDestinationSelected = { destination ->
                         selectedArtistName = null
-                        selectedAlbumFolderPath = null
+                        selectedAlbumKey = null
                         selectedGenreKey = null
                         clearPlaylistSelection()
                         if (destination == MainDestination.SEARCH) {

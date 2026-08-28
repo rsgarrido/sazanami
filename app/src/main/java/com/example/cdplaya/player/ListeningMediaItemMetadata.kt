@@ -121,6 +121,7 @@ internal fun Song.toPlayableMediaItem(
     val extras = ListeningMediaItemMetadata.toExtras(evidence).apply {
         putInt(AlbumTransitionMetadata.RAW_TRACK_NUMBER, trackNumber)
         putString(AlbumTransitionMetadata.FOLDER_PATH, folderPath)
+        putInt(AlbumTransitionMetadata.DISC_NUMBER, discNumber ?: 0)
     }
     val metadata = MediaMetadata.Builder()
         .setTitle(title)

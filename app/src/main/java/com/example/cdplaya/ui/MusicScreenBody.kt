@@ -136,7 +136,7 @@ internal fun MusicScreenBody(
     mainDestination: MainDestination,
     selectedLibraryTab: LibraryTab,
     selectedArtistName: String?,
-    selectedAlbumFolderPath: String?,
+    selectedAlbumKey: String?,
     selectedGenreKey: String?,
     selectedPlaylistId: Long?,
     searchQuery: String,
@@ -545,7 +545,7 @@ internal fun MusicScreenBody(
                 } else {
                     val isSearchDestination = destination == MainDestination.SEARCH
                     val isGroupedLibraryDetail = selectedArtistName != null ||
-                            selectedAlbumFolderPath != null ||
+                            selectedAlbumKey != null ||
                             selectedGenreKey != null
                     val isLibraryDetail = isGroupedLibraryDetail ||
                             selectedPlaylistId != null
@@ -613,7 +613,7 @@ internal fun MusicScreenBody(
                                         songs = songs,
                                         selectedLibraryTab = selectedLibraryTab,
                                         selectedArtistName = selectedArtistName,
-                                        selectedAlbumFolderPath = selectedAlbumFolderPath,
+                                        selectedAlbumKey = selectedAlbumKey,
                                         selectedSongSortState = selectedCollectionSortState,
                                         selectedArtistSortState = selectedArtistSortState,
                                         selectedAlbumSortState = selectedAlbumSortState,
@@ -703,7 +703,7 @@ internal fun MusicScreenBody(
                                     viewMode = selectedViewMode,
                                     gridColumnCount = selectedGridColumnCount,
                                     selectedArtistName = selectedArtistName,
-                                    selectedAlbumFolderPath = selectedAlbumFolderPath,
+                                    selectedAlbumKey = selectedAlbumKey,
                                     selectedGenreKey = selectedGenreKey,
                                     selectedPlaylistId = selectedPlaylistId,
                                     playlists = playlists,

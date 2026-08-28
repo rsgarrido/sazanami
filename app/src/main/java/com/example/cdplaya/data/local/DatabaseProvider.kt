@@ -38,7 +38,8 @@ object DatabaseProvider {
                     MIGRATION_13_14,
                     MIGRATION_14_15,
                     MIGRATION_15_16,
-                    MIGRATION_16_17
+                    MIGRATION_16_17,
+                    MIGRATION_17_18
                 )
                 .addCallback(object : RoomDatabase.Callback() {
                     override fun onOpen(db: SupportSQLiteDatabase) {
@@ -658,7 +659,7 @@ object DatabaseProvider {
             )
             db.execSQL(
                 "CREATE INDEX IF NOT EXISTS `index_listening_identity_reconciliations_targetIdentityId` " +
-                    "ON `listening_identity_reconciliations` (`targetIdentityId`)"
+                        "ON `listening_identity_reconciliations` (`targetIdentityId`)"
             )
         }
     }
@@ -699,7 +700,7 @@ object DatabaseProvider {
             )
             db.execSQL(
                 "CREATE INDEX IF NOT EXISTS `index_playlists_folderId` " +
-                    "ON `playlists` (`folderId`)"
+                        "ON `playlists` (`folderId`)"
             )
         }
     }
@@ -847,6 +848,21 @@ object DatabaseProvider {
                 "ALTER TABLE `cached_songs` ADD COLUMN `bpm` INTEGER"
             )
             // Cached rows are deliberately re-enriched so the new columns come from current tags.
+            db.execSQL(
+                "UPDATE `cached_songs` SET `embeddedMetadataEnrichmentVersion` = 0"
+            )
+        }
+    }
+
+    val MIGRATION_17_18 = object : Migration(17, 18) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE `cached_songs` ADD COLUMN `discNumber` INTEGER"
+            )
+            db.execSQL(
+                "ALTER TABLE `cached_songs` ADD COLUMN `discTotal` INTEGER"
+            )
+            // Re-read embedded tags once so existing cached libraries gain disc metadata.
             db.execSQL(
                 "UPDATE `cached_songs` SET `embeddedMetadataEnrichmentVersion` = 0"
             )

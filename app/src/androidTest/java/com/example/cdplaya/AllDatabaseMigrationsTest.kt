@@ -19,7 +19,7 @@ class AllDatabaseMigrationsTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val migrations = allMigrations()
 
-        for (startVersion in 1..16) {
+        for (startVersion in 1..17) {
             val databaseName = "all-migrations-$startVersion-${System.nanoTime()}.db"
             val configuration = SupportSQLiteOpenHelper.Configuration.builder(context)
                 .name(databaseName)
@@ -62,13 +62,15 @@ class AllDatabaseMigrationsTest {
                         foundColumns += cursor.getString(nameIndex)
                     }
                     "year" in foundColumns &&
-                        "genresJson" in foundColumns &&
-                        "normalizedGenresJson" in foundColumns &&
-                        "composersJson" in foundColumns &&
-                        "composerText" in foundColumns &&
-                        "publisher" in foundColumns &&
-                        "bpm" in foundColumns &&
-                        "embeddedMetadataEnrichmentVersion" in foundColumns
+                            "genresJson" in foundColumns &&
+                            "normalizedGenresJson" in foundColumns &&
+                            "composersJson" in foundColumns &&
+                            "composerText" in foundColumns &&
+                            "publisher" in foundColumns &&
+                            "bpm" in foundColumns &&
+                            "discNumber" in foundColumns &&
+                            "discTotal" in foundColumns &&
+                            "embeddedMetadataEnrichmentVersion" in foundColumns
                 })
             } finally {
                 database.close()
@@ -93,6 +95,7 @@ class AllDatabaseMigrationsTest {
         DatabaseProvider.MIGRATION_13_14,
         DatabaseProvider.MIGRATION_14_15,
         DatabaseProvider.MIGRATION_15_16,
-        DatabaseProvider.MIGRATION_16_17
+        DatabaseProvider.MIGRATION_16_17,
+        DatabaseProvider.MIGRATION_17_18
     )
 }

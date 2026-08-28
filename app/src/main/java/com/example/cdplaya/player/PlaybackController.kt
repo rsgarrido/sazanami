@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import com.example.cdplaya.data.Song
+import com.example.cdplaya.data.knownDiscNumber
 import com.example.cdplaya.data.SongReferenceResolution
 import com.example.cdplaya.data.SongReferenceResolver
 import com.example.cdplaya.data.toSongReference
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import java.util.Locale
 import kotlin.random.Random
 
 class PlaybackController(
@@ -966,35 +968,52 @@ class PlaybackController(
     }
 
     private fun isAlbumPlaybackContextForSong(song: Song): Boolean {
-        if (playbackContextSongs.size <= 1) {
-            return false
-        }
+        if (playbackContextSongs.size <= 1) return false
+        if (playbackContextSongs.none { contextSong -> contextSong.id == song.id }) return false
 
-        val currentAlbumTitle = song.album.ifBlank {
-            "Unknown Album"
-        }
-
-        val currentFolderPath = song.folderPath
-
-        val currentSongIsInContext = playbackContextSongs.any { contextSong ->
-            contextSong.id == song.id
-        }
-
-        if (!currentSongIsInContext) {
-            return false
-        }
-
-        return playbackContextSongs.all { contextSong ->
-            val contextAlbumTitle = contextSong.album.ifBlank {
-                "Unknown Album"
+        val currentAlbumTitle = song.album.ifBlank { "Unknown Album" }
+        if (playbackContextSongs.any { contextSong ->
+                !contextSong.album.ifBlank { "Unknown Album" }
+                    .equals(currentAlbumTitle, ignoreCase = true)
             }
-
-            contextSong.folderPath == currentFolderPath &&
-                    contextAlbumTitle.equals(
-                        currentAlbumTitle,
-                        ignoreCase = true
-                    )
+        ) {
+            return false
         }
+
+        val folderGroups = playbackContextSongs.groupBy(Song::folderPath)
+        if (folderGroups.size == 1) return true
+
+        val normalizedParents = folderGroups.keys
+            .map { path ->
+                path.trim()
+                    .replace('\\', '/')
+                    .trimEnd('/')
+                    .substringBeforeLast('/', missingDelimiterValue = "")
+                    .lowercase(Locale.ROOT)
+            }
+            .distinct()
+        if (normalizedParents.size != 1 || normalizedParents.single().isBlank()) return false
+
+        val folderDiscNumbers = folderGroups.values.map { folderSongs ->
+            folderSongs.mapNotNull(Song::knownDiscNumber).distinct().singleOrNull()
+        }
+        if (folderDiscNumbers.any { it == null }) return false
+        if (folderDiscNumbers.filterNotNull().distinct().size != folderGroups.size) return false
+
+        val artistEvidence = folderGroups.values.mapNotNull(::albumPlaybackArtistEvidence).distinct()
+        return artistEvidence.size <= 1
+    }
+
+    private fun albumPlaybackArtistEvidence(songs: List<Song>): String? {
+        val albumArtists = songs.map { it.albumArtist.trim() }
+            .filter { it.isNotBlank() && !it.equals("Unknown Artist", ignoreCase = true) }
+            .distinctBy { it.lowercase(Locale.ROOT) }
+        if (albumArtists.size == 1) return albumArtists.single().lowercase(Locale.ROOT)
+
+        val trackArtists = songs.map { it.artist.trim() }
+            .filter { it.isNotBlank() && !it.equals("Unknown Artist", ignoreCase = true) }
+            .distinctBy { it.lowercase(Locale.ROOT) }
+        return trackArtists.singleOrNull()?.lowercase(Locale.ROOT)
     }
 
     private fun getPlaybackSourceSongs(): List<Song> {

@@ -30,7 +30,7 @@ import androidx.room.TypeConverters
         GeneratedPlaylistStateEntity::class,
         GeneratedPlaylistSongEntity::class
     ],
-    version = 17,
+    version = 18,
     exportSchema = true
 )
 @TypeConverters(ListeningHistoryTypeConverters::class)

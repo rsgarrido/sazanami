@@ -38,6 +38,8 @@ data class CachedSongEntity(
     val composerText: String = "",
     val publisher: String = "",
     val bpm: Int? = null,
+    val discNumber: Int? = null,
+    val discTotal: Int? = null,
     val embeddedMetadataEnrichmentVersion: Int = 0,
     val cachedAt: Long
 )

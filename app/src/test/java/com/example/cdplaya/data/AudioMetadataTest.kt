@@ -84,7 +84,8 @@ class AudioMetadataTest {
                 genres = listOf("Rock", "R&B / Soul"),
                 composers = listOf("Composer One", "Composer Two"),
                 publisher = "Label",
-                bpm = "128"
+                bpm = "128",
+                discNumber = "2/3"
             )
         )
 
@@ -92,6 +93,8 @@ class AudioMetadataTest {
         assertEquals(listOf("Composer One", "Composer Two"), enriched.composers)
         assertEquals("Label", enriched.publisher)
         assertEquals(128, enriched.bpm)
+        assertEquals(2, enriched.discNumber)
+        assertEquals(3, enriched.discTotal)
         assertEquals(2026, enriched.year)
         assertEquals(
             CURRENT_EMBEDDED_METADATA_ENRICHMENT_VERSION,
@@ -115,6 +118,27 @@ class AudioMetadataTest {
         assertEquals(null, parseMetadataBpm("120.5"))
         assertEquals(null, parseMetadataBpm("0"))
         assertEquals(null, parseMetadataBpm("1000"))
+    }
+
+    @Test
+    fun `disc metadata parsing accepts split and combined tag forms`() {
+        assertEquals(2, parseMetadataDiscNumber(" 2 "))
+        assertEquals(2, parseMetadataDiscNumber("2/3"))
+        assertEquals(3, parseMetadataDiscTotal("2/3", null))
+        assertEquals(4, parseMetadataDiscTotal("2/3", "4"))
+        assertEquals(null, parseMetadataDiscNumber("0/2"))
+        assertEquals(null, parseMetadataDiscTotal(null, "unknown"))
+    }
+
+    @Test
+    fun `WAV merge promotes embedded disc metadata`() {
+        val merged = mergeWavEmbeddedMetadata(
+            song("Title", "Artist", "Album"),
+            AudioMetadata(discNumber = "2/3")
+        )
+
+        assertEquals(2, merged.discNumber)
+        assertEquals(3, merged.discTotal)
     }
 
     @Test

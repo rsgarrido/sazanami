@@ -28,6 +28,27 @@ class HomePinResolutionTest {
     }
 
     @Test
+    fun albumPinAnchorResolvesToCombinedMultiDiscAlbum() {
+        val discOne = song(
+            id = 1L,
+            relativePath = "Music/Album/CD1/",
+            discNumber = 1
+        )
+        val discTwo = song(
+            id = 2L,
+            relativePath = "Music/Album/CD2/",
+            discNumber = 2
+        )
+        val pin = requireNotNull(HomePin.album("Album", "Artist", listOf(discOne)))
+
+        val resolved = resolveHomePins(listOf(pin), listOf(discOne, discTwo)).single()
+        val target = resolved.target as HomePinTarget.AlbumTarget
+
+        assertTrue(target.album.key.startsWith("multi-disc:"))
+        assertEquals(listOf(1L, 2L), target.album.songs.map(Song::id))
+    }
+
+    @Test
     fun artistPinUsesCurrentArtistAfterAnchorTrackIsRetagged() {
         val before = song(id = 1L, artist = "Old Artist")
         val retagged = song(id = 22L, artist = "New Artist")
@@ -112,7 +133,8 @@ class HomePinResolutionTest {
         artist: String = "Artist",
         relativePath: String = "Music/Album/",
         displayName: String = "track.flac",
-        fileSizeBytes: Long = 12_000L
+        fileSizeBytes: Long = 12_000L,
+        discNumber: Int? = null
     ): Song {
         val mockedUri = mock(Uri::class.java)
         doReturn("content://media/external/audio/$id").`when`(mockedUri).toString()
@@ -131,7 +153,10 @@ class HomePinResolutionTest {
             relativePath = relativePath,
             displayName = displayName,
             fileSizeBytes = fileSizeBytes,
-            dateModifiedEpochSeconds = 1_700_000_000L
+            dateModifiedEpochSeconds = 1_700_000_000L,
+            albumArtist = "Artist",
+            discNumber = discNumber,
+            discTotal = discNumber?.let { 2 }
         )
     }
 }

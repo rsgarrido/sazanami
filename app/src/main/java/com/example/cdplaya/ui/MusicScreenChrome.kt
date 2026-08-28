@@ -250,7 +250,7 @@ fun LibraryOrganizeAction(
     songs: List<Song>,
     selectedLibraryTab: LibraryTab,
     selectedArtistName: String?,
-    selectedAlbumFolderPath: String?,
+    selectedAlbumKey: String?,
     selectedSongSortState: LibrarySortState,
     selectedArtistSortState: LibrarySortState,
     selectedAlbumSortState: LibrarySortState,
@@ -270,7 +270,7 @@ fun LibraryOrganizeAction(
                 selectedLibraryTab == LibraryTab.FAVORITES ||
                 selectedLibraryTab == LibraryTab.RECENTLY_ADDED ||
                 selectedLibraryTab == LibraryTab.ARTISTS && selectedArtistName == null ||
-                selectedLibraryTab == LibraryTab.ALBUMS && selectedAlbumFolderPath == null
+                selectedLibraryTab == LibraryTab.ALBUMS && selectedAlbumKey == null
 
     if (shouldShowOrganizeAction) {
         val requestedSortState = when (selectedLibraryTab) {

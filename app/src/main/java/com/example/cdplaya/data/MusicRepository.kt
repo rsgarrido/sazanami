@@ -255,7 +255,7 @@ class MusicRepository(private val context: Context) {
 
 }
 
-internal const val CURRENT_EMBEDDED_METADATA_ENRICHMENT_VERSION = 3
+internal const val CURRENT_EMBEDDED_METADATA_ENRICHMENT_VERSION = 4
 
 internal fun Song.withEmbeddedLibraryMetadata(metadata: AudioMetadata?): Song = copy(
     year = parseMetadataYear(metadata?.date) ?: year,
@@ -263,6 +263,8 @@ internal fun Song.withEmbeddedLibraryMetadata(metadata: AudioMetadata?): Song = 
     composers = metadata?.composers.orEmpty(),
     publisher = metadata?.publisher?.trim().orEmpty(),
     bpm = parseMetadataBpm(metadata?.bpm),
+    discNumber = parseMetadataDiscNumber(metadata?.discNumber),
+    discTotal = parseMetadataDiscTotal(metadata?.discNumber, metadata?.discTotal),
     embeddedMetadataEnrichmentVersion = if (metadata != null) {
         CURRENT_EMBEDDED_METADATA_ENRICHMENT_VERSION
     } else {
@@ -336,6 +338,11 @@ internal fun mergeWavEmbeddedMetadata(
             ?.trim()
             ?.toIntOrNull()
             ?: mediaStoreSong.trackNumber,
-        year = parseMetadataYear(embeddedMetadata.date) ?: mediaStoreSong.year
+        year = parseMetadataYear(embeddedMetadata.date) ?: mediaStoreSong.year,
+        discNumber = parseMetadataDiscNumber(embeddedMetadata.discNumber),
+        discTotal = parseMetadataDiscTotal(
+            embeddedMetadata.discNumber,
+            embeddedMetadata.discTotal
+        )
     )
 }

@@ -72,6 +72,33 @@ class AlbumTransitionPolicyTest {
         assertFalse(policy(track(10), track(2_001)))
     }
 
+    @Test
+    fun `explicit disc metadata preserves sibling-folder disc boundary`() {
+        val playlist = listOf(
+            track(9, folder = "Music/Artist/Album/CD1", disc = 1),
+            track(10, folder = "Music/Artist/Album/CD1", disc = 1),
+            track(1, folder = "Music/Artist/Album/CD2", disc = 2)
+        )
+
+        assertTrue(
+            NaturalAlbumTransitionPolicy.isConfidentContinuationTracks(
+                playlist = playlist,
+                currentIndex = 1,
+                nextIndex = 2
+            )
+        )
+    }
+
+    @Test
+    fun `sibling folders without disc evidence stay crossfade eligible`() {
+        assertFalse(
+            policy(
+                track(10, folder = "Music/Artist/Album/CD1"),
+                track(1, folder = "Music/Artist/Album/CD2")
+            )
+        )
+    }
+
     private fun policy(
         outgoing: AlbumTransitionTrack,
         incoming: AlbumTransitionTrack,
@@ -86,12 +113,14 @@ class AlbumTransitionPolicyTest {
         number: Int,
         album: String = "Album",
         folder: String = "Music/Artist/Album",
-        artist: String = "Album Artist"
+        artist: String = "Album Artist",
+        disc: Int? = null
     ) = AlbumTransitionTrack(
         album = album,
         albumArtist = artist,
         trackArtist = artist,
         folderPath = folder,
-        rawTrackNumber = number
+        rawTrackNumber = number,
+        discNumber = disc
     )
 }

@@ -27,6 +27,7 @@ import com.example.cdplaya.ui.library.LibraryAlbumGroup
 import com.example.cdplaya.ui.library.LibraryArtistGroup
 import com.example.cdplaya.ui.library.LibraryItemAction
 import com.example.cdplaya.ui.library.buildLibraryAlbumGroups
+import com.example.cdplaya.ui.library.findLibraryAlbumGroupForSong
 import com.example.cdplaya.ui.library.buildLibraryArtistGroups
 import java.util.Locale
 
@@ -190,7 +191,6 @@ fun resolveHomePins(
     val songIndex = SongReferenceIndex.build(songs)
     val albums = buildLibraryAlbumGroups(songs)
     val artists = buildLibraryArtistGroups(songs)
-    val albumsByFolder = albums.associateBy { album -> album.key }
     val artistsByName = artists.associateBy { artist -> artist.name.lowercase(Locale.ROOT) }
 
     val playlistsById = playlists.associateBy(Playlist::playlistId)
@@ -205,7 +205,9 @@ fun resolveHomePins(
         val target = when (pin.type) {
             HomePinType.SONG -> anchorSong?.let(HomePinTarget::SongTarget)
             HomePinType.ALBUM -> {
-                val anchored = anchorSong?.folderPath?.let(albumsByFolder::get)
+                val anchored = anchorSong?.let { song ->
+                    findLibraryAlbumGroupForSong(song, albums)
+                }
                 val fallback = if (anchored == null) {
                     albums.singleOrNull { album ->
                         album.title.equals(pin.title, ignoreCase = true) &&
