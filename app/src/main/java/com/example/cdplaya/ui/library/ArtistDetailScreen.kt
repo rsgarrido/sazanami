@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -209,18 +210,17 @@ fun ArtistDetailScreen(
                         .padding(top = 6.dp, bottom = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(196.dp),
+                    BoxWithConstraints(
+                        modifier = Modifier.fillMaxWidth(),
                         contentAlignment = Alignment.Center
                     ) {
+                        val artistImageSize = artistDetailHeroImageSize(maxWidth)
                         ArtistPicture(
                             identity = artistGroup.identity,
                             fallbackModel = artistSongs.firstOrNull()?.albumArtUri,
                             contentDescription = "Picture of $artistName",
                             modifier = Modifier
-                                .size(180.dp)
+                                .size(artistImageSize)
                                 .clip(RoundedCornerShape(26.dp)),
                             variant = VisualAssetVariant.DISPLAY
                         )
@@ -389,6 +389,18 @@ fun ArtistDetailScreen(
         )
     }
 }
+
+internal fun artistDetailHeroImageSize(availableContentWidth: Dp): Dp {
+    if (!availableContentWidth.value.isFinite() || availableContentWidth <= 0.dp) return 0.dp
+    return minOf(
+        availableContentWidth * ARTIST_DETAIL_HERO_WIDTH_FRACTION,
+        ARTIST_DETAIL_HERO_MAXIMUM_SIZE,
+        availableContentWidth
+    )
+}
+
+private const val ARTIST_DETAIL_HERO_WIDTH_FRACTION = 0.70f
+private val ARTIST_DETAIL_HERO_MAXIMUM_SIZE = 432.dp
 
 @Composable
 private fun ShuffleModeMenuText(
