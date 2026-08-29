@@ -7,9 +7,9 @@ import org.junit.Test
 
 class BackupExportActionsTest {
     @Test
-    fun backupFilename_usesProvidedLocalDateAndJsonExtension() {
+    fun backupFilename_usesProvidedLocalDateAndPackageExtension() {
         assertEquals(
-            "cdplaya-backup-2026-07-15.json",
+            "cdplaya-backup-2026-07-15.cdplaya",
             backupFilename(LocalDate.of(2026, 7, 15))
         )
     }
@@ -17,13 +17,14 @@ class BackupExportActionsTest {
     @Test
     fun backupExportSuccessMessage_includesExportCounts() {
         assertEquals(
-            "Backup exported. 3 playlists, 24 favorites, 86 history entries.",
+            "Backup exported. 3 playlists, 24 favorites, 86 history entries, 4 pictures.",
             backupExportSuccessMessage(
                 BackupExportResult(
                     favoriteCount = 24,
                     playlistCount = 3,
                     playlistSongCount = 120,
-                    listeningHistoryCount = 86
+                    listeningHistoryCount = 86,
+                    visualAssetCount = 4
                 )
             )
         )
@@ -32,13 +33,14 @@ class BackupExportActionsTest {
     @Test
     fun backupExportSuccessMessage_usesSingularLabels() {
         assertEquals(
-            "Backup exported. 1 playlist, 1 favorite, 1 history entry.",
+            "Backup exported. 1 playlist, 1 favorite, 1 history entry, 1 picture.",
             backupExportSuccessMessage(
                 BackupExportResult(
                     favoriteCount = 1,
                     playlistCount = 1,
                     playlistSongCount = 1,
-                    listeningHistoryCount = 1
+                    listeningHistoryCount = 1,
+                    visualAssetCount = 1
                 )
             )
         )

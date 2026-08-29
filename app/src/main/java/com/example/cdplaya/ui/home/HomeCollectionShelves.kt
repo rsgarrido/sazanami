@@ -63,9 +63,12 @@ import com.example.cdplaya.data.Playlist
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.stableUiKey
 import com.example.cdplaya.data.home.HomePin
+import com.example.cdplaya.data.visual.VisualAssetVariant
 import com.example.cdplaya.ui.AppShellAccent
 import com.example.cdplaya.ui.AppShellIcons
 import com.example.cdplaya.ui.AppShellTypography
+import com.example.cdplaya.ui.library.ArtistPicture
+import com.example.cdplaya.ui.library.LocalArtistPictureUi
 import com.example.cdplaya.ui.playlist.PlaylistArtwork
 import kotlin.math.roundToInt
 
@@ -85,26 +88,32 @@ fun HomePinnedShelf(
     val density = LocalDensity.current
 
     val persistedPins = pins.take(HomePin.MAX_COUNT)
-    val persistedOrderKey = persistedPins
-        .joinToString(separator = "|") { pin -> pin.pin.id }
+    val persistedPinIds = persistedPins.map { pin -> pin.pin.id }
+    val persistedOrderKey = persistedPinIds.joinToString(separator = "|")
 
     var isEditing by remember { mutableStateOf(false) }
 
     /*
-     * visualPins is the optimistic UI order used while dragging.
+     * visualPinIds is the optimistic UI order used while dragging. Resolved pin
+     * objects remain authoritative inputs so playlist artwork metadata and
+     * automatic-collage songs can update without changing the persisted order.
      *
      * Keying this state to the persisted order is intentional:
      *
-     * - A drag can update visualPins immediately without waiting for DataStore.
+     * - A drag can update visualPinIds immediately without waiting for DataStore.
      * - Pressing DONE does not reset the optimistic order.
      * - Once the persisted pin order actually changes, Compose recreates this
      *   state from the authoritative persisted list.
      *
      * This avoids a race between edit mode and an asynchronous LaunchedEffect.
      */
-    var visualPins by remember(persistedOrderKey) {
-        mutableStateOf(persistedPins)
+    var visualPinIds by remember(persistedOrderKey) {
+        mutableStateOf(persistedPinIds)
     }
+    val visualPins = homePinsInVisualOrder(
+        authoritativePins = persistedPins,
+        visualPinIds = visualPinIds
+    )
 
     var draggedPinId by remember { mutableStateOf<String?>(null) }
     var dragStartIndex by remember { mutableIntStateOf(-1) }
@@ -136,7 +145,7 @@ fun HomePinnedShelf(
                         finishEditing()
                     } else {
                         isEditing = true
-                        visualPins = persistedPins
+                        visualPinIds = persistedPinIds
                     }
                 }
             ) {
@@ -167,9 +176,9 @@ fun HomePinnedShelf(
             Box(modifier = Modifier.fillMaxWidth()) {
                 visualPins.forEach { pin ->
                     key(pin.pin.id) {
-                        val currentIndex = visualPins.indexOfFirst { candidate ->
-                            candidate.pin.id == pin.pin.id
-                        }.coerceAtLeast(0)
+                        val currentIndex = visualPinIds
+                            .indexOf(pin.pin.id)
+                            .coerceAtLeast(0)
 
                         val isDragged = draggedPinId == pin.pin.id
 
@@ -203,9 +212,7 @@ fun HomePinnedShelf(
                                 detectDragGesturesAfterLongPress(
                                     onDragStart = {
                                         val startIndex =
-                                            visualPins.indexOfFirst { candidate ->
-                                                candidate.pin.id == pin.pin.id
-                                            }
+                                            visualPinIds.indexOf(pin.pin.id)
 
                                         if (startIndex >= 0) {
                                             draggedPinId = pin.pin.id
@@ -255,16 +262,14 @@ fun HomePinnedShelf(
                                                 )
 
                                         val fromIndex =
-                                            visualPins.indexOfFirst { candidate ->
-                                                candidate.pin.id == pin.pin.id
-                                            }
+                                            visualPinIds.indexOf(pin.pin.id)
 
                                         if (
                                             fromIndex >= 0 &&
                                             fromIndex != desiredIndex
                                         ) {
-                                            visualPins =
-                                                visualPins
+                                            visualPinIds =
+                                                visualPinIds
                                                     .toMutableList()
                                                     .apply {
                                                         val movingPin =
@@ -280,9 +285,7 @@ fun HomePinnedShelf(
 
                                     onDragEnd = {
                                         val finalIndex =
-                                            visualPins.indexOfFirst { candidate ->
-                                                candidate.pin.id == pin.pin.id
-                                            }
+                                            visualPinIds.indexOf(pin.pin.id)
 
                                         if (
                                             dragStartIndex >= 0 &&
@@ -309,7 +312,7 @@ fun HomePinnedShelf(
                                         dragStartIndex = -1
                                         dragOffsetX = 0f
 
-                                        visualPins = persistedPins
+                                        visualPinIds = persistedPinIds
                                     }
                                 )
                             }
@@ -359,10 +362,9 @@ fun HomePinnedShelf(
                                     dragOffsetX = 0f
                                 }
 
-                                visualPins =
-                                    visualPins.filterNot { candidate ->
-                                        candidate.pin.id == pin.pin.id
-                                    }
+                                visualPinIds = visualPinIds.filterNot { candidateId ->
+                                    candidateId == pin.pin.id
+                                }
 
                                 homePinUi.onUnpinRequested(pin.pin.id)
                             },
@@ -396,6 +398,14 @@ fun HomePinnedShelf(
     }
 }
 
+internal fun homePinsInVisualOrder(
+    authoritativePins: List<ResolvedHomePin>,
+    visualPinIds: List<String>
+): List<ResolvedHomePin> {
+    val authoritativePinsById = authoritativePins.associateBy { pin -> pin.pin.id }
+    return visualPinIds.mapNotNull(authoritativePinsById::get)
+}
+
 @Composable
 private fun HomePinnedCard(
     pin: ResolvedHomePin,
@@ -404,6 +414,7 @@ private fun HomePinnedCard(
     onUnpin: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val artistPictureAssignments = LocalArtistPictureUi.current.assignments
     PressableHomeCard(
         onClick = onClick,
         modifier = modifier,
@@ -422,11 +433,23 @@ private fun HomePinnedCard(
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest)
             ) {
                 val playlistTarget = pin.target as? HomePinTarget.PlaylistTarget
+                val artistPictureIdentity = pin.artistPictureIdentityOrNull()
+                val artistPictureAssignment = pin.artistPictureAssignmentOrNull(
+                    artistPictureAssignments
+                )
                 if (playlistTarget != null) {
                     PlaylistArtwork(
                         playlist = playlistTarget.playlist,
                         contentDescription = "Artwork for ${pin.title}",
                         modifier = Modifier.fillMaxSize()
+                    )
+                } else if (artistPictureIdentity != null && artistPictureAssignment != null) {
+                    ArtistPicture(
+                        identity = artistPictureIdentity,
+                        fallbackModel = pin.artworkUri,
+                        contentDescription = "Artwork for ${pin.title}",
+                        modifier = Modifier.fillMaxSize(),
+                        variant = VisualAssetVariant.THUMBNAIL
                     )
                 } else {
                     ArtworkPlaceholder(modifier = Modifier.fillMaxSize())

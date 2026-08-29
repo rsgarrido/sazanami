@@ -1,16 +1,19 @@
 package com.example.cdplaya.ui.playlist
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -18,26 +21,56 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import coil.Coil
+import coil.request.ImageRequest
 import com.example.cdplaya.data.Playlist
 import com.example.cdplaya.data.PlaylistArtworkMode
 import com.example.cdplaya.data.PlaylistArtworkStore
 import com.example.cdplaya.data.Song
+import com.example.cdplaya.data.visual.VisualAssetIdentity
+import com.example.cdplaya.data.visual.VisualAssetVariant
+import com.example.cdplaya.data.visual.PlaylistCollageAsset
+import com.example.cdplaya.data.visual.PlaylistCollageStore
+import com.example.cdplaya.data.visual.playlistCollageSignature
+import com.example.cdplaya.data.visual.requestPolicy
 import com.example.cdplaya.ui.AppShellIcons
+import kotlinx.coroutines.CancellationException
 
 @Composable
 fun PlaylistArtwork(
     playlist: Playlist,
     contentDescription: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    variant: VisualAssetVariant = VisualAssetVariant.THUMBNAIL
 ) {
     val context = LocalContext.current
-    val customArtwork = remember(playlist.artworkMode, playlist.artworkReference) {
+    val customArtwork = remember(playlist.playlistId, playlist.artworkMode, playlist.artworkReference, variant) {
         if (playlist.artworkMode == PlaylistArtworkMode.CUSTOM) {
-            PlaylistArtworkStore.fileFor(context, playlist.artworkReference)
+            PlaylistArtworkStore.fileFor(context, playlist.playlistId, playlist.artworkReference, variant)
         } else {
             null
         }
     }
+    val customIdentity = remember(playlist.playlistId, playlist.artworkReference) {
+        PlaylistArtworkStore.identity(playlist.playlistId, playlist.artworkReference)
+    }
+    val customDisplayArtwork = remember(playlist.playlistId, playlist.artworkMode, playlist.artworkReference) {
+        if (playlist.artworkMode == PlaylistArtworkMode.CUSTOM) {
+            PlaylistArtworkStore.fileFor(
+                context,
+                playlist.playlistId,
+                playlist.artworkReference,
+                VisualAssetVariant.DISPLAY
+            )
+        } else {
+            null
+        }
+    }
+    VisualAssetDisplayPrefetchEffect(
+        model = customDisplayArtwork,
+        identity = customIdentity,
+        enabled = variant == VisualAssetVariant.THUMBNAIL
+    )
 
     Box(
         modifier = modifier
@@ -48,13 +81,17 @@ fun PlaylistArtwork(
             ArtworkTile(
                 model = customArtwork,
                 contentDescription = contentDescription,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                identity = customIdentity,
+                variant = variant
             )
         } else {
             AutomaticPlaylistArtwork(
+                playlistId = playlist.playlistId,
                 songs = playlist.automaticArtworkSongs,
                 contentDescription = contentDescription,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                variant = variant
             )
         }
     }
@@ -62,80 +99,86 @@ fun PlaylistArtwork(
 
 @Composable
 private fun AutomaticPlaylistArtwork(
+    playlistId: Long,
     songs: List<Song>,
     contentDescription: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    variant: VisualAssetVariant
 ) {
     val artwork = songs.take(4)
-    when (artwork.size) {
-        0 -> ArtworkTile(null, contentDescription, modifier)
-        1 -> ArtworkTile(artwork[0].albumArtUri, contentDescription, modifier)
-        2 -> Row(
-            modifier = modifier,
-            horizontalArrangement = Arrangement.spacedBy(1.dp)
-        ) {
-            artwork.forEachIndexed { index, song ->
-                ArtworkTile(
-                    model = song.albumArtUri,
-                    contentDescription = if (index == 0) contentDescription else null,
-                    modifier = Modifier.weight(1f).fillMaxSize()
-                )
+    val signature = remember(playlistId, artwork) {
+        playlistCollageSignature(
+            playlistId,
+            artwork.map { song ->
+                "${song.albumArtUri}:${song.artworkEnrichmentVersion}:${song.dateModifiedEpochSeconds}"
             }
-        }
-        3 -> Row(
-            modifier = modifier,
-            horizontalArrangement = Arrangement.spacedBy(1.dp)
-        ) {
-            ArtworkTile(
-                model = artwork[0].albumArtUri,
-                contentDescription = contentDescription,
-                modifier = Modifier.weight(1f).fillMaxSize()
+        )
+    }
+    if (artwork.isEmpty()) {
+        ArtworkTile(null, contentDescription, modifier)
+        return
+    }
+    val context = LocalContext.current
+    val store = remember(context) { PlaylistCollageStore(context) }
+    val expected = remember(playlistId, signature) { store.expected(playlistId, signature) }
+    var displayed by remember(playlistId) { mutableStateOf<PlaylistCollageAsset?>(expected) }
+    var requestEpoch by remember(playlistId) { mutableIntStateOf(0) }
+    LaunchedEffect(playlistId, signature) {
+        val ready = try {
+            store.ensure(
+                playlistId = playlistId,
+                signature = signature,
+                orderedArtworkUris = artwork.mapNotNull(Song::albumArtUri)
             )
-            Column(
-                modifier = Modifier.weight(1f).fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(1.dp)
-            ) {
-                artwork.drop(1).forEach { song ->
-                    ArtworkTile(
-                        model = song.albumArtUri,
-                        contentDescription = null,
-                        modifier = Modifier.weight(1f).fillMaxSize()
-                    )
-                }
-            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
         }
-        else -> Column(
-            modifier = modifier,
-            verticalArrangement = Arrangement.spacedBy(1.dp)
-        ) {
-            artwork.chunked(2).forEachIndexed { rowIndex, rowArtwork ->
-                Row(
-                    modifier = Modifier.weight(1f).fillMaxSize(),
-                    horizontalArrangement = Arrangement.spacedBy(1.dp)
-                ) {
-                    rowArtwork.forEachIndexed { columnIndex, song ->
-                        ArtworkTile(
-                            model = song.albumArtUri,
-                            contentDescription = if (rowIndex == 0 && columnIndex == 0) {
-                                contentDescription
-                            } else {
-                                null
-                            },
-                            modifier = Modifier.weight(1f).fillMaxSize()
-                        )
-                    }
-                }
-            }
+        if (ready != null && ready.identity.revision == signature) {
+            displayed = ready
+            requestEpoch += 1
         }
     }
+    val asset = displayed
+    VisualAssetDisplayPrefetchEffect(
+        model = asset?.displayFile,
+        identity = asset?.identity,
+        enabled = variant == VisualAssetVariant.THUMBNAIL && requestEpoch > 0
+    )
+    ArtworkTile(
+        model = asset?.file(variant),
+        contentDescription = contentDescription,
+        modifier = modifier,
+        identity = asset?.identity,
+        variant = variant,
+        reloadKey = requestEpoch
+    )
 }
 
 @Composable
 private fun ArtworkTile(
     model: Any?,
     contentDescription: String?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    identity: VisualAssetIdentity? = null,
+    variant: VisualAssetVariant = VisualAssetVariant.THUMBNAIL,
+    reloadKey: Any? = null
 ) {
+    val context = LocalContext.current
+    val request = remember(model, identity, variant, reloadKey) {
+        if (model == null) null else ImageRequest.Builder(context)
+            .data(model)
+            .apply {
+                identity?.requestPolicy(variant)?.let { policy ->
+                    memoryCacheKey(policy.cacheKey)
+                    diskCacheKey(policy.cacheKey)
+                    policy.placeholderMemoryCacheKey?.let(::placeholderMemoryCacheKey)
+                }
+            }
+            .crossfade(false)
+            .build()
+    }
     Box(
         modifier = modifier.background(MaterialTheme.colorScheme.surfaceContainerHighest),
         contentAlignment = Alignment.Center
@@ -147,11 +190,37 @@ private fun ArtworkTile(
             modifier = Modifier.fillMaxSize(0.42f)
         )
         AsyncImage(
-            model = model,
+            model = request,
             contentDescription = if (model != null) contentDescription else null,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop
         )
+    }
+}
+
+@Composable
+private fun VisualAssetDisplayPrefetchEffect(
+    model: Any?,
+    identity: VisualAssetIdentity?,
+    enabled: Boolean
+) {
+    val context = LocalContext.current
+    DisposableEffect(model, identity, enabled) {
+        val disposable = if (enabled && model != null && identity != null) {
+            val policy = identity.requestPolicy(VisualAssetVariant.DISPLAY)
+            Coil.imageLoader(context).enqueue(
+                ImageRequest.Builder(context)
+                    .data(model)
+                    .size(1024)
+                    .memoryCacheKey(policy.cacheKey)
+                    .diskCacheKey(policy.cacheKey)
+                    .crossfade(false)
+                    .build()
+            )
+        } else {
+            null
+        }
+        onDispose { disposable?.dispose() }
     }
 }
 

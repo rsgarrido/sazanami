@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -59,6 +60,8 @@ import androidx.compose.ui.window.PopupProperties
 import coil.compose.AsyncImage
 import com.example.cdplaya.R
 import com.example.cdplaya.data.Song
+import com.example.cdplaya.data.ArtistIdentity
+import com.example.cdplaya.data.visual.VisualAssetVariant
 import com.example.cdplaya.ui.AppShellAccent
 import com.example.cdplaya.ui.AppShellIcons
 import com.example.cdplaya.ui.home.LocalHomePinUi
@@ -66,6 +69,7 @@ import com.example.cdplaya.ui.home.LocalHomePinUi
 @Composable
 fun ArtistDetailScreen(
     artistName: String,
+    artistIdentity: ArtistIdentity,
     artistSongs: List<Song>,
     librarySongs: List<Song>,
     onBackClick: () -> Unit,
@@ -123,13 +127,15 @@ fun ArtistDetailScreen(
             }
         )
     }
-    val artistGroup = remember(artistName, artistSongs) {
+    val artistGroup = remember(artistName, artistIdentity, artistSongs) {
         LibraryArtistGroup(
+            identity = artistIdentity,
             name = artistName,
             songs = artistSongs
         )
     }
     val homePinUi = LocalHomePinUi.current
+    val artistPictureUi = LocalArtistPictureUi.current
     val gridState = rememberLazyGridState()
     val showCompactTitle by remember {
         derivedStateOf {
@@ -165,6 +171,10 @@ fun ArtistDetailScreen(
                     artistName = artistName,
                     subtitle = subtitle,
                     artworkUri = artistSongs.firstOrNull()?.albumArtUri,
+                    artistIdentity = artistGroup.identity,
+                    hasCustomPicture = artistGroup.key in artistPictureUi.assignments,
+                    onChoosePicture = artistPictureUi.onChoosePicture,
+                    onRemovePicture = artistPictureUi.onRemovePicture,
                     artistSongs = artistSongs,
                     onPlayClick = { _, _ -> onPlayAllClick() },
                     onShuffleClick = { _, _ -> onShuffleSongsClick() },
@@ -200,6 +210,21 @@ fun ArtistDetailScreen(
                         .padding(top = 6.dp, bottom = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    BoxWithConstraints(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val artistImageSize = artistDetailHeroImageSize(maxWidth)
+                        ArtistPicture(
+                            identity = artistGroup.identity,
+                            fallbackModel = artistSongs.firstOrNull()?.albumArtUri,
+                            contentDescription = "Picture of $artistName",
+                            modifier = Modifier
+                                .size(artistImageSize)
+                                .clip(RoundedCornerShape(26.dp)),
+                            variant = VisualAssetVariant.DISPLAY
+                        )
+                    }
                     Text(
                         text = artistName,
                         style = MaterialTheme.typography.headlineLarge,
@@ -364,6 +389,18 @@ fun ArtistDetailScreen(
         )
     }
 }
+
+internal fun artistDetailHeroImageSize(availableContentWidth: Dp): Dp {
+    if (!availableContentWidth.value.isFinite() || availableContentWidth <= 0.dp) return 0.dp
+    return minOf(
+        availableContentWidth * ARTIST_DETAIL_HERO_WIDTH_FRACTION,
+        ARTIST_DETAIL_HERO_MAXIMUM_SIZE,
+        availableContentWidth
+    )
+}
+
+private const val ARTIST_DETAIL_HERO_WIDTH_FRACTION = 0.70f
+private val ARTIST_DETAIL_HERO_MAXIMUM_SIZE = 432.dp
 
 @Composable
 private fun ShuffleModeMenuText(

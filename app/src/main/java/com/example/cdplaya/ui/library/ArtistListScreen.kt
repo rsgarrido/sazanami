@@ -1,6 +1,5 @@
 package com.example.cdplaya.ui.library
 
-import android.R
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,6 +14,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.ListItem
@@ -26,13 +27,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
-import coil.compose.AsyncImage
+import com.example.cdplaya.data.ArtistIdentity
 import com.example.cdplaya.data.Song
+import com.example.cdplaya.data.visual.VisualAssetVariant
 import com.example.cdplaya.ui.home.LocalHomePinUi
 import com.example.cdplaya.R as AppR
 
@@ -58,6 +58,7 @@ fun ArtistListScreen(
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
     }
     val homePinUi = LocalHomePinUi.current
+    val artistPictureUi = LocalArtistPictureUi.current
     val rememberedListState = rememberLazyListState()
 
     LazyColumn(
@@ -67,7 +68,7 @@ fun ArtistListScreen(
     ) {
         items(
             items = artists,
-            key = { artist -> artist.name }
+            key = { artist -> artist.key }
         ) { artist ->
             val firstSong = artist.songs.firstOrNull()
             val songCountText = pluralStringResource(
@@ -78,15 +79,14 @@ fun ArtistListScreen(
 
             ListItem(
                 leadingContent = {
-                    AsyncImage(
-                        model = firstSong?.albumArtUri,
+                    ArtistPicture(
+                        identity = artist.identity,
+                        fallbackModel = firstSong?.albumArtUri,
                         contentDescription = "Artwork for ${artist.name}",
                         modifier = Modifier
                             .size(56.dp)
                             .clip(RoundedCornerShape(8.dp)),
-                        contentScale = ContentScale.Crop,
-                        error = painterResource(R.drawable.ic_media_play),
-                        placeholder = painterResource(R.drawable.ic_media_play)
+                        variant = VisualAssetVariant.THUMBNAIL
                     )
                 },
                 headlineContent = {
@@ -112,6 +112,10 @@ fun ArtistListScreen(
                                 artistName = artist.name,
                                 subtitle = songCountText,
                                 artworkUri = firstSong?.albumArtUri,
+                                artistIdentity = artist.identity,
+                                hasCustomPicture = artist.key in artistPictureUi.assignments,
+                                onChoosePicture = artistPictureUi.onChoosePicture,
+                                onRemovePicture = artistPictureUi.onRemovePicture,
                                 artistSongs = artist.songs,
                                 onPlayClick = onArtistPlayClick,
                                 onShuffleClick = onArtistShuffleClick,
@@ -175,6 +179,10 @@ internal fun artistActionSheetTarget(
     artistName: String,
     subtitle: String,
     artworkUri: Any?,
+    artistIdentity: ArtistIdentity,
+    hasCustomPicture: Boolean,
+    onChoosePicture: (ArtistIdentity) -> Unit,
+    onRemovePicture: (ArtistIdentity) -> Unit,
     artistSongs: List<Song>,
     onPlayClick: (String, List<Song>) -> Unit,
     onShuffleClick: (String, List<Song>) -> Unit,
@@ -188,6 +196,14 @@ internal fun artistActionSheetTarget(
         subtitle = subtitle,
         artworkUri = artworkUri,
         artworkDescription = "Artwork for $artistName",
+        artworkContent = {
+            ArtistPicture(
+                identity = artistIdentity,
+                fallbackModel = artworkUri,
+                contentDescription = "Artwork for $artistName",
+                modifier = Modifier.fillMaxSize()
+            )
+        },
         actions = buildList {
             add(LibraryItemAction(
                 label = "Play",
@@ -214,6 +230,21 @@ internal fun artistActionSheetTarget(
                 icon = Icons.AutoMirrored.Filled.PlaylistAdd,
                 onClick = { onAddToPlaylistClick(artistName, artistSongs) }
             ))
+            if (artistIdentity.supportsCustomPicture) {
+                add(LibraryItemAction(
+                    label = if (hasCustomPicture) "Change artist picture" else "Set artist picture",
+                    icon = Icons.Filled.Image,
+                    onClick = { onChoosePicture(artistIdentity) }
+                ))
+                if (hasCustomPicture) {
+                    add(LibraryItemAction(
+                        label = "Remove artist picture",
+                        icon = Icons.Filled.Delete,
+                        isDestructive = true,
+                        onClick = { onRemovePicture(artistIdentity) }
+                    ))
+                }
+            }
             homePinAction?.let(::add)
         }
     )

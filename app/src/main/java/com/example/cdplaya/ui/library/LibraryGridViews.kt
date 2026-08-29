@@ -43,6 +43,7 @@ import com.example.cdplaya.R
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.membershipKey
 import com.example.cdplaya.data.stableUiKey
+import com.example.cdplaya.data.visual.VisualAssetVariant
 import com.example.cdplaya.ui.AppShellIcons
 import com.example.cdplaya.ui.AppShellAccent
 import com.example.cdplaya.ui.AppShellTypography
@@ -238,6 +239,7 @@ fun ArtistGridScreen(
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
     }
     val homePinUi = LocalHomePinUi.current
+    val artistPictureUi = LocalArtistPictureUi.current
     val rememberedGridState = rememberLazyGridState()
 
     LazyVerticalGrid(
@@ -250,7 +252,7 @@ fun ArtistGridScreen(
     ) {
         items(
             items = artists,
-            key = { artist -> artist.name }
+            key = { artist -> artist.key }
         ) { artist ->
             val songCountText = pluralStringResource(
                 R.plurals.song_count,
@@ -260,6 +262,15 @@ fun ArtistGridScreen(
             LibraryGridCard(
                 artworkUri = artist.songs.firstOrNull()?.albumArtUri,
                 artworkDescription = "Artwork for ${artist.name}",
+                artworkContent = {
+                    ArtistPicture(
+                        identity = artist.identity,
+                        fallbackModel = artist.songs.firstOrNull()?.albumArtUri,
+                        contentDescription = "Artwork for ${artist.name}",
+                        modifier = Modifier.fillMaxSize(),
+                        variant = VisualAssetVariant.THUMBNAIL
+                    )
+                },
                 title = artist.name,
                 subtitle = songCountText,
                 clickLabel = "Open ${artist.name}",
@@ -270,6 +281,10 @@ fun ArtistGridScreen(
                         artistName = artist.name,
                         subtitle = songCountText,
                         artworkUri = artist.songs.firstOrNull()?.albumArtUri,
+                        artistIdentity = artist.identity,
+                        hasCustomPicture = artist.key in artistPictureUi.assignments,
+                        onChoosePicture = artistPictureUi.onChoosePicture,
+                        onRemovePicture = artistPictureUi.onRemovePicture,
                         artistSongs = artist.songs,
                         onPlayClick = onArtistPlayClick,
                         onShuffleClick = onArtistShuffleClick,
@@ -303,6 +318,7 @@ fun ArtistGridScreen(
 private fun LibraryGridCard(
     artworkUri: Any?,
     artworkDescription: String,
+    artworkContent: (@Composable () -> Unit)? = null,
     title: String,
     subtitle: String?,
     clickLabel: String,
@@ -338,12 +354,16 @@ private fun LibraryGridCard(
                     .size(gridMetrics.placeholderIconSize),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f)
             )
-            AsyncImage(
-                model = artworkUri,
-                contentDescription = artworkDescription,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
+            if (artworkContent != null) {
+                artworkContent()
+            } else {
+                AsyncImage(
+                    model = artworkUri,
+                    contentDescription = artworkDescription,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
 
             if (selected) {
                 Box(

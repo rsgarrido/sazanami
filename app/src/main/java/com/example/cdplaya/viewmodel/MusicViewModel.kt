@@ -18,6 +18,7 @@ import com.example.cdplaya.controller.LinkedHistoricalReconciliation
 import com.example.cdplaya.controller.ReconciliationReviewTab
 import com.example.cdplaya.data.LocalReconciliationTarget
 import com.example.cdplaya.data.Song
+import com.example.cdplaya.data.ArtistIdentity
 import com.example.cdplaya.data.EditableSongTags
 import com.example.cdplaya.data.Playlist
 import com.example.cdplaya.data.PlaylistFolder
@@ -1096,6 +1097,17 @@ class MusicViewModel(
     ) {
         libraryController.resetPlaylistArtwork(playlist, onComplete)
     }
+
+    fun changeArtistPicture(
+        identity: ArtistIdentity,
+        source: Uri,
+        onComplete: (Result<Unit>) -> Unit = {}
+    ) = libraryController.changeArtistPicture(identity, source, onComplete)
+
+    fun removeArtistPicture(
+        identity: ArtistIdentity,
+        onComplete: (Result<Unit>) -> Unit = {}
+    ) = libraryController.removeArtistPicture(identity, onComplete)
 
     fun loadSelectedPlaylist(playlist: Playlist) {
         libraryController.loadSelectedPlaylist(playlist)

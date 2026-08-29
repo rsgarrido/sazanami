@@ -1,5 +1,8 @@
 package com.example.cdplaya.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -24,10 +27,13 @@ import com.example.cdplaya.mediaaccess.MediaAccessState
 import com.example.cdplaya.mediaaccess.FolderArtworkAccessState
 import com.example.cdplaya.data.home.HomePin
 import com.example.cdplaya.data.buildGenreCollections
+import com.example.cdplaya.data.ArtistIdentity
 import com.example.cdplaya.ui.home.HomePinReplacementDialog
 import com.example.cdplaya.ui.home.HomePinUiEnvironment
 import com.example.cdplaya.ui.home.LocalHomePinUi
 import com.example.cdplaya.ui.home.resolveHomePins
+import com.example.cdplaya.ui.library.ArtistPictureUiEnvironment
+import com.example.cdplaya.ui.library.LocalArtistPictureUi
 import com.example.cdplaya.ui.ratings.LocalSongRatingUi
 import com.example.cdplaya.ui.ratings.SongRatingDialog
 import com.example.cdplaya.ui.ratings.SongRatingUiEnvironment
@@ -108,7 +114,25 @@ internal fun MusicRoute(
     }
 
     var pendingHomePin by remember { mutableStateOf<HomePin?>(null) }
+    var pendingArtistPicture by remember { mutableStateOf<ArtistIdentity?>(null) }
     var quickRateMode by remember { mutableStateOf(false) }
+    val artistPicturePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        val identity = pendingArtistPicture
+        pendingArtistPicture = null
+        if (uri != null && identity != null) {
+            musicViewModel.changeArtistPicture(identity, uri) { result ->
+                result.exceptionOrNull()?.let { failure ->
+                    routeScope.launch {
+                        snackbarHostState.showSnackbar(
+                            failure.message ?: "Unable to set artist picture."
+                        )
+                    }
+                }
+            }
+        }
+    }
     val resolvedHomePins = remember(
         homeCustomizationUiState.pins,
         libraryUiState.songs,
@@ -189,6 +213,26 @@ internal fun MusicRoute(
             onResolve = musicViewModel::resolveSmartPlaylist
         ),
         LocalHomePinUi provides homePinUiEnvironment,
+        LocalArtistPictureUi provides ArtistPictureUiEnvironment(
+            assignments = libraryUiState.artistPictureAssignments,
+            onChoosePicture = { identity ->
+                pendingArtistPicture = identity
+                artistPicturePicker.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+            },
+            onRemovePicture = { identity ->
+                musicViewModel.removeArtistPicture(identity) { result ->
+                    result.exceptionOrNull()?.let { failure ->
+                        routeScope.launch {
+                            snackbarHostState.showSnackbar(
+                                failure.message ?: "Unable to remove artist picture."
+                            )
+                        }
+                    }
+                }
+            }
+        ),
         LocalFolderArtworkUi provides FolderArtworkUiEnvironment(
             state = folderArtworkAccessState,
             onChooseFolder = onChooseFolderArtwork,
