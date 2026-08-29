@@ -62,6 +62,7 @@ import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.PlaylistType
 import com.example.cdplaya.data.PlaylistMembershipBehavior
 import com.example.cdplaya.data.Song
+import com.example.cdplaya.data.visual.VisualAssetVariant
 import com.example.cdplaya.ui.AppShellAccent
 import com.example.cdplaya.ui.AppShellTypography
 import com.example.cdplaya.ui.home.LocalHomePinUi
@@ -204,7 +205,8 @@ fun PlaylistDetailScreen(
                 PlaylistArtwork(
                     playlist = playlist,
                     contentDescription = "Artwork for ${playlist.name}",
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    variant = VisualAssetVariant.DISPLAY
                 )
             }
         )
@@ -444,7 +446,8 @@ private fun PlaylistDetailHero(
             modifier = Modifier
                 .fillMaxWidth(0.72f)
                 .widthIn(max = 320.dp)
-                .aspectRatio(1f)
+                .aspectRatio(1f),
+            variant = VisualAssetVariant.DISPLAY
         )
 
         Column(

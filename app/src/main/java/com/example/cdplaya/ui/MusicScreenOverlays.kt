@@ -21,6 +21,7 @@ import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.membershipKey
 import com.example.cdplaya.player.RepeatMode
 import com.example.cdplaya.ui.player.ExpandedPlayerThemeHost
+import com.example.cdplaya.ui.player.ExpandedPlayerPortraitOrientationEffect
 import com.example.cdplaya.ui.player.PlayerLyricsTransitionState
 import com.example.cdplaya.ui.player.PlayerMorphState
 import com.example.cdplaya.ui.player.PlayerEndpointBounds
@@ -119,6 +120,7 @@ fun MusicScreenOverlays(
     pocketCassetteMorphBounds: PocketCassetteMorphBounds
 ) {
     val isPlayerExpanded = playerMorphState.shouldComposeExpanded
+    ExpandedPlayerPortraitOrientationEffect(isPlayerExpanded)
     val shouldWarmCurrentWaveform = shouldLoadExpandedPlayerWaveform(
         selectedPlayerTheme = selectedPlayerTheme,
         modernSeekbarStyle = selectedModernPlayerAppearance.seekbar.style

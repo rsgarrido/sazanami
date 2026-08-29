@@ -23,6 +23,8 @@ import com.example.cdplaya.data.MusicRepository
 import com.example.cdplaya.data.Playlist
 import com.example.cdplaya.data.PlaylistFolder
 import com.example.cdplaya.data.PlaylistArtworkStore
+import com.example.cdplaya.data.visual.VisualAssetReplacementCoordinator
+import com.example.cdplaya.data.visual.PlaylistCollageStore
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.PlaylistsRepository
 import com.example.cdplaya.data.GeneratedPlaylistState
@@ -114,6 +116,8 @@ class LibraryController(
     private val libraryCacheRepository = LibraryCacheRepository(appDatabase.cachedSongDao())
     private val playlistFileRepository = PlaylistFileRepository(applicationContext)
     private val playlistArtworkStore = PlaylistArtworkStore(applicationContext)
+    private val playlistArtworkReplacements = VisualAssetReplacementCoordinator()
+    private val playlistCollageStore = PlaylistCollageStore(applicationContext)
     private var refreshJob: Job? = null
     private var reconciliationJob: Job? = null
     private val reconciliationCoordinator = ReconciliationGenerationCoordinator()
@@ -679,11 +683,13 @@ class LibraryController(
     }
 
     fun deletePlaylist(playlist: Playlist) {
+        playlistArtworkReplacements.invalidate(playlist.playlistId.toString())
         coroutineScope.launch {
             playlistsRepository.deletePlaylist(playlist.playlistId)
             appPreferencesRepository.removeHomePinsForPlaylist(playlist.playlistId)
             withContext(Dispatchers.IO) {
-                playlistArtworkStore.delete(playlist.artworkReference)
+                playlistArtworkStore.delete(playlist.playlistId, playlist.artworkReference)
+                playlistCollageStore.deletePlaylist(playlist.playlistId)
             }
             loadPlaylists()
 
@@ -698,10 +704,18 @@ class LibraryController(
         source: Uri,
         onComplete: (Result<Unit>) -> Unit = {}
     ) {
+        val ownerKey = playlist.playlistId.toString()
+        val replacementGeneration = playlistArtworkReplacements.begin(ownerKey)
         coroutineScope.launch {
             val result = runCatching {
                 val newReference = withContext(Dispatchers.IO) {
                     playlistArtworkStore.importArtwork(playlist.playlistId, source)
+                }
+                if (!playlistArtworkReplacements.isCurrent(ownerKey, replacementGeneration)) {
+                    withContext(Dispatchers.IO) {
+                        playlistArtworkStore.delete(playlist.playlistId, newReference)
+                    }
+                    return@runCatching
                 }
                 try {
                     playlistsRepository.setCustomArtwork(
@@ -710,12 +724,12 @@ class LibraryController(
                     )
                 } catch (failure: Throwable) {
                     withContext(Dispatchers.IO) {
-                        playlistArtworkStore.delete(newReference)
+                        playlistArtworkStore.delete(playlist.playlistId, newReference)
                     }
                     throw failure
                 }
                 withContext(Dispatchers.IO) {
-                    playlistArtworkStore.delete(playlist.artworkReference)
+                    playlistArtworkStore.delete(playlist.playlistId, playlist.artworkReference)
                 }
                 loadPlaylists()
             }.onFailure { failure ->
@@ -777,11 +791,12 @@ class LibraryController(
         playlist: Playlist,
         onComplete: (Result<Unit>) -> Unit = {}
     ) {
+        playlistArtworkReplacements.invalidate(playlist.playlistId.toString())
         coroutineScope.launch {
             val result = runCatching {
                 playlistsRepository.resetArtwork(playlist.playlistId)
                 withContext(Dispatchers.IO) {
-                    playlistArtworkStore.delete(playlist.artworkReference)
+                    playlistArtworkStore.delete(playlist.playlistId, playlist.artworkReference)
                 }
                 loadPlaylists()
             }.onFailure { failure ->
