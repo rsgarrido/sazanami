@@ -47,11 +47,7 @@ class VisualAssetStore(context: Context) {
             val orientation = readExifOrientation(sourceFile)
             VisualAssetVariant.entries.forEach { variant ->
                 val bitmap = decodeBounded(sourceFile, variant.maximumDimensionPx, orientation)
-                try {
-                    writeWebp(bitmap, File(stagingDirectory, variant.fileName))
-                } finally {
-                    bitmap.recycle()
-                }
+                writeWebp(bitmap, File(stagingDirectory, variant.fileName))
             }
             sourceFile.delete()
             if (finalDirectory.exists() || !stagingDirectory.renameTo(finalDirectory)) {
@@ -122,7 +118,6 @@ class VisualAssetStore(context: Context) {
         val target = boundedVisualAssetSize(oriented.width, oriented.height, maxDimension)
         if (target.width == oriented.width && target.height == oriented.height) return oriented
         val scaled = Bitmap.createScaledBitmap(oriented, target.width, target.height, true)
-        if (scaled !== oriented) oriented.recycle()
         return scaled
     }
 
@@ -139,7 +134,6 @@ class VisualAssetStore(context: Context) {
             else -> return bitmap
         }
         val transformed = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-        if (transformed !== bitmap) bitmap.recycle()
         return transformed
     }
 

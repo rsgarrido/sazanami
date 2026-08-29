@@ -34,6 +34,7 @@ import com.example.cdplaya.data.visual.PlaylistCollageStore
 import com.example.cdplaya.data.visual.playlistCollageSignature
 import com.example.cdplaya.data.visual.requestPolicy
 import com.example.cdplaya.ui.AppShellIcons
+import kotlinx.coroutines.CancellationException
 
 @Composable
 fun PlaylistArtwork(
@@ -123,11 +124,17 @@ private fun AutomaticPlaylistArtwork(
     var displayed by remember(playlistId) { mutableStateOf<PlaylistCollageAsset?>(expected) }
     var requestEpoch by remember(playlistId) { mutableIntStateOf(0) }
     LaunchedEffect(playlistId, signature) {
-        val ready = store.ensure(
-            playlistId = playlistId,
-            signature = signature,
-            orderedArtworkUris = artwork.mapNotNull(Song::albumArtUri)
-        )
+        val ready = try {
+            store.ensure(
+                playlistId = playlistId,
+                signature = signature,
+                orderedArtworkUris = artwork.mapNotNull(Song::albumArtUri)
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
         if (ready != null && ready.identity.revision == signature) {
             displayed = ready
             requestEpoch += 1

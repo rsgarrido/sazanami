@@ -12,8 +12,12 @@ import coil.Coil
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 
 data class PlaylistCollageAsset(
@@ -46,9 +50,11 @@ class PlaylistCollageStore(context: Context) {
         )
     }
 
-    fun deletePlaylist(playlistId: Long) {
+    suspend fun deletePlaylist(playlistId: Long) {
         requestedSignatures.remove(playlistId)
-        File(root, playlistId.toString()).deleteRecursively()
+        generationMutexes.computeIfAbsent(playlistId) { Mutex() }.withLock {
+            File(root, playlistId.toString()).deleteRecursively()
+        }
     }
 
     suspend fun ensure(
@@ -57,54 +63,86 @@ class PlaylistCollageStore(context: Context) {
         orderedArtworkUris: List<Uri>
     ): PlaylistCollageAsset? = withContext(Dispatchers.IO) {
         requestedSignatures[playlistId] = signature
-        val expected = expected(playlistId, signature)
-        if (expected.thumbnailFile.isFile && expected.displayFile.isFile) return@withContext expected
-        if (orderedArtworkUris.isEmpty()) return@withContext null
-        val ownerDirectory = expected.displayFile.parentFile?.parentFile ?: return@withContext null
-        val staging = File(ownerDirectory, ".$signature-${System.nanoTime()}.tmp")
-        if (!staging.mkdirs()) return@withContext null
-        try {
-            val sources = orderedArtworkUris.take(4).mapNotNull { uri ->
-                val result = imageLoader.execute(
-                    ImageRequest.Builder(appContext)
-                        .data(uri)
-                        .size(COLLAGE_DISPLAY_SIZE_PX)
-                        .allowHardware(false)
-                        .build()
-                ) as? SuccessResult
-                result?.drawable?.toBitmap()
+        generationMutexes.computeIfAbsent(playlistId) { Mutex() }.withLock {
+            val expected = expected(playlistId, signature)
+            if (expected.thumbnailFile.isFile && expected.displayFile.isFile) return@withLock expected
+            if (orderedArtworkUris.isEmpty()) return@withLock null
+            val ownerDirectory = expected.displayFile.parentFile?.parentFile ?: return@withLock null
+            val staging = File(ownerDirectory, ".$signature-${System.nanoTime()}.tmp")
+            if (!staging.mkdirs()) return@withLock null
+            try {
+                // Keep each SuccessResult strongly reachable until rendering finishes. toBitmap()
+                // may return BitmapDrawable.bitmap directly, so every source is shared/read-only
+                // and must never be recycled or mutated by CDPlaya.
+                val coilResults = orderedArtworkUris.take(4).mapNotNull { uri ->
+                    loadArtwork(uri)
+                }
+                if (coilResults.isEmpty()) return@withLock null
+                val display = PlaylistCollageRenderer.render(
+                    sources = coilResults.map { result -> result.drawable.toBitmap() },
+                    size = COLLAGE_DISPLAY_SIZE_PX
+                )
+                val thumbnail = Bitmap.createScaledBitmap(
+                    display,
+                    VisualAssetVariant.THUMBNAIL.maximumDimensionPx,
+                    VisualAssetVariant.THUMBNAIL.maximumDimensionPx,
+                    true
+                )
+                writeWebp(display, File(staging, VisualAssetVariant.DISPLAY.fileName))
+                writeWebp(thumbnail, File(staging, VisualAssetVariant.THUMBNAIL.fileName))
+                if (requestedSignatures[playlistId] != signature) return@withLock null
+                val destination = expected.displayFile.parentFile ?: return@withLock null
+                if (destination.exists()) destination.deleteRecursively()
+                if (!staging.renameTo(destination)) return@withLock null
+                if (requestedSignatures[playlistId] != signature) {
+                    destination.deleteRecursively()
+                    return@withLock null
+                }
+                ownerDirectory.listFiles()
+                    ?.filter { it.isDirectory && it.name != signature && !it.name.startsWith(".") }
+                    ?.forEach(File::deleteRecursively)
+                expected
+            } finally {
+                staging.deleteRecursively()
             }
-            if (sources.isEmpty()) return@withContext null
-            val display = renderCollage(sources, COLLAGE_DISPLAY_SIZE_PX)
-            sources.forEach { if (it !== display) it.recycle() }
-            val thumbnail = Bitmap.createScaledBitmap(
-                display,
-                VisualAssetVariant.THUMBNAIL.maximumDimensionPx,
-                VisualAssetVariant.THUMBNAIL.maximumDimensionPx,
-                true
-            )
-            writeWebp(display, File(staging, VisualAssetVariant.DISPLAY.fileName))
-            writeWebp(thumbnail, File(staging, VisualAssetVariant.THUMBNAIL.fileName))
-            display.recycle()
-            thumbnail.recycle()
-            if (requestedSignatures[playlistId] != signature) return@withContext null
-            val destination = expected.displayFile.parentFile ?: return@withContext null
-            if (destination.exists()) destination.deleteRecursively()
-            if (!staging.renameTo(destination)) return@withContext null
-            if (requestedSignatures[playlistId] != signature) {
-                destination.deleteRecursively()
-                return@withContext null
-            }
-            ownerDirectory.listFiles()
-                ?.filter { it.isDirectory && it.name != signature && !it.name.startsWith(".") }
-                ?.forEach(File::deleteRecursively)
-            expected
-        } finally {
-            staging.deleteRecursively()
         }
     }
 
-    private fun renderCollage(sources: List<Bitmap>, size: Int): Bitmap {
+    private suspend fun loadArtwork(uri: Uri): SuccessResult? = try {
+        imageLoader.execute(
+            ImageRequest.Builder(appContext)
+                .data(uri)
+                .size(COLLAGE_DISPLAY_SIZE_PX)
+                .allowHardware(false)
+                .build()
+        ) as? SuccessResult
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: IOException) {
+        // A canceled/closed source can surface as InterruptedIOException. It is not fatal;
+        // the collage can be attempted again when it is next requested.
+        null
+    }
+
+    private fun writeWebp(bitmap: Bitmap, file: File) {
+        val format = if (Build.VERSION.SDK_INT >= 30) Bitmap.CompressFormat.WEBP_LOSSY else {
+            @Suppress("DEPRECATION") Bitmap.CompressFormat.WEBP
+        }
+        check(file.outputStream().buffered().use { bitmap.compress(format, 86, it) })
+    }
+
+    private companion object {
+        const val COLLAGE_DISPLAY_SIZE_PX = 1024
+        val requestedSignatures = ConcurrentHashMap<Long, String>()
+        val generationMutexes = ConcurrentHashMap<Long, Mutex>()
+    }
+}
+
+/** Draws shared source bitmaps read-only into a newly owned collage bitmap. */
+internal object PlaylistCollageRenderer {
+    fun render(sources: List<Bitmap>, size: Int): Bitmap {
+        require(sources.isNotEmpty())
+        require(size > 0)
         val output = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(output)
         val half = size / 2
@@ -136,17 +174,5 @@ class PlaylistCollageStore(context: Context) {
             Rect(0, top, bitmap.width, top + height)
         }
         canvas.drawBitmap(bitmap, source, destination, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
-    }
-
-    private fun writeWebp(bitmap: Bitmap, file: File) {
-        val format = if (Build.VERSION.SDK_INT >= 30) Bitmap.CompressFormat.WEBP_LOSSY else {
-            @Suppress("DEPRECATION") Bitmap.CompressFormat.WEBP
-        }
-        check(file.outputStream().buffered().use { bitmap.compress(format, 86, it) })
-    }
-
-    private companion object {
-        const val COLLAGE_DISPLAY_SIZE_PX = 1024
-        val requestedSignatures = ConcurrentHashMap<Long, String>()
     }
 }
