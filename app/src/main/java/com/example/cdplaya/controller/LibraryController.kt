@@ -7,6 +7,9 @@ import android.os.SystemClock
 import android.content.pm.ApplicationInfo
 import androidx.room.withTransaction
 import com.example.cdplaya.data.EditableSongTags
+import com.example.cdplaya.data.ArtistIdentity
+import com.example.cdplaya.data.ArtistPictureAssignment
+import com.example.cdplaya.data.ArtistPictureRepository
 import com.example.cdplaya.data.DuplicateListeningHistoryResolution
 import com.example.cdplaya.data.FavoritesRepository
 import com.example.cdplaya.data.FolderSelection
@@ -25,6 +28,8 @@ import com.example.cdplaya.data.PlaylistFolder
 import com.example.cdplaya.data.PlaylistArtworkStore
 import com.example.cdplaya.data.visual.VisualAssetReplacementCoordinator
 import com.example.cdplaya.data.visual.PlaylistCollageStore
+import com.example.cdplaya.data.visual.VisualAssetOwnerType
+import com.example.cdplaya.data.visual.VisualAssetStore
 import com.example.cdplaya.data.PlaylistSong
 import com.example.cdplaya.data.PlaylistsRepository
 import com.example.cdplaya.data.GeneratedPlaylistState
@@ -73,6 +78,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 
 internal suspend fun <T> runLibraryScanOffMain(block: suspend () -> T): T {
@@ -118,6 +124,11 @@ class LibraryController(
     private val playlistArtworkStore = PlaylistArtworkStore(applicationContext)
     private val playlistArtworkReplacements = VisualAssetReplacementCoordinator()
     private val playlistCollageStore = PlaylistCollageStore(applicationContext)
+    private val artistPictureRepository = ArtistPictureRepository(
+        appDatabase.artistPictureAssignmentDao()
+    )
+    private val artistVisualAssetStore = VisualAssetStore(applicationContext)
+    private val artistPictureReplacements = VisualAssetReplacementCoordinator()
     private var refreshJob: Job? = null
     private var reconciliationJob: Job? = null
     private val reconciliationCoordinator = ReconciliationGenerationCoordinator()
@@ -191,6 +202,11 @@ class LibraryController(
     }
 
     init {
+        coroutineScope.launch {
+            artistPictureRepository.observeAll().collect { assignments ->
+                updateState { copy(artistPictureAssignments = assignments) }
+            }
+        }
         coroutineScope.launch {
             collectProductionListeningHistory(
                 history = listeningStatsRepository.observeProductionHistory(),
@@ -806,6 +822,92 @@ class LibraryController(
         }
     }
 
+    fun changeArtistPicture(
+        identity: ArtistIdentity,
+        source: Uri,
+        onComplete: (Result<Unit>) -> Unit = {}
+    ) {
+        if (!identity.supportsCustomPicture) {
+            onComplete(Result.failure(IllegalArgumentException("Unknown Artist cannot have a custom picture.")))
+            return
+        }
+        val generation = artistPictureReplacements.begin(identity.key)
+        coroutineScope.launch {
+            val result = runCatching {
+                val previous = artistPictureRepository.get(identity.key)
+                val imported = withContext(Dispatchers.IO) {
+                    artistVisualAssetStore.import(
+                        ownerType = VisualAssetOwnerType.ARTIST_IMAGE,
+                        ownerKey = identity.key,
+                        source = source
+                    )
+                }
+                if (!artistPictureReplacements.isCurrent(identity.key, generation)) {
+                    withContext(Dispatchers.IO) {
+                        artistVisualAssetStore.delete(
+                            VisualAssetOwnerType.ARTIST_IMAGE,
+                            identity.key,
+                            imported.reference
+                        )
+                    }
+                    return@runCatching
+                }
+                try {
+                    artistPictureRepository.upsert(
+                        ArtistPictureAssignment(
+                            artistKey = identity.key,
+                            normalizedArtistName = identity.normalizedName,
+                            assetReference = imported.reference,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    )
+                } catch (failure: Throwable) {
+                    withContext(Dispatchers.IO) {
+                        artistVisualAssetStore.delete(
+                            VisualAssetOwnerType.ARTIST_IMAGE,
+                            identity.key,
+                            imported.reference
+                        )
+                    }
+                    throw failure
+                }
+                withContext(Dispatchers.IO) {
+                    artistVisualAssetStore.delete(
+                        VisualAssetOwnerType.ARTIST_IMAGE,
+                        identity.key,
+                        previous?.assetReference
+                    )
+                }
+            }.onFailure { failure ->
+                Log.e("ArtistPicture", "Unable to change artist picture", failure)
+            }
+            onComplete(result)
+        }
+    }
+
+    fun removeArtistPicture(
+        identity: ArtistIdentity,
+        onComplete: (Result<Unit>) -> Unit = {}
+    ) {
+        artistPictureReplacements.invalidate(identity.key)
+        coroutineScope.launch {
+            val result = runCatching {
+                val previous = artistPictureRepository.get(identity.key)
+                artistPictureRepository.delete(identity.key)
+                withContext(Dispatchers.IO) {
+                    artistVisualAssetStore.delete(
+                        VisualAssetOwnerType.ARTIST_IMAGE,
+                        identity.key,
+                        previous?.assetReference
+                    )
+                }
+            }.onFailure { failure ->
+                Log.e("ArtistPicture", "Unable to remove artist picture", failure)
+            }
+            onComplete(result)
+        }
+    }
+
     fun loadSelectedPlaylist(playlist: Playlist) {
         updateState {
             copy(
@@ -1219,6 +1321,7 @@ class LibraryController(
                 selectedFolders = folderSelection.customFolders,
                 excludedFolders = folderSelection.excludedFolders,
                 favoriteMembershipKeys = current.favoriteMembershipKeys,
+                artistPictureAssignments = current.artistPictureAssignments,
                 playlists = current.playlists,
                 playlistFolders = current.playlistFolders,
                 selectedPlaylistId = current.selectedPlaylistId,

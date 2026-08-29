@@ -14,6 +14,7 @@ class BackupRestoreActionsTest {
         listOf(
             "Favorites",
             "Playlists",
+            "Artist pictures and custom playlist artwork",
             "Listening history, imported-track links, and ratings",
             "Library folder selection",
             "Player theme and ReplayGain setting",
@@ -32,6 +33,7 @@ class BackupRestoreActionsTest {
             - 120 playlist songs
             - 86 history entries
             - 2 selected folders
+            - 4 pictures
             """.trimIndent(),
             backupRestoreSummaryText(
                 BackupRestoreSummary(
@@ -39,7 +41,8 @@ class BackupRestoreActionsTest {
                     playlistCount = 3,
                     playlistSongCount = 120,
                     listeningHistoryCount = 86,
-                    selectedFolderCount = 2
+                    selectedFolderCount = 2,
+                    visualAssetCount = 4
                 )
             )
         )
@@ -48,14 +51,15 @@ class BackupRestoreActionsTest {
     @Test
     fun backupRestoreSuccessMessage_formatsResultCounts() {
         assertEquals(
-            "Backup restored. 3 playlists, 24 favorites, 86 history entries.",
+            "Backup restored. 3 playlists, 24 favorites, 86 history entries, 4 pictures.",
             backupRestoreSuccessMessage(
                 BackupRestoreResult(
                     favoriteCount = 24,
                     playlistCount = 3,
                     playlistSongCount = 120,
                     listeningHistoryCount = 86,
-                    selectedFolderCount = 2
+                    selectedFolderCount = 2,
+                    visualAssetCount = 4
                 )
             )
         )

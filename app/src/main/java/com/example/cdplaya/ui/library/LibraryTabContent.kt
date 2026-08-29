@@ -14,6 +14,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.cdplaya.R
 import com.example.cdplaya.data.Song
+import com.example.cdplaya.data.UNKNOWN_ARTIST_DISPLAY_NAME
+import com.example.cdplaya.data.UNKNOWN_ARTIST_IDENTITY
+import com.example.cdplaya.data.artistIdentity
 import com.example.cdplaya.data.membershipKey
 import com.example.cdplaya.player.PlaybackShuffleMode
 import com.example.cdplaya.ui.filterSongsByAlbumSearch
@@ -457,14 +460,20 @@ fun ArtistsTabContent(
             )
         }
     } else {
+        val selectedArtistIdentity = if (selectedArtistName == UNKNOWN_ARTIST_DISPLAY_NAME) {
+            UNKNOWN_ARTIST_IDENTITY
+        } else {
+            artistIdentity(selectedArtistName)
+        }
         val artistSongs = sortSongsForArtistDetail(
             songs.filter { song ->
-                song.artist.ifBlank { "Unknown Artist" } == selectedArtistName
+                artistIdentity(song.artist) == selectedArtistIdentity
             }
         )
 
         ArtistDetailScreen(
             artistName = selectedArtistName,
+            artistIdentity = selectedArtistIdentity,
             artistSongs = artistSongs,
             librarySongs = songs,
             onBackClick = onBackFromArtist,

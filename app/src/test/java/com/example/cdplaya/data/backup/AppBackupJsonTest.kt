@@ -45,7 +45,8 @@ class AppBackupJsonTest {
             "listeningHistory",
             "canonicalListeningHistory",
             "songRatings",
-            "preferences"
+            "preferences",
+            "visualAssets"
         ).forEach { key ->
             assertTrue("Missing JSON key: $key", encoded.contains("\"$key\""))
         }

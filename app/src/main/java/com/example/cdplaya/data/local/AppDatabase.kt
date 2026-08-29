@@ -28,9 +28,10 @@ import androidx.room.TypeConverters
         SmartPlaylistResolutionStateEntity::class,
         SmartPlaylistCachedSongEntity::class,
         GeneratedPlaylistStateEntity::class,
-        GeneratedPlaylistSongEntity::class
+        GeneratedPlaylistSongEntity::class,
+        ArtistPictureAssignmentEntity::class
     ],
-    version = 18,
+    version = 19,
     exportSchema = true
 )
 @TypeConverters(ListeningHistoryTypeConverters::class)
@@ -53,4 +54,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun importedListeningEventEvidenceDao(): ImportedListeningEventEvidenceDao
     abstract fun listeningImportBatchEventDao(): ListeningImportBatchEventDao
     abstract fun smartPlaylistDao(): SmartPlaylistDao
+    abstract fun artistPictureAssignmentDao(): ArtistPictureAssignmentDao
 }

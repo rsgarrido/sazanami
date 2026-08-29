@@ -6,10 +6,17 @@ import androidx.room.withTransaction
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import com.example.cdplaya.data.FavoritesRepository
+import com.example.cdplaya.data.ArtistPictureAssignment
+import com.example.cdplaya.data.ArtistPictureRepository
+import com.example.cdplaya.data.artistIdentity
 import com.example.cdplaya.data.FolderSelection
 import com.example.cdplaya.data.ListeningHistoryRepository
 import com.example.cdplaya.data.PlayerTheme
 import com.example.cdplaya.data.PlaylistsRepository
+import com.example.cdplaya.data.PlaylistArtworkMode
+import com.example.cdplaya.data.visual.VisualAssetOwnerType
+import com.example.cdplaya.data.visual.VisualAssetStore
+import com.example.cdplaya.data.visual.VisualAssetVariant
 import com.example.cdplaya.data.home.HomePin
 import com.example.cdplaya.data.home.HomePinType
 import com.example.cdplaya.data.home.sanitizeHomePins
@@ -59,7 +66,10 @@ import com.example.cdplaya.ui.player.theme.PlayerThemeTokenOverrides
 import com.example.cdplaya.ui.player.theme.customizationOptions
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
+
+private data class RestoredVisualAssets(val count: Int)
 
 class BackupRepository(
     context: Context,
@@ -73,11 +83,15 @@ class BackupRepository(
     private val context = context.applicationContext ?: context
     private val canonicalHistoryRepository = ListeningHistoryBackupRepository(appDatabase)
     private val smartPlaylistBackupRepository = SmartPlaylistBackupRepository(appDatabase)
+    private val artistPictureRepository = ArtistPictureRepository(
+        appDatabase.artistPictureAssignmentDao()
+    )
+    private val visualAssetStore = VisualAssetStore(this.context)
 
     suspend fun createBackup(): AppBackup = withContext(Dispatchers.IO) {
         val appPreferences = appPreferencesRepository.awaitLoadedState()
         val canonical = canonicalHistoryRepository.exportWithRatings()
-        AppBackup(
+        val backup = AppBackup(
             schemaVersion = AppBackupJson.CURRENT_SCHEMA_VERSION,
             createdAt = System.currentTimeMillis(),
             appName = APP_NAME,
@@ -166,15 +180,23 @@ class BackupRepository(
                     .toBackupEqualizerPreferences()
             )
         )
+        val payloads = collectVisualAssetPayloads(
+            playlists = backup.playlists,
+            artistAssignments = artistPictureRepository.getAll()
+        )
+        backup.copy(
+            visualAssets = payloads.map(BackupVisualAssetPayload::metadata),
+            visualAssetPayloads = payloads
+        )
     }
 
     suspend fun writeBackupToUri(uri: Uri): BackupExportResult = withContext(Dispatchers.IO) {
         val backup = createBackup()
-        val outputStream = context.contentResolver.openOutputStream(uri, "wt")
+        val outputStream = context.contentResolver.openOutputStream(uri, "w")
             ?: throw IOException("Unable to open backup destination.")
 
         outputStream.use { stream ->
-            AppBackupJson.encodeBackup(backup, stream)
+            BackupArchive.write(backup, stream)
         }
 
         backup.toBackupExportResult()
@@ -184,7 +206,7 @@ class BackupRepository(
         val inputStream = context.contentResolver.openInputStream(uri)
             ?: throw IOException("Unable to open backup source.")
         inputStream.use { stream ->
-            AppBackupJson.decodeBackup(stream)
+            BackupArchive.read(stream)
         }
     }
 
@@ -203,6 +225,7 @@ class BackupRepository(
                 validatedHistory
             )
 
+            val previousArtistPictures = artistPictureRepository.getAll()
             val restoredPlaylistIds = appDatabase.withTransaction {
                 val restoredIdentityIds =
                     canonicalHistoryRepository.restoreValidatedWithinTransaction(validatedHistory)
@@ -222,7 +245,16 @@ class BackupRepository(
                 listeningHistoryRepository.restoreListeningHistoryFromBackup(
                     backup.listeningHistory
                 )
+                appDatabase.artistPictureAssignmentDao().deleteAll()
                 playlistIds
+            }
+            val restoredVisualAssets = restoreVisualAssets(backup, restoredPlaylistIds)
+            previousArtistPictures.forEach { assignment ->
+                visualAssetStore.delete(
+                    VisualAssetOwnerType.ARTIST_IMAGE,
+                    assignment.artistKey,
+                    assignment.assetReference
+                )
             }
             restorePreferences(backup.preferences, restoredPlaylistIds)
 
@@ -231,9 +263,154 @@ class BackupRepository(
                 playlistCount = summary.playlistCount,
                 playlistSongCount = summary.playlistSongCount,
                 listeningHistoryCount = summary.listeningHistoryCount,
-                selectedFolderCount = summary.selectedFolderCount
+                selectedFolderCount = summary.selectedFolderCount,
+                visualAssetCount = restoredVisualAssets.count
             )
         }
+
+    private fun collectVisualAssetPayloads(
+        playlists: List<BackupPlaylist>,
+        artistAssignments: List<ArtistPictureAssignment>
+    ): List<BackupVisualAssetPayload> = buildList {
+        artistAssignments.forEach { assignment ->
+            collectVisualAssetPayload(
+                ownerType = VisualAssetOwnerType.ARTIST_IMAGE,
+                ownerKey = assignment.artistKey,
+                reference = assignment.assetReference,
+                normalizedArtistName = assignment.normalizedArtistName,
+                archiveOwnerDirectory = "artists/${assignment.artistKey}"
+            )?.let(::add)
+        }
+        playlists.forEach { playlist ->
+            val playlistId = playlist.playlistId ?: return@forEach
+            val reference = playlist.artworkReference
+                ?.takeIf { playlist.artworkMode == PlaylistArtworkMode.CUSTOM.name }
+                ?: return@forEach
+            collectVisualAssetPayload(
+                ownerType = VisualAssetOwnerType.PLAYLIST_IMAGE,
+                ownerKey = playlistId.toString(),
+                reference = reference,
+                normalizedArtistName = null,
+                archiveOwnerDirectory = "playlists/$playlistId"
+            )?.let(::add)
+        }
+    }
+
+    private fun collectVisualAssetPayload(
+        ownerType: VisualAssetOwnerType,
+        ownerKey: String,
+        reference: String,
+        normalizedArtistName: String?,
+        archiveOwnerDirectory: String
+    ): BackupVisualAssetPayload? {
+        val thumbnail = visualAssetStore.file(
+            ownerType, ownerKey, reference, VisualAssetVariant.THUMBNAIL
+        ) ?: return null
+        val display = visualAssetStore.file(
+            ownerType, ownerKey, reference, VisualAssetVariant.DISPLAY
+        ) ?: return null
+        return runCatching {
+            val root = "visual_assets/$archiveOwnerDirectory/$reference"
+            val metadata = BackupVisualAsset(
+                ownerType = ownerType.name,
+                ownerKey = ownerKey,
+                assetReference = reference,
+                normalizedArtistName = normalizedArtistName,
+                thumbnailEntry = "$root/${VisualAssetVariant.THUMBNAIL.fileName}",
+                displayEntry = "$root/${VisualAssetVariant.DISPLAY.fileName}"
+            )
+            BackupVisualAssetPayload(metadata, thumbnail.readBytes(), display.readBytes())
+        }.getOrNull()
+    }
+
+    private suspend fun restoreVisualAssets(
+        backup: AppBackup,
+        restoredPlaylistIds: Map<Long, Long>
+    ): RestoredVisualAssets {
+        var restoredCount = 0
+        val restoredPlaylistBackupIds = mutableSetOf<Long>()
+        backup.visualAssetPayloads.forEach { payload ->
+            val restored = runCatching {
+                when (payload.metadata.ownerType) {
+                    VisualAssetOwnerType.ARTIST_IMAGE.name -> {
+                        val normalizedName = payload.metadata.normalizedArtistName
+                            ?.takeIf(String::isNotBlank) ?: return@runCatching false
+                        val identity = artistIdentity(normalizedName)
+                        if (!identity.supportsCustomPicture ||
+                            identity.key != payload.metadata.ownerKey
+                        ) return@runCatching false
+                        val imported = visualAssetStore.restoreVariants(
+                            ownerType = VisualAssetOwnerType.ARTIST_IMAGE,
+                            ownerKey = payload.metadata.ownerKey,
+                            thumbnailBytes = payload.thumbnailBytes,
+                            displayBytes = payload.displayBytes
+                        )
+                        try {
+                            artistPictureRepository.upsert(
+                                ArtistPictureAssignment(
+                                    artistKey = payload.metadata.ownerKey,
+                                    normalizedArtistName = normalizedName,
+                                    assetReference = imported.reference,
+                                    updatedAt = System.currentTimeMillis()
+                                )
+                            )
+                        } catch (failure: Throwable) {
+                            visualAssetStore.delete(
+                                VisualAssetOwnerType.ARTIST_IMAGE,
+                                payload.metadata.ownerKey,
+                                imported.reference
+                            )
+                            throw failure
+                        }
+                        true
+                    }
+                    VisualAssetOwnerType.PLAYLIST_IMAGE.name -> {
+                        val oldPlaylistId = payload.metadata.ownerKey.toLongOrNull()
+                            ?: return@runCatching false
+                        val newPlaylistId = restoredPlaylistIds[oldPlaylistId]
+                            ?: return@runCatching false
+                        val imported = visualAssetStore.restoreVariants(
+                            ownerType = VisualAssetOwnerType.PLAYLIST_IMAGE,
+                            ownerKey = newPlaylistId.toString(),
+                            thumbnailBytes = payload.thumbnailBytes,
+                            displayBytes = payload.displayBytes
+                        )
+                        try {
+                            playlistsRepository.setCustomArtwork(
+                                newPlaylistId,
+                                imported.reference
+                            )
+                        } catch (failure: Throwable) {
+                            visualAssetStore.delete(
+                                VisualAssetOwnerType.PLAYLIST_IMAGE,
+                                newPlaylistId.toString(),
+                                imported.reference
+                            )
+                            throw failure
+                        }
+                        restoredPlaylistBackupIds += oldPlaylistId
+                        true
+                    }
+                    else -> false
+                }
+            }.fold(
+                onSuccess = { it },
+                onFailure = { failure ->
+                    if (failure is CancellationException) throw failure
+                    false
+                }
+            )
+            if (restored) restoredCount += 1
+        }
+        backup.visualAssets.asSequence()
+            .filter { it.ownerType == VisualAssetOwnerType.PLAYLIST_IMAGE.name }
+            .mapNotNull { it.ownerKey.toLongOrNull() }
+            .filterNot(restoredPlaylistBackupIds::contains)
+            .mapNotNull(restoredPlaylistIds::get)
+            .distinct()
+            .forEach { playlistId -> playlistsRepository.resetArtwork(playlistId) }
+        return RestoredVisualAssets(restoredCount)
+    }
 
     private fun createThemeTokenBackup(
         preferences: AppPreferencesState
@@ -536,7 +713,8 @@ data class BackupExportResult(
     val favoriteCount: Int,
     val playlistCount: Int,
     val playlistSongCount: Int,
-    val listeningHistoryCount: Int
+    val listeningHistoryCount: Int,
+    val visualAssetCount: Int = 0
 )
 
 data class BackupRestoreSummary(
@@ -544,7 +722,8 @@ data class BackupRestoreSummary(
     val playlistCount: Int,
     val playlistSongCount: Int,
     val listeningHistoryCount: Int,
-    val selectedFolderCount: Int
+    val selectedFolderCount: Int,
+    val visualAssetCount: Int = 0
 )
 
 data class BackupRestoreResult(
@@ -552,7 +731,8 @@ data class BackupRestoreResult(
     val playlistCount: Int,
     val playlistSongCount: Int,
     val listeningHistoryCount: Int,
-    val selectedFolderCount: Int
+    val selectedFolderCount: Int,
+    val visualAssetCount: Int = 0
 )
 
 internal fun AppBackup.toBackupExportResult(): BackupExportResult {
@@ -561,7 +741,8 @@ internal fun AppBackup.toBackupExportResult(): BackupExportResult {
         playlistCount = playlists.size,
         playlistSongCount = playlists.sumOf { playlist -> playlist.songs.size },
         listeningHistoryCount = requiredCanonicalListeningHistory()
-            .summary.identityCount.toDisplayCount()
+            .summary.identityCount.toDisplayCount(),
+        visualAssetCount = visualAssetPayloads.size
     )
 }
 
@@ -572,7 +753,8 @@ internal fun AppBackup.toBackupRestoreSummary(): BackupRestoreSummary {
         playlistSongCount = playlists.sumOf { playlist -> playlist.songs.size },
         listeningHistoryCount = requiredCanonicalListeningHistory()
             .summary.identityCount.toDisplayCount(),
-        selectedFolderCount = preferences.selectedLibraryFolders.size
+        selectedFolderCount = preferences.selectedLibraryFolders.size,
+        visualAssetCount = visualAssetPayloads.size
     )
 }
 

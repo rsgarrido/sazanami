@@ -33,7 +33,7 @@ fun rememberBackupExportActions(
     }
 
     val createDocumentLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/json")
+        contract = ActivityResultContracts.CreateDocument("application/zip")
     ) { uri ->
         if (uri != null) {
             onExport(uri) { result ->
@@ -59,14 +59,15 @@ fun rememberBackupExportActions(
 }
 
 internal fun backupFilename(date: LocalDate): String {
-    return "cdplaya-backup-$date.json"
+    return "cdplaya-backup-$date.cdplaya"
 }
 
 internal fun backupExportSuccessMessage(result: BackupExportResult): String {
     return "Backup exported. " +
         "${countLabel(result.playlistCount, "playlist")}, " +
         "${countLabel(result.favoriteCount, "favorite")}, " +
-        "${countLabel(result.listeningHistoryCount, "history entry")}."
+        "${countLabel(result.listeningHistoryCount, "history entry")}, " +
+        "${countLabel(result.visualAssetCount, "picture")}."
 }
 
 private fun countLabel(count: Int, singularLabel: String): String {

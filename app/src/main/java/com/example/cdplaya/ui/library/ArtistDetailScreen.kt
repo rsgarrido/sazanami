@@ -59,6 +59,8 @@ import androidx.compose.ui.window.PopupProperties
 import coil.compose.AsyncImage
 import com.example.cdplaya.R
 import com.example.cdplaya.data.Song
+import com.example.cdplaya.data.ArtistIdentity
+import com.example.cdplaya.data.visual.VisualAssetVariant
 import com.example.cdplaya.ui.AppShellAccent
 import com.example.cdplaya.ui.AppShellIcons
 import com.example.cdplaya.ui.home.LocalHomePinUi
@@ -66,6 +68,7 @@ import com.example.cdplaya.ui.home.LocalHomePinUi
 @Composable
 fun ArtistDetailScreen(
     artistName: String,
+    artistIdentity: ArtistIdentity,
     artistSongs: List<Song>,
     librarySongs: List<Song>,
     onBackClick: () -> Unit,
@@ -123,13 +126,15 @@ fun ArtistDetailScreen(
             }
         )
     }
-    val artistGroup = remember(artistName, artistSongs) {
+    val artistGroup = remember(artistName, artistIdentity, artistSongs) {
         LibraryArtistGroup(
+            identity = artistIdentity,
             name = artistName,
             songs = artistSongs
         )
     }
     val homePinUi = LocalHomePinUi.current
+    val artistPictureUi = LocalArtistPictureUi.current
     val gridState = rememberLazyGridState()
     val showCompactTitle by remember {
         derivedStateOf {
@@ -165,6 +170,10 @@ fun ArtistDetailScreen(
                     artistName = artistName,
                     subtitle = subtitle,
                     artworkUri = artistSongs.firstOrNull()?.albumArtUri,
+                    artistIdentity = artistGroup.identity,
+                    hasCustomPicture = artistGroup.key in artistPictureUi.assignments,
+                    onChoosePicture = artistPictureUi.onChoosePicture,
+                    onRemovePicture = artistPictureUi.onRemovePicture,
                     artistSongs = artistSongs,
                     onPlayClick = { _, _ -> onPlayAllClick() },
                     onShuffleClick = { _, _ -> onShuffleSongsClick() },
@@ -200,6 +209,22 @@ fun ArtistDetailScreen(
                         .padding(top = 6.dp, bottom = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(196.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        ArtistPicture(
+                            identity = artistGroup.identity,
+                            fallbackModel = artistSongs.firstOrNull()?.albumArtUri,
+                            contentDescription = "Picture of $artistName",
+                            modifier = Modifier
+                                .size(180.dp)
+                                .clip(RoundedCornerShape(26.dp)),
+                            variant = VisualAssetVariant.DISPLAY
+                        )
+                    }
                     Text(
                         text = artistName,
                         style = MaterialTheme.typography.headlineLarge,

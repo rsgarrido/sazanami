@@ -39,7 +39,8 @@ object DatabaseProvider {
                     MIGRATION_14_15,
                     MIGRATION_15_16,
                     MIGRATION_16_17,
-                    MIGRATION_17_18
+                    MIGRATION_17_18,
+                    MIGRATION_18_19
                 )
                 .addCallback(object : RoomDatabase.Callback() {
                     override fun onOpen(db: SupportSQLiteDatabase) {
@@ -865,6 +866,22 @@ object DatabaseProvider {
             // Re-read embedded tags once so existing cached libraries gain disc metadata.
             db.execSQL(
                 "UPDATE `cached_songs` SET `embeddedMetadataEnrichmentVersion` = 0"
+            )
+        }
+    }
+
+    val MIGRATION_18_19 = object : Migration(18, 19) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `artist_picture_assignments` (
+                    `artistKey` TEXT NOT NULL,
+                    `normalizedArtistName` TEXT NOT NULL,
+                    `assetReference` TEXT NOT NULL,
+                    `updatedAt` INTEGER NOT NULL,
+                    PRIMARY KEY(`artistKey`)
+                )
+                """.trimIndent()
             )
         }
     }

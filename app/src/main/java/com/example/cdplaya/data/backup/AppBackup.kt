@@ -1,6 +1,7 @@
 package com.example.cdplaya.data.backup
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 @Serializable
 data class AppBackup(
@@ -13,7 +14,25 @@ data class AppBackup(
     val listeningHistory: List<BackupListeningHistoryEntry> = emptyList(),
     val canonicalListeningHistory: BackupListeningHistoryV2? = null,
     val songRatings: BackupSongRatings = BackupSongRatings(),
-    val preferences: BackupPreferences = BackupPreferences()
+    val preferences: BackupPreferences = BackupPreferences(),
+    val visualAssets: List<BackupVisualAsset> = emptyList(),
+    @Transient val visualAssetPayloads: List<BackupVisualAssetPayload> = emptyList()
+)
+
+@Serializable
+data class BackupVisualAsset(
+    val ownerType: String,
+    val ownerKey: String,
+    val assetReference: String,
+    val normalizedArtistName: String? = null,
+    val thumbnailEntry: String,
+    val displayEntry: String
+)
+
+data class BackupVisualAssetPayload(
+    val metadata: BackupVisualAsset,
+    val thumbnailBytes: ByteArray,
+    val displayBytes: ByteArray
 )
 
 @Serializable

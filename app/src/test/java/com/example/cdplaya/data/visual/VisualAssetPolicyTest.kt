@@ -46,6 +46,27 @@ class VisualAssetPolicyTest {
     }
 
     @Test
+    fun artistPictureUsesOwnerScopedVersionedKeysAndItsOwnThumbnailPlaceholder() {
+        val artist = VisualAssetIdentity(
+            VisualAssetOwnerType.ARTIST_IMAGE,
+            ownerKey = "artist_abc123",
+            revision = "artist-artist_abc123-100.image"
+        )
+        val otherArtist = artist.copy(ownerKey = "artist_def456")
+        val replacement = artist.copy(revision = "artist-artist_abc123-101.image")
+
+        val thumbnail = artist.requestPolicy(VisualAssetVariant.THUMBNAIL)
+        val display = artist.requestPolicy(VisualAssetVariant.DISPLAY)
+        assertTrue(thumbnail.cacheKey.startsWith("artist:artist_abc123:"))
+        assertEquals(thumbnail.cacheKey, display.placeholderMemoryCacheKey)
+        assertNotEquals(
+            otherArtist.cacheKey(VisualAssetVariant.THUMBNAIL),
+            display.placeholderMemoryCacheKey
+        )
+        assertNotEquals(display.cacheKey, replacement.cacheKey(VisualAssetVariant.DISPLAY))
+    }
+
+    @Test
     fun variantBoundsPreserveAspectRatioAndNeverUpscale() {
         assertTrue(
             VisualAssetVariant.THUMBNAIL.maximumDimensionPx <

@@ -75,6 +75,47 @@ class VisualAssetStore(context: Context) {
         ?.resolve(variant.fileName)
         ?.takeIf(File::isFile)
 
+    fun restoreVariants(
+        ownerType: VisualAssetOwnerType,
+        ownerKey: String,
+        thumbnailBytes: ByteArray,
+        displayBytes: ByteArray,
+        reference: String = newReference(ownerType, ownerKey)
+    ): ImportedVisualAsset {
+        require(ownerType != VisualAssetOwnerType.PLAYLIST_COLLAGE)
+        require(SAFE_KEY.matches(ownerKey))
+        require(thumbnailBytes.size.toLong() <= MAX_SOURCE_BYTES)
+        require(displayBytes.size.toLong() <= MAX_SOURCE_BYTES)
+        validateEncodedImage(thumbnailBytes)
+        validateEncodedImage(displayBytes)
+
+        val ownerDirectory = ownerDirectory(ownerType, ownerKey)
+        if (!ownerDirectory.exists() && !ownerDirectory.mkdirs()) {
+            throw IOException("Unable to prepare visual asset storage.")
+        }
+        val finalDirectory = File(ownerDirectory, reference)
+        val stagingDirectory = File(ownerDirectory, ".$reference-${System.nanoTime()}.tmp")
+        if (!stagingDirectory.mkdirs()) throw IOException("Unable to stage restored artwork.")
+        try {
+            File(stagingDirectory, VisualAssetVariant.THUMBNAIL.fileName)
+                .outputStream().buffered().use { it.write(thumbnailBytes) }
+            File(stagingDirectory, VisualAssetVariant.DISPLAY.fileName)
+                .outputStream().buffered().use { it.write(displayBytes) }
+            if (finalDirectory.exists() || !stagingDirectory.renameTo(finalDirectory)) {
+                throw IOException("Unable to publish restored artwork.")
+            }
+            return ImportedVisualAsset(
+                identity = VisualAssetIdentity(ownerType, ownerKey, reference),
+                reference = reference,
+                thumbnailFile = File(finalDirectory, VisualAssetVariant.THUMBNAIL.fileName),
+                displayFile = File(finalDirectory, VisualAssetVariant.DISPLAY.fileName)
+            )
+        } catch (failure: Throwable) {
+            stagingDirectory.deleteRecursively()
+            throw failure
+        }
+    }
+
     fun delete(ownerType: VisualAssetOwnerType, ownerKey: String, reference: String?) {
         reference ?: return
         safeAssetDirectory(ownerType, ownerKey, reference)?.deleteRecursively()
@@ -97,6 +138,14 @@ class VisualAssetStore(context: Context) {
                     output.write(buffer, 0, read)
                 }
             }
+        }
+    }
+
+    private fun validateEncodedImage(bytes: ByteArray) {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            throw IOException("Restored artwork could not be decoded.")
         }
     }
 

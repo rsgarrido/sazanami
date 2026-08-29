@@ -142,6 +142,7 @@ fun rememberBackupRestoreActions(
             openDocumentLauncher.launch(
                 arrayOf(
                     "application/json",
+                    "application/zip",
                     "text/plain",
                     "application/octet-stream",
                     "*/*"
@@ -156,6 +157,7 @@ internal fun backupRestoreConfirmationText(): String {
         This will replace your current CDPlaya app data:
         - Favorites
         - Playlists
+        - Artist pictures and custom playlist artwork
         - Listening history, imported-track links, and ratings
         - Library folder selection
         - Player theme and ReplayGain setting
@@ -170,7 +172,8 @@ internal fun backupRestoreSummaryText(summary: BackupRestoreSummary): String {
         restoreCountLabel(summary.playlistCount, "playlist"),
         restoreCountLabel(summary.playlistSongCount, "playlist song"),
         restoreCountLabel(summary.listeningHistoryCount, "history entry"),
-        restoreCountLabel(summary.selectedFolderCount, "selected folder")
+        restoreCountLabel(summary.selectedFolderCount, "selected folder"),
+        restoreCountLabel(summary.visualAssetCount, "picture")
     ).joinToString(separator = "\n") { count -> "- $count" }
 }
 
@@ -178,7 +181,8 @@ internal fun backupRestoreSuccessMessage(result: BackupRestoreResult): String {
     return "Backup restored. " +
         "${restoreCountLabel(result.playlistCount, "playlist")}, " +
         "${restoreCountLabel(result.favoriteCount, "favorite")}, " +
-        "${restoreCountLabel(result.listeningHistoryCount, "history entry")}."
+        "${restoreCountLabel(result.listeningHistoryCount, "history entry")}, " +
+        "${restoreCountLabel(result.visualAssetCount, "picture")}."
 }
 
 internal fun invalidBackupErrorMessage(): String {
