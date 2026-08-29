@@ -17,6 +17,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.cdplaya.data.Playlist
 import com.example.cdplaya.data.Song
+import com.example.cdplaya.data.ArtistIdentity
+import com.example.cdplaya.data.ArtistPictureAssignment
 import com.example.cdplaya.data.SongReferenceIndex
 import com.example.cdplaya.data.SongReferenceResolution
 import com.example.cdplaya.data.home.HomePin
@@ -77,6 +79,18 @@ data class ResolvedHomePin(
             HomePinType.ARTIST -> "ARTIST"
             HomePinType.PLAYLIST -> "PLAYLIST"
         }
+}
+
+internal fun ResolvedHomePin.artistPictureIdentityOrNull(): ArtistIdentity? =
+    (target as? HomePinTarget.ArtistTarget)
+        ?.artist
+        ?.identity
+        ?.takeIf { identity -> identity.supportsCustomPicture }
+
+internal fun ResolvedHomePin.artistPictureAssignmentOrNull(
+    assignments: Map<String, ArtistPictureAssignment>
+): ArtistPictureAssignment? = artistPictureIdentityOrNull()?.let { identity ->
+    assignments[identity.key]
 }
 
 @Immutable
