@@ -88,6 +88,10 @@
     <string name="statistics_range_this_year">This year</string>
     <string name="statistics_range_all_time">All time</string>
     <string name="statistics_range_custom">Custom</string>
+    <string name="statistics_range_7_days_compact">7 days</string>
+    <string name="statistics_range_30_days_compact">30 days</string>
+    <string name="statistics_range_month_compact">Month</string>
+    <string name="statistics_range_year_compact">Year</string>
     <string name="statistics_range_selected">Selected</string>
     <string name="statistics_range_not_selected">Not selected</string>
     <string name="statistics_custom_range_description">Selected date range: %1$s</string>
@@ -97,10 +101,12 @@
     <string name="statistics_close">Close</string>
     <string name="statistics_recorded_listening">Recorded listening</string>
     <string name="statistics_recorded_listening_support">Detailed history only</string>
+    <string name="statistics_overview_title">Overview</string>
     <string name="statistics_plays">Plays</string>
     <string name="statistics_completed">Completed</string>
     <string name="statistics_not_counted">Not counted</string>
     <string name="statistics_not_counted_support">Attempts below the play threshold</string>
+    <string name="statistics_not_counted_support_compact">Below threshold</string>
     <string name="statistics_loading">Loading listening statistics…</string>
     <string name="statistics_refreshing">Updating statistics</string>
     <string name="statistics_error">Listening statistics couldn’t be loaded. Try again.</string>
@@ -108,6 +114,7 @@
     <string name="statistics_no_history">Your listening activity will appear here as you play music.</string>
     <string name="statistics_no_activity_range">No listening activity in this range.</string>
     <string name="statistics_history_concise">Some older plays may be included in All Time totals. Listening time and completion details are available only for activity recorded with detailed history.</string>
+    <string name="statistics_history_concise_compact">Some All Time plays predate detailed history.</string>
     <string name="statistics_learn_more">Learn more</string>
     <string name="statistics_history_dialog_title">About your listening history</string>
     <string name="statistics_history_dialog_message">CDPlaya preserved earlier play counts when detailed listening history was introduced. Those older counts may appear in All Time plays and future rankings, but they do not include exact listening time, completion status, or date-by-date activity. Recorded listening time, completed tracks, not-counted attempts, date ranges, and future trends use detailed events only. CDPlaya does not estimate missing listening time from older aggregate play counts.</string>
@@ -132,6 +139,7 @@
     <string name="statistics_trend_no_detailed_history">Detailed listening activity will appear here as you play music.</string>
     <string name="statistics_trend_no_data_range">No trend data in this range.</string>
     <string name="statistics_trend_axis_maximum">Scale maximum: %1$s</string>
+    <string name="statistics_trend_axis_maximum_compact">Max %1$s</string>
     <string name="statistics_trend_peak_summary">Most active: %1$s · %2$s</string>
     <string name="statistics_trend_accessibility">Listening trend. %1$s selected. %2$d periods. Total %3$s. Most active %4$s, %5$s. Range: %6$s.</string>
     <string name="statistics_trend_accessibility_empty">Listening trend. %1$s selected. Range: %2$s. %3$s</string>
@@ -156,6 +164,7 @@
     <string name="statistics_rankings_artists">Artists</string>
     <string name="statistics_rankings_albums">Albums</string>
     <string name="statistics_rankings_basis">Ranked by qualified plays</string>
+    <string name="statistics_rankings_basis_compact">Qualified plays</string>
     <string name="statistics_rankings_track_metadata">%1$s · %2$s</string>
     <string name="statistics_rankings_recorded_time">%1$s recorded</string>
     <string name="statistics_rankings_no_tracks">No top tracks in this range.</string>

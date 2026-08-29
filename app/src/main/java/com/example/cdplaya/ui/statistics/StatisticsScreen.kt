@@ -14,9 +14,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -57,6 +57,7 @@ import com.example.cdplaya.data.AnalyticsRangeSelection
 import com.example.cdplaya.data.ListeningOverview
 import com.example.cdplaya.data.ListeningRankingCategory
 import com.example.cdplaya.data.ListeningTrendMetric
+import com.example.cdplaya.data.Song
 import com.example.cdplaya.ui.AppShellIconButton
 import com.example.cdplaya.ui.MusicScreenHeader
 import com.example.cdplaya.ui.state.ListeningAnalyticsUiState
@@ -72,6 +73,7 @@ internal fun StatisticsScreen(
     onRetry: () -> Unit,
     onTrendMetricSelected: (ListeningTrendMetric) -> Unit = {},
     onRankingCategorySelected: (ListeningRankingCategory) -> Unit = {},
+    librarySongs: List<Song> = emptyList(),
     listState: LazyListState,
     modifier: Modifier = Modifier
 ) {
@@ -87,12 +89,13 @@ internal fun StatisticsScreen(
                 ?.let { range ->
                     val zone = state.resolvedRange.zoneId
                     Instant.ofEpochMilli(range.startInclusive).atZone(zone).toLocalDate() to
-                        Instant.ofEpochMilli(range.endExclusive).atZone(zone).toLocalDate().minusDays(1L)
+                            Instant.ofEpochMilli(range.endExclusive).atZone(zone).toLocalDate().minusDays(1L)
                 } ?: LocalDate.now().minusDays(29L) to LocalDate.now()
         }
     }
     val displayedSelection = state.resolvedRange?.selection ?: state.selectedRange
     val displayedRangeDescription = analyticsRangeDescription(displayedSelection)
+    val artworkIndex = remember(librarySongs) { StatisticsArtworkIndex(librarySongs) }
 
     LazyColumn(
         state = listState,
@@ -163,12 +166,12 @@ internal fun StatisticsScreen(
                     item { StatisticsErrorCard(onRetry = onRetry) }
                 }
                 val noHistory = state.selectedRange ==
-                    AnalyticsRangeSelection.Preset(AnalyticsRangePreset.ALL_TIME) &&
-                    overview.detailedEventCount == 0L &&
-                    overview.playCounts.totalPlayCount == 0L
+                        AnalyticsRangeSelection.Preset(AnalyticsRangePreset.ALL_TIME) &&
+                        overview.detailedEventCount == 0L &&
+                        overview.playCounts.totalPlayCount == 0L
                 val noRangeActivity = state.selectedRange !=
-                    AnalyticsRangeSelection.Preset(AnalyticsRangePreset.ALL_TIME) &&
-                    overview.detailedEventCount == 0L
+                        AnalyticsRangeSelection.Preset(AnalyticsRangePreset.ALL_TIME) &&
+                        overview.detailedEventCount == 0L
                 if (noHistory) {
                     item { StatisticsEmptyCard(R.string.statistics_no_history) }
                 } else {
@@ -177,11 +180,12 @@ internal fun StatisticsScreen(
                         item { StatisticsEmptyCard(R.string.statistics_no_activity_range) }
                     }
                 }
-                item {
-                    HistoryCoverageCard(
-                        prominent = state.coverage?.hasLegacyPlays == true || overview.hasLegacyBaseline,
-                        onClick = { showCoverageDialog = true }
-                    )
+                val isAllTime = displayedSelection ==
+                        AnalyticsRangeSelection.Preset(AnalyticsRangePreset.ALL_TIME)
+                if (isAllTime && (state.coverage?.hasLegacyPlays == true || overview.hasLegacyBaseline)) {
+                    item {
+                        HistoryCoverageCard(onClick = { showCoverageDialog = true })
+                    }
                 }
                 item(key = "listening_trend") {
                     ListeningTrendSection(
@@ -207,11 +211,17 @@ internal fun StatisticsScreen(
                                 StatisticsEmptyCard(R.string.statistics_rankings_no_tracks)
                             }
                         } else {
-                            itemsIndexed(
-                                items = state.topTracks,
-                                key = { _, stats -> "track_${stats.trackIdentityId}" }
-                            ) { index, stats ->
-                                TrackRankingRow(rank = index + 1, stats = stats)
+                            item(key = "top_tracks") {
+                                Column {
+                                    state.topTracks.forEachIndexed { index, stats ->
+                                        TrackRankingRow(
+                                            rank = index + 1,
+                                            stats = stats,
+                                            artworkModel = artworkIndex.trackArtwork(stats),
+                                            showDivider = index != state.topTracks.lastIndex
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -221,11 +231,17 @@ internal fun StatisticsScreen(
                                 StatisticsEmptyCard(R.string.statistics_rankings_no_artists)
                             }
                         } else {
-                            itemsIndexed(
-                                items = state.topArtists,
-                                key = { _, stats -> "artist_${stats.groupingKey}" }
-                            ) { index, stats ->
-                                ArtistRankingRow(rank = index + 1, stats = stats)
+                            item(key = "top_artists") {
+                                Column {
+                                    state.topArtists.forEachIndexed { index, stats ->
+                                        ArtistRankingRow(
+                                            rank = index + 1,
+                                            stats = stats,
+                                            fallbackArtworkModel = artworkIndex.artistFallbackArtwork(stats),
+                                            showDivider = index != state.topArtists.lastIndex
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -235,11 +251,17 @@ internal fun StatisticsScreen(
                                 StatisticsEmptyCard(R.string.statistics_rankings_no_albums)
                             }
                         } else {
-                            itemsIndexed(
-                                items = state.topAlbums,
-                                key = { _, stats -> "album_${stats.groupingKey}" }
-                            ) { index, stats ->
-                                AlbumRankingRow(rank = index + 1, stats = stats)
+                            item(key = "top_albums") {
+                                Column {
+                                    state.topAlbums.forEachIndexed { index, stats ->
+                                        AlbumRankingRow(
+                                            rank = index + 1,
+                                            stats = stats,
+                                            artworkModel = artworkIndex.albumArtwork(stats),
+                                            showDivider = index != state.topAlbums.lastIndex
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -325,13 +347,18 @@ private fun StatisticsRangeSelector(
     ) {
         AnalyticsRangePreset.entries.forEach { preset ->
             val selected = selectedRange == AnalyticsRangeSelection.Preset(preset)
+            val fullLabel = stringResource(preset.labelResource())
+            val compactLabel = stringResource(preset.compactLabelResource())
             FilterChip(
                 selected = selected,
                 onClick = { onPresetSelected(preset) },
-                label = { Text(stringResource(preset.labelResource())) },
+                label = { Text(compactLabel) },
                 modifier = Modifier
                     .heightIn(min = 48.dp)
-                    .semantics { stateDescription = if (selected) selectedDescription else notSelectedDescription }
+                    .semantics {
+                        contentDescription = fullLabel
+                        stateDescription = if (selected) selectedDescription else notSelectedDescription
+                    }
             )
         }
         val customSelected = selectedRange is AnalyticsRangeSelection.Custom
@@ -357,50 +384,99 @@ private fun AnalyticsRangePreset.labelResource(): Int = when (this) {
     AnalyticsRangePreset.ALL_TIME -> R.string.statistics_range_all_time
 }
 
-private data class MetricPresentation(
-    val title: String,
-    val value: String,
-    val accessibleValue: String,
-    val supportingText: String? = null
-)
+private fun AnalyticsRangePreset.compactLabelResource(): Int = when (this) {
+    AnalyticsRangePreset.TODAY -> R.string.statistics_range_today
+    AnalyticsRangePreset.LAST_7_DAYS -> R.string.statistics_range_7_days_compact
+    AnalyticsRangePreset.LAST_30_DAYS -> R.string.statistics_range_30_days_compact
+    AnalyticsRangePreset.THIS_MONTH -> R.string.statistics_range_month_compact
+    AnalyticsRangePreset.THIS_YEAR -> R.string.statistics_range_year_compact
+    AnalyticsRangePreset.ALL_TIME -> R.string.statistics_range_all_time
+}
 
 @Composable
 private fun StatisticsOverviewGrid(overview: ListeningOverview) {
     val duration = durationPresentation(overview.listeningTime.confirmedDetailedListeningMs)
-    val metrics = listOf(
-        MetricPresentation(
-            stringResource(R.string.statistics_recorded_listening),
-            duration.first,
-            duration.second,
-            stringResource(R.string.statistics_recorded_listening_support)
-        ),
-        MetricPresentation(
-            stringResource(R.string.statistics_plays),
-            formatAnalyticsCount(overview.playCounts.totalPlayCount),
-            formatAnalyticsCount(overview.playCounts.totalPlayCount)
-        ),
-        MetricPresentation(
-            stringResource(R.string.statistics_completed),
-            formatAnalyticsCount(overview.naturalCompletionCount),
-            formatAnalyticsCount(overview.naturalCompletionCount)
-        ),
-        MetricPresentation(
-            stringResource(R.string.statistics_not_counted),
-            formatAnalyticsCount(overview.nonQualifiedAttemptCount),
-            formatAnalyticsCount(overview.nonQualifiedAttemptCount),
-            stringResource(R.string.statistics_not_counted_support)
-        )
-    )
-    BoxWithConstraints(modifier = Modifier.padding(horizontal = 16.dp)) {
-        val oneColumn = maxWidth < 360.dp || LocalConfiguration.current.fontScale >= 1.3f
-        val columns = if (oneColumn) 1 else 2
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            metrics.chunked(columns).forEach { rowMetrics ->
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    rowMetrics.forEach { metric ->
-                        AnalyticsMetricCard(metric, Modifier.weight(1f))
+    val recordedLabel = stringResource(R.string.statistics_recorded_listening)
+    val recordedSupport = stringResource(R.string.statistics_recorded_listening_support)
+    val recordedAccessibility = "$recordedLabel, ${duration.second}. $recordedSupport"
+    Card(
+        modifier = Modifier
+            .padding(horizontal = 16.dp)
+            .fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.statistics_overview_title),
+                style = MaterialTheme.typography.titleMedium
+            )
+            Column(
+                modifier = Modifier.semantics(mergeDescendants = true) {
+                    contentDescription = recordedAccessibility
+                },
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Text(
+                    text = duration.first,
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = recordedLabel,
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Text(
+                    text = recordedSupport,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val stacked = maxWidth < 320.dp || LocalConfiguration.current.fontScale >= 1.5f
+                if (stacked) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        CompactOverviewMetric(
+                            title = stringResource(R.string.statistics_plays),
+                            value = formatAnalyticsCount(overview.playCounts.totalPlayCount)
+                        )
+                        CompactOverviewMetric(
+                            title = stringResource(R.string.statistics_completed),
+                            value = formatAnalyticsCount(overview.naturalCompletionCount)
+                        )
+                        CompactOverviewMetric(
+                            title = stringResource(R.string.statistics_not_counted),
+                            value = formatAnalyticsCount(overview.nonQualifiedAttemptCount),
+                            supportingText = stringResource(R.string.statistics_not_counted_support_compact),
+                            accessibleSupportingText = stringResource(R.string.statistics_not_counted_support)
+                        )
                     }
-                    if (rowMetrics.size < columns) Box(Modifier.weight(1f))
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        CompactOverviewMetric(
+                            title = stringResource(R.string.statistics_plays),
+                            value = formatAnalyticsCount(overview.playCounts.totalPlayCount),
+                            modifier = Modifier.weight(1f)
+                        )
+                        CompactOverviewMetric(
+                            title = stringResource(R.string.statistics_completed),
+                            value = formatAnalyticsCount(overview.naturalCompletionCount),
+                            modifier = Modifier.weight(1f)
+                        )
+                        CompactOverviewMetric(
+                            title = stringResource(R.string.statistics_not_counted),
+                            value = formatAnalyticsCount(overview.nonQualifiedAttemptCount),
+                            supportingText = stringResource(R.string.statistics_not_counted_support_compact),
+                            accessibleSupportingText = stringResource(R.string.statistics_not_counted_support),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
             }
         }
@@ -408,33 +484,43 @@ private fun StatisticsOverviewGrid(overview: ListeningOverview) {
 }
 
 @Composable
-private fun AnalyticsMetricCard(metric: MetricPresentation, modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier
-            .heightIn(min = 132.dp)
-            .semantics(mergeDescendants = true) {
-                contentDescription = buildString {
-                    append(metric.title)
-                    append(", ")
-                    append(metric.accessibleValue)
-                    metric.supportingText?.let { append(". "); append(it) }
-                }
-            },
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(metric.title, style = MaterialTheme.typography.labelLarge)
-            Text(
-                metric.value,
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.primary
-            )
-            metric.supportingText?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun CompactOverviewMetric(
+    title: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    supportingText: String? = null,
+    accessibleSupportingText: String? = supportingText
+) {
+    Column(
+        modifier = modifier.semantics(mergeDescendants = true) {
+            contentDescription = buildString {
+                append(title)
+                append(", ")
+                append(value)
+                accessibleSupportingText?.let { append(". "); append(it) }
             }
+        },
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
+        )
+        supportingText?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -522,32 +608,36 @@ private fun StatisticsEmptyCard(messageResource: Int) {
 }
 
 @Composable
-private fun HistoryCoverageCard(prominent: Boolean, onClick: () -> Unit) {
+private fun HistoryCoverageCard(onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = if (prominent) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 Icons.Rounded.Info,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.width(20.dp)
             )
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(stringResource(R.string.statistics_history_concise), style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    stringResource(R.string.statistics_learn_more),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
+            Text(
+                text = stringResource(R.string.statistics_history_concise_compact),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                stringResource(R.string.statistics_learn_more),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
         }
     }
 }

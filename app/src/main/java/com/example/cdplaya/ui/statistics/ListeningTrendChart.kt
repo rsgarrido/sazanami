@@ -13,12 +13,15 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -33,7 +36,6 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.example.cdplaya.R
 import com.example.cdplaya.data.AnalyticsRangePreset
@@ -58,14 +60,41 @@ internal fun ListeningTrendSection(
         modifier = modifier.padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text(
-            text = stringResource(R.string.statistics_trend_title),
-            style = MaterialTheme.typography.titleLarge
-        )
-        TrendMetricSelector(metric, onMetricSelected)
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val stackedHeader = maxWidth < 360.dp || LocalConfiguration.current.fontScale >= 1.3f
+            if (stackedHeader) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = stringResource(R.string.statistics_trend_title),
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                    TrendMetricSelector(
+                        metric = metric,
+                        onMetricSelected = onMetricSelected,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(R.string.statistics_trend_title),
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                    TrendMetricSelector(
+                        metric = metric,
+                        onMetricSelected = onMetricSelected,
+                        modifier = Modifier.widthIn(min = 190.dp, max = 220.dp)
+                    )
+                }
+            }
+        }
         val noDetailedEventsAnywhere =
             selectedRange == AnalyticsRangeSelection.Preset(AnalyticsRangePreset.ALL_TIME) &&
-                !hasDetailedEvents
+                    !hasDetailedEvents
         ListeningTrendChart(
             buckets = buckets,
             metric = metric,
@@ -82,41 +111,39 @@ internal fun ListeningTrendSection(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TrendMetricSelector(
     metric: ListeningTrendMetric,
-    onMetricSelected: (ListeningTrendMetric) -> Unit
+    onMetricSelected: (ListeningTrendMetric) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    val selectedDescription = stringResource(R.string.statistics_range_selected)
-    val notSelectedDescription = stringResource(R.string.statistics_range_not_selected)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        ListeningTrendMetric.entries.forEach { choice ->
-            val selected = metric == choice
-            FilterChip(
-                selected = selected,
+    SingleChoiceSegmentedButtonRow(modifier = modifier) {
+        ListeningTrendMetric.entries.forEachIndexed { index, choice ->
+            SegmentedButton(
+                selected = metric == choice,
                 onClick = { onMetricSelected(choice) },
+                shape = SegmentedButtonDefaults.itemShape(
+                    index = index,
+                    count = ListeningTrendMetric.entries.size
+                ),
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 48.dp),
+                icon = {},
                 label = {
                     Text(
-                        stringResource(
+                        text = stringResource(
                             when (choice) {
                                 ListeningTrendMetric.RECORDED_LISTENING_TIME ->
                                     R.string.statistics_trend_metric_time
                                 ListeningTrendMetric.QUALIFIED_PLAYS ->
                                     R.string.statistics_trend_metric_plays
                             }
-                        )
+                        ),
+                        maxLines = 1
                     )
-                },
-                modifier = Modifier
-                    .heightIn(min = 48.dp)
-                    .semantics {
-                        stateDescription = if (selected) selectedDescription else notSelectedDescription
-                    }
+                }
             )
         }
     }
@@ -149,7 +176,7 @@ internal fun ListeningTrendChart(
     )
 
     Card(
-        modifier = modifier.fillMaxWidth().heightIn(min = 284.dp),
+        modifier = modifier.fillMaxWidth().heightIn(min = 236.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
         if (maximum <= 0L || buckets.isEmpty()) {
@@ -186,14 +213,14 @@ internal fun ListeningTrendChart(
 
         Column(
             modifier = Modifier
-                .padding(16.dp)
+                .padding(14.dp)
                 .semantics { contentDescription = chartDescription }
                 .testTag("listening_trend_chart"),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Text(
-                text = stringResource(R.string.statistics_trend_axis_maximum, maximumLabel),
-                style = MaterialTheme.typography.labelMedium,
+                text = stringResource(R.string.statistics_trend_axis_maximum_compact, maximumLabel),
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
@@ -222,7 +249,7 @@ internal fun ListeningTrendChart(
                     Canvas(
                         modifier = Modifier
                             .width(contentWidth)
-                            .height(156.dp)
+                            .height(132.dp)
                     ) {
                         val baselineY = size.height - 1f
                         drawLine(
@@ -257,7 +284,7 @@ internal fun ListeningTrendChart(
                             }
                         }
                     }
-                    Box(modifier = Modifier.width(contentWidth).height(32.dp)) {
+                    Box(modifier = Modifier.width(contentWidth).height(28.dp)) {
                         labels.forEach { (index, label) ->
                             val labelWidth = 72.dp
                             val idealLeft = slotWidth * (index + 0.5f) - labelWidth / 2f
@@ -280,7 +307,7 @@ internal fun ListeningTrendChart(
                         peakPeriod,
                         peakValue
                     ),
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodySmall
                 )
             }
         }

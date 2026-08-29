@@ -48,7 +48,7 @@ class AnalyticsRankingsTest {
         composeRule.onNodeWithText("Tracks").assertIsSelected()
         composeRule.onNodeWithText("Artists").performClick().assertIsSelected()
         composeRule.runOnIdle { assertEquals(1, changes) }
-        composeRule.onNodeWithText("Ranked by qualified plays").assertExists()
+        composeRule.onNodeWithText("Qualified plays").assertExists()
     }
 
     @Test

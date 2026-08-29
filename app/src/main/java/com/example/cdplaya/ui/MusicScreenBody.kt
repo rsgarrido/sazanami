@@ -319,6 +319,7 @@ internal fun MusicScreenBody(
                 onRetry = onRetryListeningAnalytics,
                 onTrendMetricSelected = onListeningAnalyticsTrendMetricSelected,
                 onRankingCategorySelected = onListeningAnalyticsRankingCategorySelected,
+                librarySongs = songs,
                 listState = statisticsListState,
                 modifier = modifier.fillMaxSize()
             )
