@@ -25,6 +25,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.first
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -48,20 +49,19 @@ class AppPreferencesMigrationTest {
             "/storage/1234-5678/My Collection"
         )
 
-        repository.completeInitialLibraryFolderSelection(
+        repository.saveInitialLibraryFolderSelection(
             FolderSelection(FolderSelectionMode.CUSTOM, selectedRoots)
         )
         val confirmed = withTimeout(5_000) {
-            repository.state.firstMatching { it.initialLibraryFolderSelectionCompleted }
+            repository.state.firstMatching { it.selectedLibraryFolders == selectedRoots }
         }
 
         assertEquals(selectedRoots, confirmed.selectedLibraryFolders)
-        assertTrue(confirmed.initialLibraryFolderSelectionCompleted)
         scope.cancel()
     }
 
     @Test
-    fun confirmingInitialEmptyFolderSelectionPersistsCompletion() = runBlocking {
+    fun savingInitialEmptyFolderSelectionPreservesItsExplicitCustomMode() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val suffix = System.nanoTime().toString()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -72,14 +72,15 @@ class AppPreferencesMigrationTest {
             legacyStores = emptyList()
         )
 
-        repository.completeInitialLibraryFolderSelection(
+        repository.saveInitialLibraryFolderSelection(
             FolderSelection(FolderSelectionMode.CUSTOM, emptySet())
         )
         val confirmed = withTimeout(5_000) {
-            repository.state.firstMatching { it.initialLibraryFolderSelectionCompleted }
+            repository.state.firstMatching {
+                it.folderSelectionMode == FolderSelectionMode.CUSTOM
+            }
         }
 
-        assertTrue(confirmed.initialLibraryFolderSelectionCompleted)
         assertEquals(FolderSelectionMode.CUSTOM, confirmed.folderSelectionMode)
         assertTrue(confirmed.selectedLibraryFolders.isEmpty())
         scope.cancel()
@@ -122,7 +123,8 @@ class AppPreferencesMigrationTest {
         assertEquals(ReplayGainMode.TRACK, migrated.replayGainMode)
         assertEquals(AudioOffloadPreference.DISABLED, migrated.audioOffloadPreference)
         assertEquals(setOf("Music", "Podcasts"), migrated.selectedLibraryFolders)
-        assertTrue(migrated.initialLibraryFolderSelectionCompleted)
+        assertTrue(repository.consumeLegacyInitialLibraryFolderSelectionCompletion())
+        assertFalse(repository.consumeLegacyInitialLibraryFolderSelectionCompletion())
         assertEquals(LibraryViewMode.GRID, migrated.songsViewMode)
         assertEquals(4, migrated.songsGridColumnCount)
         assertEquals(
@@ -172,7 +174,8 @@ class AppPreferencesMigrationTest {
         context.getSharedPreferences(stores[2], Context.MODE_PRIVATE).edit()
             .putString("replay_gain_mode", ReplayGainMode.TRACK.name).commit()
         context.getSharedPreferences(stores[3], Context.MODE_PRIVATE).edit()
-            .putStringSet("selected_folders", setOf("Music", "Podcasts")).commit()
+            .putStringSet("selected_folders", setOf("Music", "Podcasts"))
+            .putBoolean("initial_library_folder_selection_completed", true).commit()
         context.getSharedPreferences(stores[4], Context.MODE_PRIVATE).edit()
             .putString("songs_view_mode", "grid")
             .putInt("songs_view_mode_columns", 4).commit()

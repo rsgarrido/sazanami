@@ -62,6 +62,68 @@ class InitialLibraryFolderSelectionTest {
     }
 
     @Test
+    fun validRestoredRootsBecomeCurrentDevicePreselectionHints() {
+        val folders = listOf(
+            LibraryFolder("/storage/emulated/0/Music", "Music", 10),
+            LibraryFolder("/storage/emulated/0/Download", "Download", 3),
+            LibraryFolder("/storage/1234-5678/Collection", "Collection", 4)
+        )
+        val selection = initialLibraryFolderSelectionWithRestoredHints(
+            folders = folders,
+            restoredSelection = FolderSelection(
+                FolderSelectionMode.CUSTOM,
+                setOf(
+                    "/storage/emulated/0/Download",
+                    "/storage/1234-5678/Collection"
+                )
+            )
+        )
+
+        assertEquals(
+            setOf(
+                "/storage/emulated/0/Download",
+                "/storage/1234-5678/Collection"
+            ),
+            selection.customFolders
+        )
+    }
+
+    @Test
+    fun staleRestoredRootsAreIgnoredWhileValidRootsAreRetained() {
+        val selection = initialLibraryFolderSelectionWithRestoredHints(
+            folders = listOf(
+                LibraryFolder("/storage/emulated/0/Music", "Music", 10),
+                LibraryFolder("/storage/emulated/0/Download", "Download", 3)
+            ),
+            restoredSelection = FolderSelection(
+                FolderSelectionMode.CUSTOM,
+                setOf(
+                    "/storage/emulated/0/Download",
+                    "/storage/missing-card/Old Music"
+                )
+            )
+        )
+
+        assertEquals(setOf("/storage/emulated/0/Download"), selection.customFolders)
+    }
+
+    @Test
+    fun entirelyStaleRestoredSelectionFallsBackToConventionalMusic() {
+        val selection = initialLibraryFolderSelectionWithRestoredHints(
+            folders = listOf(
+                LibraryFolder("/storage/emulated/0/Music", "Music", 10),
+                LibraryFolder("/storage/emulated/0/Download", "Download", 3)
+            ),
+            restoredSelection = FolderSelection(
+                FolderSelectionMode.CUSTOM,
+                setOf("/storage/missing-card/Old Music")
+            )
+        )
+
+        assertEquals(setOf("/storage/emulated/0/Music"), selection.customFolders)
+    }
+
+    @Test
     fun downloadsAndLocalizedOrCustomRootsRemainAvailableForManualSelection() {
         val available = listOf(
             "/storage/emulated/0/Music",

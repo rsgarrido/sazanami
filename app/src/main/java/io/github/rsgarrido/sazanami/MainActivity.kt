@@ -278,18 +278,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun restoreFolderArtworkState() {
-        var state = folderArtworkAccessStore.readState()
-        val savedUri = state.treeUri
-        if (savedUri != null) {
-            val stillGranted = contentResolver.persistedUriPermissions.any { permission ->
+        folderArtworkAccessState = folderArtworkAccessStore.readValidatedState { savedUri ->
+            contentResolver.persistedUriPermissions.any { permission ->
                 permission.uri == savedUri && permission.isReadPermission
             }
-            if (!stillGranted) {
-                folderArtworkAccessStore.clearTreeUri()
-                state = folderArtworkAccessStore.readState()
-            }
         }
-        folderArtworkAccessState = state
     }
 
     private fun chooseFolderArtwork() {

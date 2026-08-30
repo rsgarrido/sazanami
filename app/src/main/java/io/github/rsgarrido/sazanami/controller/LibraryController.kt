@@ -27,7 +27,7 @@ import io.github.rsgarrido.sazanami.data.ProgressiveArtworkEnricher
 import io.github.rsgarrido.sazanami.data.buildInitialSelectedCoreLibrary
 import io.github.rsgarrido.sazanami.data.buildInitialSelectedLibraryData
 import io.github.rsgarrido.sazanami.data.buildLibraryFolders
-import io.github.rsgarrido.sazanami.data.defaultInitialLibraryFolderSelection
+import io.github.rsgarrido.sazanami.data.initialLibraryFolderSelectionWithRestoredHints
 import io.github.rsgarrido.sazanami.data.MediaLibraryAccessException
 import io.github.rsgarrido.sazanami.data.stableKey
 import io.github.rsgarrido.sazanami.data.MusicRepository
@@ -71,6 +71,8 @@ import io.github.rsgarrido.sazanami.player.PlaybackLibraryBridge
 import io.github.rsgarrido.sazanami.performance.PerformanceTraceNames
 import io.github.rsgarrido.sazanami.performance.tracePerformance
 import io.github.rsgarrido.sazanami.mediaaccess.LibraryPermissionGate
+import io.github.rsgarrido.sazanami.mediaaccess.InstallationOnboardingStore
+import io.github.rsgarrido.sazanami.mediaaccess.shouldMigrateLegacyOnboardingCompletion
 import io.github.rsgarrido.sazanami.ui.state.LibraryUiState
 import io.github.rsgarrido.sazanami.ui.state.libraryUiState
 import io.github.rsgarrido.sazanami.ui.state.toUiSummary
@@ -129,6 +131,7 @@ class LibraryController(
     private val applicationContext = context.applicationContext
 
     private val appPreferencesRepository = AppPreferencesRepository.getInstance(applicationContext)
+    private val installationOnboardingStore = InstallationOnboardingStore(applicationContext)
     private val favoritesRepository = FavoritesRepository(appDatabase.favoriteSongDao())
     private val playlistsRepository = PlaylistsRepository(appDatabase.playlistDao())
     private val smartPlaylistRepository = SmartPlaylistRepository(
@@ -385,6 +388,27 @@ class LibraryController(
                 storedMode = savedPreferences.folderSelectionMode.name,
                 storedFolders = savedPreferences.selectedLibraryFolders
             )
+            val initialFolderSelectionCompleted = withContext(Dispatchers.IO) {
+                val legacyCompletion = appPreferencesRepository
+                    .consumeLegacyInitialLibraryFolderSelectionCompletion()
+                val packageInfo = applicationContext.packageManager.getPackageInfo(
+                    applicationContext.packageName,
+                    0
+                )
+                if (
+                    shouldMigrateLegacyOnboardingCompletion(
+                        legacyCompletionPresent = legacyCompletion,
+                        hasMeaningfulLegacyFolderSelection =
+                            savedSelection.customFolders.isNotEmpty() ||
+                                    savedSelection.excludedFolders.isNotEmpty(),
+                        firstInstallTimeMillis = packageInfo.firstInstallTime,
+                        lastUpdateTimeMillis = packageInfo.lastUpdateTime
+                    )
+                ) {
+                    installationOnboardingStore.markLibraryFolderSelectionCompleted()
+                }
+                installationOnboardingStore.isLibraryFolderSelectionCompleted()
+            }
             tracePerformance(PerformanceTraceNames.PREFERENCES_READY) { Unit }
             debugLibraryTiming(
                 "startup-preferences-ready elapsedMs=" +
@@ -394,17 +418,16 @@ class LibraryController(
             folderSelection = savedSelection
             updateState {
                 copy(
-                    initialFolderSelectionCompleted =
-                        savedPreferences.initialLibraryFolderSelectionCompleted,
-                    initialFolderDiscoveryCompleted =
-                        savedPreferences.initialLibraryFolderSelectionCompleted
+                    initialFolderSelectionCompleted = initialFolderSelectionCompleted,
+                    initialFolderDiscoveryCompleted = initialFolderSelectionCompleted
                 )
             }
 
-            if (!savedPreferences.initialLibraryFolderSelectionCompleted) {
+            if (!initialFolderSelectionCompleted) {
                 discoverInitialLibraryFolders(
                     scanToken = scanToken,
-                    libraryLoadRequestedAt = libraryLoadRequestedAt
+                    libraryLoadRequestedAt = libraryLoadRequestedAt,
+                    restoredSelectionHint = savedSelection
                 )
                 return@launchProtectedRefresh
             }
@@ -502,7 +525,10 @@ class LibraryController(
             "initial-selected-core-start selectedRoots=${confirmedSelection.customFolders.size}"
         )
         launchProtectedRefresh { scanToken ->
-            appPreferencesRepository.completeInitialLibraryFolderSelection(confirmedSelection)
+            withContext(Dispatchers.IO) {
+                appPreferencesRepository.saveInitialLibraryFolderSelection(confirmedSelection)
+                installationOnboardingStore.markLibraryFolderSelectionCompleted()
+            }
             if (!permissionGate.isCurrent(scanToken)) throw CancellationException()
             updateState { copy(initialFolderSelectionCompleted = true) }
 
@@ -1316,7 +1342,8 @@ class LibraryController(
 
     private suspend fun discoverInitialLibraryFolders(
         scanToken: Long,
-        libraryLoadRequestedAt: Long
+        libraryLoadRequestedAt: Long,
+        restoredSelectionHint: FolderSelection
     ) {
         val discoveryStartedAt = SystemClock.elapsedRealtime()
         debugLibraryTiming("initial-folder-discovery-start token=$scanToken")
@@ -1347,7 +1374,10 @@ class LibraryController(
                     "${SystemClock.elapsedRealtime() - hierarchyStartedAt} " +
                     "rows=${discoveredSongs.size} folders=${discoveredFolders.size}"
         )
-        folderSelection = defaultInitialLibraryFolderSelection(discoveredFolders)
+        folderSelection = initialLibraryFolderSelectionWithRestoredHints(
+            folders = discoveredFolders,
+            restoredSelection = restoredSelectionHint
+        )
         updateState {
             copy(
                 songs = emptyList(),

@@ -1,5 +1,7 @@
 package io.github.rsgarrido.sazanami.data
 
+import java.util.Locale
+
 /**
  * Creates the conservative first-run default. Only conventional top-level Music roots are
  * included automatically; other roots remain opt-in even when MediaStore reports audio there.
@@ -15,6 +17,37 @@ internal fun defaultInitialLibraryFolderSelection(
         }
         .mapTo(linkedSetOf(), LibraryFolder::path)
 )
+
+/**
+ * Uses restored custom roots only as current-device hints. Missing roots and an ambiguous restored
+ * ALL/empty selection are ignored, falling back to conventional Music roots.
+ */
+internal fun initialLibraryFolderSelectionWithRestoredHints(
+    folders: Collection<LibraryFolder>,
+    restoredSelection: FolderSelection
+): FolderSelection {
+    val availableByNormalizedPath = folders.associateBy { folder ->
+        normalizeLibraryFolderPath(folder.path).lowercase(Locale.ROOT)
+    }
+    val restoredIncludes = restoredSelection.customFolders.mapNotNullTo(linkedSetOf()) { path ->
+        availableByNormalizedPath[
+            normalizeLibraryFolderPath(path).lowercase(Locale.ROOT)
+        ]?.path
+    }
+    if (restoredIncludes.isEmpty()) {
+        return defaultInitialLibraryFolderSelection(folders)
+    }
+    val restoredExclusions = restoredSelection.excludedFolders.mapNotNullTo(linkedSetOf()) { path ->
+        availableByNormalizedPath[
+            normalizeLibraryFolderPath(path).lowercase(Locale.ROOT)
+        ]?.path
+    }
+    return FolderSelection(
+        mode = FolderSelectionMode.CUSTOM,
+        customFolders = restoredIncludes,
+        excludedFolders = restoredExclusions
+    )
+}
 
 /**
  * Keeps discovery metadata for every root while replacing only selected songs with their current

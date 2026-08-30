@@ -96,7 +96,6 @@ data class AppPreferencesState(
         EqualizerPreferencesState(),
     val folderSelectionMode: FolderSelectionMode = FolderSelectionMode.ALL,
     val selectedLibraryFolders: Set<String> = emptySet(),
-    val initialLibraryFolderSelectionCompleted: Boolean = false,
     val songsViewMode: LibraryViewMode = LibraryViewMode.LIST,
     val albumsViewMode: LibraryViewMode = LibraryViewMode.LIST,
     val artistsViewMode: LibraryViewMode = LibraryViewMode.LIST,
@@ -466,10 +465,19 @@ class AppPreferencesRepository private constructor(
         it[Keys.selectedLibraryFolders] = selection.toStoredFolders()
     }
 
-    suspend fun completeInitialLibraryFolderSelection(selection: FolderSelection) = edit {
+    suspend fun saveInitialLibraryFolderSelection(selection: FolderSelection) = edit {
         it[Keys.folderSelectionMode] = selection.mode.name
         it[Keys.selectedLibraryFolders] = selection.toStoredFolders()
-        it[Keys.initialLibraryFolderSelectionCompleted] = true
+    }
+
+    /** Removes the retired restorable marker and reports whether it had been completed. */
+    suspend fun consumeLegacyInitialLibraryFolderSelectionCompletion(): Boolean {
+        var completed = false
+        dataStore.edit { preferences ->
+            completed = preferences[Keys.legacyInitialLibraryFolderSelectionCompleted] == true
+            preferences.remove(Keys.legacyInitialLibraryFolderSelectionCompleted)
+        }
+        return completed
     }
 
     @Deprecated("Use setLibraryFolderSelection so an empty custom selection is unambiguous.")
@@ -562,9 +570,6 @@ class AppPreferencesRepository private constructor(
         )
         preferences[Keys.folderSelectionMode] = restored.folderSelectionMode.name
         preferences[Keys.selectedLibraryFolders] = restored.selectedLibraryFolders.toSet()
-        // A restored preferences snapshot contains an intentional folder configuration, including
-        // an intentionally empty custom selection, so it must not restart first-run onboarding.
-        preferences[Keys.initialLibraryFolderSelectionCompleted] = true
         LibraryViewCategory.entries.forEach { category ->
             val (mode, columns) = restored.libraryView(category)
             preferences[Keys.viewMode(category)] = mode.storageValue
@@ -629,7 +634,6 @@ internal fun decodeAppPreferences(preferences: Preferences): AppPreferencesState
         storedMode = storedFolderMode,
         storedFolders = storedFolders
     )
-    val hasMeaningfulLegacyFolderConfiguration = storedFolders.isNotEmpty()
     return AppPreferencesState(
         selectedPlayerTheme = PlayerTheme.fromId(preferences[Keys.selectedPlayerTheme]),
         playerThemeTokenOverrides = PlayerTheme.entries.associateWith { emptyOverrides() }
@@ -726,11 +730,6 @@ internal fun decodeAppPreferences(preferences: Preferences): AppPreferencesState
         equalizerPreferences = decodeEqualizerPreferences(preferences),
         folderSelectionMode = folderSelection.mode,
         selectedLibraryFolders = folderSelection.toStoredFolders(),
-        initialLibraryFolderSelectionCompleted =
-            preferences[Keys.initialLibraryFolderSelectionCompleted]
-                // Only a meaningful legacy selection can stand in for the explicit confirmation
-                // flag. A stored/default mode alone must never auto-complete first-run onboarding.
-                ?: hasMeaningfulLegacyFolderConfiguration,
         songsViewMode = LibraryViewMode.fromStorageValue(preferences[Keys.songsViewMode]),
         albumsViewMode = LibraryViewMode.fromStorageValue(preferences[Keys.albumsViewMode]),
         artistsViewMode = LibraryViewMode.fromStorageValue(preferences[Keys.artistsViewMode]),
@@ -1216,7 +1215,8 @@ private object Keys {
         doublePreferencesKey("equalizer_limiter_ceiling_dbfs")
     val selectedLibraryFolders = stringSetPreferencesKey("selected_folders")
     val folderSelectionMode = stringPreferencesKey("folder_selection_mode")
-    val initialLibraryFolderSelectionCompleted =
+    // Retained only so existing installations can consume and remove the old backed-up marker.
+    val legacyInitialLibraryFolderSelectionCompleted =
         booleanPreferencesKey("initial_library_folder_selection_completed")
     val songsViewMode = stringPreferencesKey("songs_view_mode")
     val albumsViewMode = stringPreferencesKey("albums_view_mode")

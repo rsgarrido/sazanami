@@ -20,7 +20,7 @@ class LibraryStartupStageTest {
     }
 
     @Test
-    fun freshUserCannotBypassFolderConfirmationEvenWhenOtherStartupStateIsReady() {
+    fun restoredPreferencesCannotBypassExplicitFolderConfirmation() {
         assertEquals(
             LibraryStartupStage.FOLDER_SELECTION,
             resolveLibraryStartupStage(

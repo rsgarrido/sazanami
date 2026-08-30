@@ -51,6 +51,32 @@ class FolderArtworkAccessStoreTest {
         assertEquals(selectedTree, settingsState.treeUri)
     }
 
+    @Test
+    fun restoredTreeWithoutPersistedReadPermissionIsResetToNotGranted() {
+        val restoredTree = Uri.parse("content://documents/tree/primary%3AMusic")
+        val store = FolderArtworkAccessStore(context)
+        store.setTreeUri(restoredTree)
+
+        val validated = store.readValidatedState { false }
+
+        assertFalse(validated.hasFolderAccess)
+        assertFalse(validated.onboardingComplete)
+        assertNull(store.readState().treeUri)
+    }
+
+    @Test
+    fun validPersistedReadPermissionKeepsRestoredTreeAccess() {
+        val restoredTree = Uri.parse("content://documents/tree/primary%3AMusic")
+        val store = FolderArtworkAccessStore(context)
+        store.setTreeUri(restoredTree)
+
+        val validated = store.readValidatedState { uri -> uri == restoredTree }
+
+        assertTrue(validated.hasFolderAccess)
+        assertTrue(validated.onboardingComplete)
+        assertEquals(restoredTree, validated.treeUri)
+    }
+
     private companion object {
         const val PREFERENCES_NAME = "folder_artwork_access"
     }

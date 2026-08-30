@@ -139,7 +139,7 @@ fun FolderSelectionScreen(
                 isInitialOnboarding && selectedLibraryFolders.isEmpty() ->
                     "No folders selected. You can continue with an empty library."
                 isInitialOnboarding ->
-                    "${selectedLibraryFolders.size} folder root(s) selected."
+                    selectedFolderCountText(selectedLibraryFolders.size)
                 folderSelectionMode == FolderSelectionMode.ALL &&
                         excludedLibraryFolders.isEmpty() ->
                     "Every detected folder tree is included."
@@ -298,6 +298,11 @@ fun FolderSelectionScreen(
             }
         }
     }
+}
+
+internal fun selectedFolderCountText(count: Int): String = when (count) {
+    1 -> "1 folder selected."
+    else -> "$count folders selected."
 }
 
 @Composable

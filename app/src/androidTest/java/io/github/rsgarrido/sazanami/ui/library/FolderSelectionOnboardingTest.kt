@@ -27,7 +27,7 @@ class FolderSelectionOnboardingTest {
         }
 
         composeRule.onNodeWithText("Choose your music folders").assertIsDisplayed()
-        composeRule.onNodeWithText("1 folder root(s) selected.").assertIsDisplayed()
+        composeRule.onNodeWithText("1 folder selected.").assertIsDisplayed()
         assertFalse(continued)
 
         composeRule.onNodeWithText("Continue").performClick()
