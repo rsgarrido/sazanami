@@ -100,20 +100,20 @@ Both generated files are tracked under `app/src/release/generated/baselineProfil
 
 # Reduced smoke suite
 .\gradlew.bat :benchmark:connectedBenchmarkBenchmarkAndroidTest `
-  "-Pandroid.testInstrumentationRunnerArguments.class=com.example.cdplaya.benchmark.MacrobenchmarkSmokeSuite"
+  "-Pandroid.testInstrumentationRunnerArguments.class=io.github.rsgarrido.sazanami.benchmark.MacrobenchmarkSmokeSuite"
 
 # Full startup and frame suites
 .\gradlew.bat :benchmark:connectedBenchmarkBenchmarkAndroidTest `
-  "-Pandroid.testInstrumentationRunnerArguments.class=com.example.cdplaya.benchmark.StartupBenchmarks"
+  "-Pandroid.testInstrumentationRunnerArguments.class=io.github.rsgarrido.sazanami.benchmark.StartupBenchmarks"
 .\gradlew.bat :benchmark:connectedBenchmarkBenchmarkAndroidTest `
-  "-Pandroid.testInstrumentationRunnerArguments.class=com.example.cdplaya.benchmark.JourneyBenchmarks"
+  "-Pandroid.testInstrumentationRunnerArguments.class=io.github.rsgarrido.sazanami.benchmark.JourneyBenchmarks"
 
 # Generate Baseline and focused Startup Profiles
 .\gradlew.bat :app:generateReleaseBaselineProfile
 
 # Same-device compilation comparison
 .\gradlew.bat :benchmark:connectedBenchmarkBenchmarkAndroidTest `
-  "-Pandroid.testInstrumentationRunnerArguments.class=com.example.cdplaya.benchmark.BaselineProfileComparisonBenchmarks"
+  "-Pandroid.testInstrumentationRunnerArguments.class=io.github.rsgarrido.sazanami.benchmark.BaselineProfileComparisonBenchmarks"
 ```
 
 Benchmark JSON and traces are written below `benchmark/build/outputs/`; connected reports are below `benchmark/build/reports/androidTests/connected/`. Do not commit these artifacts.

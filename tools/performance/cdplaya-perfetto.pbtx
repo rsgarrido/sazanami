@@ -16,7 +16,7 @@ data_sources: {
       atrace_categories: "idle"
       atrace_categories: "sched"
       atrace_categories: "view"
-      atrace_apps: "com.example.cdplaya"
+      atrace_apps: "io.github.rsgarrido.sazanami"
     }
   }
 }

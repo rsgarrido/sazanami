@@ -32,7 +32,7 @@ This is a work in progress. The app currently reads song metadata from MediaStor
 ## Project Structure
 
 ```text
-app/src/main/java/com/example/cdplaya/
+app/src/main/java/io/github/rsgarrido/sazanami/
   MainActivity.kt              App entry point and top-level wiring
   data/                        Song models, library preferences, MediaStore repository
   data/local/                  Room database scaffold

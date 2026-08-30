@@ -8,11 +8,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.cdplaya"
+    namespace = "io.github.rsgarrido.sazanami"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.cdplaya"
+        applicationId = "io.github.rsgarrido.sazanami"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

@@ -453,7 +453,7 @@ Post-change focused evidence:
 
 - `.\gradlew.bat --no-daemon :app:dependencyInsight --configuration debugRuntimeClasspath --dependency androidx.media3:media3-exoplayer`
   passed and resolved every Media3 module to stable 1.10.1.
-- `.\gradlew.bat --no-daemon :app:testDebugUnitTest --tests 'com.example.cdplaya.player.feasibility.*' --stacktrace`
+- `.\gradlew.bat --no-daemon :app:testDebugUnitTest --tests 'io.github.rsgarrido.sazanami.player.feasibility.*' --stacktrace`
   passed in 53s: 32 tests, 0 failures/errors/skips.
 - The focused connected feasibility command passed in 44s: 4 tests, 0
   failures/errors/skips. The first harness iteration exposed a null platform
@@ -478,13 +478,13 @@ Final ordinary aggregate:
 
 Opt-in existing performance verification:
 
-- `.\gradlew.bat --no-daemon '-Dequalizer.performance=true' '-Dequalizer.longRun=true' :app:testDebugUnitTest --tests 'com.example.cdplaya.player.equalizer.performance.*' --stacktrace`
+- `.\gradlew.bat --no-daemon '-Dequalizer.performance=true' '-Dequalizer.longRun=true' :app:testDebugUnitTest --tests 'io.github.rsgarrido.sazanami.player.equalizer.performance.*' --stacktrace`
   ran 5 tests in 42s: 4 passed and 1 failed. The sixty-minute equivalent
   long-run test passed (`3,600` equivalent seconds, `42,188` calls,
   `172,802,048` frames) with no buffer growth or state loss. The existing
   processor allocation benchmark failed its unchanged 16-byte/call threshold
   for `graphic-moderate` at 29.192 bytes/call.
-- `.\gradlew.bat --no-daemon '-Dequalizer.performance=true' :app:testDebugUnitTest --tests 'com.example.cdplaya.player.equalizer.performance.EqualizerProcessorBenchmarkTest' --rerun-tasks --stacktrace`
+- `.\gradlew.bat --no-daemon '-Dequalizer.performance=true' :app:testDebugUnitTest --tests 'io.github.rsgarrido.sazanami.player.equalizer.performance.EqualizerProcessorBenchmarkTest' --rerun-tasks --stacktrace`
   reproduced the unchanged assertion in 2m26s, this time for
   `graphic-worst-high-rate-surround` at 29.328 bytes/call. Its median real-time
   factor was 0.0682 and maximum was 0.1116. The scenario-to-scenario movement
@@ -508,7 +508,7 @@ Every invocation used the same command after one excluded warm-up per revision:
 .\gradlew.bat --no-daemon `
   "-Dequalizer.performance=true" `
   :app:testDebugUnitTest `
-  --tests "com.example.cdplaya.player.equalizer.performance.EqualizerProcessorBenchmarkTest" `
+  --tests "io.github.rsgarrido.sazanami.player.equalizer.performance.EqualizerProcessorBenchmarkTest" `
   --rerun-tasks `
   --stacktrace
 ```
@@ -564,7 +564,7 @@ cleanup state. It does not touch DSP, the equalizer processor hot path, Media3
 format selection, or the 16-byte allocation assertion.
 
 - Focused state/controller command:
-  `.\gradlew.bat --no-daemon :app:testDebugUnitTest --tests 'com.example.cdplaya.player.feasibility.BitPerfectFeasibilityStateTest' --tests 'com.example.cdplaya.player.feasibility.UsbMixerFeasibilityControllerTest' --stacktrace`
+  `.\gradlew.bat --no-daemon :app:testDebugUnitTest --tests 'io.github.rsgarrido.sazanami.player.feasibility.BitPerfectFeasibilityStateTest' --tests 'io.github.rsgarrido.sazanami.player.feasibility.UsbMixerFeasibilityControllerTest' --stacktrace`
   passed: 14 tests, 0 failures/errors/skips.
 - Final aggregate command:
   `.\gradlew.bat --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease :app:assembleBenchmark :benchmark:assembleBenchmarkBenchmark :app:assembleDebugAndroidTest --stacktrace`
@@ -574,7 +574,7 @@ format selection, or the 16-byte allocation assertion.
   minified release/R8, app benchmark, benchmark-module, and instrumentation APK
   assembly all passed.
 - Sixty-minute-equivalent command:
-  `.\gradlew.bat --no-daemon '-Dequalizer.performance=true' '-Dequalizer.longRun=true' :app:testDebugUnitTest --tests 'com.example.cdplaya.player.equalizer.performance.EqualizerProcessorLongRunTest' --rerun-tasks --stacktrace`
+  `.\gradlew.bat --no-daemon '-Dequalizer.performance=true' '-Dequalizer.longRun=true' :app:testDebugUnitTest --tests 'io.github.rsgarrido.sazanami.player.equalizer.performance.EqualizerProcessorLongRunTest' --rerun-tasks --stacktrace`
   passed in 2m30s: 3,600 equivalent seconds, 42,188 calls, and 172,802,048
   frames.
 - The unchanged allocation command was rerun on corrected HEAD. Flat bypass
@@ -613,23 +613,23 @@ Final APK artifacts:
 | File | Purpose and runtime impact | Scope / Phase A reason |
 |---|---|---|
 | `app/src/main/AndroidManifest.xml` | Adds normal `MODIFY_AUDIO_SETTINGS`; no runtime prompt. | Production manifest contract required by the probed API. |
-| `app/src/main/java/com/example/cdplaya/player/PlaybackService.kt` | Owns the single provider/controller, explicit activation, state-preserving output recreation, and cleanup callbacks. | Probe invocation is debug-rejected outside debug builds; authoritative ownership remains production-safe. |
-| `app/src/main/java/com/example/cdplaya/player/equalizer/EqualizerAudioProcessor.kt` | Publishes input/output format and buffer count only while observing; DSP is unchanged. | Low-cost dormant production instrumentation needed to answer the processor boundary question. |
-| `app/src/main/java/com/example/cdplaya/player/equalizer/EqualizerRenderersFactory.kt` | Installs the forwarding provider in the existing sink. | Dormant production-safe observation point; no second sink/player. |
-| `app/src/main/java/com/example/cdplaya/player/feasibility/BitPerfectFeasibilityModels.kt` | Framework-free session evidence and enums. | Non-persisted Phase A facts. |
-| `app/src/main/java/com/example/cdplaya/player/feasibility/BitPerfectFeasibilityReportFormatter.kt` | Produces sanitized copied diagnostics. | Experimental/debug reporting without raw identifiers. |
-| `app/src/main/java/com/example/cdplaya/player/feasibility/BitPerfectFeasibilityRuntimeBridge.kt` | Bounded in-process state and service control bridge; closure fix preserves unsupported/precondition rejection facts after returning to Off without inventing a set attempt. | Dormant unless explicitly invoked; no ownership duplication. |
-| `app/src/main/java/com/example/cdplaya/player/feasibility/ExactMixerAttributeMatcher.kt` | Strict encoding/rate/mask/behavior matching. | Pure Phase A eligibility evidence. |
-| `app/src/main/java/com/example/cdplaya/player/feasibility/FeasibilityAudioOutputProvider.kt` | Delegates Media3 behavior while observing format, real AudioTrack, reuse, and lifecycle. | Production-safe forwarding seam; activation remains experimental. |
-| `app/src/main/java/com/example/cdplaya/player/feasibility/UsbMixerFeasibilityController.kt` | API-gated USB enumeration, set/query/listen/clear, and exception-safe cleanup; closure fix resolves a no-set pending state to cleanup not required. | Experimental Android 14+ probe with API-29-safe loading. |
-| `app/src/main/java/com/example/cdplaya/ui/settings/DiagnosticsScreen.kt` | Adds explicit debug-only Observe, Exact probe, Stop/Clear, and Copy controls. | No preference, badge, or production claim. |
-| `app/src/test/java/com/example/cdplaya/player/feasibility/BitPerfectFeasibilityArchitectureTest.kt` | Enforces one service/player/session and no production preference/badge. | Phase A scope guard. |
-| `app/src/test/java/com/example/cdplaya/player/feasibility/BitPerfectFeasibilityStateTest.kt` | Tests safe defaults, immutability, bounded events, exact actual-track confirmation, and truthful unsupported rejection retention. | Phase A state integrity. |
-| `app/src/test/java/com/example/cdplaya/player/feasibility/DeterministicWavFixtureGeneratorTest.kt` | Generates and hashes copyright-free fixtures. | Test-only evidence; no APK asset. |
-| `app/src/test/java/com/example/cdplaya/player/feasibility/ExactMixerAttributeMatcherTest.kt` | Covers exact matches and every mismatch/ambiguity class. | Pure Phase A selection proof. |
-| `app/src/test/java/com/example/cdplaya/player/feasibility/FeasibilityAudioOutputProviderTest.kt` | Covers delegation, snapshots, reuse, lifecycle, and failure publication. | Phase A observer verification. |
-| `app/src/test/java/com/example/cdplaya/player/feasibility/UsbMixerFeasibilityControllerTest.kt` | Covers SDK/device rejection, default-only hardware, no-set cleanup, set/listener/query failures, and idempotent cleanup. | Hardware-independent cleanup proof. |
-| `app/src/androidTest/java/com/example/cdplaya/player/feasibility/BitPerfectFeasibilityInstrumentationTest.kt` | Exercises real Media3 sink/provider and actual AudioTrack creation plus safe API-36 USB inspection. | Device-only Phase A boundary evidence. |
+| `app/src/main/java/io/github/rsgarrido/sazanami/player/PlaybackService.kt` | Owns the single provider/controller, explicit activation, state-preserving output recreation, and cleanup callbacks. | Probe invocation is debug-rejected outside debug builds; authoritative ownership remains production-safe. |
+| `app/src/main/java/io/github/rsgarrido/sazanami/player/equalizer/EqualizerAudioProcessor.kt` | Publishes input/output format and buffer count only while observing; DSP is unchanged. | Low-cost dormant production instrumentation needed to answer the processor boundary question. |
+| `app/src/main/java/io/github/rsgarrido/sazanami/player/equalizer/EqualizerRenderersFactory.kt` | Installs the forwarding provider in the existing sink. | Dormant production-safe observation point; no second sink/player. |
+| `app/src/main/java/io/github/rsgarrido/sazanami/player/feasibility/BitPerfectFeasibilityModels.kt` | Framework-free session evidence and enums. | Non-persisted Phase A facts. |
+| `app/src/main/java/io/github/rsgarrido/sazanami/player/feasibility/BitPerfectFeasibilityReportFormatter.kt` | Produces sanitized copied diagnostics. | Experimental/debug reporting without raw identifiers. |
+| `app/src/main/java/io/github/rsgarrido/sazanami/player/feasibility/BitPerfectFeasibilityRuntimeBridge.kt` | Bounded in-process state and service control bridge; closure fix preserves unsupported/precondition rejection facts after returning to Off without inventing a set attempt. | Dormant unless explicitly invoked; no ownership duplication. |
+| `app/src/main/java/io/github/rsgarrido/sazanami/player/feasibility/ExactMixerAttributeMatcher.kt` | Strict encoding/rate/mask/behavior matching. | Pure Phase A eligibility evidence. |
+| `app/src/main/java/io/github/rsgarrido/sazanami/player/feasibility/FeasibilityAudioOutputProvider.kt` | Delegates Media3 behavior while observing format, real AudioTrack, reuse, and lifecycle. | Production-safe forwarding seam; activation remains experimental. |
+| `app/src/main/java/io/github/rsgarrido/sazanami/player/feasibility/UsbMixerFeasibilityController.kt` | API-gated USB enumeration, set/query/listen/clear, and exception-safe cleanup; closure fix resolves a no-set pending state to cleanup not required. | Experimental Android 14+ probe with API-29-safe loading. |
+| `app/src/main/java/io/github/rsgarrido/sazanami/ui/settings/DiagnosticsScreen.kt` | Adds explicit debug-only Observe, Exact probe, Stop/Clear, and Copy controls. | No preference, badge, or production claim. |
+| `app/src/test/java/io/github/rsgarrido/sazanami/player/feasibility/BitPerfectFeasibilityArchitectureTest.kt` | Enforces one service/player/session and no production preference/badge. | Phase A scope guard. |
+| `app/src/test/java/io/github/rsgarrido/sazanami/player/feasibility/BitPerfectFeasibilityStateTest.kt` | Tests safe defaults, immutability, bounded events, exact actual-track confirmation, and truthful unsupported rejection retention. | Phase A state integrity. |
+| `app/src/test/java/io/github/rsgarrido/sazanami/player/feasibility/DeterministicWavFixtureGeneratorTest.kt` | Generates and hashes copyright-free fixtures. | Test-only evidence; no APK asset. |
+| `app/src/test/java/io/github/rsgarrido/sazanami/player/feasibility/ExactMixerAttributeMatcherTest.kt` | Covers exact matches and every mismatch/ambiguity class. | Pure Phase A selection proof. |
+| `app/src/test/java/io/github/rsgarrido/sazanami/player/feasibility/FeasibilityAudioOutputProviderTest.kt` | Covers delegation, snapshots, reuse, lifecycle, and failure publication. | Phase A observer verification. |
+| `app/src/test/java/io/github/rsgarrido/sazanami/player/feasibility/UsbMixerFeasibilityControllerTest.kt` | Covers SDK/device rejection, default-only hardware, no-set cleanup, set/listener/query failures, and idempotent cleanup. | Hardware-independent cleanup proof. |
+| `app/src/androidTest/java/io/github/rsgarrido/sazanami/player/feasibility/BitPerfectFeasibilityInstrumentationTest.kt` | Exercises real Media3 sink/provider and actual AudioTrack creation plus safe API-36 USB inspection. | Device-only Phase A boundary evidence. |
 | `docs/audio/phase-a-bit-perfect-feasibility.md` | Records contracts, matrices, commands, caveats, hashes, and architecture decision. | Phase A deliverable; no runtime impact. |
 
 ## 12. Privacy and cleanup audit

@@ -1,0 +1,36 @@
+package io.github.rsgarrido.sazanami.data
+
+import io.github.rsgarrido.sazanami.data.backup.AppBackupJson
+import io.github.rsgarrido.sazanami.data.backup.BackupSongRatings
+import io.github.rsgarrido.sazanami.data.local.DatabaseProvider
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class MigrationContractTest {
+    @Test
+    fun databaseAndBackupVersionContractsRemainExplicit() {
+        assertEquals(9, DatabaseProvider.MIGRATION_9_10.startVersion)
+        assertEquals(10, DatabaseProvider.MIGRATION_9_10.endVersion)
+        assertEquals(10, DatabaseProvider.MIGRATION_10_11.startVersion)
+        assertEquals(11, DatabaseProvider.MIGRATION_10_11.endVersion)
+        assertEquals(11, DatabaseProvider.MIGRATION_11_12.startVersion)
+        assertEquals(12, DatabaseProvider.MIGRATION_11_12.endVersion)
+        assertEquals(12, DatabaseProvider.MIGRATION_12_13.startVersion)
+        assertEquals(13, DatabaseProvider.MIGRATION_12_13.endVersion)
+        assertEquals(13, DatabaseProvider.MIGRATION_13_14.startVersion)
+        assertEquals(14, DatabaseProvider.MIGRATION_13_14.endVersion)
+        assertEquals(14, DatabaseProvider.MIGRATION_14_15.startVersion)
+        assertEquals(15, DatabaseProvider.MIGRATION_14_15.endVersion)
+        assertEquals(15, DatabaseProvider.MIGRATION_15_16.startVersion)
+        assertEquals(16, DatabaseProvider.MIGRATION_15_16.endVersion)
+        assertEquals(16, DatabaseProvider.MIGRATION_16_17.startVersion)
+        assertEquals(17, DatabaseProvider.MIGRATION_16_17.endVersion)
+        assertEquals(17, DatabaseProvider.MIGRATION_17_18.startVersion)
+        assertEquals(18, DatabaseProvider.MIGRATION_17_18.endVersion)
+        assertEquals(18, DatabaseProvider.MIGRATION_18_19.startVersion)
+        assertEquals(19, DatabaseProvider.MIGRATION_18_19.endVersion)
+        assertEquals(15, AppBackupJson.CURRENT_SCHEMA_VERSION)
+        assertEquals(2, io.github.rsgarrido.sazanami.data.backup.BackupListeningHistoryV2.CURRENT_FORMAT_VERSION)
+        assertEquals(1, BackupSongRatings.CURRENT_FORMAT_VERSION)
+    }
+}
