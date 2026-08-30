@@ -65,37 +65,46 @@ duplicate complete `Song` objects.
 
 ## Search normalization and evidence
 
-Candidate search deliberately has multiple representations:
+Candidate search deliberately has multiple comparison-only representations:
 
-1. The conservative key applies Unicode NFC, `Locale.ROOT` lowercase, trim, and whitespace
-   collapse. A unique title/artist/album result in this tier is `STRONG_METADATA`.
-2. The typography key additionally equates curly and straight apostrophes and common Unicode dash
-   characters.
+1. The conservative key applies `Locale.ROOT` lowercase and edge trimming. A unique
+   title/artist/album result in this tier has `EXACT` confidence.
+2. The canonical key additionally applies Unicode NFC, collapses repeated/Unicode separator
+   whitespace, and equates single- and double-quote variants, common Unicode dash characters,
+   ellipsis/three-period forms, BOM/zero-width-space
+   artifacts, and known UTF-8/Windows-1252 smart-quote decoding artifacts. A unique complete
+   metadata result in this tier has `CANONICAL_EXACT` confidence.
 3. The accent key decomposes Unicode and removes combining marks.
 4. The bounded punctuation key removes periods only when they occur between letters and normalizes
    whitespace around `#`.
+5. A bounded edit-distance lookup may compare a title only after canonical artist and album have
+   narrowed the candidate bucket (or canonical artist when imported album metadata is absent).
 
-The weaker forms are lookup aids only and produce `TYPOGRAPHY_VARIANT`, never identity proof.
-Original source and target strings remain in the result and are never rewritten. These functions
-are separate from portable song identity, Spotify fingerprinting, imported evidence, and persisted
-normalized identity fields.
+Accent, bounded-punctuation, and edit-distance forms are lookup aids only and have `FUZZY`
+confidence, never deterministic identity proof. Canonical equivalence is deterministic only when
+title, artist, and album are present and exactly one plausible local reference remains across all
+lookup tiers. Original source and target strings remain in the result and are never rewritten.
+These functions are separate from portable song identity, Spotify fingerprinting, imported
+evidence, and persisted normalized identity fields.
 
-Each candidate explains its title, artist, and album relation (`EXACT`, `NORMALIZED`, `MISSING`,
-`DIFFERENT`, or `VERSION_VARIANT`), its missing source fields, its version relation, and its
-category. Implemented candidate categories are:
+Each candidate explains its title, artist, and album relation (`EXACT`, `CANONICAL`, `FUZZY`,
+`MISSING`, `DIFFERENT`, or `VERSION_VARIANT`), its missing source fields, matched fields, raw and
+canonical source/target metadata, candidate count, final confidence, non-deterministic reason,
+version relation, and category. Implemented candidate categories are:
 
-- `STRONG_METADATA`: one unique conservative title/artist/album candidate with compatible version
-  evidence.
-- `TYPOGRAPHY_VARIANT`: one candidate found only through typography, accent, or bounded punctuation
-  normalization.
+- `STRONG_METADATA`: one unique conservative title/artist/album candidate.
+- `CANONICAL_METADATA`: one unique safe-canonical title/artist/album candidate.
+- `TYPOGRAPHY_VARIANT`: one candidate found only through accent, bounded punctuation, or spelling
+  similarity.
 - `INCOMPLETE_EVIDENCE`: one bounded candidate found with missing source album or artist evidence.
 - `VERSION_SENSITIVE`: one candidate shares the conservative artist and base title but version
   markers differ.
 - `AMBIGUOUS`: multiple plausible targets, or a bounded result whose bucket contains more targets.
 
-Item disposition is independently `SUGGESTED`, `AMBIGUOUS`, or `NO_CANDIDATE`. No category is
-auto-link authority. There is no selected candidate field, confidence percentage, or implicit first
-match.
+Item disposition remains independently `SUGGESTED`, `AMBIGUOUS`, or `NO_CANDIDATE`. Final confidence
+is `EXACT`, `CANONICAL_EXACT`, `FUZZY`, `AMBIGUOUS`, or `UNMATCHED`; only unique complete `EXACT` and
+`CANONICAL_EXACT` items report `isDeterministic`. No category creates a link, and there is no
+selected candidate field, confidence percentage, or implicit first match.
 
 ## Versions, missing metadata, and ambiguity
 
@@ -111,9 +120,10 @@ recording versions are ambiguous. A missing artist permits only a bounded title 
 blank title produces no candidate. Blank fields are treated as missing for lookup without changing
 their persisted representation.
 
-Candidate lists are capped at eight. `hasMoreCandidates` indicates truncation or an intentionally
-suppressed over-broad title-only bucket. Candidates sort by normalized title, artist, album, and
-identity ID. The review queue sorts strong, typography, incomplete, and version-sensitive
+Candidate lists are capped at eight. `hasMoreCandidates` indicates truncation, including an
+over-broad title-only bucket, and the item remains explicitly ambiguous. Candidates sort by
+normalized title, artist, album, and identity ID. The review queue sorts strong, canonical,
+typography, incomplete, and version-sensitive
 suggestions first, then ambiguous items, then no-candidate items; ties use imported event count,
 last-listened time, title, and source identity ID. Hash-map iteration order never reaches the API.
 
@@ -134,12 +144,45 @@ Manual target search filters the complete current in-memory library by title, ar
 sorts deterministically, and only then applies its 100-result cap. It is the authoritative fallback
 when deterministic candidate discovery cannot express a semantic or localized-title relationship.
 
+## Automatic deterministic reconciliation and batch binding
+
+Session 2 uses the matcher result as a strict automatic-link boundary. An unresolved imported
+identity is eligible only when its final confidence is `EXACT` or `CANONICAL_EXACT`, its candidate
+is unique and untruncated, and the matcher's complete-metadata rules report it deterministic.
+`FUZZY`, `AMBIGUOUS`, `UNMATCHED`, incomplete, and version-conflicting results remain manual-review
+work. Automatic reconciliation does not select a preferred item from multiple canonical-equivalent
+local songs.
+
+Automatic reconciliation runs after a Spotify import has been durably published and after a real
+library snapshot publication. The shared reconciler serializes those triggers, reads only unresolved
+published imported identities, and is idempotent because confirmed sources are excluded by the
+authoritative reconciliation relationship. A later library rescan can therefore resolve a formerly
+unmatched identity, while an already manual- or automatically-linked source is not reconsidered or
+overwritten. Failures in this post-publication step do not change a successful import into a failed
+import.
+
+The local binding service accepts many source-to-current-song requests, resolves each distinct local
+reference once, validates reconciliation roles with bulk DAO queries, and inserts all new
+relationships in one outer Room transaction. Existing same-target relationships are reported as
+already linked; different-target relationships are conflicts and remain unchanged. One commit
+coalesces reconciliation-table invalidation for the batch. The result reports requested, newly
+linked, already linked, conflicts, and validation failures. The same binding authority handles a
+single manual confirmation.
+
+Manual confirmation updates the already-loaded review model from the committed link result instead
+of re-querying all historical aggregates and rebuilding all candidates. A full reload remains a
+defensive fallback for a malformed result and is still used where unlink semantics require it. An
+open review is refreshed once after an external automatic batch adds links. No link path updates,
+copies, or duplicates `listening_events`; fifty historical plays owned by one imported identity
+still produce one reconciliation relationship.
+
 ## Final v1 behavior
 
 Reconciliation is optional. Unmatched imported identities remain legitimate historical rows and
 continue contributing to global Statistics; a user does not need to review an entire provider
-archive before it becomes useful. Candidate discovery never creates a link, and every suggestion
-still requires explicit confirmation.
+archive before it becomes useful. Candidate discovery itself remains read-only. The automatic
+orchestrator consumes only deterministic exact/canonical results; every other suggestion still
+requires explicit confirmation.
 
 Statistics canonicalizes identity before grouping, ranking, and applying Top-N limits. Top Tracks,
 Top Artists, Top Albums, custom historical ranges, and provider-neutral per-playable-track metrics
@@ -157,8 +200,9 @@ Stable Spotify identity and URI-less history intentionally behave differently:
   A later export reuses that same historical identity; genuinely new events automatically flow
   through its existing reconciliation. The identity needs to be reconciled only once.
 - URI-less occurrences may create separate historical fragments. Existing linked fragments remain
-  independent sources that can share one canonical target. A future fragment is not auto-linked by
-  metadata and may require its own explicit reconciliation.
+  independent sources that can share one canonical target. A future fragment is evaluated as a new
+  identity and is auto-linked only if it independently satisfies the unique deterministic boundary;
+  otherwise it requires explicit reconciliation.
 
 Backup 10 preserves identities, local bindings (including `missingSince`), native and imported
 events, source profiles, external IDs, fingerprint evidence, duplicate ordinals, ratings, and
@@ -179,8 +223,8 @@ Smart Playlist milestone; v1 does not implement Smart Playlist rules or UI.
 - Future URI-less occurrences can create new fragments that require additional confirmation.
 - Translation, transliteration, romanization, and localized-title equivalence are not inferred.
 - Featured-artist and unusual metadata forms may not produce a suggestion.
-- Strong suggestions require individual confirmation; there is no Match All, auto-link, or batch
-  approval workflow.
+- Fuzzy, ambiguous, incomplete, version-sensitive, and unmatched items require individual manual
+  handling; there is no Match All or batch-approval UI yet.
 - Candidate discovery uses deterministic normalization and current local-library metadata, not a
   Spotify API, network lookup, or external catalog.
 - Temporarily unavailable local targets remain linked but non-playable until normal library

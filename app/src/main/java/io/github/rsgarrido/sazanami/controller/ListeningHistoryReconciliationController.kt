@@ -1,6 +1,5 @@
 package io.github.rsgarrido.sazanami.controller
 
-import androidx.room.withTransaction
 import io.github.rsgarrido.sazanami.data.HistoricalReconciliationItem
 import io.github.rsgarrido.sazanami.data.HistoricalReconciliationSource
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationCandidateService
@@ -8,8 +7,8 @@ import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationFailure
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationLinkResult
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationRatingState
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationRatings
+import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationBindingService
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationRepository
-import io.github.rsgarrido.sazanami.data.ListeningNativeTrackResolver
 import io.github.rsgarrido.sazanami.data.LocalReconciliationTarget
 import io.github.rsgarrido.sazanami.data.ReconciliationCandidateDisposition
 import io.github.rsgarrido.sazanami.data.Song
@@ -17,7 +16,7 @@ import io.github.rsgarrido.sazanami.data.local.AppDatabase
 import io.github.rsgarrido.sazanami.data.local.LocalTrackBindingEntity
 import io.github.rsgarrido.sazanami.data.membershipKey
 import io.github.rsgarrido.sazanami.data.toDomain
-import io.github.rsgarrido.sazanami.data.toSongReference
+import io.github.rsgarrido.sazanami.data.toReconciliationTarget
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -144,8 +143,8 @@ class DefaultListeningHistoryReconciliationOperations(
         ListeningIdentityReconciliationCandidateService(database),
     private val repository: ListeningIdentityReconciliationRepository =
         ListeningIdentityReconciliationRepository(database),
-    private val nativeTrackResolver: ListeningNativeTrackResolver =
-        ListeningNativeTrackResolver(database)
+    private val bindingService: ListeningIdentityReconciliationBindingService =
+        ListeningIdentityReconciliationBindingService(database, repository)
 ) : ListeningHistoryReconciliationOperations {
     override suspend fun load(): ReconciliationReviewSnapshot {
         val dao = database.listeningIdentityReconciliationCandidateDao()
@@ -186,52 +185,14 @@ class DefaultListeningHistoryReconciliationOperations(
     override suspend fun linkMany(
         sourceIdentityIds: List<Long>,
         target: LocalReconciliationTarget
-    ): ListeningIdentityReconciliationLinkResult {
-        // Re-read the authoritative library at confirmation time. The review snapshot can be stale
-        // after a rescan, removal, or membership-key change.
-        val song = currentSongs()
-            .distinctBy(Song::membershipKey)
-            .associateBy(Song::membershipKey)[target.referenceKey]
-            ?: return ListeningIdentityReconciliationLinkResult.Rejected(
-                ListeningIdentityReconciliationFailure.TARGET_NOT_FOUND
-            )
-        return try {
-            database.withTransaction {
-                val displayedBinding = target.identityId.takeIf { it > 0L }?.let {
-                    database.localTrackBindingDao().getByReferenceKey(target.referenceKey)
-                }
-                if (target.identityId > 0L &&
-                    (displayedBinding?.trackIdentityId != target.identityId ||
-                        displayedBinding.missingSince != null)
-                ) {
-                    throw ReconciliationLinkRollback(
-                        ListeningIdentityReconciliationLinkResult.Rejected(
-                            ListeningIdentityReconciliationFailure.TARGET_HAS_NO_LOCAL_BINDING
-                        )
-                    )
-                }
-                val resolved = nativeTrackResolver.resolveOrCreate(
-                    target.referenceKey,
-                    song.toSongReference(),
-                    refreshExistingBinding = true
-                )
-                when (val result = repository.linkMany(sourceIdentityIds, resolved.trackIdentityId)) {
-                    is ListeningIdentityReconciliationLinkResult.Linked -> result
-                    is ListeningIdentityReconciliationLinkResult.Rejected ->
-                        throw ReconciliationLinkRollback(result)
-                }
-            }
-        } catch (rejected: ReconciliationLinkRollback) {
-            rejected.result
-        }
-    }
+    ): ListeningIdentityReconciliationLinkResult = bindingService.linkManyAtomically(
+        sourceIdentityIds,
+        target,
+        currentSongs()
+    )
 
     override suspend fun unlink(sourceIdentityId: Long) = repository.unlink(sourceIdentityId)
 }
-
-private class ReconciliationLinkRollback(
-    val result: ListeningIdentityReconciliationLinkResult.Rejected
-) : RuntimeException()
 
 class ListeningHistoryReconciliationController(
     private val operations: ListeningHistoryReconciliationOperations,
@@ -258,6 +219,12 @@ class ListeningHistoryReconciliationController(
     }
 
     fun retry() = refresh(showLoading = true)
+
+    /** Refreshes an already-open review once after an external automatic batch commit. */
+    fun onExternalReconciliationMutation() {
+        if (contentOrNull() == null || operationJob?.isActive == true) return
+        refresh(showLoading = false)
+    }
 
     fun selectTab(tab: ReconciliationReviewTab) = updateContent { copy(activeTab = tab, message = null) }
 
@@ -368,13 +335,14 @@ class ListeningHistoryReconciliationController(
             }
             when (result) {
                 is ListeningIdentityReconciliationLinkResult.Linked -> {
-                    reloadAfterMutation(
-                        if (confirmation.sources.size == 1) {
-                            "History linked. Statistics will now combine it with the local track."
-                        } else {
-                            "${confirmation.sources.size} histories linked. Statistics will now combine them with the local track."
-                        }
-                    )
+                    val message = if (confirmation.sources.size == 1) {
+                        "History linked. Statistics will now combine it with the local track."
+                    } else {
+                        "${confirmation.sources.size} histories linked. Statistics will now combine them with the local track."
+                    }
+                    if (!applySuccessfulLink(content, confirmation, result, message)) {
+                        reloadAfterMutation(message)
+                    }
                 }
                 is ListeningIdentityReconciliationLinkResult.Rejected -> {
                     val message = reconciliationFailureMessage(
@@ -385,6 +353,49 @@ class ListeningHistoryReconciliationController(
                 }
             }
         }
+    }
+
+    /**
+     * A successful link already contains everything needed to update the review. Avoid rebuilding
+     * aggregates and every candidate from all historical events after each manual confirmation.
+     */
+    private fun applySuccessfulLink(
+        content: ReconciliationReviewContent,
+        confirmation: ReconciliationConfirmation.Link,
+        result: ListeningIdentityReconciliationLinkResult.Linked,
+        message: String
+    ): Boolean {
+        val linksBySource = result.links.associateBy { it.sourceIdentityId }
+        if (linksBySource.keys != confirmation.sources.mapTo(mutableSetOf()) { it.identityId }) {
+            return false
+        }
+        val targetIdentityIds = result.links.mapTo(mutableSetOf()) { it.targetIdentityId }
+        if (targetIdentityIds.size != 1) return false
+        val resolvedTarget = confirmation.target.copy(identityId = targetIdentityIds.single())
+        val sourceIds = linksBySource.keys
+        localTargets = localTargets.map { target ->
+            if (target.referenceKey == resolvedTarget.referenceKey) resolvedTarget else target
+        }
+        val newlyLinked = confirmation.sources.map { source ->
+            LinkedHistoricalReconciliation(
+                source = source,
+                target = resolvedTarget,
+                reconciledAt = requireNotNull(linksBySource[source.identityId]).reconciledAt
+            )
+        }
+        _state.value = ListeningHistoryReconciliationUiState.Content(
+            content.copy(
+                reviewItems = content.reviewItems.filterNot { it.source.identityId in sourceIds },
+                linkedItems = (content.linkedItems + newlyLinked)
+                    .distinctBy { it.source.identityId },
+                expandedSourceId = null,
+                confirmation = null,
+                search = null,
+                isWorking = false,
+                message = message
+            )
+        )
+        return true
     }
 
     private fun performUnlink(content: ReconciliationReviewContent, item: LinkedHistoricalReconciliation) {
@@ -457,28 +468,6 @@ class ListeningHistoryReconciliationController(
     companion object {
         const val GENERIC_REFRESH_MESSAGE = "The tracks changed before they could be linked. Review the matches again."
     }
-}
-
-internal fun Song.toReconciliationTarget(
-    binding: LocalTrackBindingEntity?,
-    transientId: Long
-): LocalReconciliationTarget {
-    require(transientId < 0L)
-    val referenceKey = membershipKey()
-    return LocalReconciliationTarget(
-        identityId = binding?.trackIdentityId ?: transientId,
-        localBindingId = binding?.id ?: transientId,
-        referenceKey = referenceKey,
-        title = title,
-        artist = artist,
-        album = album,
-        albumArtist = albumArtist.takeIf(String::isNotBlank),
-        durationMs = duration.takeIf { it > 0L },
-        displayName = displayName.takeIf(String::isNotBlank),
-        fileExtension = displayName.substringAfterLast('.', "")
-            .takeIf(String::isNotBlank),
-        relativeFolder = relativePath.replace('\\', '/').trim('/').takeIf(String::isNotBlank)
-    )
 }
 
 private val currentSongComparator = compareBy<Song>(

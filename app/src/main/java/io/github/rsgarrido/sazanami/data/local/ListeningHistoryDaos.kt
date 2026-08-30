@@ -15,6 +15,9 @@ interface ListeningTrackIdentityDao {
     @Query("SELECT * FROM listening_track_identities WHERE id = :id")
     suspend fun getById(id: Long): ListeningTrackIdentityEntity?
 
+    @Query("SELECT id FROM listening_track_identities WHERE id IN (:ids)")
+    suspend fun getExistingIds(ids: List<Long>): List<Long>
+
     @Query("SELECT * FROM listening_track_identities ORDER BY id")
     suspend fun getAll(): List<ListeningTrackIdentityEntity>
 
@@ -61,6 +64,15 @@ interface ListeningIdentityReconciliationDao {
     @Query("SELECT * FROM listening_identity_reconciliations ORDER BY sourceIdentityId")
     suspend fun getAll(): List<ListeningIdentityReconciliationEntity>
 
+    @Query("SELECT * FROM listening_identity_reconciliations WHERE sourceIdentityId IN (:sourceIdentityIds)")
+    suspend fun getForSources(sourceIdentityIds: List<Long>): List<ListeningIdentityReconciliationEntity>
+
+    @Query("SELECT sourceIdentityId FROM listening_identity_reconciliations WHERE sourceIdentityId IN (:identityIds)")
+    suspend fun getSourceIds(identityIds: List<Long>): List<Long>
+
+    @Query("SELECT DISTINCT targetIdentityId FROM listening_identity_reconciliations WHERE targetIdentityId IN (:identityIds)")
+    suspend fun getTargetIds(identityIds: List<Long>): List<Long>
+
     @Query("SELECT EXISTS(SELECT 1 FROM listening_identity_reconciliations WHERE sourceIdentityId = :identityId)")
     suspend fun isSource(identityId: Long): Boolean
 
@@ -99,6 +111,9 @@ interface LocalTrackBindingDao {
 
     @Query("SELECT EXISTS(SELECT 1 FROM local_track_bindings WHERE trackIdentityId = :trackIdentityId)")
     suspend fun existsForTrackIdentity(trackIdentityId: Long): Boolean
+
+    @Query("SELECT DISTINCT trackIdentityId FROM local_track_bindings WHERE trackIdentityId IN (:trackIdentityIds)")
+    suspend fun getBoundTrackIdentityIds(trackIdentityIds: List<Long>): List<Long>
 
     @Query("DELETE FROM local_track_bindings WHERE id = :id")
     suspend fun deleteById(id: Long)
@@ -141,6 +156,11 @@ interface ListeningEventDao {
 
     @Query("SELECT EXISTS(SELECT 1 FROM listening_events WHERE trackIdentityId = :trackIdentityId AND source != 'native' AND publicationState = 'import_published')")
     suspend fun hasPublishedImportedHistory(trackIdentityId: Long): Boolean
+
+    @Query("SELECT DISTINCT trackIdentityId FROM listening_events WHERE trackIdentityId IN (:trackIdentityIds) AND source != 'native' AND publicationState = 'import_published'")
+    suspend fun getTrackIdentityIdsWithPublishedImportedHistory(
+        trackIdentityIds: List<Long>
+    ): List<Long>
 
     @Query(
         "SELECT * FROM listening_events " +

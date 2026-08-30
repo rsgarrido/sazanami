@@ -4,6 +4,7 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationFailure
+import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationBindingRequest
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationLinkResult
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationRatingState
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationRepository
@@ -282,6 +283,44 @@ class ListeningIdentityReconciliationRepositoryTest {
         assertEquals(fragmented.sorted(), repository.findSourcesForTarget(batchTarget).map { it.sourceIdentityId })
     }
 
+    @Test
+    fun heterogeneousBatchIsIdempotentPreservesEventsAndNeverOverwritesManualLink() = runBlocking {
+        val firstSource = historical("First source")
+        repeat(49) { ordinal -> importedEvent(firstSource, "extra-$ordinal") }
+        val secondSource = historical("Second source")
+        val firstTarget = local("First target", null)
+        val secondTarget = local("Second target", null)
+        val replacementTarget = local("Replacement target", null)
+        val requests = listOf(
+            ListeningIdentityReconciliationBindingRequest(firstSource, firstTarget),
+            ListeningIdentityReconciliationBindingRequest(secondSource, secondTarget)
+        )
+        val eventsBefore = database.listeningEventDao().getBackupPage(1_000, 0)
+
+        val first = repository.linkBatch(requests, reconciledAt = 1_000L)
+        val retry = repository.linkBatch(requests, reconciledAt = 2_000L)
+        val conflicting = repository.linkBatch(
+            listOf(ListeningIdentityReconciliationBindingRequest(firstSource, replacementTarget)),
+            reconciledAt = 3_000L
+        )
+
+        assertEquals(2, first.requested)
+        assertEquals(2, first.newlyLinked)
+        assertEquals(0, first.alreadyLinked)
+        assertEquals(0, retry.newlyLinked)
+        assertEquals(2, retry.alreadyLinked)
+        assertEquals(1, conflicting.conflicts.size)
+        assertEquals(firstTarget, repository.findTargetForSource(firstSource)?.targetIdentityId)
+        assertEquals(2, repository.listLinks().size)
+        assertEquals(1, repository.listLinks().count { it.sourceIdentityId == firstSource })
+        assertEquals(eventsBefore, database.listeningEventDao().getBackupPage(1_000, 0))
+        assertEquals(50L, database.listeningEventDao().countForTrackIdentity(firstSource))
+
+        assertTrue(repository.unlink(firstSource))
+        assertNull(repository.findTargetForSource(firstSource))
+        assertEquals(50L, database.listeningEventDao().countForTrackIdentity(firstSource))
+    }
+
     private suspend fun identity(title: String): Long =
         database.listeningTrackIdentityDao().insert(
             ListeningTrackIdentityEntity(
@@ -302,15 +341,20 @@ class ListeningIdentityReconciliationRepositoryTest {
 
     private suspend fun historical(title: String): Long {
         val id = identity(title)
+        importedEvent(id, "base")
+        return id
+    }
+
+    private suspend fun importedEvent(identityId: Long, suffix: String) {
         database.listeningEventDao().insert(
             ListeningEventEntity(
-                eventUuid = "event-$id",
+                eventUuid = "event-$identityId-$suffix",
                 source = ListeningSource.SPOTIFY_IMPORT,
-                trackIdentityId = id,
+                trackIdentityId = identityId,
                 localTrackBindingId = null,
                 playbackSessionId = null,
-                startedAt = 100L + id,
-                endedAt = 200L + id,
+                startedAt = 100L + identityId,
+                endedAt = 200L + identityId,
                 listenedMs = 100L,
                 trackDurationMs = 180_000L,
                 qualifiedAsPlay = true,
@@ -320,12 +364,11 @@ class ListeningIdentityReconciliationRepositoryTest {
                 endReason = null,
                 completionClassification = ListeningCompletionClassification.NONE,
                 publicationState = ListeningEventPublicationState.IMPORT_PUBLISHED,
-                sourceEventKey = "source-$id",
+                sourceEventKey = "source-$identityId-$suffix",
                 importBatchId = null,
-                createdAt = 300L + id
+                createdAt = 300L + identityId
             )
         )
-        return id
     }
 
     private suspend fun local(title: String, missingSince: Long?): Long {

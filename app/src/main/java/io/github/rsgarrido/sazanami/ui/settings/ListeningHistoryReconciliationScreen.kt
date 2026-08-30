@@ -705,6 +705,8 @@ private fun ConfirmationDialog(
 
 fun candidateEvidenceCopy(category: ReconciliationCandidateCategory): String = when (category) {
     ReconciliationCandidateCategory.STRONG_METADATA -> "Title, artist, and album match"
+    ReconciliationCandidateCategory.CANONICAL_METADATA ->
+        "Title, artist, and album match after typography normalization"
     ReconciliationCandidateCategory.TYPOGRAPHY_VARIANT -> "Minor punctuation, spelling, or accent differences"
     ReconciliationCandidateCategory.INCOMPLETE_EVIDENCE -> "Some imported metadata is missing"
     ReconciliationCandidateCategory.VERSION_SENSITIVE -> "Possible different song version"

@@ -246,9 +246,20 @@ class ListeningHistoryReconciliationControllerTest {
         )
         controller.confirm()
         assertEquals(1, operations.linkCalls)
+        assertEquals(1, operations.loadCalls)
         assertEquals(listOf(source.identityId), operations.lastLinkedSources)
         assertEquals(2, content().linkedCount)
         assertTrue(content().message!!.startsWith("History linked"))
+    }
+
+    @Test fun oneExternalAutomaticBatchCommitTriggersOneOpenScreenRefresh() {
+        operations.snapshot = snapshot()
+        controller.enter()
+        assertEquals(1, operations.loadCalls)
+
+        controller.onExternalReconciliationMutation()
+
+        assertEquals(2, operations.loadCalls)
     }
 
     @Test fun linkManyIsOneAtomicOperationAndFailureRefreshesWithoutPartialSuccess() {
@@ -316,13 +327,14 @@ class ListeningHistoryReconciliationControllerTest {
         var snapshot = ReconciliationReviewSnapshot(emptyList(), emptyList(), emptyList())
         var suspendLoad = false
         var loadFailure: Throwable? = null
+        var loadCalls = 0
         var linkCalls = 0
         var unlinkCalls = 0
         var lastLinkedSources = emptyList<Long>()
-        var linkResult: ListeningIdentityReconciliationLinkResult =
-            ListeningIdentityReconciliationLinkResult.Linked(emptyList())
+        var linkResult: ListeningIdentityReconciliationLinkResult? = null
 
         override suspend fun load(): ReconciliationReviewSnapshot {
+            loadCalls++
             loadFailure?.let { throw it }
             if (suspendLoad) awaitCancellation()
             return snapshot
@@ -340,7 +352,11 @@ class ListeningHistoryReconciliationControllerTest {
         ): ListeningIdentityReconciliationLinkResult {
             linkCalls++
             lastLinkedSources = sourceIdentityIds
-            return linkResult
+            return linkResult ?: ListeningIdentityReconciliationLinkResult.Linked(
+                sourceIdentityIds.map { sourceIdentityId ->
+                    ListeningIdentityReconciliationEntity(sourceIdentityId, target.identityId, 9)
+                }
+            )
         }
 
         override suspend fun unlink(sourceIdentityId: Long): Boolean {

@@ -17,6 +17,7 @@ import io.github.rsgarrido.sazanami.controller.ListeningHistoryReconciliationCon
 import io.github.rsgarrido.sazanami.controller.LinkedHistoricalReconciliation
 import io.github.rsgarrido.sazanami.controller.ReconciliationReviewTab
 import io.github.rsgarrido.sazanami.data.LocalReconciliationTarget
+import io.github.rsgarrido.sazanami.data.ListeningHistoryAutomaticReconciler
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.ArtistIdentity
 import io.github.rsgarrido.sazanami.data.EditableSongTags
@@ -127,6 +128,7 @@ class MusicViewModel(
     private val appContext = application.applicationContext
 
     private val appDatabase: AppDatabase = DatabaseProvider.getDatabase(appContext)
+    private val historyAutomaticReconciler = ListeningHistoryAutomaticReconciler(appDatabase)
 
     private val appPreferencesRepository = AppPreferencesRepository.getInstance(appContext)
     private val tagEditorRepository = TagEditorRepository()
@@ -160,7 +162,15 @@ class MusicViewModel(
                 sourceProfiles = spotifyImportSourceProfiles,
                 parser = spotifyImportParser,
                 createdAppVersion = BuildConfig.VERSION_NAME
-            )
+            ),
+            reconcilePublishedHistory = {
+                val result = historyAutomaticReconciler.reconcile(
+                    libraryController.uiState.value.songs
+                )
+                if (result.newlyLinked > 0) {
+                    listeningHistoryReconciliationController.onExternalReconciliationMutation()
+                }
+            }
         ),
         scope = viewModelScope
     )
@@ -576,6 +586,12 @@ class MusicViewModel(
         coroutineScope = viewModelScope,
         onMediaAccessFailure = {
             _mediaAccessFailures.tryEmit(Unit)
+        },
+        onLibraryPublished = { songs ->
+            val result = historyAutomaticReconciler.reconcile(songs)
+            if (result.newlyLinked > 0) {
+                listeningHistoryReconciliationController.onExternalReconciliationMutation()
+            }
         }
     )
 
