@@ -402,13 +402,13 @@ data class ModernPlayerAppearance(
 }
 
 enum class ModernAppearancePreset(val displayName: String) {
-    CDPLAYA("Sazanami"),
+    DEFAULT("Sazanami Default"),
     ARTWORK_FOCUS("Artwork Focus"),
     MINIMAL("Minimal"),
     COLORFUL("Colorful");
 
     fun appearance(): ModernPlayerAppearance = when (this) {
-        CDPLAYA -> ModernPlayerAppearance.Default
+        DEFAULT -> ModernPlayerAppearance.Default
         ARTWORK_FOCUS -> ModernPlayerAppearance(
             seekbar = ModernSeekbarAppearance(
                 style = ModernSeekbarStyle.WAVEFORM_PREVIEW,

@@ -57,7 +57,7 @@ class SongRatingMigrationTest {
                     )
                     db.execSQL(
                         "INSERT INTO listening_events VALUES " +
-                                "(1, 'event-one', 'cdplaya', 1, 1, 'session-one', 40, 50, 10, " +
+                                "(1, 'event-one', 'native', 1, 1, 'session-one', 40, 50, 10, " +
                                 "1000, 1, 'time_threshold', 1, 'stopped', NULL, NULL, 50)"
                     )
                     db.execSQL(

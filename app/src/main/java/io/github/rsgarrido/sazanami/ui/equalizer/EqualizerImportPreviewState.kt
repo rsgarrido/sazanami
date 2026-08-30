@@ -2,7 +2,7 @@ package io.github.rsgarrido.sazanami.ui.equalizer
 
 import io.github.rsgarrido.sazanami.player.equalizer.EqualizerMode
 import io.github.rsgarrido.sazanami.player.equalizer.EqualizerPreferencesState
-import io.github.rsgarrido.sazanami.player.equalizer.interchange.CdplayaPresetFile
+import io.github.rsgarrido.sazanami.player.equalizer.interchange.SazanamiPresetFile
 import io.github.rsgarrido.sazanami.player.equalizer.interchange.EqualizerProfileDiagnosticCode
 import io.github.rsgarrido.sazanami.player.equalizer.interchange.EqualizerProfileDiagnosticSeverity
 import io.github.rsgarrido.sazanami.player.equalizer.interchange.EqualizerProfileFormat
@@ -202,7 +202,7 @@ internal data class EqualizerImportPreviewState(
         }
 
         fun fromNative(
-            file: CdplayaPresetFile,
+            file: SazanamiPresetFile,
             sourceName: String?
         ): EqualizerImportPreviewState {
             val declarations = file.filters.mapIndexed { index, filter ->
@@ -223,7 +223,7 @@ internal data class EqualizerImportPreviewState(
                 parseResult = EqualizerProfileParseResult(
                     detectedFormat =
                         EqualizerProfileFormat
-                            .CDPLAYA_PARAMETRIC_PRESET_JSON,
+                            .SAZANAMI_PARAMETRIC_PRESET_JSON,
                     sourceName = sourceName,
                     preampDb = file.preampDb,
                     declarations = declarations
@@ -249,7 +249,7 @@ internal fun proposedImportName(
     if (!nativeName.isNullOrBlank()) return nativeName.trim().take(40)
     var name = sourceName?.trim().orEmpty()
     val suffixes = listOf(
-        ".cdpeq", ".json", ".txt", ".peq", ".eq",
+        ".sazeq", ".json", ".txt", ".peq", ".eq",
         " ParametricEQ", " Parametric EQ", " FixedBandEQ",
         "ParametricEQ", "Parametric EQ", "FixedBandEQ"
     )

@@ -7,7 +7,7 @@ import kotlinx.serialization.Transient
 data class AppBackup(
     val schemaVersion: Int = AppBackupJson.CURRENT_SCHEMA_VERSION,
     val createdAt: Long,
-    val appName: String = "CDPlaya",
+    val appName: String = "Sazanami",
     val favorites: List<BackupFavoriteSong> = emptyList(),
     val playlistFolders: List<BackupPlaylistFolder> = emptyList(),
     val playlists: List<BackupPlaylist> = emptyList(),
@@ -322,13 +322,13 @@ data class BackupListeningEvent(
     val attributionAt: Long = startedAt ?: endedAt ?: 0L,
     val timestampEvidence: String = "native_exact",
     val qualificationPolicy: String = when (source) {
-        "cdplaya" -> "cdplaya"
+        "native" -> "native"
         "spotify_import" -> "spotify"
         "lastfm_import" -> "lastfm"
         else -> "other_import"
     },
-    val completionClassification: String = if (source == "cdplaya" && endReason == "natural_end") "native_natural" else "none",
-    val publicationState: String = if (source == "cdplaya") "native" else "import_published"
+    val completionClassification: String = if (source == "native" && endReason == "natural_end") "native_natural" else "none",
+    val publicationState: String = if (source == "native") "native" else "import_published"
 )
 
 @Serializable data class BackupListeningImportSource(

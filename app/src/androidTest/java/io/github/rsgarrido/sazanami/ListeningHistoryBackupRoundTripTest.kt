@@ -155,8 +155,8 @@ class ListeningHistoryBackupRoundTripTest {
             LegacyListeningBaselineEntity(both, 2, 20, 80, "baseline-b", 99)
         )
         listOf(
-            event("event-error", both, null, 600, false, ListeningSource.CDPLAYA, ListeningEndReason.ERROR),
-            event("event-natural", detailedOnly, firstBinding, 100, true, ListeningSource.CDPLAYA, ListeningEndReason.NATURAL_END, "session-1", "source-1"),
+            event("event-error", both, null, 600, false, ListeningSource.NATIVE, ListeningEndReason.ERROR),
+            event("event-natural", detailedOnly, firstBinding, 100, true, ListeningSource.NATIVE, ListeningEndReason.NATURAL_END, "session-1", "source-1"),
             event("event-transition", detailedOnly, secondBinding, 200, false, ListeningSource.SPOTIFY_IMPORT, ListeningEndReason.TRANSITION, null, "source-1"),
             event("event-stopped", both, null, 300, true, ListeningSource.LASTFM_IMPORT, ListeningEndReason.STOPPED, "session-3"),
             event("event-null-binding", both, null, 400, false),
@@ -205,7 +205,7 @@ class ListeningHistoryBackupRoundTripTest {
         bindingId: Long?,
         startedAt: Long,
         qualified: Boolean,
-        source: ListeningSource = ListeningSource.CDPLAYA,
+        source: ListeningSource = ListeningSource.NATIVE,
         endReason: ListeningEndReason = ListeningEndReason.STOPPED,
         sessionId: String? = null,
         sourceKey: String? = null,
@@ -228,18 +228,18 @@ class ListeningHistoryBackupRoundTripTest {
         } else ListeningQualificationReason.NONE,
         qualificationRuleVersion = 1,
         qualificationPolicy = when (source) {
-            ListeningSource.CDPLAYA -> ListeningQualificationPolicy.CDPLAYA
+            ListeningSource.NATIVE -> ListeningQualificationPolicy.NATIVE
             ListeningSource.SPOTIFY_IMPORT -> ListeningQualificationPolicy.SPOTIFY
             ListeningSource.LASTFM_IMPORT -> ListeningQualificationPolicy.LASTFM
         },
         endReason = endReason,
-        publicationState = if (source == ListeningSource.CDPLAYA) {
+        publicationState = if (source == ListeningSource.NATIVE) {
             ListeningEventPublicationState.NATIVE
         } else {
             ListeningEventPublicationState.IMPORT_PUBLISHED
         },
         sourceEventKey = sourceKey,
-        importBatchId = if (source == ListeningSource.CDPLAYA) null else 44,
+        importBatchId = if (source == ListeningSource.NATIVE) null else 44,
         createdAt = startedAt + 20
     )
 }

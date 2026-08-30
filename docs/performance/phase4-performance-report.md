@@ -22,8 +22,8 @@
 - AndroidX ProfileInstaller: 1.4.1
 - AndroidX UIAutomator: 2.4.0
 - AndroidX Tracing: 1.3.0
-- Default full iterations: 10 (`cdplaya.fullIterations` overrides)
-- Default smoke iterations: 2 (`cdplaya.smokeIterations` overrides)
+- Default full iterations: 10 (`sazanami.fullIterations` overrides)
+- Default smoke iterations: 2 (`sazanami.smokeIterations` overrides)
 
 The stable Baseline Profile plugin 1.4.1 reports that its declared compatibility testing predates AGP 9.0. Despite that warning, the module compiled under AGP 9.2.1, connected profile collection completed, both generated files were non-empty, and the release-like APK contained the compiled profile assets.
 
@@ -122,9 +122,9 @@ For an additional 60-second Pocket Flip Perfetto capture, install/launch the ben
 
 ```powershell
 $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
-Get-Content -Raw tools\performance\cdplaya-perfetto.pbtx |
-  & $adb shell perfetto --txt -c - -o /data/misc/perfetto-traces/cdplaya-phase4.perfetto-trace
-& $adb pull /data/misc/perfetto-traces/cdplaya-phase4.perfetto-trace benchmark\build\outputs\perfetto\
+Get-Content -Raw tools\performance\sazanami-perfetto.pbtx |
+  & $adb shell perfetto --txt -c - -o /data/misc/perfetto-traces/sazanami-phase4.perfetto-trace
+& $adb pull /data/misc/perfetto-traces/sazanami-phase4.perfetto-trace benchmark\build\outputs\perfetto\
 ```
 
 ## Thermal method for the next device run

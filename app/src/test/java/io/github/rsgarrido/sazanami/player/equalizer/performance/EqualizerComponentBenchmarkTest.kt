@@ -10,8 +10,8 @@ import io.github.rsgarrido.sazanami.player.equalizer.EqualizerRuntimeBridge
 import io.github.rsgarrido.sazanami.player.equalizer.EqualizerTransitionState
 import io.github.rsgarrido.sazanami.player.equalizer.Pcm16SampleConversion
 import io.github.rsgarrido.sazanami.player.equalizer.interchange.EqualizerProfileExporter
-import io.github.rsgarrido.sazanami.player.equalizer.interchange.CdplayaPresetFile
-import io.github.rsgarrido.sazanami.player.equalizer.interchange.CdplayaPresetFileJson
+import io.github.rsgarrido.sazanami.player.equalizer.interchange.SazanamiPresetFile
+import io.github.rsgarrido.sazanami.player.equalizer.interchange.SazanamiPresetFileJson
 import io.github.rsgarrido.sazanami.player.equalizer.interchange.EqualizerProfileLimits
 import io.github.rsgarrido.sazanami.player.equalizer.interchange.EqualizerProfileParser
 import io.github.rsgarrido.sazanami.player.equalizer.limiter.LimiterConfiguration
@@ -560,16 +560,16 @@ class EqualizerComponentBenchmarkTest {
 
     private fun measureNativePresetJson(): ComponentResult {
         val state = parametricPreferences().parametricState
-        val file = CdplayaPresetFile(
+        val file = SazanamiPresetFile(
             name = "Phase F",
             preampDb = state.preampDb,
             automaticHeadroomEnabled =
                 state.automaticHeadroomEnabled,
             filters = state.filters
         )
-        return measure("native-cdpeq-json-round-trip", 500) {
-            val encoded = CdplayaPresetFileJson.encode(file)
-            CdplayaPresetFileJson.decode(encoded)
+        return measure("native-sazeq-json-round-trip", 500) {
+            val encoded = SazanamiPresetFileJson.encode(file)
+            SazanamiPresetFileJson.decode(encoded)
         }
     }
 

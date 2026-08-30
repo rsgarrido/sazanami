@@ -22,7 +22,7 @@ class ListeningStatsModelsTest {
         assertTrue(ListeningStatsFilter().effectiveIncludeLegacy)
         assertFalse(
             ListeningStatsFilter(
-                sources = setOf(ListeningSource.CDPLAYA),
+                sources = setOf(ListeningSource.NATIVE),
                 includeLegacyBaseline = true
             ).effectiveIncludeLegacy
         )

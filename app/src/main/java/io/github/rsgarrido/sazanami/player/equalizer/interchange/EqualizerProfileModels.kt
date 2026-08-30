@@ -5,7 +5,7 @@ import io.github.rsgarrido.sazanami.player.equalizer.parametric.ParametricFilter
 enum class EqualizerProfileFormat {
     AUTOEQ_PARAMETRIC_TEXT,
     EQUALIZER_APO_SUBSET,
-    CDPLAYA_PARAMETRIC_PRESET_JSON
+    SAZANAMI_PARAMETRIC_PRESET_JSON
 }
 
 enum class EqualizerProfileDiagnosticSeverity {

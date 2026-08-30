@@ -3,7 +3,7 @@ package io.github.rsgarrido.sazanami.data.local
 import androidx.room.TypeConverter
 
 enum class ListeningSource(val storageValue: String) {
-    CDPLAYA("cdplaya"),
+    NATIVE("native"),
     SPOTIFY_IMPORT("spotify_import"),
     LASTFM_IMPORT("lastfm_import");
 
@@ -51,7 +51,7 @@ enum class ListeningTimestampEvidence(val storageValue: String) {
 }
 
 enum class ListeningQualificationPolicy(val storageValue: String) {
-    CDPLAYA("cdplaya"),
+    NATIVE("native"),
     SPOTIFY("spotify"),
     LASTFM("lastfm"),
     OTHER_IMPORT("other_import");

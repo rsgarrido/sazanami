@@ -85,7 +85,7 @@ to the recorder; automatic transition discontinuities are ignored.
 Finalized drafts are inserted with Room conflict-ignore semantics. Event UUID and
 playback-session unique indexes make callback duplication idempotent. Insert failures
 are logged without track metadata and never crash or block playback. Native events keep
-source `CDPLAYA`, null import fields, and never update `song_play_stats`.
+source `NATIVE`, null import fields, and never update `song_play_stats`.
 
 The old `PlaybackController` aggregate recorder and its UI-side progress qualification
 tracker have been removed. Playback-position observation remains for player progress and
@@ -402,7 +402,7 @@ finalization clears the active session so another can start, while the most rece
 finalized session ID is retained to reject both its duplicate finalization and a delayed
 duplicate start. A genuinely new session therefore needs a new playback session ID.
 UUID generation occurs only for successful finalization. Native drafts always use
-source `CDPLAYA` and leave import fields null. The separate `toEntity()` mapper is the
+source `NATIVE` and leave import fields null. The separate `toEntity()` mapper is the
 Room boundary; the recorder itself neither constructs nor inserts Room entities.
 
 ## Statistics destination and overview (Session 3)

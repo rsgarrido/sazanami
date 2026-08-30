@@ -166,4 +166,4 @@ internal fun isSameOrDescendantFolder(candidatePath: String, rootPath: String): 
             candidate.startsWith("$root/", ignoreCase = true)
 }
 
-private const val EXCLUDED_FOLDER_PREFIX = "__cdplaya_exclude__:"
+private const val EXCLUDED_FOLDER_PREFIX = "__internal_folder_exclude__:"

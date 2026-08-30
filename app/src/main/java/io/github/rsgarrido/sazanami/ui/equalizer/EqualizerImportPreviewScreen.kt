@@ -750,6 +750,6 @@ private fun formatName(format: EqualizerProfileFormat): String =
             "AutoEq-style Parametric EQ text"
         EqualizerProfileFormat.EQUALIZER_APO_SUBSET ->
             "Equalizer APO-compatible subset"
-        EqualizerProfileFormat.CDPLAYA_PARAMETRIC_PRESET_JSON ->
+        EqualizerProfileFormat.SAZANAMI_PARAMETRIC_PRESET_JSON ->
             "Native Sazanami Parametric preset"
     }

@@ -395,7 +395,7 @@ class ListeningAnalyticsTrendQueryTest {
         startedAt: Long,
         listenedMs: Long,
         qualified: Boolean,
-        source: ListeningSource = ListeningSource.CDPLAYA,
+        source: ListeningSource = ListeningSource.NATIVE,
         endReason: ListeningEndReason = ListeningEndReason.STOPPED
     ) = ListeningEventEntity(
         eventUuid = uuid,

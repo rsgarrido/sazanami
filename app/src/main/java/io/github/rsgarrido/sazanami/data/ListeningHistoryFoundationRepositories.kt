@@ -232,7 +232,7 @@ class ListeningImportRepository(
     }
 
     suspend fun insertEvent(event: ListeningEventEntity): Long {
-        require(event.source != ListeningSource.CDPLAYA) { "Import repository accepts imported events only." }
+        require(event.source != ListeningSource.NATIVE) { "Import repository accepts imported events only." }
         event.requireSupportedSemantics()
         return database.listeningEventDao().insert(event)
     }

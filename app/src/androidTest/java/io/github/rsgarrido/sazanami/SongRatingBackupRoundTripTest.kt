@@ -241,7 +241,7 @@ class SongRatingBackupRoundTripTest {
 
     private fun event(uuid: String, identityId: Long, startedAt: Long) = ListeningEventEntity(
         eventUuid = uuid,
-        source = ListeningSource.CDPLAYA,
+        source = ListeningSource.NATIVE,
         trackIdentityId = identityId,
         localTrackBindingId = null,
         playbackSessionId = null,

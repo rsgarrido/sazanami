@@ -1,7 +1,7 @@
 package io.github.rsgarrido.sazanami.data.local
 
 internal fun ListeningSource.requiredQualificationPolicy(): ListeningQualificationPolicy = when (this) {
-    ListeningSource.CDPLAYA -> ListeningQualificationPolicy.CDPLAYA
+    ListeningSource.NATIVE -> ListeningQualificationPolicy.NATIVE
     ListeningSource.SPOTIFY_IMPORT -> ListeningQualificationPolicy.SPOTIFY
     ListeningSource.LASTFM_IMPORT -> ListeningQualificationPolicy.LASTFM
 }
@@ -10,7 +10,7 @@ internal fun ListeningEventEntity.requireSupportedSemantics() {
     require(qualificationPolicy == source.requiredQualificationPolicy()) {
         "Listening event qualification policy is incompatible with its source."
     }
-    if (source == ListeningSource.CDPLAYA) {
+    if (source == ListeningSource.NATIVE) {
         require(publicationState == ListeningEventPublicationState.NATIVE) {
             "Native listening events must use native publication."
         }
@@ -36,14 +36,14 @@ internal fun ListeningEventEntity.requireSupportedSemantics() {
 }
 
 internal fun ListeningImportSourceEntity.requireSupportedImportSource() {
-    require(sourceType != ListeningSource.CDPLAYA) {
-        "Sazanami cannot be used as an import source profile."
+    require(sourceType != ListeningSource.NATIVE) {
+        "Native listening cannot be used as an import source profile."
     }
 }
 
 internal fun ListeningTrackExternalIdEntity.requireSupportedExternalSource() {
-    require(sourceType != ListeningSource.CDPLAYA) {
-        "Sazanami cannot be used as an external catalog source."
+    require(sourceType != ListeningSource.NATIVE) {
+        "Native listening cannot be used as an external catalog source."
     }
 }
 

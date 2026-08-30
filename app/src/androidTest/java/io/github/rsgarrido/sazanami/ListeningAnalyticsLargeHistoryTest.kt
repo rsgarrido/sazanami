@@ -70,7 +70,7 @@ class ListeningAnalyticsLargeHistoryTest {
         val events = (0 until 10_000).map { index ->
             ListeningEventEntity(
                 eventUuid = "analytics-bulk-$index",
-                source = ListeningSource.CDPLAYA,
+                source = ListeningSource.NATIVE,
                 trackIdentityId = id,
                 localTrackBindingId = null,
                 playbackSessionId = null,
@@ -109,7 +109,7 @@ class ListeningAnalyticsLargeHistoryTest {
     @Test
     fun existingCompositeIndexesCoverSourceDateAndQualifiedDatePlans() {
         val sourcePlan = queryPlan(
-            "SELECT id FROM listening_events WHERE source = 'cdplaya' AND publicationState != 'import_pending' AND attributionAt >= 100 AND attributionAt < 200"
+            "SELECT id FROM listening_events WHERE source = 'native' AND publicationState != 'import_pending' AND attributionAt >= 100 AND attributionAt < 200"
         )
         val qualifiedPlan = queryPlan(
             "SELECT id FROM listening_events WHERE qualifiedAsPlay = 1 AND publicationState != 'import_pending' AND attributionAt >= 100 AND attributionAt < 200"
@@ -120,7 +120,7 @@ class ListeningAnalyticsLargeHistoryTest {
         val bucketJoinPlan = queryPlan(
             "WITH buckets(startInclusive, endExclusive) AS (VALUES (100, 200)) " +
                 "SELECT COUNT(e.id) FROM buckets b LEFT JOIN listening_events e " +
-                "ON e.source = 'cdplaya' AND e.publicationState != 'import_pending' AND e.attributionAt >= b.startInclusive AND e.attributionAt < b.endExclusive"
+                "ON e.source = 'native' AND e.publicationState != 'import_pending' AND e.attributionAt >= b.startInclusive AND e.attributionAt < b.endExclusive"
         )
         assertTrue(sourcePlan.contains("index_listening_events_source_publicationState_attributionAt"))
         assertTrue(qualifiedPlan.contains("index_listening_events_qualifiedAsPlay_publicationState_attributionAt"))
@@ -152,7 +152,7 @@ class ListeningAnalyticsLargeHistoryTest {
                 val index = batchIndex * 1_000 + offset
                 ListeningEventEntity(
                     eventUuid = "analytics-100k-$index",
-                    source = ListeningSource.CDPLAYA,
+                    source = ListeningSource.NATIVE,
                     trackIdentityId = id,
                     localTrackBindingId = null,
                     playbackSessionId = null,

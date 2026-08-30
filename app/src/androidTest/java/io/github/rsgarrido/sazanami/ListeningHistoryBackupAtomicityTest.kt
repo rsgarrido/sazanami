@@ -77,7 +77,7 @@ class ListeningHistoryBackupAtomicityTest {
     )
 
     private fun event(identityId: Long) = ListeningEventEntity(
-        eventUuid = "existing-event", source = ListeningSource.CDPLAYA,
+        eventUuid = "existing-event", source = ListeningSource.NATIVE,
         trackIdentityId = identityId, localTrackBindingId = null,
         playbackSessionId = "existing-session", startedAt = 10, endedAt = 20,
         listenedMs = 10, trackDurationMs = 1_000, qualifiedAsPlay = true,

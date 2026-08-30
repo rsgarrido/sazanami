@@ -577,7 +577,7 @@ private fun ModernPlayerAppearancePreview(
                     appearance = appearance.seekbar,
                     waveformSeed = previewSong?.let {
                         "${it.id}|${it.filePath}|${it.title}"
-                    } ?: "cdplaya-default-preview",
+                    } ?: "default-player-preview",
                     artworkPalette = artworkPalette,
                     style = style,
                     modifier = Modifier.fillMaxWidth()

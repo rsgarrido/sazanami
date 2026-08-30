@@ -373,7 +373,7 @@ class ListeningIdentityReconciliationBackupRoundTripTest {
         database.listeningEventDao().insert(
             ListeningEventEntity(
                 eventUuid = "native",
-                source = ListeningSource.CDPLAYA,
+                source = ListeningSource.NATIVE,
                 trackIdentityId = identityId,
                 localTrackBindingId = bindingId,
                 playbackSessionId = "native-session",
@@ -384,7 +384,7 @@ class ListeningIdentityReconciliationBackupRoundTripTest {
                 qualifiedAsPlay = false,
                 qualificationReason = ListeningQualificationReason.NONE,
                 qualificationRuleVersion = 1,
-                qualificationPolicy = ListeningQualificationPolicy.CDPLAYA,
+                qualificationPolicy = ListeningQualificationPolicy.NATIVE,
                 endReason = null,
                 publicationState = ListeningEventPublicationState.NATIVE,
                 sourceEventKey = null,

@@ -97,7 +97,7 @@ class ListeningHistoryBackupCompatibilityTest {
             database.listeningEventDao().insert(
                 ListeningEventEntity(
                     eventUuid = "backup-8-native-event",
-                    source = ListeningSource.CDPLAYA,
+                    source = ListeningSource.NATIVE,
                     trackIdentityId = identityId,
                     localTrackBindingId = null,
                     playbackSessionId = "backup-8-native-session",
@@ -136,7 +136,7 @@ class ListeningHistoryBackupCompatibilityTest {
             }
             val restored = repository.exportWithRatings()
             assertEquals(1, restored.history.events.size)
-            assertEquals("cdplaya", restored.history.events.single().source)
+            assertEquals("native", restored.history.events.single().source)
             assertEquals(5, restored.ratings.entries.single().rating)
             assertTrue(restored.history.importSources.isEmpty())
             assertTrue(restored.history.importBatches.isEmpty())

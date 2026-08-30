@@ -277,7 +277,7 @@ object AppBackupJson {
         val history = requireNotNull(backup.canonicalListeningHistory) {
             "Sazanami backup schema 8 requires canonical listening history."
         }
-        val importedSources = history.events.map { it.source }.filter { it != "cdplaya" }.distinct()
+        val importedSources = history.events.map { it.source }.filter { it != "native" }.distinct()
         val sourceIds = importedSources.mapIndexed { index, source -> source to index.toLong() + 1L }.toMap()
         val sources = importedSources.map { source ->
             BackupListeningImportSource(
@@ -288,7 +288,7 @@ object AppBackupJson {
                 updatedAt = history.events.filter { it.source == source }.maxOfOrNull { it.createdAt } ?: backup.createdAt
             )
         }
-        val legacyGroups = history.events.filter { it.source != "cdplaya" && it.importBatchId != null }
+        val legacyGroups = history.events.filter { it.source != "native" && it.importBatchId != null }
             .groupBy { it.source to requireNotNull(it.importBatchId) }
         val batches = legacyGroups.entries.mapIndexed { index, (key, events) ->
             BackupListeningImportBatch(

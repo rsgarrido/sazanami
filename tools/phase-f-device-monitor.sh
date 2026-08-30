@@ -27,7 +27,7 @@ CSV_PATH="$OUTPUT_DIRECTORY/$RUN_ID-$SCENARIO.csv"
 LOG_PATH="$OUTPUT_DIRECTORY/$RUN_ID-$SCENARIO.log"
 DONE_PATH="$OUTPUT_DIRECTORY/$RUN_ID-$SCENARIO.done"
 FAILED_PATH="$OUTPUT_DIRECTORY/$RUN_ID-$SCENARIO.failed"
-TEMP_PREFIX="/data/local/tmp/cdplaya-phase-f-$RUN_ID-$$"
+TEMP_PREFIX="/data/local/tmp/sazanami-phase-f-$RUN_ID-$$"
 BATTERY_TEMP_PATH="$TEMP_PREFIX-battery.txt"
 THERMAL_TEMP_PATH="$TEMP_PREFIX-thermal.txt"
 MEMORY_TEMP_PATH="$TEMP_PREFIX-memory.txt"
@@ -65,10 +65,10 @@ playback_state() {
     dumpsys media_session |
         awk -v package_name="$PACKAGE_NAME" '
             $0 ~ "androidx.media3.session.id\\. " package_name "/" {
-                in_cdplaya_session = 1
+                in_app_session = 1
                 next
             }
-            in_cdplaya_session && !reported && /state=PlaybackState/ {
+            in_app_session && !reported && /state=PlaybackState/ {
                 if ($0 ~ /state=PLAYING/) {
                     print "PLAYING"
                 } else if ($0 ~ /state=PAUSED/) {

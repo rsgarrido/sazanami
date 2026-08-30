@@ -162,7 +162,7 @@ object ListeningHistoryBackupValidator {
             require(qualificationPolicy == source.requiredQualificationPolicy()) {
                 "Listening-history event qualification policy is incompatible with its source."
             }
-            if (source == ListeningSource.CDPLAYA) {
+            if (source == ListeningSource.NATIVE) {
                 require(publication == ListeningEventPublicationState.NATIVE &&
                     timestampEvidence == ListeningTimestampEvidence.NATIVE_EXACT &&
                     event.startedAt != null && event.endedAt != null &&
@@ -195,7 +195,7 @@ object ListeningHistoryBackupValidator {
         history.importSources.forEach { source ->
             require(source.backupSourceProfileId > 0 && source.stableUuid.isNotBlank() && source.displayLabel.isNotBlank())
             require(source.updatedAt >= source.createdAt)
-            require(parseEnumValue("import source", source.sourceType, ListeningSource::fromStorageValue) != ListeningSource.CDPLAYA) {
+            require(parseEnumValue("import source", source.sourceType, ListeningSource::fromStorageValue) != ListeningSource.NATIVE) {
                 "Sazanami cannot be used as an import source profile."
             }
         }
@@ -220,7 +220,7 @@ object ListeningHistoryBackupValidator {
         require(externalKeys.distinct().size == externalKeys.size) { "Listening external IDs must be unique per source." }
         history.externalTrackIds.forEach { external ->
             require(external.trackIdentityBackupId in identities && external.externalId.isNotBlank() && external.lastSeenAt >= external.createdAt)
-            require(parseEnumValue("external ID source", external.sourceType, ListeningSource::fromStorageValue) != ListeningSource.CDPLAYA) {
+            require(parseEnumValue("external ID source", external.sourceType, ListeningSource::fromStorageValue) != ListeningSource.NATIVE) {
                 "Sazanami cannot be used as an external catalog source."
             }
         }
@@ -234,7 +234,7 @@ object ListeningHistoryBackupValidator {
                 ?: throw IllegalArgumentException("Imported evidence references a missing source profile.")
             require(source.sourceType == event.source) { "Imported evidence source profile is incompatible with its event." }
             require(evidence.fingerprintVersion > 0 && evidence.fingerprint.isNotBlank() && evidence.duplicateOrdinal >= 0)
-            require(event.publicationState == "import_published" && event.source != "cdplaya") { "Imported evidence points to an incompatible native event." }
+            require(event.publicationState == "import_published" && event.source != "native") { "Imported evidence points to an incompatible native event." }
             parseEnum("skipped state", evidence.skippedState, ImportedListeningSkippedState::fromStorageValue)
             parseEnum("match disposition", evidence.matchDispositionAtImport, ImportedListeningMatchDisposition::fromStorageValue)
         }
@@ -259,7 +259,7 @@ object ListeningHistoryBackupValidator {
             val batch = batches.getValue(link.batchBackupId)
             val source = sources.getValue(batch.sourceProfileBackupId)
             val event = eventsByUuid.getValue(link.eventUuid)
-            require(source.sourceType == event.source && event.source != ListeningSource.CDPLAYA.storageValue) {
+            require(source.sourceType == event.source && event.source != ListeningSource.NATIVE.storageValue) {
                 "Listening batch-event link crosses import sources."
             }
             require(evidenceByEventUuid[event.eventUuid]?.sourceProfileBackupId == null ||
@@ -267,7 +267,7 @@ object ListeningHistoryBackupValidator {
                 "Listening batch-event link crosses import source profiles."
             }
         }
-        history.events.filter { it.source == "cdplaya" }.forEach { event ->
+        history.events.filter { it.source == "native" }.forEach { event ->
             require(event.publicationState == "native" && event.eventUuid !in history.importedEventEvidence.map { it.eventUuid }.toSet()) {
                 "Native listening events cannot carry import state."
             }
@@ -287,7 +287,7 @@ object ListeningHistoryBackupValidator {
         }
         val boundIdentityIds = history.bindings.mapTo(HashSet()) { it.trackIdentityBackupId }
         val importedHistoryIdentityIds = history.events.asSequence()
-            .filter { it.source != ListeningSource.CDPLAYA.storageValue }
+            .filter { it.source != ListeningSource.NATIVE.storageValue }
             .filter { it.publicationState == ListeningEventPublicationState.IMPORT_PUBLISHED.storageValue }
             .mapTo(HashSet()) { it.trackIdentityBackupId }
         history.reconciliations.forEach { reconciliation ->

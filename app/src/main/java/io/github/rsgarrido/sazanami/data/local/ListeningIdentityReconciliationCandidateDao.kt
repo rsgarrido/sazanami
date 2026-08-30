@@ -53,7 +53,7 @@ interface ListeningIdentityReconciliationCandidateDao {
                 WHERE externalId.trackIdentityId = identity.id) AS externalIdCount
         FROM listening_track_identities identity
         JOIN listening_events event ON event.trackIdentityId = identity.id
-            AND event.source != 'cdplaya'
+            AND event.source != 'native'
             AND event.publicationState = 'import_published'
         WHERE NOT EXISTS (
                   SELECT 1 FROM local_track_bindings binding
@@ -83,7 +83,7 @@ interface ListeningIdentityReconciliationCandidateDao {
                 WHERE externalId.trackIdentityId = identity.id) AS externalIdCount
         FROM listening_track_identities identity
         JOIN listening_events event ON event.trackIdentityId = identity.id
-            AND event.source != 'cdplaya'
+            AND event.source != 'native'
             AND event.publicationState = 'import_published'
         WHERE NOT EXISTS (
                   SELECT 1 FROM local_track_bindings binding

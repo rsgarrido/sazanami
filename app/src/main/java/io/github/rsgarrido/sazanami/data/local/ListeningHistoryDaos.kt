@@ -139,7 +139,7 @@ interface ListeningEventDao {
     @Query("SELECT COUNT(*) FROM listening_events WHERE trackIdentityId = :trackIdentityId")
     suspend fun countForTrackIdentity(trackIdentityId: Long): Long
 
-    @Query("SELECT EXISTS(SELECT 1 FROM listening_events WHERE trackIdentityId = :trackIdentityId AND source != 'cdplaya' AND publicationState = 'import_published')")
+    @Query("SELECT EXISTS(SELECT 1 FROM listening_events WHERE trackIdentityId = :trackIdentityId AND source != 'native' AND publicationState = 'import_published')")
     suspend fun hasPublishedImportedHistory(trackIdentityId: Long): Boolean
 
     @Query(
@@ -297,7 +297,7 @@ interface ListeningImportBatchEventDao {
         JOIN listening_import_sources source ON source.id = batch.sourceProfileId
         JOIN listening_events event ON event.id = link.eventId
         WHERE link.batchId = :batchId AND (
-            event.source != source.sourceType OR event.source = 'cdplaya' OR
+            event.source != source.sourceType OR event.source = 'native' OR
             event.qualificationPolicy != batch.qualificationPolicy OR event.publicationState = 'native'
         )
     """)

@@ -31,7 +31,7 @@ class SpotifyLargeParserTest {
     }
 
     private fun verifyGenerated(count: Int) {
-        val file = Files.createTempFile("cdplaya-spotify-$count-", ".json")
+        val file = Files.createTempFile("spotify-parser-$count-", ".json")
         try {
             Files.newOutputStream(file).use { output ->
                 SyntheticSpotifyHistoryGenerator.write(

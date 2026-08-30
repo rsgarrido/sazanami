@@ -279,7 +279,7 @@ internal fun EqualizerScreen(
                     "Parametric filters."
             } else {
                 "Text export is Equalizer APO-compatible. Native " +
-                    ".cdpeq preserves automatic headroom, IDs, and " +
+                    ".sazeq preserves automatic headroom, IDs, and " +
                     "all stored parameters losslessly."
             },
             style = MaterialTheme.typography.bodySmall,

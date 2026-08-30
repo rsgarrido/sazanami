@@ -93,12 +93,14 @@ data class FinalizedListeningEventDraft(
 ) {
     init {
         require(eventUuid.isNotBlank()) { "Event UUID cannot be blank" }
-        require(source == ListeningSource.CDPLAYA) { "Native recorder drafts must use CDPLAYA" }
+        require(source == ListeningSource.NATIVE) {
+            "Native recorder drafts must use the native listening source"
+        }
         require(listenedMs >= 0L) { "Listening time cannot be negative" }
         require(endedAt >= startedAt) { "A finalized listening event must not end before it starts" }
         require(attributionAt == startedAt) { "Native attribution must use the exact start" }
         require(timestampEvidence == ListeningTimestampEvidence.NATIVE_EXACT)
-        require(qualificationPolicy == ListeningQualificationPolicy.CDPLAYA)
+        require(qualificationPolicy == ListeningQualificationPolicy.NATIVE)
         require(publicationState == ListeningEventPublicationState.NATIVE)
         require(sourceEventKey == null) { "Native recorder drafts cannot have an import event key" }
         require(importBatchId == null) { "Native recorder drafts cannot have an import batch" }

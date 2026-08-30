@@ -593,7 +593,7 @@ class BackupRepository(
     }
 
     private companion object {
-        const val APP_NAME = "CDPlaya"
+        const val APP_NAME = "Sazanami"
     }
 }
 

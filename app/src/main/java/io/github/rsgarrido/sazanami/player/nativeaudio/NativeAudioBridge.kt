@@ -71,7 +71,7 @@ internal object NativeAudioBridge {
                     runCatching { nativeDestroySession(sessionHandle) }
                     closeQuietly(descriptor)
                 },
-                "cdplaya-native-waveform"
+                "sazanami-native-waveform"
             ).apply {
                 isDaemon = true
             }
@@ -105,6 +105,6 @@ internal object NativeAudioBridge {
 
     private external fun nativeDestroySession(handle: Long)
 
-    private const val LIBRARY_NAME = "cdplaya_native"
+    private const val LIBRARY_NAME = "sazanami_native"
     private const val NATIVE_API_VERSION = 1
 }

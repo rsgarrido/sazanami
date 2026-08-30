@@ -221,7 +221,7 @@ class ListeningHistoryDaoTest {
         trackIdentityId: Long,
         localTrackBindingId: Long? = null,
         playbackSessionId: String? = null,
-        source: ListeningSource = ListeningSource.CDPLAYA,
+        source: ListeningSource = ListeningSource.NATIVE,
         sourceEventKey: String? = null,
         listenedMs: Long = 90_000L,
         trackDurationMs: Long? = 180_000L

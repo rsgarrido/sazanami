@@ -19,7 +19,7 @@ class ListeningHistoryFoundationModelsTest {
 
     @Test
     fun enumConvertersPersistExplicitStableTextValues() {
-        assertEquals("cdplaya", converters.listeningSourceToString(ListeningSource.CDPLAYA))
+        assertEquals("native", converters.listeningSourceToString(ListeningSource.NATIVE))
         assertEquals(
             ListeningSource.SPOTIFY_IMPORT,
             converters.stringToListeningSource("spotify_import")
@@ -86,7 +86,7 @@ class ListeningHistoryFoundationModelsTest {
         )
         imported.requireSupportedSemantics()
         listOf(
-            imported.copy(qualificationPolicy = ListeningQualificationPolicy.CDPLAYA),
+            imported.copy(qualificationPolicy = ListeningQualificationPolicy.NATIVE),
             imported.copy(publicationState = ListeningEventPublicationState.NATIVE),
             imported.copy(completionClassification = ListeningCompletionClassification.NATIVE_NATURAL)
         ).forEach { invalid ->
@@ -101,7 +101,7 @@ class ListeningHistoryFoundationModelsTest {
         endedAt: Long = 2_000L
     ) = ListeningEventEntity(
         eventUuid = "event-uuid",
-        source = ListeningSource.CDPLAYA,
+        source = ListeningSource.NATIVE,
         trackIdentityId = 1L,
         localTrackBindingId = null,
         playbackSessionId = null,

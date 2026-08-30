@@ -13,7 +13,7 @@ import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.player.audio.AudioOffloadPreference
 import io.github.rsgarrido.sazanami.player.replaygain.ReplayGainMode
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernArtworkTransitionStyle
-import io.github.rsgarrido.sazanami.ui.player.modern.ModernSeekbarStyle
+import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerAppearance
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -65,9 +65,10 @@ class EqualizerSettingsNavigationTest {
                     selectedModernArtworkTransitionStyle =
                         ModernArtworkTransitionStyle.SLIDE,
                     onModernArtworkTransitionStyleSelected = {},
-                    selectedModernSeekbarStyle =
-                        ModernSeekbarStyle.CLASSIC_BAR,
-                    onModernSeekbarStyleSelected = {},
+                    selectedModernPlayerAppearance = ModernPlayerAppearance.Default,
+                    onModernPlayerAppearanceChanged = {},
+                    onResetModernPlayerAppearance = {},
+                    previewSong = null,
                     selectedReplayGainMode =
                         ReplayGainMode.OFF,
                     onReplayGainModeSelected = {},
@@ -128,8 +129,10 @@ class EqualizerSettingsNavigationTest {
                     onResetPlayerThemeTokenOverrides = {},
                     selectedModernArtworkTransitionStyle = ModernArtworkTransitionStyle.SLIDE,
                     onModernArtworkTransitionStyleSelected = {},
-                    selectedModernSeekbarStyle = ModernSeekbarStyle.CLASSIC_BAR,
-                    onModernSeekbarStyleSelected = {},
+                    selectedModernPlayerAppearance = ModernPlayerAppearance.Default,
+                    onModernPlayerAppearanceChanged = {},
+                    onResetModernPlayerAppearance = {},
+                    previewSong = null,
                     selectedReplayGainMode = ReplayGainMode.OFF,
                     onReplayGainModeSelected = {},
                     selectedAudioOffloadPreference = AudioOffloadPreference.DISABLED,

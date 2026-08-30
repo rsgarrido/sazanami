@@ -19,14 +19,14 @@ exact start and end and use their start as attribution. A source-end-only event 
 start, uses the exact source end as both `endedAt` and `attributionAt`, and never derives a start by
 subtracting listening time.
 
-Qualification stores both a source-neutral policy owner (`cdplaya`, `spotify`, `lastfm`, or
+Qualification stores both a source-neutral policy owner (`native`, `spotify`, `lastfm`, or
 `other_import`) and an integer policy version. Completion is independently classified as `none`,
 `native_natural`, or `source_documented_natural`. The nullable `endReason` column is native-only in
 new data; legacy imported rows may retain their old value for compatibility without gaining a
 source-natural completion classification.
 
 Publication is `native`, `import_pending`, or `import_published`. Every user-visible history and
-analytics query excludes pending rows. Native recording writes `native_exact`, `cdplaya`, `native`,
+analytics query excludes pending rows. Native recording writes `native_exact`, `native`, `native`,
 and either `native_natural` or `none`, preserving the existing qualification thresholds and
 playback behavior.
 

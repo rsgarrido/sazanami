@@ -251,7 +251,7 @@ class ModernPlayerCustomizationTest {
         )
         assertEquals(
             ModernPlayerAppearance.Default,
-            ModernAppearancePreset.CDPLAYA.appearance()
+            ModernAppearancePreset.DEFAULT.appearance()
         )
         assertEquals(
             ModernArtworkSize.LARGE,

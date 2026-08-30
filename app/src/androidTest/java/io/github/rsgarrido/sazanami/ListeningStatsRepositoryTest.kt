@@ -102,13 +102,13 @@ class ListeningStatsRepositoryTest {
         assertEquals(2_000L, spotify.listeningTime.confirmedDetailedListeningMs)
         assertFalse(spotify.hasLegacyBaseline)
 
-        val cdplaya = repository.getAllTimeOverview(
-            sources = setOf(ListeningSource.CDPLAYA),
+        val native = repository.getAllTimeOverview(
+            sources = setOf(ListeningSource.NATIVE),
             includeLegacyBaseline = true
         )
-        assertEquals(4L, cdplaya.playCounts.totalPlayCount)
-        assertEquals(0L, cdplaya.playCounts.legacyPlayCount)
-        assertEquals(6_800L, cdplaya.listeningTime.confirmedDetailedListeningMs)
+        assertEquals(4L, native.playCounts.totalPlayCount)
+        assertEquals(0L, native.playCounts.legacyPlayCount)
+        assertEquals(6_800L, native.listeningTime.confirmedDetailedListeningMs)
     }
 
     @Test
@@ -189,7 +189,7 @@ class ListeningStatsRepositoryTest {
         assertEquals("Guest", artists[1].artist)
 
         val detailedCd = ListeningStatsFilter(
-            sources = setOf(ListeningSource.CDPLAYA),
+            sources = setOf(ListeningSource.NATIVE),
             includeLegacyBaseline = false
         )
         assertEquals(2L, repository.getTopAlbums(10, detailedCd).first().playCounts.totalPlayCount)
@@ -437,16 +437,16 @@ class ListeningStatsRepositoryTest {
         assertEquals(listOf("unknown-nonqualified", "lastfm-nonqualified", "compilation-natural"), latest.map { it.eventUuid })
         assertFalse(latest.first().qualifiedAsPlay)
 
-        val cdplaya = repository.getRecentDetailedEvents(
+        val native = repository.getRecentDetailedEvents(
             limit = 20,
             range = ListeningDateRange(600L, 900L),
-            sources = setOf(ListeningSource.CDPLAYA)
+            sources = setOf(ListeningSource.NATIVE)
         )
         assertEquals(
             listOf("compilation-natural", "duplicate-qualified", "detailed-qualified", "both-nonqualified"),
-            cdplaya.map { it.eventUuid }
+            native.map { it.eventUuid }
         )
-        assertTrue(cdplaya.none { it.source != ListeningSource.CDPLAYA })
+        assertTrue(native.none { it.source != ListeningSource.NATIVE })
     }
 
     @Test
@@ -475,7 +475,7 @@ class ListeningStatsRepositoryTest {
         val plan = database.query(
             SimpleSQLiteQuery(
                 "EXPLAIN QUERY PLAN SELECT id FROM listening_events " +
-                    "WHERE source = 'cdplaya' AND publicationState != 'import_pending' AND attributionAt >= 100 AND attributionAt < 200"
+                    "WHERE source = 'native' AND publicationState != 'import_pending' AND attributionAt >= 100 AND attributionAt < 200"
             )
         ).use { cursor ->
             buildList {
@@ -503,7 +503,7 @@ class ListeningStatsRepositoryTest {
 
         database.listeningEventDao().insert(
             listOf(
-                event("both-natural", both, 500L, 1_000L, true, ListeningSource.CDPLAYA, ListeningEndReason.NATURAL_END),
+                event("both-natural", both, 500L, 1_000L, true, ListeningSource.NATIVE, ListeningEndReason.NATURAL_END),
                 event("both-nonqualified", both, 600L, 500L, false),
                 event("both-spotify", both, 700L, 2_000L, true, ListeningSource.SPOTIFY_IMPORT),
                 event("detailed-qualified", detailedOnly, 800L, 3_000L, true, endReason = ListeningEndReason.ERROR),
@@ -570,7 +570,7 @@ class ListeningStatsRepositoryTest {
         startedAt: Long,
         listenedMs: Long,
         qualified: Boolean,
-        source: ListeningSource = ListeningSource.CDPLAYA,
+        source: ListeningSource = ListeningSource.NATIVE,
         endReason: ListeningEndReason = ListeningEndReason.STOPPED
     ) = ListeningEventEntity(
         eventUuid = uuid,
@@ -590,7 +590,7 @@ class ListeningStatsRepositoryTest {
         },
         qualificationRuleVersion = 1,
         endReason = endReason,
-        sourceEventKey = if (source == ListeningSource.CDPLAYA) null else "source:$uuid",
+        sourceEventKey = if (source == ListeningSource.NATIVE) null else "source:$uuid",
         importBatchId = null,
         createdAt = startedAt + 50L
     )

@@ -124,7 +124,7 @@ class ListeningSessionRecorder(
         val eventUuid = eventUuidGenerator.newUuid()
         val draft = FinalizedListeningEventDraft(
             eventUuid = eventUuid,
-            source = ListeningSource.CDPLAYA,
+            source = ListeningSource.NATIVE,
             trackIdentityId = session.request.trackIdentityId,
             localTrackBindingId = session.request.localTrackBindingId,
             playbackSessionId = session.request.playbackSessionId,
@@ -137,7 +137,7 @@ class ListeningSessionRecorder(
             qualifiedAsPlay = session.qualificationReason != ListeningQualificationReason.NONE,
             qualificationReason = session.qualificationReason,
             qualificationRuleVersion = ListeningQualificationRuleV1.VERSION,
-            qualificationPolicy = ListeningQualificationPolicy.CDPLAYA,
+            qualificationPolicy = ListeningQualificationPolicy.NATIVE,
             endReason = endReason,
             completionClassification = if (endReason == ListeningEndReason.NATURAL_END) {
                 ListeningCompletionClassification.NATIVE_NATURAL

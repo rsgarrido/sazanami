@@ -5,8 +5,6 @@ import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.test.assertDoesNotExist
-import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -191,6 +189,7 @@ class SongsRatingIntegrationTest {
             MaterialTheme {
                 RatedSongFilterRow(
                     selectedFilter = selectedFilter.value,
+                    quickRateActive = false,
                     onFilterSelected = { selectedFilter.value = it }
                 )
             }

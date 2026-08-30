@@ -10,7 +10,7 @@ import io.github.rsgarrido.sazanami.player.equalizer.applyPreset
 import io.github.rsgarrido.sazanami.player.equalizer.activeAutomaticHeadroomEnabled
 import io.github.rsgarrido.sazanami.player.equalizer.toDspConfiguration
 import io.github.rsgarrido.sazanami.player.equalizer.limiter.LimiterConfiguration
-import io.github.rsgarrido.sazanami.player.equalizer.interchange.CdplayaPresetFileJson
+import io.github.rsgarrido.sazanami.player.equalizer.interchange.SazanamiPresetFileJson
 import io.github.rsgarrido.sazanami.player.equalizer.interchange.EqualizerProfileParser
 import io.github.rsgarrido.sazanami.player.equalizer.parametric.MAX_PARAMETRIC_FILTER_COUNT
 import io.github.rsgarrido.sazanami.player.equalizer.parametric.ParametricFilter
@@ -485,7 +485,7 @@ internal class EqualizerUiController(
                 withContext(Dispatchers.Default) {
                     if (
                         sourceName?.endsWith(
-                            ".cdpeq",
+                            ".sazeq",
                             ignoreCase = true
                         ) == true ||
                         sourceName?.endsWith(
@@ -495,7 +495,7 @@ internal class EqualizerUiController(
                         text.trimStart().startsWith("{")
                     ) {
                         EqualizerImportPreviewState.fromNative(
-                            file = CdplayaPresetFileJson.decode(text),
+                            file = SazanamiPresetFileJson.decode(text),
                             sourceName = sourceName
                         )
                     } else {

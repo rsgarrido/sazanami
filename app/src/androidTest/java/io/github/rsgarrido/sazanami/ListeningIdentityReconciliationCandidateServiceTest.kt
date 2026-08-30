@@ -552,7 +552,7 @@ class ListeningIdentityReconciliationCandidateServiceTest {
         database.listeningEventDao().insert(
             ListeningEventEntity(
                 eventUuid = "native-$identityId-$ordinal",
-                source = ListeningSource.CDPLAYA,
+                source = ListeningSource.NATIVE,
                 trackIdentityId = identityId,
                 localTrackBindingId = null,
                 playbackSessionId = "session-$identityId-$ordinal",
@@ -563,7 +563,7 @@ class ListeningIdentityReconciliationCandidateServiceTest {
                 qualifiedAsPlay = false,
                 qualificationReason = ListeningQualificationReason.NONE,
                 qualificationRuleVersion = 1,
-                qualificationPolicy = ListeningQualificationPolicy.CDPLAYA,
+                qualificationPolicy = ListeningQualificationPolicy.NATIVE,
                 endReason = null,
                 completionClassification = ListeningCompletionClassification.NONE,
                 publicationState = ListeningEventPublicationState.NATIVE,

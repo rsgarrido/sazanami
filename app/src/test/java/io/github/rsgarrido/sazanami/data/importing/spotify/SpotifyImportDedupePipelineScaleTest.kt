@@ -29,7 +29,7 @@ class SpotifyImportDedupePipelineScaleTest {
     @Test fun threeLargeOverlappingFilesUseMaximumMultiplicityWhenEnabled() = runBlocking {
         assumeTrue(System.getProperty("spotify.importStress100k") == "true")
         val files = listOf(0, 20_000, 40_000).map { startIndex ->
-            Files.createTempFile("cdplaya-session6-overlap-$startIndex-", ".json").also { file ->
+            Files.createTempFile("spotify-import-overlap-$startIndex-", ".json").also { file ->
                 Files.newOutputStream(file).use { output ->
                     SyntheticSpotifyHistoryGenerator.write(
                         output,
@@ -71,7 +71,7 @@ class SpotifyImportDedupePipelineScaleTest {
     }
 
     private fun verify(count: Int) = runBlocking {
-        val file = Files.createTempFile("cdplaya-session2-$count-", ".json")
+        val file = Files.createTempFile("spotify-import-$count-", ".json")
         try {
             Files.newOutputStream(file).use { output ->
                 SyntheticSpotifyHistoryGenerator.write(

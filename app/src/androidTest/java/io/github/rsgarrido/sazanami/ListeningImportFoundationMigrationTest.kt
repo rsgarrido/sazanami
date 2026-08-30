@@ -36,7 +36,7 @@ class ListeningImportFoundationMigrationTest {
                          startedAt,endedAt,listenedMs,trackDurationMs,qualifiedAsPlay,
                          qualificationReason,qualificationRuleVersion,endReason,sourceEventKey,importBatchId,createdAt)
                         VALUES
-                        (1,'native','cdplaya',1,NULL,'session',100,200,100,1000,1,'natural_end',1,'natural_end',NULL,NULL,200),
+                        (1,'native','native',1,NULL,'session',100,200,100,1000,1,'natural_end',1,'natural_end',NULL,NULL,200),
                         (2,'legacy-import','spotify_import',2,NULL,NULL,300,400,100,1000,0,'none',1,'unknown','legacy-key',44,400)
                     """.trimIndent())
                     db.execSQL("INSERT INTO song_ratings(trackIdentityId,rating,ratedAt,updatedAt) VALUES (2,4,123,456)")

@@ -33,12 +33,12 @@ class ListeningImportInvariantTest {
     @Test fun supportedCreationRejectsNativeImportOwnershipAndMismatchedBatchPolicy() = runBlocking {
         val identityId = database.listeningTrackIdentityDao().insert(identity())
         assertRejected {
-            repository.createSourceProfile(source(ListeningSource.CDPLAYA, "native-profile"))
+            repository.createSourceProfile(source(ListeningSource.NATIVE, "native-profile"))
         }
         assertRejected {
             repository.insertExternalId(
                 ListeningTrackExternalIdEntity(
-                    trackIdentityId = identityId, sourceType = ListeningSource.CDPLAYA,
+                    trackIdentityId = identityId, sourceType = ListeningSource.NATIVE,
                     externalId = "not-external", createdAt = 1, lastSeenAt = 1
                 )
             )
@@ -218,7 +218,7 @@ class ListeningImportInvariantTest {
     )
 
     private fun nativeEvent(identityId: Long) = ListeningEventEntity(
-        eventUuid = "native", source = ListeningSource.CDPLAYA, trackIdentityId = identityId,
+        eventUuid = "native", source = ListeningSource.NATIVE, trackIdentityId = identityId,
         localTrackBindingId = null, playbackSessionId = "native-session", startedAt = 1,
         endedAt = 2, listenedMs = 1, trackDurationMs = 1_000, qualifiedAsPlay = false,
         qualificationReason = ListeningQualificationReason.NONE, qualificationRuleVersion = 1,

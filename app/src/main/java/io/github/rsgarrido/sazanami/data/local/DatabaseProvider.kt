@@ -525,7 +525,7 @@ object DatabaseProvider {
                 INSERT INTO listening_import_sources(stableUuid, sourceType, displayLabel, accountIdentityDigest, createdAt, updatedAt)
                 SELECT 'legacy-unscoped:' || source, source, 'Legacy unscoped ' || source, NULL,
                        COALESCE(MIN(createdAt), 0), COALESCE(MAX(createdAt), 0)
-                FROM listening_events WHERE source != 'cdplaya' GROUP BY source
+                FROM listening_events WHERE source != 'native' GROUP BY source
             """.trimIndent())
 
             db.execSQL("""
@@ -561,7 +561,7 @@ object DatabaseProvider {
                        COUNT(*), COUNT(*), 0, 0, 0, 0, 0, COUNT(*),
                        SUM(CASE WHEN e.qualifiedAsPlay = 1 THEN 1 ELSE 0 END), NULL, 'room10-legacy'
                 FROM listening_events e JOIN listening_import_sources s ON s.sourceType = e.source
-                WHERE e.source != 'cdplaya' AND e.importBatchId IS NOT NULL
+                WHERE e.source != 'native' AND e.importBatchId IS NOT NULL
                 GROUP BY e.source, e.importBatchId
             """.trimIndent())
 
@@ -590,10 +590,10 @@ object DatabaseProvider {
                 SELECT id,eventUuid,source,trackIdentityId,localTrackBindingId,playbackSessionId,
                     startedAt,endedAt,startedAt,'native_exact',listenedMs,trackDurationMs,
                     qualifiedAsPlay,qualificationReason,qualificationRuleVersion,
-                    CASE source WHEN 'cdplaya' THEN 'cdplaya' WHEN 'spotify_import' THEN 'spotify' WHEN 'lastfm_import' THEN 'lastfm' ELSE 'other_import' END,
+                    CASE source WHEN 'native' THEN 'native' WHEN 'spotify_import' THEN 'spotify' WHEN 'lastfm_import' THEN 'lastfm' ELSE 'other_import' END,
                     endReason,
-                    CASE WHEN source = 'cdplaya' AND endReason = 'natural_end' THEN 'native_natural' ELSE 'none' END,
-                    CASE WHEN source = 'cdplaya' THEN 'native' ELSE 'import_published' END,
+                    CASE WHEN source = 'native' AND endReason = 'natural_end' THEN 'native_natural' ELSE 'none' END,
+                    CASE WHEN source = 'native' THEN 'native' ELSE 'import_published' END,
                     sourceEventKey,importBatchId,createdAt FROM listening_events
             """.trimIndent())
             db.execSQL("DROP TABLE listening_events")
@@ -904,5 +904,5 @@ object DatabaseProvider {
         if (value.isBlank()) putNull(columnName) else put(columnName, value)
     }
 
-    private const val DATABASE_NAME = "cdplaya_database"
+    private const val DATABASE_NAME = "sazanami_database"
 }

@@ -47,7 +47,7 @@ quotes around dotted `-P` property names):
 .\gradlew.bat :app:generateReleaseBaselineProfile
 ```
 
-Use instrumentation arguments `cdplaya.smokeIterations` and `cdplaya.fullIterations` to override
+Use instrumentation arguments `sazanami.smokeIterations` and `sazanami.fullIterations` to override
 the default 2-iteration smoke and 10-iteration full suites.
 
 Gradle writes benchmark JSON and Perfetto traces below `benchmark/build/outputs/` and connected

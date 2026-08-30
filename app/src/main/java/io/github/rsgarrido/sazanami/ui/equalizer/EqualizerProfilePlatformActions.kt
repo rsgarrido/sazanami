@@ -17,8 +17,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
-import io.github.rsgarrido.sazanami.player.equalizer.interchange.CdplayaPresetFile
-import io.github.rsgarrido.sazanami.player.equalizer.interchange.CdplayaPresetFileJson
+import io.github.rsgarrido.sazanami.player.equalizer.interchange.SazanamiPresetFile
+import io.github.rsgarrido.sazanami.player.equalizer.interchange.SazanamiPresetFileJson
 import io.github.rsgarrido.sazanami.player.equalizer.interchange.EqualizerProfileExporter
 import io.github.rsgarrido.sazanami.player.equalizer.interchange.EqualizerProfileLimits
 import io.github.rsgarrido.sazanami.player.equalizer.parametric.ParametricEqualizerPreset
@@ -139,8 +139,8 @@ internal fun rememberEqualizerProfilePlatformActions(
     fun nativeFile(
         name: String,
         state: ParametricEqualizerState
-    ) = CdplayaPresetFileJson.encode(
-        CdplayaPresetFile(
+    ) = SazanamiPresetFileJson.encode(
+        SazanamiPresetFile(
             name = name,
             preampDb = state.preampDb,
             automaticHeadroomEnabled =
@@ -215,7 +215,7 @@ internal fun rememberEqualizerProfilePlatformActions(
             }
             pendingNativeExport = PendingProfileExport(
                 filename =
-                    "${sanitizedProfileFilename(safeName)}.cdpeq",
+                    "${sanitizedProfileFilename(safeName)}.sazeq",
                 content = nativeFile(safeName, latestState)
             )
             createNativeDocument.launch(
@@ -243,9 +243,9 @@ internal fun rememberEqualizerProfilePlatformActions(
         exportPresetNative = { preset ->
             pendingNativeExport = PendingProfileExport(
                 filename =
-                    "${sanitizedProfileFilename(preset.name)}.cdpeq",
-                content = CdplayaPresetFileJson.encode(
-                    CdplayaPresetFileJson.fromPreset(preset)
+                    "${sanitizedProfileFilename(preset.name)}.sazeq",
+                content = SazanamiPresetFileJson.encode(
+                    SazanamiPresetFileJson.fromPreset(preset)
                 )
             )
             createNativeDocument.launch(

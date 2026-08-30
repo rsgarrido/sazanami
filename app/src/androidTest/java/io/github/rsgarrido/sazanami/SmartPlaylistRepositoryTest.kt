@@ -518,7 +518,7 @@ class SmartPlaylistRepositoryTest {
         database.listeningEventDao().insert(
             ListeningEventEntity(
                 eventUuid = "event-$mediaStoreId-$startedAt",
-                source = ListeningSource.CDPLAYA,
+                source = ListeningSource.NATIVE,
                 trackIdentityId = binding.trackIdentityId,
                 localTrackBindingId = binding.id,
                 playbackSessionId = "session-$mediaStoreId-$startedAt",

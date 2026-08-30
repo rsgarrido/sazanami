@@ -6,8 +6,8 @@ import androidx.media3.common.audio.AudioProcessor.StreamMetadata
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.rsgarrido.sazanami.player.equalizer.dsp.EqualizerConfiguration
 import io.github.rsgarrido.sazanami.player.equalizer.dsp.EqualizerFilterSpec
-import io.github.rsgarrido.sazanami.player.equalizer.interchange.CdplayaPresetFile
-import io.github.rsgarrido.sazanami.player.equalizer.interchange.CdplayaPresetFileJson
+import io.github.rsgarrido.sazanami.player.equalizer.interchange.SazanamiPresetFile
+import io.github.rsgarrido.sazanami.player.equalizer.interchange.SazanamiPresetFileJson
 import io.github.rsgarrido.sazanami.player.equalizer.limiter.LimiterConfiguration
 import io.github.rsgarrido.sazanami.player.equalizer.parametric.ParametricFilter
 import java.nio.ByteBuffer
@@ -119,7 +119,7 @@ class EqualizerPerformanceInstrumentationTest {
 
     @Test
     fun packagedNativePresetSerializationRoundTripsAllTypes() {
-        val file = CdplayaPresetFile(
+        val file = SazanamiPresetFile(
             name = "Instrumentation",
             preampDb = -6.0,
             automaticHeadroomEnabled = true,
@@ -150,8 +150,8 @@ class EqualizerPerformanceInstrumentationTest {
 
         assertEquals(
             file,
-            CdplayaPresetFileJson.decode(
-                CdplayaPresetFileJson.encode(file)
+            SazanamiPresetFileJson.decode(
+                SazanamiPresetFileJson.encode(file)
             )
         )
     }

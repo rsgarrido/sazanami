@@ -12,7 +12,7 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-data class CdplayaPresetFile(
+data class SazanamiPresetFile(
     val name: String,
     val preampDb: Double,
     val automaticHeadroomEnabled: Boolean,
@@ -29,8 +29,8 @@ data class CdplayaPresetFile(
     )
 }
 
-object CdplayaPresetFileJson {
-    const val KIND = "cdplaya-parametric-eq-preset"
+object SazanamiPresetFileJson {
+    const val KIND = "sazanami-parametric-eq-preset"
     const val CURRENT_VERSION = 1
     private val json = Json {
         prettyPrint = true
@@ -38,12 +38,12 @@ object CdplayaPresetFileJson {
         ignoreUnknownKeys = true
     }
 
-    fun encode(file: CdplayaPresetFile): String {
+    fun encode(file: SazanamiPresetFile): String {
         validate(file)
         return json.encodeToString(file.toDto())
     }
 
-    fun decode(text: String): CdplayaPresetFile {
+    fun decode(text: String): SazanamiPresetFile {
         require(
             text.toByteArray(StandardCharsets.UTF_8).size <=
                 EqualizerProfileLimits.MAX_INPUT_BYTES
@@ -66,7 +66,7 @@ object CdplayaPresetFileJson {
         require(dto.version == CURRENT_VERSION) {
             "Unsupported Sazanami Parametric preset version ${dto.version}."
         }
-        val file = CdplayaPresetFile(
+        val file = SazanamiPresetFile(
             name = dto.name,
             preampDb = dto.preampDb,
             automaticHeadroomEnabled =
@@ -79,7 +79,7 @@ object CdplayaPresetFileJson {
 
     fun fromPreset(
         preset: ParametricEqualizerPreset
-    ): CdplayaPresetFile = CdplayaPresetFile(
+    ): SazanamiPresetFile = SazanamiPresetFile(
         name = preset.name,
         preampDb = preset.preampDb,
         automaticHeadroomEnabled =
@@ -87,7 +87,7 @@ object CdplayaPresetFileJson {
         filters = preset.filters
     )
 
-    private fun validate(file: CdplayaPresetFile) {
+    private fun validate(file: SazanamiPresetFile) {
         requireValidPresetName(file.name)
         ParametricEqualizerState(
             preampDb = file.preampDb,
@@ -100,9 +100,9 @@ object CdplayaPresetFileJson {
 
 @Serializable
 private data class NativePresetDto(
-    val kind: String = CdplayaPresetFileJson.KIND,
+    val kind: String = SazanamiPresetFileJson.KIND,
     val version: Int =
-        CdplayaPresetFileJson.CURRENT_VERSION,
+        SazanamiPresetFileJson.CURRENT_VERSION,
     val name: String,
     val preampDb: Double,
     val automaticHeadroomEnabled: Boolean,
@@ -178,7 +178,7 @@ private data class NativeFilterDto(
     }
 }
 
-private fun CdplayaPresetFile.toDto(): NativePresetDto =
+private fun SazanamiPresetFile.toDto(): NativePresetDto =
     NativePresetDto(
         name = name,
         preampDb = preampDb,

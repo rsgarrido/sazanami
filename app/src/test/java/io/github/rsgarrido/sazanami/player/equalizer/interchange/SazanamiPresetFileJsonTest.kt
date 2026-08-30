@@ -5,10 +5,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class CdplayaPresetFileJsonTest {
+class SazanamiPresetFileJsonTest {
     @Test
     fun nativeRoundTripIsLosslessAndPreservesIdsAndOrder() {
-        val file = CdplayaPresetFile(
+        val file = SazanamiPresetFile(
             name = "My Headphones",
             preampDb = -6.2,
             automaticHeadroomEnabled = false,
@@ -24,19 +24,19 @@ class CdplayaPresetFileJsonTest {
                 )
             )
         )
-        val encoded = CdplayaPresetFileJson.encode(file)
-        val decoded = CdplayaPresetFileJson.decode(encoded)
+        val encoded = SazanamiPresetFileJson.encode(file)
+        val decoded = SazanamiPresetFileJson.decode(encoded)
         assertEquals(file, decoded)
         assertTrue(encoded.contains(
-            "\"kind\": \"cdplaya-parametric-eq-preset\""
+            "\"kind\": \"sazanami-parametric-eq-preset\""
         ))
         assertTrue(encoded.contains("\"version\": 1"))
     }
 
     @Test
     fun unknownFieldsAreIgnoredButWrongKindAndVersionAreRejected() {
-        val base = CdplayaPresetFileJson.encode(
-            CdplayaPresetFile(
+        val base = SazanamiPresetFileJson.encode(
+            SazanamiPresetFile(
                 "Native", 0.0, true, emptyList()
             )
         )
@@ -46,12 +46,12 @@ class CdplayaPresetFileJsonTest {
         )
         assertEquals(
             "Native",
-            CdplayaPresetFileJson.decode(futureField).name
+            SazanamiPresetFileJson.decode(futureField).name
         )
         listOf(
             base.replace(
-                "cdplaya-parametric-eq-preset",
-                "cdplaya-backup"
+                "sazanami-parametric-eq-preset",
+                "sazanami-backup"
             ),
             base.replace("\"version\": 1", "\"version\": 2"),
             "{}",
@@ -59,7 +59,7 @@ class CdplayaPresetFileJsonTest {
         ).forEach { invalid ->
             assertTrue(
                 runCatching {
-                    CdplayaPresetFileJson.decode(invalid)
+                    SazanamiPresetFileJson.decode(invalid)
                 }.isFailure
             )
         }
@@ -67,7 +67,7 @@ class CdplayaPresetFileJsonTest {
 
     @Test
     fun rejectsDuplicateIdsTooManyFiltersAndUnknownTypes() {
-        val duplicate = CdplayaPresetFile(
+        val duplicate = SazanamiPresetFile(
             "Duplicate", 0.0, true,
             listOf(
                 ParametricFilter.Peaking("same", true, 100.0, 1.0, 1.0),
@@ -75,9 +75,9 @@ class CdplayaPresetFileJsonTest {
             )
         )
         assertTrue(runCatching {
-            CdplayaPresetFileJson.encode(duplicate)
+            SazanamiPresetFileJson.encode(duplicate)
         }.isFailure)
-        val tooMany = CdplayaPresetFile(
+        val tooMany = SazanamiPresetFile(
             "Too Many",
             0.0,
             true,
@@ -92,10 +92,10 @@ class CdplayaPresetFileJsonTest {
             }
         )
         assertTrue(runCatching {
-            CdplayaPresetFileJson.encode(tooMany)
+            SazanamiPresetFileJson.encode(tooMany)
         }.isFailure)
-        val valid = CdplayaPresetFileJson.encode(
-            CdplayaPresetFile("Valid", 0.0, true, emptyList())
+        val valid = SazanamiPresetFileJson.encode(
+            SazanamiPresetFile("Valid", 0.0, true, emptyList())
         )
         val unknown = valid.replace(
             "\"filters\": []",
@@ -103,14 +103,14 @@ class CdplayaPresetFileJsonTest {
                 "\"type\":\"CUSTOM\",\"frequencyHz\":1000,\"q\":1}]"
         )
         assertTrue(runCatching {
-            CdplayaPresetFileJson.decode(unknown)
+            SazanamiPresetFileJson.decode(unknown)
         }.isFailure)
     }
 
     @Test
     fun rejectsMissingFieldsNonFiniteValuesAndApplicationBackups() {
-        val valid = CdplayaPresetFileJson.encode(
-            CdplayaPresetFile(
+        val valid = SazanamiPresetFileJson.encode(
+            SazanamiPresetFile(
                 "Validation",
                 0.0,
                 true,
@@ -120,12 +120,12 @@ class CdplayaPresetFileJsonTest {
         val invalidFiles = listOf(
             valid.replace("\"preampDb\": 0.0,", ""),
             valid.replace("\"preampDb\": 0.0", "\"preampDb\": NaN"),
-            """{"kind":"cdplaya-app-backup","version":6}"""
+            """{"kind":"sazanami-app-backup","version":6}"""
         )
         invalidFiles.forEach { invalid ->
             assertTrue(
                 runCatching {
-                    CdplayaPresetFileJson.decode(invalid)
+                    SazanamiPresetFileJson.decode(invalid)
                 }.isFailure
             )
         }

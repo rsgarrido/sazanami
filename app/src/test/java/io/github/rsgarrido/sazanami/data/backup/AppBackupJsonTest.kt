@@ -59,7 +59,7 @@ class AppBackupJsonTest {
             {
               "schemaVersion": 2,
               "createdAt": 123,
-              "appName": "CDPlaya",
+              "appName": "Sazanami",
               "favorites": [],
               "playlists": [],
               "listeningHistory": [],

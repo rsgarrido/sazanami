@@ -390,7 +390,7 @@ private fun HistoricalDetails(source: HistoricalReconciliationSource) {
     val providers = source.importedProviders.mapNotNull { provider ->
         when (provider) {
             ListeningSource.SPOTIFY_IMPORT -> "Spotify import"
-            ListeningSource.CDPLAYA -> null
+            ListeningSource.NATIVE -> null
             ListeningSource.LASTFM_IMPORT -> "Imported history"
         }
     }.sorted().joinToString()

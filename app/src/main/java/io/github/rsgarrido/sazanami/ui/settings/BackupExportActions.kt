@@ -59,7 +59,7 @@ fun rememberBackupExportActions(
 }
 
 internal fun backupFilename(date: LocalDate): String {
-    return "sazanami-backup-$date.cdplaya"
+    return "sazanami-backup-$date.sazanami"
 }
 
 internal fun backupExportSuccessMessage(result: BackupExportResult): String {

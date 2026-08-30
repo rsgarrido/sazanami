@@ -79,7 +79,7 @@ class ListeningStatsReconciliationTest {
         )
         baseline(target, 2, 20L, 30L)
         baseline(sourceA, 3, 10L, 25L)
-        events(target, "native", 5, 1_000L, ListeningSource.CDPLAYA)
+        events(target, "native", 5, 1_000L, ListeningSource.NATIVE)
         events(sourceA, "source-a", 20, 100L, ListeningSource.SPOTIFY_IMPORT)
         events(sourceB, "source-b", 30, 500L, ListeningSource.SPOTIFY_IMPORT)
         database.listeningEventDao().insert(
@@ -93,7 +93,7 @@ class ListeningStatsReconciliationTest {
             )
         )
         val other = identity("Other", "Other Artist", "Other Album", "Other Artist")
-        events(other, "other", 50, 2_000L, ListeningSource.CDPLAYA)
+        events(other, "other", 50, 2_000L, ListeningSource.NATIVE)
 
         val overviewBefore = stats.getAllTimeOverview()
         val customRangeBefore = stats.getDetailedOverview(ListeningDateRange(0L, 10_000L))
@@ -191,7 +191,7 @@ class ListeningStatsReconciliationTest {
                 300L,
                 60_000L,
                 true,
-                ListeningSource.CDPLAYA,
+                ListeningSource.NATIVE,
                 ListeningCompletionClassification.NATIVE_NATURAL
             )
         )
@@ -256,7 +256,7 @@ class ListeningStatsReconciliationTest {
         val sourceA = identity("A", "Artist A", "Album A", "Artist A")
         val sourceB = identity("B", "Artist B", "Album B", "Artist B")
         binding(target, "local:target")
-        events(target, "target", 10, 1_000L, ListeningSource.CDPLAYA)
+        events(target, "target", 10, 1_000L, ListeningSource.NATIVE)
         events(sourceA, "a", 20, 2_000L, ListeningSource.SPOTIFY_IMPORT)
         events(sourceB, "b", 30, 3_000L, ListeningSource.SPOTIFY_IMPORT)
         val globalBefore = stats.getAllTimeOverview()
@@ -308,8 +308,8 @@ class ListeningStatsReconciliationTest {
         binding(firstTarget, "local:first")
         binding(secondTarget, "local:second")
         events(source, "historical", 5, 1_000L, ListeningSource.SPOTIFY_IMPORT)
-        events(firstTarget, "first", 1, 2_000L, ListeningSource.CDPLAYA)
-        events(secondTarget, "second", 2, 3_000L, ListeningSource.CDPLAYA)
+        events(firstTarget, "first", 1, 2_000L, ListeningSource.NATIVE)
+        events(secondTarget, "second", 2, 3_000L, ListeningSource.NATIVE)
         val globalBefore = stats.getAllTimeOverview()
 
         assertTrue(reconciliation.link(source, firstTarget) is
@@ -349,7 +349,7 @@ class ListeningStatsReconciliationTest {
         database.listeningEventDao().insert(event("target", target, 10_000L, 1L, true))
         repeat(10) { rank ->
             val competitor = identity("Competitor $rank", "Other", "Other", "Other")
-            events(competitor, "competitor-$rank", 50 - rank, 20_000L + rank, ListeningSource.CDPLAYA)
+            events(competitor, "competitor-$rank", 50 - rank, 20_000L + rank, ListeningSource.NATIVE)
         }
         val aliases = (0 until 1_000).map { index ->
             val source = identity("Alias $index", "Imported", "Imported", "Imported")
@@ -529,18 +529,18 @@ class ListeningStatsReconciliationTest {
         at: Long,
         listenedMs: Long,
         qualified: Boolean,
-        source: ListeningSource = ListeningSource.CDPLAYA,
+        source: ListeningSource = ListeningSource.NATIVE,
         completion: ListeningCompletionClassification = ListeningCompletionClassification.NONE
     ) = ListeningEventEntity(
         eventUuid = uuid,
         source = source,
         trackIdentityId = trackIdentityId,
         localTrackBindingId = null,
-        playbackSessionId = if (source == ListeningSource.CDPLAYA) "session:$uuid" else null,
-        startedAt = if (source == ListeningSource.CDPLAYA) at else null,
+        playbackSessionId = if (source == ListeningSource.NATIVE) "session:$uuid" else null,
+        startedAt = if (source == ListeningSource.NATIVE) at else null,
         endedAt = at,
         attributionAt = at,
-        timestampEvidence = if (source == ListeningSource.CDPLAYA) {
+        timestampEvidence = if (source == ListeningSource.NATIVE) {
             ListeningTimestampEvidence.NATIVE_EXACT
         } else {
             ListeningTimestampEvidence.SOURCE_END_ONLY
@@ -557,7 +557,7 @@ class ListeningStatsReconciliationTest {
         qualificationPolicy = if (source == ListeningSource.SPOTIFY_IMPORT) {
             ListeningQualificationPolicy.SPOTIFY
         } else {
-            ListeningQualificationPolicy.CDPLAYA
+            ListeningQualificationPolicy.NATIVE
         },
         endReason = if (completion == ListeningCompletionClassification.NATIVE_NATURAL) {
             ListeningEndReason.NATURAL_END
@@ -565,12 +565,12 @@ class ListeningStatsReconciliationTest {
             null
         },
         completionClassification = completion,
-        publicationState = if (source == ListeningSource.CDPLAYA) {
+        publicationState = if (source == ListeningSource.NATIVE) {
             ListeningEventPublicationState.NATIVE
         } else {
             ListeningEventPublicationState.IMPORT_PUBLISHED
         },
-        sourceEventKey = if (source == ListeningSource.CDPLAYA) null else "source:$uuid",
+        sourceEventKey = if (source == ListeningSource.NATIVE) null else "source:$uuid",
         importBatchId = null,
         createdAt = at + 1L
     )

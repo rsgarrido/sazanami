@@ -25,7 +25,7 @@ class ListeningHistoryBackupValidatorTest {
         assertEquals(100L, decoded.summary.earliestDetailedEventAt)
         assertEquals(400L, decoded.summary.latestDetailedEventAt)
         assertEquals(
-            listOf("cdplaya", "spotify_import", "lastfm_import", "cdplaya"),
+            listOf("native", "spotify_import", "lastfm_import", "native"),
             decoded.events.map { it.source }
         )
     }
@@ -199,10 +199,10 @@ class ListeningHistoryBackupValidatorTest {
             ListeningHistoryBackupValidator.validate(valid.copy(batchEventObservations = valid.batchEventObservations + valid.batchEventObservations.single()))
         }
         expectInvalid("native import profile") {
-            ListeningHistoryBackupValidator.validate(valid.copy(importSources = listOf(source.copy(sourceType = "cdplaya"))))
+            ListeningHistoryBackupValidator.validate(valid.copy(importSources = listOf(source.copy(sourceType = "native"))))
         }
         expectInvalid("native external ID") {
-            ListeningHistoryBackupValidator.validate(valid.copy(externalTrackIds = listOf(valid.externalTrackIds.single().copy(sourceType = "cdplaya"))))
+            ListeningHistoryBackupValidator.validate(valid.copy(externalTrackIds = listOf(valid.externalTrackIds.single().copy(sourceType = "native"))))
         }
         expectInvalid("batch policy ownership") {
             ListeningHistoryBackupValidator.validate(valid.copy(importBatches = listOf(batch.copy(qualificationPolicy = "lastfm"))))
@@ -273,10 +273,10 @@ class ListeningHistoryBackupValidatorTest {
             BackupLegacyListeningBaseline(1, 7, 1, 90, "legacy:one", 99)
         )
         val events = listOf(
-            event("uuid-1", 2, 100, "cdplaya", 10, true, "natural_end", "natural_end", "session-1", "source-1"),
+            event("uuid-1", 2, 100, "native", 10, true, "natural_end", "natural_end", "session-1", "source-1"),
             event("uuid-2", 2, 200, "spotify_import", 11, false, "none", "transition", null, "source-1"),
             event("uuid-3", 3, 300, "lastfm_import", null, true, "time_threshold", "stopped", "session-3", null),
-            event("uuid-4", 3, 400, "cdplaya", null, false, "none", "error", null, "source-4", listenedMs = 2_000, duration = 1_000)
+            event("uuid-4", 3, 400, "native", null, false, "none", "error", null, "source-4", listenedMs = 2_000, duration = 1_000)
         )
         return BackupListeningHistoryV2(
             identities = identities,

@@ -139,7 +139,7 @@ data class ListeningEventEntity(
     val qualifiedAsPlay: Boolean,
     val qualificationReason: ListeningQualificationReason,
     val qualificationRuleVersion: Int,
-    val qualificationPolicy: ListeningQualificationPolicy = ListeningQualificationPolicy.CDPLAYA,
+    val qualificationPolicy: ListeningQualificationPolicy = ListeningQualificationPolicy.NATIVE,
     val endReason: ListeningEndReason?,
     val completionClassification: ListeningCompletionClassification =
         if (endReason == ListeningEndReason.NATURAL_END) ListeningCompletionClassification.NATIVE_NATURAL

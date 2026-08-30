@@ -1,16 +1,16 @@
 cmake_minimum_required(VERSION 3.22.1)
 
-project(cdplaya_native LANGUAGES CXX)
+project(sazanami_native LANGUAGES CXX)
 
 add_library(
-        cdplaya_native
+        sazanami_native
         SHARED
         src/main/cpp/native_audio_decoder.cpp
 )
 
-target_compile_features(cdplaya_native PRIVATE cxx_std_17)
+target_compile_features(sazanami_native PRIVATE cxx_std_17)
 target_compile_options(
-        cdplaya_native
+        sazanami_native
         PRIVATE
         -Wall
         -Wextra
@@ -21,7 +21,7 @@ find_library(log_library log REQUIRED)
 find_library(media_ndk_library mediandk REQUIRED)
 
 target_link_libraries(
-        cdplaya_native
+        sazanami_native
         PRIVATE
         ${log_library}
         ${media_ndk_library}
