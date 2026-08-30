@@ -61,7 +61,7 @@ class StatisticsScreenTest {
             state = ListeningAnalyticsUiState(overview = overview())
         )
 
-        composeRule.onNodeWithText("Last 30 days").assertIsSelected()
+        composeRule.onNodeWithContentDescription("Last 30 days").assertIsSelected()
         composeRule.onNodeWithText("3 hr 18 min").assertExists()
         composeRule.onNodeWithText("1,234").assertExists()
         composeRule.onNodeWithText("52").assertExists()
@@ -160,7 +160,7 @@ class StatisticsScreenTest {
 
         composeRule.onNodeWithTag("statistics_refresh_slot").assertExists()
         composeRule.onNodeWithTag("statistics_refresh_indicator").assertDoesNotExist()
-        composeRule.onNodeWithText("Last 30 days").assertIsSelected()
+        composeRule.onNodeWithContentDescription("Last 30 days").assertIsSelected()
         val metric = composeRule.onNodeWithContentDescription(
             "Recorded listening, 3 hours, 18 minutes. Detailed history only"
         )
@@ -199,7 +199,7 @@ class StatisticsScreenTest {
         val indexBeforeDialog = listState.firstVisibleItemIndex
         val offsetBeforeDialog = listState.firstVisibleItemScrollOffset
         assertTrue(indexBeforeDialog > 0 || offsetBeforeDialog > 0)
-        composeRule.onNodeWithText("Learn more").performClick()
+        composeRule.onNodeWithContentDescription("About listening history coverage").performClick()
         composeRule.onNodeWithText("About your listening history").assertExists()
         composeRule.onNodeWithText("Close").performClick()
         composeRule.runOnIdle {
@@ -296,18 +296,18 @@ class StatisticsScreenTest {
             }
         }
 
-        composeRule.onNodeWithText("Last 30 days")
+        composeRule.onNodeWithContentDescription("Last 30 days")
             .performScrollTo()
             .assertIsSelected()
             .assertHeightIsAtLeast(48.dp)
         composeRule.onNodeWithText("3 hr 18 min").performScrollTo().assertIsDisplayed()
-        composeRule.runOnIdle { listState.requestScrollToItem(4) }
+        composeRule.runOnIdle { listState.requestScrollToItem(3) }
         composeRule.waitForIdle()
         composeRule.onNodeWithText("Listening time").assertHeightIsAtLeast(48.dp)
-        composeRule.runOnIdle { listState.requestScrollToItem(5) }
+        composeRule.runOnIdle { listState.requestScrollToItem(4) }
         composeRule.waitForIdle()
         composeRule.onNodeWithText("Tracks").assertHeightIsAtLeast(48.dp)
-        composeRule.runOnIdle { listState.requestScrollToItem(6) }
+        composeRule.runOnIdle { listState.requestScrollToItem(5) }
         composeRule.waitForIdle()
         composeRule.onNodeWithText("Narrow track").assertIsDisplayed()
     }
@@ -370,7 +370,7 @@ class StatisticsScreenTest {
             }
         }
 
-        composeRule.runOnIdle { listState.requestScrollToItem(4) }
+        composeRule.runOnIdle { listState.requestScrollToItem(3) }
         composeRule.waitForIdle()
         composeRule.onNodeWithText("Listening trend").assertExists()
         val trendIndex = listState.firstVisibleItemIndex
@@ -383,7 +383,7 @@ class StatisticsScreenTest {
             assertEquals(trendOffset, listState.firstVisibleItemScrollOffset)
         }
 
-        composeRule.runOnIdle { listState.requestScrollToItem(5) }
+        composeRule.runOnIdle { listState.requestScrollToItem(4) }
         composeRule.waitForIdle()
         composeRule.onNodeWithText("Top listening").assertExists()
         val rankingIndex = listState.firstVisibleItemIndex

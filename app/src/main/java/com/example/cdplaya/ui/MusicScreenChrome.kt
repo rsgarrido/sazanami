@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.cdplaya.data.PlayerTheme
 import com.example.cdplaya.data.Song
@@ -57,6 +58,7 @@ fun MusicScreenHeader(
     onSettingsClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
     backContentDescription: String = "Back to Home",
+    backTitleSpacing: Dp = 0.dp,
     batchMetadataAction: (@Composable () -> Unit)? = null,
     viewModeAction: (@Composable () -> Unit)? = null,
     organizeAction: (@Composable () -> Unit)? = null
@@ -70,7 +72,8 @@ fun MusicScreenHeader(
     ) {
         Row(
             modifier = Modifier.weight(1f),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(backTitleSpacing)
         ) {
             if (onBackClick != null) {
                 AppShellIconButton(
