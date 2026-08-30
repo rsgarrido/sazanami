@@ -1,6 +1,6 @@
 # Imported history reconciliation foundation
 
-CDPlaya stores imported-history reconciliation as a durable, non-destructive relationship from a
+Sazanami stores imported-history reconciliation as a durable, non-destructive relationship from a
 historical listening identity to a canonical local/playable identity. Room 12 adds
 `listening_identity_reconciliations`; Backup 10 and canonical listening-history format 2 preserve
 the same confirmed links through backup identity IDs and restore-time ID remapping.
@@ -44,7 +44,7 @@ pure Kotlin engine. Candidate discovery operates once per `ListeningTrackIdentit
 event. It is transient and adds no Room entity, column, suggestion record, rejection record, or
 backup data.
 
-A reviewable source must have at least one non-CDPlaya event whose publication state is
+A reviewable source must have at least one non-native event whose publication state is
 `import_published`, must have no local binding, and must not be a confirmed reconciliation source.
 The query groups published imported events per identity and returns provider presence, imported
 event count, qualified play count, total recorded listening time, completed count, first listen,

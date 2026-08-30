@@ -723,7 +723,7 @@ namespace {
 namespace {
 
     constexpr char kNativeAudioBridgeClassName[] =
-            "com/example/cdplaya/player/nativeaudio/NativeAudioBridge";
+            "io/github/rsgarrido/sazanami/player/nativeaudio/NativeAudioBridge";
 
     jint nativeApiVersion(JNIEnv*, jobject) {
         return 1;

@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.cdplaya.benchmark"
+    namespace = "io.github.rsgarrido.sazanami.benchmark"
     compileSdk = 36
 
     defaultConfig {

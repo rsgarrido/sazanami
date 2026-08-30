@@ -1,4 +1,4 @@
-# CDPlaya performance benchmarks
+# Sazanami performance benchmarks
 
 This module runs Macrobenchmark and Baseline Profile tests against the non-debuggable,
 shell-profileable `benchmark` app build. The app variant inherits the current release
@@ -37,17 +37,17 @@ quotes around dotted `-P` property names):
 
 ```powershell
 .\gradlew.bat :benchmark:connectedBenchmarkBenchmarkAndroidTest `
-  "-Pandroid.testInstrumentationRunnerArguments.class=com.example.cdplaya.benchmark.MacrobenchmarkSmokeSuite"
+  "-Pandroid.testInstrumentationRunnerArguments.class=io.github.rsgarrido.sazanami.benchmark.MacrobenchmarkSmokeSuite"
 .\gradlew.bat :benchmark:connectedBenchmarkBenchmarkAndroidTest `
-  "-Pandroid.testInstrumentationRunnerArguments.class=com.example.cdplaya.benchmark.BaselineProfileComparisonBenchmarks"
+  "-Pandroid.testInstrumentationRunnerArguments.class=io.github.rsgarrido.sazanami.benchmark.BaselineProfileComparisonBenchmarks"
 .\gradlew.bat :benchmark:connectedBenchmarkBenchmarkAndroidTest `
-  "-Pandroid.testInstrumentationRunnerArguments.class=com.example.cdplaya.benchmark.StartupBenchmarks"
+  "-Pandroid.testInstrumentationRunnerArguments.class=io.github.rsgarrido.sazanami.benchmark.StartupBenchmarks"
 .\gradlew.bat :benchmark:connectedBenchmarkBenchmarkAndroidTest `
-  "-Pandroid.testInstrumentationRunnerArguments.class=com.example.cdplaya.benchmark.JourneyBenchmarks"
+  "-Pandroid.testInstrumentationRunnerArguments.class=io.github.rsgarrido.sazanami.benchmark.JourneyBenchmarks"
 .\gradlew.bat :app:generateReleaseBaselineProfile
 ```
 
-Use instrumentation arguments `cdplaya.smokeIterations` and `cdplaya.fullIterations` to override
+Use instrumentation arguments `sazanami.smokeIterations` and `sazanami.fullIterations` to override
 the default 2-iteration smoke and 10-iteration full suites.
 
 Gradle writes benchmark JSON and Perfetto traces below `benchmark/build/outputs/` and connected

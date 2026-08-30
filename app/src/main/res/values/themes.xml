@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.Cdplaya" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.Sazanami" parent="android:Theme.Material.Light.NoActionBar" />
 
-    <style name="Theme.Cdplaya.Starting" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@color/cdplaya_splash_background</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_cdplaya</item>
-        <item name="postSplashScreenTheme">@style/Theme.Cdplaya</item>
+    <style name="Theme.Sazanami.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/sazanami_splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_sazanami</item>
+        <item name="postSplashScreenTheme">@style/Theme.Sazanami</item>
     </style>
 </resources>

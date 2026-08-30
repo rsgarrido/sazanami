@@ -19,14 +19,14 @@ exact start and end and use their start as attribution. A source-end-only event 
 start, uses the exact source end as both `endedAt` and `attributionAt`, and never derives a start by
 subtracting listening time.
 
-Qualification stores both a source-neutral policy owner (`cdplaya`, `spotify`, `lastfm`, or
+Qualification stores both a source-neutral policy owner (`native`, `spotify`, `lastfm`, or
 `other_import`) and an integer policy version. Completion is independently classified as `none`,
 `native_natural`, or `source_documented_natural`. The nullable `endReason` column is native-only in
 new data; legacy imported rows may retain their old value for compatibility without gaining a
 source-natural completion classification.
 
 Publication is `native`, `import_pending`, or `import_published`. Every user-visible history and
-analytics query excludes pending rows. Native recording writes `native_exact`, `cdplaya`, `native`,
+analytics query excludes pending rows. Native recording writes `native_exact`, `native`, `native`,
 and either `native_natural` or `none`, preserving the existing qualification thresholds and
 playback behavior.
 
@@ -81,7 +81,7 @@ event without making a batch its owner.
 The migration explicitly rebuilds `listening_events`. IDs, event UUIDs, local-binding nullability,
 source keys, listening values, and native end reasons are copied. Existing rows receive
 `attributionAt = startedAt` and `native_exact` because Room 10 asserted exact starts and ends.
-Native rows receive the CDPlaya policy, native publication, and native-natural completion only for
+Native rows receive the Sazanami policy, native publication, and native-natural completion only for
 the old natural-end reason.
 
 For each non-native source present in Room 10, migration creates one deterministic unscoped legacy
@@ -140,7 +140,7 @@ supported relationship left.
 
 ## Spotify Extended Streaming History v1 behavior
 
-CDPlaya supports one or multiple Spotify Extended Streaming History JSON files. Selection and
+Sazanami supports one or multiple Spotify Extended Streaming History JSON files. Selection and
 parsing are local to the device. Repeating an export, selecting overlapping exports, or importing a
 later re-export uses the persisted fingerprint/ordinal evidence so that existing occurrences remain
 single events and only genuinely new occurrences are published. Published imported events join the
@@ -151,7 +151,7 @@ deduplication evidence.
 
 An imported historical identity is valid without a local track binding. It can appear in Statistics
 from its metadata snapshot, but it is omitted from playable Recently Played and Most Played library
-surfaces until an actual local binding exists. CDPlaya never fabricates a playable `Song` from
+surfaces until an actual local binding exists. Sazanami never fabricates a playable `Song` from
 Spotify metadata.
 
 The simpler Spotify Account Data streaming-history format is not supported. Podcasts and

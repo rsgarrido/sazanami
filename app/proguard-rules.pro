@@ -20,7 +20,7 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
-# jaudiotagger includes optional Java SE artwork decoding methods. CDPlaya
+# jaudiotagger includes optional Java SE artwork decoding methods. Sazanami
 # reads embedded artwork bytes through Android APIs and never calls these
 # desktop-only paths.
 -dontwarn java.awt.image.BufferedImage

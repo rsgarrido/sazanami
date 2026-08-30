@@ -81,7 +81,7 @@ function Capture-Sample {
     $memory = Invoke-DeviceShell -Arguments @(
         "dumpsys",
         "meminfo",
-        "com.example.cdplaya"
+        "io.github.rsgarrido.sazanami"
     )
     $cpu = Invoke-DeviceShell -Arguments @("dumpsys", "cpuinfo")
     $audio = Invoke-DeviceShell -Arguments @(
@@ -106,7 +106,7 @@ function Capture-Sample {
     )
     $cpuLine = (
         $cpu -split "`r?`n" |
-            Where-Object { $_ -match "com\.example\.cdplaya" } |
+            Where-Object { $_ -match "io\.github\.rsgarrido\.sazanami" } |
             Select-Object -First 1
     )
     $cpuPercent = if ($cpuLine -match "^\s*([0-9.]+)%") {
@@ -231,7 +231,7 @@ function Capture-Sample {
 }
 
 @(
-    "CDPlaya Phase F device thermal monitor"
+    "Sazanami Phase F device thermal monitor"
     "scenario=$Scenario"
     "device=$DeviceSerial"
     "started=$($startedAt.ToString('o'))"

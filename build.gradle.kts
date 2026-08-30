@@ -11,7 +11,7 @@ plugins {
     alias(libs.plugins.ksp) apply false
 }
 
-// Link the app module to CDPlaya's native audio decoder.
+// Link the app module to Sazanami's native audio decoder.
 project(":app") {
     val nativeBuildScript = file("CMakeLists.txt")
     plugins.withId("com.android.application") {

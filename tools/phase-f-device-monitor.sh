@@ -6,8 +6,8 @@ SCENARIO="${1:?scenario is required}"
 DURATION_SECONDS="${2:-600}"
 INTERVAL_SECONDS="${3:-60}"
 MANUAL_START_TIMEOUT_SECONDS="${4:-900}"
-OUTPUT_DIRECTORY="/sdcard/Download/CDPlaya-Phase-F-Thermal"
-PACKAGE_NAME="com.example.cdplaya"
+OUTPUT_DIRECTORY="/sdcard/Download/Sazanami-Phase-F-Thermal"
+PACKAGE_NAME="io.github.rsgarrido.sazanami"
 MAX_START_AP_C="37.5"
 MAX_START_SKIN_C="35.0"
 REQUIRED_STABLE_SAMPLES=1
@@ -27,7 +27,7 @@ CSV_PATH="$OUTPUT_DIRECTORY/$RUN_ID-$SCENARIO.csv"
 LOG_PATH="$OUTPUT_DIRECTORY/$RUN_ID-$SCENARIO.log"
 DONE_PATH="$OUTPUT_DIRECTORY/$RUN_ID-$SCENARIO.done"
 FAILED_PATH="$OUTPUT_DIRECTORY/$RUN_ID-$SCENARIO.failed"
-TEMP_PREFIX="/data/local/tmp/cdplaya-phase-f-$RUN_ID-$$"
+TEMP_PREFIX="/data/local/tmp/sazanami-phase-f-$RUN_ID-$$"
 BATTERY_TEMP_PATH="$TEMP_PREFIX-battery.txt"
 THERMAL_TEMP_PATH="$TEMP_PREFIX-thermal.txt"
 MEMORY_TEMP_PATH="$TEMP_PREFIX-memory.txt"
@@ -65,10 +65,10 @@ playback_state() {
     dumpsys media_session |
         awk -v package_name="$PACKAGE_NAME" '
             $0 ~ "androidx.media3.session.id\\. " package_name "/" {
-                in_cdplaya_session = 1
+                in_app_session = 1
                 next
             }
-            in_cdplaya_session && !reported && /state=PlaybackState/ {
+            in_app_session && !reported && /state=PlaybackState/ {
                 if ($0 ~ /state=PLAYING/) {
                     print "PLAYING"
                 } else if ($0 ~ /state=PAUSED/) {
@@ -243,7 +243,7 @@ write_sample() {
 trap cleanup EXIT HUP INT TERM
 
 cat > "$LOG_PATH" <<EOF
-CDPlaya Phase F detached device thermal monitor
+Sazanami Phase F detached device thermal monitor
 scenario=$SCENARIO
 started=$(date -Iseconds)
 durationSeconds=$DURATION_SECONDS
@@ -300,7 +300,7 @@ done
 {
     echo "cooldownCompleted=$(date -Iseconds)"
     echo "waitingForManualStart=true"
-    echo "requiredStartState=CDPlaya PLAYING and screen Asleep"
+    echo "requiredStartState=Sazanami PLAYING and screen Asleep"
 } >> "$LOG_PATH"
 
 manual_wait_started_epoch="$(date +%s)"

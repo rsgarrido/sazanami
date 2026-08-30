@@ -34,7 +34,7 @@ asks the capability object whether a field is supported; it contains no extensio
 checks.
 
 Publisher / Label maps to jaudiotagger's `FieldKey.RECORD_LABEL`. BPM maps to `FieldKey.BPM` and is
-manual metadata only. CDPlaya accepts a blank value or a whole number from 1 through 999; it does
+manual metadata only. Sazanami accepts a blank value or a whole number from 1 through 999; it does
 not perform BPM analysis.
 
 ## Multi-value policy
