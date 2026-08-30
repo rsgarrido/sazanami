@@ -240,6 +240,18 @@ class AppPreferencesStateTest {
     }
 
     @Test
+    fun storedDefaultModeAloneKeepsAnEmptyAllFolderPreference() {
+        val state = decodeAppPreferences(
+            mutablePreferencesOf(
+                stringPreferencesKey("folder_selection_mode") to "ALL"
+            )
+        )
+
+        assertEquals(FolderSelectionMode.ALL, state.folderSelectionMode)
+        assertTrue(state.selectedLibraryFolders.isEmpty())
+    }
+
+    @Test
     fun automaticOffloadPreferenceDecodesWithoutChangingOtherSettings() {
         val preferences = mutablePreferencesOf(
             stringPreferencesKey("audio_offload_preference") to "AUTOMATIC",

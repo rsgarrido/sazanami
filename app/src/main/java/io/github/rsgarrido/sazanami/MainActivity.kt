@@ -91,7 +91,11 @@ class MainActivity : ComponentActivity() {
         folderArtworkAccessStore.setTreeUri(uri)
         folderArtworkAccessState = folderArtworkAccessStore.readState()
         musicViewModel.setFolderArtworkTreeUri(uri)
-        musicViewModel.refreshFolderArtwork()
+        // During first-run folder selection there is no normal library to refresh yet. The
+        // confirmed core scan will use this same URI when progressive artwork starts.
+        if (musicViewModel.libraryUiState.value.initialFolderSelectionCompleted) {
+            musicViewModel.refreshFolderArtwork()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -113,8 +117,11 @@ class MainActivity : ComponentActivity() {
         // the real UI surface an unexpected startup error instead of trapping the user here.
         splashScreen.setKeepOnScreenCondition {
             val libraryState = musicViewModel.libraryUiState.value
+            val libraryOnboardingReady =
+                !libraryState.initialFolderSelectionCompleted &&
+                        libraryState.initialFolderDiscoveryCompleted
             val stableFirstFrameReady =
-                libraryState.hasPublishedInitialLibraryState &&
+                (libraryOnboardingReady || libraryState.hasPublishedInitialLibraryState) &&
                         musicViewModel.playerAppearanceUiState.value.isLoaded &&
                         musicViewModel.libraryAppearanceUiState.value.isLoaded &&
                         musicViewModel.homeCustomizationUiState.value.isLoaded
@@ -271,18 +278,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun restoreFolderArtworkState() {
-        var state = folderArtworkAccessStore.readState()
-        val savedUri = state.treeUri
-        if (savedUri != null) {
-            val stillGranted = contentResolver.persistedUriPermissions.any { permission ->
+        folderArtworkAccessState = folderArtworkAccessStore.readValidatedState { savedUri ->
+            contentResolver.persistedUriPermissions.any { permission ->
                 permission.uri == savedUri && permission.isReadPermission
             }
-            if (!stillGranted) {
-                folderArtworkAccessStore.clearTreeUri()
-                state = folderArtworkAccessStore.readState()
-            }
         }
-        folderArtworkAccessState = state
     }
 
     private fun chooseFolderArtwork() {

@@ -465,6 +465,21 @@ class AppPreferencesRepository private constructor(
         it[Keys.selectedLibraryFolders] = selection.toStoredFolders()
     }
 
+    suspend fun saveInitialLibraryFolderSelection(selection: FolderSelection) = edit {
+        it[Keys.folderSelectionMode] = selection.mode.name
+        it[Keys.selectedLibraryFolders] = selection.toStoredFolders()
+    }
+
+    /** Removes the retired restorable marker and reports whether it had been completed. */
+    suspend fun consumeLegacyInitialLibraryFolderSelectionCompletion(): Boolean {
+        var completed = false
+        dataStore.edit { preferences ->
+            completed = preferences[Keys.legacyInitialLibraryFolderSelectionCompleted] == true
+            preferences.remove(Keys.legacyInitialLibraryFolderSelectionCompleted)
+        }
+        return completed
+    }
+
     @Deprecated("Use setLibraryFolderSelection so an empty custom selection is unambiguous.")
     suspend fun setSelectedLibraryFolders(folders: Set<String>) =
         setLibraryFolderSelection(FolderSelection.fromStored(null, folders))
@@ -614,8 +629,9 @@ class AppPreferencesRepository private constructor(
 
 internal fun decodeAppPreferences(preferences: Preferences): AppPreferencesState {
     val storedFolders = preferences[Keys.selectedLibraryFolders]?.toSet().orEmpty()
+    val storedFolderMode = preferences[Keys.folderSelectionMode]
     val folderSelection = FolderSelection.fromStored(
-        storedMode = preferences[Keys.folderSelectionMode],
+        storedMode = storedFolderMode,
         storedFolders = storedFolders
     )
     return AppPreferencesState(
@@ -1199,6 +1215,9 @@ private object Keys {
         doublePreferencesKey("equalizer_limiter_ceiling_dbfs")
     val selectedLibraryFolders = stringSetPreferencesKey("selected_folders")
     val folderSelectionMode = stringPreferencesKey("folder_selection_mode")
+    // Retained only so existing installations can consume and remove the old backed-up marker.
+    val legacyInitialLibraryFolderSelectionCompleted =
+        booleanPreferencesKey("initial_library_folder_selection_completed")
     val songsViewMode = stringPreferencesKey("songs_view_mode")
     val albumsViewMode = stringPreferencesKey("albums_view_mode")
     val artistsViewMode = stringPreferencesKey("artists_view_mode")

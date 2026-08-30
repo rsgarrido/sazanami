@@ -14,7 +14,9 @@ import io.github.rsgarrido.sazanami.performance.tracePerformance
 
 
 class MusicRepository(private val context: Context) {
-    private val embeddedMetadataReader = EmbeddedMetadataReader()
+    private val embeddedMetadataReader by lazy(LazyThreadSafetyMode.NONE) {
+        EmbeddedMetadataReader()
+    }
 
     fun getLibraryData(selectedFolders: Set<String> = emptySet()): MusicLibraryData {
         return buildMusicLibraryData(
@@ -27,8 +29,13 @@ class MusicRepository(private val context: Context) {
         return getLibraryData(selectedFolders).songs
     }
 
-    fun queryLibraryIndex(): List<Song>? = try {
-        tracePerformance(PerformanceTraceNames.MEDIASTORE_INDEX_QUERY) { querySongIndex() }
+    fun queryLibraryIndex(): List<Song>? = queryLibraryRows(LibraryIndexMode.WITH_WAV_METADATA)
+
+    fun queryLightweightLibraryRows(): List<Song>? =
+        queryLibraryRows(LibraryIndexMode.LIGHTWEIGHT)
+
+    private fun queryLibraryRows(mode: LibraryIndexMode): List<Song>? = try {
+        tracePerformance(PerformanceTraceNames.MEDIASTORE_INDEX_QUERY) { querySongIndex(mode) }
     } catch (exception: SecurityException) {
         throw MediaLibraryAccessException(exception)
     }
@@ -122,7 +129,7 @@ class MusicRepository(private val context: Context) {
         return hideUnavailableEmbeddedArtwork(cachedSongs, resolver::isMaterialized)
     }
 
-    private fun querySongIndex(): List<Song>? {
+    private fun querySongIndex(mode: LibraryIndexMode): List<Song>? {
         val songs = mutableListOf<Song>()
 
         val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
@@ -227,14 +234,15 @@ class MusicRepository(private val context: Context) {
                     dateModifiedEpochSeconds = dateModifiedEpochSeconds,
                     year = year
                 )
-                val song = if (isWavFile(filePath, displayName)) {
+                val song = mediaStoreSong.withIndexRowEnrichment(
+                    mode = mode,
+                    isWav = isWavFile(filePath, displayName)
+                ) { wavSong ->
                     val embeddedMetadata = embeddedMetadataReader
-                        .readOrNull(File(filePath))
+                        .readOrNull(File(wavSong.filePath))
                         ?.takeIf { it.format == AudioMetadataFormat.WAV }
                         ?.metadata
-                    mergeWavEmbeddedMetadata(mediaStoreSong, embeddedMetadata)
-                } else {
-                    mediaStoreSong
+                    mergeWavEmbeddedMetadata(wavSong, embeddedMetadata)
                 }
 
                 songs.add(song)
@@ -253,6 +261,21 @@ class MusicRepository(private val context: Context) {
         }
     }
 
+}
+
+internal enum class LibraryIndexMode {
+    LIGHTWEIGHT,
+    WITH_WAV_METADATA
+}
+
+internal inline fun Song.withIndexRowEnrichment(
+    mode: LibraryIndexMode,
+    isWav: Boolean,
+    enrichWav: (Song) -> Song
+): Song = if (mode == LibraryIndexMode.WITH_WAV_METADATA && isWav) {
+    enrichWav(this)
+} else {
+    this
 }
 
 internal const val CURRENT_EMBEDDED_METADATA_ENRICHMENT_VERSION = 4

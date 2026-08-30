@@ -1003,6 +1003,18 @@ class MusicViewModel(
         libraryController.clearSelectedLibraryFolders()
     }
 
+    fun toggleInitialLibraryFolder(folderPath: String) {
+        libraryController.toggleInitialLibraryFolder(folderPath)
+    }
+
+    fun clearInitialLibraryFolders() {
+        libraryController.clearInitialLibraryFolders()
+    }
+
+    fun confirmInitialLibraryFolderSelection() {
+        libraryController.confirmInitialLibraryFolderSelection()
+    }
+
     fun toggleFavorite(song: Song) {
         libraryController.toggleFavorite(song)
     }

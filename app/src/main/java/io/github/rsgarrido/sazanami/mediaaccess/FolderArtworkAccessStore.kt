@@ -21,6 +21,20 @@ internal class FolderArtworkAccessStore(context: Context) {
         onboardingComplete = preferences.getBoolean(KEY_ONBOARDING_COMPLETE, false)
     )
 
+    fun readValidatedState(
+        hasPersistedReadPermission: (Uri) -> Boolean
+    ): FolderArtworkAccessState {
+        val stored = readState()
+        val treeUri = stored.treeUri ?: return stored
+        if (hasPersistedReadPermission(treeUri)) return stored
+
+        preferences.edit()
+            .remove(KEY_TREE_URI)
+            .putBoolean(KEY_ONBOARDING_COMPLETE, false)
+            .apply()
+        return FolderArtworkAccessState()
+    }
+
     fun setTreeUri(uri: Uri) {
         preferences.edit()
             .putString(KEY_TREE_URI, uri.toString())

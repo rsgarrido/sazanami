@@ -71,6 +71,22 @@ class ArtworkSameSessionPublicationTest {
     }
 
     @Test
+    fun progressiveArtworkReplacesSelectedReferencesWithoutTouchingDiscoveryRows() {
+        val artwork = embeddedArtworkUri()
+        val selected = song(albumArtUri = null)
+        val unselected = song(albumArtUri = null).copy(id = 2L, folderPath = "/recordings")
+        val enriched = selected.copy(albumArtUri = artwork)
+
+        val updated = replaceSelectedSongReferences(
+            referenceSongs = listOf(selected, unselected),
+            selectedSongs = listOf(enriched)
+        )
+
+        assertSame(artwork, updated.first().albumArtUri)
+        assertSame(unselected, updated.last())
+    }
+
+    @Test
     fun artworkPublicationDoesNotRestartRepairGeneration() {
         val tracker = LibraryPublicationTracker()
         val repaired = library(listOf(song(albumArtUri = embeddedArtworkUri())))

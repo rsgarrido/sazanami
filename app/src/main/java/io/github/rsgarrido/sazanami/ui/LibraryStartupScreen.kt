@@ -68,7 +68,7 @@ internal fun LibraryStartupScreen(
                     Button(onClick = onOpenAppSettings) { Text("Open app settings") }
                 } else {
                     Button(onClick = onRequestAudioAccess) {
-                        Text(if (mediaAccessState.audioPermissionRequested) "Try again" else "Grant music access")
+                        Text(if (mediaAccessState.audioPermissionRequested) "Grant music access" else "Grant music access")
                     }
                 }
             }
@@ -101,7 +101,9 @@ internal fun LibraryStartupScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.size(22.dp))
-                Button(onClick = onChooseFolderArtwork) { Text("Choose music folder") }
+                Button(onClick = onChooseFolderArtwork) {
+                    Text("Allow folder artwork access")
+                }
                 Spacer(Modifier.size(10.dp))
                 OutlinedButton(onClick = onSkipFolderArtwork) { Text("Not now") }
             }
