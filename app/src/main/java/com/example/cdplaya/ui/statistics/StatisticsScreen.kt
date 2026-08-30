@@ -1,6 +1,5 @@
 package com.example.cdplaya.ui.statistics
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -109,6 +107,7 @@ internal fun StatisticsScreen(
                 onBackClick = onBackClick,
                 onSettingsClick = null,
                 backContentDescription = stringResource(R.string.statistics_back_description),
+                backTitleSpacing = 10.dp,
                 modifier = Modifier.statusBarsPadding(),
                 viewModeAction = {
                     AppShellIconButton(
@@ -178,13 +177,6 @@ internal fun StatisticsScreen(
                     item { StatisticsOverviewGrid(overview) }
                     if (noRangeActivity) {
                         item { StatisticsEmptyCard(R.string.statistics_no_activity_range) }
-                    }
-                }
-                val isAllTime = displayedSelection ==
-                        AnalyticsRangeSelection.Preset(AnalyticsRangePreset.ALL_TIME)
-                if (isAllTime && (state.coverage?.hasLegacyPlays == true || overview.hasLegacyBaseline)) {
-                    item {
-                        HistoryCoverageCard(onClick = { showCoverageDialog = true })
                     }
                 }
                 item(key = "listening_trend") {
@@ -286,7 +278,7 @@ internal fun StatisticsScreen(
             onDismissRequest = { showCoverageDialog = false },
             icon = { Icon(Icons.Rounded.Info, contentDescription = null) },
             title = { Text(stringResource(R.string.statistics_history_dialog_title)) },
-            text = { Text(stringResource(R.string.statistics_history_dialog_message)) },
+            text = { StatisticsInfoContent() },
             confirmButton = {
                 TextButton(onClick = { showCoverageDialog = false }) {
                     Text(stringResource(R.string.statistics_close))
@@ -436,45 +428,60 @@ private fun StatisticsOverviewGrid(overview: ListeningOverview) {
             }
 
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                val stacked = maxWidth < 320.dp || LocalConfiguration.current.fontScale >= 1.5f
-                if (stacked) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        CompactOverviewMetric(
-                            title = stringResource(R.string.statistics_plays),
-                            value = formatAnalyticsCount(overview.playCounts.totalPlayCount)
-                        )
-                        CompactOverviewMetric(
-                            title = stringResource(R.string.statistics_completed),
-                            value = formatAnalyticsCount(overview.naturalCompletionCount)
-                        )
-                        CompactOverviewMetric(
-                            title = stringResource(R.string.statistics_not_counted),
-                            value = formatAnalyticsCount(overview.nonQualifiedAttemptCount),
-                            supportingText = stringResource(R.string.statistics_not_counted_support_compact),
-                            accessibleSupportingText = stringResource(R.string.statistics_not_counted_support)
-                        )
-                    }
-                } else {
+                val fontScale = LocalConfiguration.current.fontScale
+                val useThreeColumns = maxWidth >= 270.dp && fontScale < 1.45f
+                val plays = formatAnalyticsCount(overview.playCounts.totalPlayCount)
+                val completed = formatAnalyticsCount(overview.naturalCompletionCount)
+                val notCounted = formatAnalyticsCount(overview.nonQualifiedAttemptCount)
+                val notCountedSupport = stringResource(R.string.statistics_not_counted_support_compact)
+                val notCountedAccessibility = stringResource(R.string.statistics_not_counted_support)
+
+                if (useThreeColumns) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         CompactOverviewMetric(
                             title = stringResource(R.string.statistics_plays),
-                            value = formatAnalyticsCount(overview.playCounts.totalPlayCount),
+                            value = plays,
                             modifier = Modifier.weight(1f)
                         )
                         CompactOverviewMetric(
                             title = stringResource(R.string.statistics_completed),
-                            value = formatAnalyticsCount(overview.naturalCompletionCount),
+                            value = completed,
                             modifier = Modifier.weight(1f)
                         )
                         CompactOverviewMetric(
                             title = stringResource(R.string.statistics_not_counted),
-                            value = formatAnalyticsCount(overview.nonQualifiedAttemptCount),
-                            supportingText = stringResource(R.string.statistics_not_counted_support_compact),
-                            accessibleSupportingText = stringResource(R.string.statistics_not_counted_support),
+                            value = notCounted,
+                            supportingText = notCountedSupport,
+                            accessibleSupportingText = notCountedAccessibility,
+                            emphasized = false,
                             modifier = Modifier.weight(1f)
+                        )
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            CompactOverviewMetric(
+                                title = stringResource(R.string.statistics_plays),
+                                value = plays,
+                                modifier = Modifier.weight(1f)
+                            )
+                            CompactOverviewMetric(
+                                title = stringResource(R.string.statistics_completed),
+                                value = completed,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        MutedOverviewMetric(
+                            title = stringResource(R.string.statistics_not_counted),
+                            value = notCounted,
+                            supportingText = notCountedSupport,
+                            accessibleSupportingText = notCountedAccessibility
                         )
                     }
                 }
@@ -489,7 +496,8 @@ private fun CompactOverviewMetric(
     value: String,
     modifier: Modifier = Modifier,
     supportingText: String? = null,
-    accessibleSupportingText: String? = supportingText
+    accessibleSupportingText: String? = supportingText,
+    emphasized: Boolean = true
 ) {
     Column(
         modifier = modifier.semantics(mergeDescendants = true) {
@@ -505,7 +513,11 @@ private fun CompactOverviewMetric(
         Text(
             text = value,
             style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.primary
+            color = if (emphasized) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            }
         )
         Text(
             text = title,
@@ -522,6 +534,80 @@ private fun CompactOverviewMetric(
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
             )
         }
+    }
+}
+
+@Composable
+private fun MutedOverviewMetric(
+    title: String,
+    value: String,
+    supportingText: String,
+    accessibleSupportingText: String
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                contentDescription = "$title, $value. $accessibleSupportingText"
+            },
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = supportingText,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun StatisticsInfoContent() {
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        StatisticsInfoSection(
+            title = stringResource(R.string.statistics_info_qualified_title),
+            body = stringResource(R.string.statistics_info_qualified_body)
+        )
+        StatisticsInfoSection(
+            title = stringResource(R.string.statistics_info_not_counted_title),
+            body = stringResource(R.string.statistics_info_not_counted_body)
+        )
+        StatisticsInfoSection(
+            title = stringResource(R.string.statistics_info_recorded_title),
+            body = stringResource(R.string.statistics_info_recorded_body)
+        )
+        StatisticsInfoSection(
+            title = stringResource(R.string.statistics_info_all_time_title),
+            body = stringResource(R.string.statistics_info_all_time_body)
+        )
+    }
+}
+
+@Composable
+private fun StatisticsInfoSection(title: String, body: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = body,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -604,40 +690,5 @@ private fun StatisticsEmptyCard(messageResource: Int) {
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-    }
-}
-
-@Composable
-private fun HistoryCoverageCard(onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Rounded.Info,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.width(20.dp)
-            )
-            Text(
-                text = stringResource(R.string.statistics_history_concise_compact),
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                stringResource(R.string.statistics_learn_more),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
     }
 }
