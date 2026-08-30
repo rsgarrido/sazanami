@@ -22,15 +22,14 @@ class ListeningAnalyticsRangeResolver(
         val today = resolvedAt.atZone(zoneId).toLocalDate()
         val dates = when (selection) {
             is AnalyticsRangeSelection.Custom -> selection.startDate to
-                selection.endDateInclusive.plusDays(1L)
+                    selection.endDateInclusive.plusDays(1L)
             is AnalyticsRangeSelection.Preset -> when (selection.preset) {
                 AnalyticsRangePreset.TODAY -> today to today.plusDays(1L)
                 AnalyticsRangePreset.LAST_7_DAYS -> today.minusDays(6L) to today.plusDays(1L)
                 AnalyticsRangePreset.LAST_30_DAYS -> today.minusDays(29L) to today.plusDays(1L)
-                AnalyticsRangePreset.THIS_MONTH -> today.withDayOfMonth(1) to
-                    today.withDayOfMonth(1).plusMonths(1L)
-                AnalyticsRangePreset.THIS_YEAR -> LocalDate.of(today.year, 1, 1) to
-                    LocalDate.of(today.year + 1, 1, 1)
+                // Calendar presets are to-date, while keeping the current local day open for new plays.
+                AnalyticsRangePreset.THIS_MONTH -> today.withDayOfMonth(1) to today.plusDays(1L)
+                AnalyticsRangePreset.THIS_YEAR -> LocalDate.of(today.year, 1, 1) to today.plusDays(1L)
                 AnalyticsRangePreset.ALL_TIME -> null
             }
         }
@@ -153,7 +152,7 @@ object ListeningAnalyticsBucketBuilder {
         AnalyticsBucketGranularity.DAY -> current.plusDays(1L)
         AnalyticsBucketGranularity.MONTH -> {
             val isMonthBoundary = current.toLocalTime() == LocalTime.MIDNIGHT &&
-                current.dayOfMonth == 1
+                    current.dayOfMonth == 1
             if (isMonthBoundary) current.plusMonths(1L)
             else YearMonth.from(current).plusMonths(1L).atDay(1).atStartOfDay(current.zone)
         }

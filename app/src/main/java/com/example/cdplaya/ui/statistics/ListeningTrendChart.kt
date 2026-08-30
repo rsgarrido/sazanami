@@ -36,6 +36,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.cdplaya.R
 import com.example.cdplaya.data.AnalyticsRangePreset
@@ -286,14 +287,35 @@ internal fun ListeningTrendChart(
                     }
                     Box(modifier = Modifier.width(contentWidth).height(28.dp)) {
                         labels.forEach { (index, label) ->
-                            val labelWidth = 72.dp
+                            // When each bucket has enough horizontal room (for example the
+                            // seven-day view), give the label that exact bucket slot. This keeps
+                            // the first and last labels centered beneath their bars instead of
+                            // pinning their text to the chart edges. Denser ranges retain the
+                            // wider clamped label boxes so dates such as "Aug 29" stay readable.
+                            val useBucketSlot = slotWidth >= 40.dp
+                            val labelWidth = if (useBucketSlot) slotWidth else 72.dp
+                            val maximumLeft = (contentWidth - labelWidth).coerceAtLeast(0.dp)
+                            val isFirstBucket = index == 0
+                            val isLastBucket = index == buckets.lastIndex
                             val idealLeft = slotWidth * (index + 0.5f) - labelWidth / 2f
-                            val left = idealLeft.coerceIn(0.dp, (contentWidth - labelWidth).coerceAtLeast(0.dp))
+                            val left = when {
+                                useBucketSlot -> slotWidth * index
+                                isFirstBucket -> 0.dp
+                                isLastBucket -> maximumLeft
+                                else -> idealLeft.coerceIn(0.dp, maximumLeft)
+                            }
+                            val textAlign = when {
+                                useBucketSlot -> TextAlign.Center
+                                isFirstBucket -> TextAlign.Start
+                                isLastBucket -> TextAlign.End
+                                else -> TextAlign.Center
+                            }
                             Text(
                                 text = label,
                                 modifier = Modifier.offset(x = left).width(labelWidth),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = textAlign,
                                 maxLines = 1
                             )
                         }
