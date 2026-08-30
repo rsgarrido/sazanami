@@ -32,6 +32,35 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class AppPreferencesMigrationTest {
     @Test
+    fun confirmingMultipleInitialRootsPersistsTheExplicitSelection() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val suffix = System.nanoTime().toString()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val repository = AppPreferencesRepository.create(
+            context = context,
+            scope = scope,
+            dataStoreFileName = "initial_multiple_folder_selection_$suffix.preferences_pb",
+            legacyStores = emptyList()
+        )
+        val selectedRoots = setOf(
+            "/storage/emulated/0/Music",
+            "/storage/emulated/0/Download",
+            "/storage/1234-5678/My Collection"
+        )
+
+        repository.completeInitialLibraryFolderSelection(
+            FolderSelection(FolderSelectionMode.CUSTOM, selectedRoots)
+        )
+        val confirmed = withTimeout(5_000) {
+            repository.state.firstMatching { it.initialLibraryFolderSelectionCompleted }
+        }
+
+        assertEquals(selectedRoots, confirmed.selectedLibraryFolders)
+        assertTrue(confirmed.initialLibraryFolderSelectionCompleted)
+        scope.cancel()
+    }
+
+    @Test
     fun confirmingInitialEmptyFolderSelectionPersistsCompletion() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val suffix = System.nanoTime().toString()

@@ -232,6 +232,7 @@ class AppPreferencesStateTest {
     fun explicitCustomModePreservesIntentionalEmptySelection() {
         val state = decodeAppPreferences(
             mutablePreferencesOf(
+                booleanPreferencesKey("initial_library_folder_selection_completed") to true,
                 stringPreferencesKey("folder_selection_mode") to "CUSTOM",
                 stringSetPreferencesKey("selected_folders") to emptySet()
             )
@@ -240,6 +241,18 @@ class AppPreferencesStateTest {
         assertEquals(FolderSelectionMode.CUSTOM, state.folderSelectionMode)
         assertTrue(state.selectedLibraryFolders.isEmpty())
         assertTrue(state.initialLibraryFolderSelectionCompleted)
+    }
+
+    @Test
+    fun storedDefaultModeAloneDoesNotAutoCompleteFolderOnboarding() {
+        val state = decodeAppPreferences(
+            mutablePreferencesOf(
+                stringPreferencesKey("folder_selection_mode") to "ALL"
+            )
+        )
+
+        assertEquals(FolderSelectionMode.ALL, state.folderSelectionMode)
+        assertFalse(state.initialLibraryFolderSelectionCompleted)
     }
 
     @Test

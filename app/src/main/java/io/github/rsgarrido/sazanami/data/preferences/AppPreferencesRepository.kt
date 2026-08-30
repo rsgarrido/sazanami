@@ -629,9 +629,7 @@ internal fun decodeAppPreferences(preferences: Preferences): AppPreferencesState
         storedMode = storedFolderMode,
         storedFolders = storedFolders
     )
-    val hasLegacyOrCurrentFolderConfiguration =
-        storedFolders.isNotEmpty() ||
-                FolderSelectionMode.entries.any { mode -> mode.name == storedFolderMode }
+    val hasMeaningfulLegacyFolderConfiguration = storedFolders.isNotEmpty()
     return AppPreferencesState(
         selectedPlayerTheme = PlayerTheme.fromId(preferences[Keys.selectedPlayerTheme]),
         playerThemeTokenOverrides = PlayerTheme.entries.associateWith { emptyOverrides() }
@@ -730,9 +728,9 @@ internal fun decodeAppPreferences(preferences: Preferences): AppPreferencesState
         selectedLibraryFolders = folderSelection.toStoredFolders(),
         initialLibraryFolderSelectionCompleted =
             preferences[Keys.initialLibraryFolderSelectionCompleted]
-                // A non-empty legacy selection or an explicit mode is deliberate configuration.
-                // A legacy empty set alone is ambiguous and must not skip first-run onboarding.
-                ?: hasLegacyOrCurrentFolderConfiguration,
+                // Only a meaningful legacy selection can stand in for the explicit confirmation
+                // flag. A stored/default mode alone must never auto-complete first-run onboarding.
+                ?: hasMeaningfulLegacyFolderConfiguration,
         songsViewMode = LibraryViewMode.fromStorageValue(preferences[Keys.songsViewMode]),
         albumsViewMode = LibraryViewMode.fromStorageValue(preferences[Keys.albumsViewMode]),
         artistsViewMode = LibraryViewMode.fromStorageValue(preferences[Keys.artistsViewMode]),

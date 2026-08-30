@@ -20,3 +20,14 @@ internal fun resolveLibraryStartupStage(
     !folderArtworkOnboardingComplete -> LibraryStartupStage.FOLDER_ARTWORK
     else -> LibraryStartupStage.COMPLETE
 }
+
+internal fun confirmInitialFolderOnboarding(
+    folderArtworkOnboardingComplete: Boolean,
+    onSkipFolderArtwork: () -> Unit,
+    onConfirmLibraryFolders: () -> Unit
+) {
+    if (!folderArtworkOnboardingComplete) {
+        onSkipFolderArtwork()
+    }
+    onConfirmLibraryFolders()
+}

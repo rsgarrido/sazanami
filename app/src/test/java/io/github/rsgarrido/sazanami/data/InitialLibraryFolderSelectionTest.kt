@@ -62,6 +62,29 @@ class InitialLibraryFolderSelectionTest {
     }
 
     @Test
+    fun downloadsAndLocalizedOrCustomRootsRemainAvailableForManualSelection() {
+        val available = listOf(
+            "/storage/emulated/0/Music",
+            "/storage/emulated/0/Download",
+            "/storage/emulated/0/Música",
+            "/storage/1234-5678/My Collection"
+        )
+        var selection = FolderSelection(
+            FolderSelectionMode.CUSTOM,
+            setOf("/storage/emulated/0/Music")
+        )
+
+        selection = selection.toggle("/storage/emulated/0/Download", available)
+        selection = selection.toggle("/storage/emulated/0/Música", available)
+        selection = selection.toggle("/storage/1234-5678/My Collection", available)
+
+        assertTrue(selection.includes("/storage/emulated/0/Download/Album"))
+        assertTrue(selection.includes("/storage/emulated/0/Música/Album"))
+        assertTrue(selection.includes("/storage/1234-5678/My Collection/Album"))
+        assertEquals(4, selection.customFolders.size)
+    }
+
+    @Test
     fun initialLibraryContainsSelectedRootAndNeverPublishesUnselectedRoot() {
         val music = song(1, "/storage/emulated/0/Music/Album")
         val download = song(2, "/storage/emulated/0/Download")

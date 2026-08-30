@@ -113,10 +113,22 @@ internal fun MusicRoute(
             onFolderToggle = musicViewModel::toggleInitialLibraryFolder,
             onSelectAllClick = {},
             onClearSelectionClick = musicViewModel::clearInitialLibraryFolders,
+            folderArtworkTreeUri = folderArtworkAccessState.treeUri,
+            folderArtworkOnboardingComplete = folderArtworkAccessState.onboardingComplete,
+            onChooseFolderArtwork = onChooseFolderArtwork,
+            onSkipFolderArtwork = onSkipFolderArtwork,
             isInitialOnboarding = true,
             isDiscoveryLoading = !libraryUiState.initialFolderDiscoveryCompleted,
             isSaving = libraryUiState.isLoading,
-            onContinueClick = musicViewModel::confirmInitialLibraryFolderSelection,
+            onContinueClick = {
+                confirmInitialFolderOnboarding(
+                    folderArtworkOnboardingComplete =
+                        folderArtworkAccessState.onboardingComplete,
+                    onSkipFolderArtwork = onSkipFolderArtwork,
+                    onConfirmLibraryFolders =
+                        musicViewModel::confirmInitialLibraryFolderSelection
+                )
+            },
             modifier = modifier
         )
         return

@@ -1,6 +1,8 @@
 package io.github.rsgarrido.sazanami.ui
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LibraryStartupStageTest {
@@ -13,6 +15,19 @@ class LibraryStartupStageTest {
                 initialFolderSelectionCompleted = false,
                 initialLibraryReady = false,
                 folderArtworkOnboardingComplete = false
+            )
+        )
+    }
+
+    @Test
+    fun freshUserCannotBypassFolderConfirmationEvenWhenOtherStartupStateIsReady() {
+        assertEquals(
+            LibraryStartupStage.FOLDER_SELECTION,
+            resolveLibraryStartupStage(
+                hasAudioAccess = true,
+                initialFolderSelectionCompleted = false,
+                initialLibraryReady = true,
+                folderArtworkOnboardingComplete = true
             )
         )
     }
@@ -41,5 +56,35 @@ class LibraryStartupStageTest {
                 folderArtworkOnboardingComplete = false
             )
         )
+    }
+
+    @Test
+    fun continuingWithoutArtworkChoiceRecordsOptionalSkipBeforeConfirmation() {
+        var skipped = false
+        var confirmed = false
+
+        confirmInitialFolderOnboarding(
+            folderArtworkOnboardingComplete = false,
+            onSkipFolderArtwork = { skipped = true },
+            onConfirmLibraryFolders = { confirmed = true }
+        )
+
+        assertTrue(skipped)
+        assertTrue(confirmed)
+    }
+
+    @Test
+    fun grantedArtworkChoiceIsPreservedWhenConfirmingFolders() {
+        var skipped = false
+        var confirmed = false
+
+        confirmInitialFolderOnboarding(
+            folderArtworkOnboardingComplete = true,
+            onSkipFolderArtwork = { skipped = true },
+            onConfirmLibraryFolders = { confirmed = true }
+        )
+
+        assertFalse(skipped)
+        assertTrue(confirmed)
     }
 }

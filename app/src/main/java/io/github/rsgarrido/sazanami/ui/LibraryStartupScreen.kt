@@ -101,7 +101,9 @@ internal fun LibraryStartupScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.size(22.dp))
-                Button(onClick = onChooseFolderArtwork) { Text("Choose music folder") }
+                Button(onClick = onChooseFolderArtwork) {
+                    Text("Allow folder artwork access")
+                }
                 Spacer(Modifier.size(10.dp))
                 OutlinedButton(onClick = onSkipFolderArtwork) { Text("Not now") }
             }

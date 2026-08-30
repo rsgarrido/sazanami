@@ -158,6 +158,13 @@ class LibraryRefreshEngineTest {
     }
 
     @Test
+    fun embeddedArtworkDoesNotDependOnFolderArtworkAccess() {
+        val embedded = mock(Uri::class.java)
+
+        assertSame(embedded, selectArtwork(embedded, null))
+    }
+
+    @Test
     fun sourceChangeInvalidatesEmbeddedArtworkReference() {
         val cached = song(1, modified = 10, size = 20)
         val changed = song(1, modified = 11, size = 21)

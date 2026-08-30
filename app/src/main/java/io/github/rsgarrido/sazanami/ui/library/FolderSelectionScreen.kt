@@ -1,5 +1,6 @@
 package io.github.rsgarrido.sazanami.ui.library
 
+import android.net.Uri
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,6 +22,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
@@ -39,6 +41,7 @@ import io.github.rsgarrido.sazanami.data.FolderSelection
 import io.github.rsgarrido.sazanami.data.FolderSelectionMode
 import io.github.rsgarrido.sazanami.data.FolderSelectionState
 import io.github.rsgarrido.sazanami.data.LibraryFolder
+import io.github.rsgarrido.sazanami.mediaaccess.folderArtworkLocationLabel
 
 @Composable
 fun FolderSelectionScreen(
@@ -50,6 +53,10 @@ fun FolderSelectionScreen(
     onFolderToggle: (String) -> Unit,
     onSelectAllClick: () -> Unit,
     onClearSelectionClick: () -> Unit,
+    folderArtworkTreeUri: Uri? = null,
+    folderArtworkOnboardingComplete: Boolean = false,
+    onChooseFolderArtwork: () -> Unit = {},
+    onSkipFolderArtwork: () -> Unit = {},
     isInitialOnboarding: Boolean = false,
     isDiscoveryLoading: Boolean = false,
     isSaving: Boolean = false,
@@ -192,18 +199,33 @@ fun FolderSelectionScreen(
                 text = "Finding music folders…",
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
-        } else if (libraryFolders.isEmpty()) {
-            Text(
-                text = if (isInitialOnboarding) {
-                    "No music folders were found. You can continue with an empty library and " +
-                            "scan again after adding music."
-                } else {
-                    "No music folders found. Run Scan library after adding music to the device."
-                },
-                modifier = Modifier.padding(16.dp)
-            )
         } else {
             LazyColumn {
+                if (isInitialOnboarding) {
+                    item {
+                        FolderArtworkOnboardingSection(
+                            treeUri = folderArtworkTreeUri,
+                            onboardingComplete = folderArtworkOnboardingComplete,
+                            isSaving = isSaving,
+                            onChooseFolderArtwork = onChooseFolderArtwork,
+                            onSkipFolderArtwork = onSkipFolderArtwork
+                        )
+                    }
+                }
+                if (libraryFolders.isEmpty()) {
+                    item {
+                        Text(
+                            text = if (isInitialOnboarding) {
+                                "No music folders were found. You can continue with an empty " +
+                                        "library and scan again after adding music."
+                            } else {
+                                "No music folders found. Run Scan library after adding music " +
+                                        "to the device."
+                            },
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
+                }
                 items(
                     items = visibleFolders,
                     key = { folder -> folder.path }
@@ -273,6 +295,71 @@ fun FolderSelectionScreen(
                         }
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FolderArtworkOnboardingSection(
+    treeUri: Uri?,
+    onboardingComplete: Boolean,
+    isSaving: Boolean,
+    onChooseFolderArtwork: () -> Unit,
+    onSkipFolderArtwork: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Text(
+            text = "Folder artwork (optional)",
+            style = MaterialTheme.typography.titleMedium
+        )
+        Text(
+            text = "Embedded artwork inside your audio files works automatically. Allow " +
+                    "access only if you also want Sazanami to use separate cover.jpg, " +
+                    "folder.jpg, and similar images stored alongside music.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+        Text(
+            text = when {
+                treeUri != null -> folderArtworkLocationLabel(treeUri)
+                onboardingComplete ->
+                    "Skipped for now. You can enable it later in Settings."
+                else -> "No additional folder access granted."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 6.dp)
+        )
+        OutlinedButton(
+            onClick = onChooseFolderArtwork,
+            enabled = !isSaving,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp)
+        ) {
+            Text(
+                if (treeUri != null) {
+                    "Change artwork folder"
+                } else {
+                    "Allow folder artwork access"
+                }
+            )
+        }
+        if (!onboardingComplete) {
+            OutlinedButton(
+                onClick = onSkipFolderArtwork,
+                enabled = !isSaving,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+            ) {
+                Text("Not now")
             }
         }
     }
