@@ -231,7 +231,7 @@ function Capture-Sample {
 }
 
 @(
-    "CDPlaya Phase F device thermal monitor"
+    "Sazanami Phase F device thermal monitor"
     "scenario=$Scenario"
     "device=$DeviceSerial"
     "started=$($startedAt.ToString('o'))"

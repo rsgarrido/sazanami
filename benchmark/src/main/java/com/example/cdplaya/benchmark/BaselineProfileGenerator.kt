@@ -17,7 +17,7 @@ class BaselineProfileGenerator {
         includeInStartupProfile = true
     ) {
         pressHome()
-        val actions = CdPlayaBenchmarkActions()
+        val actions = SazanamiBenchmarkActions()
         with(actions) { launchAndWaitForShell() }
     }
 
@@ -26,7 +26,7 @@ class BaselineProfileGenerator {
         packageName = TARGET_PACKAGE,
         includeInStartupProfile = false
     ) {
-        val actions = CdPlayaBenchmarkActions()
+        val actions = SazanamiBenchmarkActions()
         with(actions) {
             launchAndWaitForShell()
             selectHome()

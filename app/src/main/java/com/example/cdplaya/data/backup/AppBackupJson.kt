@@ -42,7 +42,7 @@ object AppBackupJson {
         val backup = try {
             json.decodeFromString<AppBackup>(jsonText)
         } catch (exception: SerializationException) {
-            throw IllegalArgumentException("Invalid CDPlaya backup JSON.", exception)
+            throw IllegalArgumentException("Invalid Sazanami backup JSON.", exception)
         }
 
         return migrateAndValidate(backup)
@@ -53,14 +53,14 @@ object AppBackupJson {
         val backup = try {
             json.decodeFromStream<AppBackup>(input)
         } catch (exception: SerializationException) {
-            throw IllegalArgumentException("Invalid CDPlaya backup JSON.", exception)
+            throw IllegalArgumentException("Invalid Sazanami backup JSON.", exception)
         }
         return migrateAndValidate(backup)
     }
 
     private fun migrateAndValidate(backup: AppBackup): AppBackup {
         require(backup.schemaVersion in OLDEST_SUPPORTED_SCHEMA_VERSION..CURRENT_SCHEMA_VERSION) {
-            "Unsupported CDPlaya backup schema version ${backup.schemaVersion}; " +
+            "Unsupported Sazanami backup schema version ${backup.schemaVersion}; " +
                     "supported versions are $OLDEST_SUPPORTED_SCHEMA_VERSION through " +
                     "$CURRENT_SCHEMA_VERSION."
         }
@@ -117,7 +117,7 @@ object AppBackupJson {
         )
         validateEqualizerBackup(migrated.preferences.equalizer)
         val history = requireNotNull(migrated.canonicalListeningHistory) {
-            "CDPlaya backup schema 10 requires canonical listening history."
+            "Sazanami backup schema 10 requires canonical listening history."
         }
         ListeningHistoryBackupValidator.validate(history)
         SongRatingBackupValidator.validate(migrated.songRatings, history)
@@ -275,7 +275,7 @@ object AppBackupJson {
 
     private fun migrateV8ToV9(backup: AppBackup): AppBackup {
         val history = requireNotNull(backup.canonicalListeningHistory) {
-            "CDPlaya backup schema 8 requires canonical listening history."
+            "Sazanami backup schema 8 requires canonical listening history."
         }
         val importedSources = history.events.map { it.source }.filter { it != "cdplaya" }.distinct()
         val sourceIds = importedSources.mapIndexed { index, source -> source to index.toLong() + 1L }.toMap()
@@ -315,7 +315,7 @@ object AppBackupJson {
 
     private fun migrateV9ToV10(backup: AppBackup): AppBackup {
         val history = requireNotNull(backup.canonicalListeningHistory) {
-            "CDPlaya backup schema 9 requires canonical listening history."
+            "Sazanami backup schema 9 requires canonical listening history."
         }
         return backup.copy(
             schemaVersion = 10,

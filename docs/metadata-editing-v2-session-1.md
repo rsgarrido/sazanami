@@ -49,11 +49,11 @@ ID3 frames, Vorbis comments, MP4 atoms, or RIFF identifiers to the UI.
 ## WAV findings and policy
 
 jaudiotagger reads both RIFF `LIST/INFO` and ID3-in-WAV into `WavTag`. Its default active-tag rule is
-ID3 when ID3 exists, otherwise INFO. Its default save rule writes both chunks. CDPlaya previously
+ID3 when ID3 exists, otherwise INFO. Its default save rule writes both chunks. Sazanami previously
 changed only the active tag before invoking that save rule. For an untagged WAV this produced an
 edited ID3 chunk and a newly written empty INFO chunk; for a dual-tag WAV it could leave stale INFO.
 MediaStore/framework readers can prefer or expose INFO and therefore continued to return filename /
-unknown fallbacks even though CDPlaya and another ID3-aware editor could see the edit.
+unknown fallbacks even though Sazanami and another ID3-aware editor could see the edit.
 
 The policy is now:
 
@@ -83,7 +83,7 @@ selects replacement artwork. A FLAC tag-level regression explicitly verifies Rep
 genre mutation.
 
 jaudiotagger provides format-specific writers. Several use temporary-file strategies, but its WAV
-writer is an in-place RIFF chunk editor. CDPlaya now pre-reads and post-write rereads/validates, but it
+writer is an in-place RIFF chunk editor. Sazanami now pre-reads and post-write rereads/validates, but it
 cannot claim an application-level atomic replacement for WAV under Android scoped-storage grants.
 The dependency is designed to preserve unrelated chunks and refuses known-corrupt chunk layouts;
 nevertheless, interruption during the dependency's in-place WAV write remains a limitation to test

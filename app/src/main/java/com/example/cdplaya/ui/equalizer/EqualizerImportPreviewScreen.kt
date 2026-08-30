@@ -234,7 +234,7 @@ internal fun EqualizerImportPreviewScreen(
             }
         }
         Text(
-            "CDPlaya can apply at most 10 filters. Selection preserves " +
+            "Sazanami can apply at most 10 filters. Selection preserves " +
                 "source order; files with more than 10 start unselected.",
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(
@@ -388,7 +388,7 @@ internal fun EqualizerImportPreviewScreen(
             title = { Text("Import supported filters only?") },
             text = {
                 Text(
-                    "CDPlaya will not reproduce the unsupported commands. " +
+                    "Sazanami will not reproduce the unsupported commands. " +
                         "The result may not match the original file, and " +
                         "scoped preamp commands will not be imported."
                 )
@@ -751,5 +751,5 @@ private fun formatName(format: EqualizerProfileFormat): String =
         EqualizerProfileFormat.EQUALIZER_APO_SUBSET ->
             "Equalizer APO-compatible subset"
         EqualizerProfileFormat.CDPLAYA_PARAMETRIC_PRESET_JSON ->
-            "Native CDPlaya Parametric preset"
+            "Native Sazanami Parametric preset"
     }

@@ -44,7 +44,7 @@ import com.example.cdplaya.mediaaccess.FolderArtworkAccessStore
 import com.example.cdplaya.mediaaccess.MediaPermissions
 import com.example.cdplaya.mediaaccess.PermissionAccess
 import com.example.cdplaya.ui.MusicRoute
-import com.example.cdplaya.ui.theme.CdplayaTheme
+import com.example.cdplaya.ui.theme.SazanamiTheme
 import com.example.cdplaya.viewmodel.MusicViewModel
 import kotlinx.coroutines.launch
 
@@ -175,7 +175,7 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            CdplayaTheme {
+            SazanamiTheme {
                 val snackbarHostState = remember { SnackbarHostState() }
 
                 CompositionLocalProvider(

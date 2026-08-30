@@ -222,7 +222,7 @@ internal fun HomeHeader(
     modifier: Modifier = Modifier
 ) {
     MusicScreenHeader(
-        title = "CDPlaya",
+        title = stringResource(R.string.app_name),
         onSettingsClick = onSettingsClick,
         modifier = modifier,
         viewModeAction = {

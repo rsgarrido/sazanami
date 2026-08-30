@@ -73,7 +73,7 @@ class PlaylistCollageStore(context: Context) {
             try {
                 // Keep each SuccessResult strongly reachable until rendering finishes. toBitmap()
                 // may return BitmapDrawable.bitmap directly, so every source is shared/read-only
-                // and must never be recycled or mutated by CDPlaya.
+                // and must never be recycled or mutated by Sazanami.
                 val coilResults = orderedArtworkUris.take(4).mapNotNull { uri ->
                     loadArtwork(uri)
                 }

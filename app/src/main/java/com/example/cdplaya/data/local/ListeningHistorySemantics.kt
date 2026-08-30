@@ -37,13 +37,13 @@ internal fun ListeningEventEntity.requireSupportedSemantics() {
 
 internal fun ListeningImportSourceEntity.requireSupportedImportSource() {
     require(sourceType != ListeningSource.CDPLAYA) {
-        "CDPlaya cannot be used as an import source profile."
+        "Sazanami cannot be used as an import source profile."
     }
 }
 
 internal fun ListeningTrackExternalIdEntity.requireSupportedExternalSource() {
     require(sourceType != ListeningSource.CDPLAYA) {
-        "CDPlaya cannot be used as an external catalog source."
+        "Sazanami cannot be used as an external catalog source."
     }
 }
 

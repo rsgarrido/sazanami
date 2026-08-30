@@ -25,6 +25,7 @@ import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import com.example.cdplaya.MainActivity
+import com.example.cdplaya.R
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.ListeningEventRepository
 import com.example.cdplaya.data.ListeningNativeTrackResolver
@@ -797,7 +798,10 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private fun buildBrowseTree(): AutoBrowseNode {
-        return buildAndroidAutoBrowseTree(PlaybackLibraryBridge.songs)
+        return buildAndroidAutoBrowseTree(
+            songs = PlaybackLibraryBridge.songs,
+            rootTitle = getString(R.string.app_name)
+        )
     }
 
     private fun AutoBrowseNode.toMediaItem(): MediaItem {

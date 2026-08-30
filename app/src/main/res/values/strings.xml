@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">cdplaya</string>
+    <string name="app_name">Sazanami</string>
     <string name="settings_support">Support</string>
     <string name="settings_diagnostics">Diagnostics</string>
     <string name="settings_diagnostics_summary">Playback status and safe cache controls</string>
@@ -41,7 +41,7 @@
     <string name="diagnostics_cache_cleared">Waveform cache cleared.</string>
     <string name="diagnostics_clear">Clear</string>
     <string name="diagnostics_cancel">Cancel</string>
-    <string name="diagnostics_clip_label">CDPlaya diagnostics</string>
+    <string name="diagnostics_clip_label">Sazanami diagnostics</string>
     <string name="recently_added">Recently Added</string>
     <string name="recently_added_empty">No recently added songs.</string>
     <string name="recently_added_filter">Added</string>
@@ -115,13 +115,13 @@
     <string name="statistics_no_activity_range">No listening activity in this range.</string>
     <string name="statistics_history_dialog_title">About Statistics</string>
     <string name="statistics_info_qualified_title">Qualified plays</string>
-    <string name="statistics_info_qualified_body">A play is counted after playback reaches CDPlaya’s play qualification threshold.</string>
+    <string name="statistics_info_qualified_body">A play is counted after playback reaches Sazanami’s play qualification threshold.</string>
     <string name="statistics_info_not_counted_title">Not counted</string>
     <string name="statistics_info_not_counted_body">Playback attempts that end before qualifying are kept as not-counted activity instead of being added to play totals.</string>
     <string name="statistics_info_recorded_title">Recorded listening</string>
     <string name="statistics_info_recorded_body">Listening duration and completion details are available for activity recorded with detailed listening history.</string>
     <string name="statistics_info_all_time_title">All Time</string>
-    <string name="statistics_info_all_time_body">Older play counts from before detailed history may be included in All Time totals and rankings. CDPlaya does not estimate missing listening time or completion details for those older plays.</string>
+    <string name="statistics_info_all_time_body">Older play counts from before detailed history may be included in All Time totals and rankings. Sazanami does not estimate missing listening time or completion details for those older plays.</string>
     <string name="statistics_duration_minutes">%1$d min</string>
     <string name="statistics_duration_hours_minutes">%1$d hr %2$d min</string>
     <string name="statistics_duration_days_hours">%1$d days %2$d hr</string>

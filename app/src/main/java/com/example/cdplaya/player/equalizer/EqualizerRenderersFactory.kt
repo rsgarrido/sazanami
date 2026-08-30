@@ -9,7 +9,7 @@ import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 
 /**
- * Builds CDPlaya's audio sink with one persistent equalizer processor.
+ * Builds Sazanami's audio sink with one persistent equalizer processor.
  *
  * Float output is deliberately disabled because Media3 bypasses ordinary audio
  * processors on its float-output path.

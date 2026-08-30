@@ -135,7 +135,7 @@ to a day, month, or year.
 
 A null source selection means all detailed sources. Any explicit detailed-source filter
 applies only to events and excludes the legacy baseline even if legacy inclusion was
-requested. In particular, neither a CDPlaya nor an import filter claims provenance for
+requested. In particular, neither a Sazanami nor an import filter claims provenance for
 legacy counts. Legacy inclusion is effective only for unfiltered all-time queries; no
 `LEGACY` event source was added.
 
@@ -328,7 +328,7 @@ the JSON, metadata, paths, or event history; structural errors use privacy-safe 
 
 ## Pure listening-session recorder (qualification rule v1)
 
-`ListeningSessionRecorder` remains a pure Kotlin state machine for one native CDPlaya
+`ListeningSessionRecorder` remains a pure Kotlin state machine for one native Sazanami
 playback attempt. Android, Media3, Room, UI, and lifecycle dependencies remain outside
 its contract in the service adapter and repository boundaries.
 

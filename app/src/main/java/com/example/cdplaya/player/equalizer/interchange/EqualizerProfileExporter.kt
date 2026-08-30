@@ -7,9 +7,9 @@ import java.math.RoundingMode
 
 object EqualizerProfileExporter {
     fun exportText(state: ParametricEqualizerState): String = buildString {
-        append("# Exported by CDPlaya\n")
+        append("# Exported by Sazanami\n")
         append("# Sample-peak limiter and automatic headroom settings are not included.\n")
-        append("# CDPlaya automatic headroom: ")
+        append("# Sazanami automatic headroom: ")
         append(if (state.automaticHeadroomEnabled) "ON" else "OFF")
         append('\n')
         append("Preamp: ")

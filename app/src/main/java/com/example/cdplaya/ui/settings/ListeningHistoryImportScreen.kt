@@ -158,7 +158,7 @@ fun ListeningHistoryImportScreen(
             is SpotifyImportUiState.Importing -> ImportProgressContent(state, actions)
             is SpotifyImportUiState.Cancelling -> ProgressContent(
                 title = "Cancelling import…",
-                description = "CDPlaya is cleaning up unfinished changes."
+                description = "Sazanami is cleaning up unfinished changes."
             )
             is SpotifyImportUiState.Cancelled -> CancelledContent(actions)
             is SpotifyImportUiState.Success -> ResultContent(state.result, actions)
@@ -407,9 +407,9 @@ private fun RecoveryContent(
     ImportCard(title = "An earlier import didn't finish") {
         Text(
             if (state.pendingBatchCount == null) {
-                "CDPlaya couldn't verify or clean up an earlier import. Try again before starting a new import."
+                "Sazanami couldn't verify or clean up an earlier import. Try again before starting a new import."
             } else {
-                "CDPlaya can clean up its unfinished changes before starting another import. " +
+                "Sazanami can clean up its unfinished changes before starting another import. " +
                     "Published history will remain unchanged."
             }
         )
@@ -437,13 +437,13 @@ private fun ErrorContent(
 ) {
     val base = when (state.error) {
         SpotifyImportUiError.ACCOUNT_DATA_FORMAT ->
-            "This looks like Spotify's Account Data streaming history. CDPlaya currently supports Extended Streaming History instead."
+            "This looks like Spotify's Account Data streaming history. Sazanami currently supports Extended Streaming History instead."
         SpotifyImportUiError.UNKNOWN_JSON ->
             "These files don't appear to contain supported Spotify Extended Streaming History."
         SpotifyImportUiError.MALFORMED_JSON ->
             "One of the selected files couldn't be read as valid JSON."
         SpotifyImportUiError.FILE_ACCESS ->
-            "CDPlaya could no longer access one of the selected files. Select the files again and retry."
+            "Sazanami could no longer access one of the selected files. Select the files again and retry."
         SpotifyImportUiError.NO_MUSIC ->
             "No music listening history was found in these files."
         SpotifyImportUiError.IMPORT_FAILED ->

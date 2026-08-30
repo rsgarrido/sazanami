@@ -15,7 +15,7 @@ mixer behavior. Actual support depends on the phone, firmware, audio policy and
 HAL, and connected USB device. High-resolution USB playback alone does not imply
 bit-perfect mixer support.
 
-Phase A established that CDPlaya's current processor-backed Media3 sink converts
+Phase A established that Sazanami's current processor-backed Media3 sink converts
 high-resolution integer PCM to PCM16 before the persistent equalizer processor.
 A production exact path would require controlled reconstruction of the
 authoritative player, renderers, and sink. The successful hardware activation
@@ -60,7 +60,7 @@ Positive consequences:
 
 Negative consequences:
 
-- CDPlaya will not currently offer native Android bit-perfect playback.
+- Sazanami will not currently offer native Android bit-perfect playback.
 - A future implementation may require recreating or adapting the prototype.
 
 ## Re-entry criteria

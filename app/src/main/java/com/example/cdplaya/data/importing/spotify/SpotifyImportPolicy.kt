@@ -9,7 +9,7 @@ import com.example.cdplaya.data.local.ListeningCompletionClassification
 import com.example.cdplaya.data.local.ListeningQualificationPolicy
 import com.example.cdplaya.data.local.ListeningQualificationReason
 
-/** CDPlaya's versioned interpretation of Spotify import evidence. */
+/** Sazanami's versioned interpretation of Spotify import evidence. */
 object SpotifyImportPolicy {
     const val QUALIFICATION_RULE_VERSION = 1
     const val QUALIFIED_LISTENED_MS = 30_000L

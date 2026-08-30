@@ -43,7 +43,7 @@ class HomeStatisticsHeaderTest {
             }
         }
 
-        composeRule.onNodeWithText("CDPlaya").assertIsDisplayed()
+        composeRule.onNodeWithText("Sazanami").assertIsDisplayed()
         val statistics = composeRule.onNodeWithContentDescription("Open listening statistics")
             .assertIsDisplayed()
             .assertHasClickAction()

@@ -196,7 +196,7 @@ object ListeningHistoryBackupValidator {
             require(source.backupSourceProfileId > 0 && source.stableUuid.isNotBlank() && source.displayLabel.isNotBlank())
             require(source.updatedAt >= source.createdAt)
             require(parseEnumValue("import source", source.sourceType, ListeningSource::fromStorageValue) != ListeningSource.CDPLAYA) {
-                "CDPlaya cannot be used as an import source profile."
+                "Sazanami cannot be used as an import source profile."
             }
         }
         val batches = history.importBatches.associateByUnique(BackupListeningImportBatch::backupBatchId, "import batch ID")
@@ -221,7 +221,7 @@ object ListeningHistoryBackupValidator {
         history.externalTrackIds.forEach { external ->
             require(external.trackIdentityBackupId in identities && external.externalId.isNotBlank() && external.lastSeenAt >= external.createdAt)
             require(parseEnumValue("external ID source", external.sourceType, ListeningSource::fromStorageValue) != ListeningSource.CDPLAYA) {
-                "CDPlaya cannot be used as an external catalog source."
+                "Sazanami cannot be used as an external catalog source."
             }
         }
         val eventsByUuid = history.events.associateBy { it.eventUuid }

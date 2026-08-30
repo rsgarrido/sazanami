@@ -392,7 +392,7 @@ internal fun DefaultPlayerCustomizationScreen(
 
         SettingsSection(
             title = "Reset",
-            description = "Restore CDPlaya's intended Modern player defaults.",
+            description = "Restore Sazanami's intended Modern player defaults.",
             icon = Icons.Filled.Refresh
         ) {
             ElevatedButton(
@@ -525,7 +525,7 @@ private fun ModernPlayerAppearancePreview(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text(
-                    text = previewSong?.artist ?: "CDPlaya",
+                    text = previewSong?.artist ?: "Sazanami",
                     style = MaterialTheme.typography.bodySmall,
                     color = style.secondaryContentColor,
                     maxLines = 1,

@@ -24,8 +24,8 @@ class ListeningAnalyticsRangeResolverTest {
         assertDates(AnalyticsRangePreset.TODAY, "2026-03-18", "2026-03-19")
         assertDates(AnalyticsRangePreset.LAST_7_DAYS, "2026-03-12", "2026-03-19")
         assertDates(AnalyticsRangePreset.LAST_30_DAYS, "2026-02-17", "2026-03-19")
-        assertDates(AnalyticsRangePreset.THIS_MONTH, "2026-03-01", "2026-04-01")
-        assertDates(AnalyticsRangePreset.THIS_YEAR, "2026-01-01", "2027-01-01")
+        assertDates(AnalyticsRangePreset.THIS_MONTH, "2026-03-01", "2026-03-19")
+        assertDates(AnalyticsRangePreset.THIS_YEAR, "2026-01-01", "2026-03-19")
 
         val allTime = resolver.resolve(AnalyticsRangeSelection.Preset(AnalyticsRangePreset.ALL_TIME))
         assertNull(allTime.eventRange)

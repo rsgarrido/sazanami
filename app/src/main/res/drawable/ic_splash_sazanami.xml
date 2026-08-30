@@ -12,7 +12,7 @@
         <path
             android:fillColor="@android:color/transparent"
             android:pathData="M6,4 L18,4 C19.1,4 20,4.9 20,6 L20,18 C20,19.1 19.1,20 18,20 L6,20 C4.9,20 4,19.1 4,18 L4,6 C4,4.9 4.9,4 6,4 Z M8,1.75 L18,1.75 M2,8 L2,18 M15.25,12 C15.25,13.8 13.8,15.25 12,15.25 C10.2,15.25 8.75,13.8 8.75,12 C8.75,10.2 10.2,8.75 12,8.75 C13.8,8.75 15.25,10.2 15.25,12 Z M12,11.6 L12,12.4"
-            android:strokeColor="@color/cdplaya_splash_accent"
+            android:strokeColor="@color/sazanami_splash_accent"
             android:strokeLineCap="round"
             android:strokeLineJoin="round"
             android:strokeWidth="1.7" />

@@ -84,7 +84,7 @@ private fun InterruptedContent(onDone: () -> Unit) {
     Text("Previous batch interrupted", style = MaterialTheme.typography.headlineSmall)
     Text(
         "A previous metadata batch ended while its outcome was still uncertain. Some files may " +
-            "have completed. CDPlaya will not replay it automatically. Rescan the library and " +
+            "have completed. Sazanami will not replay it automatically. Rescan the library and " +
             "review the affected files before creating a new batch."
     )
     Button(onClick = onDone, modifier = Modifier.fillMaxWidth()) { Text("Acknowledge") }

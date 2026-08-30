@@ -9,7 +9,7 @@ class BackupExportActionsTest {
     @Test
     fun backupFilename_usesProvidedLocalDateAndPackageExtension() {
         assertEquals(
-            "cdplaya-backup-2026-07-15.cdplaya",
+            "sazanami-backup-2026-07-15.cdplaya",
             backupFilename(LocalDate.of(2026, 7, 15))
         )
     }

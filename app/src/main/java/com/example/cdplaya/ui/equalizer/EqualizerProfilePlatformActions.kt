@@ -126,10 +126,10 @@ internal fun rememberEqualizerProfilePlatformActions(
                     }
                 }.fold(
                     onSuccess = {
-                        show("CDPlaya Parametric preset exported.")
+                        show("Sazanami Parametric preset exported.")
                     },
                     onFailure = {
-                        show("Couldn't export CDPlaya preset.")
+                        show("Couldn't export Sazanami preset.")
                     }
                 )
             }
@@ -198,7 +198,7 @@ internal fun rememberEqualizerProfilePlatformActions(
             )
             clipboard.setPrimaryClip(
                 ClipData.newPlainText(
-                    "CDPlaya Parametric EQ",
+                    "Sazanami Parametric EQ",
                     EqualizerProfileExporter.exportText(latestState)
                 )
             )

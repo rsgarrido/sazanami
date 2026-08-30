@@ -402,7 +402,7 @@ data class ModernPlayerAppearance(
 }
 
 enum class ModernAppearancePreset(val displayName: String) {
-    CDPLAYA("CDPlaya"),
+    CDPLAYA("Sazanami"),
     ARTWORK_FOCUS("Artwork Focus"),
     MINIMAL("Minimal"),
     COLORFUL("Colorful");

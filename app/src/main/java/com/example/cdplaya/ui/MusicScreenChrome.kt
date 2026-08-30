@@ -21,9 +21,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.example.cdplaya.R
 import com.example.cdplaya.data.PlayerTheme
 import com.example.cdplaya.data.Song
 import com.example.cdplaya.data.membershipKey
@@ -53,7 +55,7 @@ import com.example.cdplaya.ui.player.theme.PlayerThemeTokens
 
 @Composable
 fun MusicScreenHeader(
-    title: String = "CDPlaya",
+    title: String = stringResource(R.string.app_name),
     onBackClick: (() -> Unit)? = null,
     onSettingsClick: (() -> Unit)?,
     modifier: Modifier = Modifier,

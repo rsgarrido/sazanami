@@ -10,7 +10,7 @@ Spotify officially states that a song stream is counted after at least 30 second
 [How we count streams](https://support.spotify.com/nz/artists/article/how-we-count-streams/).
 Spotify's [Understanding your data](https://support.spotify.com/in-en/article/understanding-your-data/)
 officially describes Extended Streaming History as including the UTC stream-end time, milliseconds
-played, unique Spotify Track URI, start/end reasons, and skipped information. CDPlaya uses those
+played, unique Spotify Track URI, start/end reasons, and skipped information. Sazanami uses those
 facts as evidence for its own import policy; it does not claim to reproduce every internal Spotify
 counting rule.
 
@@ -19,7 +19,7 @@ the fields and directs users to the export's `Read Me First - Extended Streaming
 but does not publish a stable token registry on that page. `trackdone` is widely observed in real
 exports as the natural-finish end token; examples and other observed values are catalogued in
 [Ortham's analysis of an Extended Streaming History export](https://blog.ortham.net/posts/2024-12-21-spotify-streaming-history-part-1/).
-CDPlaya treats this token mapping as an observed export convention that should eventually be
+Sazanami treats this token mapping as an observed export convention that should eventually be
 checked against a real current `Read Me First` file, not as a permanent public API promise.
 
 `SpotifyImportPolicy` owns qualification policy `spotify`, rule version 1:

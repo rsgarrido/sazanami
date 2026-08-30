@@ -151,7 +151,7 @@ fun RetroRackExpandedPlayer(
         verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 7.dp)
     ) {
         RackModule(
-            title = "CDPLAYA // MAIN DECK",
+            title = "SAZANAMI // MAIN DECK",
             modifier = Modifier.height(mainDeckHeight).graphicsLayer { alpha = deckReveal },
             titleModifier = safeHeaderGesture,
             trailingAction = {

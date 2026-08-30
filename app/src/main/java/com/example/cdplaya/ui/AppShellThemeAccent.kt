@@ -10,12 +10,12 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import com.example.cdplaya.data.PlayerTheme
 import com.example.cdplaya.ui.player.theme.PlayerThemeTokens
-import com.example.cdplaya.ui.theme.CdPlayaAccent
-import com.example.cdplaya.ui.theme.CdPlayaSurfaceHigh
+import com.example.cdplaya.ui.theme.SazanamiAccent
+import com.example.cdplaya.ui.theme.SazanamiSurfaceHigh
 
 private const val MinimumShellAccentContrast = 4.5f
 
-internal val LocalAppShellAccent = staticCompositionLocalOf { CdPlayaAccent }
+internal val LocalAppShellAccent = staticCompositionLocalOf { SazanamiAccent }
 
 val AppShellAccent: Color
     @Composable
@@ -38,7 +38,7 @@ fun rememberAppShellAccent(
 internal fun resolveAppShellAccent(
     playerTheme: PlayerTheme,
     tokens: PlayerThemeTokens?,
-    fallbackAccent: Color = CdPlayaAccent
+    fallbackAccent: Color = SazanamiAccent
 ): Color {
     val tokenAccent = when (playerTheme) {
         PlayerTheme.DEFAULT -> null
@@ -53,7 +53,7 @@ internal fun resolveAppShellAccent(
 private fun ensureReadableShellAccent(accent: Color): Color {
     var readableAccent = accent.copy(alpha = 1f)
     repeat(12) {
-        if (contrastRatio(readableAccent, CdPlayaSurfaceHigh) >= MinimumShellAccentContrast) {
+        if (contrastRatio(readableAccent, SazanamiSurfaceHigh) >= MinimumShellAccentContrast) {
             return readableAccent
         }
         readableAccent = lerp(readableAccent, Color.White, 0.12f)

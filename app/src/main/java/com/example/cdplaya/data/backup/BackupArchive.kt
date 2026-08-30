@@ -53,7 +53,7 @@ object BackupArchive {
                 }
             }
         } catch (failure: IOException) {
-            throw IllegalArgumentException("Invalid CDPlaya backup package.", failure)
+            throw IllegalArgumentException("Invalid Sazanami backup package.", failure)
         }
 
         val metadataBytes = entries[METADATA_ENTRY]

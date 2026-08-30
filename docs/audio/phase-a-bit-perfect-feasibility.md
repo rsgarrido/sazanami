@@ -9,7 +9,7 @@
 > [Native Android Bit-Perfect Playback — Deferred](native-bit-perfect-decision.md).
 
 This document records feasibility evidence only. It does not describe a production
-bit-perfect feature and it does not claim that ordinary CDPlaya playback is
+bit-perfect feature and it does not claim that ordinary Sazanami playback is
 bit-perfect.
 
 ## 1. Git state
@@ -90,7 +90,7 @@ sample rate, position mask, and index mask; routing is truthful only while the
 track is playing, using `getRoutedDevice()` through API 35 and the potentially
 multi-route `getRoutedDevices()` API on API 36.
 
-## 3. Current CDPlaya path
+## 3. Current Sazanami path
 
 ```text
 Source Format (analytics callback)
@@ -271,7 +271,7 @@ returned combination used `MIXER_BEHAVIOR_DEFAULT`; none used
 
 The normal Media3/AudioTrack observations were:
 
-| Source confirmed by CDPlaya | Processor | Media3 OutputConfig | Actual AudioTrack | Route | Audible result |
+| Source confirmed by Sazanami | Processor | Media3 OutputConfig | Actual AudioTrack | Route | Audible result |
 |---|---|---|---|---|---|
 | FLAC, 44.1 kHz, stereo; source bit depth not reported | PCM16, 44.1 kHz, 299 observed buffers | PCM16, 44.1 kHz, mask 12, offload/tunneling false | PCM16, 44.1 kHz, mask 12, session 25561 | USB | Normal |
 | FLAC, 96 kHz, stereo; source bit depth not reported | Persistent processor received buffers; final post-fix configuration snapshot was not captured | PCM16, 96 kHz, mask 12, offload/tunneling false | PCM16, 96 kHz, mask 12, session 25529 | USB | Normal |
@@ -382,7 +382,7 @@ The same fix also truthfully retained the earlier
 ## 8. Architecture decision
 
 ```text
-Can CDPlaya retain one ExoPlayer and one persistent sink?
+Can Sazanami retain one ExoPlayer and one persistent sink?
 NO
 
 Can the existing persistent equalizer processor remain installed during
@@ -658,7 +658,7 @@ Final APK artifacts:
   confirmation, buffer-free exact stream, post-set clear, and bit-perfect
   format transition therefore could not be exercised.
 - Normal USB playback was observed at 44.1 and 96 kHz. No confirmed 48 or
-  192 kHz source was exercised, and CDPlaya diagnostics did not report source
+  192 kHz source was exercised, and Sazanami diagnostics did not report source
   bit depth, so no 16-bit or 24-bit source claim is made.
 - The DAC's own sample-rate display was not recorded; it would have been
   secondary evidence only.

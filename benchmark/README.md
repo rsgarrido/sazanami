@@ -1,4 +1,4 @@
-# CDPlaya performance benchmarks
+# Sazanami performance benchmarks
 
 This module runs Macrobenchmark and Baseline Profile tests against the non-debuggable,
 shell-profileable `benchmark` app build. The app variant inherits the current release

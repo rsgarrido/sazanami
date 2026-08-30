@@ -599,7 +599,7 @@ internal class DualPlayerPlaybackCoordinator(
             else -> false
         }
         if (!crossfadeTransition.hasStarted && preservesFutureCrossfade) {
-            // CDPlaya routinely reapplies Play, Repeat, Shuffle, and playback parameters while
+            // Sazanami routinely reapplies Play, Repeat, Shuffle, and playback parameters while
             // starting/restoring a track. Before overlap, these commands must update eligibility
             // rather than permanently suppressing crossfade for the whole current media item.
             CrossfadeTrace.log(

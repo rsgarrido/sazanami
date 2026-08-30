@@ -194,7 +194,7 @@ object EqualizerProfileParser {
                 EqualizerProfileDiagnosticCode.OUT_OF_RANGE,
                 EqualizerProfileDiagnosticSeverity.BLOCKING,
                 null,
-                "Combined preamp is outside CDPlaya's -15.0 to +6.0 dB range."
+                "Combined preamp is outside Sazanami's -15.0 to +6.0 dB range."
             )
         }
         val validCount = declarations.count {

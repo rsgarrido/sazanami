@@ -17,7 +17,7 @@ class MacrobenchmarkSmokeSuite {
 
     @Test
     fun coldStartupSmoke() {
-        val actions = CdPlayaBenchmarkActions()
+        val actions = SazanamiBenchmarkActions()
         benchmarkRule.measureRepeated(
             packageName = TARGET_PACKAGE,
             metrics = listOf(StartupTimingMetric()),
@@ -32,7 +32,7 @@ class MacrobenchmarkSmokeSuite {
 
     @Test
     fun homeScrollSmoke() {
-        val actions = CdPlayaBenchmarkActions()
+        val actions = SazanamiBenchmarkActions()
         benchmarkRule.measureRepeated(
             packageName = TARGET_PACKAGE,
             metrics = listOf(FrameTimingMetric()),

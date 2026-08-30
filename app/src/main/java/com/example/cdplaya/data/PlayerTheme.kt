@@ -6,7 +6,7 @@ enum class PlayerTheme(
 ) {
     DEFAULT(
         id = "default",
-        displayName = "CDPlaya Default"
+        displayName = "Sazanami Default"
     ),
 
     CLASSIC_WHEEL(

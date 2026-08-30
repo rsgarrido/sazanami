@@ -12,7 +12,10 @@ data class AutoBrowseNode(
     val children: List<AutoBrowseNode> = emptyList()
 )
 
-fun buildAndroidAutoBrowseTree(songs: List<Song>): AutoBrowseNode {
+fun buildAndroidAutoBrowseTree(
+    songs: List<Song>,
+    rootTitle: String
+): AutoBrowseNode {
     val artists = buildLibraryArtistGroups(songs)
         .sortedBy { it.name.lowercase() }
         .mapIndexed { index, artist ->
@@ -36,7 +39,7 @@ fun buildAndroidAutoBrowseTree(songs: List<Song>): AutoBrowseNode {
 
     return AutoBrowseNode(
         id = ROOT_ID,
-        title = "CDPlaya",
+        title = rootTitle,
         children = listOf(
             AutoBrowseNode(ARTISTS_ID, "Artists", children = artists),
             AutoBrowseNode(ALBUMS_ID, "Albums", children = albums),

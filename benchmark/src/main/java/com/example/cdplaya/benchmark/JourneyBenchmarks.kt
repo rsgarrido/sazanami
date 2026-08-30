@@ -50,12 +50,12 @@ class JourneyBenchmarks {
 
     @Test
     fun modernPlayerExpandAndCollapse() = measureExpandedPlayer(
-        theme = "CDPlaya Default"
+        theme = "Sazanami Default"
     ) { collapsePlayer() }
 
     @Test
     fun modernPlayerSwipeBetweenTracks() = measureExpandedPlayer(
-        theme = "CDPlaya Default"
+        theme = "Sazanami Default"
     ) { swipeExpandedPlayerLeft() }
 
     @Test
@@ -88,7 +88,7 @@ class JourneyBenchmarks {
     }
 
     @Test
-    fun returnToShellWhilePlaybackContinues() = measureExpandedPlayer("CDPlaya Default") {
+    fun returnToShellWhilePlaybackContinues() = measureExpandedPlayer("Sazanami Default") {
         collapsePlayer()
         scrollForward(2)
     }
@@ -117,7 +117,7 @@ class JourneyBenchmarks {
 
     private fun measureExpandedPlayer(
         theme: String,
-        measure: CdPlayaBenchmarkActions.() -> Unit
+        measure: SazanamiBenchmarkActions.() -> Unit
     ) = measureJourney(
         setup = {
             selectExpandedPlayerTheme(theme)
@@ -129,10 +129,10 @@ class JourneyBenchmarks {
     )
 
     private fun measureJourney(
-        setup: CdPlayaBenchmarkActions.() -> Unit,
-        measure: CdPlayaBenchmarkActions.() -> Unit
+        setup: SazanamiBenchmarkActions.() -> Unit,
+        measure: SazanamiBenchmarkActions.() -> Unit
     ) {
-        val actions = CdPlayaBenchmarkActions()
+        val actions = SazanamiBenchmarkActions()
         benchmarkRule.measureRepeated(
             packageName = TARGET_PACKAGE,
             metrics = listOf(FrameTimingMetric()),

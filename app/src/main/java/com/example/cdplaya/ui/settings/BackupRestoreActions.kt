@@ -154,7 +154,7 @@ fun rememberBackupRestoreActions(
 
 internal fun backupRestoreConfirmationText(): String {
     return """
-        This will replace your current CDPlaya app data:
+        This will replace your current Sazanami app data:
         - Favorites
         - Playlists
         - Artist pictures and custom playlist artwork

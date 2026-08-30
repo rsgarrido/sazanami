@@ -19,7 +19,7 @@ fun DeletePlaylistDialog(
         },
         text = {
             Text(
-                text = "This will delete \"${playlist.name}\" from CDPlaya. The audio files on your phone will not be deleted."
+                text = "This will delete \"${playlist.name}\" from Sazanami. The audio files on your phone will not be deleted."
             )
         },
         confirmButton = {

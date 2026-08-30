@@ -142,7 +142,7 @@ class ModernPlayerCustomizationTest {
     }
 
     @Test
-    fun modernAppearanceDefaultsMatchTheIntendedCdPlayaBaseline() {
+    fun modernAppearanceDefaultsMatchTheIntendedSazanamiBaseline() {
         val defaults = ModernPlayerAppearance.Default
 
         assertEquals(ModernSeekbarStyle.WAVEFORM_PREVIEW, defaults.seekbar.style)

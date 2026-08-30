@@ -13,8 +13,12 @@ class AndroidAutoBrowseTreeTest {
         val included = song(1, "Included", "Artist B", "Album", "/selected/album")
         val otherArtist = song(2, "First", "Artist A", "Other", "/selected/other")
 
-        val root = buildAndroidAutoBrowseTree(listOf(included, otherArtist))
+        val root = buildAndroidAutoBrowseTree(
+            songs = listOf(included, otherArtist),
+            rootTitle = "Sazanami"
+        )
 
+        assertEquals("Sazanami", root.title)
         assertEquals(listOf("Artists", "Albums", "Songs"), root.children.map { it.title })
         assertEquals(listOf("Artist A", "Artist B"), root.findNode(ARTISTS_ID)?.children?.map { it.title })
         assertEquals(2, root.findNode(SONGS_ID)?.children?.size)
@@ -25,7 +29,10 @@ class AndroidAutoBrowseTreeTest {
     fun `playable song retains its grouping context`() {
         val first = song(1, "One", "Artist", "Album", "/music/album")
         val second = song(2, "Two", "Artist", "Album", "/music/album")
-        val root = buildAndroidAutoBrowseTree(listOf(first, second))
+        val root = buildAndroidAutoBrowseTree(
+            songs = listOf(first, second),
+            rootTitle = "Sazanami"
+        )
         val artist = root.findNode(ARTISTS_ID)!!.children.single()
         val selectedId = artist.children.last().id
 

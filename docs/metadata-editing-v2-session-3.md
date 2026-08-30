@@ -47,7 +47,7 @@ disabled with an explanation. Session 3 does not offer apply-to-supported-files-
 ## Artwork
 
 Artwork derives as common present, common absent, or mixed. Equality reuses the SHA-256 hash already
-encoded in CDPlaya embedded-artwork references and falls back to the resolved URI for other artwork
+encoded in Sazanami embedded-artwork references and falls back to the resolved URI for other artwork
 sources, avoiding new image-byte comparisons. Replacement keeps the selected URI as a reviewable
 reference; clear is explicit. Neither operation writes artwork in Session 3.
 

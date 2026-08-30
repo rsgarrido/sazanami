@@ -253,7 +253,7 @@ internal fun EqualizerScreen(
                     EqualizerMode.PARAMETRIC,
                 modifier = Modifier.semantics {
                     contentDescription =
-                        "Export current native CDPlaya preset"
+                        "Export current native Sazanami preset"
                 }
             ) {
                 Text("Export native")
@@ -275,7 +275,7 @@ internal fun EqualizerScreen(
         Text(
             text = if (preferences.mode == EqualizerMode.GRAPHIC) {
                 "Current export is unavailable in Graphic mode. " +
-                    "CDPlaya does not convert Graphic bands into " +
+                    "Sazanami does not convert Graphic bands into " +
                     "Parametric filters."
             } else {
                 "Text export is Equalizer APO-compatible. Native " +
@@ -723,7 +723,7 @@ internal fun EqualizerScreen(
         ) {
             Text(
                 text = "An active equalizer requires decoded PCM. " +
-                    "CDPlaya does not claim bit-perfect or " +
+                    "Sazanami does not claim bit-perfect or " +
                     "high-resolution output while processing.",
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(16.dp)

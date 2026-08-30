@@ -145,7 +145,7 @@ fun SettingsScreen(
         isLibraryRefreshing -> "Scanning for added, changed, moved, or removed music…"
         libraryErrorMessage != null -> libraryErrorMessage
         lastLibraryRefreshSummary != null -> lastLibraryRefreshSummary.settingsSummary()
-        else -> "Check the device library without restarting CDPlaya"
+        else -> "Check the device library without restarting Sazanami"
     }
 
     Column(
@@ -178,7 +178,7 @@ fun SettingsScreen(
 
         SettingsSection(
             title = "Library",
-            description = "Choose what CDPlaya includes and refresh your current collection.",
+            description = "Choose what Sazanami includes and refresh your current collection.",
             icon = AppShellIcons.AlbumStack
         ) {
             SettingsRow(
@@ -396,7 +396,7 @@ fun SettingsScreen(
 
             SettingsFooterNote(
                 text = "Audio offload may reduce power use during long background playback. " +
-                        "CDPlaya falls back to normal decoded playback when offload is unavailable " +
+                        "Sazanami falls back to normal decoded playback when offload is unavailable " +
                         "or incompatible with an active audio feature. Crossfade uses decoded " +
                         "playback while enabled."
             )
@@ -458,7 +458,7 @@ fun SettingsScreen(
 
         SettingsSection(
             title = "Listening history",
-            description = "Bring previous listening activity into CDPlaya.",
+            description = "Bring previous listening activity into Sazanami.",
             icon = Icons.Filled.History
         ) {
             SettingsRow(
@@ -497,7 +497,7 @@ fun SettingsScreen(
 
             SettingsRow(
                 title = "Restore Backup",
-                summary = "Replace app data from a CDPlaya backup JSON file.",
+                summary = "Replace app data from a Sazanami backup file.",
                 icon = AppShellIcons.Restore,
                 onClick = onRestoreBackupClick,
                 navigationContentDescription = "Restore backup"
@@ -518,11 +518,11 @@ fun SettingsScreen(
 
         SettingsSection(
             title = "About",
-            description = "CDPlaya information and project identity.",
+            description = "Sazanami information and project identity.",
             icon = AppShellIcons.Info
         ) {
             SettingsRow(
-                title = "CDPlaya",
+                title = stringResource(R.string.app_name),
                 summary = "A local music player for your personal library.",
                 icon = AppShellIcons.Info
             )
@@ -647,7 +647,7 @@ fun SettingsScreen(
             },
             text = {
                 Text(
-                    text = "CDPlaya will stop using cover.jpg-style files from the selected folder and remove its saved folder access. Embedded artwork inside your music files will still be used. You can choose a folder again later in Settings."
+                    text = "Sazanami will stop using cover.jpg-style files from the selected folder and remove its saved folder access. Embedded artwork inside your music files will still be used. You can choose a folder again later in Settings."
                 )
             },
             dismissButton = {

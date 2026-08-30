@@ -12,7 +12,7 @@
 
 ## 2. Media3 version
 
-CDPlaya uses AndroidX Media3 1.9.1 for `media3-exoplayer` and `media3-session`.
+Sazanami uses AndroidX Media3 1.9.1 for `media3-exoplayer` and `media3-session`.
 
 The implementation uses Media3's track-selection audio-offload preferences,
 `ExoPlayer.AudioOffloadListener`, and the analytics audio input-format callback.
@@ -63,9 +63,9 @@ Code and unit-test observations:
 - The durable default is Disabled for new and existing installations.
 - Disabled maps to Media3 `AUDIO_OFFLOAD_MODE_DISABLED`.
 - Automatic maps to Media3 `AUDIO_OFFLOAD_MODE_ENABLED`.
-- `AUDIO_OFFLOAD_MODE_REQUIRED` is not selected or exposed by CDPlaya.
+- `AUDIO_OFFLOAD_MODE_REQUIRED` is not selected or exposed by Sazanami.
 - Automatic retains Media3's normal decoded-playback fallback.
-- A live preference change changes only the player's track-selection parameters; CDPlaya does not
+- A live preference change changes only the player's track-selection parameters; Sazanami does not
   rebuild the playlist, seek, or recreate the service.
 - Backup schema 3 stores the preference as an optional field. A missing or unknown field restores
   as Disabled, and schemas 1 through 3 remain accepted.
@@ -79,7 +79,7 @@ succeeded.
 
 Actual offload activation was not conclusively observed during the bounded device session.
 
-CDPlaya reports active offload only from Media3's `onOffloadedPlayback` callback. Enabling
+Sazanami reports active offload only from Media3's `onOffloadedPlayback` callback. Enabling
 Automatic by itself does not produce an Active status.
 
 Diagnostics continued to present requested preference and actual offload state separately.
@@ -88,7 +88,7 @@ Diagnostics continued to present requested preference and actual offload state s
 
 Sleeping-for-offload was not observed during the bounded device session.
 
-CDPlaya reports the sleeping state only from Media3's
+Sazanami reports the sleeping state only from Media3's
 `onSleepingForOffloadChanged` callback, and only while offloaded playback is active.
 
 ## 10. Gapless results
@@ -97,7 +97,7 @@ Gapless transition behavior under Automatic was not tested.
 
 Automatic requests gapless support from Media3 and does not require playback-speed support.
 According to Media3's contract, the gapless constraint prevents offload for a gapless stream when
-the renderer cannot preserve gapless playback. CDPlaya does not force offload at the expense of
+the renderer cannot preserve gapless playback. Sazanami does not force offload at the expense of
 gapless transitions.
 
 ## 11. ReplayGain compatibility
@@ -133,12 +133,12 @@ Not measured. No battery-life, power-reduction, or thermal claim is made from th
 ## 15. Known unsupported or unmeasured scenarios
 
 - Android versions before API 33 cannot reliably identify the active media route using the
-  media-attribute routing API. CDPlaya reports Unknown when connected-device inventory cannot
+  media-attribute routing API. Sazanami reports Unknown when connected-device inventory cannot
   prove the active route.
 - A device, route, codec, gapless requirement, or current playback configuration may keep
   Automatic requested while actual offload remains inactive. This is normal fallback, not an
   error.
-- The platform callback does not provide a precise rejection reason, so CDPlaya does not invent
+- The platform callback does not provide a precise rejection reason, so Sazanami does not invent
   one.
 - Bluetooth codec, final mixer format, DAC format, analog output quality, and hardware resampling
   are not inferred.
@@ -162,7 +162,7 @@ connected device may mix, process, resample, encode, or transmit the stream diff
 ## 17. Bit-perfect feasibility notes
 
 Offload is not proof of bit-perfect playback. Source format is not proof of hardware output format.
-CDPlaya therefore does not display a bit-perfect, no-resampling, or high-resolution-output claim.
+Sazanami therefore does not display a bit-perfect, no-resampling, or high-resolution-output claim.
 
 A defensible bit-perfect determination would require route- and device-specific evidence of the
 actual framework and hardware path, including the final mixer/transport format and confirmation

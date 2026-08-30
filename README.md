@@ -1,6 +1,6 @@
-# Local Media Player
+# Sazanami
 
-Local Media Player is an in-progress Android music player for a local personal music library. It scans music from the device with MediaStore, displays songs by song, artist, and album, and plays audio through a Media3 playback service.
+Sazanami is an in-progress Android music player for a local personal music library. It scans music from the device with MediaStore, displays songs by song, artist, and album, and plays audio through a Media3 playback service.
 
 The app is fully functional and actively in development. Core playback and library browsing are complete: you can listen to your local library by song, artist, or album, with shuffle, repeat, queue management, and persistent playback state. Planned features still in progress include favorites, playlists, Android Auto support, and additional playback polish.
 ## Current Features

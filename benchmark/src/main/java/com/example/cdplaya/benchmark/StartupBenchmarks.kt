@@ -25,7 +25,7 @@ class StartupBenchmarks {
     fun hotStartup_existingInstall() = measureStartup(StartupMode.HOT)
 
     private fun measureStartup(startupMode: StartupMode) {
-        val actions = CdPlayaBenchmarkActions()
+        val actions = SazanamiBenchmarkActions()
         benchmarkRule.measureRepeated(
             packageName = TARGET_PACKAGE,
             metrics = listOf(StartupTimingMetric()),

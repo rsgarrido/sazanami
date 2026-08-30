@@ -86,7 +86,7 @@ internal data class DiagnosticsSnapshot(
 )
 
 internal fun formatDiagnosticsSummary(snapshot: DiagnosticsSnapshot): String = buildString {
-    appendLine("CDPlaya diagnostics")
+    appendLine("Sazanami diagnostics")
     appendLine("App: ${snapshot.appVersionName} (${snapshot.appVersionCode})")
     appendLine("Android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
     appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")

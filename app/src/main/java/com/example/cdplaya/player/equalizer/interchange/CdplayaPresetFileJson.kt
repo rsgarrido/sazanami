@@ -56,15 +56,15 @@ object CdplayaPresetFileJson {
             )
         } catch (error: SerializationException) {
             throw IllegalArgumentException(
-                "Invalid CDPlaya Parametric preset JSON.",
+                "Invalid Sazanami Parametric preset JSON.",
                 error
             )
         }
         require(dto.kind == KIND) {
-            "This JSON is not a CDPlaya Parametric preset."
+            "This JSON is not a Sazanami Parametric preset."
         }
         require(dto.version == CURRENT_VERSION) {
-            "Unsupported CDPlaya Parametric preset version ${dto.version}."
+            "Unsupported Sazanami Parametric preset version ${dto.version}."
         }
         val file = CdplayaPresetFile(
             name = dto.name,

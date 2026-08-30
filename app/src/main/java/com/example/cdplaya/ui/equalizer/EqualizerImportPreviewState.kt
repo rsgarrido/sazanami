@@ -100,7 +100,7 @@ internal data class EqualizerImportPreviewState(
             next.remove(lineNumber)
         } else {
             require(next.size <= 10) {
-                "CDPlaya supports at most ten selected filters."
+                "Sazanami supports at most ten selected filters."
             }
         }
         return copy(

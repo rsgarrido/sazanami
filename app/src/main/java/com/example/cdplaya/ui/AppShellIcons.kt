@@ -10,7 +10,7 @@ import androidx.compose.ui.unit.dp
 
 object AppShellIcons {
     val Deck: ImageVector by lazy {
-        shellIcon("CDPlayaDeck") {
+        shellIcon("SazanamiDeck") {
             strokedPath {
                 moveTo(4.5f, 7f)
                 curveTo(3.7f, 7f, 3f, 7.7f, 3f, 8.5f)
@@ -39,7 +39,7 @@ object AppShellIcons {
     }
 
     val AlbumStack: ImageVector by lazy {
-        shellIcon("CDPlayaAlbumStack") {
+        shellIcon("SazanamiAlbumStack") {
             strokedPath {
                 moveTo(6f, 4f)
                 horizontalLineTo(18f)
@@ -72,7 +72,7 @@ object AppShellIcons {
     }
 
     val Search: ImageVector by lazy {
-        shellIcon("CDPlayaSearch") {
+        shellIcon("SazanamiSearch") {
             strokedPath {
                 moveTo(16.75f, 10.75f)
                 curveTo(16.75f, 14.06f, 14.06f, 16.75f, 10.75f, 16.75f)
@@ -88,7 +88,7 @@ object AppShellIcons {
     }
 
     val GridView: ImageVector by lazy {
-        shellIcon("CDPlayaGridView") {
+        shellIcon("SazanamiGridView") {
             strokedPath {
                 moveTo(4.5f, 4.5f)
                 horizontalLineTo(10f)
@@ -118,7 +118,7 @@ object AppShellIcons {
     }
 
     val ListView: ImageVector by lazy {
-        shellIcon("CDPlayaListView") {
+        shellIcon("SazanamiListView") {
             strokedPath {
                 moveTo(5f, 6.5f)
                 horizontalLineTo(7f)
@@ -149,7 +149,7 @@ object AppShellIcons {
 
 
     val Folder: ImageVector by lazy {
-        shellIcon("CDPlayaFolder") {
+        shellIcon("SazanamiFolder") {
             strokedPath {
                 moveTo(3.5f, 7.25f)
                 curveTo(3.5f, 6.28f, 4.28f, 5.5f, 5.25f, 5.5f)
@@ -167,7 +167,7 @@ object AppShellIcons {
     }
 
     val MusicNote: ImageVector by lazy {
-        shellIcon("CDPlayaMusicNote") {
+        shellIcon("SazanamiMusicNote") {
             strokedPath {
                 moveTo(10f, 17.25f)
                 curveTo(10f, 18.49f, 8.88f, 19.5f, 7.5f, 19.5f)
@@ -195,7 +195,7 @@ object AppShellIcons {
     }
 
     val Lyrics: ImageVector by lazy {
-        shellIcon("CDPlayaLyrics") {
+        shellIcon("SazanamiLyrics") {
             strokedPath {
                 moveTo(6f, 3.5f)
                 horizontalLineTo(14.5f)
@@ -222,7 +222,7 @@ object AppShellIcons {
     }
 
     val Equalizer: ImageVector by lazy {
-        shellIcon("CDPlayaEqualizer") {
+        shellIcon("SazanamiEqualizer") {
             strokedPath {
                 moveTo(5f, 5f)
                 verticalLineTo(19f)
@@ -242,7 +242,7 @@ object AppShellIcons {
     }
 
     val Gauge: ImageVector by lazy {
-        shellIcon("CDPlayaGauge") {
+        shellIcon("SazanamiGauge") {
             strokedPath {
                 moveTo(4.25f, 17.5f)
                 curveTo(3.75f, 16.4f, 3.5f, 15.2f, 3.5f, 14f)
@@ -259,7 +259,7 @@ object AppShellIcons {
     }
 
     val AudioRoute: ImageVector by lazy {
-        shellIcon("CDPlayaAudioRoute") {
+        shellIcon("SazanamiAudioRoute") {
             strokedPath {
                 moveTo(4f, 9f)
                 horizontalLineTo(8f)
@@ -281,7 +281,7 @@ object AppShellIcons {
     }
 
     val Timer: ImageVector by lazy {
-        shellIcon("CDPlayaTimer") {
+        shellIcon("SazanamiTimer") {
             strokedPath {
                 moveTo(12f, 6f)
                 curveTo(16.14f, 6f, 19.5f, 9.36f, 19.5f, 13.5f)
@@ -301,7 +301,7 @@ object AppShellIcons {
     }
 
     val Palette: ImageVector by lazy {
-        shellIcon("CDPlayaPalette") {
+        shellIcon("SazanamiPalette") {
             strokedPath {
                 moveTo(12f, 3.5f)
                 curveTo(7.03f, 3.5f, 3f, 7.08f, 3f, 11.5f)
@@ -330,7 +330,7 @@ object AppShellIcons {
     }
 
     val Transition: ImageVector by lazy {
-        shellIcon("CDPlayaTransition") {
+        shellIcon("SazanamiTransition") {
             strokedPath {
                 moveTo(4f, 6f)
                 horizontalLineTo(13f)
@@ -351,7 +351,7 @@ object AppShellIcons {
     }
 
     val Seekbar: ImageVector by lazy {
-        shellIcon("CDPlayaSeekbar") {
+        shellIcon("SazanamiSeekbar") {
             strokedPath {
                 moveTo(4f, 12f)
                 horizontalLineTo(20f)
@@ -367,7 +367,7 @@ object AppShellIcons {
     }
 
     val Export: ImageVector by lazy {
-        shellIcon("CDPlayaExport") {
+        shellIcon("SazanamiExport") {
             strokedPath {
                 moveTo(5f, 10f)
                 verticalLineTo(19f)
@@ -384,7 +384,7 @@ object AppShellIcons {
     }
 
     val Restore: ImageVector by lazy {
-        shellIcon("CDPlayaRestore") {
+        shellIcon("SazanamiRestore") {
             strokedPath {
                 moveTo(5f, 10f)
                 verticalLineTo(19f)
@@ -401,7 +401,7 @@ object AppShellIcons {
     }
 
     val Diagnostics: ImageVector by lazy {
-        shellIcon("CDPlayaDiagnostics") {
+        shellIcon("SazanamiDiagnostics") {
             strokedPath {
                 moveTo(4f, 15f)
                 horizontalLineTo(7f)
@@ -421,7 +421,7 @@ object AppShellIcons {
     }
 
     val Info: ImageVector by lazy {
-        shellIcon("CDPlayaInfo") {
+        shellIcon("SazanamiInfo") {
             strokedPath {
                 moveTo(20f, 12f)
                 curveTo(20f, 16.42f, 16.42f, 20f, 12f, 20f)

@@ -16,8 +16,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.cdplaya.R
 import com.example.cdplaya.mediaaccess.MediaAccessState
 import com.example.cdplaya.mediaaccess.PermissionAccess
 
@@ -42,7 +44,7 @@ internal fun LibraryStartupScreen(
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "CDPlaya",
+            text = stringResource(R.string.app_name),
             style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.Bold
         )
@@ -57,7 +59,7 @@ internal fun LibraryStartupScreen(
                 )
                 Spacer(Modifier.size(10.dp))
                 Text(
-                    text = "CDPlaya needs access to audio files on this device to build your local music library. Your music stays on your device.",
+                    text = "Sazanami needs access to audio files on this device to build your local music library. Your music stays on your device.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -94,7 +96,7 @@ internal fun LibraryStartupScreen(
                 )
                 Spacer(Modifier.size(10.dp))
                 Text(
-                    text = "If your music folders contain files such as cover.jpg, folder.jpg, or front.png, choose your Music folder and CDPlaya can use them. Embedded album artwork works without this access.",
+                    text = "If your music folders contain files such as cover.jpg, folder.jpg, or front.png, choose your Music folder and Sazanami can use them. Embedded album artwork works without this access.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

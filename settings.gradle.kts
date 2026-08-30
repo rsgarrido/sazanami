@@ -22,6 +22,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "cdplaya"
+rootProject.name = "Sazanami"
 include(":app")
 include(":benchmark")

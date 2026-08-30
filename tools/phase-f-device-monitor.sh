@@ -6,7 +6,7 @@ SCENARIO="${1:?scenario is required}"
 DURATION_SECONDS="${2:-600}"
 INTERVAL_SECONDS="${3:-60}"
 MANUAL_START_TIMEOUT_SECONDS="${4:-900}"
-OUTPUT_DIRECTORY="/sdcard/Download/CDPlaya-Phase-F-Thermal"
+OUTPUT_DIRECTORY="/sdcard/Download/Sazanami-Phase-F-Thermal"
 PACKAGE_NAME="com.example.cdplaya"
 MAX_START_AP_C="37.5"
 MAX_START_SKIN_C="35.0"
@@ -243,7 +243,7 @@ write_sample() {
 trap cleanup EXIT HUP INT TERM
 
 cat > "$LOG_PATH" <<EOF
-CDPlaya Phase F detached device thermal monitor
+Sazanami Phase F detached device thermal monitor
 scenario=$SCENARIO
 started=$(date -Iseconds)
 durationSeconds=$DURATION_SECONDS
@@ -300,7 +300,7 @@ done
 {
     echo "cooldownCompleted=$(date -Iseconds)"
     echo "waitingForManualStart=true"
-    echo "requiredStartState=CDPlaya PLAYING and screen Asleep"
+    echo "requiredStartState=Sazanami PLAYING and screen Asleep"
 } >> "$LOG_PATH"
 
 manual_wait_started_epoch="$(date +%s)"

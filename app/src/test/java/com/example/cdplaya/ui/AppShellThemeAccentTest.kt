@@ -5,7 +5,7 @@ import androidx.compose.ui.graphics.luminance
 import com.example.cdplaya.data.PlayerTheme
 import com.example.cdplaya.ui.player.theme.PlayerThemeTokens
 import com.example.cdplaya.ui.player.theme.defaultTokens
-import com.example.cdplaya.ui.theme.CdPlayaAccent
+import com.example.cdplaya.ui.theme.SazanamiAccent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -26,11 +26,11 @@ class AppShellThemeAccentTest {
     }
 
     @Test
-    fun defaultThemeKeepsCurrentCdPlayaAccent() {
+    fun defaultThemeKeepsCurrentSazanamiAccent() {
         val unrelatedTokens = tokens(accent = Color.Cyan)
 
         assertEquals(
-            CdPlayaAccent,
+            SazanamiAccent,
             resolveAppShellAccent(PlayerTheme.DEFAULT, unrelatedTokens)
         )
     }
@@ -69,7 +69,7 @@ class AppShellThemeAccentTest {
     fun missingTokensFallBackToCurrentAccent() {
         PlayerTheme.entries.forEach { playerTheme ->
             assertEquals(
-                CdPlayaAccent,
+                SazanamiAccent,
                 resolveAppShellAccent(playerTheme, tokens = null)
             )
         }

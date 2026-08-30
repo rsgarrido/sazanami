@@ -121,7 +121,7 @@ internal class LyricsSettingsController(
                     _state.value = _state.value.copy(
                         isScanning = false,
                         message = if (error is LyricsFolderAccessException) {
-                            "CDPlaya could not retain access to that folder."
+                            "Sazanami could not retain access to that folder."
                         } else {
                             "Lyrics folders could not be scanned."
                         }

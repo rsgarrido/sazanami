@@ -259,7 +259,7 @@ class AppBackupJsonTest {
 
         assertTrue(
             exception.message.orEmpty().contains(
-                "Unsupported CDPlaya backup schema version " +
+                "Unsupported Sazanami backup schema version " +
                     (AppBackupJson.CURRENT_SCHEMA_VERSION + 1)
             )
         )
@@ -550,7 +550,7 @@ class AppBackupJsonTest {
             AppBackupJson.decodeBackup("not json")
         }
 
-        assertEquals("Invalid CDPlaya backup JSON.", exception.message)
+        assertEquals("Invalid Sazanami backup JSON.", exception.message)
     }
 
     @Test

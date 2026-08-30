@@ -6,7 +6,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
 /**
- * Thin JNI boundary for CDPlaya's native offline audio decoder.
+ * Thin JNI boundary for Sazanami's native offline audio decoder.
  *
  * The native side owns extraction, MediaCodec decode, PCM sampling, RMS bucketing,
  * and waveform normalization. Kotlin receives only the final bar array.

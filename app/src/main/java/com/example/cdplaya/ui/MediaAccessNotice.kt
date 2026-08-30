@@ -35,9 +35,9 @@ internal fun MediaAccessNotice(
             )
             Text(
                 text = if (state.audioPermissionRequested) {
-                    "CDPlaya still needs access to audio files to build your music library."
+                    "Sazanami still needs access to audio files to build your music library."
                 } else {
-                    "CDPlaya needs access to audio files on this device to build your music library."
+                    "Sazanami needs access to audio files on this device to build your music library."
                 },
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

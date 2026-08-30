@@ -27,8 +27,8 @@ class ListeningAnalyticsBucketBuilderTest {
     fun namedAndCustomPoliciesSelectDeterministicGranularities() {
         assertPresetGranularity(AnalyticsRangePreset.LAST_7_DAYS, AnalyticsBucketGranularity.DAY, 7)
         assertPresetGranularity(AnalyticsRangePreset.LAST_30_DAYS, AnalyticsBucketGranularity.DAY, 30)
-        assertPresetGranularity(AnalyticsRangePreset.THIS_MONTH, AnalyticsBucketGranularity.DAY, 31)
-        assertPresetGranularity(AnalyticsRangePreset.THIS_YEAR, AnalyticsBucketGranularity.MONTH, 12)
+        assertPresetGranularity(AnalyticsRangePreset.THIS_MONTH, AnalyticsBucketGranularity.DAY, 18)
+        assertPresetGranularity(AnalyticsRangePreset.THIS_YEAR, AnalyticsBucketGranularity.MONTH, 3)
 
         assertCustomGranularity("2026-01-01", "2026-03-31", AnalyticsBucketGranularity.DAY, 90)
         assertCustomGranularity("2026-01-15", "2026-07-20", AnalyticsBucketGranularity.MONTH, 7)

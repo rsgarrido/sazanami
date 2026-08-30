@@ -10,7 +10,7 @@ import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 
-internal class CdPlayaBenchmarkActions(
+internal class SazanamiBenchmarkActions(
     private val device: UiDevice = UiDevice.getInstance(
         InstrumentationRegistry.getInstrumentation()
     )

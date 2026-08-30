@@ -1,7 +1,7 @@
 package com.example.cdplaya.data
 
 /**
- * Returns the explicit/encoded disc number CDPlaya can trust for this song.
+ * Returns the explicit/encoded disc number Sazanami can trust for this song.
  *
  * MediaStore sometimes encodes disc + track as 1001, 1002, 2001, ... . Explicit embedded
  * DISC_NO metadata is preferred when it agrees with MediaStore; conflicting evidence is treated

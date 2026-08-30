@@ -26,7 +26,7 @@ class BaselineProfileComparisonBenchmarks {
     )
 
     private fun measure(compilationMode: CompilationMode) {
-        val actions = CdPlayaBenchmarkActions()
+        val actions = SazanamiBenchmarkActions()
         benchmarkRule.measureRepeated(
             packageName = TARGET_PACKAGE,
             metrics = listOf(StartupTimingMetric()),

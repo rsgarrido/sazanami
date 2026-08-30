@@ -13,7 +13,7 @@ data class ShelfParameterConversionResult(
 )
 
 /**
- * Converts between the common shelf-Q representation and CDPlaya's RBJ
+ * Converts between the common shelf-Q representation and Sazanami's RBJ
  * shelf slope S by matching the two equivalent RBJ alpha expressions.
  */
 object ShelfParameterConversion {
@@ -53,7 +53,7 @@ object ShelfParameterConversion {
             raw in MIN_PARAMETRIC_SHELF_SLOPE..
                 MAX_PARAMETRIC_SHELF_SLOPE
         ) {
-            "Converted shelf slope is outside CDPlaya's supported range."
+            "Converted shelf slope is outside Sazanami's supported range."
         }
         return ShelfParameterConversionResult(raw)
     }

@@ -684,7 +684,7 @@ private fun unavailableContent(
     )
     is LyricsUnavailableReason.Ambiguous -> UnavailableContent(
         title = "Multiple matching lyrics files",
-        detail = "CDPlaya could not safely choose between these files.",
+        detail = "Sazanami could not safely choose between these files.",
         canRescan = true,
         candidates = reason.candidates.take(5)
     )
