@@ -113,8 +113,11 @@ class MainActivity : ComponentActivity() {
         // the real UI surface an unexpected startup error instead of trapping the user here.
         splashScreen.setKeepOnScreenCondition {
             val libraryState = musicViewModel.libraryUiState.value
+            val libraryOnboardingReady =
+                !libraryState.initialFolderSelectionCompleted &&
+                        libraryState.initialFolderDiscoveryCompleted
             val stableFirstFrameReady =
-                libraryState.hasPublishedInitialLibraryState &&
+                (libraryOnboardingReady || libraryState.hasPublishedInitialLibraryState) &&
                         musicViewModel.playerAppearanceUiState.value.isLoaded &&
                         musicViewModel.libraryAppearanceUiState.value.isLoaded &&
                         musicViewModel.homeCustomizationUiState.value.isLoaded

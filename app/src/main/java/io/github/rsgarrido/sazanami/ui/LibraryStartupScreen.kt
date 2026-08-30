@@ -68,7 +68,7 @@ internal fun LibraryStartupScreen(
                     Button(onClick = onOpenAppSettings) { Text("Open app settings") }
                 } else {
                     Button(onClick = onRequestAudioAccess) {
-                        Text(if (mediaAccessState.audioPermissionRequested) "Try again" else "Grant music access")
+                        Text(if (mediaAccessState.audioPermissionRequested) "Grant music access" else "Grant music access")
                     }
                 }
             }

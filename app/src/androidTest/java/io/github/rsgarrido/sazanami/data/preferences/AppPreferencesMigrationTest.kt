@@ -8,6 +8,8 @@ import androidx.datastore.preferences.SharedPreferencesMigration
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import io.github.rsgarrido.sazanami.data.PlayerTheme
+import io.github.rsgarrido.sazanami.data.FolderSelection
+import io.github.rsgarrido.sazanami.data.FolderSelectionMode
 import io.github.rsgarrido.sazanami.player.replaygain.ReplayGainMode
 import io.github.rsgarrido.sazanami.player.audio.AudioOffloadPreference
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewCategory
@@ -23,11 +25,37 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.first
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class AppPreferencesMigrationTest {
+    @Test
+    fun confirmingInitialEmptyFolderSelectionPersistsCompletion() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val suffix = System.nanoTime().toString()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val repository = AppPreferencesRepository.create(
+            context = context,
+            scope = scope,
+            dataStoreFileName = "initial_folder_selection_$suffix.preferences_pb",
+            legacyStores = emptyList()
+        )
+
+        repository.completeInitialLibraryFolderSelection(
+            FolderSelection(FolderSelectionMode.CUSTOM, emptySet())
+        )
+        val confirmed = withTimeout(5_000) {
+            repository.state.firstMatching { it.initialLibraryFolderSelectionCompleted }
+        }
+
+        assertTrue(confirmed.initialLibraryFolderSelectionCompleted)
+        assertEquals(FolderSelectionMode.CUSTOM, confirmed.folderSelectionMode)
+        assertTrue(confirmed.selectedLibraryFolders.isEmpty())
+        scope.cancel()
+    }
+
     @Test
     fun existingDataStoreValueWinsOverLegacyValue() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -65,6 +93,7 @@ class AppPreferencesMigrationTest {
         assertEquals(ReplayGainMode.TRACK, migrated.replayGainMode)
         assertEquals(AudioOffloadPreference.DISABLED, migrated.audioOffloadPreference)
         assertEquals(setOf("Music", "Podcasts"), migrated.selectedLibraryFolders)
+        assertTrue(migrated.initialLibraryFolderSelectionCompleted)
         assertEquals(LibraryViewMode.GRID, migrated.songsViewMode)
         assertEquals(4, migrated.songsGridColumnCount)
         assertEquals(

@@ -96,6 +96,7 @@ data class AppPreferencesState(
         EqualizerPreferencesState(),
     val folderSelectionMode: FolderSelectionMode = FolderSelectionMode.ALL,
     val selectedLibraryFolders: Set<String> = emptySet(),
+    val initialLibraryFolderSelectionCompleted: Boolean = false,
     val songsViewMode: LibraryViewMode = LibraryViewMode.LIST,
     val albumsViewMode: LibraryViewMode = LibraryViewMode.LIST,
     val artistsViewMode: LibraryViewMode = LibraryViewMode.LIST,
@@ -465,6 +466,12 @@ class AppPreferencesRepository private constructor(
         it[Keys.selectedLibraryFolders] = selection.toStoredFolders()
     }
 
+    suspend fun completeInitialLibraryFolderSelection(selection: FolderSelection) = edit {
+        it[Keys.folderSelectionMode] = selection.mode.name
+        it[Keys.selectedLibraryFolders] = selection.toStoredFolders()
+        it[Keys.initialLibraryFolderSelectionCompleted] = true
+    }
+
     @Deprecated("Use setLibraryFolderSelection so an empty custom selection is unambiguous.")
     suspend fun setSelectedLibraryFolders(folders: Set<String>) =
         setLibraryFolderSelection(FolderSelection.fromStored(null, folders))
@@ -555,6 +562,9 @@ class AppPreferencesRepository private constructor(
         )
         preferences[Keys.folderSelectionMode] = restored.folderSelectionMode.name
         preferences[Keys.selectedLibraryFolders] = restored.selectedLibraryFolders.toSet()
+        // A restored preferences snapshot contains an intentional folder configuration, including
+        // an intentionally empty custom selection, so it must not restart first-run onboarding.
+        preferences[Keys.initialLibraryFolderSelectionCompleted] = true
         LibraryViewCategory.entries.forEach { category ->
             val (mode, columns) = restored.libraryView(category)
             preferences[Keys.viewMode(category)] = mode.storageValue
@@ -614,10 +624,14 @@ class AppPreferencesRepository private constructor(
 
 internal fun decodeAppPreferences(preferences: Preferences): AppPreferencesState {
     val storedFolders = preferences[Keys.selectedLibraryFolders]?.toSet().orEmpty()
+    val storedFolderMode = preferences[Keys.folderSelectionMode]
     val folderSelection = FolderSelection.fromStored(
-        storedMode = preferences[Keys.folderSelectionMode],
+        storedMode = storedFolderMode,
         storedFolders = storedFolders
     )
+    val hasLegacyOrCurrentFolderConfiguration =
+        storedFolders.isNotEmpty() ||
+                FolderSelectionMode.entries.any { mode -> mode.name == storedFolderMode }
     return AppPreferencesState(
         selectedPlayerTheme = PlayerTheme.fromId(preferences[Keys.selectedPlayerTheme]),
         playerThemeTokenOverrides = PlayerTheme.entries.associateWith { emptyOverrides() }
@@ -714,6 +728,11 @@ internal fun decodeAppPreferences(preferences: Preferences): AppPreferencesState
         equalizerPreferences = decodeEqualizerPreferences(preferences),
         folderSelectionMode = folderSelection.mode,
         selectedLibraryFolders = folderSelection.toStoredFolders(),
+        initialLibraryFolderSelectionCompleted =
+            preferences[Keys.initialLibraryFolderSelectionCompleted]
+                // A non-empty legacy selection or an explicit mode is deliberate configuration.
+                // A legacy empty set alone is ambiguous and must not skip first-run onboarding.
+                ?: hasLegacyOrCurrentFolderConfiguration,
         songsViewMode = LibraryViewMode.fromStorageValue(preferences[Keys.songsViewMode]),
         albumsViewMode = LibraryViewMode.fromStorageValue(preferences[Keys.albumsViewMode]),
         artistsViewMode = LibraryViewMode.fromStorageValue(preferences[Keys.artistsViewMode]),
@@ -1199,6 +1218,8 @@ private object Keys {
         doublePreferencesKey("equalizer_limiter_ceiling_dbfs")
     val selectedLibraryFolders = stringSetPreferencesKey("selected_folders")
     val folderSelectionMode = stringPreferencesKey("folder_selection_mode")
+    val initialLibraryFolderSelectionCompleted =
+        booleanPreferencesKey("initial_library_folder_selection_completed")
     val songsViewMode = stringPreferencesKey("songs_view_mode")
     val albumsViewMode = stringPreferencesKey("albums_view_mode")
     val artistsViewMode = stringPreferencesKey("artists_view_mode")

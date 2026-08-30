@@ -208,6 +208,7 @@ class AppPreferencesStateTest {
         )
         assertEquals(setOf("Music", "Card/Music"), state.selectedLibraryFolders)
         assertEquals(FolderSelectionMode.CUSTOM, state.folderSelectionMode)
+        assertTrue(state.initialLibraryFolderSelectionCompleted)
         assertEquals(LibraryViewMode.GRID, state.songsViewMode)
         assertEquals(3, state.songsGridColumnCount)
         assertEquals(LibraryViewMode.GRID, state.playlistsViewMode)
@@ -224,6 +225,7 @@ class AppPreferencesStateTest {
 
         assertEquals(FolderSelectionMode.ALL, state.folderSelectionMode)
         assertTrue(state.selectedLibraryFolders.isEmpty())
+        assertFalse(state.initialLibraryFolderSelectionCompleted)
     }
 
     @Test
@@ -237,6 +239,27 @@ class AppPreferencesStateTest {
 
         assertEquals(FolderSelectionMode.CUSTOM, state.folderSelectionMode)
         assertTrue(state.selectedLibraryFolders.isEmpty())
+        assertTrue(state.initialLibraryFolderSelectionCompleted)
+    }
+
+    @Test
+    fun brandNewPreferencesRequireInitialFolderSelection() {
+        val state = decodeAppPreferences(mutablePreferencesOf())
+
+        assertFalse(state.initialLibraryFolderSelectionCompleted)
+    }
+
+    @Test
+    fun explicitIncompleteFlagOverridesMigratedFolderKeys() {
+        val state = decodeAppPreferences(
+            mutablePreferencesOf(
+                booleanPreferencesKey("initial_library_folder_selection_completed") to false,
+                stringPreferencesKey("folder_selection_mode") to "CUSTOM",
+                stringSetPreferencesKey("selected_folders") to setOf("Music")
+            )
+        )
+
+        assertFalse(state.initialLibraryFolderSelectionCompleted)
     }
 
     @Test

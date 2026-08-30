@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -14,6 +16,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -47,6 +50,10 @@ fun FolderSelectionScreen(
     onFolderToggle: (String) -> Unit,
     onSelectAllClick: () -> Unit,
     onClearSelectionClick: () -> Unit,
+    isInitialOnboarding: Boolean = false,
+    isDiscoveryLoading: Boolean = false,
+    isSaving: Boolean = false,
+    onContinueClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val selection = remember(
@@ -78,29 +85,54 @@ fun FolderSelectionScreen(
         }
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    val screenModifier = if (isInitialOnboarding) {
+        modifier.statusBarsPadding().navigationBarsPadding()
+    } else {
+        modifier
+    }
+    Column(modifier = screenModifier.fillMaxSize()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBackClick) {
-                Icon(
-                    imageVector = Icons.Filled.ArrowBack,
-                    contentDescription = "Back to settings"
-                )
+            if (!isInitialOnboarding) {
+                IconButton(onClick = onBackClick) {
+                    Icon(
+                        imageVector = Icons.Filled.ArrowBack,
+                        contentDescription = "Back to settings"
+                    )
+                }
             }
 
             Text(
-                text = "Library Folders",
+                text = if (isInitialOnboarding) {
+                    "Choose your music folders"
+                } else {
+                    "Library Folders"
+                },
                 style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(start = 8.dp)
+                modifier = Modifier.padding(start = if (isInitialOnboarding) 0.dp else 8.dp)
+            )
+        }
+
+        if (isInitialOnboarding) {
+            Text(
+                text = "Sazanami will only include music from the folders you select. " +
+                        "Select one or more roots now; you can change them later in Settings.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
         }
 
         Text(
             text = when {
+                isInitialOnboarding && selectedLibraryFolders.isEmpty() ->
+                    "No folders selected. You can continue with an empty library."
+                isInitialOnboarding ->
+                    "${selectedLibraryFolders.size} folder root(s) selected."
                 folderSelectionMode == FolderSelectionMode.ALL &&
                         excludedLibraryFolders.isEmpty() ->
                     "Every detected folder tree is included."
@@ -127,21 +159,47 @@ fun FolderSelectionScreen(
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            Button(
-                onClick = onSelectAllClick,
-                modifier = Modifier.padding(end = 8.dp)
-            ) {
-                Text(text = "Include All")
+            if (!isInitialOnboarding) {
+                Button(
+                    onClick = onSelectAllClick,
+                    modifier = Modifier.padding(end = 8.dp)
+                ) {
+                    Text(text = "Include All")
+                }
             }
 
-            Button(onClick = onClearSelectionClick) {
+            Button(
+                onClick = onClearSelectionClick,
+                enabled = !isSaving,
+                modifier = Modifier.padding(end = 8.dp)
+            ) {
                 Text(text = "Clear")
+            }
+
+            if (isInitialOnboarding) {
+                Button(
+                    onClick = onContinueClick,
+                    enabled = !isDiscoveryLoading && !isSaving
+                ) {
+                    Text(text = if (isSaving) "Saving…" else "Continue")
+                }
             }
         }
 
-        if (libraryFolders.isEmpty()) {
+        if (isDiscoveryLoading) {
+            CircularProgressIndicator(modifier = Modifier.padding(24.dp))
             Text(
-                text = "No music folders found. Run Scan library after adding music to the device.",
+                text = "Finding music folders…",
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+        } else if (libraryFolders.isEmpty()) {
+            Text(
+                text = if (isInitialOnboarding) {
+                    "No music folders were found. You can continue with an empty library and " +
+                            "scan again after adding music."
+                } else {
+                    "No music folders found. Run Scan library after adding music to the device."
+                },
                 modifier = Modifier.padding(16.dp)
             )
         } else {

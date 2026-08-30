@@ -7,6 +7,7 @@ import android.os.SystemClock
 import android.content.pm.ApplicationInfo
 import androidx.room.withTransaction
 import io.github.rsgarrido.sazanami.data.EditableSongTags
+import io.github.rsgarrido.sazanami.data.ArtworkResolutionCache
 import io.github.rsgarrido.sazanami.data.ArtistIdentity
 import io.github.rsgarrido.sazanami.data.ArtistPictureAssignment
 import io.github.rsgarrido.sazanami.data.ArtistPictureRepository
@@ -14,12 +15,19 @@ import io.github.rsgarrido.sazanami.data.DuplicateListeningHistoryResolution
 import io.github.rsgarrido.sazanami.data.FavoritesRepository
 import io.github.rsgarrido.sazanami.data.FolderSelection
 import io.github.rsgarrido.sazanami.data.FolderSelectionMode
+import io.github.rsgarrido.sazanami.data.FolderArtworkResolver
 import io.github.rsgarrido.sazanami.data.LibraryFolder
 import io.github.rsgarrido.sazanami.data.LibraryRefreshEngine
 import io.github.rsgarrido.sazanami.data.ListeningHistoryRepository
 import io.github.rsgarrido.sazanami.data.ListeningStatsRepository
 import io.github.rsgarrido.sazanami.data.LibraryCacheRepository
 import io.github.rsgarrido.sazanami.data.MusicLibraryData
+import io.github.rsgarrido.sazanami.data.EmbeddedArtworkResolver
+import io.github.rsgarrido.sazanami.data.ProgressiveArtworkEnricher
+import io.github.rsgarrido.sazanami.data.buildInitialSelectedCoreLibrary
+import io.github.rsgarrido.sazanami.data.buildInitialSelectedLibraryData
+import io.github.rsgarrido.sazanami.data.buildLibraryFolders
+import io.github.rsgarrido.sazanami.data.defaultInitialLibraryFolderSelection
 import io.github.rsgarrido.sazanami.data.MediaLibraryAccessException
 import io.github.rsgarrido.sazanami.data.stableKey
 import io.github.rsgarrido.sazanami.data.MusicRepository
@@ -80,6 +88,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.ensureActive
+import kotlin.coroutines.coroutineContext
 
 internal suspend fun <T> runLibraryScanOffMain(block: suspend () -> T): T {
     return withContext(Dispatchers.IO) { block() }
@@ -96,6 +106,16 @@ internal class LibraryPublicationTracker {
 
     fun reset() {
         lastSnapshot = null
+    }
+}
+
+internal fun replaceSelectedSongReferences(
+    referenceSongs: List<Song>,
+    selectedSongs: List<Song>
+): List<Song> {
+    val selectedByMembership = selectedSongs.associateBy(Song::membershipKey)
+    return referenceSongs.map { reference ->
+        selectedByMembership[reference.membershipKey()] ?: reference
     }
 }
 
@@ -130,6 +150,7 @@ class LibraryController(
     private val artistVisualAssetStore = VisualAssetStore(applicationContext)
     private val artistPictureReplacements = VisualAssetReplacementCoordinator()
     private var refreshJob: Job? = null
+    private var artworkEnrichmentJob: Job? = null
     private var reconciliationJob: Job? = null
     private val reconciliationCoordinator = ReconciliationGenerationCoordinator()
     private var songReferenceIndex: SongReferenceIndex = SongReferenceIndex.EMPTY
@@ -143,6 +164,9 @@ class LibraryController(
     private val libraryScanMutex = Mutex()
     private val permissionGate = LibraryPermissionGate()
     private var folderArtworkTreeUri: Uri? = null
+    private var initialFolderDiscoverySongs: List<Song> = emptyList()
+    private var referenceSongsSnapshot: List<Song> = emptyList()
+    private val artworkResolutionCache = ArtworkResolutionCache()
 
     internal fun createBackupRepository(): BackupRepository = BackupRepository(
         context = applicationContext,
@@ -264,7 +288,10 @@ class LibraryController(
         if (!changed) return false
         if (!granted) {
             refreshJob?.cancel()
+            artworkEnrichmentJob?.cancel()
             reconciliationJob?.cancel()
+            initialFolderDiscoverySongs = emptyList()
+            referenceSongsSnapshot = emptyList()
             publicationTracker.reset()
             songReferenceIndex = SongReferenceIndex.EMPTY
             visibleSongMembershipKeys = emptySet()
@@ -278,6 +305,8 @@ class LibraryController(
                     folders = emptyList(),
                     recentlyAddedSongs = emptyList(),
                     hasPublishedInitialLibraryState = false,
+                    initialFolderDiscoveryCompleted =
+                        initialFolderSelectionCompleted,
                     isLoading = false,
                     isRefreshing = false,
                     errorMessage = null
@@ -293,6 +322,7 @@ class LibraryController(
     }
 
     fun refreshFolderArtwork() {
+        artworkEnrichmentJob?.cancel()
         val scanToken = permissionGate.tokenOrNull() ?: return
         if (songs.isNotEmpty()) {
             updateState { copy(isRefreshing = true, errorMessage = null) }
@@ -303,9 +333,17 @@ class LibraryController(
                     libraryScanMutex.withLock {
                         if (!permissionGate.isCurrent(scanToken)) throw CancellationException()
                         val cachedSongs = libraryCacheRepository.getAllCachedSongs()
-                        val updatedSongs = MusicRepository(applicationContext).applyFolderArtwork(
-                            songs = cachedSongs,
-                            folderArtworkTreeUri = folderArtworkTreeUri
+                        val selectedCachedSongs = cachedSongs.filter { song ->
+                            folderSelection.includes(song.folderPath)
+                        }
+                        val updatedSelectedSongs =
+                            MusicRepository(applicationContext).applyFolderArtwork(
+                                songs = selectedCachedSongs,
+                                folderArtworkTreeUri = folderArtworkTreeUri
+                            )
+                        val updatedSongs = replaceSelectedSongReferences(
+                            referenceSongs = cachedSongs,
+                            selectedSongs = updatedSelectedSongs
                         )
                         if (updatedSongs != cachedSongs) {
                             libraryCacheRepository.replaceCachedSongs(updatedSongs)
@@ -318,6 +356,7 @@ class LibraryController(
                 }
                 if (permissionGate.isCurrent(scanToken)) {
                     publishLibraryData(libraryData, reconcilePlayback = true)
+                    startProgressiveArtworkEnrichment(libraryData, scanToken)
                 }
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -336,6 +375,8 @@ class LibraryController(
     }
 
     fun loadSongs() {
+        val libraryLoadRequestedAt = SystemClock.elapsedRealtime()
+        debugLibraryTiming("permission-library-discovery-start")
         launchProtectedRefresh { scanToken ->
             val startupStartedAt = SystemClock.elapsedRealtime()
             val preferencesStartedAt = SystemClock.elapsedRealtime()
@@ -351,6 +392,22 @@ class LibraryController(
                         "sinceLoadStartMs=${SystemClock.elapsedRealtime() - startupStartedAt}"
             )
             folderSelection = savedSelection
+            updateState {
+                copy(
+                    initialFolderSelectionCompleted =
+                        savedPreferences.initialLibraryFolderSelectionCompleted,
+                    initialFolderDiscoveryCompleted =
+                        savedPreferences.initialLibraryFolderSelectionCompleted
+                )
+            }
+
+            if (!savedPreferences.initialLibraryFolderSelectionCompleted) {
+                discoverInitialLibraryFolders(
+                    scanToken = scanToken,
+                    libraryLoadRequestedAt = libraryLoadRequestedAt
+                )
+                return@launchProtectedRefresh
+            }
 
             val cacheProbeStartedAt = SystemClock.elapsedRealtime()
             val hasCachedSongs = withContext(Dispatchers.IO) {
@@ -420,6 +477,55 @@ class LibraryController(
             }
             if (permissionGate.isCurrent(scanToken)) {
                 publishLibraryData(libraryData, reconcilePlayback = true)
+            }
+        }
+    }
+
+    fun toggleInitialLibraryFolder(folderPath: String) {
+        if (_uiState.value.initialFolderSelectionCompleted) return
+        folderSelection = folderSelection.toggle(
+            folderPath = folderPath,
+            availableFolders = libraryFolders.map(LibraryFolder::path)
+        )
+    }
+
+    fun clearInitialLibraryFolders() {
+        if (_uiState.value.initialFolderSelectionCompleted) return
+        folderSelection = FolderSelection(FolderSelectionMode.CUSTOM, emptySet())
+    }
+
+    fun confirmInitialLibraryFolderSelection() {
+        if (_uiState.value.initialFolderSelectionCompleted || _uiState.value.isLoading) return
+        val confirmedSelection = folderSelection
+        val continueStartedAt = SystemClock.elapsedRealtime()
+        debugLibraryTiming(
+            "initial-selected-core-start selectedRoots=${confirmedSelection.customFolders.size}"
+        )
+        launchProtectedRefresh { scanToken ->
+            appPreferencesRepository.completeInitialLibraryFolderSelection(confirmedSelection)
+            if (!permissionGate.isCurrent(scanToken)) throw CancellationException()
+            updateState { copy(initialFolderSelectionCompleted = true) }
+
+            val libraryData = withContext(Dispatchers.IO) {
+                prepareInitialSelectedCoreLibrary(
+                    folderSelection = confirmedSelection,
+                    scanToken = scanToken
+                )
+            }
+            if (permissionGate.isCurrent(scanToken)) {
+                debugLibraryTiming(
+                    "initial-core-publication-start songs=${libraryData.songs.size}"
+                )
+                publishLibraryData(libraryData, reconcilePlayback = false)
+                debugLibraryTiming(
+                    "initial-core-library-usable elapsedMs=" +
+                            "${SystemClock.elapsedRealtime() - continueStartedAt} " +
+                            "songs=${libraryData.songs.size}"
+                )
+                startProgressiveArtworkEnrichment(
+                    coreLibraryData = libraryData,
+                    scanToken = scanToken
+                )
             }
         }
     }
@@ -1208,6 +1314,198 @@ class LibraryController(
         }
     }
 
+    private suspend fun discoverInitialLibraryFolders(
+        scanToken: Long,
+        libraryLoadRequestedAt: Long
+    ) {
+        val discoveryStartedAt = SystemClock.elapsedRealtime()
+        debugLibraryTiming("initial-folder-discovery-start token=$scanToken")
+        val enumerationStartedAt = SystemClock.elapsedRealtime()
+        val discoveredSongs = withContext(Dispatchers.IO) {
+            libraryScanMutex.withLock {
+                if (!permissionGate.isCurrent(scanToken)) throw CancellationException()
+                MusicRepository(applicationContext).queryLightweightLibraryRows()
+                    ?: libraryCacheRepository.getAllCachedSongs()
+            }
+        }
+        if (!permissionGate.isCurrent(scanToken)) throw CancellationException()
+        debugLibraryTiming(
+            "initial-mediastore-rows-ready elapsedMs=" +
+                    "${SystemClock.elapsedRealtime() - enumerationStartedAt} " +
+                    "sincePermissionLoadMs=" +
+                    "${SystemClock.elapsedRealtime() - libraryLoadRequestedAt} " +
+                    "rows=${discoveredSongs.size}"
+        )
+
+        initialFolderDiscoverySongs = discoveredSongs
+        val hierarchyStartedAt = SystemClock.elapsedRealtime()
+        val discoveredFolders = withContext(Dispatchers.Default) {
+            buildLibraryFolders(discoveredSongs)
+        }
+        debugLibraryTiming(
+            "initial-folder-hierarchy-ready elapsedMs=" +
+                    "${SystemClock.elapsedRealtime() - hierarchyStartedAt} " +
+                    "rows=${discoveredSongs.size} folders=${discoveredFolders.size}"
+        )
+        folderSelection = defaultInitialLibraryFolderSelection(discoveredFolders)
+        updateState {
+            copy(
+                songs = emptyList(),
+                folders = discoveredFolders,
+                recentlyAddedSongs = emptyList(),
+                hasPublishedInitialLibraryState = false,
+                initialFolderSelectionCompleted = false,
+                initialFolderDiscoveryCompleted = true,
+                isLoading = false,
+                isRefreshing = false,
+                errorMessage = null
+            )
+        }
+        PlaybackLibraryBridge.updateSongs(emptyList())
+        debugLibraryTiming(
+            "initial-folder-picker-ready elapsedMs=" +
+                    "${SystemClock.elapsedRealtime() - libraryLoadRequestedAt} " +
+                    "discoveryOnlyMs=${SystemClock.elapsedRealtime() - discoveryStartedAt} " +
+                    "rows=${discoveredSongs.size} folders=${discoveredFolders.size}"
+        )
+    }
+
+    private suspend fun prepareInitialSelectedCoreLibrary(
+        folderSelection: FolderSelection,
+        scanToken: Long
+    ): MusicLibraryData = runLibraryScanOffMain {
+        libraryScanMutex.withLock {
+            if (!permissionGate.isCurrent(scanToken)) throw CancellationException()
+            libraryScanCount += 1
+            val cachedSongs = libraryCacheRepository.getAllCachedSongs()
+            val discoveryRows = initialFolderDiscoverySongs.ifEmpty { cachedSongs }
+            val selectedCount = discoveryRows.count { song ->
+                folderSelection.includes(song.folderPath)
+            }
+            debugLibraryTiming(
+                "initial-selected-rows-filtered rows=${discoveryRows.size} " +
+                        "selectedSongs=$selectedCount"
+            )
+
+            val coreBuild = buildInitialSelectedCoreLibrary(
+                discoveredSongs = discoveryRows,
+                cachedSongs = cachedSongs,
+                selection = folderSelection
+            )
+            if (!permissionGate.isCurrent(scanToken)) throw CancellationException()
+            lastLibraryRefreshResult = coreBuild.refreshResult
+            val libraryData = coreBuild.libraryData
+            initialFolderDiscoverySongs = libraryData.referenceSongs
+            libraryData
+        }
+    }
+
+    private fun startProgressiveArtworkEnrichment(
+        coreLibraryData: MusicLibraryData,
+        scanToken: Long
+    ) {
+        artworkEnrichmentJob?.cancel()
+        val enrichmentStartedAt = SystemClock.elapsedRealtime()
+        debugLibraryTiming(
+            "progressive-artwork-start songs=${coreLibraryData.songs.size} token=$scanToken"
+        )
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                smartPlaylistRepository.invalidateLibraryEligibility()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (exception: Exception) {
+                Log.w("LibraryRefresh", "Smart-playlist invalidation failed.", exception)
+            }
+        }
+        artworkEnrichmentJob = coroutineScope.launch(Dispatchers.IO) {
+            if (coreLibraryData.songs.isEmpty()) {
+                libraryScanMutex.withLock {
+                    if (!permissionGate.isCurrent(scanToken)) throw CancellationException()
+                    libraryCacheRepository.replaceCachedSongs(coreLibraryData.referenceSongs)
+                }
+                debugLibraryTiming(
+                    "progressive-artwork-complete elapsedMs=" +
+                            "${SystemClock.elapsedRealtime() - enrichmentStartedAt} songs=0 batches=0"
+                )
+                return@launch
+            }
+            val embeddedResolver = EmbeddedArtworkResolver(applicationContext)
+            val folderResolver = FolderArtworkResolver(
+                context = applicationContext,
+                treeUri = folderArtworkTreeUri
+            )
+            val enricher = ProgressiveArtworkEnricher(
+                cache = artworkResolutionCache,
+                resolveEmbedded = embeddedResolver::resolve,
+                resolveFolder = folderResolver::resolve,
+                resolverNamespace = folderArtworkTreeUri?.toString().orEmpty()
+            )
+            var latestSongs = coreLibraryData.songs
+            var batchCount = 0
+            for (batch in enricher.batches(coreLibraryData.songs)) {
+                coroutineContext.ensureActive()
+                if (!permissionGate.isCurrent(scanToken)) throw CancellationException()
+                latestSongs = batch
+                batchCount += 1
+                withContext(Dispatchers.Main.immediate) {
+                    publishProgressiveArtworkBatch(batch, scanToken)
+                }
+            }
+
+            if (!permissionGate.isCurrent(scanToken)) throw CancellationException()
+            val finalReferenceSongs = replaceSelectedSongReferences(
+                referenceSongs = coreLibraryData.referenceSongs,
+                selectedSongs = latestSongs
+            )
+            libraryScanMutex.withLock {
+                if (!permissionGate.isCurrent(scanToken)) throw CancellationException()
+                libraryCacheRepository.replaceCachedSongs(finalReferenceSongs)
+            }
+            if (latestSongs != coreLibraryData.songs) {
+                val finalData = coreLibraryData.copy(
+                    songs = latestSongs,
+                    referenceSongs = finalReferenceSongs
+                )
+                withContext(Dispatchers.Main.immediate) {
+                    if (permissionGate.isCurrent(scanToken)) {
+                        publishLibraryData(finalData, reconcilePlayback = true)
+                    }
+                }
+            }
+            debugLibraryTiming(
+                "progressive-artwork-complete elapsedMs=" +
+                        "${SystemClock.elapsedRealtime() - enrichmentStartedAt} " +
+                        "songs=${coreLibraryData.songs.size} batches=$batchCount"
+            )
+        }
+    }
+
+    private fun publishProgressiveArtworkBatch(
+        updatedSongs: List<Song>,
+        scanToken: Long
+    ) {
+        if (!permissionGate.isCurrent(scanToken)) return
+        val currentSongs = _uiState.value.songs
+        if (currentSongs.mapTo(mutableSetOf(), Song::membershipKey) !=
+            updatedSongs.mapTo(mutableSetOf(), Song::membershipKey)
+        ) {
+            return
+        }
+        referenceSongsSnapshot = replaceSelectedSongReferences(
+            referenceSongs = referenceSongsSnapshot,
+            selectedSongs = updatedSongs
+        )
+        updateState {
+            copy(
+                songs = updatedSongs.toList(),
+                recentlyAddedSongs = sortSongsByDateAddedDescending(updatedSongs)
+            )
+        }
+        PlaybackLibraryBridge.updateSongs(updatedSongs)
+        playbackController.handleLibrarySongsChanged(updatedSongs)
+    }
+
     private fun launchProtectedRefresh(
         onComplete: ((Result<Unit>) -> Unit)? = null,
         block: suspend (scanToken: Long) -> Unit
@@ -1217,6 +1515,7 @@ class LibraryController(
             onComplete?.invoke(Result.failure(IllegalStateException("Audio access is unavailable.")))
             return
         }
+        artworkEnrichmentJob?.cancel()
         refreshJob?.cancel()
         updateState {
             copy(
@@ -1309,6 +1608,7 @@ class LibraryController(
         traceName: String
     ) = tracePerformance(traceName) {
         songReferenceIndex = indexedSnapshot.index
+        referenceSongsSnapshot = libraryData.referenceSongs.toList()
         visibleSongMembershipKeys = indexedSnapshot.visibleMembershipKeys
         historyLibrarySnapshot.value = indexedSnapshot
         libraryPublishCount += 1
@@ -1379,6 +1679,12 @@ class LibraryController(
             }
             checkNotNull(indexSongs)
             if (!permissionGate.isCurrent(scanToken)) throw CancellationException()
+            val selectedIndexSongs = indexSongs.filter { song ->
+                folderSelection.includes(song.folderPath)
+            }
+            val selectedCachedSongs = cachedSongs.filter { song ->
+                folderSelection.includes(song.folderPath)
+            }
 
             // A brand-new library should become usable as soon as the cheap MediaStore index is
             // available. Persist and publish that base snapshot before per-file artwork enrichment.
@@ -1398,9 +1704,9 @@ class LibraryController(
 
             val refreshResult = tracePerformance(PerformanceTraceNames.LIBRARY_ENRICHMENT) {
                 repository.refreshLibrary(
-                    cachedSongs = cachedSongs,
+                    cachedSongs = selectedCachedSongs,
                     forceArtworkRefreshIds = forceArtworkRefreshIds,
-                    indexSongsOverride = indexSongs,
+                    indexSongsOverride = selectedIndexSongs,
                     folderArtworkTreeUri = folderArtworkTreeUri
                 )
             }
@@ -1419,21 +1725,26 @@ class LibraryController(
                 )
             }
 
-            if (refreshResult.successfulCompleteScan && refreshResult.requiresCacheWrite) {
+            val libraryData = buildInitialSelectedLibraryData(
+                discoveredSongs = indexSongs,
+                refreshedSelectedSongs = refreshResult.songs,
+                selection = folderSelection
+            )
+
+            if (
+                refreshResult.successfulCompleteScan &&
+                libraryData.referenceSongs != cachedSongs
+            ) {
                 val cacheWriteStartedAt = SystemClock.elapsedRealtime()
-                libraryCacheRepository.replaceCachedSongs(refreshResult.songs)
+                libraryCacheRepository.replaceCachedSongs(libraryData.referenceSongs)
                 debugLibraryTiming(
                     "cache-write elapsedMs=${SystemClock.elapsedRealtime() - cacheWriteStartedAt} " +
-                            "songs=${refreshResult.songs.size} scan=$scanNumber"
+                            "songs=${libraryData.referenceSongs.size} scan=$scanNumber"
                 )
             } else {
                 debugLibraryTiming("cache-write elapsedMs=0 songs=0 scan=$scanNumber skipped=true")
             }
             val folderDiscoveryStartedAt = SystemClock.elapsedRealtime()
-            val libraryData = io.github.rsgarrido.sazanami.data.buildMusicLibraryData(
-                allSongs = refreshResult.songs,
-                folderSelection = folderSelection
-            )
             debugLibraryTiming(
                 "folder-discovery elapsedMs=" +
                         "${SystemClock.elapsedRealtime() - folderDiscoveryStartedAt} " +

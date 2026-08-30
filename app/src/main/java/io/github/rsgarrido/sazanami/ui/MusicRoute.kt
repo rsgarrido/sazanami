@@ -34,6 +34,7 @@ import io.github.rsgarrido.sazanami.ui.home.LocalHomePinUi
 import io.github.rsgarrido.sazanami.ui.home.resolveHomePins
 import io.github.rsgarrido.sazanami.ui.library.ArtistPictureUiEnvironment
 import io.github.rsgarrido.sazanami.ui.library.LocalArtistPictureUi
+import io.github.rsgarrido.sazanami.ui.library.FolderSelectionScreen
 import io.github.rsgarrido.sazanami.ui.ratings.LocalSongRatingUi
 import io.github.rsgarrido.sazanami.ui.ratings.SongRatingDialog
 import io.github.rsgarrido.sazanami.ui.ratings.SongRatingUiEnvironment
@@ -96,10 +97,31 @@ internal fun MusicRoute(
     ) return
     val routeScope = rememberCoroutineScope()
 
-    val startupBlocked = !mediaAccessState.hasAudioAccess ||
-            !libraryUiState.hasPublishedInitialLibraryState ||
-            !folderArtworkAccessState.onboardingComplete
-    if (startupBlocked) {
+    val startupStage = resolveLibraryStartupStage(
+        hasAudioAccess = mediaAccessState.hasAudioAccess,
+        initialFolderSelectionCompleted = libraryUiState.initialFolderSelectionCompleted,
+        initialLibraryReady = libraryUiState.hasPublishedInitialLibraryState,
+        folderArtworkOnboardingComplete = folderArtworkAccessState.onboardingComplete
+    )
+    if (startupStage == LibraryStartupStage.FOLDER_SELECTION) {
+        FolderSelectionScreen(
+            libraryFolders = libraryUiState.folders,
+            folderSelectionMode = libraryUiState.folderSelectionMode,
+            selectedLibraryFolders = libraryUiState.selectedFolders,
+            excludedLibraryFolders = libraryUiState.excludedFolders,
+            onBackClick = {},
+            onFolderToggle = musicViewModel::toggleInitialLibraryFolder,
+            onSelectAllClick = {},
+            onClearSelectionClick = musicViewModel::clearInitialLibraryFolders,
+            isInitialOnboarding = true,
+            isDiscoveryLoading = !libraryUiState.initialFolderDiscoveryCompleted,
+            isSaving = libraryUiState.isLoading,
+            onContinueClick = musicViewModel::confirmInitialLibraryFolderSelection,
+            modifier = modifier
+        )
+        return
+    }
+    if (startupStage != LibraryStartupStage.COMPLETE) {
         LibraryStartupScreen(
             mediaAccessState = mediaAccessState,
             initialLibraryReady = libraryUiState.hasPublishedInitialLibraryState,
