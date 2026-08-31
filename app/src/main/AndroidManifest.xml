@@ -25,6 +25,11 @@
             android:name=".data.EmbeddedArtworkProvider"
             android:authorities="${applicationId}.embeddedartwork"
             android:exported="true" />
+        <provider
+            android:name=".data.visual.VisualAssetProvider"
+            android:authorities="${applicationId}.visualassets"
+            android:exported="true"
+            android:grantUriPermissions="true" />
         <service
             android:name=".player.PlaybackService"
             android:exported="true"

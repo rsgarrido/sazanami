@@ -53,6 +53,27 @@ class PlayerStateStorage internal constructor(
             .apply()
     }
 
+    fun saveServicePlaybackContext(
+        playbackContextSongIds: List<Long>,
+        shuffleMode: PlaybackShuffleMode
+    ) {
+        preferences.edit()
+            .putBoolean(KEY_SHUFFLE_ENABLED, shuffleMode.isEnabled)
+            .putString(KEY_SHUFFLE_MODE, shuffleMode.name)
+            .putString(KEY_PLAYBACK_CONTEXT, playbackContextSongIds.joinToString(","))
+            .putString(KEY_PREVIOUS_HISTORY, "")
+            .putString(KEY_NEXT_HISTORY, "")
+            .putString(KEY_QUEUE, "")
+            .apply()
+    }
+
+    fun saveServiceShuffleMode(shuffleMode: PlaybackShuffleMode) {
+        preferences.edit()
+            .putBoolean(KEY_SHUFFLE_ENABLED, shuffleMode.isEnabled)
+            .putString(KEY_SHUFFLE_MODE, shuffleMode.name)
+            .apply()
+    }
+
     fun getQueueSongIds(): List<Long> {
         return getSongIds(KEY_QUEUE)
     }

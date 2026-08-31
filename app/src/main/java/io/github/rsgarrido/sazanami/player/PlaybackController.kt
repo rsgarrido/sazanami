@@ -77,12 +77,16 @@ class PlaybackController(
         set(value) {
             field = value
             _uiState.update { state -> state.copy(isShuffleEnabled = value.isEnabled) }
+            PlaybackLibraryBridge.notifyPlaybackPolicyChanged(value.isEnabled, repeatMode)
         }
     private val isShuffleEnabled: Boolean
         get() = shuffleMode.isEnabled
     private var repeatMode: RepeatMode
         get() = _uiState.value.repeatMode
-        set(value) = _uiState.update { state -> state.copy(repeatMode = value) }
+        set(value) {
+            _uiState.update { state -> state.copy(repeatMode = value) }
+            PlaybackLibraryBridge.notifyPlaybackPolicyChanged(shuffleMode.isEnabled, value)
+        }
     private var upcomingSongsValue: List<Song> = emptyList()
     private var upcomingSongs: List<Song>
         get() = upcomingSongsValue
@@ -366,23 +370,31 @@ class PlaybackController(
         musicPlayer.getCurrentPosition().coerceAtLeast(0).toLong()
 
     fun toggleShuffle() {
-        shuffleMode = if (shuffleMode == PlaybackShuffleMode.OFF) {
-            PlaybackShuffleMode.SONGS
-        } else {
-            PlaybackShuffleMode.OFF
-        }
+        setSongShuffleEnabled(shuffleMode == PlaybackShuffleMode.OFF)
+    }
+
+    fun setSongShuffleEnabled(enabled: Boolean) {
+        val target = if (enabled) PlaybackShuffleMode.SONGS else PlaybackShuffleMode.OFF
+        if (shuffleMode == target) return
+        shuffleMode = target
         playbackNavigationHistory.clearAll()
         syncServicePlaylistKeepingCurrent(preserveExistingShuffleOrder = false)
         savePlayerState()
     }
 
     fun cycleRepeatMode() {
-        repeatMode = when (repeatMode) {
-            RepeatMode.OFF -> RepeatMode.ALL
-            RepeatMode.ALL -> RepeatMode.ONE
-            RepeatMode.ONE -> RepeatMode.OFF
-        }
+        setRepeatModeFromExternalController(
+            when (repeatMode) {
+                RepeatMode.OFF -> RepeatMode.ALL
+                RepeatMode.ALL -> RepeatMode.ONE
+                RepeatMode.ONE -> RepeatMode.OFF
+            }
+        )
+    }
 
+    fun setRepeatModeFromExternalController(mode: RepeatMode) {
+        if (repeatMode == mode) return
+        repeatMode = mode
         syncServicePlaylistKeepingCurrent()
         savePlayerState()
     }

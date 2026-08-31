@@ -5,8 +5,10 @@ import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
 import androidx.annotation.OptIn
 import android.content.Intent
 import androidx.media3.common.AudioAttributes
@@ -21,9 +23,14 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.session.CommandButton
 import androidx.media3.session.LibraryResult
+import androidx.media3.session.SessionError
+import androidx.media3.session.MediaConstants
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import io.github.rsgarrido.sazanami.MainActivity
 import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.data.Song
@@ -51,6 +58,7 @@ import io.github.rsgarrido.sazanami.player.equalizer.limiter.LimiterConfiguratio
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.SettableFuture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -61,6 +69,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlin.random.Random
 
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaLibraryService() {
@@ -74,6 +83,10 @@ class PlaybackService : MediaLibraryService() {
     private lateinit var listeningAdapter: PlaybackServiceListeningAdapter
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var appPreferencesRepository: AppPreferencesRepository
+    private lateinit var androidAutoCatalogRepository: AndroidAutoCatalogRepository
+    @Volatile
+    private var androidAutoCatalogSnapshot: AndroidAutoCatalogSnapshot = AndroidAutoCatalogSnapshot.EMPTY
+    private var servicePlaybackContextSongs: List<Song> = emptyList()
     private lateinit var audioManager: AudioManager
     private var isRemotePlayback = false
     private var activeServiceBinding: ActiveServiceBinding? = null
@@ -134,8 +147,8 @@ class PlaybackService : MediaLibraryService() {
 
         private fun isAuthoritative(): Boolean =
             !released &&
-                ::physicalPlayers.isInitialized &&
-                physicalPlayers.isActive(pipeline.player)
+                    ::physicalPlayers.isInitialized &&
+                    physicalPlayers.isActive(pipeline.player)
 
         private val playerListener = object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -189,7 +202,7 @@ class PlaybackService : MediaLibraryService() {
                 val isWithinSameItem =
                     oldPosition.mediaItemIndex == newPosition.mediaItemIndex
                 val isSeek = reason == Player.DISCONTINUITY_REASON_SEEK ||
-                    reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT
+                        reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT
                 if (isWithinSameItem && isSeek) {
                     listeningAdapter.onPositionDiscontinuity(
                         pipeline.player.currentMediaItem
@@ -295,14 +308,42 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private val libraryCallback = object : MediaLibrarySession.Callback {
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo
+        ): MediaSession.ConnectionResult {
+            val result = super.onConnect(session, controller)
+            if (!result.isAccepted) return result
+            val commands = result.availableSessionCommands.buildUpon()
+                .add(AUTO_TOGGLE_SHUFFLE_COMMAND)
+                .add(AUTO_TOGGLE_REPEAT_ALL_COMMAND)
+                .build()
+            return MediaSession.ConnectionResult.accept(
+                commands,
+                result.availablePlayerCommands
+            )
+        }
+
         override fun onGetLibraryRoot(
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
             params: LibraryParams?
-        ): ListenableFuture<LibraryResult<MediaItem>> {
-            return Futures.immediateFuture(
-                LibraryResult.ofItem(buildBrowseTree().toMediaItem(), params)
-            )
+        ): ListenableFuture<LibraryResult<MediaItem>> = serviceBackgroundFuture {
+            val catalog = loadAndroidAutoCatalog()
+            LibraryResult.ofItem(buildBrowseTree(catalog).toMediaItem(), params)
+        }
+
+        override fun onGetItem(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            mediaId: String
+        ): ListenableFuture<LibraryResult<MediaItem>> = serviceBackgroundFuture {
+            val item = buildBrowseTree(loadAndroidAutoCatalog()).findNode(mediaId)
+            if (item != null) {
+                LibraryResult.ofItem(item.toMediaItem(), null)
+            } else {
+                LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
+            }
         }
 
         override fun onGetChildren(
@@ -312,17 +353,70 @@ class PlaybackService : MediaLibraryService() {
             page: Int,
             pageSize: Int,
             params: LibraryParams?
-        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
-            val children = buildBrowseTree().findNode(parentId)?.children.orEmpty()
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = serviceBackgroundFuture {
+            val children = buildBrowseTree(loadAndroidAutoCatalog())
+                .findNode(parentId)
+                ?.children
+                .orEmpty()
             val fromIndex = (page * pageSize).coerceAtMost(children.size)
             val toIndex = (fromIndex + pageSize).coerceAtMost(children.size)
-
-            return Futures.immediateFuture(
-                LibraryResult.ofItemList(
-                    children.subList(fromIndex, toIndex).map { it.toMediaItem() },
-                    params
-                )
+            LibraryResult.ofItemList(
+                children.subList(fromIndex, toIndex).map { it.toMediaItem() },
+                params
             )
+        }
+
+        override fun onSearch(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            query: String,
+            params: LibraryParams?
+        ): ListenableFuture<LibraryResult<Void>> = serviceBackgroundFuture {
+            val catalog = loadAndroidAutoCatalog()
+            val resultCount = AndroidAutoSearchResolver.searchSongs(query, catalog).size
+            session.notifySearchResultChanged(browser, query, resultCount, params)
+            LibraryResult.ofVoid(params)
+        }
+
+        override fun onGetSearchResult(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            query: String,
+            page: Int,
+            pageSize: Int,
+            params: LibraryParams?
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = serviceBackgroundFuture {
+            val results = AndroidAutoSearchResolver.searchSongs(
+                query = query,
+                catalog = loadAndroidAutoCatalog()
+            )
+            val fromIndex = (page * pageSize).coerceAtMost(results.size)
+            val toIndex = (fromIndex + pageSize).coerceAtMost(results.size)
+            LibraryResult.ofItemList(
+                results.subList(fromIndex, toIndex).map { song ->
+                    song.toAndroidAutoSearchMediaItem(query)
+                },
+                params
+            )
+        }
+
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle
+        ): ListenableFuture<SessionResult> {
+            return when (customCommand.customAction) {
+                AUTO_TOGGLE_SHUFFLE_ACTION -> serviceFuture {
+                    toggleAndroidAutoShuffle()
+                    SessionResult(SessionResult.RESULT_SUCCESS)
+                }
+                AUTO_TOGGLE_REPEAT_ALL_ACTION -> serviceFuture {
+                    toggleAndroidAutoRepeatAll()
+                    SessionResult(SessionResult.RESULT_SUCCESS)
+                }
+                else -> super.onCustomCommand(session, controller, customCommand, args)
+            }
         }
 
         override fun onSetMediaItems(
@@ -341,40 +435,13 @@ class PlaybackService : MediaLibraryService() {
                     startPositionMs
                 )
             }
-
-            val tree = buildBrowseTree()
-            val selectedIndex = startIndex.takeIf { it in mediaItems.indices } ?: 0
-            val requestedId = mediaItems.getOrNull(selectedIndex)?.mediaId.orEmpty()
-            val selectedNode = tree.findNode(requestedId)
-            val contextSongs = tree.findParent(requestedId)
-                ?.children
-                ?.mapNotNull { it.song }
-                .orEmpty()
-            val selectedSong = selectedNode?.song
-
-            if (selectedSong != null) {
-                val playbackContext = contextSongs.ifEmpty { listOf(selectedSong) }
-                PlaybackLibraryBridge.playSelectedSong(selectedSong, playbackContext)
-                val resolvedItems = playbackContext.map { song -> song.toPlayableMediaItem() }
-                val resolvedIndex = resolvedItems.indexOfFirst {
-                    it.mediaId == selectedSong.id.toString()
-                }
-                return Futures.immediateFuture(
-                    MediaSession.MediaItemsWithStartPosition(
-                        resolvedItems,
-                        resolvedIndex,
-                        startPositionMs
-                    )
+            return serviceFuture {
+                resolveAndroidAutoMediaItems(
+                    mediaItems = mediaItems,
+                    startIndex = startIndex,
+                    startPositionMs = startPositionMs
                 )
             }
-
-            return super.onSetMediaItems(
-                mediaSession,
-                controller,
-                mediaItems,
-                startIndex,
-                startPositionMs
-            )
         }
     }
 
@@ -428,6 +495,11 @@ class PlaybackService : MediaLibraryService() {
         audioManager = getSystemService(AudioManager::class.java)
         playerStateStorage = PlayerStateStorage(this)
         val database = DatabaseProvider.getDatabase(this)
+        androidAutoCatalogRepository = AndroidAutoCatalogRepository(
+            context = this,
+            database = database,
+            preferencesRepository = appPreferencesRepository
+        )
         listeningAdapter = PlaybackServiceListeningAdapter(
             trackResolver = ListeningNativeTrackResolver(database),
             eventRepository = ListeningEventRepository(database.listeningEventDao())
@@ -454,7 +526,18 @@ class PlaybackService : MediaLibraryService() {
 
         mediaSession = MediaLibrarySession.Builder(this, sessionPlayer, libraryCallback)
             .setSessionActivity(sessionActivity)
+            .setMediaButtonPreferences(
+                buildAndroidAutoMediaButtonPreferences(
+                    shuffleEnabled = playerStateStorage.getShuffleMode().isEnabled,
+                    repeatMode = playerStateStorage.getRepeatMode()
+                )
+            )
             .build()
+        PlaybackLibraryBridge.registerPlaybackPolicyListener { shuffleEnabled, repeatMode ->
+            serviceScope.launch {
+                updateAndroidAutoMediaButtonPreferences(shuffleEnabled, repeatMode)
+            }
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
@@ -468,6 +551,7 @@ class PlaybackService : MediaLibraryService() {
         activeServiceBinding = null
         listeningAdapter.closeGracefully()
         audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)
+        PlaybackLibraryBridge.unregisterPlaybackPolicyListener()
         mediaSession?.release()
         mediaSession = null
         sessionPlayer.releaseTransitionResources()
@@ -488,10 +572,10 @@ class PlaybackService : MediaLibraryService() {
                         AudioProcessingRequirements(
                             equalizerEffectivelyActive =
                                 state.effectivelyActive &&
-                                    !state.limiterEffectivelyActive,
+                                        !state.limiterEffectivelyActive,
                             limiterEffectivelyActive =
                                 state.limiterRequestedEnabled ||
-                                    state.limiterEffectivelyActive,
+                                        state.limiterEffectivelyActive,
                             comparisonSessionActive =
                                 state.comparisonSessionActive
                         )
@@ -512,9 +596,9 @@ class PlaybackService : MediaLibraryService() {
                 .collectLatest { runtime ->
                     CrossfadeTrace.log(
                         "PREFERENCES enabled=${runtime.crossfade.enabled} " +
-                            "durationMs=${runtime.crossfade.durationMillis} " +
-                            "preserveAlbumTransitions=" +
-                            runtime.crossfade.preserveAlbumTransitions
+                                "durationMs=${runtime.crossfade.durationMillis} " +
+                                "preserveAlbumTransitions=" +
+                                runtime.crossfade.preserveAlbumTransitions
                     )
                     if (runtime.crossfade.enabled) {
                         // Decode both pipelines before overlap can become eligible.
@@ -630,7 +714,7 @@ class PlaybackService : MediaLibraryService() {
             )
             CrossfadeTrace.log(
                 "OFFLOAD crossfadeEnabled=$crossfadeEnabled effectivePreference=" +
-                    effectiveOffloadPreference
+                        effectiveOffloadPreference
             )
             physicalPlayers.forEachPipeline { pipeline ->
                 val updatedParameters = pipeline.player.trackSelectionParameters
@@ -722,12 +806,12 @@ class PlaybackService : MediaLibraryService() {
         if (outputs.size == 1) return outputs.single().type
         val hasBuiltInSpeaker = outputs.any { device ->
             mapAudioRoute(device.type, isLocalPlayback = true).category ==
-                AudioRouteCategory.BUILT_IN_SPEAKER
+                    AudioRouteCategory.BUILT_IN_SPEAKER
         }
         val hasExternalRoute = outputs.any { device ->
             val category = mapAudioRoute(device.type, isLocalPlayback = true).category
             category != AudioRouteCategory.BUILT_IN_SPEAKER &&
-                category != AudioRouteCategory.UNKNOWN
+                    category != AudioRouteCategory.UNKNOWN
         }
         return if (hasBuiltInSpeaker && !hasExternalRoute) {
             AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
@@ -797,26 +881,358 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
-    private fun buildBrowseTree(): AutoBrowseNode {
+    private suspend fun loadAndroidAutoCatalog(): AndroidAutoCatalogSnapshot {
+        val snapshot = androidAutoCatalogRepository.loadSnapshot()
+        androidAutoCatalogSnapshot = snapshot
+        return snapshot
+    }
+
+    private fun buildBrowseTree(catalog: AndroidAutoCatalogSnapshot): AutoBrowseNode {
         return buildAndroidAutoBrowseTree(
-            songs = PlaybackLibraryBridge.songs,
-            rootTitle = getString(R.string.app_name)
+            songs = catalog.songs,
+            rootTitle = getString(R.string.app_name),
+            playlists = catalog.playlists,
+            artistArtworkUris = catalog.artistArtworkUris
         )
     }
 
     private fun AutoBrowseNode.toMediaItem(): MediaItem {
-        val metadata = MediaMetadata.Builder()
+        val extras = Bundle().apply {
+            browsableChildrenStyle?.let { style ->
+                putInt(
+                    MediaConstants.EXTRAS_KEY_CONTENT_STYLE_BROWSABLE,
+                    style.toMedia3ContentStyle()
+                )
+            }
+            playableChildrenStyle?.let { style ->
+                putInt(
+                    MediaConstants.EXTRAS_KEY_CONTENT_STYLE_PLAYABLE,
+                    style.toMedia3ContentStyle()
+                )
+            }
+        }
+        val metadataBuilder = MediaMetadata.Builder()
             .setTitle(title)
             .setArtist(subtitle)
-            .setIsBrowsable(children.isNotEmpty())
-            .setIsPlayable(song != null)
-            .setArtworkUri(song?.albumArtUri)
-            .build()
+            .setIsBrowsable(isBrowsable)
+            .setIsPlayable(isPlayable)
+            .setArtworkUri(artworkUri)
+        if (!extras.isEmpty) metadataBuilder.setExtras(extras)
 
         return MediaItem.Builder()
             .setMediaId(id)
-            .setMediaMetadata(metadata)
+            .setMediaMetadata(metadataBuilder.build())
             .build()
     }
 
+    private fun AutoBrowseContentStyle.toMedia3ContentStyle(): Int = when (this) {
+        AutoBrowseContentStyle.LIST -> MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_LIST_ITEM
+        AutoBrowseContentStyle.GRID -> MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM
+    }
+
+    private fun Song.toAndroidAutoSearchMediaItem(query: String): MediaItem {
+        return MediaItem.Builder()
+            .setMediaId("song:search:$id")
+            .setRequestMetadata(
+                MediaItem.RequestMetadata.Builder()
+                    .setSearchQuery(query)
+                    .build()
+            )
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(title)
+                    .setArtist(artist.ifBlank { "Unknown Artist" })
+                    .setAlbumTitle(album)
+                    .setArtworkUri(albumArtUri)
+                    .setIsBrowsable(false)
+                    .setIsPlayable(true)
+                    .build()
+            )
+            .build()
+    }
+
+    private suspend fun resolveAndroidAutoMediaItems(
+        mediaItems: List<MediaItem>,
+        startIndex: Int,
+        startPositionMs: Long
+    ): MediaSession.MediaItemsWithStartPosition {
+        val catalog = loadAndroidAutoCatalog()
+        if (catalog.songs.isEmpty() || mediaItems.isEmpty()) {
+            return MediaSession.MediaItemsWithStartPosition(
+                mediaItems,
+                startIndex.coerceAtLeast(0),
+                startPositionMs
+            )
+        }
+
+        val selectedIndex = startIndex.takeIf { it in mediaItems.indices } ?: 0
+        val requestedItem = mediaItems[selectedIndex]
+        val preferredSongId = requestedItem.mediaId.substringAfterLast(':').toLongOrNull()
+        val searchRequest = requestedItem.toAndroidAutoSearchRequest()
+        val hasSearchRequest = !searchRequest.query.isNullOrBlank() ||
+                !searchRequest.title.isNullOrBlank() ||
+                !searchRequest.artist.isNullOrBlank() ||
+                !searchRequest.album.isNullOrBlank() ||
+                !searchRequest.playlist.isNullOrBlank() ||
+                !searchRequest.genre.isNullOrBlank()
+
+        val match = when {
+            hasSearchRequest && preferredSongId != null -> {
+                val query = searchRequest.query
+                val clickedSongIsInResults = query.isNullOrBlank() ||
+                        AndroidAutoSearchResolver.searchSongs(query, catalog).any { song ->
+                            song.id == preferredSongId
+                        }
+                if (clickedSongIsInResults) {
+                    AndroidAutoSearchResolver.resolveSongSelection(preferredSongId, catalog)
+                } else {
+                    null
+                }
+            }
+            else -> null
+        } ?: if (hasSearchRequest) {
+            AndroidAutoSearchResolver.resolvePlayback(
+                request = searchRequest,
+                catalog = catalog,
+                preferredSongId = preferredSongId ?: playerStateStorage.getCurrentSongId()
+            )
+        } else {
+            resolveBrowseSelection(
+                requestedMediaId = requestedItem.mediaId,
+                catalog = catalog
+            ) ?: preferredSongId?.let { songId ->
+                AndroidAutoSearchResolver.resolveSongSelection(songId, catalog)
+            }
+        } ?: AndroidAutoSearchResolver.resolvePlayback(
+            request = AndroidAutoSearchRequest(),
+            catalog = catalog,
+            preferredSongId = playerStateStorage.getCurrentSongId()
+        )
+
+        if (match == null) {
+            return MediaSession.MediaItemsWithStartPosition(
+                mediaItems,
+                selectedIndex,
+                startPositionMs
+            )
+        }
+
+        servicePlaybackContextSongs = match.songs
+        val selectedSong = match.selectedSong
+        val controllerHandledSelection = PlaybackLibraryBridge.playSelectedSong(
+            song = selectedSong,
+            playbackContext = match.songs
+        )
+        val bridgeShuffleEnabled = PlaybackLibraryBridge.currentShuffleEnabled()
+        val logicalShuffleMode = if (
+            bridgeShuffleEnabled ?: playerStateStorage.getShuffleMode().isEnabled
+        ) {
+            PlaybackShuffleMode.SONGS
+        } else {
+            PlaybackShuffleMode.OFF
+        }
+        if (!controllerHandledSelection) {
+            playerStateStorage.saveServicePlaybackContext(
+                playbackContextSongIds = match.songs.map(Song::id),
+                shuffleMode = logicalShuffleMode
+            )
+        }
+
+        val orderedSongs = if (!controllerHandledSelection && logicalShuffleMode.isEnabled) {
+            buildList {
+                add(selectedSong)
+                addAll(match.songs.filterNot { song -> song.id == selectedSong.id }.shuffled())
+            }
+        } else {
+            match.songs
+        }
+        val resolvedIndex = orderedSongs.indexOfFirst { song -> song.id == selectedSong.id }
+            .coerceAtLeast(0)
+        return MediaSession.MediaItemsWithStartPosition(
+            orderedSongs.map { song -> song.toPlayableMediaItem() },
+            resolvedIndex,
+            startPositionMs
+        )
+    }
+
+    private fun resolveBrowseSelection(
+        requestedMediaId: String,
+        catalog: AndroidAutoCatalogSnapshot
+    ): AndroidAutoPlaybackMatch? {
+        val tree = buildBrowseTree(catalog)
+        val selectedNode = tree.findNode(requestedMediaId) ?: return null
+        val selectedSong = selectedNode.song ?: return null
+        val contextSongs = tree.findParent(requestedMediaId)
+            ?.children
+            ?.mapNotNull(AutoBrowseNode::song)
+            .orEmpty()
+            .ifEmpty { listOf(selectedSong) }
+        val selectedIndex = contextSongs.indexOfFirst { song -> song.id == selectedSong.id }
+            .coerceAtLeast(0)
+        return AndroidAutoPlaybackMatch(contextSongs, selectedIndex)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun MediaItem.toAndroidAutoSearchRequest(): AndroidAutoSearchRequest {
+        val extras = requestMetadata.extras
+        val query = requestMetadata.searchQuery
+        return AndroidAutoSearchRequest(
+            query = query,
+            title = extras?.getString(MediaStore.EXTRA_MEDIA_TITLE)
+                ?: query?.let { mediaMetadata.title?.toString() },
+            artist = extras?.getString(MediaStore.EXTRA_MEDIA_ARTIST)
+                ?: query?.let { mediaMetadata.artist?.toString() },
+            album = extras?.getString(MediaStore.EXTRA_MEDIA_ALBUM)
+                ?: query?.let { mediaMetadata.albumTitle?.toString() },
+            playlist = extras?.getString(MediaStore.EXTRA_MEDIA_PLAYLIST),
+            genre = extras?.getString(MediaStore.EXTRA_MEDIA_GENRE)
+        )
+    }
+
+    private suspend fun toggleAndroidAutoShuffle() {
+        val currentlyEnabled = PlaybackLibraryBridge.currentShuffleEnabled()
+            ?: playerStateStorage.getShuffleMode().isEnabled
+        val enable = !currentlyEnabled
+        if (!PlaybackLibraryBridge.setSongShuffleEnabled(enable)) {
+            applyServiceOnlySongShuffle(enable)
+        }
+        updateAndroidAutoMediaButtonPreferences(
+            shuffleEnabled = enable,
+            repeatMode = PlaybackLibraryBridge.currentRepeatMode()
+                ?: playerStateStorage.getRepeatMode()
+        )
+    }
+
+    private suspend fun applyServiceOnlySongShuffle(enabled: Boolean) {
+        val catalog = androidAutoCatalogSnapshot.takeIf { it.songs.isNotEmpty() }
+            ?: loadAndroidAutoCatalog()
+        val currentSongId = player.currentMediaItem?.mediaId?.toLongOrNull()
+        val context = resolveServicePlaybackContext(catalog, currentSongId)
+        val mode = if (enabled) PlaybackShuffleMode.SONGS else PlaybackShuffleMode.OFF
+        playerStateStorage.saveServiceShuffleMode(mode)
+        if (context.isEmpty() || currentSongId == null) return
+
+        servicePlaybackContextSongs = context
+        playerStateStorage.saveServicePlaybackContext(
+            playbackContextSongIds = context.map(Song::id),
+            shuffleMode = mode
+        )
+        val currentSong = context.firstOrNull { song -> song.id == currentSongId } ?: return
+        val ordered = if (enabled) {
+            listOf(currentSong) + context.filterNot { song -> song.id == currentSongId }.shuffled(Random.Default)
+        } else {
+            context
+        }
+        val start = ordered.indexOfFirst { song -> song.id == currentSongId }.coerceAtLeast(0)
+        val position = player.currentPosition.coerceAtLeast(0L)
+        val wasPlaying = player.isPlaying
+        sessionPlayer.setMediaItems(ordered.map { song -> song.toPlayableMediaItem() }, start, position)
+        sessionPlayer.prepare()
+        if (wasPlaying) sessionPlayer.play()
+    }
+
+    private fun resolveServicePlaybackContext(
+        catalog: AndroidAutoCatalogSnapshot,
+        currentSongId: Long?
+    ): List<Song> {
+        if (
+            servicePlaybackContextSongs.isNotEmpty() &&
+            (currentSongId == null || servicePlaybackContextSongs.any { song -> song.id == currentSongId })
+        ) {
+            return servicePlaybackContextSongs
+        }
+        val songsById = catalog.songs.associateBy(Song::id)
+        val persisted = playerStateStorage.getPlaybackContextSongIds()
+            .mapNotNull(songsById::get)
+        if (persisted.isNotEmpty()) return persisted
+
+        val timelineSongs = (0 until player.mediaItemCount)
+            .mapNotNull { index -> player.getMediaItemAt(index).mediaId.toLongOrNull() }
+            .mapNotNull(songsById::get)
+        if (timelineSongs.isNotEmpty()) return timelineSongs
+        val currentSong = currentSongId?.let { songId -> songsById[songId] }
+        return currentSong?.let { song -> listOf(song) }.orEmpty()
+    }
+
+    private fun toggleAndroidAutoRepeatAll() {
+        val current = PlaybackLibraryBridge.currentRepeatMode()
+            ?: playerStateStorage.getRepeatMode()
+        val enable = current != RepeatMode.ALL
+        if (!PlaybackLibraryBridge.setRepeatAllEnabled(enable)) {
+            player.repeatMode = if (enable) Player.REPEAT_MODE_ALL else Player.REPEAT_MODE_OFF
+            saveServicePlaybackState()
+        }
+        updateAndroidAutoMediaButtonPreferences(
+            shuffleEnabled = PlaybackLibraryBridge.currentShuffleEnabled()
+                ?: playerStateStorage.getShuffleMode().isEnabled,
+            repeatMode = if (enable) RepeatMode.ALL else RepeatMode.OFF
+        )
+    }
+
+    private fun buildAndroidAutoMediaButtonPreferences(
+        shuffleEnabled: Boolean,
+        repeatMode: RepeatMode
+    ): List<CommandButton> = listOf(
+        CommandButton.Builder(
+            if (shuffleEnabled) CommandButton.ICON_SHUFFLE_ON else CommandButton.ICON_SHUFFLE_OFF
+        )
+            .setDisplayName(if (shuffleEnabled) "Shuffle on" else "Shuffle")
+            .setSessionCommand(AUTO_TOGGLE_SHUFFLE_COMMAND)
+            .setSlots(CommandButton.SLOT_BACK_SECONDARY, CommandButton.SLOT_OVERFLOW)
+            .build(),
+        CommandButton.Builder(
+            if (repeatMode == RepeatMode.ALL) {
+                CommandButton.ICON_REPEAT_ALL
+            } else {
+                CommandButton.ICON_REPEAT_OFF
+            }
+        )
+            .setDisplayName(if (repeatMode == RepeatMode.ALL) "Repeat all on" else "Repeat all")
+            .setSessionCommand(AUTO_TOGGLE_REPEAT_ALL_COMMAND)
+            .setSlots(CommandButton.SLOT_FORWARD_SECONDARY, CommandButton.SLOT_OVERFLOW)
+            .build()
+    )
+
+    private fun updateAndroidAutoMediaButtonPreferences(
+        shuffleEnabled: Boolean,
+        repeatMode: RepeatMode
+    ) {
+        mediaSession?.setMediaButtonPreferences(
+            buildAndroidAutoMediaButtonPreferences(shuffleEnabled, repeatMode)
+        )
+    }
+
+    private fun <T> serviceFuture(block: suspend () -> T): ListenableFuture<T> {
+        val future = SettableFuture.create<T>()
+        serviceScope.launch {
+            try {
+                future.set(block())
+            } catch (error: Throwable) {
+                future.setException(error)
+            }
+        }
+        return future
+    }
+
+    /** Avoids legacy MediaBrowser root requests deadlocking the service main thread on I/O. */
+    private fun <T> serviceBackgroundFuture(block: suspend () -> T): ListenableFuture<T> {
+        val future = SettableFuture.create<T>()
+        serviceScope.launch(Dispatchers.IO) {
+            try {
+                future.set(block())
+            } catch (error: Throwable) {
+                future.setException(error)
+            }
+        }
+        return future
+    }
+
 }
+
+
+private const val AUTO_TOGGLE_SHUFFLE_ACTION =
+    "io.github.rsgarrido.sazanami.action.AUTO_TOGGLE_SHUFFLE"
+private const val AUTO_TOGGLE_REPEAT_ALL_ACTION =
+    "io.github.rsgarrido.sazanami.action.AUTO_TOGGLE_REPEAT_ALL"
+private val AUTO_TOGGLE_SHUFFLE_COMMAND = SessionCommand(AUTO_TOGGLE_SHUFFLE_ACTION, Bundle.EMPTY)
+private val AUTO_TOGGLE_REPEAT_ALL_COMMAND = SessionCommand(AUTO_TOGGLE_REPEAT_ALL_ACTION, Bundle.EMPTY)
