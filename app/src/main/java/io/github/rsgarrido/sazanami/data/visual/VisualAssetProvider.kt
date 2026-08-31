@@ -12,18 +12,29 @@ import java.io.FileNotFoundException
 class VisualAssetProvider : ContentProvider() {
     override fun onCreate(): Boolean = true
 
-    override fun getType(uri: Uri): String? =
-        parse(uri)?.let { "image/*" }
+    override fun getType(uri: Uri): String? {
+        val providerContext = context
+        if (providerContext != null &&
+            AndroidAutoArtworkCache.isProviderUri(providerContext.packageName, uri)
+        ) {
+            return "image/webp"
+        }
+        return parse(uri)?.let { "image/*" }
+    }
 
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
         if (mode != "r") throw FileNotFoundException("Visual assets are read-only")
         val providerContext = context ?: throw FileNotFoundException("Provider is unavailable")
-        val reference = parse(uri) ?: throw FileNotFoundException("Malformed visual asset URI")
         val expectedAuthority = "${providerContext.packageName}.$AUTHORITY_SUFFIX"
         if (uri.authority != expectedAuthority) {
             throw FileNotFoundException("Unexpected visual asset authority")
         }
 
+        AndroidAutoArtworkCache.resolveProviderFile(providerContext, uri)?.let { file ->
+            return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+        }
+
+        val reference = parse(uri) ?: throw FileNotFoundException("Malformed visual asset URI")
         val file = when (reference.ownerType) {
             VisualAssetOwnerType.PLAYLIST_IMAGE -> {
                 val playlistId = reference.ownerKey.toLongOrNull()

@@ -16,6 +16,7 @@ import io.github.rsgarrido.sazanami.data.SongReferenceIndex
 import io.github.rsgarrido.sazanami.data.SongReferenceResolution
 import io.github.rsgarrido.sazanami.data.local.AppDatabase
 import io.github.rsgarrido.sazanami.data.preferences.AppPreferencesRepository
+import io.github.rsgarrido.sazanami.data.visual.AndroidAutoArtworkCache
 import io.github.rsgarrido.sazanami.data.visual.PlaylistCollageStore
 import io.github.rsgarrido.sazanami.data.visual.VisualAssetIdentity
 import io.github.rsgarrido.sazanami.data.visual.VisualAssetOwnerType
@@ -48,6 +49,7 @@ class AndroidAutoCatalogRepository(
     private val playlistsRepository = PlaylistsRepository(database.playlistDao())
     private val artistPictureRepository = ArtistPictureRepository(database.artistPictureAssignmentDao())
     private val collageStore = PlaylistCollageStore(appContext)
+    private val androidAutoArtworkCache = AndroidAutoArtworkCache(appContext)
 
     suspend fun loadSnapshot(): AndroidAutoCatalogSnapshot = withContext(Dispatchers.IO) {
         val preferences = preferencesRepository.awaitLoadedState()
@@ -81,6 +83,26 @@ class AndroidAutoCatalogRepository(
             )
         }
 
+        val externalArtworkBySource = mutableMapOf<String, Uri?>()
+        fun externallyReadableArtwork(uri: Uri?): Uri? {
+            uri ?: return null
+            return externalArtworkBySource.getOrPut(uri.toString()) {
+                androidAutoArtworkCache.externallyReadableUri(uri)
+            }
+        }
+        fun songForAndroidAuto(song: Song): Song {
+            val artworkUri = externallyReadableArtwork(song.albumArtUri)
+            return if (artworkUri == song.albumArtUri) song else song.copy(albumArtUri = artworkUri)
+        }
+
+        val androidAutoSongs = songs.map(::songForAndroidAuto)
+        val androidAutoPlaylists = playlists.map { playlist ->
+            playlist.copy(
+                songs = playlist.songs.map(::songForAndroidAuto),
+                artworkUri = externallyReadableArtwork(playlist.artworkUri)
+            )
+        }
+
         val assignmentByArtistKey = artistPictureRepository.getAll()
             .associateBy { assignment -> assignment.artistKey }
         val artistArtworkUris = buildLibraryArtistGroups(songs).mapNotNull { artist ->
@@ -97,8 +119,8 @@ class AndroidAutoCatalogRepository(
         }.toMap()
 
         AndroidAutoCatalogSnapshot(
-            songs = songs,
-            playlists = playlists,
+            songs = androidAutoSongs,
+            playlists = androidAutoPlaylists,
             artistArtworkUris = artistArtworkUris
         )
     }
