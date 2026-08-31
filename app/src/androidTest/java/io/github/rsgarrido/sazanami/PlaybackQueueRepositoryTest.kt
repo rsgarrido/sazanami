@@ -174,6 +174,65 @@ class PlaybackQueueRepositoryTest {
         assertEquals(0L, cleared.queue.currentPositionMs)
     }
 
+    @Test
+    fun duplicatingQueueCreatesIndependentInactiveEntriesAndPreservesResumeMetadata() = runBlocking {
+        val track = seedIdentity("Duplicate")
+        repository.createQueue(
+            queueId = "source",
+            displayName = "Queue 1",
+            entries = listOf(
+                entry("source-a", track, base = 0, playback = 1),
+                entry("source-b", track, base = 1, playback = 0)
+            ),
+            currentEntryId = "source-b",
+            currentPositionMs = 4_200L,
+            shuffleEnabled = true,
+            repeatMode = PersistedQueueRepeatMode.ONE
+        )
+        repository.setActiveQueue("source")
+        val copiedIds = ArrayDeque(listOf("copy-a", "copy-b"))
+
+        val copy = repository.duplicateQueue(
+            sourceQueueId = "source",
+            displayName = " Queue 2 ",
+            queueId = "copy",
+            entryIdFactory = { copiedIds.removeFirst() }
+        )
+
+        assertEquals("Queue 2", copy.queue.displayName)
+        assertEquals(listOf("copy-a", "copy-b"), copy.entries.map { it.entryId })
+        assertEquals(listOf(1, 0), copy.entries.map { it.baseOrder })
+        assertEquals("copy-a", copy.queue.currentEntryId)
+        assertEquals(4_200L, copy.queue.currentPositionMs)
+        assertTrue(copy.queue.shuffleEnabled)
+        assertEquals(PersistedQueueRepeatMode.ONE, copy.queue.repeatMode)
+        assertEquals("source", repository.getActiveQueueId())
+        assertEquals(listOf("source-b", "source-a"), repository.loadQueue("source")?.entries?.map {
+            it.entryId
+        })
+    }
+
+    @Test
+    fun guardedDeletionRejectsActiveAndOnlyRemainingQueue() = runBlocking {
+        val track = seedIdentity("Guarded")
+        repository.createQueue(
+            queueId = "active",
+            displayName = "Active",
+            entries = listOf(entry("active-entry", track, 0, 0))
+        )
+        repository.createQueue(
+            queueId = "inactive",
+            displayName = "Inactive",
+            entries = listOf(entry("inactive-entry", track, 0, 0))
+        )
+        repository.setActiveQueue("active")
+
+        assertTrue(!repository.deleteInactiveQueueIfNotLast("active"))
+        assertTrue(repository.deleteInactiveQueueIfNotLast("inactive"))
+        assertTrue(!repository.deleteInactiveQueueIfNotLast("active"))
+        assertEquals("active", repository.getActiveQueueId())
+    }
+
     private suspend fun seedIdentity(label: String): Long {
         return database.listeningTrackIdentityDao().insert(
             ListeningTrackIdentityEntity(

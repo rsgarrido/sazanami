@@ -114,6 +114,10 @@ fun RetroRackMiniPlayer(
                 }
             }
             Spacer(modifier = Modifier.width(6.dp))
+            MiniPlayerQueueButton(
+                onClick = callbacks.onQueueHubClick,
+                iconTint = tokens.displayTextColor
+            )
             MiniPlayerPlayPauseButton(
                 isPlaying = displayedState.isPlaying,
                 onClick = callbacks.onPlayPauseClick,

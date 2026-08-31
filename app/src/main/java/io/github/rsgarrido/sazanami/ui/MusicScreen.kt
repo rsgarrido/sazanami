@@ -117,6 +117,7 @@ import io.github.rsgarrido.sazanami.controller.SpotifyImportUiState
 import io.github.rsgarrido.sazanami.ui.settings.SpotifyImportUiActions
 import io.github.rsgarrido.sazanami.ui.settings.ListeningHistoryReconciliationUiActions
 import io.github.rsgarrido.sazanami.controller.ListeningHistoryReconciliationUiState
+import io.github.rsgarrido.sazanami.controller.PlaybackQueueHubUiState
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -166,6 +167,13 @@ internal fun MusicScreen(
     onRepeatClick: () -> Unit,
     queuedSongs: List<Song>,
     upcomingSongs: List<Song>,
+    playbackQueueHubUiState: PlaybackQueueHubUiState,
+    onPlaybackQueueSelected: (String) -> Unit,
+    onSwitchSelectedPlaybackQueue: () -> Unit,
+    onCreatePlaybackQueueFromCurrent: () -> Unit,
+    onRenamePlaybackQueue: (String, String) -> Unit,
+    onDeletePlaybackQueue: (String) -> Unit,
+    onClearPlaybackQueueMessage: () -> Unit,
     onAddToQueueClick: (Song) -> Unit,
     onPlayNextClick: (Song) -> Unit,
     onUndoPlayNextClick: (Song) -> Unit,
@@ -312,6 +320,7 @@ internal fun MusicScreen(
     var isListeningHistoryReconciliationVisible by
     overlayState.isListeningHistoryReconciliationVisible
     var isExpandedUpNextSheetVisible by overlayState.isExpandedUpNextSheetVisible
+    var isQueueHubVisible by overlayState.isQueueHubVisible
     var isCreatePlaylistDialogVisible by overlayState.isCreatePlaylistDialogVisible
     var playlistCreationFolderId by rememberSaveable { mutableStateOf<Long?>(null) }
     var isSleepTimerDialogVisible by overlayState.isSleepTimerDialogVisible
@@ -587,6 +596,7 @@ internal fun MusicScreen(
                 batchMetadataEditorState != null ||
                 batchMetadataOperationState != null ||
                 isExpandedUpNextSheetVisible ||
+                isQueueHubVisible ||
                 playerMorphState.shouldConsumeBack ||
                 isFolderScreenVisible ||
                 isDiagnosticsScreenVisible ||
@@ -629,6 +639,10 @@ internal fun MusicScreen(
 
             isExpandedUpNextSheetVisible -> {
                 isExpandedUpNextSheetVisible = false
+            }
+
+            isQueueHubVisible -> {
+                isQueueHubVisible = false
             }
 
             playerMorphState.shouldConsumeBack -> {
@@ -1315,6 +1329,9 @@ internal fun MusicScreen(
                             clearPlaylistSelection()
                             mainDestination = MainDestination.LIBRARY
                         },
+                        onOpenQueueHubClick = {
+                            isQueueHubVisible = true
+                        },
                         onToggleFavoriteClick = onToggleFavoriteClick,
                         isSleepTimerActive = isSleepTimerActive,
                         sleepTimerDisplayText = sleepTimerDisplayText,
@@ -1417,6 +1434,8 @@ internal fun MusicScreen(
                     playbackProgressUiState = playbackProgressUiState,
                     favoriteMembershipKeys = favoriteMembershipKeys,
                     isExpandedUpNextSheetVisible = isExpandedUpNextSheetVisible,
+                    isQueueHubVisible = isQueueHubVisible,
+                    playbackQueueHubUiState = playbackQueueHubUiState,
                     queuedSongs = queuedSongs,
                     upcomingSongs = upcomingSongs,
                     isCreatePlaylistDialogVisible = isCreatePlaylistDialogVisible,
@@ -1445,6 +1464,9 @@ internal fun MusicScreen(
                     onShowExpandedUpNextSheet = {
                         isExpandedUpNextSheetVisible = true
                     },
+                    onShowQueueHub = {
+                        isQueueHubVisible = true
+                    },
                     onShowExpandedSleepTimer = {
                         isSleepTimerDialogVisible = true
                     },
@@ -1456,6 +1478,15 @@ internal fun MusicScreen(
                     onDismissExpandedUpNextSheet = {
                         isExpandedUpNextSheetVisible = false
                     },
+                    onDismissQueueHub = {
+                        isQueueHubVisible = false
+                    },
+                    onPlaybackQueueSelected = onPlaybackQueueSelected,
+                    onSwitchSelectedPlaybackQueue = onSwitchSelectedPlaybackQueue,
+                    onCreatePlaybackQueueFromCurrent = onCreatePlaybackQueueFromCurrent,
+                    onRenamePlaybackQueue = onRenamePlaybackQueue,
+                    onDeletePlaybackQueue = onDeletePlaybackQueue,
+                    onClearPlaybackQueueMessage = onClearPlaybackQueueMessage,
                     onRemoveFromQueueClick = onRemoveFromQueueClick,
                     onMoveQueueItemUpClick = onMoveQueueItemUpClick,
                     onMoveQueueItemDownClick = onMoveQueueItemDownClick,

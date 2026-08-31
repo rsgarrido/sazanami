@@ -186,6 +186,12 @@ fun PocketFlipMiniPlayer(
 
             Spacer(modifier = Modifier.width(6.dp))
 
+            MiniPlayerQueueButton(
+                onClick = callbacks.onQueueHubClick,
+                iconTint = displayText,
+                modifier = if (morphOwnsVisuals) Modifier.clearAndSetSemantics { } else Modifier
+            )
+
             Box(
                 modifier = Modifier
                     .size(48.dp)

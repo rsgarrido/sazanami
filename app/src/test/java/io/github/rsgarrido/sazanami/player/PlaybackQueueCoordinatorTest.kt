@@ -270,6 +270,65 @@ class PlaybackQueueCoordinatorTest {
         }
 
     @Test
+    fun newQueueFromCurrentCopiesStateWithoutChangingPlaybackOrActiveQueue() = runBlocking {
+        val persistence = FakePersistence(activeQueueId = "A").apply {
+            seed(queue(
+                id = "A",
+                specs = listOf(
+                    spec("duplicate-1", 1L, base = 0, playback = 1),
+                    spec("duplicate-2", 1L, base = 1, playback = 0)
+                ),
+                current = "duplicate-2",
+                position = 987L,
+                shuffle = true,
+                repeat = PersistedQueueRepeatMode.ONE
+            ))
+        }
+        val runtime = FakeRuntime(
+            liveSnapshot(
+                ids = listOf("duplicate-2" to 1L, "duplicate-1" to 1L),
+                currentEntryId = "duplicate-2",
+                positionMs = 987L,
+                shouldPlay = true,
+                shuffle = true,
+                repeat = PersistedQueueRepeatMode.ONE,
+                baseEntryIds = listOf("duplicate-1", "duplicate-2")
+            )
+        )
+        val coordinator = coordinator(persistence, runtime)
+        coordinator.initialize()
+
+        val copied = requireNotNull(coordinator.createQueueFromCurrent())
+
+        assertEquals("Queue 2", copied.queue.displayName)
+        assertEquals("A", persistence.activeQueueId)
+        assertEquals(0, runtime.replaceCount)
+        assertEquals(listOf(1, 0), copied.entries.map { it.baseOrder })
+        assertEquals(listOf(0, 1), copied.entries.map { it.playbackOrder })
+        assertEquals(2, copied.entries.size)
+        assertEquals(1, copied.entries.map { it.trackIdentityId }.distinct().size)
+        assertTrue(copied.entries.none { copiedEntry ->
+            persistence.queue("A").entries.any { sourceEntry ->
+                sourceEntry.entryId == copiedEntry.entryId
+            }
+        })
+        assertEquals(987L, copied.queue.currentPositionMs)
+        assertTrue(copied.queue.shuffleEnabled)
+        assertEquals(PersistedQueueRepeatMode.ONE, copied.queue.repeatMode)
+
+        val secondCopy = requireNotNull(coordinator.createQueueFromCurrent())
+        assertEquals("Queue 3", secondCopy.queue.displayName)
+        assertEquals("A", persistence.activeQueueId)
+        assertEquals(0, runtime.replaceCount)
+    }
+
+    @Test
+    fun generatedQueueNamesAdvancePastRenamedAndExistingGeneratedQueues() {
+        assertEquals("Queue 2", nextDefaultQueueName(listOf("Morning")))
+        assertEquals("Queue 4", nextDefaultQueueName(listOf("Queue 1", "Queue 3")))
+    }
+
+    @Test
     fun unresolvedEntriesAreSkippedAndMissingCurrentFallsForwardDeterministically() = runBlocking {
         val persistence = FakePersistence(activeQueueId = "A").apply {
             seed(queue("A", listOf(spec("a", 1L, 0, 0)), current = "a"))
@@ -403,6 +462,9 @@ class PlaybackQueueCoordinatorTest {
 
         fun queue(id: String): PlaybackQueueWithEntries = requireNotNull(queues[id])
 
+        override suspend fun listQueues(): List<PlaybackQueueEntity> =
+            queues.values.map(PlaybackQueueWithEntries::queue)
+
         override suspend fun getActiveQueueId(): String? = activeQueueId
 
         override suspend fun setActiveQueue(queueId: String?) {
@@ -472,6 +534,32 @@ class PlaybackQueueCoordinatorTest {
                     repeatMode = repeatMode
                 )
             )
+        }
+
+        override suspend fun duplicateQueue(
+            sourceQueueId: String,
+            displayName: String
+        ): PlaybackQueueWithEntries {
+            val source = queue(sourceQueueId)
+            val queueId = "copy-${queues.size}"
+            val copiedIds = source.entries.associate { entry ->
+                entry.entryId to "$queueId-${entry.entryId}"
+            }
+            val copied = PlaybackQueueWithEntries(
+                queue = source.queue.copy(
+                    queueId = queueId,
+                    displayName = displayName,
+                    currentEntryId = source.queue.currentEntryId?.let(copiedIds::get)
+                ),
+                entries = source.entries.map { entry ->
+                    entry.copy(
+                        entryId = checkNotNull(copiedIds[entry.entryId]),
+                        queueId = queueId
+                    )
+                }
+            )
+            queues[queueId] = copied
+            return copied.ordered()
         }
 
         private fun PlaybackQueueWithEntries.ordered() = copy(

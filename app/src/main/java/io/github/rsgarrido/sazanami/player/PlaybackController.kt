@@ -401,6 +401,9 @@ class PlaybackController(
 
     suspend fun saveActiveQueue(): String? = PlaybackQueueRuntimeBridge.saveActiveQueue()
 
+    suspend fun createQueueFromCurrent(): String? =
+        PlaybackQueueRuntimeBridge.createQueueFromCurrent()
+
     suspend fun switchActiveQueue(queueId: String): Boolean {
         val switched = PlaybackQueueRuntimeBridge.switchActiveQueue(queueId)
         if (switched && pendingPersistentQueueSwitch) {

@@ -79,6 +79,10 @@ fun ClassicWheelMiniPlayer(
                     modifier = Modifier.onGloballyPositioned { morphBounds?.updateMiniArtist(it.boundsInRoot()) }
                 )
             }
+            MiniPlayerQueueButton(
+                onClick = callbacks.onQueueHubClick,
+                iconTint = tokens.displayTextColor
+            )
             MiniPlayerPlayPauseButton(
                 isPlaying = displayedState.isPlaying,
                 onClick = callbacks.onPlayPauseClick,

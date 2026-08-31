@@ -68,6 +68,48 @@ class PlaybackQueueRepository(
         checkNotNull(loadQueueWithinTransaction(queueId))
     }
 
+    suspend fun duplicateQueue(
+        sourceQueueId: String,
+        displayName: String,
+        queueId: String = UUID.randomUUID().toString(),
+        entryIdFactory: () -> String = { UUID.randomUUID().toString() }
+    ): PlaybackQueueWithEntries = database.withTransaction {
+        val source = requireNotNull(loadQueueWithinTransaction(sourceQueueId)) {
+            "Queue $sourceQueueId does not exist"
+        }
+        val safeName = requireDisplayName(displayName)
+        require(queueId.isNotBlank()) { "Queue ID cannot be blank" }
+        require(dao.getQueue(queueId) == null) { "Queue $queueId already exists" }
+
+        val copiedEntryIds = source.entries.associate { entry ->
+            entry.entryId to entryIdFactory().also { copiedId ->
+                require(copiedId.isNotBlank()) { "Entry IDs cannot be blank" }
+            }
+        }
+        require(copiedEntryIds.values.distinct().size == copiedEntryIds.size) {
+            "Copied entry IDs must be unique"
+        }
+        val now = nowMillis()
+        dao.insertQueue(
+            source.queue.copy(
+                queueId = queueId,
+                displayName = safeName,
+                createdAt = now,
+                updatedAt = now,
+                currentEntryId = source.queue.currentEntryId?.let(copiedEntryIds::get)
+            )
+        )
+        dao.insertEntries(
+            source.entries.map { entry ->
+                entry.copy(
+                    entryId = checkNotNull(copiedEntryIds[entry.entryId]),
+                    queueId = queueId
+                )
+            }
+        )
+        checkNotNull(loadQueueWithinTransaction(queueId))
+    }
+
     suspend fun replaceEntries(
         queueId: String,
         entries: List<PlaybackQueueEntryDraft>,
@@ -141,6 +183,13 @@ class PlaybackQueueRepository(
     suspend fun deleteQueue(queueId: String): Boolean = database.withTransaction {
         dao.deleteQueue(queueId) == 1
     }
+
+    suspend fun deleteInactiveQueueIfNotLast(queueId: String): Boolean =
+        database.withTransaction {
+            if (dao.getQueues().size <= 1) return@withTransaction false
+            if (dao.getActiveQueueId() == queueId) return@withTransaction false
+            dao.deleteQueue(queueId) == 1
+        }
 
     suspend fun clearQueue(queueId: String): PlaybackQueueWithEntries =
         database.withTransaction {

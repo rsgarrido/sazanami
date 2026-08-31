@@ -27,6 +27,7 @@ data class MiniPlayerCallbacks(
     val onPlayPauseClick: () -> Unit,
     val onPreviousClick: () -> Unit,
     val onNextClick: () -> Unit,
+    val onQueueHubClick: () -> Unit,
     val onExpandClick: () -> Unit
 )
 

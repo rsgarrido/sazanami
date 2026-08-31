@@ -5,6 +5,7 @@ import io.github.rsgarrido.sazanami.data.PlaybackQueueRepository
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.membershipKey
 import io.github.rsgarrido.sazanami.data.local.PersistedQueueRepeatMode
+import io.github.rsgarrido.sazanami.data.local.PlaybackQueueEntity
 import io.github.rsgarrido.sazanami.data.local.PlaybackQueueEntryEntity
 import io.github.rsgarrido.sazanami.data.local.PlaybackQueueWithEntries
 import kotlinx.coroutines.sync.Mutex
@@ -62,6 +63,7 @@ internal interface PlaybackQueueTrackAccess {
 }
 
 internal interface PlaybackQueuePersistence {
+    suspend fun listQueues(): List<PlaybackQueueEntity>
     suspend fun getActiveQueueId(): String?
     suspend fun setActiveQueue(queueId: String?)
     suspend fun loadQueue(queueId: String): PlaybackQueueWithEntries?
@@ -90,11 +92,18 @@ internal interface PlaybackQueuePersistence {
         shuffleEnabled: Boolean,
         repeatMode: PersistedQueueRepeatMode
     )
+
+    suspend fun duplicateQueue(
+        sourceQueueId: String,
+        displayName: String
+    ): PlaybackQueueWithEntries
 }
 
 internal class RepositoryPlaybackQueuePersistence(
     private val repository: PlaybackQueueRepository
 ) : PlaybackQueuePersistence {
+    override suspend fun listQueues(): List<PlaybackQueueEntity> = repository.listQueues()
+
     override suspend fun getActiveQueueId(): String? = repository.getActiveQueueId()
 
     override suspend fun setActiveQueue(queueId: String?) = repository.setActiveQueue(queueId)
@@ -145,6 +154,11 @@ internal class RepositoryPlaybackQueuePersistence(
         shuffleEnabled = shuffleEnabled,
         repeatMode = repeatMode
     )
+
+    override suspend fun duplicateQueue(
+        sourceQueueId: String,
+        displayName: String
+    ): PlaybackQueueWithEntries = repository.duplicateQueue(sourceQueueId, displayName)
 }
 
 /** Owns the mapping between the one live Media3 timeline and inactive Room-backed queues. */
@@ -174,6 +188,19 @@ internal class PlaybackQueueCoordinator(
 
     suspend fun persistActiveQueueSnapshot(): String? = mutex.withLock {
         persistActiveQueueSnapshotLocked()
+    }
+
+    suspend fun createQueueFromCurrent(): PlaybackQueueWithEntries? = mutex.withLock {
+        val sourceQueueId = persistActiveQueueSnapshotLocked() ?: return@withLock null
+        val source = persistence.loadQueue(sourceQueueId) ?: return@withLock null
+        if (source.entries.isEmpty()) return@withLock null
+        val displayName = nextDefaultQueueName(
+            persistence.listQueues().map(PlaybackQueueEntity::displayName)
+        )
+        persistence.duplicateQueue(
+            sourceQueueId = sourceQueueId,
+            displayName = displayName
+        )
     }
 
     suspend fun switchToQueue(queueId: String): Boolean = mutex.withLock {
@@ -465,4 +492,17 @@ internal class PlaybackQueueCoordinator(
     companion object {
         private const val DEFAULT_QUEUE_NAME = "Queue 1"
     }
+}
+
+internal fun nextDefaultQueueName(existingNames: List<String>): String {
+    val pattern = Regex("Queue (\\d+)")
+    val highestGeneratedNumber = existingNames
+        .mapNotNull(pattern::matchEntire)
+        .mapNotNull { match -> match.groupValues[1].toIntOrNull() }
+        .maxOrNull()
+        ?: 0
+    var number = maxOf(existingNames.size + 1, highestGeneratedNumber + 1)
+    val existing = existingNames.toSet()
+    while ("Queue $number" in existing) number += 1
+    return "Queue $number"
 }

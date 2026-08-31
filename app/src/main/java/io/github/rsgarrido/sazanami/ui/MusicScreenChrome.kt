@@ -178,6 +178,7 @@ fun MiniPlayerSection(
     onRepeatClick: () -> Unit,
     onExpandClick: () -> Unit,
     onOpenUpNextClick: () -> Unit,
+    onOpenQueueHubClick: () -> Unit,
     onToggleFavoriteClick: (Song) -> Unit,
     isSleepTimerActive: Boolean,
     sleepTimerDisplayText: String,
@@ -219,6 +220,7 @@ fun MiniPlayerSection(
             onExpandClick = onExpandClick,
             onCollapseClick = {},
             onOpenUpNextClick = onOpenUpNextClick,
+            onOpenQueueHubClick = onOpenQueueHubClick,
             isCurrentSongFavorite = currentSong?.let { song ->
                 song.membershipKey() in favoriteMembershipKeys
             } == true,

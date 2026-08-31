@@ -166,6 +166,9 @@ internal object PlaybackQueueRuntimeBridge {
 
     suspend fun saveActiveQueue(): String? = coordinator?.persistActiveQueueSnapshot()
 
+    suspend fun createQueueFromCurrent(): String? =
+        coordinator?.createQueueFromCurrent()?.queue?.queueId
+
     suspend fun switchActiveQueue(queueId: String): Boolean =
         coordinator?.switchToQueue(queueId) == true
 

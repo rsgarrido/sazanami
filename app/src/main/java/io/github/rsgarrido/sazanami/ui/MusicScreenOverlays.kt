@@ -41,6 +41,8 @@ import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 import io.github.rsgarrido.sazanami.ui.playlist.AddToPlaylistDialog
 import io.github.rsgarrido.sazanami.ui.playlist.PlaylistNameDialog
 import io.github.rsgarrido.sazanami.ui.queue.QueueScreen
+import io.github.rsgarrido.sazanami.ui.queue.QueueHubSheet
+import io.github.rsgarrido.sazanami.controller.PlaybackQueueHubUiState
 import io.github.rsgarrido.sazanami.ui.settings.SleepTimerDialog
 import io.github.rsgarrido.sazanami.ui.state.PlaybackProgress
 import io.github.rsgarrido.sazanami.ui.state.PlaybackProgressUiState
@@ -65,6 +67,8 @@ fun MusicScreenOverlays(
     playbackProgressUiState: StateFlow<PlaybackProgressUiState>,
     favoriteMembershipKeys: Set<String>,
     isExpandedUpNextSheetVisible: Boolean,
+    isQueueHubVisible: Boolean,
+    playbackQueueHubUiState: PlaybackQueueHubUiState,
     queuedSongs: List<Song>,
     upcomingSongs: List<Song>,
     isCreatePlaylistDialogVisible: Boolean,
@@ -84,9 +88,17 @@ fun MusicScreenOverlays(
     onRepeatClick: () -> Unit,
     onCollapseExpandedPlayer: () -> Unit,
     onShowExpandedUpNextSheet: () -> Unit,
+    onShowQueueHub: () -> Unit,
     onShowExpandedSleepTimer: () -> Unit,
     onShowExpandedMore: () -> Unit,
     onDismissExpandedUpNextSheet: () -> Unit,
+    onDismissQueueHub: () -> Unit,
+    onPlaybackQueueSelected: (String) -> Unit,
+    onSwitchSelectedPlaybackQueue: () -> Unit,
+    onCreatePlaybackQueueFromCurrent: () -> Unit,
+    onRenamePlaybackQueue: (String, String) -> Unit,
+    onDeletePlaybackQueue: (String) -> Unit,
+    onClearPlaybackQueueMessage: () -> Unit,
     onRemoveFromQueueClick: (Int) -> Unit,
     onMoveQueueItemUpClick: (Int) -> Unit,
     onMoveQueueItemDownClick: (Int) -> Unit,
@@ -163,6 +175,7 @@ fun MusicScreenOverlays(
                     modernPlayerAppearance = selectedModernPlayerAppearance,
                     isVisualizerWorkAllowed = !isLyricsVisible &&
                             !isExpandedUpNextSheetVisible &&
+                            !isQueueHubVisible &&
                             !isSleepTimerDialogVisible &&
                             !isCreatePlaylistDialogVisible &&
                             songPendingPlaylistAdd == null &&
@@ -186,6 +199,7 @@ fun MusicScreenOverlays(
                     playerMorphState = playerMorphState,
                     lyricsTransitionState = lyricsTransitionState,
                     onOpenUpNextClick = onShowExpandedUpNextSheet,
+                    onOpenQueueHubClick = onShowQueueHub,
                     onOpenSleepTimerClick = onShowExpandedSleepTimer,
                     onOpenMoreClick = onShowExpandedMore,
                     onToggleFavoriteClick = onToggleFavoriteClick,
@@ -241,6 +255,19 @@ fun MusicScreenOverlays(
                 modifier = Modifier.fillMaxHeight(0.86f)
             )
         }
+    }
+
+    if (isQueueHubVisible) {
+        QueueHubSheet(
+            state = playbackQueueHubUiState,
+            onDismiss = onDismissQueueHub,
+            onQueueSelected = onPlaybackQueueSelected,
+            onSwitchSelected = onSwitchSelectedPlaybackQueue,
+            onCreateFromCurrent = onCreatePlaybackQueueFromCurrent,
+            onRename = onRenamePlaybackQueue,
+            onDelete = onDeletePlaybackQueue,
+            onMessageDismissed = onClearPlaybackQueueMessage
+        )
     }
 
     if (isCreatePlaylistDialogVisible) {

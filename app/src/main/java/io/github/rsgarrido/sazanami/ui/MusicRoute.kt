@@ -57,6 +57,8 @@ internal fun MusicRoute(
     modifier: Modifier = Modifier
 ) {
     val playbackUiState by musicViewModel.playbackUiState.collectAsStateWithLifecycle()
+    val playbackQueueHubUiState by
+        musicViewModel.playbackQueueHubUiState.collectAsStateWithLifecycle()
     val libraryUiState by musicViewModel.libraryUiState.collectAsStateWithLifecycle()
     val sleepTimerUiState by musicViewModel.sleepTimerUiState.collectAsStateWithLifecycle()
     val playerAppearanceUiState by
@@ -299,6 +301,19 @@ internal fun MusicRoute(
             lyricsPlaybackUiState = lyricsPlaybackUiState,
             queuedSongs = playbackUiState.queuedSongs,
             upcomingSongs = playbackUiState.upcomingSongs,
+            playbackQueueHubUiState = playbackQueueHubUiState,
+            onPlaybackQueueSelected = musicViewModel::selectPlaybackQueue,
+            onSwitchSelectedPlaybackQueue = { musicViewModel.switchSelectedPlaybackQueue() },
+            onCreatePlaybackQueueFromCurrent = {
+                musicViewModel.createPlaybackQueueFromCurrent()
+            },
+            onRenamePlaybackQueue = { queueId, name ->
+                musicViewModel.renamePlaybackQueue(queueId, name)
+            },
+            onDeletePlaybackQueue = { queueId ->
+                musicViewModel.deletePlaybackQueue(queueId)
+            },
+            onClearPlaybackQueueMessage = musicViewModel::clearPlaybackQueueMessage,
             snackbarHostState = snackbarHostState,
             modifier = modifier,
             libraryFolders = libraryUiState.folders,
