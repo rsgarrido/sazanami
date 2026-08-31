@@ -30,6 +30,11 @@ import kotlinx.coroutines.flow.update
 import java.util.Locale
 import kotlin.random.Random
 
+private data class PendingExternalPlaybackSelection(
+    val selectedSongId: Long,
+    val playbackContext: List<Song>
+)
+
 class PlaybackController(
     context: Context,
     private val coroutineScope: CoroutineScope
@@ -44,6 +49,7 @@ class PlaybackController(
     private val restoredShuffleMode = playerStateStorage.getShuffleMode()
     private var librarySongs: List<Song> = emptyList()
     private var playbackContextSongs: List<Song> = emptyList()
+    private var pendingExternalPlaybackSelection: PendingExternalPlaybackSelection? = null
     private var replayGainMode: ReplayGainMode = ReplayGainMode.OFF
     private var replayGainRequestId = 0
     private val _uiState = MutableStateFlow(
@@ -287,6 +293,25 @@ class PlaybackController(
             addCurrentToHistory = false,
             clearForwardHistory = false,
             preserveSpecializedShuffleMode = true
+        )
+    }
+
+    internal fun prepareExternalPlaybackSelection(
+        song: Song,
+        playbackContext: List<Song>
+    ) {
+        // MediaSession.Callback.onSetMediaItems is a resolver callback. The session applies the
+        // returned playlist after the callback completes, so only stage logical controller state
+        // here and never call MusicPlayer.setMediaItems/prepare/play from this path.
+        if (
+            shuffleMode == PlaybackShuffleMode.ALBUMS ||
+            shuffleMode == PlaybackShuffleMode.ALBUMS_AND_SONGS
+        ) {
+            shuffleMode = PlaybackShuffleMode.OFF
+        }
+        pendingExternalPlaybackSelection = PendingExternalPlaybackSelection(
+            selectedSongId = song.id,
+            playbackContext = playbackContext.ifEmpty { listOf(song) }
         )
     }
 
@@ -772,6 +797,36 @@ class PlaybackController(
         val newSong = librarySongs.firstOrNull { song ->
             song.id == songId
         } ?: return
+
+        val pendingExternal = pendingExternalPlaybackSelection
+            ?.takeIf { pending -> pending.selectedSongId == newSong.id }
+        if (pendingExternal != null) {
+            pendingExternalPlaybackSelection = null
+            playbackNavigationHistory.clearAll()
+            playbackQueueManager.replaceQueue(emptyList())
+            playbackContextSongs = pendingExternal.playbackContext
+
+            val live = musicPlayer.adoptLiveSession(librarySongs)
+            currentSong = newSong
+            currentPosition = live?.currentPosition ?: musicPlayer.getCurrentPosition()
+            duration = live?.duration ?: newSong.duration
+                .coerceIn(0L, Int.MAX_VALUE.toLong())
+                .toInt()
+            isPlaying = live?.isPlaying ?: musicPlayer.isPlaying()
+            upcomingSongs = live?.upcomingSongs ?: pendingExternal.playbackContext
+                .dropWhile { song -> song.id != newSong.id }
+                .drop(1)
+
+            musicPlayer.synchronizeNavigationPolicy(
+                shuffleEnabled = shuffleMode.usesDynamicSongShuffle,
+                repeatMode = repeatMode,
+                origin = ControllerSynchronizationOrigin.EXTERNAL
+            )
+            applyReplayGainForCurrentSong()
+            startProgressUpdates()
+            savePlayerState()
+            return
+        }
 
         if (currentSong?.id == newSong.id) {
             musicPlayer.synchronizeNavigationPolicy(

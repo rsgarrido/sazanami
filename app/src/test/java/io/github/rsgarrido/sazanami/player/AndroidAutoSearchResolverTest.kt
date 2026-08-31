@@ -4,6 +4,7 @@ import android.net.Uri
 import io.github.rsgarrido.sazanami.data.Song
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Test
 import org.mockito.Mockito.mock
 
@@ -62,6 +63,43 @@ class AndroidAutoSearchResolverTest {
         val results = AndroidAutoSearchResolver.searchSongs("Left Behind", catalog)
 
         assertEquals(leftBehind.id, results.first().id)
+    }
+
+    @Test
+    fun `unmatched voice query does not fall back to current song`() {
+        val match = AndroidAutoSearchResolver.resolvePlayback(
+            AndroidAutoSearchRequest(query = "Everything's True"),
+            catalog,
+            preferredSongId = warning.id
+        )
+
+        assertNull(match)
+    }
+
+    @Test
+    fun `empty request still preserves generic playback fallback`() {
+        val match = AndroidAutoSearchResolver.resolvePlayback(
+            AndroidAutoSearchRequest(),
+            catalog,
+            preferredSongId = warning.id
+        )
+
+        assertNotNull(match)
+        assertEquals(warning.id, match!!.selectedSong.id)
+        assertEquals(catalog.songs.map(Song::id), match.songs.map(Song::id))
+    }
+
+    @Test
+    fun `generic music request still resolves the library`() {
+        val match = AndroidAutoSearchResolver.resolvePlayback(
+            AndroidAutoSearchRequest(query = "play my music"),
+            catalog,
+            preferredSongId = peopleEquals.id
+        )
+
+        assertNotNull(match)
+        assertEquals(peopleEquals.id, match!!.selectedSong.id)
+        assertEquals(catalog.songs.map(Song::id), match.songs.map(Song::id))
     }
 
     private fun song(

@@ -8,7 +8,9 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.MediaStore
+import android.util.Log
 import androidx.annotation.OptIn
 import android.content.Intent
 import androidx.media3.common.AudioAttributes
@@ -955,7 +957,12 @@ class PlaybackService : MediaLibraryService() {
         startIndex: Int,
         startPositionMs: Long
     ): MediaSession.MediaItemsWithStartPosition {
-        val catalog = loadAndroidAutoCatalog()
+        val resolutionStartedAt = SystemClock.elapsedRealtime()
+        val cachedCatalog = androidAutoCatalogSnapshot.takeIf { snapshot ->
+            snapshot.songs.isNotEmpty()
+        }
+        val catalog = cachedCatalog ?: loadAndroidAutoCatalog()
+        val catalogSource = if (cachedCatalog != null) "snapshot" else "repository"
         if (catalog.songs.isEmpty() || mediaItems.isEmpty()) {
             return MediaSession.MediaItemsWithStartPosition(
                 mediaItems,
@@ -974,6 +981,13 @@ class PlaybackService : MediaLibraryService() {
                 !searchRequest.album.isNullOrBlank() ||
                 !searchRequest.playlist.isNullOrBlank() ||
                 !searchRequest.genre.isNullOrBlank()
+        if (hasSearchRequest) {
+            Log.i(
+                ANDROID_AUTO_VOICE_TAG,
+                "Received media search query=${searchRequest.query.orEmpty()} " +
+                        "title=${searchRequest.title.orEmpty()} artist=${searchRequest.artist.orEmpty()}"
+            )
+        }
 
         val match = when {
             hasSearchRequest && preferredSongId != null -> {
@@ -1002,13 +1016,25 @@ class PlaybackService : MediaLibraryService() {
             ) ?: preferredSongId?.let { songId ->
                 AndroidAutoSearchResolver.resolveSongSelection(songId, catalog)
             }
-        } ?: AndroidAutoSearchResolver.resolvePlayback(
-            request = AndroidAutoSearchRequest(),
-            catalog = catalog,
-            preferredSongId = playerStateStorage.getCurrentSongId()
-        )
+        } ?: if (!hasSearchRequest) {
+            AndroidAutoSearchResolver.resolvePlayback(
+                request = AndroidAutoSearchRequest(),
+                catalog = catalog,
+                preferredSongId = playerStateStorage.getCurrentSongId()
+            )
+        } else {
+            null
+        }
 
         if (match == null) {
+            if (hasSearchRequest) {
+                val elapsedMs = SystemClock.elapsedRealtime() - resolutionStartedAt
+                Log.w(
+                    ANDROID_AUTO_VOICE_TAG,
+                    "No confident media search match after ${elapsedMs}ms; rejecting request"
+                )
+                throw IllegalArgumentException("No matching media found for voice search request")
+            }
             return MediaSession.MediaItemsWithStartPosition(
                 mediaItems,
                 selectedIndex,
@@ -1018,7 +1044,11 @@ class PlaybackService : MediaLibraryService() {
 
         servicePlaybackContextSongs = match.songs
         val selectedSong = match.selectedSong
-        val controllerHandledSelection = PlaybackLibraryBridge.playSelectedSong(
+
+        // Stage phone-side logical state without touching the player. Media3 applies the resolved
+        // playlist, then calls prepare/play for legacy playFromSearch requests after this callback
+        // completes. Mutating the player here would process the same Gemini request twice.
+        PlaybackLibraryBridge.prepareExternalPlaybackSelection(
             song = selectedSong,
             playbackContext = match.songs
         )
@@ -1030,14 +1060,12 @@ class PlaybackService : MediaLibraryService() {
         } else {
             PlaybackShuffleMode.OFF
         }
-        if (!controllerHandledSelection) {
-            playerStateStorage.saveServicePlaybackContext(
-                playbackContextSongIds = match.songs.map(Song::id),
-                shuffleMode = logicalShuffleMode
-            )
-        }
+        playerStateStorage.saveServicePlaybackContext(
+            playbackContextSongIds = match.songs.map(Song::id),
+            shuffleMode = logicalShuffleMode
+        )
 
-        val orderedSongs = if (!controllerHandledSelection && logicalShuffleMode.isEnabled) {
+        val orderedSongs = if (logicalShuffleMode.isEnabled) {
             buildList {
                 add(selectedSong)
                 addAll(match.songs.filterNot { song -> song.id == selectedSong.id }.shuffled())
@@ -1047,6 +1075,14 @@ class PlaybackService : MediaLibraryService() {
         }
         val resolvedIndex = orderedSongs.indexOfFirst { song -> song.id == selectedSong.id }
             .coerceAtLeast(0)
+        if (hasSearchRequest) {
+            Log.i(
+                ANDROID_AUTO_VOICE_TAG,
+                "Resolved media search to ${selectedSong.title} by ${selectedSong.artist} " +
+                        "in ${SystemClock.elapsedRealtime() - resolutionStartedAt}ms " +
+                        "using $catalogSource catalog (${orderedSongs.size} items)"
+            )
+        }
         return MediaSession.MediaItemsWithStartPosition(
             orderedSongs.map { song -> song.toPlayableMediaItem() },
             resolvedIndex,
@@ -1240,6 +1276,7 @@ class PlaybackService : MediaLibraryService() {
 }
 
 
+private const val ANDROID_AUTO_VOICE_TAG = "SazanamiVoiceSearch"
 private const val AUTO_TOGGLE_SHUFFLE_ACTION =
     "io.github.rsgarrido.sazanami.action.AUTO_TOGGLE_SHUFFLE"
 private const val AUTO_TOGGLE_REPEAT_ALL_ACTION =

@@ -37,6 +37,15 @@ object AndroidAutoSearchResolver {
     ): AndroidAutoPlaybackMatch? {
         if (catalog.songs.isEmpty()) return null
 
+        val hasExplicitSearchTerm = listOf(
+            request.query,
+            request.title,
+            request.artist,
+            request.album,
+            request.playlist,
+            request.genre
+        ).any { value -> value.cleanQuery() != null }
+
         request.playlist.cleanQuery()?.let { requestedPlaylist ->
             catalog.playlists.bestNamedMatch(requestedPlaylist)?.let { playlist ->
                 return playlist.songs.toPlaybackMatch(preferredSongId)
@@ -77,6 +86,10 @@ object AndroidAutoSearchResolver {
 
         val rawQuery = request.query.cleanQuery()?.stripVoicePlayPrefix()
         if (rawQuery != null) {
+            if (rawQuery.isGenericLibraryRequest()) {
+                return catalog.songs.toPlaybackMatch(preferredSongId)
+            }
+
             parseTitleByArtist(rawQuery)?.let { (title, artist) ->
                 bestSongMatch(catalog.songs, title, artist)?.let { song ->
                     return contextForSong(song, catalog.songs)
@@ -105,6 +118,8 @@ object AndroidAutoSearchResolver {
                 return contextForSong(song, catalog.songs)
             }
         }
+
+        if (hasExplicitSearchTerm) return null
 
         val preferredIndex = preferredSongId?.let { id ->
             catalog.songs.indexOfFirst { song -> song.id == id }.takeIf { it >= 0 }
@@ -211,6 +226,16 @@ object AndroidAutoSearchResolver {
     private fun String.stripVoicePlayPrefix(): String =
         replace(Regex("^(please\\s+)?(play|listen\\s+to)(\\s+me)?\\s+", RegexOption.IGNORE_CASE), "")
             .trim()
+
+    private fun String.isGenericLibraryRequest(): Boolean = normalized(this) in setOf(
+        "music",
+        "my music",
+        "songs",
+        "all songs",
+        "my songs",
+        "library",
+        "my library"
+    )
 
     private fun textMatches(actual: String, requested: String): Boolean {
         val actualNorm = normalized(actual)

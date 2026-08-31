@@ -28,9 +28,9 @@ object PlaybackLibraryBridge {
 
     fun hasPlaybackController(): Boolean = playbackController != null
 
-    fun playSelectedSong(song: Song, playbackContext: List<Song>): Boolean {
+    fun prepareExternalPlaybackSelection(song: Song, playbackContext: List<Song>): Boolean {
         val controller = playbackController ?: return false
-        controller.playSelectedSong(song, playbackContext)
+        controller.prepareExternalPlaybackSelection(song, playbackContext)
         return true
     }
 
