@@ -23,6 +23,26 @@ class ReconciliationMetadataNormalizationTest {
     }
 
     @Test
+    fun boundedReviewNormalizationDoesNotBroadenCanonicalEquality() {
+        assertNotEquals(
+            candidateCanonicalNormalize("Good Old-Fashioned Lover Boy"),
+            candidateCanonicalNormalize("Good Old Fashioned Lover Boy")
+        )
+        assertEquals(
+            candidatePunctuationNormalize("Good Old-Fashioned Lover Boy"),
+            candidatePunctuationNormalize("Good Old Fashioned Lover Boy")
+        )
+        assertNotEquals(
+            candidateCanonicalNormalize("Shake That"),
+            candidateCanonicalNormalize("Shake That!!!")
+        )
+        assertEquals(
+            candidatePunctuationNormalize("Shake That"),
+            candidatePunctuationNormalize("Shake That!!!")
+        )
+    }
+
+    @Test
     fun unicodeCompositionAndJapaneseMetadataRemainIntact() {
         assertEquals(candidateCanonicalNormalize("Cafe\u0301"),
             candidateCanonicalNormalize("Café"))

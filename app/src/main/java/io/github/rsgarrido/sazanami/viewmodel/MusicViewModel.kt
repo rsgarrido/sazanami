@@ -15,7 +15,11 @@ import io.github.rsgarrido.sazanami.controller.SpotifyListeningHistoryImportCont
 import io.github.rsgarrido.sazanami.controller.DefaultListeningHistoryReconciliationOperations
 import io.github.rsgarrido.sazanami.controller.ListeningHistoryReconciliationController
 import io.github.rsgarrido.sazanami.controller.LinkedHistoricalReconciliation
+import io.github.rsgarrido.sazanami.controller.ReconciliationAlbumKey
+import io.github.rsgarrido.sazanami.controller.ReconciliationBrowseMode
 import io.github.rsgarrido.sazanami.controller.ReconciliationReviewTab
+import io.github.rsgarrido.sazanami.controller.ReconciliationReviewFilter
+import io.github.rsgarrido.sazanami.controller.ReconciliationSortOption
 import io.github.rsgarrido.sazanami.data.LocalReconciliationTarget
 import io.github.rsgarrido.sazanami.data.ListeningHistoryAutomaticReconciler
 import io.github.rsgarrido.sazanami.data.Song
@@ -129,6 +133,7 @@ class MusicViewModel(
 
     private val appDatabase: AppDatabase = DatabaseProvider.getDatabase(appContext)
     private val historyAutomaticReconciler = ListeningHistoryAutomaticReconciler(appDatabase)
+    private var refreshOpenHistoryReconciliation: () -> Unit = {}
 
     private val appPreferencesRepository = AppPreferencesRepository.getInstance(appContext)
     private val tagEditorRepository = TagEditorRepository()
@@ -168,7 +173,7 @@ class MusicViewModel(
                     libraryController.uiState.value.songs
                 )
                 if (result.newlyLinked > 0) {
-                    listeningHistoryReconciliationController.onExternalReconciliationMutation()
+                    refreshOpenHistoryReconciliation()
                 }
             }
         ),
@@ -183,10 +188,29 @@ class MusicViewModel(
     fun retryListeningHistoryReconciliation() = listeningHistoryReconciliationController.retry()
     fun selectReconciliationTab(tab: ReconciliationReviewTab) =
         listeningHistoryReconciliationController.selectTab(tab)
+    fun selectReconciliationBrowseMode(mode: ReconciliationBrowseMode) =
+        listeningHistoryReconciliationController.selectBrowseMode(mode)
+    fun updateReconciliationBrowseQuery(query: String) =
+        listeningHistoryReconciliationController.updateBrowseQuery(query)
+    fun selectReconciliationSort(option: ReconciliationSortOption) =
+        listeningHistoryReconciliationController.selectSort(option)
+    fun selectReconciliationReviewFilter(filter: ReconciliationReviewFilter) =
+        listeningHistoryReconciliationController.selectReviewFilter(filter)
     fun toggleReconciliationItem(sourceId: Long) =
         listeningHistoryReconciliationController.toggleExpanded(sourceId)
     fun toggleLinkedReconciliationGroup(targetIdentityId: Long) =
         listeningHistoryReconciliationController.toggleLinkedGroup(targetIdentityId)
+    fun toggleReconciliationAlbum(key: ReconciliationAlbumKey) =
+        listeningHistoryReconciliationController.toggleAlbum(key)
+    fun toggleReconciliationArtist(key: String) =
+        listeningHistoryReconciliationController.toggleArtist(key)
+    fun toggleReconciliationSelection(sourceId: Long) =
+        listeningHistoryReconciliationController.toggleSelected(sourceId)
+    fun selectReconciliationItems(sourceIds: List<Long>) =
+        listeningHistoryReconciliationController.selectReviewItems(sourceIds)
+    fun clearReconciliationSelection() = listeningHistoryReconciliationController.clearSelection()
+    fun requestLinkSelectedReconciliations() =
+        listeningHistoryReconciliationController.requestLinkSelected()
     fun skipReconciliationItem(sourceId: Long) =
         listeningHistoryReconciliationController.skip(sourceId)
     fun chooseReconciliationTarget(sourceIds: List<Long>, target: LocalReconciliationTarget) =
@@ -590,7 +614,7 @@ class MusicViewModel(
         onLibraryPublished = { songs ->
             val result = historyAutomaticReconciler.reconcile(songs)
             if (result.newlyLinked > 0) {
-                listeningHistoryReconciliationController.onExternalReconciliationMutation()
+                refreshOpenHistoryReconciliation()
             }
         }
     )
@@ -626,6 +650,11 @@ class MusicViewModel(
             ),
             scope = viewModelScope
         )
+
+    init {
+        refreshOpenHistoryReconciliation =
+            listeningHistoryReconciliationController::onExternalReconciliationMutation
+    }
 
     val libraryUiState = libraryController.uiState
     val playbackUiState = playbackController.uiState

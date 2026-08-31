@@ -75,9 +75,16 @@ internal fun candidateAccentNormalize(value: String): String = Normalizer
     .normalize(candidateCanonicalNormalize(value), Normalizer.Form.NFD)
     .replace(Regex("\\p{M}+"), "")
 
-/** Bounded punctuation folding is intentionally a weaker lookup signal. */
+/**
+ * Bounded punctuation folding is intentionally a weaker lookup signal. Hyphen/space, repeated
+ * period formatting, and trailing emphatic punctuation can surface a review candidate, but this
+ * representation is never canonical equality and can never make a match deterministic.
+ */
 internal fun candidatePunctuationNormalize(value: String): String = candidateAccentNormalize(value)
     .replace(Regex("(?<=\\p{L})\\.(?=\\p{L})"), "")
+    .replace(Regex("[\\p{Pd}]+"), " ")
+    .replace(Regex("\\.{2,}"), " ")
+    .replace(Regex("[!?]+$"), "")
     .replace(Regex("\\s*#\\s*"), "#")
     .replace(Regex("[\\p{Z}\\s]+"), " ")
     .trim()

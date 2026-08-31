@@ -3,7 +3,9 @@ package io.github.rsgarrido.sazanami.ui.settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,20 +17,26 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,23 +47,32 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.controller.LinkedHistoricalReconciliation
-import io.github.rsgarrido.sazanami.controller.LinkedReconciliationGroup
 import io.github.rsgarrido.sazanami.controller.ListeningHistoryReconciliationUiState
+import io.github.rsgarrido.sazanami.controller.ReconciliationAlbumKey
+import io.github.rsgarrido.sazanami.controller.ReconciliationAlbumPresentation
+import io.github.rsgarrido.sazanami.controller.ReconciliationArtistPresentation
+import io.github.rsgarrido.sazanami.controller.ReconciliationBrowseMode
 import io.github.rsgarrido.sazanami.controller.ReconciliationConfirmation
 import io.github.rsgarrido.sazanami.controller.ReconciliationReviewContent
+import io.github.rsgarrido.sazanami.controller.ReconciliationReviewFilter
 import io.github.rsgarrido.sazanami.controller.ReconciliationReviewTab
+import io.github.rsgarrido.sazanami.controller.ReconciliationSortOption
+import io.github.rsgarrido.sazanami.controller.ReconciliationTrackPresentation
+import io.github.rsgarrido.sazanami.controller.ReconciliationTrackStatus
 import io.github.rsgarrido.sazanami.controller.ratingWarning
-import io.github.rsgarrido.sazanami.data.HistoricalReconciliationItem
 import io.github.rsgarrido.sazanami.data.HistoricalReconciliationSource
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationCandidate
 import io.github.rsgarrido.sazanami.data.LocalReconciliationTarget
@@ -74,8 +91,18 @@ data class ListeningHistoryReconciliationUiActions(
     val onBack: () -> Unit,
     val onRetry: () -> Unit,
     val onTabSelected: (ReconciliationReviewTab) -> Unit,
+    val onBrowseModeSelected: (ReconciliationBrowseMode) -> Unit,
+    val onBrowseQueryChanged: (String) -> Unit,
+    val onSortSelected: (ReconciliationSortOption) -> Unit,
+    val onReviewFilterSelected: (ReconciliationReviewFilter) -> Unit,
     val onToggleExpanded: (Long) -> Unit,
     val onToggleLinkedGroup: (Long) -> Unit,
+    val onToggleAlbum: (ReconciliationAlbumKey) -> Unit,
+    val onToggleArtist: (String) -> Unit,
+    val onToggleSelected: (Long) -> Unit,
+    val onSelectItems: (List<Long>) -> Unit,
+    val onClearSelection: () -> Unit,
+    val onLinkSelectedRequested: () -> Unit,
     val onSkip: (Long) -> Unit,
     val onCandidateSelected: (List<Long>, LocalReconciliationTarget) -> Unit,
     val onSearchRequested: (List<Long>) -> Unit,
@@ -204,6 +231,7 @@ private fun Content(
 ) {
     Column(modifier) {
         TabRow(content, actions.onTabSelected)
+        BrowseControls(content, actions)
         content.message?.let { message ->
             Surface(
                 color = MaterialTheme.colorScheme.secondaryContainer,
@@ -219,26 +247,138 @@ private fun Content(
                 }
             }
         }
-        when (content.activeTab) {
-            ReconciliationReviewTab.SUGGESTED -> ReviewList(
-                items = content.suggestedItems,
-                emptyTitle = "No suggested matches",
-                emptyText = "You can still search your library from the Unmatched tab.",
-                expandedSourceId = content.expandedSourceId,
-                actions = actions
+        if (content.selectedSourceIds.isNotEmpty()) {
+            SelectionBar(content, actions)
+        }
+        when (content.browseMode) {
+            ReconciliationBrowseMode.TRACKS -> TrackPresentationList(
+                content.visibleTracks,
+                content,
+                actions
             )
-            ReconciliationReviewTab.UNMATCHED -> ReviewList(
-                items = content.unmatchedItems,
-                emptyTitle = "No unmatched imported tracks",
-                emptyText = "All imported tracks with reviewable history have suggestions or are already linked.",
-                expandedSourceId = content.expandedSourceId,
-                actions = actions
+            ReconciliationBrowseMode.ALBUMS -> AlbumPresentationList(
+                content.visibleAlbums,
+                content,
+                actions
             )
-            ReconciliationReviewTab.LINKED -> LinkedList(
-                groups = content.linkedGroups,
-                expandedTargetId = content.expandedLinkedTargetId,
-                actions = actions
+            ReconciliationBrowseMode.ARTISTS -> ArtistPresentationList(
+                content.visibleArtists,
+                content,
+                actions
             )
+        }
+    }
+}
+
+@Composable
+private fun BrowseControls(
+    content: ReconciliationReviewContent,
+    actions: ListeningHistoryReconciliationUiActions
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ReconciliationBrowseMode.entries.forEach { mode ->
+                FilterChip(
+                    selected = content.browseMode == mode,
+                    onClick = { actions.onBrowseModeSelected(mode) },
+                    label = { Text(mode.displayLabel()) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+        OutlinedTextField(
+            value = content.browseQuery,
+            onValueChange = actions.onBrowseQueryChanged,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            label = { Text("Search title, artist, or album") }
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SortMenu(content.sortOption, actions.onSortSelected)
+            Text(
+                "${content.visibleTracks.size} shown",
+                modifier = Modifier.padding(start = 10.dp),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (content.activeTab == ReconciliationReviewTab.SUGGESTED) {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ReconciliationReviewFilter.entries.forEach { filter ->
+                    FilterChip(
+                        selected = content.reviewFilter == filter,
+                        onClick = { actions.onReviewFilterSelected(filter) },
+                        label = { Text(filter.displayLabel()) }
+                    )
+                }
+            }
+        }
+    }
+    HorizontalDivider()
+}
+
+@Composable
+private fun SortMenu(
+    selected: ReconciliationSortOption,
+    onSelected: (ReconciliationSortOption) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { expanded = true }) {
+            Icon(Icons.Default.Sort, contentDescription = null)
+            Text(selected.displayLabel(), modifier = Modifier.padding(start = 6.dp))
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            ReconciliationSortOption.entries.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option.displayLabel()) },
+                    onClick = {
+                        expanded = false
+                        onSelected(option)
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SelectionBar(
+    content: ReconciliationReviewContent,
+    actions: ListeningHistoryReconciliationUiActions
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "${content.selectedSourceIds.size} selected",
+                modifier = Modifier.weight(1f),
+                fontWeight = FontWeight.SemiBold
+            )
+            TextButton(onClick = actions.onClearSelection, enabled = !content.isWorking) {
+                Text("Clear")
+            }
+            Button(onClick = actions.onLinkSelectedRequested, enabled = !content.isWorking) {
+                Text("Link selected")
+            }
         }
     }
 }
@@ -252,7 +392,9 @@ private fun TabRow(content: ReconciliationReviewContent, onSelected: (Reconcilia
                 ReconciliationReviewTab.UNMATCHED -> content.unmatchedCount
                 ReconciliationReviewTab.LINKED -> content.linkedCount
             }
-            val label = "${tab.name.lowercase().replaceFirstChar { it.titlecase() }} $count"
+            val name = if (tab == ReconciliationReviewTab.SUGGESTED) "Review"
+            else tab.name.lowercase().replaceFirstChar { it.titlecase() }
+            val label = "$name $count"
             val selected = content.activeTab == tab
             TextButton(
                 onClick = { onSelected(tab) },
@@ -268,39 +410,189 @@ private fun TabRow(content: ReconciliationReviewContent, onSelected: (Reconcilia
 }
 
 @Composable
-private fun ReviewList(
-    items: List<HistoricalReconciliationItem>,
-    emptyTitle: String,
-    emptyText: String,
-    expandedSourceId: Long?,
+private fun TrackPresentationList(
+    tracks: List<ReconciliationTrackPresentation>,
+    content: ReconciliationReviewContent,
     actions: ListeningHistoryReconciliationUiActions
 ) {
-    if (items.isEmpty()) {
-        EmptyState(emptyTitle, emptyText)
+    if (tracks.isEmpty()) {
+        EmptyState(emptyTitle(content), emptyText(content))
         return
     }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        items(items, key = { "history-${it.source.identityId}" }) { item ->
-            ReviewCard(item, expandedSourceId == item.source.identityId, actions)
+        items(tracks, key = { "track-${it.status}-${it.sourceId}" }) { track ->
+            CompactTrackCard(track, content, actions)
         }
         item { Spacer(Modifier.height(20.dp)) }
     }
 }
 
 @Composable
-private fun ReviewCard(
-    item: HistoricalReconciliationItem,
-    expanded: Boolean,
+private fun AlbumPresentationList(
+    albums: List<ReconciliationAlbumPresentation>,
+    content: ReconciliationReviewContent,
     actions: ListeningHistoryReconciliationUiActions
 ) {
-    val source = item.source
+    if (albums.isEmpty()) {
+        EmptyState(emptyTitle(content), emptyText(content))
+        return
+    }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(albums, key = { "album-${it.key.stableKey}" }) { album ->
+            val expanded = content.expandedAlbumKey == album.key
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
+            ) {
+                CompactGroupHeader(
+                    title = album.title,
+                    subtitle = album.artist,
+                    summary = albumSummary(album),
+                    expanded = expanded,
+                    onClick = { actions.onToggleAlbum(album.key) }
+                )
+                if (expanded) {
+                    Column(
+                        modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        HorizontalDivider()
+                        val eligible = album.tracks.filter(ReconciliationTrackPresentation::isSelectable)
+                        if (content.activeTab == ReconciliationReviewTab.SUGGESTED && eligible.isNotEmpty()) {
+                            OutlinedButton(
+                                onClick = { actions.onSelectItems(eligible.map { it.sourceId }) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("Select ${eligible.size} review matches") }
+                        }
+                        album.tracks.forEach { track -> CompactTrackCard(track, content, actions) }
+                    }
+                }
+            }
+        }
+        item { Spacer(Modifier.height(20.dp)) }
+    }
+}
+
+@Composable
+private fun ArtistPresentationList(
+    artists: List<ReconciliationArtistPresentation>,
+    content: ReconciliationReviewContent,
+    actions: ListeningHistoryReconciliationUiActions
+) {
+    if (artists.isEmpty()) {
+        EmptyState(emptyTitle(content), emptyText(content))
+        return
+    }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(artists, key = { "artist-${it.key}" }) { artist ->
+            val expanded = content.expandedArtistKey == artist.key
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
+            ) {
+                CompactGroupHeader(
+                    title = artist.artist,
+                    subtitle = "${artist.albums.size} ${if (artist.albums.size == 1) "album" else "albums"}",
+                    summary = artistSummary(artist),
+                    expanded = expanded,
+                    onClick = { actions.onToggleArtist(artist.key) }
+                )
+                if (expanded) {
+                    Column(
+                        modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        HorizontalDivider()
+                        artist.albums.forEach { album ->
+                            Text(
+                                album.title,
+                                style = MaterialTheme.typography.titleSmall,
+                                modifier = Modifier.padding(start = 4.dp, top = 4.dp)
+                            )
+                            Text(
+                                albumSummary(album),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 4.dp)
+                            )
+                            album.tracks.forEach { track -> CompactTrackCard(track, content, actions) }
+                        }
+                    }
+                }
+            }
+        }
+        item { Spacer(Modifier.height(20.dp)) }
+    }
+}
+
+@Composable
+private fun CompactGroupHeader(
+    title: String,
+    subtitle: String,
+    summary: String,
+    expanded: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                role = Role.Button,
+                onClickLabel = if (expanded) "Collapse group" else "Expand group",
+                onClick = onClick
+            )
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 2)
+            Text(
+                subtitle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                summary,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 3.dp)
+            )
+        }
+        Icon(
+            if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+            contentDescription = if (expanded) "Collapse" else "Expand"
+        )
+    }
+}
+
+@Composable
+private fun CompactTrackCard(
+    track: ReconciliationTrackPresentation,
+    content: ReconciliationReviewContent,
+    actions: ListeningHistoryReconciliationUiActions
+) {
+    val expanded = content.expandedSourceId == track.sourceId
+    val selected = track.sourceId in content.selectedSourceIds
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
     ) {
         Row(
             modifier = Modifier
@@ -308,30 +600,44 @@ private fun ReviewCard(
                 .clickable(
                     role = Role.Button,
                     onClickLabel = if (expanded) "Collapse imported track" else "Expand imported track"
-                ) { actions.onToggleExpanded(source.identityId) }
-                .padding(16.dp),
+                ) { actions.onToggleExpanded(track.sourceId) }
+                .padding(horizontal = 10.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (track.isSelectable && content.activeTab == ReconciliationReviewTab.SUGGESTED) {
+                Checkbox(
+                    checked = selected,
+                    onCheckedChange = { actions.onToggleSelected(track.sourceId) },
+                    enabled = !content.isWorking,
+                    modifier = Modifier.semantics {
+                        contentDescription = "Select ${track.source.title}"
+                    }
+                )
+            }
             Column(modifier = Modifier.weight(1f)) {
-                Text(source.title.ifBlank { "Unknown title" }, style = MaterialTheme.typography.titleMedium)
                 Text(
-                    formatArtistAlbum(source.artist, source.album),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    track.source.title.ifBlank { "Unknown title" },
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    historicalPlayLabel(source),
-                    modifier = Modifier.padding(top = 6.dp),
-                    style = MaterialTheme.typography.labelLarge
+                    formatArtistAlbum(track.source.artist, track.source.album),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    when (item.disposition) {
-                        ReconciliationCandidateDisposition.SUGGESTED -> candidateEvidenceCopy(item.candidates.single().evidence.category)
-                        ReconciliationCandidateDisposition.AMBIGUOUS -> "Multiple possible matches"
-                        ReconciliationCandidateDisposition.NO_CANDIDATE -> "No likely library match found"
-                    },
-                    modifier = Modifier.padding(top = 4.dp),
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(historicalPlayLabel(track.source), style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        track.reason.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
             Icon(
                 if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
@@ -341,43 +647,68 @@ private fun ReviewCard(
         if (expanded) {
             HorizontalDivider()
             Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                HistoricalDetails(source)
-                if (item.disposition == ReconciliationCandidateDisposition.AMBIGUOUS) {
-                    WarningText("Multiple library versions may match. No track has been selected.")
-                }
-                item.candidates.forEach { candidate ->
-                    CandidateRow(
-                        candidate,
-                        actionLabel = if (item.disposition == ReconciliationCandidateDisposition.AMBIGUOUS) {
-                            "Select this track"
-                        } else {
-                            "Link history"
-                        },
-                        onSelected = {
-                            actions.onCandidateSelected(listOf(source.identityId), candidate.target)
+                HistoricalDetails(track.source)
+                when (track.status) {
+                    ReconciliationTrackStatus.LINKED -> {
+                        val linked = requireNotNull(track.linkedItem)
+                        Text("Linked local song", style = MaterialTheme.typography.labelLarge)
+                        TargetMetadata(linked.target)
+                        OutlinedButton(
+                            onClick = { actions.onUnlinkRequested(linked) },
+                            modifier = Modifier.fillMaxWidth().semantics {
+                                contentDescription =
+                                    "Unlink ${linked.source.title} from ${linked.target.title}"
+                            }
+                        ) { Text("Unlink history") }
+                    }
+                    ReconciliationTrackStatus.REVIEW,
+                    ReconciliationTrackStatus.UNMATCHED -> {
+                        val item = requireNotNull(track.reviewItem)
+                        if (item.disposition == ReconciliationCandidateDisposition.AMBIGUOUS) {
+                            WarningText("Multiple library versions may match. No track has been selected.")
                         }
-                    )
+                        item.candidates.forEach { candidate ->
+                            CandidateRow(
+                                candidate = candidate,
+                                actionLabel = if (item.disposition == ReconciliationCandidateDisposition.AMBIGUOUS) {
+                                    "Select this track"
+                                } else {
+                                    "Link history"
+                                },
+                                evidenceLabel = if (item.candidates.size == 1) {
+                                    track.reason.label
+                                } else {
+                                    candidateEvidenceCopy(candidate.evidence.category)
+                                },
+                                onSelected = {
+                                    actions.onCandidateSelected(listOf(track.sourceId), candidate.target)
+                                }
+                            )
+                        }
+                        if (item.hasMoreCandidates) {
+                            Text(
+                                "More possible matches exist. Search the library to review them.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = { actions.onSearchRequested(listOf(track.sourceId)) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Search, contentDescription = null)
+                            Text("Choose from library", modifier = Modifier.padding(start = 8.dp))
+                        }
+                        if (track.status == ReconciliationTrackStatus.REVIEW) {
+                            TextButton(
+                                onClick = { actions.onSkip(track.sourceId) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("Skip · review later") }
+                        }
+                    }
                 }
-                if (item.hasMoreCandidates) {
-                    Text(
-                        "More possible matches exist. Search the library to review them.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                OutlinedButton(
-                    onClick = { actions.onSearchRequested(listOf(source.identityId)) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.Search, contentDescription = null)
-                    Text("Choose from library", modifier = Modifier.padding(start = 8.dp))
-                }
-                TextButton(
-                    onClick = { actions.onSkip(source.identityId) },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("Skip · review later") }
             }
         }
     }
@@ -408,6 +739,7 @@ private fun HistoricalDetails(source: HistoricalReconciliationSource) {
 private fun CandidateRow(
     candidate: ListeningIdentityReconciliationCandidate,
     actionLabel: String,
+    evidenceLabel: String = candidateEvidenceCopy(candidate.evidence.category),
     onSelected: () -> Unit
 ) {
     val warning = candidateWarningCopy(candidate.evidence.category)
@@ -417,7 +749,7 @@ private fun CandidateRow(
         tonalElevation = 2.dp
     ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text(candidateEvidenceCopy(candidate.evidence.category), style = MaterialTheme.typography.labelLarge)
+            Text(evidenceLabel, style = MaterialTheme.typography.labelLarge)
             TargetMetadata(candidate.target)
             if (candidate.evidence.missingFields.contains(ReconciliationMissingField.ALBUM)) {
                 Text("Album information is missing from the imported track.", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -458,121 +790,6 @@ private fun WarningText(text: String) {
         )
         Text(text, modifier = Modifier.padding(start = 8.dp), fontWeight = FontWeight.SemiBold)
     }
-}
-
-@Composable
-private fun LinkedList(
-    groups: List<LinkedReconciliationGroup>,
-    expandedTargetId: Long?,
-    actions: ListeningHistoryReconciliationUiActions
-) {
-    if (groups.isEmpty()) {
-        EmptyState("No imported history has been linked yet", "Confirmed matches will appear here.")
-        return
-    }
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        items(groups, key = { "linked-target-${it.target.identityId}" }) { group ->
-            val expanded = expandedTargetId == group.target.identityId
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer
-                )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(
-                            role = Role.Button,
-                            onClickLabel = if (expanded) {
-                                "Collapse linked histories"
-                            } else {
-                                "Expand linked histories"
-                            }
-                        ) { actions.onToggleLinkedGroup(group.target.identityId) }
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            group.target.title.ifBlank { "Unknown title" },
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            formatArtistAlbum(group.target.artist, group.target.album),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            linkedGroupSummary(group),
-                            modifier = Modifier.padding(top = 6.dp),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    Icon(
-                        if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = null
-                    )
-                }
-                if (expanded) {
-                    Column(
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        HorizontalDivider()
-                        Text("Local song", style = MaterialTheme.typography.labelLarge)
-                        TargetMetadata(group.target)
-                        HorizontalDivider()
-                        group.items.forEach { item ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        item.source.title.ifBlank { "Unknown title" },
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    Text(
-                                        formatArtistAlbum(item.source.artist, item.source.album),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        historicalPlayLabel(item.source),
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
-                                }
-                                TextButton(
-                                    onClick = { actions.onUnlinkRequested(item) },
-                                    modifier = Modifier.semantics {
-                                        contentDescription =
-                                            "Unlink ${item.source.title} from ${item.target.title}"
-                                    }
-                                ) { Text("Unlink") }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        item { Spacer(Modifier.height(20.dp)) }
-    }
-}
-
-fun linkedGroupSummary(group: LinkedReconciliationGroup): String {
-    val histories = if (group.historicalIdentityCount == 1) {
-        "1 imported history"
-    } else {
-        "${group.historicalIdentityCount} imported histories"
-    }
-    val plays = if (group.historicalPlayCount == 1L) "1 historical play"
-    else "${group.historicalPlayCount} historical plays"
-    return "$histories · $plays"
 }
 
 @Composable
@@ -652,10 +869,17 @@ private fun ConfirmationDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val isLink = confirmation is ReconciliationConfirmation.Link
     AlertDialog(
         onDismissRequest = { if (!isWorking) onDismiss() },
-        title = { Text(if (isLink) "Link imported history?" else "Unlink imported history?") },
+        title = {
+            Text(
+                when (confirmation) {
+                    is ReconciliationConfirmation.Link -> "Link imported history?"
+                    is ReconciliationConfirmation.Batch -> "Link selected histories?"
+                    is ReconciliationConfirmation.Unlink -> "Unlink imported history?"
+                }
+            )
+        },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth().heightIn(max = 470.dp),
@@ -677,6 +901,26 @@ private fun ConfirmationDialog(
                         Text("After linking, Statistics will combine this history with the local song.")
                         Text("You can unlink this later.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    is ReconciliationConfirmation.Batch -> {
+                        Text(
+                            "${confirmation.selections.size} explicitly selected review matches will be linked in one batch."
+                        )
+                        confirmation.selections.take(8).forEach { selection ->
+                            Text(
+                                "${selection.source.title} → ${selection.target.title}",
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        if (confirmation.selections.size > 8) {
+                            Text(
+                                "And ${confirmation.selections.size - 8} more.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text("Existing or conflicting links will not be overwritten.")
+                        Text("You can unlink these later.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     is ReconciliationConfirmation.Unlink -> {
                         Text(
                             "Imported history will remain saved, but it will no longer be combined with this local song in Statistics."
@@ -694,6 +938,8 @@ private fun ConfirmationDialog(
                         is ReconciliationConfirmation.Link -> if (confirmation.sources.size == 1) {
                             "Link history"
                         } else "Link all ${confirmation.sources.size} histories"
+                        is ReconciliationConfirmation.Batch ->
+                            "Link ${confirmation.selections.size} selected"
                         is ReconciliationConfirmation.Unlink -> "Unlink"
                     }
                 )
@@ -707,11 +953,61 @@ fun candidateEvidenceCopy(category: ReconciliationCandidateCategory): String = w
     ReconciliationCandidateCategory.STRONG_METADATA -> "Title, artist, and album match"
     ReconciliationCandidateCategory.CANONICAL_METADATA ->
         "Title, artist, and album match after typography normalization"
-    ReconciliationCandidateCategory.TYPOGRAPHY_VARIANT -> "Minor punctuation, spelling, or accent differences"
+    ReconciliationCandidateCategory.TYPOGRAPHY_VARIANT -> "Similar title"
     ReconciliationCandidateCategory.INCOMPLETE_EVIDENCE -> "Some imported metadata is missing"
     ReconciliationCandidateCategory.VERSION_SENSITIVE -> "Possible different song version"
     ReconciliationCandidateCategory.AMBIGUOUS -> "Multiple library versions may match"
 }
+
+private fun ReconciliationBrowseMode.displayLabel(): String = when (this) {
+    ReconciliationBrowseMode.TRACKS -> "Tracks"
+    ReconciliationBrowseMode.ALBUMS -> "Albums"
+    ReconciliationBrowseMode.ARTISTS -> "Artists"
+}
+
+private fun ReconciliationSortOption.displayLabel(): String = when (this) {
+    ReconciliationSortOption.HISTORICAL_PLAYS -> "Historical plays"
+    ReconciliationSortOption.TRACK_TITLE -> "Track title"
+    ReconciliationSortOption.ARTIST -> "Artist"
+    ReconciliationSortOption.ALBUM -> "Album"
+}
+
+private fun ReconciliationReviewFilter.displayLabel(): String = when (this) {
+    ReconciliationReviewFilter.ALL -> "All review"
+    ReconciliationReviewFilter.TITLE_FORMATTING -> "Title formatting"
+    ReconciliationReviewFilter.ACCENT_DIACRITIC -> "Accent/diacritic"
+    ReconciliationReviewFilter.SIMILAR_TITLE -> "Similar title"
+    ReconciliationReviewFilter.AMBIGUOUS -> "Ambiguous"
+}
+
+private fun emptyTitle(content: ReconciliationReviewContent): String = when (content.activeTab) {
+    ReconciliationReviewTab.SUGGESTED -> "No review cases found"
+    ReconciliationReviewTab.UNMATCHED -> "No unmatched imported tracks found"
+    ReconciliationReviewTab.LINKED -> "No linked imported tracks found"
+}
+
+private fun emptyText(content: ReconciliationReviewContent): String = when {
+    content.browseQuery.isNotBlank() -> "Try another track, artist, or album search."
+    content.activeTab == ReconciliationReviewTab.SUGGESTED ->
+        "Change the review filter or browse unmatched history."
+    content.activeTab == ReconciliationReviewTab.UNMATCHED ->
+        "All imported tracks have a review candidate or are already linked."
+    else -> "Confirmed and automatic matches will appear here."
+}
+
+fun albumSummary(album: ReconciliationAlbumPresentation): String = buildList {
+    add("${album.importedCount} imported")
+    if (album.linkedCount > 0) add("${album.linkedCount} linked")
+    if (album.reviewCount > 0) add("${album.reviewCount} review")
+    if (album.unmatchedCount > 0) add("${album.unmatchedCount} unmatched")
+}.joinToString(" · ")
+
+fun artistSummary(artist: ReconciliationArtistPresentation): String = buildList {
+    add("${artist.importedCount} imported")
+    if (artist.linkedCount > 0) add("${artist.linkedCount} linked")
+    if (artist.reviewCount > 0) add("${artist.reviewCount} review")
+    if (artist.unmatchedCount > 0) add("${artist.unmatchedCount} unmatched")
+}.joinToString(" · ")
 
 fun candidateWarningCopy(category: ReconciliationCandidateCategory): String? = when (category) {
     ReconciliationCandidateCategory.VERSION_SENSITIVE -> "This may be a different version of the song."

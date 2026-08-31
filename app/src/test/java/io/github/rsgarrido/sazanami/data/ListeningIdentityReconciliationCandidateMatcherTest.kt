@@ -80,6 +80,36 @@ class ListeningIdentityReconciliationCandidateMatcherTest {
     }
 
     @Test
+    fun boundedTitleFormattingExamplesBecomeReviewCandidatesButNeverDeterministic() {
+        val sources = listOf(
+            source(1, "Good Old-Fashioned Lover Boy", "Queen", "Greatest Hits"),
+            source(2, "Shake That", "BAND-MAID", "New Beginning"),
+            source(3, "Rust in Peace... Polaris", "Megadeth", "Rust in Peace"),
+            source(4, "River's Soul - Live Session", "The Warning", "Live Session")
+        )
+        val targets = listOf(
+            target(11, "Good Old Fashioned Lover Boy", "Queen", "Greatest Hits"),
+            target(12, "Shake That!!!", "BAND-MAID", "New Beginning"),
+            target(13, "Rust in Peace Polaris", "Megadeth", "Rust in Peace"),
+            target(14, "River's Soul (Live Session)", "The Warning", "Live Session")
+        )
+
+        val result = matcher.discover(sources, targets)
+
+        assertTrue(result.items.all {
+            it.disposition == ReconciliationCandidateDisposition.SUGGESTED
+        })
+        assertTrue(result.items.all {
+            it.confidence == ReconciliationMatchConfidence.FUZZY
+        })
+        assertTrue(result.items.all {
+            it.candidates.single().evidence.category ==
+                ReconciliationCandidateCategory.TYPOGRAPHY_VARIANT
+        })
+        assertTrue(result.items.none(HistoricalReconciliationItem::isDeterministic))
+    }
+
+    @Test
     fun straightCurlyAndMojibakeApostrophesAreCanonicalExactWhenUnique() {
         val result = matcher.discover(
             listOf(

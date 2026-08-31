@@ -14,8 +14,10 @@ class ListeningHistoryReconciliationUiMappingTest {
         assertEquals("Title, artist, and album match", copies[0])
         assertTrue(candidateEvidenceCopy(ReconciliationCandidateCategory.CANONICAL_METADATA)
             .contains("typography normalization"))
-        assertTrue(candidateEvidenceCopy(ReconciliationCandidateCategory.TYPOGRAPHY_VARIANT)
-            .contains("punctuation"))
+        assertEquals(
+            "Similar title",
+            candidateEvidenceCopy(ReconciliationCandidateCategory.TYPOGRAPHY_VARIANT)
+        )
         assertTrue(candidateEvidenceCopy(ReconciliationCandidateCategory.INCOMPLETE_EVIDENCE)
             .contains("metadata is missing"))
         assertTrue(candidateEvidenceCopy(ReconciliationCandidateCategory.VERSION_SENSITIVE)

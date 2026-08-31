@@ -176,6 +176,36 @@ open review is refreshed once after an external automatic batch adds links. No l
 copies, or duplicates `listening_events`; fifty historical plays owned by one imported identity
 still produce one reconciliation relationship.
 
+## Exception-review screen
+
+Session 3 presents the remaining human decisions as `Review`, `Unmatched`, and `Linked`, combined
+with independent `Tracks`, `Albums`, and `Artists` browsing modes. Tracks remain the authoritative
+identity-level rows. Album keys combine normalized imported artist and album metadata, and artist
+keys use normalized imported artist metadata; these groups are transient navigation and summary
+projections, not persistence identities or reconciliation targets.
+
+The controller prepares one in-memory presentation row per imported identity after a reconciliation
+snapshot loads. Each row contains Unicode-safe search text for imported title, artist, and album,
+stable normalized grouping and sort keys, status, a specific display reason, and an optional unique
+proposed target. Search, sorting, filtering, and grouping operate on that prepared identity state and
+never query or reaggregate listening events per keystroke or per card. Historical plays is the
+default stable sort; title, artist, and album sorts use normalized metadata and source identity as a
+final tie-breaker.
+
+Review filters distinguish title/punctuation/version formatting, accent/diacritic differences,
+similar titles, and ambiguous candidates. These are display classifications only. Punctuation-only
+examples such as hyphen/space or trailing-exclamation differences remain explicit review work, and
+version wording remains reviewable. The UI does not feed these labels back into deterministic
+matching or automatic reconciliation.
+
+Selection is available only for Review rows with exactly one untruncated proposed target. An album
+can select its eligible visible review rows, while an artist remains a navigation hierarchy without
+a one-tap artist link. `Link selected` sends heterogeneous source-to-target requests through the
+Session 2 batch service in one transaction. Clean results update the prepared screen state once;
+already-linked, conflict, or failure results cause one authoritative refresh and never overwrite an
+existing relationship. Linked and unmatched identities use the same search and grouping projections,
+and unlink remains the existing reversible relationship deletion.
+
 ## Final v1 behavior
 
 Reconciliation is optional. Unmatched imported identities remain legitimate historical rows and
