@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationCandidateService
+import io.github.rsgarrido.sazanami.data.ListeningHistoryAutomaticReconciler
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationFailure
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationLinkResult
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationRepository
@@ -329,7 +330,7 @@ class ListeningIdentityReconciliationCandidateServiceTest {
         val target = local("It’s Me", "Artist", "Album")
 
         val before = service.discoverCandidates()
-        assertEquals(ReconciliationCandidateCategory.TYPOGRAPHY_VARIANT,
+        assertEquals(ReconciliationCandidateCategory.CANONICAL_METADATA,
             before.items.single().candidates.single().evidence.category)
 
         assertTrue(reconciliation.link(source, target) is ListeningIdentityReconciliationLinkResult.Linked)
@@ -436,6 +437,106 @@ class ListeningIdentityReconciliationCandidateServiceTest {
 
         assertTrue(result.items.isEmpty())
         assertFalse(database.listeningIdentityReconciliationDao().getAll().isEmpty())
+    }
+
+    @Test
+    fun automaticBatchLinksOnlyUniqueExactAndCanonicalMatchesAndPreservesEvents() = runBlocking {
+        val exact = identity("Exact", "Artist", "Album").also { importedEvent(it, 1) }
+        val canonical = identity("Everything's Ruined", "Faith No More", "Angel Dust")
+            .also { importedEvent(it, 2) }
+        val fuzzy = identity("Enemie", "Faith No More", "King for a Day")
+            .also { importedEvent(it, 3) }
+        val ambiguous = identity("Duplicate", "Artist", "Album")
+            .also { importedEvent(it, 4) }
+        val unmatched = identity("Missing", "Nobody", "Nowhere")
+            .also { importedEvent(it, 5) }
+        val songs = listOf(
+            song(101, "Exact", "Artist", "Album", "Exact.flac"),
+            song(102, "Everything\u00e2\u20ac\u2122s Ruined", "Faith No More", "Angel Dust",
+                "Everything.flac"),
+            song(103, "Enemies", "Faith No More", "King for a Day", "Enemies.flac"),
+            song(104, "Duplicate", "Artist", "Album", "Duplicate A.flac"),
+            song(105, "Duplicate", "Artist", "Album", "Duplicate B.flac")
+        )
+        val eventRowsBefore = database.listeningEventDao().getBackupPage(100, 0)
+
+        val reconciler = ListeningHistoryAutomaticReconciler(database)
+        val result = reconciler.reconcile(songs)
+        val retry = reconciler.reconcile(songs)
+
+        assertEquals(5, result.reviewed)
+        assertEquals(2, result.requested)
+        assertEquals(2, result.newlyLinked)
+        assertEquals(3, result.skippedNonDeterministic)
+        assertEquals(setOf(exact, canonical), reconciliation.listLinks()
+            .map { it.sourceIdentityId }.toSet())
+        assertTrue(reconciliation.findTargetForSource(fuzzy) == null)
+        assertTrue(reconciliation.findTargetForSource(ambiguous) == null)
+        assertTrue(reconciliation.findTargetForSource(unmatched) == null)
+        assertEquals(0, retry.newlyLinked)
+        assertEquals(3, retry.reviewed)
+        assertEquals(2, reconciliation.listLinks().size)
+        val downstreamRows = ListeningStatsRepository(database).getTopTracksByQualifiedPlays(10)
+        reconciliation.listLinks().forEach { link ->
+            assertEquals(
+                1L,
+                downstreamRows.single { it.trackIdentityId == link.targetIdentityId }
+                    .playCounts.totalPlayCount
+            )
+        }
+        assertEquals(eventRowsBefore, database.listeningEventDao().getBackupPage(100, 0))
+    }
+
+    @Test
+    fun libraryRetryLinksNewlyAvailableTrackWithoutReplacingManualBinding() = runBlocking {
+        val future = identity("Future Song", "Artist", "Future Album")
+            .also { importedEvent(it, 1) }
+        val manual = identity("Manual Song", "Artist", "Album")
+            .also { importedEvent(it, 2) }
+        val manualTarget = local("Chosen Manually", "Different Artist", "Different Album")
+        assertTrue(reconciliation.link(manual, manualTarget) is
+            ListeningIdentityReconciliationLinkResult.Linked)
+        val reconciler = ListeningHistoryAutomaticReconciler(database)
+
+        val beforeAddition = reconciler.reconcile(emptyList())
+        val afterAddition = reconciler.reconcile(listOf(
+            song(201, "Future Song", "Artist", "Future Album", "Future Song.flac"),
+            song(202, "Manual Song", "Artist", "Album", "Manual Song.flac")
+        ))
+
+        assertEquals(0, beforeAddition.newlyLinked)
+        assertEquals(1, afterAddition.newlyLinked)
+        assertTrue(reconciliation.findTargetForSource(future) != null)
+        assertEquals(manualTarget, reconciliation.findTargetForSource(manual)?.targetIdentityId)
+
+        assertTrue(reconciliation.unlink(future))
+        assertTrue(service.discoverCandidates(
+            listOf(song(201, "Future Song", "Artist", "Future Album", "Future Song.flac")
+                .let { current ->
+                    io.github.rsgarrido.sazanami.data.LocalReconciliationTarget(
+                        identityId = -1,
+                        localBindingId = -1,
+                        referenceKey = current.membershipKey(),
+                        title = current.title,
+                        artist = current.artist,
+                        album = current.album,
+                        albumArtist = current.albumArtist,
+                        durationMs = current.duration,
+                        displayName = current.displayName,
+                        fileExtension = "flac",
+                        relativeFolder = current.relativePath
+                    )
+                })
+        ).items.any { it.source.identityId == future })
+
+        // There is currently no durable user-veto record. A later real library publication will
+        // reconsider an explicitly unlinked deterministic pair; this behavior is documented as a
+        // follow-up product decision rather than hidden behind session-only UI skip state.
+        val afterExplicitUnlink = reconciler.reconcile(listOf(
+            song(201, "Future Song", "Artist", "Future Album", "Future Song.flac")
+        ))
+        assertEquals(1, afterExplicitUnlink.newlyLinked)
+        assertTrue(reconciliation.findTargetForSource(future) != null)
     }
 
     private suspend fun identity(title: String, artist: String, album: String): Long =

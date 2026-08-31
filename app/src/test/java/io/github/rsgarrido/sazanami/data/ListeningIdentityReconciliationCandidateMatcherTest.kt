@@ -20,6 +20,8 @@ class ListeningIdentityReconciliationCandidateMatcherTest {
         assertEquals(ReconciliationCandidateDisposition.SUGGESTED, item.disposition)
         assertEquals(ReconciliationCandidateCategory.STRONG_METADATA,
             item.candidates.single().evidence.category)
+        assertEquals(ReconciliationMatchConfidence.EXACT, item.confidence)
+        assertTrue(item.isDeterministic)
         assertEquals(10, item.candidates.single().target.identityId)
         assertFalse(item.hasMoreCandidates)
         // The candidate API intentionally has no link/chosen-candidate result state.
@@ -27,7 +29,7 @@ class ListeningIdentityReconciliationCandidateMatcherTest {
     }
 
     @Test
-    fun unicodeNfcCaseAndWhitespaceUseTheConservativeStrongTier() {
+    fun unicodeNfcAndRepeatedWhitespaceUseCanonicalWhileCaseOnlyIsExact() {
         val sources = listOf(
             source(1, "夢中猫", "作家", "作品"),
             source(2, "Cafe\u0301", "ARTIST", "  An   Album  "),
@@ -42,27 +44,26 @@ class ListeningIdentityReconciliationCandidateMatcherTest {
         val result = matcher.discover(sources, targets)
 
         assertEquals(3, result.items.size)
-        assertTrue(result.items.all {
-            it.candidates.single().evidence.category == ReconciliationCandidateCategory.STRONG_METADATA
-        })
+        assertEquals(ReconciliationMatchConfidence.EXACT,
+            result.items.single { it.source.identityId == 1L }.confidence)
+        assertEquals(ReconciliationMatchConfidence.CANONICAL_EXACT,
+            result.items.single { it.source.identityId == 2L }.confidence)
+        assertEquals(ReconciliationMatchConfidence.EXACT,
+            result.items.single { it.source.identityId == 3L }.confidence)
         assertEquals("Cafe\u0301", result.items.single { it.source.identityId == 2L }.source.title)
     }
 
     @Test
-    fun apostrophesDashesAccentsAndBoundedPunctuationAreWeakSearchOnlyEvidence() {
+    fun accentsAndBoundedPunctuationRemainFuzzySearchOnlyEvidence() {
         val sources = listOf(
-            source(1, "It's Me", "Artist", "Album"),
-            source(2, "Signal - One", "Artist", "Album"),
-            source(3, "Ser Humano N°2", "Artist", "Ser Humano"),
-            source(4, "S.A.S.S", "Artist", "Album"),
-            source(5, "In Motion # 1", "Artist", "Album")
+            source(1, "Ser Humano N°2", "Artist", "Ser Humano"),
+            source(2, "S.A.S.S", "Artist", "Album"),
+            source(3, "In Motion # 1", "Artist", "Album")
         )
         val targets = listOf(
-            target(11, "It’s Me", "Artist", "Album"),
-            target(12, "Signal — One", "Artist", "Album"),
-            target(13, "Ser hümáno N°2", "Artist", "Ser hümáno"),
-            target(14, "SASS", "Artist", "Album"),
-            target(15, "In Motion #1", "Artist", "Album")
+            target(11, "Ser hümáno N°2", "Artist", "Ser hümáno"),
+            target(12, "SASS", "Artist", "Album"),
+            target(13, "In Motion #1", "Artist", "Album")
         )
 
         val result = matcher.discover(sources, targets)
@@ -72,8 +73,145 @@ class ListeningIdentityReconciliationCandidateMatcherTest {
                 ReconciliationCandidateCategory.TYPOGRAPHY_VARIANT
         })
         assertTrue(result.items.all {
-            it.candidates.single().evidence.titleRelation == ReconciliationMetadataRelation.NORMALIZED
+            it.candidates.single().evidence.titleRelation == ReconciliationMetadataRelation.FUZZY
         })
+        assertTrue(result.items.all { it.confidence == ReconciliationMatchConfidence.FUZZY })
+        assertTrue(result.items.none(HistoricalReconciliationItem::isDeterministic))
+    }
+
+    @Test
+    fun boundedTitleFormattingExamplesBecomeReviewCandidatesButNeverDeterministic() {
+        val sources = listOf(
+            source(1, "Good Old-Fashioned Lover Boy", "Queen", "Greatest Hits"),
+            source(2, "Shake That", "BAND-MAID", "New Beginning"),
+            source(3, "Rust in Peace... Polaris", "Megadeth", "Rust in Peace"),
+            source(4, "River's Soul - Live Session", "The Warning", "Live Session")
+        )
+        val targets = listOf(
+            target(11, "Good Old Fashioned Lover Boy", "Queen", "Greatest Hits"),
+            target(12, "Shake That!!!", "BAND-MAID", "New Beginning"),
+            target(13, "Rust in Peace Polaris", "Megadeth", "Rust in Peace"),
+            target(14, "River's Soul (Live Session)", "The Warning", "Live Session")
+        )
+
+        val result = matcher.discover(sources, targets)
+
+        assertTrue(result.items.all {
+            it.disposition == ReconciliationCandidateDisposition.SUGGESTED
+        })
+        assertTrue(result.items.all {
+            it.confidence == ReconciliationMatchConfidence.FUZZY
+        })
+        assertTrue(result.items.all {
+            it.candidates.single().evidence.category ==
+                ReconciliationCandidateCategory.TYPOGRAPHY_VARIANT
+        })
+        assertTrue(result.items.none(HistoricalReconciliationItem::isDeterministic))
+    }
+
+    @Test
+    fun straightCurlyAndMojibakeApostrophesAreCanonicalExactWhenUnique() {
+        val result = matcher.discover(
+            listOf(
+                source(1, "Everything's Ruined", "Faith No More", "Angel Dust"),
+                source(2, "Everything\u00e2\u20ac\u2122s Ruined", "Faith No More", "Angel Dust")
+            ),
+            listOf(target(11, "Everything’s Ruined", "Faith No More", "Angel Dust"))
+        )
+
+        assertTrue(result.items.all { it.confidence == ReconciliationMatchConfidence.CANONICAL_EXACT })
+        assertTrue(result.items.all(HistoricalReconciliationItem::isDeterministic))
+        assertTrue(result.items.all {
+            it.candidates.single().evidence.category ==
+                ReconciliationCandidateCategory.CANONICAL_METADATA
+        })
+        assertEquals(
+            "everything's ruined",
+            result.items.first().candidates.single().evidence.importedMetadata?.canonicalTitle
+        )
+    }
+
+    @Test
+    fun identicalAndCanonicalEquivalentLocalDuplicatesRemainAmbiguous() {
+        val item = matcher.discover(
+            listOf(source(1, "Everything's Ruined", "Faith No More", "Angel Dust")),
+            listOf(
+                target(11, "Everything's Ruined", "Faith No More", "Angel Dust"),
+                target(12, "Everything's Ruined", "Faith No More", "Angel Dust"),
+                target(13, "Everything’s Ruined", "Faith No More", "Angel Dust")
+            )
+        ).items.single()
+
+        assertEquals(ReconciliationCandidateDisposition.AMBIGUOUS, item.disposition)
+        assertEquals(ReconciliationMatchConfidence.AMBIGUOUS, item.confidence)
+        assertEquals(3, item.candidateCount)
+        assertEquals(
+            ReconciliationNonDeterministicReason.MULTIPLE_PLAUSIBLE_CANDIDATES,
+            item.nonDeterministicReason
+        )
+        assertFalse(item.isDeterministic)
+    }
+
+    @Test
+    fun exactCandidateDoesNotHideAWeakerAccentEquivalentCandidate() {
+        val item = matcher.discover(
+            listOf(source(1, "Café", "Artist", "Album")),
+            listOf(
+                target(11, "Café", "Artist", "Album"),
+                target(12, "Cafe", "Artist", "Album")
+            )
+        ).items.single()
+
+        assertEquals(ReconciliationMatchConfidence.AMBIGUOUS, item.confidence)
+        assertEquals(setOf(11L, 12L), item.candidates.map { it.target.identityId }.toSet())
+        assertFalse(item.isDeterministic)
+    }
+
+    @Test
+    fun sameTitleAndArtistOnDifferentAlbumIsNotAFullMetadataMatch() {
+        val item = discover(
+            source(1, "The Real Thing", "Faith No More", "The Real Thing"),
+            target(11, "The Real Thing", "Faith No More", "Who Cares a Lot?")
+        ).items.single()
+
+        assertEquals(ReconciliationMatchConfidence.UNMATCHED, item.confidence)
+        assertEquals(ReconciliationCandidateDisposition.NO_CANDIDATE, item.disposition)
+        assertFalse(item.isDeterministic)
+    }
+
+    @Test
+    fun realSpellingDifferenceIsFuzzyAndNeverDeterministic() {
+        val item = discover(
+            source(1, "The Gentle Art of Making Enemys", "Faith No More",
+                "King for a Day... Fool for a Lifetime"),
+            target(11, "The Gentle Art of Making Enemies", "Faith No More",
+                "King for a Day... Fool for a Lifetime")
+        ).items.single()
+
+        assertEquals(ReconciliationMatchConfidence.FUZZY, item.confidence)
+        assertEquals(ReconciliationMetadataRelation.FUZZY,
+            item.candidates.single().evidence.titleRelation)
+        assertEquals(ReconciliationNonDeterministicReason.FUZZY_ONLY,
+            item.nonDeterministicReason)
+        assertFalse(item.isDeterministic)
+    }
+
+    @Test
+    fun gentleArtRegressionHandlesInvisibleWhitespaceAndEllipsisAsCanonical() {
+        val item = discover(
+            source(1, "The Gentle Art of Making\u00a0Enemies", "Faith No More",
+                "King for a Day… Fool for a Lifetime"),
+            target(11, "The Gentle Art of Making Enemies", "Faith No More",
+                "King for a Day... Fool for a Lifetime")
+        ).items.single()
+
+        assertEquals(ReconciliationMatchConfidence.CANONICAL_EXACT, item.confidence)
+        assertTrue(item.isDeterministic)
+        assertEquals(setOf(
+            ReconciliationMetadataField.TITLE,
+            ReconciliationMetadataField.ARTIST,
+            ReconciliationMetadataField.ALBUM
+        ), item.candidates.single().evidence.matchedFields)
     }
 
     @Test
@@ -332,8 +470,14 @@ class ListeningIdentityReconciliationCandidateMatcherTest {
             unrelated + common
         )
 
-        assertTrue(result.items.all { it.disposition == ReconciliationCandidateDisposition.NO_CANDIDATE })
-        assertTrue(result.items.single { it.source.identityId == 20_001L }.hasMoreCandidates)
+        assertEquals(ReconciliationCandidateDisposition.NO_CANDIDATE,
+            result.items.single { it.source.identityId == 20_000L }.disposition)
+        val commonTitle = result.items.single { it.source.identityId == 20_001L }
+        assertEquals(ReconciliationCandidateDisposition.AMBIGUOUS, commonTitle.disposition)
+        assertEquals(ReconciliationMatchConfidence.AMBIGUOUS, commonTitle.confidence)
+        assertEquals(ReconciliationNonDeterministicReason.CANDIDATE_LIMIT_EXCEEDED,
+            commonTitle.nonDeterministicReason)
+        assertTrue(commonTitle.hasMoreCandidates)
     }
 
     private fun discover(

@@ -121,17 +121,17 @@ class ListeningHistoryReconciliationScreenTest {
             MaterialTheme {
                 ListeningHistoryReconciliationScreen(
                     ListeningHistoryReconciliationUiState.Content(uiState.value),
-                    actions(onLinkedToggle = { id ->
-                        uiState.value = uiState.value.copy(expandedLinkedTargetId = id)
+                    actions(onToggle = { id ->
+                        uiState.value = uiState.value.copy(expandedSourceId = id)
                     })
                 )
             }
         }
-        composeRule.onNodeWithText("Song").performClick()
+        composeRule.onNodeWithText("Remastered Song").performClick()
         composeRule.onNodeWithContentDescription("Unlink Remastered Song from Song").assertExists()
     }
 
-    @Test fun linkedHistoriesAreCompactlyGroupedAndExpandTransiently() {
+    @Test fun linkedHistoriesRenderAsCompactIdentityRowsAndExpandTransiently() {
         val target = target(12, "Canonical Song", "Current Album")
         val first = LinkedHistoricalReconciliation(source(2, "Imported One"), target, 1)
         val second = LinkedHistoricalReconciliation(source(3, "Imported Two"), target, 2)
@@ -144,22 +144,21 @@ class ListeningHistoryReconciliationScreenTest {
             MaterialTheme {
                 ListeningHistoryReconciliationScreen(
                     ListeningHistoryReconciliationUiState.Content(uiState.value),
-                    actions(onLinkedToggle = { id ->
+                    actions(onToggle = { id ->
                         uiState.value = uiState.value.copy(
-                            expandedLinkedTargetId =
-                                if (uiState.value.expandedLinkedTargetId == id) null else id
+                            expandedSourceId =
+                                if (uiState.value.expandedSourceId == id) null else id
                         )
                     })
                 )
             }
         }
 
-        composeRule.onAllNodesWithText("Canonical Song").assertCountEquals(1)
-        composeRule.onNodeWithText("2 imported histories · 6 historical plays").assertExists()
-        composeRule.onAllNodesWithText("Imported One").assertCountEquals(0)
-        composeRule.onNodeWithText("Canonical Song").performClick()
         composeRule.onNodeWithText("Imported One").assertExists()
         composeRule.onNodeWithText("Imported Two").assertExists()
+        composeRule.onAllNodesWithText("Canonical Song").assertCountEquals(0)
+        composeRule.onNodeWithText("Imported One").performClick()
+        composeRule.onNodeWithText("Canonical Song").assertExists()
     }
 
     @Test fun versionWarningHasAccessibleText() {
@@ -199,7 +198,7 @@ class ListeningHistoryReconciliationScreenTest {
             reviewItems = emptyList(),
             linkedItems = listOf(linked),
             activeTab = ReconciliationReviewTab.LINKED,
-            expandedLinkedTargetId = canonical.identityId
+            expandedSourceId = linked.source.identityId
         )
         composeRule.setContent {
             MaterialTheme {
@@ -212,8 +211,8 @@ class ListeningHistoryReconciliationScreenTest {
             }
         }
 
-        composeRule.onAllNodesWithText("復讐の歌 — Extended Title").assertCountEquals(2)
-        composeRule.onAllNodesWithText(longAlbum, substring = true).assertCountEquals(2)
+        composeRule.onAllNodesWithText("復讐の歌 — Extended Title").assertCountEquals(1)
+        composeRule.onAllNodesWithText(longAlbum, substring = true).assertCountEquals(1)
         composeRule.onNodeWithText("歴史的なインポート曲 — Remastered 2015").assertExists()
         composeRule.onNodeWithContentDescription(
             "Unlink 歴史的なインポート曲 — Remastered 2015 from 復讐の歌 — Extended Title"
@@ -284,12 +283,15 @@ class ListeningHistoryReconciliationScreenTest {
 
     private fun actions(
         onToggle: (Long) -> Unit = {},
-        onLinkedToggle: (Long) -> Unit = {},
         onSelect: (List<Long>, LocalReconciliationTarget) -> Unit = { _, _ -> },
         onConfirmed: () -> Unit = {}
     ) = ListeningHistoryReconciliationUiActions(
         onEnter = {}, onBack = {}, onRetry = {}, onTabSelected = {},
-        onToggleExpanded = onToggle, onToggleLinkedGroup = onLinkedToggle,
+        onBrowseModeSelected = {}, onBrowseQueryChanged = {}, onSortSelected = {},
+        onReviewFilterSelected = {},
+        onToggleExpanded = onToggle,
+        onToggleAlbum = {}, onToggleArtist = {}, onToggleSelected = {},
+        onSelectItems = {}, onClearSelection = {}, onLinkSelectedRequested = {},
         onSkip = {}, onCandidateSelected = onSelect,
         onSearchRequested = {}, onSearchQueryChanged = {}, onSearchDismissed = {},
         onUnlinkRequested = {}, onConfirmationCancelled = {}, onConfirmed = onConfirmed,

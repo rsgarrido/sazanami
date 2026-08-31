@@ -57,6 +57,7 @@ class SpotifyListeningHistoryImportFlowTest {
     private lateinit var executor: SpotifyListeningHistoryImportExecutor
     private lateinit var scope: CoroutineScope
     private val batchSequence = AtomicInteger()
+    private val reconciliationSequence = AtomicInteger()
 
     @Before
     fun setUp() {
@@ -82,6 +83,7 @@ class SpotifyListeningHistoryImportFlowTest {
             repository = repository,
             previewer = SpotifyListeningHistoryImportPreviewer(repository, sourceProfiles, parser),
             executor = executor,
+            reconcilePublishedHistory = { reconciliationSequence.incrementAndGet() },
             nowMillis = { NOW }
         )
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
@@ -109,6 +111,7 @@ class SpotifyListeningHistoryImportFlowTest {
         controller.importHistory()
         val result = awaitState<SpotifyImportUiState.Success>()
         assertEquals(2L, result.result.newPublished)
+        assertEquals(1, reconciliationSequence.get())
         assertEquals(2L, ListeningStatsRepository(database)
             .getAllTimeOverview(includeLegacyBaseline = false).detailedEventCount)
 
@@ -120,6 +123,7 @@ class SpotifyListeningHistoryImportFlowTest {
         assertEquals(2L, repeat.preview.dedupe.alreadyImportedOccurrences)
         controller.importHistory()
         assertTrue(controller.state.value is SpotifyImportUiState.Preview)
+        assertEquals(1, reconciliationSequence.get())
     }
 
     @Test

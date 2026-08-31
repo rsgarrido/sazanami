@@ -4,11 +4,16 @@ import io.github.rsgarrido.sazanami.data.HistoricalReconciliationItem
 import io.github.rsgarrido.sazanami.data.HistoricalReconciliationMetrics
 import io.github.rsgarrido.sazanami.data.HistoricalReconciliationSource
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationCandidate
+import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationBatchConflict
+import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationBindingRequest
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationFailure
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationLinkResult
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationRatingState
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationRatings
 import io.github.rsgarrido.sazanami.data.LocalReconciliationTarget
+import io.github.rsgarrido.sazanami.data.LocalReconciliationBatchFailure
+import io.github.rsgarrido.sazanami.data.LocalReconciliationBatchResult
+import io.github.rsgarrido.sazanami.data.LocalReconciliationBindingRequest
 import io.github.rsgarrido.sazanami.data.ReconciliationCandidateCategory
 import io.github.rsgarrido.sazanami.data.ReconciliationCandidateDisposition
 import io.github.rsgarrido.sazanami.data.ReconciliationCandidateEvidence
@@ -46,7 +51,7 @@ class ListeningHistoryReconciliationControllerTest {
         assertTrue(controller.state.value is ListeningHistoryReconciliationUiState.Loading)
         controller.enter()
         val content = content()
-        assertEquals(1, content.suggestedCount)
+        assertEquals(1, content.reviewCount)
         assertEquals(1, content.unmatchedCount)
         assertEquals(1, content.linkedCount)
     }
@@ -74,8 +79,10 @@ class ListeningHistoryReconciliationControllerTest {
     @Test fun skipIsSessionOnlyAndRecreationRestoresPersistedLinks() {
         operations.snapshot = snapshot()
         controller.enter()
+        controller.toggleSelected(1)
         controller.skip(1)
-        assertTrue(content().suggestedItems.isEmpty())
+        assertTrue(content().visibleReviewItems.isEmpty())
+        assertTrue(content().selectedSourceIds.isEmpty())
 
         val recreated = ListeningHistoryReconciliationController(
             operations,
@@ -85,7 +92,7 @@ class ListeningHistoryReconciliationControllerTest {
         recreated.enter()
         val recreatedContent =
             (recreated.state.value as ListeningHistoryReconciliationUiState.Content).value
-        assertEquals(1, recreatedContent.suggestedCount)
+        assertEquals(1, recreatedContent.reviewCount)
         assertEquals(1, recreatedContent.linkedCount)
         assertTrue(recreatedContent.skippedSourceIds.isEmpty())
     }
@@ -94,11 +101,11 @@ class ListeningHistoryReconciliationControllerTest {
         operations.snapshot = snapshot()
         controller.enter()
         controller.skip(1)
-        assertTrue(content().suggestedItems.isEmpty())
+        assertTrue(content().visibleReviewItems.isEmpty())
 
         controller.enter()
 
-        assertEquals(1, content().suggestedCount)
+        assertEquals(1, content().reviewCount)
         assertTrue(content().skippedSourceIds.isEmpty())
     }
 
@@ -130,19 +137,6 @@ class ListeningHistoryReconciliationControllerTest {
         controller.updateSearchQuery("needle")
 
         assertEquals(listOf(13L), content().search!!.results.map { it.identityId })
-    }
-
-    @Test fun linkedItemsGroupByTargetWithStableCountsAndPlayTotals() {
-        val sharedTarget = target(10, "Canonical")
-        val groups = groupLinkedReconciliations(listOf(
-            LinkedHistoricalReconciliation(source(2, "Second"), sharedTarget, 2),
-            LinkedHistoricalReconciliation(source(1, "First"), sharedTarget, 1)
-        ))
-
-        assertEquals(1, groups.size)
-        assertEquals(2, groups.single().historicalIdentityCount)
-        assertEquals(4L, groups.single().historicalPlayCount)
-        assertEquals(listOf(1L, 2L), groups.single().items.map { it.source.identityId })
     }
 
     @Test fun tenThousandTargetSearchFiltersBeforeTheHundredResultCapDeterministically() {
@@ -181,7 +175,7 @@ class ListeningHistoryReconciliationControllerTest {
         println("reconciliation current-library search localTargets=10000 matches=150 cap=100 ms=$elapsed")
     }
 
-    @Test fun fiveHundredLinkedTargetsGroupAliasesAndExpandOnlyOneTarget() {
+    @Test fun fifteenHundredLinkedIdentitiesUsePreparedTrackAlbumAndArtistViews() {
         val linked = (0 until 500).flatMap { targetIndex ->
             val canonical = target(
                 id = 10_000L + targetIndex,
@@ -198,28 +192,20 @@ class ListeningHistoryReconciliationControllerTest {
                 )
             }
         }
-        val elapsed = measureTimeMillis {
-            val groups = groupLinkedReconciliations(linked)
-            assertEquals(500, groups.size)
-            assertTrue(groups.all { it.historicalIdentityCount == 3 })
-            assertEquals(3_000L, groups.sumOf { it.historicalPlayCount })
-        }
-        val largeOperations = FakeOperations().apply {
-            snapshot = ReconciliationReviewSnapshot(emptyList(), linked, emptyList())
-        }
-        val largeController = ListeningHistoryReconciliationController(
-            largeOperations,
-            scope,
-            Dispatchers.Unconfined
+        val content = ReconciliationReviewContent(
+            reviewItems = emptyList(),
+            linkedItems = linked,
+            activeTab = ReconciliationReviewTab.LINKED
         )
-        largeController.enter()
-        largeController.toggleLinkedGroup(10_010L)
-        largeController.toggleLinkedGroup(10_011L)
-        val content = (largeController.state.value as ListeningHistoryReconciliationUiState.Content).value
+        val elapsed = measureTimeMillis {
+            assertEquals(1_500, content.visibleTracks.size)
+            assertEquals(1, content.visibleAlbums.size)
+            assertEquals(1, content.visibleArtists.size)
+        }
 
-        assertEquals(10_011L, content.expandedLinkedTargetId)
         assertEquals(1_500, content.linkedCount)
-        println("reconciliation linked grouping targets=500 aliases=1500 ms=$elapsed")
+        assertEquals(1_500, content.visibleTracks.map { it.sourceId }.distinct().size)
+        println("reconciliation prepared linked identities=1500 ms=$elapsed")
     }
 
     @Test fun selectingTargetRequiresConfirmationAndCancelDoesNotLink() {
@@ -246,9 +232,20 @@ class ListeningHistoryReconciliationControllerTest {
         )
         controller.confirm()
         assertEquals(1, operations.linkCalls)
+        assertEquals(1, operations.loadCalls)
         assertEquals(listOf(source.identityId), operations.lastLinkedSources)
         assertEquals(2, content().linkedCount)
         assertTrue(content().message!!.startsWith("History linked"))
+    }
+
+    @Test fun oneExternalAutomaticBatchCommitTriggersOneOpenScreenRefresh() {
+        operations.snapshot = snapshot()
+        controller.enter()
+        assertEquals(1, operations.loadCalls)
+
+        controller.onExternalReconciliationMutation()
+
+        assertEquals(2, operations.loadCalls)
     }
 
     @Test fun linkManyIsOneAtomicOperationAndFailureRefreshesWithoutPartialSuccess() {
@@ -301,6 +298,166 @@ class ListeningHistoryReconciliationControllerTest {
         assertEquals(0, content().linkedCount)
     }
 
+    @Test fun selectedEligibleReviewItemsUseOneBatchAndUpdatePreparedState() {
+        val first = source(1, "First")
+        val second = source(2, "Second")
+        val firstTarget = target(10, "First local")
+        val secondTarget = target(11, "Second local")
+        operations.snapshot = ReconciliationReviewSnapshot(
+            listOf(item(first, firstTarget), item(second, secondTarget)),
+            emptyList(),
+            listOf(firstTarget, secondTarget)
+        )
+        controller.enter()
+
+        controller.toggleSelected(first.identityId)
+        controller.toggleSelected(second.identityId)
+        controller.requestLinkSelected()
+
+        assertTrue(content().confirmation is ReconciliationConfirmation.Batch)
+        controller.confirm()
+
+        assertEquals(1, operations.batchCalls)
+        assertEquals(0, operations.linkCalls)
+        assertEquals(setOf(1L, 2L), operations.lastBatchRequests
+            .map { it.sourceIdentityId }.toSet())
+        assertEquals(2, content().linkedCount)
+        assertTrue(content().reviewItems.isEmpty())
+        assertTrue(content().selectedSourceIds.isEmpty())
+        assertEquals(1, operations.loadCalls)
+    }
+
+    @Test fun ambiguousRowsCannotBeSelectedAndAlreadyLinkedBatchRefreshesOnce() {
+        val eligible = source(1, "Eligible")
+        val eligibleTarget = target(10)
+        val ambiguousSource = source(2, "Ambiguous")
+        val ambiguous = HistoricalReconciliationItem(
+            ambiguousSource,
+            listOf(
+                ListeningIdentityReconciliationCandidate(eligibleTarget,
+                    candidateEvidence(ReconciliationCandidateCategory.AMBIGUOUS)),
+                ListeningIdentityReconciliationCandidate(target(11),
+                    candidateEvidence(ReconciliationCandidateCategory.AMBIGUOUS))
+            ),
+            ReconciliationCandidateDisposition.AMBIGUOUS,
+            false
+        )
+        operations.snapshot = ReconciliationReviewSnapshot(
+            listOf(item(eligible, eligibleTarget), ambiguous),
+            emptyList(),
+            listOf(eligibleTarget)
+        )
+        controller.enter()
+        controller.toggleSelected(ambiguousSource.identityId)
+        assertTrue(content().selectedSourceIds.isEmpty())
+
+        controller.toggleSelected(eligible.identityId)
+        controller.requestLinkSelected()
+        operations.batchResult = LocalReconciliationBatchResult(
+            requested = 1,
+            newlyLinked = 0,
+            alreadyLinked = 1,
+            conflicts = emptyList(),
+            failures = emptyList(),
+            links = emptyList()
+        )
+        controller.confirm()
+
+        assertEquals(1, operations.batchCalls)
+        assertEquals(2, operations.loadCalls)
+        assertTrue(content().selectedSourceIds.isEmpty())
+        assertTrue(content().message!!.contains("already linked"))
+    }
+
+    @Test fun batchConflictDoesNotMoveOrDropTheReviewIdentity() {
+        val source = source(1, "Conflict")
+        val proposed = target(10)
+        operations.snapshot = ReconciliationReviewSnapshot(
+            listOf(item(source, proposed)),
+            emptyList(),
+            listOf(proposed)
+        )
+        controller.enter()
+        controller.toggleSelected(source.identityId)
+        controller.requestLinkSelected()
+        operations.batchResult = LocalReconciliationBatchResult(
+            requested = 1,
+            newlyLinked = 0,
+            alreadyLinked = 0,
+            conflicts = listOf(ListeningIdentityReconciliationBatchConflict(
+                ListeningIdentityReconciliationBindingRequest(source.identityId, proposed.identityId),
+                existingTargetIdentityId = 99
+            )),
+            failures = emptyList(),
+            links = emptyList()
+        )
+
+        controller.confirm()
+
+        assertEquals(1, operations.batchCalls)
+        assertEquals(listOf(source.identityId), content().reviewItems.map { it.source.identityId })
+        assertEquals(0, content().linkedCount)
+        assertTrue(content().selectedSourceIds.isEmpty())
+        assertTrue(content().message!!.contains("conflict"))
+    }
+
+    @Test fun mixedBatchResultReloadsAuthoritativeCountsAndClearsSelectionOnce() {
+        val sources = (1L..4L).map { source(it, "Source $it") }
+        val targets = (1L..4L).map { target(it + 10, "Target $it") }
+        operations.snapshot = ReconciliationReviewSnapshot(
+            sources.mapIndexed { index, source -> item(source, targets[index]) },
+            emptyList(),
+            targets
+        )
+        controller.enter()
+        sources.forEach { controller.toggleSelected(it.identityId) }
+        controller.requestLinkSelected()
+
+        operations.batchResult = LocalReconciliationBatchResult(
+            requested = 4,
+            newlyLinked = 1,
+            alreadyLinked = 1,
+            conflicts = listOf(ListeningIdentityReconciliationBatchConflict(
+                ListeningIdentityReconciliationBindingRequest(
+                    sources[2].identityId,
+                    targets[2].identityId
+                ),
+                existingTargetIdentityId = 99
+            )),
+            failures = listOf(LocalReconciliationBatchFailure(
+                sourceIdentityId = sources[3].identityId,
+                targetReferenceKey = targets[3].referenceKey,
+                reason = ListeningIdentityReconciliationFailure.TARGET_NOT_FOUND
+            )),
+            links = listOf(ListeningIdentityReconciliationEntity(
+                sources[0].identityId,
+                targets[0].identityId,
+                9
+            ))
+        )
+        operations.snapshot = ReconciliationReviewSnapshot(
+            reviewItems = listOf(item(sources[2], targets[2]), item(sources[3], targets[3])),
+            linkedItems = listOf(
+                LinkedHistoricalReconciliation(sources[0], targets[0], 9),
+                LinkedHistoricalReconciliation(sources[1], targets[1], 8)
+            ),
+            localTargets = targets
+        )
+
+        controller.confirm()
+
+        assertEquals(1, operations.batchCalls)
+        assertEquals(2, operations.loadCalls)
+        assertEquals(2, content().reviewCount)
+        assertEquals(0, content().unmatchedCount)
+        assertEquals(2, content().linkedCount)
+        assertTrue(content().selectedSourceIds.isEmpty())
+        assertTrue(content().message!!.contains("1 linked"))
+        assertTrue(content().message!!.contains("already linked"))
+        assertTrue(content().message!!.contains("conflict"))
+        assertTrue(content().message!!.contains("failed"))
+    }
+
     @Test fun ratingWarningsCoverNoRatingTargetOnlySourceOnlyAndConflict() {
         assertNull(ratingWarning(listOf(ratings(null, null))))
         assertNull(ratingWarning(listOf(ratings(null, 5))))
@@ -316,13 +473,17 @@ class ListeningHistoryReconciliationControllerTest {
         var snapshot = ReconciliationReviewSnapshot(emptyList(), emptyList(), emptyList())
         var suspendLoad = false
         var loadFailure: Throwable? = null
+        var loadCalls = 0
         var linkCalls = 0
+        var batchCalls = 0
         var unlinkCalls = 0
         var lastLinkedSources = emptyList<Long>()
-        var linkResult: ListeningIdentityReconciliationLinkResult =
-            ListeningIdentityReconciliationLinkResult.Linked(emptyList())
+        var lastBatchRequests = emptyList<LocalReconciliationBindingRequest>()
+        var linkResult: ListeningIdentityReconciliationLinkResult? = null
+        var batchResult: LocalReconciliationBatchResult? = null
 
         override suspend fun load(): ReconciliationReviewSnapshot {
+            loadCalls++
             loadFailure?.let { throw it }
             if (suspendLoad) awaitCancellation()
             return snapshot
@@ -340,7 +501,32 @@ class ListeningHistoryReconciliationControllerTest {
         ): ListeningIdentityReconciliationLinkResult {
             linkCalls++
             lastLinkedSources = sourceIdentityIds
-            return linkResult
+            return linkResult ?: ListeningIdentityReconciliationLinkResult.Linked(
+                sourceIdentityIds.map { sourceIdentityId ->
+                    ListeningIdentityReconciliationEntity(sourceIdentityId, target.identityId, 9)
+                }
+            )
+        }
+
+        override suspend fun linkBatch(
+            requests: List<LocalReconciliationBindingRequest>
+        ): LocalReconciliationBatchResult {
+            batchCalls++
+            lastBatchRequests = requests
+            return batchResult ?: LocalReconciliationBatchResult(
+                requested = requests.size,
+                newlyLinked = requests.size,
+                alreadyLinked = 0,
+                conflicts = emptyList(),
+                failures = emptyList(),
+                links = requests.map { request ->
+                    ListeningIdentityReconciliationEntity(
+                        request.sourceIdentityId,
+                        request.target.identityId,
+                        9
+                    )
+                }
+            )
         }
 
         override suspend fun unlink(sourceIdentityId: Long): Boolean {
@@ -382,6 +568,16 @@ class ListeningHistoryReconciliationControllerTest {
                 )),
                 ReconciliationCandidateDisposition.SUGGESTED,
                 false
+            )
+
+        private fun candidateEvidence(category: ReconciliationCandidateCategory) =
+            ReconciliationCandidateEvidence(
+                ReconciliationMetadataRelation.FUZZY,
+                ReconciliationMetadataRelation.EXACT,
+                ReconciliationMetadataRelation.EXACT,
+                ReconciliationVersionRelation.NONE,
+                emptySet(),
+                category
             )
 
         private fun source(id: Long, title: String) = HistoricalReconciliationSource(

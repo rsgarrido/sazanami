@@ -95,6 +95,7 @@ class DefaultSpotifyListeningHistoryImportOperations(
     private val repository: ListeningImportRepository,
     private val previewer: SpotifyListeningHistoryImportPreviewer,
     private val executor: SpotifyListeningHistoryImportExecutor,
+    private val reconcilePublishedHistory: suspend () -> Unit = {},
     private val nowMillis: () -> Long = System::currentTimeMillis
 ) : SpotifyListeningHistoryImportOperations {
     override suspend fun unfinishedBatchCount(): Int {
@@ -125,10 +126,22 @@ class DefaultSpotifyListeningHistoryImportOperations(
     override suspend fun execute(
         files: List<ListeningHistoryImportFile>,
         onProgress: suspend (ListeningImportExecutionProgress) -> Unit
-    ): ListeningImportExecutionResult = executor.execute(
-        inputs = files.map { file -> ListeningImportStreamSource(file::openStream) },
-        onProgress = onProgress
-    )
+    ): ListeningImportExecutionResult {
+        val result = executor.execute(
+            inputs = files.map { file -> ListeningImportStreamSource(file::openStream) },
+            onProgress = onProgress
+        )
+        // Import publication is already durable. Automatic reconciliation is best-effort and must
+        // never turn a successfully published import into a retryable import failure.
+        try {
+            reconcilePublishedHistory()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Throwable) {
+            Unit
+        }
+        return result
+    }
 }
 
 class SpotifyListeningHistoryImportController(

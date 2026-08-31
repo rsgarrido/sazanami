@@ -126,7 +126,8 @@ class LibraryController(
     private val appDatabase: AppDatabase,
     private val playbackController: PlaybackController,
     private val coroutineScope: CoroutineScope,
-    private val onMediaAccessFailure: () -> Unit = {}
+    private val onMediaAccessFailure: () -> Unit = {},
+    private val onLibraryPublished: suspend (List<Song>) -> Unit = {}
 ) {
     private val applicationContext = context.applicationContext
 
@@ -155,6 +156,7 @@ class LibraryController(
     private var refreshJob: Job? = null
     private var artworkEnrichmentJob: Job? = null
     private var reconciliationJob: Job? = null
+    private var automaticHistoryReconciliationJob: Job? = null
     private val reconciliationCoordinator = ReconciliationGenerationCoordinator()
     private var songReferenceIndex: SongReferenceIndex = SongReferenceIndex.EMPTY
     private var visibleSongMembershipKeys: Set<String> = emptySet()
@@ -293,6 +295,7 @@ class LibraryController(
             refreshJob?.cancel()
             artworkEnrichmentJob?.cancel()
             reconciliationJob?.cancel()
+            automaticHistoryReconciliationJob?.cancel()
             initialFolderDiscoverySongs = emptyList()
             referenceSongsSnapshot = emptyList()
             publicationTracker.reset()
@@ -1674,6 +1677,16 @@ class LibraryController(
         PlaybackLibraryBridge.updateSongs(publishedSongs)
         loadPlaylists()
         reconcileUserSongReferences(publishedSongs, indexedSnapshot.index)
+        automaticHistoryReconciliationJob?.cancel()
+        automaticHistoryReconciliationJob = coroutineScope.launch(Dispatchers.IO) {
+            try {
+                onLibraryPublished(publishedSongs)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                Unit
+            }
+        }
 
         if (reconcilePlayback) {
             playbackController.handleLibrarySongsChanged(publishedSongs)

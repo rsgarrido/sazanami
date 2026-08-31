@@ -12,10 +12,18 @@ class ListeningHistoryReconciliationUiMappingTest {
     @Test fun candidateCategoriesUseUserFacingCopyAndNeverEnumNamesOrPercentages() {
         val copies = ReconciliationCandidateCategory.entries.map(::candidateEvidenceCopy)
         assertEquals("Title, artist, and album match", copies[0])
-        assertTrue(copies[1].contains("punctuation"))
-        assertTrue(copies[2].contains("metadata is missing"))
-        assertTrue(copies[3].contains("different song version"))
-        assertTrue(copies[4].contains("Multiple library versions"))
+        assertTrue(candidateEvidenceCopy(ReconciliationCandidateCategory.CANONICAL_METADATA)
+            .contains("typography normalization"))
+        assertEquals(
+            "Similar title",
+            candidateEvidenceCopy(ReconciliationCandidateCategory.TYPOGRAPHY_VARIANT)
+        )
+        assertTrue(candidateEvidenceCopy(ReconciliationCandidateCategory.INCOMPLETE_EVIDENCE)
+            .contains("metadata is missing"))
+        assertTrue(candidateEvidenceCopy(ReconciliationCandidateCategory.VERSION_SENSITIVE)
+            .contains("different song version"))
+        assertTrue(candidateEvidenceCopy(ReconciliationCandidateCategory.AMBIGUOUS)
+            .contains("Multiple library versions"))
         copies.forEach { copy ->
             assertFalse(copy.contains('_'))
             assertFalse(copy.contains('%'))

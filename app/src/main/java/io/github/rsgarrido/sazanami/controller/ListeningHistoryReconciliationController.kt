@@ -1,6 +1,5 @@
 package io.github.rsgarrido.sazanami.controller
 
-import androidx.room.withTransaction
 import io.github.rsgarrido.sazanami.data.HistoricalReconciliationItem
 import io.github.rsgarrido.sazanami.data.HistoricalReconciliationSource
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationCandidateService
@@ -8,8 +7,10 @@ import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationFailure
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationLinkResult
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationRatingState
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationRatings
+import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationBindingService
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationRepository
-import io.github.rsgarrido.sazanami.data.ListeningNativeTrackResolver
+import io.github.rsgarrido.sazanami.data.LocalReconciliationBatchResult
+import io.github.rsgarrido.sazanami.data.LocalReconciliationBindingRequest
 import io.github.rsgarrido.sazanami.data.LocalReconciliationTarget
 import io.github.rsgarrido.sazanami.data.ReconciliationCandidateDisposition
 import io.github.rsgarrido.sazanami.data.Song
@@ -17,7 +18,7 @@ import io.github.rsgarrido.sazanami.data.local.AppDatabase
 import io.github.rsgarrido.sazanami.data.local.LocalTrackBindingEntity
 import io.github.rsgarrido.sazanami.data.membershipKey
 import io.github.rsgarrido.sazanami.data.toDomain
-import io.github.rsgarrido.sazanami.data.toSongReference
+import io.github.rsgarrido.sazanami.data.toReconciliationTarget
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -30,21 +31,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-enum class ReconciliationReviewTab { SUGGESTED, UNMATCHED, LINKED }
+enum class ReconciliationReviewTab { REVIEW, UNMATCHED, LINKED }
 
 data class LinkedHistoricalReconciliation(
     val source: HistoricalReconciliationSource,
     val target: LocalReconciliationTarget,
     val reconciledAt: Long
 )
-
-data class LinkedReconciliationGroup(
-    val target: LocalReconciliationTarget,
-    val items: List<LinkedHistoricalReconciliation>
-) {
-    val historicalIdentityCount: Int get() = items.size
-    val historicalPlayCount: Long get() = items.sumOf { it.source.metrics.qualifiedPlayCount }
-}
 
 data class ReconciliationReviewSnapshot(
     val reviewItems: List<HistoricalReconciliationItem>,
@@ -60,7 +53,14 @@ sealed interface ReconciliationConfirmation {
     ) : ReconciliationConfirmation
 
     data class Unlink(val item: LinkedHistoricalReconciliation) : ReconciliationConfirmation
+
+    data class Batch(val selections: List<ReconciliationBatchSelection>) : ReconciliationConfirmation
 }
+
+data class ReconciliationBatchSelection(
+    val source: HistoricalReconciliationSource,
+    val target: LocalReconciliationTarget
+)
 
 data class ReconciliationSearchState(
     val sourceIds: List<Long>,
@@ -71,16 +71,26 @@ data class ReconciliationSearchState(
 data class ReconciliationReviewContent(
     val reviewItems: List<HistoricalReconciliationItem>,
     val linkedItems: List<LinkedHistoricalReconciliation>,
-    val activeTab: ReconciliationReviewTab = ReconciliationReviewTab.SUGGESTED,
+    val activeTab: ReconciliationReviewTab = ReconciliationReviewTab.REVIEW,
+    val browseMode: ReconciliationBrowseMode = ReconciliationBrowseMode.TRACKS,
+    val browseQuery: String = "",
+    val sortOption: ReconciliationSortOption = ReconciliationSortOption.HISTORICAL_PLAYS,
+    val reviewFilter: ReconciliationReviewFilter = ReconciliationReviewFilter.ALL,
     val skippedSourceIds: Set<Long> = emptySet(),
+    val selectedSourceIds: Set<Long> = emptySet(),
     val expandedSourceId: Long? = null,
-    val expandedLinkedTargetId: Long? = null,
+    val expandedAlbumKey: ReconciliationAlbumKey? = null,
+    val expandedArtistKey: String? = null,
     val confirmation: ReconciliationConfirmation? = null,
     val search: ReconciliationSearchState? = null,
     val isWorking: Boolean = false,
-    val message: String? = null
+    val message: String? = null,
+    val preparedDataset: ReconciliationPreparedDataset = prepareReconciliationDataset(
+        reviewItems,
+        linkedItems
+    )
 ) {
-    val suggestedItems: List<HistoricalReconciliationItem>
+    val visibleReviewItems: List<HistoricalReconciliationItem>
         get() = reviewItems.filter {
             it.disposition != ReconciliationCandidateDisposition.NO_CANDIDATE &&
                 it.source.identityId !in skippedSourceIds
@@ -89,34 +99,37 @@ data class ReconciliationReviewContent(
         get() = reviewItems.filter {
             it.disposition == ReconciliationCandidateDisposition.NO_CANDIDATE
         }
-    val suggestedCount: Int get() = suggestedItems.size
+    val reviewCount: Int get() = visibleReviewItems.size
     val unmatchedCount: Int get() = unmatchedItems.size
     val linkedCount: Int get() = linkedItems.size
-    val linkedGroups: List<LinkedReconciliationGroup>
-        get() = groupLinkedReconciliations(linkedItems)
-}
-
-fun groupLinkedReconciliations(
-    items: List<LinkedHistoricalReconciliation>
-): List<LinkedReconciliationGroup> = items
-    .groupBy { it.target.identityId }
-    .map { (_, groupedItems) ->
-        LinkedReconciliationGroup(
-            target = groupedItems.first().target,
-            items = groupedItems.sortedWith(compareBy(
-                { it.source.title.lowercase(Locale.ROOT) },
-                { it.source.artist.lowercase(Locale.ROOT) },
-                { it.source.album.lowercase(Locale.ROOT) },
-                { it.source.identityId }
-            ))
+    val visibleTracks: List<ReconciliationTrackPresentation> by lazy(LazyThreadSafetyMode.NONE) {
+        filterAndSortReconciliationTracks(
+            dataset = preparedDataset,
+            status = when (activeTab) {
+                ReconciliationReviewTab.REVIEW -> ReconciliationTrackStatus.REVIEW
+                ReconciliationReviewTab.UNMATCHED -> ReconciliationTrackStatus.UNMATCHED
+                ReconciliationReviewTab.LINKED -> ReconciliationTrackStatus.LINKED
+            },
+            query = browseQuery,
+            sort = sortOption,
+            reviewFilter = reviewFilter,
+            skippedSourceIds = skippedSourceIds
         )
     }
-    .sortedWith(compareBy(
-        { it.target.title.lowercase(Locale.ROOT) },
-        { it.target.artist.lowercase(Locale.ROOT) },
-        { it.target.album.lowercase(Locale.ROOT) },
-        { it.target.identityId }
-    ))
+
+    val visibleAlbums: List<ReconciliationAlbumPresentation> by lazy(LazyThreadSafetyMode.NONE) {
+        groupReconciliationAlbums(preparedDataset.tracks, visibleTracks, sortOption)
+    }
+
+    val visibleArtists: List<ReconciliationArtistPresentation> by lazy(LazyThreadSafetyMode.NONE) {
+        groupReconciliationArtists(preparedDataset.tracks, visibleTracks, sortOption)
+    }
+
+    val selectableVisibleSourceIds: Set<Long> by lazy(LazyThreadSafetyMode.NONE) {
+        visibleTracks.filter(ReconciliationTrackPresentation::isSelectable)
+            .mapTo(linkedSetOf(), ReconciliationTrackPresentation::sourceId)
+    }
+}
 
 sealed interface ListeningHistoryReconciliationUiState {
     data object Loading : ListeningHistoryReconciliationUiState
@@ -134,6 +147,9 @@ interface ListeningHistoryReconciliationOperations {
         sourceIdentityIds: List<Long>,
         target: LocalReconciliationTarget
     ): ListeningIdentityReconciliationLinkResult
+    suspend fun linkBatch(
+        requests: List<LocalReconciliationBindingRequest>
+    ): LocalReconciliationBatchResult
     suspend fun unlink(sourceIdentityId: Long): Boolean
 }
 
@@ -144,8 +160,8 @@ class DefaultListeningHistoryReconciliationOperations(
         ListeningIdentityReconciliationCandidateService(database),
     private val repository: ListeningIdentityReconciliationRepository =
         ListeningIdentityReconciliationRepository(database),
-    private val nativeTrackResolver: ListeningNativeTrackResolver =
-        ListeningNativeTrackResolver(database)
+    private val bindingService: ListeningIdentityReconciliationBindingService =
+        ListeningIdentityReconciliationBindingService(database, repository)
 ) : ListeningHistoryReconciliationOperations {
     override suspend fun load(): ReconciliationReviewSnapshot {
         val dao = database.listeningIdentityReconciliationCandidateDao()
@@ -186,52 +202,18 @@ class DefaultListeningHistoryReconciliationOperations(
     override suspend fun linkMany(
         sourceIdentityIds: List<Long>,
         target: LocalReconciliationTarget
-    ): ListeningIdentityReconciliationLinkResult {
-        // Re-read the authoritative library at confirmation time. The review snapshot can be stale
-        // after a rescan, removal, or membership-key change.
-        val song = currentSongs()
-            .distinctBy(Song::membershipKey)
-            .associateBy(Song::membershipKey)[target.referenceKey]
-            ?: return ListeningIdentityReconciliationLinkResult.Rejected(
-                ListeningIdentityReconciliationFailure.TARGET_NOT_FOUND
-            )
-        return try {
-            database.withTransaction {
-                val displayedBinding = target.identityId.takeIf { it > 0L }?.let {
-                    database.localTrackBindingDao().getByReferenceKey(target.referenceKey)
-                }
-                if (target.identityId > 0L &&
-                    (displayedBinding?.trackIdentityId != target.identityId ||
-                        displayedBinding.missingSince != null)
-                ) {
-                    throw ReconciliationLinkRollback(
-                        ListeningIdentityReconciliationLinkResult.Rejected(
-                            ListeningIdentityReconciliationFailure.TARGET_HAS_NO_LOCAL_BINDING
-                        )
-                    )
-                }
-                val resolved = nativeTrackResolver.resolveOrCreate(
-                    target.referenceKey,
-                    song.toSongReference(),
-                    refreshExistingBinding = true
-                )
-                when (val result = repository.linkMany(sourceIdentityIds, resolved.trackIdentityId)) {
-                    is ListeningIdentityReconciliationLinkResult.Linked -> result
-                    is ListeningIdentityReconciliationLinkResult.Rejected ->
-                        throw ReconciliationLinkRollback(result)
-                }
-            }
-        } catch (rejected: ReconciliationLinkRollback) {
-            rejected.result
-        }
-    }
+    ): ListeningIdentityReconciliationLinkResult = bindingService.linkManyAtomically(
+        sourceIdentityIds,
+        target,
+        currentSongs()
+    )
+
+    override suspend fun linkBatch(
+        requests: List<LocalReconciliationBindingRequest>
+    ): LocalReconciliationBatchResult = bindingService.linkBatch(requests, currentSongs())
 
     override suspend fun unlink(sourceIdentityId: Long) = repository.unlink(sourceIdentityId)
 }
-
-private class ReconciliationLinkRollback(
-    val result: ListeningIdentityReconciliationLinkResult.Rejected
-) : RuntimeException()
 
 class ListeningHistoryReconciliationController(
     private val operations: ListeningHistoryReconciliationOperations,
@@ -259,25 +241,48 @@ class ListeningHistoryReconciliationController(
 
     fun retry() = refresh(showLoading = true)
 
-    fun selectTab(tab: ReconciliationReviewTab) = updateContent { copy(activeTab = tab, message = null) }
+    /** Refreshes an already-open review once after an external automatic batch commit. */
+    fun onExternalReconciliationMutation() {
+        if (contentOrNull() == null || operationJob?.isActive == true) return
+        refresh(showLoading = false)
+    }
+
+    fun selectTab(tab: ReconciliationReviewTab) = updateContent {
+        copy(
+            activeTab = tab,
+            selectedSourceIds = emptySet(),
+            expandedSourceId = null,
+            expandedAlbumKey = null,
+            expandedArtistKey = null,
+            message = null
+        )
+    }
+
+    fun selectBrowseMode(mode: ReconciliationBrowseMode) = updateContent {
+        copy(
+            browseMode = mode,
+            expandedSourceId = null,
+            expandedAlbumKey = null,
+            expandedArtistKey = null
+        )
+    }
+
+    fun updateBrowseQuery(query: String) = updateContent { copy(browseQuery = query) }
+
+    fun selectSort(option: ReconciliationSortOption) = updateContent { copy(sortOption = option) }
+
+    fun selectReviewFilter(filter: ReconciliationReviewFilter) = updateContent {
+        copy(reviewFilter = filter)
+    }
 
     fun toggleExpanded(sourceId: Long) = updateContent {
         copy(expandedSourceId = if (expandedSourceId == sourceId) null else sourceId)
     }
 
-    fun toggleLinkedGroup(targetIdentityId: Long) = updateContent {
-        copy(
-            expandedLinkedTargetId = if (expandedLinkedTargetId == targetIdentityId) {
-                null
-            } else {
-                targetIdentityId
-            }
-        )
-    }
-
     fun skip(sourceId: Long) = updateContent {
         copy(
             skippedSourceIds = skippedSourceIds + sourceId,
+            selectedSourceIds = selectedSourceIds - sourceId,
             expandedSourceId = if (expandedSourceId == sourceId) null else expandedSourceId,
             message = "Skipped for now. It will return the next time you open this screen."
         )
@@ -341,6 +346,7 @@ class ListeningHistoryReconciliationController(
         if (content.isWorking) return
         when (val confirmation = content.confirmation) {
             is ReconciliationConfirmation.Link -> performLink(content, confirmation)
+            is ReconciliationConfirmation.Batch -> performBatchLink(content, confirmation)
             is ReconciliationConfirmation.Unlink -> performUnlink(content, confirmation.item)
             null -> Unit
         }
@@ -368,13 +374,14 @@ class ListeningHistoryReconciliationController(
             }
             when (result) {
                 is ListeningIdentityReconciliationLinkResult.Linked -> {
-                    reloadAfterMutation(
-                        if (confirmation.sources.size == 1) {
-                            "History linked. Statistics will now combine it with the local track."
-                        } else {
-                            "${confirmation.sources.size} histories linked. Statistics will now combine them with the local track."
-                        }
-                    )
+                    val message = if (confirmation.sources.size == 1) {
+                        "History linked. Statistics will now combine it with the local track."
+                    } else {
+                        "${confirmation.sources.size} histories linked. Statistics will now combine them with the local track."
+                    }
+                    if (!applySuccessfulLink(content, confirmation, result, message)) {
+                        reloadAfterMutation(message)
+                    }
                 }
                 is ListeningIdentityReconciliationLinkResult.Rejected -> {
                     val message = reconciliationFailureMessage(
@@ -385,6 +392,191 @@ class ListeningHistoryReconciliationController(
                 }
             }
         }
+    }
+
+    private fun performBatchLink(
+        content: ReconciliationReviewContent,
+        confirmation: ReconciliationConfirmation.Batch
+    ) {
+        _state.value = ListeningHistoryReconciliationUiState.Content(content.copy(isWorking = true))
+        operationJob = scope.launch {
+            val result = try {
+                withContext(workDispatcher) {
+                    operations.linkBatch(confirmation.selections.map { selection ->
+                        LocalReconciliationBindingRequest(
+                            selection.source.identityId,
+                            selection.target
+                        )
+                    })
+                }
+            } catch (_: CancellationException) {
+                updateContent { copy(isWorking = false) }
+                return@launch
+            } catch (_: Throwable) {
+                updateContent {
+                    copy(
+                        isWorking = false,
+                        confirmation = null,
+                        message = GENERIC_REFRESH_MESSAGE
+                    )
+                }
+                return@launch
+            }
+
+            val message = batchResultMessage(result)
+            if (result.conflicts.isNotEmpty() || result.failures.isNotEmpty() ||
+                result.alreadyLinked > 0 ||
+                !applySuccessfulBatch(content, confirmation, result, message)
+            ) {
+                reloadAfterMutation(message)
+            }
+        }
+    }
+
+    fun toggleAlbum(key: ReconciliationAlbumKey) = updateContent {
+        copy(expandedAlbumKey = if (expandedAlbumKey == key) null else key)
+    }
+
+    fun toggleArtist(key: String) = updateContent {
+        copy(expandedArtistKey = if (expandedArtistKey == key) null else key)
+    }
+
+    fun toggleSelected(sourceId: Long) = updateContent {
+        if (sourceId !in selectableVisibleSourceIds && sourceId !in selectedSourceIds) {
+            return@updateContent this
+        }
+        copy(
+            selectedSourceIds = if (sourceId in selectedSourceIds) {
+                selectedSourceIds - sourceId
+            } else {
+                selectedSourceIds + sourceId
+            },
+            message = null
+        )
+    }
+
+    fun selectReviewItems(sourceIds: List<Long>) = updateContent {
+        val requested = sourceIds.toSet()
+        val eligible = preparedDataset.tracks.asSequence()
+            .filter(ReconciliationTrackPresentation::isSelectable)
+            .filter { it.sourceId !in skippedSourceIds }
+            .map(ReconciliationTrackPresentation::sourceId)
+            .filter(requested::contains)
+            .toSet()
+        copy(selectedSourceIds = selectedSourceIds + eligible, message = null)
+    }
+
+    fun clearSelection() = updateContent { copy(selectedSourceIds = emptySet()) }
+
+    fun requestLinkSelected() {
+        val content = contentOrNull() ?: return
+        if (content.isWorking) return
+        val selected = content.preparedDataset.tracks.asSequence()
+            .filter {
+                it.sourceId in content.selectedSourceIds &&
+                    it.sourceId !in content.skippedSourceIds &&
+                    it.isSelectable
+            }
+            .map { track ->
+                ReconciliationBatchSelection(
+                    track.source,
+                    requireNotNull(track.proposedCandidate).target
+                )
+            }
+            .toList()
+        if (selected.isEmpty()) return
+        _state.value = ListeningHistoryReconciliationUiState.Content(
+            content.copy(confirmation = ReconciliationConfirmation.Batch(selected), message = null)
+        )
+    }
+
+    /**
+     * A successful link already contains everything needed to update the review. Avoid rebuilding
+     * aggregates and every candidate from all historical events after each manual confirmation.
+     */
+    private fun applySuccessfulLink(
+        content: ReconciliationReviewContent,
+        confirmation: ReconciliationConfirmation.Link,
+        result: ListeningIdentityReconciliationLinkResult.Linked,
+        message: String
+    ): Boolean {
+        val linksBySource = result.links.associateBy { it.sourceIdentityId }
+        if (linksBySource.keys != confirmation.sources.mapTo(mutableSetOf()) { it.identityId }) {
+            return false
+        }
+        val targetIdentityIds = result.links.mapTo(mutableSetOf()) { it.targetIdentityId }
+        if (targetIdentityIds.size != 1) return false
+        val resolvedTarget = confirmation.target.copy(identityId = targetIdentityIds.single())
+        val sourceIds = linksBySource.keys
+        localTargets = localTargets.map { target ->
+            if (target.referenceKey == resolvedTarget.referenceKey) resolvedTarget else target
+        }
+        val newlyLinked = confirmation.sources.map { source ->
+            LinkedHistoricalReconciliation(
+                source = source,
+                target = resolvedTarget,
+                reconciledAt = requireNotNull(linksBySource[source.identityId]).reconciledAt
+            )
+        }
+        val reviewItems = content.reviewItems.filterNot { it.source.identityId in sourceIds }
+        val linkedItems = (content.linkedItems + newlyLinked)
+            .distinctBy { it.source.identityId }
+        _state.value = ListeningHistoryReconciliationUiState.Content(
+            content.copy(
+                reviewItems = reviewItems,
+                linkedItems = linkedItems,
+                selectedSourceIds = content.selectedSourceIds - sourceIds,
+                expandedSourceId = null,
+                confirmation = null,
+                search = null,
+                isWorking = false,
+                message = message,
+                preparedDataset = prepareReconciliationDataset(reviewItems, linkedItems)
+            )
+        )
+        return true
+    }
+
+    private fun applySuccessfulBatch(
+        content: ReconciliationReviewContent,
+        confirmation: ReconciliationConfirmation.Batch,
+        result: LocalReconciliationBatchResult,
+        message: String
+    ): Boolean {
+        if (result.requested != confirmation.selections.size ||
+            result.newlyLinked != confirmation.selections.size ||
+            result.links.size != confirmation.selections.size
+        ) return false
+        val selectionsBySource = confirmation.selections.associateBy { it.source.identityId }
+        val linksBySource = result.links.associateBy { it.sourceIdentityId }
+        if (linksBySource.keys != selectionsBySource.keys) return false
+
+        val resolvedTargetsByReference = mutableMapOf<String, LocalReconciliationTarget>()
+        val newlyLinked = linksBySource.map { (sourceId, link) ->
+            val selection = requireNotNull(selectionsBySource[sourceId])
+            val resolvedTarget = selection.target.copy(identityId = link.targetIdentityId)
+            resolvedTargetsByReference[resolvedTarget.referenceKey] = resolvedTarget
+            LinkedHistoricalReconciliation(selection.source, resolvedTarget, link.reconciledAt)
+        }
+        localTargets = localTargets.map { target ->
+            resolvedTargetsByReference[target.referenceKey] ?: target
+        }
+        val sourceIds = linksBySource.keys
+        val reviewItems = content.reviewItems.filterNot { it.source.identityId in sourceIds }
+        val linkedItems = (content.linkedItems + newlyLinked).distinctBy { it.source.identityId }
+        _state.value = ListeningHistoryReconciliationUiState.Content(
+            content.copy(
+                reviewItems = reviewItems,
+                linkedItems = linkedItems,
+                selectedSourceIds = emptySet(),
+                expandedSourceId = null,
+                confirmation = null,
+                isWorking = false,
+                message = message,
+                preparedDataset = prepareReconciliationDataset(reviewItems, linkedItems)
+            )
+        )
+        return true
     }
 
     private fun performUnlink(content: ReconciliationReviewContent, item: LinkedHistoricalReconciliation) {
@@ -434,7 +626,12 @@ class ListeningHistoryReconciliationController(
                 ReconciliationReviewContent(
                     reviewItems = snapshot.reviewItems,
                     linkedItems = snapshot.linkedItems,
-                    activeTab = previous?.activeTab ?: ReconciliationReviewTab.SUGGESTED,
+                    activeTab = previous?.activeTab ?: ReconciliationReviewTab.REVIEW,
+                    browseMode = previous?.browseMode ?: ReconciliationBrowseMode.TRACKS,
+                    browseQuery = previous?.browseQuery.orEmpty(),
+                    sortOption = previous?.sortOption
+                        ?: ReconciliationSortOption.HISTORICAL_PLAYS,
+                    reviewFilter = previous?.reviewFilter ?: ReconciliationReviewFilter.ALL,
                     skippedSourceIds = previous?.skippedSourceIds.orEmpty(),
                     message = message
                 )
@@ -457,28 +654,6 @@ class ListeningHistoryReconciliationController(
     companion object {
         const val GENERIC_REFRESH_MESSAGE = "The tracks changed before they could be linked. Review the matches again."
     }
-}
-
-internal fun Song.toReconciliationTarget(
-    binding: LocalTrackBindingEntity?,
-    transientId: Long
-): LocalReconciliationTarget {
-    require(transientId < 0L)
-    val referenceKey = membershipKey()
-    return LocalReconciliationTarget(
-        identityId = binding?.trackIdentityId ?: transientId,
-        localBindingId = binding?.id ?: transientId,
-        referenceKey = referenceKey,
-        title = title,
-        artist = artist,
-        album = album,
-        albumArtist = albumArtist.takeIf(String::isNotBlank),
-        durationMs = duration.takeIf { it > 0L },
-        displayName = displayName.takeIf(String::isNotBlank),
-        fileExtension = displayName.substringAfterLast('.', "")
-            .takeIf(String::isNotBlank),
-        relativeFolder = relativePath.replace('\\', '/').trim('/').takeIf(String::isNotBlank)
-    )
 }
 
 private val currentSongComparator = compareBy<Song>(
@@ -510,6 +685,20 @@ fun reconciliationFailureMessage(
         if (isMany) "Some imported history changed before it could be linked. Review the matches again."
         else "This imported history is no longer available."
     else -> ListeningHistoryReconciliationController.GENERIC_REFRESH_MESSAGE
+}
+
+fun batchResultMessage(result: LocalReconciliationBatchResult): String {
+    val parts = buildList {
+        if (result.newlyLinked > 0) add("${result.newlyLinked} linked")
+        if (result.alreadyLinked > 0) add("${result.alreadyLinked} already linked")
+        if (result.conflicts.isNotEmpty()) {
+            val count = result.conflicts.size
+            add("$count ${if (count == 1) "conflict" else "conflicts"}")
+        }
+        if (result.failures.isNotEmpty()) add("${result.failures.size} failed")
+    }
+    return if (parts.isEmpty()) "No selected histories were changed."
+    else parts.joinToString(separator = " · ", postfix = ".")
 }
 
 fun ratingWarning(ratings: List<ListeningIdentityReconciliationRatings>): String? {

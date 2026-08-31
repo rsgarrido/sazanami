@@ -5,11 +5,11 @@ import io.github.rsgarrido.sazanami.data.local.AppDatabase
 import io.github.rsgarrido.sazanami.data.local.HistoricalReconciliationSourceRow
 import io.github.rsgarrido.sazanami.data.local.ListeningSource
 import io.github.rsgarrido.sazanami.data.local.LocalReconciliationTargetRow
-import java.text.Normalizer
 import java.util.Locale
 
 enum class ReconciliationCandidateCategory {
     STRONG_METADATA,
+    CANONICAL_METADATA,
     TYPOGRAPHY_VARIANT,
     INCOMPLETE_EVIDENCE,
     VERSION_SENSITIVE,
@@ -18,9 +18,27 @@ enum class ReconciliationCandidateCategory {
 
 enum class ReconciliationCandidateDisposition { SUGGESTED, AMBIGUOUS, NO_CANDIDATE }
 
+enum class ReconciliationMatchConfidence {
+    EXACT,
+    CANONICAL_EXACT,
+    FUZZY,
+    AMBIGUOUS,
+    UNMATCHED
+}
+
+enum class ReconciliationNonDeterministicReason {
+    MULTIPLE_PLAUSIBLE_CANDIDATES,
+    CANDIDATE_LIMIT_EXCEEDED,
+    MISSING_REQUIRED_METADATA,
+    FUZZY_ONLY,
+    VERSION_CONFLICT,
+    NO_CREDIBLE_CANDIDATE
+}
+
 enum class ReconciliationMetadataRelation {
     EXACT,
-    NORMALIZED,
+    CANONICAL,
+    FUZZY,
     MISSING,
     DIFFERENT,
     VERSION_VARIANT
@@ -29,6 +47,8 @@ enum class ReconciliationMetadataRelation {
 enum class ReconciliationVersionRelation { NONE, SAME, DIFFERENT }
 
 enum class ReconciliationMissingField { TITLE, ARTIST, ALBUM }
+
+enum class ReconciliationMetadataField { TITLE, ARTIST, ALBUM }
 
 enum class ReconciliationState { UNMATCHED }
 
@@ -73,7 +93,13 @@ data class ReconciliationCandidateEvidence(
     val albumRelation: ReconciliationMetadataRelation,
     val versionRelation: ReconciliationVersionRelation,
     val missingFields: Set<ReconciliationMissingField>,
-    val category: ReconciliationCandidateCategory
+    val category: ReconciliationCandidateCategory,
+    val importedMetadata: ReconciliationComparisonMetadata? = null,
+    val localMetadata: ReconciliationComparisonMetadata? = null,
+    val candidateCount: Int = 1,
+    val confidence: ReconciliationMatchConfidence = ReconciliationMatchConfidence.FUZZY,
+    val matchedFields: Set<ReconciliationMetadataField> = emptySet(),
+    val nonDeterministicReason: ReconciliationNonDeterministicReason? = null
 )
 
 data class ListeningIdentityReconciliationCandidate(
@@ -85,8 +111,19 @@ data class HistoricalReconciliationItem(
     val source: HistoricalReconciliationSource,
     val candidates: List<ListeningIdentityReconciliationCandidate>,
     val disposition: ReconciliationCandidateDisposition,
-    val hasMoreCandidates: Boolean
-)
+    val hasMoreCandidates: Boolean,
+    val confidence: ReconciliationMatchConfidence = ReconciliationMatchConfidence.UNMATCHED,
+    val importedMetadata: ReconciliationComparisonMetadata = reconciliationComparisonMetadata(
+        source.title, source.artist, source.album
+    ),
+    val candidateCount: Int = candidates.size,
+    val nonDeterministicReason: ReconciliationNonDeterministicReason? = null
+) {
+    val isDeterministic: Boolean
+        get() = candidateCount == 1 && !hasMoreCandidates &&
+            (confidence == ReconciliationMatchConfidence.EXACT ||
+                confidence == ReconciliationMatchConfidence.CANONICAL_EXACT)
+}
 
 data class ReconciliationCandidateSummary(
     val totalReviewableIdentities: Int,
@@ -161,7 +198,10 @@ class ReconciliationCandidateMatcher(
         index: CandidateIndex
     ): HistoricalReconciliationItem {
         val title = source.title.meaningful()
-            ?: return noCandidate(source)
+            ?: return noCandidate(
+                source,
+                reason = ReconciliationNonDeterministicReason.MISSING_REQUIRED_METADATA
+            )
         val artist = source.artist.meaningful()
         val album = source.album.meaningful()
 
@@ -170,24 +210,59 @@ class ReconciliationCandidateMatcher(
             album == null -> index.withoutAlbum(title, artist)
             else -> index.withAlbum(title, artist, album)
         }
-        if (stage.targets.isEmpty()) return noCandidate(source, stage.hasMore)
+        if (stage.targets.isEmpty()) return noCandidate(
+            source = source,
+            hasMore = stage.hasMore,
+            candidateCount = stage.totalCandidateCount,
+            reason = if (stage.hasMore) {
+                ReconciliationNonDeterministicReason.CANDIDATE_LIMIT_EXCEEDED
+            } else {
+                ReconciliationNonDeterministicReason.NO_CREDIBLE_CANDIDATE
+            }
+        )
 
         val sorted = stage.targets.distinctBy(LocalReconciliationTarget::referenceKey)
             .sortedWith(targetComparator)
         val hasMore = stage.hasMore || sorted.size > maxCandidates
         val bounded = sorted.take(maxCandidates)
         val ambiguous = hasMore || sorted.size > 1
+        val confidence = when {
+            ambiguous -> ReconciliationMatchConfidence.AMBIGUOUS
+            artist == null || album == null -> ReconciliationMatchConfidence.FUZZY
+            stage.kind == MatchKind.EXACT -> ReconciliationMatchConfidence.EXACT
+            stage.kind == MatchKind.CANONICAL -> ReconciliationMatchConfidence.CANONICAL_EXACT
+            else -> ReconciliationMatchConfidence.FUZZY
+        }
+        val nonDeterministicReason = when {
+            hasMore -> ReconciliationNonDeterministicReason.CANDIDATE_LIMIT_EXCEEDED
+            ambiguous -> ReconciliationNonDeterministicReason.MULTIPLE_PLAUSIBLE_CANDIDATES
+            artist == null || album == null ->
+                ReconciliationNonDeterministicReason.MISSING_REQUIRED_METADATA
+            stage.kind == MatchKind.VERSION ->
+                ReconciliationNonDeterministicReason.VERSION_CONFLICT
+            stage.kind == MatchKind.ACCENT || stage.kind == MatchKind.PUNCTUATION ||
+                stage.kind == MatchKind.FUZZY -> ReconciliationNonDeterministicReason.FUZZY_ONLY
+            else -> null
+        }
         val category = when {
             ambiguous -> ReconciliationCandidateCategory.AMBIGUOUS
             stage.kind == MatchKind.VERSION -> ReconciliationCandidateCategory.VERSION_SENSITIVE
             artist == null || album == null -> ReconciliationCandidateCategory.INCOMPLETE_EVIDENCE
-            stage.kind == MatchKind.CONSERVATIVE -> ReconciliationCandidateCategory.STRONG_METADATA
+            stage.kind == MatchKind.EXACT -> ReconciliationCandidateCategory.STRONG_METADATA
+            stage.kind == MatchKind.CANONICAL -> ReconciliationCandidateCategory.CANONICAL_METADATA
             else -> ReconciliationCandidateCategory.TYPOGRAPHY_VARIANT
         }
         val candidates = bounded.map { target ->
             ListeningIdentityReconciliationCandidate(
                 target = target,
-                evidence = evidence(source, target, category)
+                evidence = evidence(
+                    source = source,
+                    target = target,
+                    category = category,
+                    candidateCount = sorted.size,
+                    confidence = confidence,
+                    nonDeterministicReason = nonDeterministicReason
+                )
             )
         }
         return HistoricalReconciliationItem(
@@ -195,24 +270,36 @@ class ReconciliationCandidateMatcher(
             candidates = candidates,
             disposition = if (ambiguous) ReconciliationCandidateDisposition.AMBIGUOUS
             else ReconciliationCandidateDisposition.SUGGESTED,
-            hasMoreCandidates = hasMore
+            hasMoreCandidates = hasMore,
+            confidence = confidence,
+            candidateCount = sorted.size,
+            nonDeterministicReason = nonDeterministicReason
         )
     }
 
     private fun noCandidate(
         source: HistoricalReconciliationSource,
-        hasMore: Boolean = false
+        hasMore: Boolean = false,
+        candidateCount: Int = 0,
+        reason: ReconciliationNonDeterministicReason =
+            ReconciliationNonDeterministicReason.NO_CREDIBLE_CANDIDATE
     ) = HistoricalReconciliationItem(
         source = source,
         candidates = emptyList(),
         disposition = ReconciliationCandidateDisposition.NO_CANDIDATE,
-        hasMoreCandidates = hasMore
+        hasMoreCandidates = hasMore,
+        confidence = ReconciliationMatchConfidence.UNMATCHED,
+        candidateCount = candidateCount,
+        nonDeterministicReason = reason
     )
 
     private fun evidence(
         source: HistoricalReconciliationSource,
         target: LocalReconciliationTarget,
-        category: ReconciliationCandidateCategory
+        category: ReconciliationCandidateCategory,
+        candidateCount: Int,
+        confidence: ReconciliationMatchConfidence,
+        nonDeterministicReason: ReconciliationNonDeterministicReason?
     ): ReconciliationCandidateEvidence {
         val sourceVersions = versionMarkers(source.title, source.album)
         val targetVersions = versionMarkers(target.title, target.album)
@@ -221,17 +308,34 @@ class ReconciliationCandidateMatcher(
             sourceVersions == targetVersions -> ReconciliationVersionRelation.SAME
             else -> ReconciliationVersionRelation.DIFFERENT
         }
+        val titleRelation = metadataRelation(source.title, target.title, versionRelation)
+        val artistRelation = metadataRelation(source.artist, target.artist)
+        val albumRelation = metadataRelation(source.album, target.album, versionRelation)
         return ReconciliationCandidateEvidence(
-            titleRelation = metadataRelation(source.title, target.title, versionRelation),
-            artistRelation = metadataRelation(source.artist, target.artist),
-            albumRelation = metadataRelation(source.album, target.album, versionRelation),
+            titleRelation = titleRelation,
+            artistRelation = artistRelation,
+            albumRelation = albumRelation,
             versionRelation = versionRelation,
             missingFields = buildSet {
                 if (source.title.meaningful() == null) add(ReconciliationMissingField.TITLE)
                 if (source.artist.meaningful() == null) add(ReconciliationMissingField.ARTIST)
                 if (source.album.meaningful() == null) add(ReconciliationMissingField.ALBUM)
             },
-            category = category
+            category = category,
+            importedMetadata = reconciliationComparisonMetadata(
+                source.title, source.artist, source.album
+            ),
+            localMetadata = reconciliationComparisonMetadata(
+                target.title, target.artist, target.album
+            ),
+            candidateCount = candidateCount,
+            confidence = confidence,
+            matchedFields = buildSet {
+                if (titleRelation.isMatch()) add(ReconciliationMetadataField.TITLE)
+                if (artistRelation.isMatch()) add(ReconciliationMetadataField.ARTIST)
+                if (albumRelation.isMatch()) add(ReconciliationMetadataField.ALBUM)
+            },
+            nonDeterministicReason = nonDeterministicReason
         )
     }
 
@@ -244,8 +348,12 @@ class ReconciliationCandidateMatcher(
         if (candidateConservativeNormalize(source) == candidateConservativeNormalize(target)) {
             return ReconciliationMetadataRelation.EXACT
         }
-        if (candidatePunctuationNormalize(source) == candidatePunctuationNormalize(target)) {
-            return ReconciliationMetadataRelation.NORMALIZED
+        if (candidateCanonicalNormalize(source) == candidateCanonicalNormalize(target)) {
+            return ReconciliationMetadataRelation.CANONICAL
+        }
+        if (candidatePunctuationNormalize(source) == candidatePunctuationNormalize(target) ||
+            fuzzyMetadataEquivalent(source, target)) {
+            return ReconciliationMetadataRelation.FUZZY
         }
         if (versionRelation == ReconciliationVersionRelation.DIFFERENT &&
             candidateConservativeNormalize(versionBase(source)) ==
@@ -260,47 +368,62 @@ class ReconciliationCandidateMatcher(
             .sortedWith(targetComparator)
         private val conservativeTriple = orderedTargets.groupBy { it.triple(::candidateConservativeNormalize) }
         private val conservativePair = orderedTargets.groupBy { it.pair(::candidateConservativeNormalize) }
-        private val typographyTriple = orderedTargets.groupBy { it.triple(::candidateTypographyNormalize) }
-        private val typographyPair = orderedTargets.groupBy { it.pair(::candidateTypographyNormalize) }
+        private val canonicalTriple = orderedTargets.groupBy { it.triple(::candidateCanonicalNormalize) }
+        private val canonicalPair = orderedTargets.groupBy { it.pair(::candidateCanonicalNormalize) }
         private val accentTriple = orderedTargets.groupBy { it.triple(::candidateAccentNormalize) }
         private val accentPair = orderedTargets.groupBy { it.pair(::candidateAccentNormalize) }
         private val punctuationTriple = orderedTargets.groupBy { it.triple(::candidatePunctuationNormalize) }
         private val punctuationPair = orderedTargets.groupBy { it.pair(::candidatePunctuationNormalize) }
         private val title = orderedTargets.groupBy { candidatePunctuationNormalize(it.title) }
+        private val canonicalArtistAlbum = orderedTargets.groupBy {
+            pairKey(candidateCanonicalNormalize(it.artist), candidateCanonicalNormalize(it.album))
+        }
+        private val canonicalArtist = orderedTargets.groupBy {
+            candidateCanonicalNormalize(it.artist)
+        }
         private val versionPair = orderedTargets.groupBy {
-            pairKey(candidateConservativeNormalize(it.artist), candidateConservativeNormalize(versionBase(it.title)))
+            pairKey(candidateCanonicalNormalize(it.artist), candidateCanonicalNormalize(versionBase(it.title)))
         }
 
         fun withAlbum(title: String, artist: String, album: String): MatchStage {
-            val lookups = listOf(
-                MatchKind.CONSERVATIVE to conservativeTriple[tripleKey(
+            val equivalenceLookups = listOf(
+                MatchKind.EXACT to conservativeTriple[tripleKey(
                     candidateConservativeNormalize(artist),
                     candidateConservativeNormalize(title),
                     candidateConservativeNormalize(album)
                 )],
-                MatchKind.TYPOGRAPHY to typographyTriple[tripleKey(
-                    candidateTypographyNormalize(artist),
-                    candidateTypographyNormalize(title),
-                    candidateTypographyNormalize(album)
+                MatchKind.CANONICAL to canonicalTriple[tripleKey(
+                    candidateCanonicalNormalize(artist),
+                    candidateCanonicalNormalize(title),
+                    candidateCanonicalNormalize(album)
                 )],
-                MatchKind.TYPOGRAPHY to accentTriple[tripleKey(
+                MatchKind.ACCENT to accentTriple[tripleKey(
                     candidateAccentNormalize(artist),
                     candidateAccentNormalize(title),
                     candidateAccentNormalize(album)
                 )],
-                MatchKind.TYPOGRAPHY to punctuationTriple[tripleKey(
+                MatchKind.PUNCTUATION to punctuationTriple[tripleKey(
                     candidatePunctuationNormalize(artist),
                     candidatePunctuationNormalize(title),
                     candidatePunctuationNormalize(album)
                 )]
             )
-            lookups.firstOrNull { !it.second.isNullOrEmpty() }?.let {
-                return MatchStage(it.second.orEmpty(), it.first)
+            if (equivalenceLookups.take(2).any { !it.second.isNullOrEmpty() }) {
+                return collectPlausible(equivalenceLookups)!!
+            }
+            val fuzzyLookups = equivalenceLookups.drop(2) + listOf(
+                MatchKind.FUZZY to canonicalArtistAlbum[pairKey(
+                    candidateCanonicalNormalize(artist),
+                    candidateCanonicalNormalize(album)
+                )].orEmpty().filter { fuzzyMetadataEquivalent(title, it.title) }
+            )
+            collectPlausible(fuzzyLookups)?.let {
+                return it
             }
             val sourceVersions = versionMarkers(title, album)
             val versionTargets = versionPair[pairKey(
-                candidateConservativeNormalize(artist),
-                candidateConservativeNormalize(versionBase(title))
+                candidateCanonicalNormalize(artist),
+                candidateCanonicalNormalize(versionBase(title))
             )].orEmpty().filter { target ->
                 sourceVersions != versionMarkers(target.title, target.album)
             }
@@ -308,38 +431,62 @@ class ReconciliationCandidateMatcher(
         }
 
         fun withoutAlbum(title: String, artist: String): MatchStage {
-            val lookups = listOf(
-                MatchKind.CONSERVATIVE to conservativePair[pairKey(
+            val equivalenceLookups = listOf(
+                MatchKind.EXACT to conservativePair[pairKey(
                     candidateConservativeNormalize(artist), candidateConservativeNormalize(title)
                 )],
-                MatchKind.TYPOGRAPHY to typographyPair[pairKey(
-                    candidateTypographyNormalize(artist), candidateTypographyNormalize(title)
+                MatchKind.CANONICAL to canonicalPair[pairKey(
+                    candidateCanonicalNormalize(artist), candidateCanonicalNormalize(title)
                 )],
-                MatchKind.TYPOGRAPHY to accentPair[pairKey(
+                MatchKind.ACCENT to accentPair[pairKey(
                     candidateAccentNormalize(artist), candidateAccentNormalize(title)
                 )],
-                MatchKind.TYPOGRAPHY to punctuationPair[pairKey(
+                MatchKind.PUNCTUATION to punctuationPair[pairKey(
                     candidatePunctuationNormalize(artist), candidatePunctuationNormalize(title)
                 )]
             )
-            val found = lookups.firstOrNull { !it.second.isNullOrEmpty() }
-            return MatchStage(found?.second.orEmpty(), found?.first ?: MatchKind.CONSERVATIVE)
+            if (equivalenceLookups.take(2).any { !it.second.isNullOrEmpty() }) {
+                return collectPlausible(equivalenceLookups)!!
+            }
+            val fuzzyLookups = equivalenceLookups.drop(2) + listOf(
+                MatchKind.FUZZY to canonicalArtist[candidateCanonicalNormalize(artist)]
+                    .orEmpty().filter { fuzzyMetadataEquivalent(title, it.title) }
+            )
+            return collectPlausible(fuzzyLookups) ?: MatchStage(emptyList(), MatchKind.EXACT)
         }
 
         fun titleOnly(titleValue: String): MatchStage {
             val matches = title[candidatePunctuationNormalize(titleValue)].orEmpty()
-            return if (matches.size <= maxCandidates) MatchStage(matches, MatchKind.TYPOGRAPHY)
-            else MatchStage(emptyList(), MatchKind.TYPOGRAPHY, hasMore = true)
+            return MatchStage(
+                targets = matches,
+                kind = MatchKind.PUNCTUATION,
+                hasMore = matches.size > maxCandidates,
+                totalCandidateCount = matches.size
+            )
+        }
+
+        private fun collectPlausible(
+            lookups: List<Pair<MatchKind, List<LocalReconciliationTarget>?>>
+        ): MatchStage? {
+            val strongest = lookups.firstOrNull { !it.second.isNullOrEmpty() }?.first ?: return null
+            val plausible = lookups.flatMap { it.second.orEmpty() }
+                .distinctBy(LocalReconciliationTarget::referenceKey)
+            return MatchStage(
+                targets = plausible,
+                kind = strongest,
+                totalCandidateCount = plausible.size
+            )
         }
     }
 
     private data class MatchStage(
         val targets: List<LocalReconciliationTarget>,
         val kind: MatchKind,
-        val hasMore: Boolean = false
+        val hasMore: Boolean = false,
+        val totalCandidateCount: Int = targets.size
     )
 
-    private enum class MatchKind { CONSERVATIVE, TYPOGRAPHY, VERSION }
+    private enum class MatchKind { EXACT, CANONICAL, ACCENT, PUNCTUATION, FUZZY, VERSION }
 
     companion object {
         const val DEFAULT_MAX_CANDIDATES = 8
@@ -375,7 +522,7 @@ private fun versionMarkers(title: String, album: String): Set<VersionMarker> = b
 }
 
 private fun markersInTitle(value: String): Set<VersionMarker> {
-    val normalized = candidateTypographyNormalize(value)
+    val normalized = candidateCanonicalNormalize(value)
     val contexts = buildList {
         bracketContent.findAll(normalized).forEach { add(it.groupValues[1]) }
         dashSuffix.find(normalized)?.groupValues?.get(1)?.let(::add)
@@ -387,7 +534,7 @@ private fun markersInTitle(value: String): Set<VersionMarker> {
 }
 
 private fun markersInAlbum(value: String): Set<VersionMarker> {
-    val normalized = candidateTypographyNormalize(value)
+    val normalized = candidateCanonicalNormalize(value)
     if (normalized.isBlank()) return emptySet()
     val contexts = buildList {
         bracketContent.findAll(normalized).forEach { add(it.groupValues[1]) }
@@ -399,7 +546,7 @@ private fun markersInAlbum(value: String): Set<VersionMarker> {
 }
 
 private fun versionBase(value: String): String {
-    var result = candidateTypographyNormalize(value)
+    var result = candidateCanonicalNormalize(value)
     result = bracketContent.replace(result) { match ->
         if (markerPatterns.values.any { it.containsMatchIn(match.groupValues[1]) }) "" else match.value
     }
@@ -411,28 +558,53 @@ private fun versionBase(value: String): String {
     return result.replace(trailing, "").trim()
 }
 
-internal fun candidateConservativeNormalize(value: String): String = Normalizer
-    .normalize(value, Normalizer.Form.NFC)
-    .lowercase(Locale.ROOT)
-    .trim()
-    .replace(Regex("\\s+"), " ")
-
-internal fun candidateTypographyNormalize(value: String): String =
-    candidateConservativeNormalize(value)
-        .replace(Regex("[\\u2018\\u2019\\u201A\\u201B\\u2032]"), "'")
-        .replace(Regex("[\\u2010-\\u2015\\u2212]"), "-")
-
-internal fun candidateAccentNormalize(value: String): String = Normalizer
-    .normalize(candidateTypographyNormalize(value), Normalizer.Form.NFD)
-    .replace(Regex("\\p{M}+"), "")
-
-internal fun candidatePunctuationNormalize(value: String): String = candidateAccentNormalize(value)
-    .replace(Regex("(?<=\\p{L})\\.(?=\\p{L})"), "")
-    .replace(Regex("\\s*#\\s*"), "#")
-    .replace(Regex("\\s+"), " ")
-    .trim()
-
 private fun String.meaningful(): String? = trim().takeIf { it.isNotEmpty() }
+
+private fun ReconciliationMetadataRelation.isMatch(): Boolean = when (this) {
+    ReconciliationMetadataRelation.EXACT,
+    ReconciliationMetadataRelation.CANONICAL,
+    ReconciliationMetadataRelation.FUZZY -> true
+    ReconciliationMetadataRelation.MISSING,
+    ReconciliationMetadataRelation.DIFFERENT,
+    ReconciliationMetadataRelation.VERSION_VARIANT -> false
+}
+
+private fun fuzzyMetadataEquivalent(first: String, second: String): Boolean {
+    val left = candidateCanonicalNormalize(first)
+    val right = candidateCanonicalNormalize(second)
+    if (left == right || left.length < 4 || right.length < 4) return false
+    if (left.none(Char::isLetterOrDigit) || right.none(Char::isLetterOrDigit)) return false
+    val longest = maxOf(left.length, right.length)
+    val allowedDistance = when {
+        longest <= 7 -> 1
+        longest <= 20 -> 2
+        else -> 3
+    }
+    val distance = boundedLevenshteinDistance(left, right, allowedDistance)
+    return distance <= allowedDistance && distance.toDouble() / longest <= 0.20
+}
+
+private fun boundedLevenshteinDistance(left: String, right: String, limit: Int): Int {
+    if (kotlin.math.abs(left.length - right.length) > limit) return limit + 1
+    var previous = IntArray(right.length + 1) { it }
+    for (leftIndex in left.indices) {
+        val current = IntArray(right.length + 1)
+        current[0] = leftIndex + 1
+        var rowMinimum = current[0]
+        for (rightIndex in right.indices) {
+            val substitutionCost = if (left[leftIndex] == right[rightIndex]) 0 else 1
+            current[rightIndex + 1] = minOf(
+                current[rightIndex] + 1,
+                previous[rightIndex + 1] + 1,
+                previous[rightIndex] + substitutionCost
+            )
+            rowMinimum = minOf(rowMinimum, current[rightIndex + 1])
+        }
+        if (rowMinimum > limit) return limit + 1
+        previous = current
+    }
+    return previous[right.length]
+}
 
 private fun tripleKey(artist: String, title: String, album: String) =
     "$artist\u0000$title\u0000$album"
@@ -458,13 +630,14 @@ private val reviewQueueComparator = compareBy<HistoricalReconciliationItem> {
             it.candidates.singleOrNull()?.evidence?.category
         ) {
             ReconciliationCandidateCategory.STRONG_METADATA -> 0
-            ReconciliationCandidateCategory.TYPOGRAPHY_VARIANT -> 1
-            ReconciliationCandidateCategory.INCOMPLETE_EVIDENCE -> 2
-            ReconciliationCandidateCategory.VERSION_SENSITIVE -> 3
+            ReconciliationCandidateCategory.CANONICAL_METADATA -> 1
+            ReconciliationCandidateCategory.TYPOGRAPHY_VARIANT -> 2
+            ReconciliationCandidateCategory.INCOMPLETE_EVIDENCE -> 3
+            ReconciliationCandidateCategory.VERSION_SENSITIVE -> 4
             else -> 4
         }
-        ReconciliationCandidateDisposition.AMBIGUOUS -> 5
-        ReconciliationCandidateDisposition.NO_CANDIDATE -> 6
+        ReconciliationCandidateDisposition.AMBIGUOUS -> 6
+        ReconciliationCandidateDisposition.NO_CANDIDATE -> 7
     }
 }.thenByDescending { it.source.metrics.importedEventCount }
     .thenByDescending { it.source.metrics.lastListenedAt }
