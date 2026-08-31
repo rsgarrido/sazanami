@@ -663,7 +663,6 @@ internal fun MusicRoute(
                 onSortSelected = musicViewModel::selectReconciliationSort,
                 onReviewFilterSelected = musicViewModel::selectReconciliationReviewFilter,
                 onToggleExpanded = musicViewModel::toggleReconciliationItem,
-                onToggleLinkedGroup = musicViewModel::toggleLinkedReconciliationGroup,
                 onToggleAlbum = musicViewModel::toggleReconciliationAlbum,
                 onToggleArtist = musicViewModel::toggleReconciliationArtist,
                 onToggleSelected = musicViewModel::toggleReconciliationSelection,

@@ -5,7 +5,6 @@ import androidx.room.withTransaction
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.rsgarrido.sazanami.controller.DefaultListeningHistoryReconciliationOperations
-import io.github.rsgarrido.sazanami.controller.groupLinkedReconciliations
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationLinkResult
 import io.github.rsgarrido.sazanami.data.ListeningIdentityReconciliationRepository
 import io.github.rsgarrido.sazanami.data.ListeningStatsRepository
@@ -268,10 +267,10 @@ class ListeningIdentityReconciliationBackupRoundTripTest {
             database = database,
             currentSongs = { emptyList() }
         ).load()
-        val groups = groupLinkedReconciliations(linkedSnapshot.linkedItems)
-        assertEquals(2, groups.size)
-        assertEquals(setOf(2, 3), groups.map { it.historicalIdentityCount }.toSet())
-        assertEquals(5, groups.sumOf { it.historicalIdentityCount })
+        val linkedByTarget = linkedSnapshot.linkedItems.groupBy { it.target.identityId }
+        assertEquals(2, linkedByTarget.size)
+        assertEquals(setOf(2, 3), linkedByTarget.values.map { it.size }.toSet())
+        assertEquals(5, linkedByTarget.values.sumOf { it.size })
         assertTrue(linkedSnapshot.reviewItems.any { it.source.identityId == restoredUnmatched })
     }
 

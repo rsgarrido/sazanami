@@ -96,7 +96,6 @@ data class ListeningHistoryReconciliationUiActions(
     val onSortSelected: (ReconciliationSortOption) -> Unit,
     val onReviewFilterSelected: (ReconciliationReviewFilter) -> Unit,
     val onToggleExpanded: (Long) -> Unit,
-    val onToggleLinkedGroup: (Long) -> Unit,
     val onToggleAlbum: (ReconciliationAlbumKey) -> Unit,
     val onToggleArtist: (String) -> Unit,
     val onToggleSelected: (Long) -> Unit,
@@ -312,7 +311,7 @@ private fun BrowseControls(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        if (content.activeTab == ReconciliationReviewTab.SUGGESTED) {
+        if (content.activeTab == ReconciliationReviewTab.REVIEW) {
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -388,12 +387,11 @@ private fun TabRow(content: ReconciliationReviewContent, onSelected: (Reconcilia
     Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp)) {
         ReconciliationReviewTab.entries.forEach { tab ->
             val count = when (tab) {
-                ReconciliationReviewTab.SUGGESTED -> content.suggestedCount
+                ReconciliationReviewTab.REVIEW -> content.reviewCount
                 ReconciliationReviewTab.UNMATCHED -> content.unmatchedCount
                 ReconciliationReviewTab.LINKED -> content.linkedCount
             }
-            val name = if (tab == ReconciliationReviewTab.SUGGESTED) "Review"
-            else tab.name.lowercase().replaceFirstChar { it.titlecase() }
+            val name = tab.name.lowercase().replaceFirstChar { it.titlecase() }
             val label = "$name $count"
             val selected = content.activeTab == tab
             TextButton(
@@ -468,7 +466,7 @@ private fun AlbumPresentationList(
                     ) {
                         HorizontalDivider()
                         val eligible = album.tracks.filter(ReconciliationTrackPresentation::isSelectable)
-                        if (content.activeTab == ReconciliationReviewTab.SUGGESTED && eligible.isNotEmpty()) {
+                        if (content.activeTab == ReconciliationReviewTab.REVIEW && eligible.isNotEmpty()) {
                             OutlinedButton(
                                 onClick = { actions.onSelectItems(eligible.map { it.sourceId }) },
                                 modifier = Modifier.fillMaxWidth()
@@ -604,7 +602,7 @@ private fun CompactTrackCard(
                 .padding(horizontal = 10.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (track.isSelectable && content.activeTab == ReconciliationReviewTab.SUGGESTED) {
+            if (track.isSelectable && content.activeTab == ReconciliationReviewTab.REVIEW) {
                 Checkbox(
                     checked = selected,
                     onCheckedChange = { actions.onToggleSelected(track.sourceId) },
@@ -981,14 +979,14 @@ private fun ReconciliationReviewFilter.displayLabel(): String = when (this) {
 }
 
 private fun emptyTitle(content: ReconciliationReviewContent): String = when (content.activeTab) {
-    ReconciliationReviewTab.SUGGESTED -> "No review cases found"
+    ReconciliationReviewTab.REVIEW -> "No review cases found"
     ReconciliationReviewTab.UNMATCHED -> "No unmatched imported tracks found"
     ReconciliationReviewTab.LINKED -> "No linked imported tracks found"
 }
 
 private fun emptyText(content: ReconciliationReviewContent): String = when {
     content.browseQuery.isNotBlank() -> "Try another track, artist, or album search."
-    content.activeTab == ReconciliationReviewTab.SUGGESTED ->
+    content.activeTab == ReconciliationReviewTab.REVIEW ->
         "Change the review filter or browse unmatched history."
     content.activeTab == ReconciliationReviewTab.UNMATCHED ->
         "All imported tracks have a review candidate or are already linked."

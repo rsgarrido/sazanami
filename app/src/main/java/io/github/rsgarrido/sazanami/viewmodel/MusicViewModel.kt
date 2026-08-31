@@ -198,8 +198,6 @@ class MusicViewModel(
         listeningHistoryReconciliationController.selectReviewFilter(filter)
     fun toggleReconciliationItem(sourceId: Long) =
         listeningHistoryReconciliationController.toggleExpanded(sourceId)
-    fun toggleLinkedReconciliationGroup(targetIdentityId: Long) =
-        listeningHistoryReconciliationController.toggleLinkedGroup(targetIdentityId)
     fun toggleReconciliationAlbum(key: ReconciliationAlbumKey) =
         listeningHistoryReconciliationController.toggleAlbum(key)
     fun toggleReconciliationArtist(key: String) =

@@ -172,6 +172,45 @@ class ListeningHistoryReconciliationPresentationTest {
         assertEquals(1, missingAlbums.single().unmatchedCount)
     }
 
+    @Test
+    fun unknownCompilationAndJapaneseGroupingRemainStableAndIdentityPreserving() {
+        val japanese = item(1, "夜に駆ける", "YOASOBI", "THE BOOK")
+        val compilation = item(2, "Guest track", "Various Artists", "Collection")
+        val distinctArtist = item(3, "Other track", "Guest Artist", "Collection")
+        val unknownA = unmatchedItem(4, "Unknown A", "", "")
+        val unknownB = unmatchedItem(5, "Unknown B", "", "")
+        val dataset = prepareReconciliationDataset(
+            listOf(japanese, compilation, distinctArtist, unknownA, unknownB),
+            emptyList()
+        )
+        val originalIds = dataset.tracks.map(ReconciliationTrackPresentation::sourceId)
+
+        assertEquals(listOf(1L), search(dataset, "夜に"))
+        val collectionAlbums = groupReconciliationAlbums(
+            dataset.tracks,
+            dataset.tracks.filter { it.source.album == "Collection" },
+            ReconciliationSortOption.ALBUM
+        )
+        assertEquals(2, collectionAlbums.size)
+        assertEquals(setOf("Various Artists", "Guest Artist"),
+            collectionAlbums.mapTo(mutableSetOf()) { it.artist })
+
+        val unknownAlbum = groupReconciliationAlbums(
+            dataset.tracks,
+            dataset.tracks.filter { it.source.album.isBlank() && it.source.artist.isBlank() },
+            ReconciliationSortOption.HISTORICAL_PLAYS
+        ).single()
+        assertEquals("Unknown album", unknownAlbum.title)
+        assertEquals("Unknown artist", unknownAlbum.artist)
+        assertEquals(2, unknownAlbum.importedCount)
+        assertEquals(2, unknownAlbum.unmatchedCount)
+
+        ReconciliationSortOption.entries.forEach { sort ->
+            groupReconciliationArtists(dataset.tracks, dataset.tracks, sort)
+        }
+        assertEquals(originalIds, dataset.tracks.map(ReconciliationTrackPresentation::sourceId))
+    }
+
     private fun search(dataset: ReconciliationPreparedDataset, query: String) =
         filterAndSortReconciliationTracks(
             dataset,

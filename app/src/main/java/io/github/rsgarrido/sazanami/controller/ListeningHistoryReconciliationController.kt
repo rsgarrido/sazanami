@@ -31,21 +31,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-enum class ReconciliationReviewTab { SUGGESTED, UNMATCHED, LINKED }
+enum class ReconciliationReviewTab { REVIEW, UNMATCHED, LINKED }
 
 data class LinkedHistoricalReconciliation(
     val source: HistoricalReconciliationSource,
     val target: LocalReconciliationTarget,
     val reconciledAt: Long
 )
-
-data class LinkedReconciliationGroup(
-    val target: LocalReconciliationTarget,
-    val items: List<LinkedHistoricalReconciliation>
-) {
-    val historicalIdentityCount: Int get() = items.size
-    val historicalPlayCount: Long get() = items.sumOf { it.source.metrics.qualifiedPlayCount }
-}
 
 data class ReconciliationReviewSnapshot(
     val reviewItems: List<HistoricalReconciliationItem>,
@@ -79,7 +71,7 @@ data class ReconciliationSearchState(
 data class ReconciliationReviewContent(
     val reviewItems: List<HistoricalReconciliationItem>,
     val linkedItems: List<LinkedHistoricalReconciliation>,
-    val activeTab: ReconciliationReviewTab = ReconciliationReviewTab.SUGGESTED,
+    val activeTab: ReconciliationReviewTab = ReconciliationReviewTab.REVIEW,
     val browseMode: ReconciliationBrowseMode = ReconciliationBrowseMode.TRACKS,
     val browseQuery: String = "",
     val sortOption: ReconciliationSortOption = ReconciliationSortOption.HISTORICAL_PLAYS,
@@ -87,7 +79,6 @@ data class ReconciliationReviewContent(
     val skippedSourceIds: Set<Long> = emptySet(),
     val selectedSourceIds: Set<Long> = emptySet(),
     val expandedSourceId: Long? = null,
-    val expandedLinkedTargetId: Long? = null,
     val expandedAlbumKey: ReconciliationAlbumKey? = null,
     val expandedArtistKey: String? = null,
     val confirmation: ReconciliationConfirmation? = null,
@@ -99,7 +90,7 @@ data class ReconciliationReviewContent(
         linkedItems
     )
 ) {
-    val suggestedItems: List<HistoricalReconciliationItem>
+    val visibleReviewItems: List<HistoricalReconciliationItem>
         get() = reviewItems.filter {
             it.disposition != ReconciliationCandidateDisposition.NO_CANDIDATE &&
                 it.source.identityId !in skippedSourceIds
@@ -108,17 +99,14 @@ data class ReconciliationReviewContent(
         get() = reviewItems.filter {
             it.disposition == ReconciliationCandidateDisposition.NO_CANDIDATE
         }
-    val suggestedCount: Int get() = suggestedItems.size
+    val reviewCount: Int get() = visibleReviewItems.size
     val unmatchedCount: Int get() = unmatchedItems.size
     val linkedCount: Int get() = linkedItems.size
-    val linkedGroups: List<LinkedReconciliationGroup>
-        get() = groupLinkedReconciliations(linkedItems)
-
     val visibleTracks: List<ReconciliationTrackPresentation> by lazy(LazyThreadSafetyMode.NONE) {
         filterAndSortReconciliationTracks(
             dataset = preparedDataset,
             status = when (activeTab) {
-                ReconciliationReviewTab.SUGGESTED -> ReconciliationTrackStatus.REVIEW
+                ReconciliationReviewTab.REVIEW -> ReconciliationTrackStatus.REVIEW
                 ReconciliationReviewTab.UNMATCHED -> ReconciliationTrackStatus.UNMATCHED
                 ReconciliationReviewTab.LINKED -> ReconciliationTrackStatus.LINKED
             },
@@ -142,28 +130,6 @@ data class ReconciliationReviewContent(
             .mapTo(linkedSetOf(), ReconciliationTrackPresentation::sourceId)
     }
 }
-
-fun groupLinkedReconciliations(
-    items: List<LinkedHistoricalReconciliation>
-): List<LinkedReconciliationGroup> = items
-    .groupBy { it.target.identityId }
-    .map { (_, groupedItems) ->
-        LinkedReconciliationGroup(
-            target = groupedItems.first().target,
-            items = groupedItems.sortedWith(compareBy(
-                { it.source.title.lowercase(Locale.ROOT) },
-                { it.source.artist.lowercase(Locale.ROOT) },
-                { it.source.album.lowercase(Locale.ROOT) },
-                { it.source.identityId }
-            ))
-        )
-    }
-    .sortedWith(compareBy(
-        { it.target.title.lowercase(Locale.ROOT) },
-        { it.target.artist.lowercase(Locale.ROOT) },
-        { it.target.album.lowercase(Locale.ROOT) },
-        { it.target.identityId }
-    ))
 
 sealed interface ListeningHistoryReconciliationUiState {
     data object Loading : ListeningHistoryReconciliationUiState
@@ -311,16 +277,6 @@ class ListeningHistoryReconciliationController(
 
     fun toggleExpanded(sourceId: Long) = updateContent {
         copy(expandedSourceId = if (expandedSourceId == sourceId) null else sourceId)
-    }
-
-    fun toggleLinkedGroup(targetIdentityId: Long) = updateContent {
-        copy(
-            expandedLinkedTargetId = if (expandedLinkedTargetId == targetIdentityId) {
-                null
-            } else {
-                targetIdentityId
-            }
-        )
     }
 
     fun skip(sourceId: Long) = updateContent {
@@ -670,7 +626,7 @@ class ListeningHistoryReconciliationController(
                 ReconciliationReviewContent(
                     reviewItems = snapshot.reviewItems,
                     linkedItems = snapshot.linkedItems,
-                    activeTab = previous?.activeTab ?: ReconciliationReviewTab.SUGGESTED,
+                    activeTab = previous?.activeTab ?: ReconciliationReviewTab.REVIEW,
                     browseMode = previous?.browseMode ?: ReconciliationBrowseMode.TRACKS,
                     browseQuery = previous?.browseQuery.orEmpty(),
                     sortOption = previous?.sortOption

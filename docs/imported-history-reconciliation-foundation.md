@@ -6,16 +6,17 @@ historical listening identity to a canonical local/playable identity. Room 12 ad
 the same confirmed links through backup identity IDs and restore-time ID remapping.
 
 The table has one row per source identity: `sourceIdentityId` is the primary key,
-`targetIdentityId` has a non-unique index, and `reconciledAt` records the user-action timestamp.
+`targetIdentityId` has a non-unique index, and `reconciledAt` records link creation time.
 Both identity foreign keys use restrictive deletion behavior. This permits many historical sources
 to target one local identity, while preventing one source from targeting multiple identities.
 
 Link creation requires a source identity with published non-native imported history and no local
 binding. It requires a target identity with at least one real persisted local binding. A source may
 not already be a source or target, and a target may not be a source. The mixed-role prohibition
-prevents chains and cycles without recursive graph traversal. Batch creation validates every source
-and the target in one Room transaction before inserting any row. Normal `link` never overwrites an
-existing link; relinking is explicitly `unlink` followed by a newly confirmed `link`.
+prevents chains and cycles without recursive graph traversal. Heterogeneous batch creation validates
+all requested source/target pairs and inserts eligible new rows in one Room transaction while
+reporting already-linked, conflicting, and invalid requests separately. Normal `link` never
+overwrites an existing link; relinking is explicitly `unlink` followed by a newly confirmed `link`.
 
 Target playability is a creation-time condition. Once a link exists, it remains when a binding is
 marked missing or the file is temporarily unavailable. Cleanup treats identities in either link
@@ -34,7 +35,9 @@ roles, historical source evidence, local target binding evidence, and non-negati
 atomic replacement. A missing-marked binding remains valid local evidence. Backup 9 migrates to
 canonical format 2 with an empty reconciliation list; no identity relationship is inferred.
 
-Statistics canonicalizes confirmed sources to their targets before grouping, ranking, and limiting.
+Statistics and existing history-aware Smart Playlist queries canonicalize confirmed sources to
+their targets before grouping, ranking, filtering, and limiting. Neither consumer merges rows by
+visible title, artist, or album metadata.
 
 ## Candidate discovery
 
@@ -75,13 +78,16 @@ Candidate search deliberately has multiple comparison-only representations:
    artifacts, and known UTF-8/Windows-1252 smart-quote decoding artifacts. A unique complete
    metadata result in this tier has `CANONICAL_EXACT` confidence.
 3. The accent key decomposes Unicode and removes combining marks.
-4. The bounded punctuation key removes periods only when they occur between letters and normalizes
-   whitespace around `#`.
+4. The bounded punctuation key removes periods only when they occur between letters, equates
+   hyphen/space formatting, repeated-period formatting, and trailing emphatic `!`/`?`, and
+   normalizes whitespace around `#`.
 5. A bounded edit-distance lookup may compare a title only after canonical artist and album have
    narrowed the candidate bucket (or canonical artist when imported album metadata is absent).
 
 Accent, bounded-punctuation, and edit-distance forms are lookup aids only and have `FUZZY`
-confidence, never deterministic identity proof. Canonical equivalence is deterministic only when
+confidence, never deterministic identity proof. In particular, the punctuation lookup does not
+rewrite persisted title identity or make generic punctuation-stripped titles automatic.
+Canonical equivalence is deterministic only when
 title, artist, and album are present and exactly one plausible local reference remains across all
 lookup tiers. Original source and target strings remain in the result and are never rewritten.
 These functions are separate from portable song identity, Spotify fingerprinting, imported
@@ -159,7 +165,8 @@ published imported identities, and is idempotent because confirmed sources are e
 authoritative reconciliation relationship. A later library rescan can therefore resolve a formerly
 unmatched identity, while an already manual- or automatically-linked source is not reconsidered or
 overwritten. Failures in this post-publication step do not change a successful import into a failed
-import.
+import. Equivalent library snapshots are suppressed by the library publication tracker; no polling
+or reconciliation timer exists.
 
 The local binding service accepts many source-to-current-song requests, resolves each distinct local
 reference once, validates reconciliation roles with bulk DAO queries, and inserts all new
@@ -206,7 +213,13 @@ already-linked, conflict, or failure results cause one authoritative refresh and
 existing relationship. Linked and unmatched identities use the same search and grouping projections,
 and unlink remains the existing reversible relationship deletion.
 
-## Final v1 behavior
+`Skip / review later` is intentionally screen-session state. It hides the identity for the current
+review session, removes it from selection, and returns it when the screen is reopened. It deletes
+nothing and is not a permanent unmatched classification. Because normal Review items are fuzzy,
+ambiguous, incomplete, or version-sensitive, skipping them does not weaken the deterministic
+automatic-link boundary.
+
+## Downstream resolution and final milestone behavior
 
 Reconciliation is optional. Unmatched imported identities remain legitimate historical rows and
 continue contributing to global Statistics; a user does not need to review an entire provider
@@ -245,18 +258,39 @@ target. When the same durable local song is resolved again, its binding reactiva
 projections return without relinking. Cleanup, import cancellation/failure, and stale-pending-batch
 recovery protect both sides of every persisted reconciliation.
 
-The canonical per-playable-track metrics API is the provider-neutral bridge intended for a future
-Smart Playlist milestone; v1 does not implement Smart Playlist rules or UI.
+Existing Smart Playlist play-count, recent-play-count, last-played, never-played, and forgotten
+behavior uses the same authoritative relationship. Its SQL resolves detailed imported events and
+legacy baselines to the local identity before joining them to the playable library row. Reconciliation
+insert/delete invalidates live queries and marks listening-dependent generated playlists dirty.
+Unresolved imported identities cannot attach to a library song by metadata, while link, unlink, and
+relink immediately change membership on the next resolution without copying or deleting history.
 
-## Intentional v1 limitations
+Representative boundaries:
+
+- `Everything's Ruined` versus `Everything’s Ruined` is safe canonical typography and may link
+  automatically when the complete candidate is unique.
+- `Good Old-Fashioned Lover Boy` versus `Good Old Fashioned Lover Boy`, and `Shake That` versus
+  `Shake That!!!`, are bounded punctuation suggestions that remain Review decisions.
+- `River's Soul - Live Session` versus `River's Soul (Live Session)` remains Review because version
+  wording can be meaningful even when the visible difference looks structural.
+- Japanese title versus romaji tags, hidden-track/CD structural differences, and imported songs not
+  stored locally can legitimately remain Unmatched. Unmatched is a durable historical state, not a
+  failure count that must reach zero.
+
+## Intentional limitations and follow-up consideration
 
 - Future URI-less occurrences can create new fragments that require additional confirmation.
 - Translation, transliteration, romanization, and localized-title equivalence are not inferred.
 - Featured-artist and unusual metadata forms may not produce a suggestion.
 - Fuzzy, ambiguous, incomplete, version-sensitive, and unmatched items require individual manual
-  handling; there is no Match All or batch-approval UI yet.
+  judgment; only explicitly selected unique proposals are eligible for batch approval.
 - Candidate discovery uses deterministic normalization and current local-library metadata, not a
   Spotify API, network lookup, or external catalog.
 - Temporarily unavailable local targets remain linked but non-playable until normal library
   resolution succeeds.
-- Last.fm import/reconciliation and Smart Playlists remain deferred.
+- An explicit unlink currently removes only the relationship. There is no persistent
+  "do not automatically link this pair again" record, so a later real library publication can
+  recreate the same deterministic match. Session-only Skip/review-later state cannot safely express
+  this durable intent. Persisting an unlink veto would require a separately designed, backed-up
+  product state and schema migration rather than overloading imported-event skip evidence.
+- Last.fm import/reconciliation remains deferred.

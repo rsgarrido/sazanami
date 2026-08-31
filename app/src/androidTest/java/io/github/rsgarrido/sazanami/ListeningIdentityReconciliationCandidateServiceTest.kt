@@ -476,6 +476,14 @@ class ListeningIdentityReconciliationCandidateServiceTest {
         assertEquals(0, retry.newlyLinked)
         assertEquals(3, retry.reviewed)
         assertEquals(2, reconciliation.listLinks().size)
+        val downstreamRows = ListeningStatsRepository(database).getTopTracksByQualifiedPlays(10)
+        reconciliation.listLinks().forEach { link ->
+            assertEquals(
+                1L,
+                downstreamRows.single { it.trackIdentityId == link.targetIdentityId }
+                    .playCounts.totalPlayCount
+            )
+        }
         assertEquals(eventRowsBefore, database.listeningEventDao().getBackupPage(100, 0))
     }
 
@@ -520,6 +528,15 @@ class ListeningIdentityReconciliationCandidateServiceTest {
                     )
                 })
         ).items.any { it.source.identityId == future })
+
+        // There is currently no durable user-veto record. A later real library publication will
+        // reconsider an explicitly unlinked deterministic pair; this behavior is documented as a
+        // follow-up product decision rather than hidden behind session-only UI skip state.
+        val afterExplicitUnlink = reconciler.reconcile(listOf(
+            song(201, "Future Song", "Artist", "Future Album", "Future Song.flac")
+        ))
+        assertEquals(1, afterExplicitUnlink.newlyLinked)
+        assertTrue(reconciliation.findTargetForSource(future) != null)
     }
 
     private suspend fun identity(title: String, artist: String, album: String): Long =

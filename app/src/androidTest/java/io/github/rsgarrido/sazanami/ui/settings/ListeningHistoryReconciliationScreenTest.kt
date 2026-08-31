@@ -283,14 +283,13 @@ class ListeningHistoryReconciliationScreenTest {
 
     private fun actions(
         onToggle: (Long) -> Unit = {},
-        onLinkedToggle: (Long) -> Unit = {},
         onSelect: (List<Long>, LocalReconciliationTarget) -> Unit = { _, _ -> },
         onConfirmed: () -> Unit = {}
     ) = ListeningHistoryReconciliationUiActions(
         onEnter = {}, onBack = {}, onRetry = {}, onTabSelected = {},
         onBrowseModeSelected = {}, onBrowseQueryChanged = {}, onSortSelected = {},
         onReviewFilterSelected = {},
-        onToggleExpanded = onToggle, onToggleLinkedGroup = onLinkedToggle,
+        onToggleExpanded = onToggle,
         onToggleAlbum = {}, onToggleArtist = {}, onToggleSelected = {},
         onSelectItems = {}, onClearSelection = {}, onLinkSelectedRequested = {},
         onSkip = {}, onCandidateSelected = onSelect,
