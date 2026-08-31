@@ -25,6 +25,11 @@
             android:name=".data.EmbeddedArtworkProvider"
             android:authorities="${applicationId}.embeddedartwork"
             android:exported="true" />
+        <provider
+            android:name=".data.visual.VisualAssetProvider"
+            android:authorities="${applicationId}.visualassets"
+            android:exported="true"
+            android:grantUriPermissions="true" />
         <service
             android:name=".player.PlaybackService"
             android:exported="true"
@@ -32,9 +37,6 @@
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaLibraryService" />
                 <action android:name="android.media.browse.MediaBrowserService" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
             </intent-filter>
         </service>
         <activity
@@ -51,6 +53,11 @@
                 <action android:name="android.intent.action.MAIN" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
+
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
     </application>
