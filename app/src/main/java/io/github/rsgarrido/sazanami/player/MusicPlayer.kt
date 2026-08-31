@@ -10,6 +10,19 @@ import androidx.media3.session.SessionToken
 import io.github.rsgarrido.sazanami.data.Song
 import com.google.common.util.concurrent.ListenableFuture
 
+internal data class LivePlaybackSnapshot(
+    val currentSong: Song,
+    val playlist: List<Song>,
+    val currentPlaylistIndex: Int,
+    val currentPosition: Int,
+    val duration: Int,
+    val isPlaying: Boolean,
+    val repeatMode: RepeatMode
+) {
+    val upcomingSongs: List<Song>
+        get() = playlist.drop(currentPlaylistIndex + 1)
+}
+
 class MusicPlayer(private val context: Context) {
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
@@ -110,6 +123,55 @@ class MusicPlayer(private val context: Context) {
         }
     }
 
+    internal fun adoptLiveSession(librarySongs: List<Song>): LivePlaybackSnapshot? {
+        val playerController = controller ?: return null
+        val currentSongId = playerController.currentMediaItem
+            ?.mediaId
+            ?.toLongOrNull()
+            ?: return null
+        val songsById = librarySongs.associateBy(Song::id)
+        val liveCurrentSong = songsById[currentSongId] ?: return null
+        val resolvedTimeline = (0 until playerController.mediaItemCount)
+            .mapNotNull { index ->
+                playerController.getMediaItemAt(index).mediaId
+                    .toLongOrNull()
+                    ?.let(songsById::get)
+            }
+        val livePlaylist = resolvedTimeline.takeIf { songs ->
+            songs.any { song -> song.id == liveCurrentSong.id }
+        } ?: listOf(liveCurrentSong)
+        val liveCurrentIndex = livePlaylist.indexOfFirst { song ->
+            song.id == liveCurrentSong.id
+        }
+
+        currentPlaylist = livePlaylist
+        currentSong = liveCurrentSong
+
+        val playerDuration = playerController.duration
+        val liveDuration = if (playerDuration > 0L) {
+            playerDuration.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        } else {
+            liveCurrentSong.duration.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+        }
+        val liveRepeatMode = when (playerController.repeatMode) {
+            Player.REPEAT_MODE_ALL -> RepeatMode.ALL
+            Player.REPEAT_MODE_ONE -> RepeatMode.ONE
+            else -> RepeatMode.OFF
+        }
+
+        return LivePlaybackSnapshot(
+            currentSong = liveCurrentSong,
+            playlist = livePlaylist,
+            currentPlaylistIndex = liveCurrentIndex,
+            currentPosition = playerController.currentPosition
+                .coerceIn(0L, Int.MAX_VALUE.toLong())
+                .toInt(),
+            duration = liveDuration,
+            isPlaying = playerController.isPlaying,
+            repeatMode = liveRepeatMode
+        )
+    }
+
     fun pause() {
         controller?.pause()
     }
@@ -166,9 +228,9 @@ class MusicPlayer(private val context: Context) {
         if (transaction != null) {
             CrossfadeTrace.log(
                 "NAV_POLICY INTERNAL_BEGIN id=${transaction.id} " +
-                    "requestedShuffle=$shuffleEnabled " +
-                    "effectiveShuffle=$effectiveShuffleEnabled " +
-                    "repeatMode=${navigationRepeatModeTraceValue(playerRepeatMode)}"
+                        "requestedShuffle=$shuffleEnabled " +
+                        "effectiveShuffle=$effectiveShuffleEnabled " +
+                        "repeatMode=${navigationRepeatModeTraceValue(playerRepeatMode)}"
             )
         }
 

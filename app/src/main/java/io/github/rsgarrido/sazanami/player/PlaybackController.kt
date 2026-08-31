@@ -176,11 +176,9 @@ class PlaybackController(
         tracePerformance(PerformanceTraceNames.PLAYBACK_CONNECT) {
             musicPlayer.connect {
                 isPlayerConnected = true
-                musicPlayer.setShuffleEnabled(shuffleMode.usesDynamicSongShuffle)
-                musicPlayer.setRepeatMode(repeatMode)
 
                 if (librarySongs.isNotEmpty()) {
-                    restorePlayerState()
+                    restoreOrAdoptPlayerState()
                 }
             }
         }
@@ -212,7 +210,7 @@ class PlaybackController(
         librarySongs = songs
 
         if (isPlayerConnected) {
-            restorePlayerState()
+            restoreOrAdoptPlayerState()
         }
     }
 
@@ -509,6 +507,53 @@ class PlaybackController(
             repeatMode = repeatMode
         )
         PlaybackLibraryBridge.unregister(this)
+    }
+
+    private fun restoreOrAdoptPlayerState() {
+        // Android Auto, Assistant, notifications, or Bluetooth may have started the service before
+        // the phone UI exists. In that case the live Media3 session is authoritative; restoring the
+        // persisted snapshot over it would rebuild the active decoder and briefly interrupt audio.
+        if (adoptLivePlayerState()) return
+
+        musicPlayer.setShuffleEnabled(shuffleMode.usesDynamicSongShuffle)
+        musicPlayer.setRepeatMode(repeatMode)
+        restorePlayerState()
+    }
+
+    private fun adoptLivePlayerState(): Boolean {
+        val live = musicPlayer.adoptLiveSession(librarySongs) ?: return false
+        val songsById = librarySongs.associateBy(Song::id)
+
+        currentSong = live.currentSong
+        currentPosition = live.currentPosition
+        duration = live.duration
+        isPlaying = live.isPlaying
+
+        shuffleMode = playerStateStorage.getShuffleMode()
+        repeatMode = live.repeatMode
+
+        val persistedContext = playerStateStorage.getPlaybackContextSongIds()
+            .mapNotNull(songsById::get)
+        playbackContextSongs = persistedContext
+            .takeIf { context ->
+                context.any { song -> song.id == live.currentSong.id }
+            }
+            ?: live.playlist
+
+        playbackQueueManager.replaceQueue(
+            playerStateStorage.getQueueSongIds().mapNotNull(songsById::get)
+        )
+        playbackNavigationHistory.replacePreviousSongs(
+            playerStateStorage.getPreviousSongIds().mapNotNull(songsById::get)
+        )
+        playbackNavigationHistory.replaceNextSongs(
+            playerStateStorage.getNextSongIds().mapNotNull(songsById::get)
+        )
+        upcomingSongs = live.upcomingSongs
+
+        applyReplayGainForCurrentSong()
+        startProgressUpdates()
+        return true
     }
 
     private fun restorePlayerState() {

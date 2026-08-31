@@ -69,7 +69,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import kotlin.random.Random
 
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaLibraryService() {
@@ -1106,7 +1105,7 @@ class PlaybackService : MediaLibraryService() {
     private suspend fun applyServiceOnlySongShuffle(enabled: Boolean) {
         val catalog = androidAutoCatalogSnapshot.takeIf { it.songs.isNotEmpty() }
             ?: loadAndroidAutoCatalog()
-        val currentSongId = player.currentMediaItem?.mediaId?.toLongOrNull()
+        val currentSongId = sessionPlayer.currentMediaItem?.mediaId?.toLongOrNull()
         val context = resolveServicePlaybackContext(catalog, currentSongId)
         val mode = if (enabled) PlaybackShuffleMode.SONGS else PlaybackShuffleMode.OFF
         playerStateStorage.saveServiceShuffleMode(mode)
@@ -1117,18 +1116,29 @@ class PlaybackService : MediaLibraryService() {
             playbackContextSongIds = context.map(Song::id),
             shuffleMode = mode
         )
-        val currentSong = context.firstOrNull { song -> song.id == currentSongId } ?: return
-        val ordered = if (enabled) {
-            listOf(currentSong) + context.filterNot { song -> song.id == currentSongId }.shuffled(Random.Default)
+        val currentContextIndex = context.indexOfFirst { song -> song.id == currentSongId }
+        if (currentContextIndex < 0) return
+        val upcomingSongs = if (enabled) {
+            context.filterNot { song -> song.id == currentSongId }.shuffled()
         } else {
-            context
+            context.drop(currentContextIndex + 1)
         }
-        val start = ordered.indexOfFirst { song -> song.id == currentSongId }.coerceAtLeast(0)
-        val position = player.currentPosition.coerceAtLeast(0L)
-        val wasPlaying = player.isPlaying
-        sessionPlayer.setMediaItems(ordered.map { song -> song.toPlayableMediaItem() }, start, position)
-        sessionPlayer.prepare()
-        if (wasPlaying) sessionPlayer.play()
+        val currentIndex = sessionPlayer.currentMediaItemIndex
+        if (currentIndex < 0) return
+
+        // Never replace the current MediaItem just to change logical shuffle order. Replacing the
+        // active item flushes/re-prepares the decoder on some devices and creates an audible gap.
+        val replaceFromIndex = currentIndex + 1
+        val existingUpcomingIds = (replaceFromIndex until sessionPlayer.mediaItemCount)
+            .map { index -> sessionPlayer.getMediaItemAt(index).mediaId }
+        val requestedUpcomingIds = upcomingSongs.map { song -> song.id.toString() }
+        if (existingUpcomingIds == requestedUpcomingIds) return
+
+        sessionPlayer.replaceMediaItems(
+            replaceFromIndex,
+            sessionPlayer.mediaItemCount,
+            upcomingSongs.map { song -> song.toPlayableMediaItem() }
+        )
     }
 
     private fun resolveServicePlaybackContext(
