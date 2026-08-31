@@ -215,6 +215,7 @@ fun RetroRackExpandedPlayer(
                 RackIconButton(
                     icon = Icons.Filled.List,
                     label = "QUEUE",
+                    contentDescription = "Open queues",
                     active = true,
                     compact = true,
                     onClick = onOpenUpNextClick,
@@ -629,6 +630,7 @@ private fun RackModule(
 private fun RackIconButton(
     icon: ImageVector,
     label: String,
+    contentDescription: String = label,
     active: Boolean = false,
     compact: Boolean = false,
     onClick: () -> Unit,
@@ -660,7 +662,7 @@ private fun RackIconButton(
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = label,
+            contentDescription = contentDescription,
             tint = if (active && !isPressed) DisplayBlack else ControlSilver,
             modifier = Modifier.size(if (compact) 14.dp else 16.dp)
         )

@@ -31,6 +31,10 @@ class PlaybackQueueUiControllerTest {
         assertEquals("A", controller.state.value.activeQueueId)
         assertEquals("A", controller.state.value.selectedQueueId)
         assertTrue(controller.state.value.queues.first { it.queueId == "A" }.isActive)
+        assertEquals(
+            "PLAYING",
+            controller.state.value.queues.first { it.queueId == "A" }.stateLabel
+        )
         assertEquals(1, controller.state.value.queues.first { it.queueId == "A" }.currentPosition)
         assertEquals("Song 1", controller.state.value.queues.first { it.queueId == "A" }.currentTrack?.title)
 
@@ -39,7 +43,28 @@ class PlaybackQueueUiControllerTest {
         assertEquals("A", controller.state.value.activeQueueId)
         assertEquals("B", controller.state.value.selectedQueueId)
         assertFalse(controller.state.value.selectedQueue?.isActive == true)
+        assertEquals("VIEWING", controller.state.value.selectedQueue?.stateLabel)
         assertEquals(0, operations.switchCount)
+    }
+
+    @Test
+    fun structuralLiveQueueMutationRefreshesTheActiveQueueWithoutARoomEmission() {
+        val first = song(1L)
+        val added = song(2L)
+        val operations = FakeOperations(activeQueueId = "A").apply {
+            add(queue("A", "A", "a", first))
+            publishLive(first)
+        }
+        val controller = controller(operations)
+
+        operations.publishLive(first, added)
+
+        assertEquals(2, controller.state.value.selectedQueueEntryCount)
+        assertEquals(
+            listOf("Song 1", "Song 2"),
+            controller.state.value.selectedEntries.mapNotNull { entry -> entry.song?.title }
+        )
+        assertTrue(controller.state.value.selectedEntries.first().isCurrent)
     }
 
     @Test
@@ -158,6 +183,7 @@ class PlaybackQueueUiControllerTest {
         var activeQueueId: String?
     ) : PlaybackQueueUiOperations {
         private val queueFlow = MutableStateFlow<List<PlaybackQueueEntity>>(emptyList())
+        private val liveQueueFlow = MutableStateFlow<LiveActiveQueueForUi?>(null)
         private val loaded = linkedMapOf<String, LoadedQueueForUi>()
         var switchCount = 0
         var createCount = 0
@@ -172,7 +198,13 @@ class PlaybackQueueUiControllerTest {
             publish()
         }
 
+        fun publishLive(vararg songs: Song) {
+            liveQueueFlow.value = LiveActiveQueueForUi(songs.toList())
+        }
+
         override fun observeQueues(): Flow<List<PlaybackQueueEntity>> = queueFlow
+
+        override fun observeLiveActiveQueue(): Flow<LiveActiveQueueForUi?> = liveQueueFlow
 
         override suspend fun listQueues(): List<PlaybackQueueEntity> = queueFlow.value
 

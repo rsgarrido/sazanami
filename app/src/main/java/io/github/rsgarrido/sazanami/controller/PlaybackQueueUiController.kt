@@ -2,6 +2,7 @@ package io.github.rsgarrido.sazanami.controller
 
 import io.github.rsgarrido.sazanami.data.PlaybackQueueRepository
 import io.github.rsgarrido.sazanami.data.Song
+import io.github.rsgarrido.sazanami.data.membershipKey
 import io.github.rsgarrido.sazanami.data.local.PlaybackQueueEntity
 import io.github.rsgarrido.sazanami.data.local.PlaybackQueueEntryEntity
 import io.github.rsgarrido.sazanami.player.PlaybackController
@@ -14,6 +15,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 data class PlaybackQueueCardUiState(
@@ -26,7 +29,14 @@ data class PlaybackQueueCardUiState(
     val lastActiveAt: Long,
     val isActive: Boolean,
     val isSelected: Boolean
-)
+) {
+    val stateLabel: String?
+        get() = when {
+            isActive -> "PLAYING"
+            isSelected -> "VIEWING"
+            else -> null
+        }
+}
 
 data class PlaybackQueueEntryUiState(
     val entryId: String,
@@ -59,8 +69,13 @@ internal data class LoadedQueueEntryForUi(
     val song: Song?
 )
 
+internal data class LiveActiveQueueForUi(
+    val songs: List<Song>
+)
+
 internal interface PlaybackQueueUiOperations {
     fun observeQueues(): Flow<List<PlaybackQueueEntity>>
+    fun observeLiveActiveQueue(): Flow<LiveActiveQueueForUi?>
     suspend fun listQueues(): List<PlaybackQueueEntity>
     suspend fun getActiveQueueId(): String?
     suspend fun loadQueue(queueId: String): LoadedQueueForUi?
@@ -79,6 +94,24 @@ internal class RoomPlaybackQueueUiOperations(
     private val trackAccess = RoomPlaybackQueueTrackAccess(database, catalogSongs)
 
     override fun observeQueues(): Flow<List<PlaybackQueueEntity>> = repository.observeQueues()
+
+    override fun observeLiveActiveQueue(): Flow<LiveActiveQueueForUi?> =
+        playbackController.uiState
+            .map { state ->
+                val currentSong = state.currentSong
+                if (!state.isConnected || currentSong == null) {
+                    null
+                } else {
+                    LiveActiveQueueForUi(
+                        songs = buildList {
+                            add(currentSong)
+                            addAll(state.queuedSongs)
+                            addAll(state.upcomingSongs)
+                        }
+                    )
+                }
+            }
+            .distinctUntilChanged()
 
     override suspend fun listQueues(): List<PlaybackQueueEntity> = repository.listQueues()
 
@@ -114,6 +147,10 @@ internal class PlaybackQueueUiController(
     private val scope: CoroutineScope
 ) {
     private val selectedQueueId = MutableStateFlow<String?>(null)
+    private var latestLiveActiveQueue: LiveActiveQueueForUi? = null
+    private var latestLoadedQueues: List<LoadedQueueForUi> = emptyList()
+    private var latestActiveQueueId: String? = null
+    private var hasLoadedPersistedQueues = false
     private val _state = MutableStateFlow(PlaybackQueueHubUiState())
     val state: StateFlow<PlaybackQueueHubUiState> = _state.asStateFlow()
 
@@ -121,7 +158,7 @@ internal class PlaybackQueueUiController(
         scope.launch {
             try {
                 operations.observeQueues().collectLatest { queues ->
-                    refresh(queues)
+                    refresh(queues, latestLiveActiveQueue)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -129,6 +166,20 @@ internal class PlaybackQueueUiController(
                 _state.value = _state.value.copy(
                     isLoading = false,
                     message = "Unable to load saved queues."
+                )
+            }
+        }
+        scope.launch {
+            try {
+                operations.observeLiveActiveQueue().collectLatest { liveQueue ->
+                    latestLiveActiveQueue = liveQueue
+                    publishCachedState()
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _state.value = _state.value.copy(
+                    message = "Live queue updates are temporarily unavailable."
                 )
             }
         }
@@ -156,7 +207,10 @@ internal class PlaybackQueueUiController(
             isSwitching = false,
             message = if (switched) null else "Unable to switch queues. Current playback was kept."
         )
-        if (switched) refreshSelection()
+        if (switched) {
+            latestLiveActiveQueue = null
+            refreshSelection()
+        }
     }
 
     fun createQueueFromCurrent(): Job = scope.launch {
@@ -238,7 +292,10 @@ internal class PlaybackQueueUiController(
         _state.value = _state.value.copy(message = null)
     }
 
-    private suspend fun refresh(queues: List<PlaybackQueueEntity>) {
+    private suspend fun refresh(
+        queues: List<PlaybackQueueEntity>,
+        liveActiveQueue: LiveActiveQueueForUi?
+    ) {
         val activeQueueId = operations.getActiveQueueId()
         val selectedId = selectedQueueId.value
             ?.takeIf { candidate -> queues.any { queue -> queue.queueId == candidate } }
@@ -258,10 +315,14 @@ internal class PlaybackQueueUiController(
             }
         }
         val loadedById = loaded.associateBy { item -> item.queue.queueId }
+        latestLoadedQueues = queues.mapNotNull { queue -> loadedById[queue.queueId] }
+        latestActiveQueueId = activeQueueId
+        hasLoadedPersistedQueues = true
         _state.value = buildState(
-            loadedQueues = queues.mapNotNull { queue -> loadedById[queue.queueId] },
-            activeQueueId = activeQueueId,
+            loadedQueues = latestLoadedQueues,
+            activeQueueId = latestActiveQueueId,
             selectedQueueId = selectedId,
+            liveActiveQueue = liveActiveQueue,
             previous = _state.value
         ).let { state ->
             if (loadFailed && state.message == null) {
@@ -273,7 +334,18 @@ internal class PlaybackQueueUiController(
     }
 
     private suspend fun refreshSelection() {
-        refresh(operations.listQueues())
+        refresh(operations.listQueues(), latestLiveActiveQueue)
+    }
+
+    private fun publishCachedState() {
+        if (!hasLoadedPersistedQueues) return
+        _state.value = buildState(
+            loadedQueues = latestLoadedQueues,
+            activeQueueId = latestActiveQueueId,
+            selectedQueueId = selectedQueueId.value,
+            liveActiveQueue = latestLiveActiveQueue,
+            previous = _state.value
+        )
     }
 }
 
@@ -284,6 +356,7 @@ internal fun buildState(
     loadedQueues: List<LoadedQueueForUi>,
     activeQueueId: String?,
     selectedQueueId: String?,
+    liveActiveQueue: LiveActiveQueueForUi? = null,
     previous: PlaybackQueueHubUiState = PlaybackQueueHubUiState()
 ): PlaybackQueueHubUiState {
     val selected = loadedQueues.firstOrNull { loaded ->
@@ -291,20 +364,39 @@ internal fun buildState(
     }
     val selectedCurrentEntryId = selected?.queue?.currentEntryId
     val cards = loadedQueues.map { loaded ->
+        val isActive = loaded.queue.queueId == activeQueueId
+        val liveSongs = liveActiveQueue?.songs.takeIf { isActive }
         val currentIndex = loaded.entries.indexOfFirst { item ->
             item.entry.entryId == loaded.queue.currentEntryId
         }.takeIf { index -> index >= 0 }
-        val currentSong = currentIndex?.let { index -> loaded.entries[index].song }
+        val currentSong = liveSongs?.firstOrNull()
+            ?: currentIndex?.let { index -> loaded.entries[index].song }
         PlaybackQueueCardUiState(
             queueId = loaded.queue.queueId,
             name = loaded.queue.displayName,
-            entryCount = loaded.entries.size,
-            currentPosition = currentIndex?.plus(1),
+            entryCount = liveSongs?.size ?: loaded.entries.size,
+            currentPosition = if (liveSongs != null) 1 else currentIndex?.plus(1),
             currentTrack = currentSong,
-            representativeTrack = currentSong ?: loaded.entries.firstNotNullOfOrNull { it.song },
+            representativeTrack = currentSong
+                ?: loaded.entries.firstNotNullOfOrNull { it.song },
             lastActiveAt = loaded.queue.lastActiveAt,
-            isActive = loaded.queue.queueId == activeQueueId,
+            isActive = isActive,
             isSelected = loaded.queue.queueId == selectedQueueId
+        )
+    }
+    val liveSelectedEntries = liveActiveQueue?.takeIf {
+        selected?.queue?.queueId == activeQueueId
+    }?.let { liveQueue ->
+        buildLiveActiveQueueEntries(
+            persistedEntries = selected?.entries.orEmpty(),
+            liveSongs = liveQueue.songs
+        )
+    }
+    val selectedEntries = liveSelectedEntries ?: selected?.entries.orEmpty().map { item ->
+        PlaybackQueueEntryUiState(
+            entryId = item.entry.entryId,
+            song = item.song,
+            isCurrent = item.entry.entryId == selectedCurrentEntryId
         )
     }
     return previous.copy(
@@ -312,13 +404,30 @@ internal fun buildState(
         queues = cards,
         activeQueueId = activeQueueId,
         selectedQueueId = selected?.queue?.queueId,
-        selectedEntries = selected?.entries.orEmpty().map { item ->
-            PlaybackQueueEntryUiState(
-                entryId = item.entry.entryId,
-                song = item.song,
-                isCurrent = item.entry.entryId == selectedCurrentEntryId
-            )
-        },
-        selectedQueueEntryCount = selected?.entries?.size ?: 0
+        selectedEntries = selectedEntries,
+        selectedQueueEntryCount = selectedEntries.size
     )
+}
+
+internal fun buildLiveActiveQueueEntries(
+    persistedEntries: List<LoadedQueueEntryForUi>,
+    liveSongs: List<Song>
+): List<PlaybackQueueEntryUiState> {
+    val unmatchedPersistedEntries = persistedEntries.toMutableList()
+    return liveSongs.mapIndexed { index, song ->
+        val membershipKey = song.membershipKey()
+        val persistedIndex = unmatchedPersistedEntries.indexOfFirst { item ->
+            item.song?.membershipKey() == membershipKey
+        }
+        val entryId = if (persistedIndex >= 0) {
+            unmatchedPersistedEntries.removeAt(persistedIndex).entry.entryId
+        } else {
+            "live:$index:$membershipKey"
+        }
+        PlaybackQueueEntryUiState(
+            entryId = entryId,
+            song = song,
+            isCurrent = index == 0
+        )
+    }
 }

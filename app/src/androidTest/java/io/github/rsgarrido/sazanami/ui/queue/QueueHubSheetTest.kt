@@ -8,9 +8,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import io.github.rsgarrido.sazanami.controller.PlaybackQueueCardUiState
+import io.github.rsgarrido.sazanami.controller.PlaybackQueueEntryUiState
 import io.github.rsgarrido.sazanami.controller.PlaybackQueueHubUiState
 import io.github.rsgarrido.sazanami.ui.player.mini.MiniPlayerQueueButton
 import org.junit.Assert.assertEquals
@@ -42,8 +46,42 @@ class QueueHubSheetTest {
 
         composeRule.onNodeWithText("Queue 2").performClick()
         composeRule.runOnIdle { assertEquals(0, switchCount) }
-        composeRule.onNodeWithText("Resume").assertIsDisplayed().performClick()
+        composeRule.onNodeWithText("VIEWING").assertIsDisplayed()
+        composeRule.onNodeWithText("Switch to this queue").assertIsDisplayed().performClick()
         composeRule.runOnIdle { assertEquals(1, switchCount) }
+    }
+
+    @Test
+    fun scrollingTheEntryListDoesNotDismissOrDragTheExpandedSheet() {
+        var dismissCount = 0
+        val entries = List(40) { index ->
+            PlaybackQueueEntryUiState(
+                entryId = "entry-$index",
+                song = null,
+                isCurrent = index == 0
+            )
+        }
+        composeRule.setContent {
+            MaterialTheme {
+                QueueHubSheet(
+                    state = state("A").copy(
+                        selectedEntries = entries,
+                        selectedQueueEntryCount = entries.size
+                    ),
+                    onDismiss = { dismissCount += 1 },
+                    onQueueSelected = {},
+                    onSwitchSelected = {},
+                    onCreateFromCurrent = {},
+                    onRename = { _, _ -> },
+                    onDelete = {},
+                    onMessageDismissed = {}
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("queue-hub-entry-list").performTouchInput { swipeUp() }
+
+        composeRule.runOnIdle { assertEquals(0, dismissCount) }
     }
 
     @Test

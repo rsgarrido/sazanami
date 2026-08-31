@@ -222,7 +222,7 @@ internal fun PocketCassetteControls(
             PocketCassetteUtilityButton(
                 icon = Icons.AutoMirrored.Filled.List,
                 label = "QUEUE",
-                contentDescription = "Open up next queue",
+                contentDescription = "Open queues",
                 enabled = inputEnabled,
                 onClick = onOpenUpNextClick,
                 modifier = Modifier.weight(1f)

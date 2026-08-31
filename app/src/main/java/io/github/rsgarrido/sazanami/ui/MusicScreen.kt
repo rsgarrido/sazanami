@@ -1461,9 +1461,6 @@ internal fun MusicScreen(
                         playerMorphState.collapse()
                         restorePlaybackLaunchContext()
                     },
-                    onShowExpandedUpNextSheet = {
-                        isExpandedUpNextSheetVisible = true
-                    },
                     onShowQueueHub = {
                         isQueueHubVisible = true
                     },

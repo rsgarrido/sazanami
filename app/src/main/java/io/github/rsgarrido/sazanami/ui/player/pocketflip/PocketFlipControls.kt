@@ -130,7 +130,7 @@ internal fun PocketFlipControlHalf(
         ) {
             PocketFlipUtilitySwitch(
                 label = "QUEUE",
-                contentDescription = "Open up next queue",
+                contentDescription = "Open queues",
                 onClick = onOpenUpNextClick,
                 compact = compact,
                 enabled = inputEnabled

@@ -55,6 +55,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -82,6 +83,8 @@ fun QueueHubSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        sheetGesturesEnabled = false,
+        dragHandle = null,
         containerColor = MaterialTheme.colorScheme.surfaceContainer
     ) {
         Column(
@@ -110,6 +113,9 @@ fun QueueHubSheet(
                     } else {
                         Icon(Icons.Filled.Add, contentDescription = "New queue from current")
                     }
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Filled.Close, contentDescription = "Close Queue Hub")
                 }
             }
 
@@ -178,13 +184,22 @@ fun QueueHubSheet(
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = "Current / Up Next",
+                                text = if (selected?.isActive == true) {
+                                    "PLAYING QUEUE - Current / Up Next"
+                                } else {
+                                    "VIEWING SAVED QUEUE - Saved playback order"
+                                },
                                 style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (selected?.isActive == true) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.secondary
+                                },
+                                fontWeight = FontWeight.Bold
                             )
                         }
                         if (selected?.isActive == true) {
-                            AssistChip(onClick = {}, enabled = false, label = { Text("Active") })
+                            AssistChip(onClick = {}, enabled = false, label = { Text("Playing") })
                         } else if (selected != null) {
                             Button(
                                 onClick = onSwitchSelected,
@@ -199,7 +214,7 @@ fun QueueHubSheet(
                                 } else {
                                     Icon(Icons.Filled.PlayArrow, contentDescription = null)
                                     Spacer(Modifier.width(6.dp))
-                                    Text("Resume")
+                                    Text("Switch to this queue")
                                 }
                             }
                         }
@@ -233,7 +248,8 @@ fun QueueHubSheet(
                         LazyColumn(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .weight(1f),
+                                .weight(1f)
+                                .testTag("queue-hub-entry-list"),
                             contentPadding = PaddingValues(bottom = 28.dp)
                         ) {
                             items(
@@ -369,11 +385,15 @@ private fun QueueHubCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            if (queue.isActive) {
+            queue.stateLabel?.let { stateLabel ->
                 Text(
-                    text = "ACTIVE",
+                    text = stateLabel,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = if (queue.isActive) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.secondary
+                    },
                     fontWeight = FontWeight.Bold
                 )
             }

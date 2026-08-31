@@ -7,6 +7,7 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,8 +15,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -286,6 +293,25 @@ internal fun ModernExpandedPlayer(
                         defaultMorphVisualState?.expensiveContentActive ?: true
                 )
 
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .suppressDefaultMorphSemantics(
+                            defaultMorphVisualState != null &&
+                                    playerMorphState.settledPresentation !=
+                                    PlayerPresentation.Expanded
+                        ),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    ModernQueueHubButton(
+                        onClick = onOpenUpNextClick,
+                        enabled = defaultMorphVisualState == null ||
+                                playerMorphState.settledPresentation ==
+                                PlayerPresentation.Expanded,
+                        tint = style.contentColor
+                    )
+                }
+
                 lyricsContent()
 
                 when (appearance.layout.density) {
@@ -365,6 +391,26 @@ internal fun ModernExpandedPlayer(
                 Spacer(modifier = Modifier.height(20.dp))
             }
         }
+    }
+}
+
+@Composable
+internal fun ModernQueueHubButton(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    tint: Color = Color.Unspecified,
+    modifier: Modifier = Modifier
+) {
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.size(42.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Filled.QueueMusic,
+            contentDescription = "Open queues",
+            tint = tint
+        )
     }
 }
 

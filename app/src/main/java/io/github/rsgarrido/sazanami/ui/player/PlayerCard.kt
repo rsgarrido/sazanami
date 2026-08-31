@@ -88,7 +88,7 @@ fun PlayerCard(
             onCollapseClick = onCollapseClick,
             playerMorphState = playerMorphState,
             lyricsTransitionState = lyricsTransitionState,
-            onOpenUpNextClick = onOpenUpNextClick,
+            onOpenUpNextClick = onOpenQueueHubClick,
             onToggleFavoriteClick = onToggleFavoriteClick,
             albumArtSize = albumArtSize,
             modifier = modifier
