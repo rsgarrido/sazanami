@@ -50,6 +50,8 @@ class PlaybackController(
     private var librarySongs: List<Song> = emptyList()
     private var playbackContextSongs: List<Song> = emptyList()
     private var pendingExternalPlaybackSelection: PendingExternalPlaybackSelection? = null
+    private var pendingPersistentQueueSwitch = false
+    private var adoptedPersistentQueueEntryId: String? = null
     private var replayGainMode: ReplayGainMode = ReplayGainMode.OFF
     private var replayGainRequestId = 0
     private val _uiState = MutableStateFlow(
@@ -391,6 +393,27 @@ class PlaybackController(
 
     fun getCurrentPositionForLyrics(): Long =
         musicPlayer.getCurrentPosition().coerceAtLeast(0).toLong()
+
+    fun getActiveQueueId(): String? = PlaybackQueueRuntimeBridge.getActiveQueueId()
+
+    internal fun playbackContextSongsForPersistence(): List<Song> =
+        playbackContextSongs.toList()
+
+    suspend fun saveActiveQueue(): String? = PlaybackQueueRuntimeBridge.saveActiveQueue()
+
+    suspend fun switchActiveQueue(queueId: String): Boolean {
+        val switched = PlaybackQueueRuntimeBridge.switchActiveQueue(queueId)
+        if (switched && pendingPersistentQueueSwitch) {
+            adoptPersistentQueueSwitch(expectTimelineCallback = true)
+        }
+        return switched
+    }
+
+    internal fun preparePersistentQueueSwitch() {
+        pendingExternalPlaybackSelection = null
+        pendingPersistentQueueSwitch = true
+        adoptedPersistentQueueEntryId = null
+    }
 
     fun toggleShuffle() {
         setSongShuffleEnabled(shuffleMode == PlaybackShuffleMode.OFF)
@@ -794,6 +817,15 @@ class PlaybackController(
     }
 
     private fun handleServiceSongChanged(songId: Long?) {
+        adoptedPersistentQueueEntryId?.let { adoptedEntryId ->
+            adoptedPersistentQueueEntryId = null
+            if (musicPlayer.currentItemInstanceId() == adoptedEntryId) return
+        }
+        if (pendingPersistentQueueSwitch) {
+            adoptPersistentQueueSwitch(expectTimelineCallback = false)
+            return
+        }
+
         val newSong = librarySongs.firstOrNull { song ->
             song.id == songId
         } ?: return
@@ -859,6 +891,29 @@ class PlaybackController(
         )
         applyReplayGainForCurrentSong()
 
+        startProgressUpdates()
+        savePlayerState()
+    }
+
+    private fun adoptPersistentQueueSwitch(expectTimelineCallback: Boolean) {
+        pendingPersistentQueueSwitch = false
+        val live = musicPlayer.adoptLiveSession(librarySongs) ?: return
+        adoptedPersistentQueueEntryId = musicPlayer.currentItemInstanceId()
+            .takeIf { expectTimelineCallback }
+        val songsById = librarySongs.associateBy(Song::id)
+        currentSong = live.currentSong
+        currentPosition = live.currentPosition
+        duration = live.duration
+        isPlaying = live.isPlaying
+        shuffleMode = playerStateStorage.getShuffleMode()
+        repeatMode = live.repeatMode
+        playbackContextSongs = playerStateStorage.getPlaybackContextSongIds()
+            .mapNotNull(songsById::get)
+            .ifEmpty { live.playlist }
+        playbackNavigationHistory.clearAll()
+        playbackQueueManager.replaceQueue(emptyList())
+        upcomingSongs = live.upcomingSongs
+        applyReplayGainForCurrentSong()
         startProgressUpdates()
         savePlayerState()
     }

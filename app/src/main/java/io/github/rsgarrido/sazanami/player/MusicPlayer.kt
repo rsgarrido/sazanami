@@ -8,6 +8,7 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import io.github.rsgarrido.sazanami.data.Song
+import io.github.rsgarrido.sazanami.data.membershipKey
 import com.google.common.util.concurrent.ListenableFuture
 
 internal data class LivePlaybackSnapshot(
@@ -130,19 +131,20 @@ class MusicPlayer(private val context: Context) {
             ?.toLongOrNull()
             ?: return null
         val songsById = librarySongs.associateBy(Song::id)
-        val liveCurrentSong = songsById[currentSongId] ?: return null
         val resolvedTimeline = (0 until playerController.mediaItemCount)
             .mapNotNull { index ->
                 playerController.getMediaItemAt(index).mediaId
                     .toLongOrNull()
                     ?.let(songsById::get)
+                    ?.let { song -> index to song }
             }
-        val livePlaylist = resolvedTimeline.takeIf { songs ->
-            songs.any { song -> song.id == liveCurrentSong.id }
-        } ?: listOf(liveCurrentSong)
-        val liveCurrentIndex = livePlaylist.indexOfFirst { song ->
-            song.id == liveCurrentSong.id
-        }
+        val resolvedCurrent = resolvedTimeline.firstOrNull { (index) ->
+            index == playerController.currentMediaItemIndex
+        } ?: resolvedTimeline.firstOrNull { (_, song) -> song.id == currentSongId }
+            ?: return null
+        val livePlaylist = resolvedTimeline.map { (_, song) -> song }
+        val liveCurrentIndex = resolvedTimeline.indexOf(resolvedCurrent)
+        val liveCurrentSong = resolvedCurrent.second
 
         currentPlaylist = livePlaylist
         currentSong = liveCurrentSong
@@ -171,6 +173,9 @@ class MusicPlayer(private val context: Context) {
             repeatMode = liveRepeatMode
         )
     }
+
+    internal fun currentItemInstanceId(): String? =
+        controller?.currentMediaItem?.listeningEvidence()?.itemInstanceId
 
     fun pause() {
         controller?.pause()
@@ -306,8 +311,22 @@ class MusicPlayer(private val context: Context) {
                 return
             }
 
+            val reusableUpcomingEvidence = (1 until playerController.mediaItemCount)
+                .mapNotNull { index ->
+                    playerController.getMediaItemAt(index).listeningEvidence()
+                }
+                .toMutableList()
             val upcomingMediaItems = upcomingSongs.map { song ->
-                song.toPlayableMediaItem()
+                val referenceKey = song.membershipKey()
+                val reusableIndex = reusableUpcomingEvidence.indexOfFirst { evidence ->
+                    evidence.referenceKey == referenceKey
+                }
+                val entryId = if (reusableIndex >= 0) {
+                    reusableUpcomingEvidence.removeAt(reusableIndex).itemInstanceId
+                } else {
+                    java.util.UUID.randomUUID().toString()
+                }
+                song.toPlayableMediaItem(itemInstanceId = entryId)
             }
             val replaceToIndex = playerController.mediaItemCount
             transaction?.let { token ->

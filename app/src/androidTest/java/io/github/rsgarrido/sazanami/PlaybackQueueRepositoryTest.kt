@@ -1,0 +1,207 @@
+package io.github.rsgarrido.sazanami
+
+import androidx.room.Room
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import io.github.rsgarrido.sazanami.data.PlaybackQueueEntryDraft
+import io.github.rsgarrido.sazanami.data.PlaybackQueueRepository
+import io.github.rsgarrido.sazanami.data.local.AppDatabase
+import io.github.rsgarrido.sazanami.data.local.ListeningTrackIdentityEntity
+import io.github.rsgarrido.sazanami.data.local.PersistedQueueRepeatMode
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class PlaybackQueueRepositoryTest {
+    private lateinit var database: AppDatabase
+    private lateinit var repository: PlaybackQueueRepository
+    private var now = 1_000L
+
+    @Before
+    fun setUp() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
+        repository = PlaybackQueueRepository(database) { now++ }
+    }
+
+    @After
+    fun tearDown() {
+        database.close()
+    }
+
+    @Test
+    fun createsMultipleIndependentQueuesAndPreservesDuplicateSongsAsEntries() = runBlocking {
+        val firstTrack = seedIdentity("First")
+        val secondTrack = seedIdentity("Second")
+        val firstQueue = repository.createQueue(
+            queueId = "queue-one",
+            displayName = "Morning",
+            entries = listOf(
+                entry("duplicate-a", firstTrack, base = 0, playback = 0),
+                entry("duplicate-b", firstTrack, base = 1, playback = 1)
+            )
+        )
+        val secondQueue = repository.createQueue(
+            queueId = "queue-two",
+            displayName = "Evening",
+            entries = listOf(entry("other", secondTrack, base = 0, playback = 0))
+        )
+
+        assertEquals(2, firstQueue.entries.size)
+        assertEquals(setOf(firstTrack), firstQueue.entries.map { it.trackIdentityId }.toSet())
+        assertNotEquals(firstQueue.entries[0].entryId, firstQueue.entries[1].entryId)
+        assertEquals(listOf("other"), secondQueue.entries.map { it.entryId })
+        assertEquals(setOf("queue-one", "queue-two"), repository.listQueues().map { it.queueId }.toSet())
+        assertEquals(2, repository.observeQueues().first().size)
+        assertEquals(
+            0,
+            database.listeningTrackIdentityDao().deleteUnreferenced(listOf(firstTrack))
+        )
+    }
+
+    @Test
+    fun retrievalUsesPlaybackOrderWithoutLosingBaseOrder() = runBlocking {
+        val track = seedIdentity("Shuffled")
+        repository.createQueue(
+            queueId = "shuffled",
+            displayName = "Shuffled",
+            shuffleEnabled = true,
+            entries = listOf(
+                entry("base-0", track, base = 0, playback = 2),
+                entry("base-1", track, base = 1, playback = 0),
+                entry("base-2", track, base = 2, playback = 1)
+            )
+        )
+
+        val loaded = checkNotNull(repository.loadQueue("shuffled"))
+        assertEquals(listOf("base-1", "base-2", "base-0"), loaded.entries.map { it.entryId })
+        assertEquals(listOf(1, 2, 0), loaded.entries.map { it.baseOrder })
+        assertEquals(listOf(0, 1, 2), loaded.entries.map { it.playbackOrder })
+    }
+
+    @Test
+    fun replacingEntriesAndUpdatingSavedPlaybackStateAreAtomicQueueChanges() = runBlocking {
+        val firstTrack = seedIdentity("Before")
+        val secondTrack = seedIdentity("After")
+        repository.createQueue(
+            queueId = "resumable",
+            displayName = "Before rename",
+            entries = listOf(entry("before", firstTrack, base = 0, playback = 0))
+        )
+
+        val replaced = repository.replaceEntries(
+            queueId = "resumable",
+            entries = listOf(
+                entry("after-0", secondTrack, base = 0, playback = 1),
+                entry("after-1", firstTrack, base = 1, playback = 0)
+            ),
+            currentEntryId = "after-1",
+            currentPositionMs = 4_321L
+        )
+        assertEquals(listOf("after-1", "after-0"), replaced.entries.map { it.entryId })
+        assertEquals("after-1", replaced.queue.currentEntryId)
+        assertEquals(4_321L, replaced.queue.currentPositionMs)
+
+        repository.updateSavedPlaybackState(
+            queueId = "resumable",
+            currentEntryId = "after-0",
+            currentPositionMs = 98_765L,
+            shuffleEnabled = true,
+            repeatMode = PersistedQueueRepeatMode.ALL
+        )
+        assertTrue(repository.renameQueue("resumable", "Renamed"))
+
+        val updated = checkNotNull(repository.loadQueue("resumable")).queue
+        assertEquals("Renamed", updated.displayName)
+        assertEquals("after-0", updated.currentEntryId)
+        assertEquals(98_765L, updated.currentPositionMs)
+        assertTrue(updated.shuffleEnabled)
+        assertEquals(PersistedQueueRepeatMode.ALL, updated.repeatMode)
+    }
+
+    @Test
+    fun activeQueueCanChangeAndDeletingOneQueueDoesNotAffectAnother() = runBlocking {
+        val track = seedIdentity("Shared")
+        repository.createQueue(
+            queueId = "first",
+            displayName = "First",
+            entries = listOf(entry("first-entry", track, base = 0, playback = 0))
+        )
+        repository.createQueue(
+            queueId = "second",
+            displayName = "Second",
+            entries = listOf(entry("second-entry", track, base = 0, playback = 0))
+        )
+
+        repository.setActiveQueue("first")
+        assertEquals("first", repository.getActiveQueueId())
+        repository.setActiveQueue("second")
+        assertEquals("second", repository.getActiveQueueId())
+
+        assertTrue(repository.deleteQueue("first"))
+        assertNull(repository.loadQueue("first"))
+        assertEquals(listOf("second-entry"), repository.loadQueue("second")?.entries?.map { it.entryId })
+        assertEquals("second", repository.getActiveQueueId())
+
+        assertTrue(repository.deleteQueue("second"))
+        assertNull(repository.getActiveQueueId())
+    }
+
+    @Test
+    fun clearingQueueKeepsSessionAndClearsResumePoint() = runBlocking {
+        val track = seedIdentity("Clear")
+        repository.createQueue(
+            queueId = "clear-me",
+            displayName = "Keep me",
+            entries = listOf(entry("entry", track, base = 0, playback = 0)),
+            currentEntryId = "entry",
+            currentPositionMs = 200L
+        )
+
+        val cleared = repository.clearQueue("clear-me")
+
+        assertEquals("clear-me", cleared.queue.queueId)
+        assertTrue(cleared.entries.isEmpty())
+        assertNull(cleared.queue.currentEntryId)
+        assertEquals(0L, cleared.queue.currentPositionMs)
+    }
+
+    private suspend fun seedIdentity(label: String): Long {
+        return database.listeningTrackIdentityDao().insert(
+            ListeningTrackIdentityEntity(
+                titleSnapshot = label,
+                artistSnapshot = "Artist",
+                albumSnapshot = "Album",
+                albumArtistSnapshot = null,
+                durationMsSnapshot = 180_000L,
+                normalizedTitle = label.lowercase(),
+                normalizedArtist = "artist",
+                normalizedAlbum = "album",
+                metadataKey = "portable:$label",
+                metadataKeyVersion = 1,
+                createdAt = now,
+                updatedAt = now
+            )
+        )
+    }
+
+    private fun entry(
+        entryId: String,
+        trackIdentityId: Long,
+        base: Int,
+        playback: Int
+    ) = PlaybackQueueEntryDraft(
+        entryId = entryId,
+        trackIdentityId = trackIdentityId,
+        baseOrder = base,
+        playbackOrder = playback
+    )
+}

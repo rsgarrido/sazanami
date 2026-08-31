@@ -21,6 +21,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DecoderReuseEvaluation
@@ -38,6 +39,7 @@ import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.ListeningEventRepository
 import io.github.rsgarrido.sazanami.data.ListeningNativeTrackResolver
+import io.github.rsgarrido.sazanami.data.PlaybackQueueRepository
 import io.github.rsgarrido.sazanami.data.local.DatabaseProvider
 import io.github.rsgarrido.sazanami.data.preferences.AppPreferencesRepository
 import io.github.rsgarrido.sazanami.performance.PerformanceTraceNames
@@ -82,6 +84,7 @@ class PlaybackService : MediaLibraryService() {
     private lateinit var sessionPlayer: SmoothPlaybackPlayer
     private lateinit var playerStateStorage: PlayerStateStorage
     private lateinit var listeningAdapter: PlaybackServiceListeningAdapter
+    private lateinit var playbackQueueCoordinator: PlaybackQueueCoordinator
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var appPreferencesRepository: AppPreferencesRepository
     private lateinit var androidAutoCatalogRepository: AndroidAutoCatalogRepository
@@ -172,6 +175,10 @@ class PlaybackService : MediaLibraryService() {
                     mappedReason,
                     pipeline.player.isPlaying
                 )
+            }
+
+            override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+                if (isAuthoritative()) saveServicePlaybackState()
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -505,6 +512,41 @@ class PlaybackService : MediaLibraryService() {
             trackResolver = ListeningNativeTrackResolver(database),
             eventRepository = ListeningEventRepository(database.listeningEventDao())
         )
+        playbackQueueCoordinator = PlaybackQueueCoordinator(
+            persistence = PlaybackQueueRepository(database).asPlaybackQueuePersistence(),
+            trackAccess = RoomPlaybackQueueTrackAccess(
+                database = database,
+                catalogSongs = { androidAutoCatalogRepository.loadSnapshot().songs }
+            ),
+            runtime = Media3PlaybackQueueRuntime(
+                player = sessionPlayer,
+                isLogicalShuffleEnabled = {
+                    PlaybackLibraryBridge.currentShuffleEnabled()
+                        ?: playerStateStorage.getShuffleMode().isEnabled
+                },
+                logicalBaseSongs = {
+                    PlaybackLibraryBridge.currentPlaybackContextSongs()
+                        .ifEmpty { servicePlaybackContextSongs }
+                },
+                beforeTimelineReplacement = {
+                    PlaybackLibraryBridge.preparePersistentQueueSwitch()
+                },
+                onBaseSongsRestored = { songs, shuffleEnabled ->
+                    servicePlaybackContextSongs = songs
+                    playerStateStorage.saveServicePlaybackContext(
+                        playbackContextSongIds = songs.map(Song::id),
+                        shuffleMode = if (shuffleEnabled) {
+                            PlaybackShuffleMode.SONGS
+                        } else {
+                            PlaybackShuffleMode.OFF
+                        }
+                    )
+                }
+            ),
+            onActiveQueueChanged = PlaybackQueueRuntimeBridge::updateActiveQueueId
+        )
+        PlaybackQueueRuntimeBridge.register(playbackQueueCoordinator)
+        serviceScope.launch { playbackQueueCoordinator.initialize() }
         bindActivePipeline(activePipeline, transition = null)
         audioManager.registerAudioDeviceCallback(audioDeviceCallback, checkpointHandler)
         applyAudioOffloadPreference(AudioOffloadPreference.DISABLED)
@@ -553,6 +595,7 @@ class PlaybackService : MediaLibraryService() {
         listeningAdapter.closeGracefully()
         audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)
         PlaybackLibraryBridge.unregisterPlaybackPolicyListener()
+        PlaybackQueueRuntimeBridge.unregister(playbackQueueCoordinator)
         mediaSession?.release()
         mediaSession = null
         sessionPlayer.releaseTransitionResources()
@@ -841,6 +884,11 @@ class PlaybackService : MediaLibraryService() {
                 .toInt(),
             repeatMode = repeatMode
         )
+        if (::playbackQueueCoordinator.isInitialized) {
+            serviceScope.launch {
+                playbackQueueCoordinator.persistActiveQueueSnapshot()
+            }
+        }
     }
 
     private fun createPhysicalPlayerPipeline(

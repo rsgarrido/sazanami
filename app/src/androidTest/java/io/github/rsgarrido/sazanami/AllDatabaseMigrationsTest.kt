@@ -19,7 +19,7 @@ class AllDatabaseMigrationsTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val migrations = allMigrations()
 
-        for (startVersion in 1..18) {
+        for (startVersion in 1..19) {
             val databaseName = "all-migrations-$startVersion-${System.nanoTime()}.db"
             val configuration = SupportSQLiteOpenHelper.Configuration.builder(context)
                 .name(databaseName)
@@ -55,6 +55,9 @@ class AllDatabaseMigrationsTest {
                 ).use { it.moveToFirst() })
                 assertTrue(database.openHelper.writableDatabase.query(
                     "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'artist_picture_assignments'"
+                ).use { it.moveToFirst() })
+                assertTrue(database.openHelper.writableDatabase.query(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'playback_queues'"
                 ).use { it.moveToFirst() })
                 assertTrue(database.openHelper.writableDatabase.query(
                     "PRAGMA table_info(cached_songs)"
@@ -100,6 +103,7 @@ class AllDatabaseMigrationsTest {
         DatabaseProvider.MIGRATION_15_16,
         DatabaseProvider.MIGRATION_16_17,
         DatabaseProvider.MIGRATION_17_18,
-        DatabaseProvider.MIGRATION_18_19
+        DatabaseProvider.MIGRATION_18_19,
+        DatabaseProvider.MIGRATION_19_20
     )
 }

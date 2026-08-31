@@ -156,7 +156,8 @@ class LibrarySourceMetadataTest {
                 DatabaseProvider.MIGRATION_15_16,
                 DatabaseProvider.MIGRATION_16_17,
                 DatabaseProvider.MIGRATION_17_18,
-                DatabaseProvider.MIGRATION_18_19
+                DatabaseProvider.MIGRATION_18_19,
+                DatabaseProvider.MIGRATION_19_20
             )
             .build()
         try {

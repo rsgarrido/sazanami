@@ -34,6 +34,10 @@ object PlaybackLibraryBridge {
         return true
     }
 
+    fun preparePersistentQueueSwitch() {
+        playbackController?.preparePersistentQueueSwitch()
+    }
+
     fun setSongShuffleEnabled(enabled: Boolean): Boolean {
         val controller = playbackController ?: return false
         controller.setSongShuffleEnabled(enabled)
@@ -53,6 +57,9 @@ object PlaybackLibraryBridge {
 
     fun currentRepeatMode(): RepeatMode? =
         playbackController?.uiState?.value?.repeatMode
+
+    fun currentPlaybackContextSongs(): List<Song> =
+        playbackController?.playbackContextSongsForPersistence().orEmpty()
 
     fun registerPlaybackPolicyListener(listener: (Boolean, RepeatMode) -> Unit) {
         playbackPolicyListener = listener
