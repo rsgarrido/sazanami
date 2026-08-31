@@ -97,6 +97,8 @@ fun MusicScreenOverlays(
     onCreatePlaybackQueueFromCurrent: () -> Unit,
     onRenamePlaybackQueue: (String, String) -> Unit,
     onDeletePlaybackQueue: (String) -> Unit,
+    onRemovePlaybackQueueEntry: (String, String) -> Unit,
+    onReorderPlaybackQueueEntry: (String, String, Int) -> Unit,
     onClearPlaybackQueueMessage: () -> Unit,
     onRemoveFromQueueClick: (Int) -> Unit,
     onMoveQueueItemUpClick: (Int) -> Unit,
@@ -264,6 +266,8 @@ fun MusicScreenOverlays(
             onCreateFromCurrent = onCreatePlaybackQueueFromCurrent,
             onRename = onRenamePlaybackQueue,
             onDelete = onDeletePlaybackQueue,
+            onRemoveEntry = onRemovePlaybackQueueEntry,
+            onReorderEntry = onReorderPlaybackQueueEntry,
             onMessageDismissed = onClearPlaybackQueueMessage
         )
     }

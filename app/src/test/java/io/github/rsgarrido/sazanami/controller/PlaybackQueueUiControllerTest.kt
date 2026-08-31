@@ -68,6 +68,26 @@ class PlaybackQueueUiControllerTest {
     }
 
     @Test
+    fun activeRemoveAndReorderUpdateHubImmediatelyWithoutRoomEmission() = runBlocking {
+        val first = song(1L)
+        val second = song(2L)
+        val third = song(3L)
+        val operations = FakeOperations(activeQueueId = "A").apply {
+            add(queue("A", "A", "first", first))
+            publishLiveWithIds(listOf("first", "second", "third"), first, second, third)
+        }
+        val controller = controller(operations)
+
+        controller.removeEntry("A", "second").join()
+        assertEquals(listOf("first", "third"), controller.state.value.selectedEntries.map { it.entryId })
+
+        controller.reorderEntry("A", "third", 0).join()
+        assertEquals(listOf("third", "first"), controller.state.value.selectedEntries.map { it.entryId })
+        assertEquals(1, operations.removeEntryCount)
+        assertEquals(1, operations.reorderEntryCount)
+    }
+
+    @Test
     fun explicitResumeSwitchesExactlyOnceAndSelectionAloneNeverSwitches() = runBlocking {
         val operations = FakeOperations(activeQueueId = "A").apply {
             add(queue("A", "A", "a", song(1L)))
@@ -192,6 +212,8 @@ class PlaybackQueueUiControllerTest {
         var renamedName: String? = null
         var createResult: LoadedQueueForUi? = null
         var switchResult = true
+        var removeEntryCount = 0
+        var reorderEntryCount = 0
 
         fun add(queue: LoadedQueueForUi) {
             loaded[queue.queue.queueId] = queue
@@ -200,6 +222,10 @@ class PlaybackQueueUiControllerTest {
 
         fun publishLive(vararg songs: Song) {
             liveQueueFlow.value = LiveActiveQueueForUi(songs.toList())
+        }
+
+        fun publishLiveWithIds(entryIds: List<String>, vararg songs: Song) {
+            liveQueueFlow.value = LiveActiveQueueForUi(songs.toList(), entryIds)
         }
 
         override fun observeQueues(): Flow<List<PlaybackQueueEntity>> = queueFlow
@@ -241,6 +267,20 @@ class PlaybackQueueUiControllerTest {
             val removed = loaded.remove(queueId) != null
             publish()
             return removed
+        }
+
+        override suspend fun removeEntry(queueId: String, entryId: String): Boolean {
+            removeEntryCount += 1
+            return true
+        }
+
+        override suspend fun reorderEntry(
+            queueId: String,
+            entryId: String,
+            toPlaybackOrder: Int
+        ): Boolean {
+            reorderEntryCount += 1
+            return true
         }
 
         private fun publish() {

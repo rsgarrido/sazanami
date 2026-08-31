@@ -4,6 +4,7 @@ import android.R
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +26,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -51,6 +54,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -74,6 +79,8 @@ fun QueueHubSheet(
     onCreateFromCurrent: () -> Unit,
     onRename: (String, String) -> Unit,
     onDelete: (String) -> Unit,
+    onRemoveEntry: (String, String) -> Unit = { _, _ -> },
+    onReorderEntry: (String, String, Int) -> Unit = { _, _, _ -> },
     onMessageDismissed: () -> Unit
 ) {
     var renameQueue by remember { mutableStateOf<PlaybackQueueCardUiState?>(null) }
@@ -237,12 +244,32 @@ fun QueueHubSheet(
                             )
                         }
                     } else {
+                        val selectedQueueId = selected?.queueId
+                        val reorderEnabled = selected != null && !selected.shuffleEnabled
+                        var displayedEntries by remember(
+                            selectedQueueId,
+                            state.selectedEntries
+                        ) { mutableStateOf(state.selectedEntries) }
+                        var draggedEntryId by remember(selectedQueueId) {
+                            mutableStateOf<String?>(null)
+                        }
+                        var dragStartIndex by remember(selectedQueueId) {
+                            mutableStateOf<Int?>(null)
+                        }
                         if (state.selectedEntries.none { entry -> entry.song != null }) {
                             Text(
                                 text = "These tracks are not currently available in the local library.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
+                            )
+                        }
+                        if (selected?.shuffleEnabled == true) {
+                            Text(
+                                text = "Turn off shuffle to reorder this queue.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
                             )
                         }
                         LazyColumn(
@@ -253,10 +280,51 @@ fun QueueHubSheet(
                             contentPadding = PaddingValues(bottom = 28.dp)
                         ) {
                             items(
-                                state.selectedEntries,
+                                displayedEntries,
                                 key = PlaybackQueueEntryUiState::entryId
                             ) { entry ->
-                                QueueHubEntryRow(entry)
+                                val index = displayedEntries.indexOfFirst {
+                                    candidate -> candidate.entryId == entry.entryId
+                                }
+                                QueueHubEntryRow(
+                                    entry = entry,
+                                    reorderEnabled = reorderEnabled &&
+                                        !(selected?.isActive == true && entry.isCurrent),
+                                    isDragging = draggedEntryId == entry.entryId,
+                                    onRemove = {
+                                        selectedQueueId?.let { queueId ->
+                                            onRemoveEntry(queueId, entry.entryId)
+                                        }
+                                    },
+                                    onDragStarted = {
+                                        draggedEntryId = entry.entryId
+                                        dragStartIndex = index
+                                    },
+                                    onDragStep = { direction ->
+                                        val from = displayedEntries.indexOfFirst { candidate ->
+                                            candidate.entryId == entry.entryId
+                                        }
+                                        val to = (from + direction).coerceIn(displayedEntries.indices)
+                                        if (from >= 0 && from != to) {
+                                            displayedEntries = displayedEntries.toMutableList().apply {
+                                                add(to, removeAt(from))
+                                            }
+                                        }
+                                    },
+                                    onDragFinished = {
+                                        val from = dragStartIndex
+                                        val to = displayedEntries.indexOfFirst { candidate ->
+                                            candidate.entryId == entry.entryId
+                                        }
+                                        draggedEntryId = null
+                                        dragStartIndex = null
+                                        if (from != null && to >= 0 && from != to) {
+                                            selectedQueueId?.let { queueId ->
+                                                onReorderEntry(queueId, entry.entryId, to)
+                                            }
+                                        }
+                                    }
+                                )
                             }
                         }
                     }
@@ -402,9 +470,21 @@ private fun QueueHubCard(
 }
 
 @Composable
-private fun QueueHubEntryRow(entry: PlaybackQueueEntryUiState) {
+private fun QueueHubEntryRow(
+    entry: PlaybackQueueEntryUiState,
+    reorderEnabled: Boolean,
+    isDragging: Boolean,
+    onRemove: () -> Unit,
+    onDragStarted: () -> Unit,
+    onDragStep: (Int) -> Unit,
+    onDragFinished: () -> Unit
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    val rowStepPx = with(LocalDensity.current) { 64.dp.toPx() }
     val background = if (entry.isCurrent) {
         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f)
+    } else if (isDragging) {
+        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.42f)
     } else {
         Color.Transparent
     }
@@ -449,6 +529,63 @@ private fun QueueHubEntryRow(entry: PlaybackQueueEntryUiState) {
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold
             )
+        }
+        if (reorderEnabled) {
+            var accumulatedDrag by remember(entry.entryId) { mutableStateOf(0f) }
+            Icon(
+                imageVector = Icons.Filled.DragHandle,
+                contentDescription = "Reorder ${entry.song?.title ?: "queue entry"}",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .size(40.dp)
+                    .padding(8.dp)
+                    .pointerInput(entry.entryId, reorderEnabled) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = {
+                                accumulatedDrag = 0f
+                                onDragStarted()
+                            },
+                            onDragCancel = {
+                                accumulatedDrag = 0f
+                                onDragFinished()
+                            },
+                            onDragEnd = {
+                                accumulatedDrag = 0f
+                                onDragFinished()
+                            },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                accumulatedDrag += dragAmount.y
+                                while (accumulatedDrag >= rowStepPx) {
+                                    onDragStep(1)
+                                    accumulatedDrag -= rowStepPx
+                                }
+                                while (accumulatedDrag <= -rowStepPx) {
+                                    onDragStep(-1)
+                                    accumulatedDrag += rowStepPx
+                                }
+                            }
+                        )
+                    }
+            )
+        }
+        Box {
+            IconButton(onClick = { menuExpanded = true }) {
+                Icon(Icons.Filled.MoreVert, contentDescription = "Actions for queue entry")
+            }
+            DropdownMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Remove") },
+                    leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+                    onClick = {
+                        menuExpanded = false
+                        onRemove()
+                    }
+                )
+            }
         }
     }
 }

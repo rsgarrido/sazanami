@@ -79,6 +79,11 @@ interface PlaybackQueueDao {
     suspend fun renameQueue(queueId: String, displayName: String, updatedAt: Long): Int
 
     @Query(
+        "UPDATE playback_queues SET updatedAt = :updatedAt WHERE queueId = :queueId"
+    )
+    suspend fun touchQueue(queueId: String, updatedAt: Long): Int
+
+    @Query(
         "UPDATE playback_queues SET lastActiveAt = :lastActiveAt, updatedAt = :updatedAt " +
             "WHERE queueId = :queueId"
     )

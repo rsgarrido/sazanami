@@ -145,6 +145,24 @@ internal class Media3PlaybackQueueRuntime(
         player.prepare()
         if (restoration.shouldPlay) player.play()
     }
+
+    override fun removeEntry(entryId: String): Boolean {
+        val index = (0 until player.mediaItemCount).firstOrNull { candidate ->
+            player.getMediaItemAt(candidate).listeningEvidence()?.itemInstanceId == entryId
+        } ?: return false
+        player.removeMediaItem(index)
+        return true
+    }
+
+    override fun moveEntry(entryId: String, toPlaybackOrder: Int): Boolean {
+        if (toPlaybackOrder !in 0 until player.mediaItemCount) return false
+        val fromIndex = (0 until player.mediaItemCount).firstOrNull { candidate ->
+            player.getMediaItemAt(candidate).listeningEvidence()?.itemInstanceId == entryId
+        } ?: return false
+        if (fromIndex == toPlaybackOrder) return true
+        player.moveMediaItem(fromIndex, toPlaybackOrder)
+        return true
+    }
 }
 
 internal object PlaybackQueueRuntimeBridge {
@@ -172,7 +190,25 @@ internal object PlaybackQueueRuntimeBridge {
     suspend fun switchActiveQueue(queueId: String): Boolean =
         coordinator?.switchToQueue(queueId) == true
 
+    suspend fun createAndActivateQueue(displayName: String, songs: List<Song>): String? =
+        coordinator?.createAndActivateQueue(displayName, songs)?.queue?.queueId
+
+    suspend fun appendToInactiveQueue(queueId: String, songs: List<Song>): Boolean =
+        coordinator?.appendToInactiveQueue(queueId, songs) != null
+
+    suspend fun removeQueueEntry(queueId: String, entryId: String): Boolean =
+        coordinator?.removeEntry(queueId, entryId) == true
+
+    suspend fun reorderQueueEntry(
+        queueId: String,
+        entryId: String,
+        toPlaybackOrder: Int
+    ): Boolean = coordinator?.reorderEntry(queueId, entryId, toPlaybackOrder) == true
+
     fun getActiveQueueId(): String? = activeQueueId
+
+    fun getActiveQueueSnapshot(): LivePlaybackQueueSnapshot? =
+        coordinator?.captureActiveQueueSnapshot()
 
     fun updateActiveQueueId(queueId: String?) {
         activeQueueId = queueId

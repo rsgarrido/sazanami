@@ -648,6 +648,21 @@ class MusicViewModel(
 
     internal fun clearPlaybackQueueMessage() = playbackQueueUiController.clearMessage()
 
+    internal fun playInNewQueue(displayName: String, songs: List<Song>) =
+        playbackQueueUiController.playInNewQueue(displayName, songs)
+
+    internal fun addToInactiveQueue(queueId: String, songs: List<Song>) =
+        playbackQueueUiController.addToInactiveQueue(queueId, songs)
+
+    internal fun removePlaybackQueueEntry(queueId: String, entryId: String) =
+        playbackQueueUiController.removeEntry(queueId, entryId)
+
+    internal fun reorderPlaybackQueueEntry(
+        queueId: String,
+        entryId: String,
+        toPlaybackOrder: Int
+    ) = playbackQueueUiController.reorderEntry(queueId, entryId, toPlaybackOrder)
+
     private val batchMetadataOperationController = BatchMetadataOperationController(
         scope = viewModelScope,
         artworkPreparer = BatchArtworkPreparer { uri ->

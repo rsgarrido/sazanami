@@ -383,6 +383,187 @@ class PlaybackQueueCoordinatorTest {
         assertEquals("A", persistence.activeQueueId)
     }
 
+    @Test
+    fun playInNewQueuePreservesOldQueueActivatesNewQueueAndKeepsSongOrder() = runBlocking {
+        val persistence = FakePersistence(activeQueueId = "A").apply {
+            seed(queue("A", listOf(spec("a", 1L, 0, 0)), current = "a", position = 900L))
+        }
+        val runtime = FakeRuntime(
+            liveSnapshot(listOf("a" to 1L), "a", 900L, shouldPlay = false)
+        )
+        val coordinator = coordinator(persistence, runtime)
+        coordinator.initialize()
+
+        val created = requireNotNull(
+            coordinator.createAndActivateQueue("Album", listOf(song(3L), song(2L), song(3L)))
+        )
+
+        assertEquals("generated-queue", persistence.activeQueueId)
+        assertEquals("Album", created.queue.displayName)
+        assertEquals(listOf(3L, 2L, 3L), runtime.lastRestoration?.entries?.map { it.song.id })
+        assertEquals(3, created.entries.map { it.entryId }.distinct().size)
+        assertEquals(900L, persistence.queue("A").queue.currentPositionMs)
+        assertEquals(listOf("a"), persistence.queue("A").entries.map { it.entryId })
+        assertEquals(1, runtime.playCount)
+    }
+
+    @Test
+    fun singleSongNewQueueUsesPredictableGeneratedName() = runBlocking {
+        val persistence = FakePersistence()
+        val runtime = FakeRuntime(null)
+
+        val created = requireNotNull(
+            coordinator(persistence, runtime).createAndActivateQueue("", listOf(song(7L)))
+        )
+
+        assertEquals("Queue 1", created.queue.displayName)
+        assertEquals(listOf(7L), runtime.lastRestoration?.entries?.map { it.song.id })
+        assertTrue(runtime.lastRestoration?.shouldPlay == true)
+    }
+
+    @Test
+    fun playlistNewQueuePreservesPreparedCustomOrder() = runBlocking {
+        val persistence = FakePersistence()
+        val runtime = FakeRuntime(null)
+
+        val created = requireNotNull(
+            coordinator(persistence, runtime).createAndActivateQueue(
+                "Favorites",
+                listOf(song(9L), song(4L), song(6L))
+            )
+        )
+
+        assertEquals("Favorites", created.queue.displayName)
+        assertEquals(listOf(9L, 4L, 6L), runtime.lastRestoration?.entries?.map { it.song.id })
+    }
+
+    @Test
+    fun addingDuplicatesToInactiveQueueAppendsWithoutSwitchingOrTouchingTimeline() = runBlocking {
+        val persistence = FakePersistence(activeQueueId = "A").apply {
+            seed(queue("A", listOf(spec("a", 1L, 0, 0)), current = "a"))
+            seed(queue("B", listOf(spec("b", 2L, 0, 0)), current = "b", position = 77L))
+        }
+        val runtime = FakeRuntime(liveSnapshot(listOf("a" to 1L), "a", 42L, true))
+        val coordinator = coordinator(persistence, runtime)
+        coordinator.initialize()
+
+        assertTrue(coordinator.appendToInactiveQueue("B", listOf(song(3L), song(3L))) != null)
+
+        assertEquals("A", persistence.activeQueueId)
+        assertEquals(0, runtime.replaceCount)
+        assertEquals(listOf(2L, 3L, 3L), persistence.queue("B").entries.map { it.trackIdentityId })
+        assertEquals(3, persistence.queue("B").entries.map { it.entryId }.distinct().size)
+        assertEquals("b", persistence.queue("B").queue.currentEntryId)
+        assertEquals(77L, persistence.queue("B").queue.currentPositionMs)
+    }
+
+    @Test
+    fun activeRemovalAndReorderUseEntryIdsWithoutReplacingTimeline() = runBlocking {
+        val persistence = FakePersistence(activeQueueId = "A").apply {
+            seed(queue(
+                "A",
+                listOf(spec("before", 1L, 0, 0), spec("current", 2L, 1, 1), spec("dup", 2L, 2, 2)),
+                current = "current",
+                position = 4_000L
+            ))
+        }
+        val runtime = FakeRuntime(
+            liveSnapshot(
+                listOf("before" to 1L, "current" to 2L, "dup" to 2L),
+                "current",
+                4_000L,
+                true
+            )
+        )
+        val coordinator = coordinator(persistence, runtime)
+        coordinator.initialize()
+
+        assertTrue(coordinator.removeEntry("A", "before"))
+        assertEquals("current", runtime.snapshot?.currentEntryId)
+        assertEquals(4_000L, runtime.snapshot?.currentPositionMs)
+        assertEquals(listOf("current", "dup"), runtime.snapshot?.entries?.map { it.entryId })
+        assertTrue(coordinator.reorderEntry("A", "dup", 0))
+
+        assertEquals("current", runtime.snapshot?.currentEntryId)
+        assertEquals(4_000L, runtime.snapshot?.currentPositionMs)
+        assertEquals(listOf("dup", "current"), runtime.snapshot?.entries?.map { it.entryId })
+        assertEquals(0, runtime.replaceCount)
+        assertEquals(listOf("dup", "current"), persistence.queue("A").entries.map { it.entryId })
+    }
+
+    @Test
+    fun activeReorderIsDisabledWhileShuffleIsEnabled() = runBlocking {
+        val persistence = FakePersistence(activeQueueId = "A").apply {
+            seed(queue(
+                "A",
+                listOf(spec("a", 1L, 0, 0), spec("b", 2L, 1, 1)),
+                current = "a",
+                shuffle = true
+            ))
+        }
+        val runtime = FakeRuntime(
+            liveSnapshot(listOf("a" to 1L, "b" to 2L), "a", 12L, true, shuffle = true)
+        )
+        val coordinator = coordinator(persistence, runtime)
+        coordinator.initialize()
+
+        assertFalse(coordinator.reorderEntry("A", "b", 0))
+        assertEquals(listOf("a", "b"), runtime.snapshot?.entries?.map { it.entryId })
+    }
+
+    @Test
+    fun inactiveReorderPersistsWithoutChangingLiveTimeline() = runBlocking {
+        val persistence = FakePersistence(activeQueueId = "A").apply {
+            seed(queue("A", listOf(spec("a", 1L, 0, 0)), current = "a"))
+            seed(queue(
+                "B",
+                listOf(spec("b1", 2L, 0, 0), spec("b2", 3L, 1, 1)),
+                current = "b1",
+                position = 333L
+            ))
+        }
+        val original = liveSnapshot(listOf("a" to 1L), "a", 44L, true)
+        val runtime = FakeRuntime(original)
+        val coordinator = coordinator(persistence, runtime)
+        coordinator.initialize()
+
+        assertTrue(coordinator.reorderEntry("B", "b2", 0))
+
+        assertEquals(original, runtime.snapshot)
+        assertEquals(listOf("b2", "b1"), persistence.queue("B").entries.map { it.entryId })
+        assertEquals("b1", persistence.queue("B").queue.currentEntryId)
+        assertEquals(333L, persistence.queue("B").queue.currentPositionMs)
+    }
+
+    @Test
+    fun removingCurrentEntryChoosesNextThenPreviousAndResetsPosition() = runBlocking {
+        val persistence = FakePersistence(activeQueueId = "A").apply {
+            seed(queue(
+                "A",
+                listOf(spec("before", 1L, 0, 0), spec("current", 2L, 1, 1), spec("after", 3L, 2, 2)),
+                current = "current",
+                position = 2_500L
+            ))
+        }
+        val runtime = FakeRuntime(
+            liveSnapshot(
+                listOf("before" to 1L, "current" to 2L, "after" to 3L),
+                "current",
+                2_500L,
+                true
+            )
+        )
+        val coordinator = coordinator(persistence, runtime)
+        coordinator.initialize()
+
+        assertTrue(coordinator.removeEntry("A", "current"))
+        assertEquals("after", runtime.snapshot?.currentEntryId)
+        assertEquals(0L, runtime.snapshot?.currentPositionMs)
+        assertTrue(coordinator.removeEntry("A", "after"))
+        assertEquals("before", runtime.snapshot?.currentEntryId)
+        assertEquals(0L, runtime.snapshot?.currentPositionMs)
+    }
+
     private fun coordinator(
         persistence: FakePersistence,
         runtime: FakeRuntime,
@@ -420,6 +601,37 @@ class PlaybackQueueCoordinatorTest {
                 repeat = restoration.repeatMode
             )
         }
+
+        override fun removeEntry(entryId: String): Boolean {
+            val before = snapshot ?: return false
+            val index = before.entries.indexOfFirst { it.entryId == entryId }
+            if (index < 0) return false
+            val remaining = before.entries.filterNot { it.entryId == entryId }
+            val newCurrent = if (before.currentEntryId == entryId) {
+                remaining.getOrNull(index)?.entryId ?: remaining.lastOrNull()?.entryId
+            } else {
+                before.currentEntryId
+            }
+            snapshot = before.copy(
+                entries = remaining,
+                baseEntryIds = before.baseEntryIds.filterNot { it == entryId },
+                currentEntryId = newCurrent,
+                currentPositionMs = before.currentPositionMs.takeIf {
+                    newCurrent == before.currentEntryId
+                } ?: 0L
+            )
+            return true
+        }
+
+        override fun moveEntry(entryId: String, toPlaybackOrder: Int): Boolean {
+            val before = snapshot ?: return false
+            val entries = before.entries.toMutableList()
+            val from = entries.indexOfFirst { it.entryId == entryId }
+            if (from < 0 || toPlaybackOrder !in entries.indices) return false
+            entries.add(toPlaybackOrder, entries.removeAt(from))
+            snapshot = before.copy(entries = entries)
+            return true
+        }
     }
 
     private class FakeTrackAccess : PlaybackQueueTrackAccess {
@@ -429,7 +641,8 @@ class PlaybackQueueCoordinatorTest {
         override suspend fun identify(
             items: List<LivePlaybackQueueItem>
         ): List<IdentifiedLivePlaybackQueueItem> = items.mapNotNull { item ->
-            val id = item.evidence.referenceKey.substringAfter("track-").toLong()
+            val id = item.evidence.reference.mediaStoreId
+                ?: item.evidence.referenceKey.substringAfter("track-").toLong()
             if (id in unresolvedIdentityIds) null else IdentifiedLivePlaybackQueueItem(
                 liveItem = item,
                 trackIdentityId = id,
@@ -560,6 +773,55 @@ class PlaybackQueueCoordinatorTest {
             )
             queues[queueId] = copied
             return copied.ordered()
+        }
+
+        override suspend fun appendEntries(
+            queueId: String,
+            entries: List<PlaybackQueueEntryDraft>
+        ): PlaybackQueueWithEntries {
+            val old = queue(queueId)
+            val start = old.entries.size
+            val appended = old.copy(
+                entries = old.entries + entries.mapIndexed { index, entry ->
+                    entry.copy(baseOrder = start + index, playbackOrder = start + index)
+                        .entity(queueId)
+                }
+            )
+            queues[queueId] = appended
+            return appended.ordered()
+        }
+
+        override suspend fun removeEntry(
+            queueId: String,
+            entryId: String
+        ): PlaybackQueueWithEntries? {
+            val old = queues[queueId] ?: return null
+            val remaining = old.entries.filterNot { it.entryId == entryId }
+                .mapIndexed { index, entry ->
+                    entry.copy(baseOrder = index, playbackOrder = index)
+                }
+            return old.copy(entries = remaining).also { queues[queueId] = it }.ordered()
+        }
+
+        override suspend fun reorderEntry(
+            queueId: String,
+            entryId: String,
+            toPlaybackOrder: Int,
+            updateBaseOrder: Boolean
+        ): PlaybackQueueWithEntries? {
+            val old = queues[queueId] ?: return null
+            val entries = old.entries.sortedBy { it.playbackOrder }.toMutableList()
+            val from = entries.indexOfFirst { it.entryId == entryId }
+            if (from < 0 || toPlaybackOrder !in entries.indices) return old
+            entries.add(toPlaybackOrder, entries.removeAt(from))
+            val updated = old.copy(entries = entries.mapIndexed { index, entry ->
+                entry.copy(
+                    playbackOrder = index,
+                    baseOrder = if (updateBaseOrder) index else entry.baseOrder
+                )
+            })
+            queues[queueId] = updated
+            return updated.ordered()
         }
 
         private fun PlaybackQueueWithEntries.ordered() = copy(

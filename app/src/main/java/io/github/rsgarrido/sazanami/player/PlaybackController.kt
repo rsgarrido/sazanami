@@ -396,6 +396,12 @@ class PlaybackController(
 
     fun getActiveQueueId(): String? = PlaybackQueueRuntimeBridge.getActiveQueueId()
 
+    internal fun activeQueueEntryIds(): List<String> =
+        PlaybackQueueRuntimeBridge.getActiveQueueSnapshot()
+            ?.entries
+            ?.map(LivePlaybackQueueItem::entryId)
+            .orEmpty()
+
     internal fun playbackContextSongsForPersistence(): List<Song> =
         playbackContextSongs.toList()
 
@@ -411,6 +417,30 @@ class PlaybackController(
         }
         return switched
     }
+
+    suspend fun playInNewQueue(displayName: String, songs: List<Song>): String? {
+        val queueId = PlaybackQueueRuntimeBridge.createAndActivateQueue(displayName, songs)
+        if (queueId != null && pendingPersistentQueueSwitch) {
+            adoptPersistentQueueSwitch(expectTimelineCallback = true)
+        }
+        return queueId
+    }
+
+    suspend fun addToInactiveQueue(queueId: String, songs: List<Song>): Boolean =
+        PlaybackQueueRuntimeBridge.appendToInactiveQueue(queueId, songs)
+
+    suspend fun removeQueueEntry(queueId: String, entryId: String): Boolean =
+        PlaybackQueueRuntimeBridge.removeQueueEntry(queueId, entryId)
+
+    suspend fun reorderQueueEntry(
+        queueId: String,
+        entryId: String,
+        toPlaybackOrder: Int
+    ): Boolean = PlaybackQueueRuntimeBridge.reorderQueueEntry(
+        queueId,
+        entryId,
+        toPlaybackOrder
+    )
 
     internal fun preparePersistentQueueSwitch() {
         pendingExternalPlaybackSelection = null
@@ -452,18 +482,21 @@ class PlaybackController(
         playbackQueueManager.addSongToQueue(song)
         syncServicePlaylistKeepingCurrent()
         savePlayerState()
+        persistActiveQueueStructure()
     }
 
     fun addSongToPlayNext(song: Song) {
         playbackQueueManager.addSongToPlayNext(song)
         syncServicePlaylistKeepingCurrent()
         savePlayerState()
+        persistActiveQueueStructure()
     }
 
     fun removeSongFromQueue(index: Int) {
         if (playbackQueueManager.removeSongFromQueue(index)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
+            persistActiveQueueStructure()
         }
     }
 
@@ -471,6 +504,7 @@ class PlaybackController(
         if (playbackQueueManager.moveQueuedSongUp(index)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
+            persistActiveQueueStructure()
         }
     }
 
@@ -478,6 +512,7 @@ class PlaybackController(
         if (playbackQueueManager.moveQueuedSongDown(index)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
+            persistActiveQueueStructure()
         }
     }
 
@@ -485,6 +520,7 @@ class PlaybackController(
         if (playbackQueueManager.clearQueue()) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
+            persistActiveQueueStructure()
         }
     }
 
@@ -492,6 +528,7 @@ class PlaybackController(
         if (playbackQueueManager.addSongsToPlayNext(songs)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
+            persistActiveQueueStructure()
         }
     }
 
@@ -499,6 +536,7 @@ class PlaybackController(
         if (playbackQueueManager.addSongsToQueue(songs)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
+            persistActiveQueueStructure()
         }
     }
 
@@ -506,6 +544,7 @@ class PlaybackController(
         if (playbackQueueManager.removeFirstMatchingSongsFromQueue(songs)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
+            persistActiveQueueStructure()
         }
     }
 
@@ -513,6 +552,7 @@ class PlaybackController(
         if (playbackQueueManager.removeLastMatchingSongsFromQueue(songs)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
+            persistActiveQueueStructure()
         }
     }
 
@@ -520,6 +560,7 @@ class PlaybackController(
         if (playbackQueueManager.removeLastMatchingSongFromQueue(song)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
+            persistActiveQueueStructure()
         }
     }
 
@@ -527,6 +568,7 @@ class PlaybackController(
         if (playbackQueueManager.removeFirstMatchingSongFromQueue(song)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
+            persistActiveQueueStructure()
         }
     }
 
@@ -896,6 +938,12 @@ class PlaybackController(
 
         startProgressUpdates()
         savePlayerState()
+    }
+
+    private fun persistActiveQueueStructure() {
+        coroutineScope.launch {
+            PlaybackQueueRuntimeBridge.saveActiveQueue()
+        }
     }
 
     private fun adoptPersistentQueueSwitch(expectTimelineCallback: Boolean) {

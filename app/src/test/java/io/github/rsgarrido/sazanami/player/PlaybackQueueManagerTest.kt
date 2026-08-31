@@ -32,6 +32,15 @@ class PlaybackQueueManagerTest {
     }
 
     @Test
+    fun playNextKeepsADuplicateOfTheCurrentSongImmediatelyAfterCurrent() {
+        val manager = PlaybackQueueManager()
+        manager.addSongToQueue(song(2))
+        manager.addSongToPlayNext(song(1))
+
+        assertEquals(listOf(1L, 2L), manager.getQueuedSongsAfterCurrent(1L).map { it.id })
+    }
+
+    @Test
     fun moveBoundariesAndInvalidIndexesDoNotMutateQueue() {
         val manager = PlaybackQueueManager()
         manager.addSongsToQueue(listOf(song(1), song(2), song(3)))
@@ -52,8 +61,8 @@ class PlaybackQueueManagerTest {
 
         assertTrue(manager.removeInvalidSongs(setOf(1L, 3L)))
         assertEquals(listOf(1L, 1L, 3L), manager.getQueuedSongIds())
-        assertEquals(1, manager.getQueuedSongCountExcludingCurrent(1L))
-        assertEquals(listOf(3L), manager.getQueuedSongsAfterCurrent(1L).map { it.id })
+        assertEquals(3, manager.getQueuedSongCountExcludingCurrent(1L))
+        assertEquals(listOf(1L, 1L, 3L), manager.getQueuedSongsAfterCurrent(1L).map { it.id })
 
         manager.replaceQueue(listOf(song(8), song(8), song(9)))
         assertEquals(listOf(8L, 8L, 9L), manager.getQueuedSongIds())

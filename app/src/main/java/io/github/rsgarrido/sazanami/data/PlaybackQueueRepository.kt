@@ -133,6 +133,106 @@ class PlaybackQueueRepository(
         checkNotNull(loadQueueWithinTransaction(queueId))
     }
 
+    suspend fun appendEntries(
+        queueId: String,
+        entries: List<PlaybackQueueEntryDraft>
+    ): PlaybackQueueWithEntries = database.withTransaction {
+        val existing = requireNotNull(loadQueueWithinTransaction(queueId)) {
+            "Queue $queueId does not exist"
+        }
+        if (entries.isEmpty()) return@withTransaction existing
+        require(entries.all { it.entryId.isNotBlank() }) { "Entry IDs cannot be blank" }
+        require(entries.map { it.entryId }.distinct().size == entries.size) {
+            "Entry IDs must be unique"
+        }
+        require(entries.none { addition ->
+            existing.entries.any { current -> current.entryId == addition.entryId }
+        }) { "Entry IDs must be unique within a queue" }
+        validateTrackReferences(entries)
+
+        val nextBaseOrder = existing.entries.size
+        val nextPlaybackOrder = existing.entries.size
+        dao.insertEntries(
+            entries.mapIndexed { index, entry ->
+                entry.copy(
+                    baseOrder = nextBaseOrder + index,
+                    playbackOrder = nextPlaybackOrder + index
+                ).toEntity(queueId)
+            }
+        )
+        check(dao.touchQueue(queueId, nowMillis()) == 1)
+        checkNotNull(loadQueueWithinTransaction(queueId))
+    }
+
+    suspend fun removeEntry(
+        queueId: String,
+        entryId: String
+    ): PlaybackQueueWithEntries? = database.withTransaction {
+        val existing = loadQueueWithinTransaction(queueId) ?: return@withTransaction null
+        val removed = existing.entries.firstOrNull { it.entryId == entryId }
+            ?: return@withTransaction existing
+        val remaining = existing.entries.filterNot { it.entryId == entryId }
+        val fallbackCurrentEntryId = if (existing.queue.currentEntryId == entryId) {
+            remaining
+                .filter { it.playbackOrder > removed.playbackOrder }
+                .minByOrNull { it.playbackOrder }
+                ?.entryId
+                ?: remaining.maxByOrNull { it.playbackOrder }?.entryId
+        } else {
+            existing.queue.currentEntryId?.takeIf { currentId ->
+                remaining.any { it.entryId == currentId }
+            }
+        }
+        replaceEntriesWithinTransaction(
+            queue = existing,
+            entries = remaining.renumberOrders(),
+            currentEntryId = fallbackCurrentEntryId,
+            currentPositionMs = existing.queue.currentPositionMs.takeIf {
+                fallbackCurrentEntryId != null && existing.queue.currentEntryId != entryId
+            } ?: 0L
+        )
+    }
+
+    suspend fun reorderEntry(
+        queueId: String,
+        entryId: String,
+        toPlaybackOrder: Int,
+        updateBaseOrder: Boolean
+    ): PlaybackQueueWithEntries? = database.withTransaction {
+        val existing = loadQueueWithinTransaction(queueId) ?: return@withTransaction null
+        val playbackOrdered = existing.entries.sortedBy { it.playbackOrder }.toMutableList()
+        val fromIndex = playbackOrdered.indexOfFirst { it.entryId == entryId }
+        if (fromIndex < 0 || toPlaybackOrder !in playbackOrdered.indices) {
+            return@withTransaction existing
+        }
+        if (fromIndex != toPlaybackOrder) {
+            val moved = playbackOrdered.removeAt(fromIndex)
+            playbackOrdered.add(toPlaybackOrder, moved)
+        } else if (!updateBaseOrder) {
+            return@withTransaction existing
+        }
+        val playbackOrderById = playbackOrdered.withIndex().associate { it.value.entryId to it.index }
+        val baseOrderById = if (updateBaseOrder) {
+            playbackOrderById
+        } else {
+            existing.entries.sortedBy { it.baseOrder }
+                .withIndex()
+                .associate { it.value.entryId to it.index }
+        }
+        val reordered = existing.entries.map { entry ->
+            entry.copy(
+                baseOrder = checkNotNull(baseOrderById[entry.entryId]),
+                playbackOrder = checkNotNull(playbackOrderById[entry.entryId])
+            )
+        }
+        replaceEntriesWithinTransaction(
+            queue = existing,
+            entries = reordered,
+            currentEntryId = existing.queue.currentEntryId,
+            currentPositionMs = existing.queue.currentPositionMs
+        )
+    }
+
     suspend fun updateSavedPlaybackState(
         queueId: String,
         currentEntryId: String?,
@@ -214,6 +314,25 @@ class PlaybackQueueRepository(
         )
     }
 
+    private suspend fun replaceEntriesWithinTransaction(
+        queue: PlaybackQueueWithEntries,
+        entries: List<PlaybackQueueEntryEntity>,
+        currentEntryId: String?,
+        currentPositionMs: Long
+    ): PlaybackQueueWithEntries {
+        dao.deleteEntries(queue.queue.queueId)
+        dao.insertEntries(entries)
+        check(
+            dao.finishReplacingEntries(
+                queueId = queue.queue.queueId,
+                currentEntryId = currentEntryId,
+                currentPositionMs = currentPositionMs,
+                updatedAt = nowMillis()
+            ) == 1
+        )
+        return checkNotNull(loadQueueWithinTransaction(queue.queue.queueId))
+    }
+
     private suspend fun requireQueue(queueId: String): PlaybackQueueEntity =
         requireNotNull(dao.getQueue(queueId)) { "Queue $queueId does not exist" }
 
@@ -274,6 +393,21 @@ class PlaybackQueueRepository(
         baseOrder = baseOrder,
         playbackOrder = playbackOrder
     )
+}
+
+private fun List<PlaybackQueueEntryEntity>.renumberOrders(): List<PlaybackQueueEntryEntity> {
+    val baseOrderById = sortedBy { it.baseOrder }
+        .withIndex()
+        .associate { it.value.entryId to it.index }
+    val playbackOrderById = sortedBy { it.playbackOrder }
+        .withIndex()
+        .associate { it.value.entryId to it.index }
+    return map { entry ->
+        entry.copy(
+            baseOrder = checkNotNull(baseOrderById[entry.entryId]),
+            playbackOrder = checkNotNull(playbackOrderById[entry.entryId])
+        )
+    }
 }
 
 private fun requireDisplayName(displayName: String): String = displayName.trim().also {

@@ -4,6 +4,7 @@ import io.github.rsgarrido.sazanami.data.PlaybackQueueEntryDraft
 import io.github.rsgarrido.sazanami.data.PlaybackQueueRepository
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.membershipKey
+import io.github.rsgarrido.sazanami.data.toSongReference
 import io.github.rsgarrido.sazanami.data.local.PersistedQueueRepeatMode
 import io.github.rsgarrido.sazanami.data.local.PlaybackQueueEntity
 import io.github.rsgarrido.sazanami.data.local.PlaybackQueueEntryEntity
@@ -50,6 +51,8 @@ internal data class PlaybackQueueRestoration(
 internal interface PlaybackQueueRuntime {
     fun captureSnapshot(): LivePlaybackQueueSnapshot?
     fun replaceTimeline(restoration: PlaybackQueueRestoration)
+    fun removeEntry(entryId: String): Boolean = false
+    fun moveEntry(entryId: String, toPlaybackOrder: Int): Boolean = false
 }
 
 internal interface PlaybackQueueTrackAccess {
@@ -97,6 +100,23 @@ internal interface PlaybackQueuePersistence {
         sourceQueueId: String,
         displayName: String
     ): PlaybackQueueWithEntries
+
+    suspend fun appendEntries(
+        queueId: String,
+        entries: List<PlaybackQueueEntryDraft>
+    ): PlaybackQueueWithEntries = error("Appending queue entries is not supported")
+
+    suspend fun removeEntry(
+        queueId: String,
+        entryId: String
+    ): PlaybackQueueWithEntries? = error("Removing queue entries is not supported")
+
+    suspend fun reorderEntry(
+        queueId: String,
+        entryId: String,
+        toPlaybackOrder: Int,
+        updateBaseOrder: Boolean
+    ): PlaybackQueueWithEntries? = error("Reordering queue entries is not supported")
 }
 
 internal class RepositoryPlaybackQueuePersistence(
@@ -159,6 +179,28 @@ internal class RepositoryPlaybackQueuePersistence(
         sourceQueueId: String,
         displayName: String
     ): PlaybackQueueWithEntries = repository.duplicateQueue(sourceQueueId, displayName)
+
+    override suspend fun appendEntries(
+        queueId: String,
+        entries: List<PlaybackQueueEntryDraft>
+    ): PlaybackQueueWithEntries = repository.appendEntries(queueId, entries)
+
+    override suspend fun removeEntry(
+        queueId: String,
+        entryId: String
+    ): PlaybackQueueWithEntries? = repository.removeEntry(queueId, entryId)
+
+    override suspend fun reorderEntry(
+        queueId: String,
+        entryId: String,
+        toPlaybackOrder: Int,
+        updateBaseOrder: Boolean
+    ): PlaybackQueueWithEntries? = repository.reorderEntry(
+        queueId = queueId,
+        entryId = entryId,
+        toPlaybackOrder = toPlaybackOrder,
+        updateBaseOrder = updateBaseOrder
+    )
 }
 
 /** Owns the mapping between the one live Media3 timeline and inactive Room-backed queues. */
@@ -186,6 +228,8 @@ internal class PlaybackQueueCoordinator(
 
     fun getActiveQueueId(): String? = activeQueueId
 
+    fun captureActiveQueueSnapshot(): LivePlaybackQueueSnapshot? = runtime.captureSnapshot()
+
     suspend fun persistActiveQueueSnapshot(): String? = mutex.withLock {
         persistActiveQueueSnapshotLocked()
     }
@@ -201,6 +245,125 @@ internal class PlaybackQueueCoordinator(
             sourceQueueId = sourceQueueId,
             displayName = displayName
         )
+    }
+
+    suspend fun createAndActivateQueue(
+        displayName: String,
+        songs: List<Song>
+    ): PlaybackQueueWithEntries? = mutex.withLock {
+        if (songs.isEmpty()) return@withLock null
+        persistActiveQueueSnapshotLocked()
+
+        val liveItems = songs.map { song -> song.toLivePlaybackQueueItem() }
+        val identified = trackAccess.identify(liveItems)
+        if (identified.size != songs.size) return@withLock null
+        val queueId = queueIdFactory()
+        val resolvedDisplayName = displayName.trim().takeIf(String::isNotEmpty)
+            ?: nextDefaultQueueName(
+                persistence.listQueues().map(PlaybackQueueEntity::displayName)
+            )
+        val drafts = identified.mapIndexed { index, item ->
+            item.toDraft(baseOrder = index, playbackOrder = index)
+        }
+        val created = persistence.createQueue(
+            queueId = queueId,
+            displayName = resolvedDisplayName,
+            entries = drafts,
+            currentEntryId = drafts.first().entryId,
+            currentPositionMs = 0L,
+            shuffleEnabled = false,
+            repeatMode = PersistedQueueRepeatMode.OFF
+        )
+        val restorationEntries = identified.mapIndexed { index, item ->
+            ResolvedPlaybackQueueItem(
+                persistedEntry = drafts[index].toEntity(queueId),
+                song = songs[index]
+            )
+        }
+        runtime.replaceTimeline(
+            PlaybackQueueRestoration(
+                queueId = queueId,
+                entries = restorationEntries,
+                currentEntryId = drafts.first().entryId,
+                currentPositionMs = 0L,
+                shouldPlay = true,
+                shuffleEnabled = false,
+                repeatMode = PersistedQueueRepeatMode.OFF
+            )
+        )
+        persistence.setActiveQueue(queueId)
+        activeQueueId = queueId
+        lastLiveSignature = LiveQueueSignature(
+            queueId = queueId,
+            entries = songs.indices.map { index -> drafts[index].entryId to songs[index].membershipKey() },
+            baseEntryIds = drafts.map(PlaybackQueueEntryDraft::entryId)
+        )
+        onActiveQueueChanged(queueId)
+        created
+    }
+
+    suspend fun appendToInactiveQueue(
+        queueId: String,
+        songs: List<Song>
+    ): PlaybackQueueWithEntries? = mutex.withLock {
+        if (songs.isEmpty() || queueId == activeQueueId) return@withLock null
+        val identified = trackAccess.identify(songs.map { it.toLivePlaybackQueueItem() })
+        if (identified.size != songs.size) return@withLock null
+        persistence.appendEntries(
+            queueId = queueId,
+            entries = identified.mapIndexed { index, item ->
+                item.toDraft(baseOrder = index, playbackOrder = index)
+            }
+        )
+    }
+
+    suspend fun removeEntry(queueId: String, entryId: String): Boolean = mutex.withLock {
+        if (queueId != activeQueueId) {
+            return@withLock persistence.removeEntry(queueId, entryId) != null
+        }
+        val before = runtime.captureSnapshot() ?: return@withLock false
+        if (before.entries.none { it.entryId == entryId }) return@withLock false
+        if (!runtime.removeEntry(entryId)) return@withLock false
+        if (before.entries.size == 1) {
+            persistence.replaceEntries(queueId, emptyList(), null, 0L)
+            lastLiveSignature = null
+            return@withLock true
+        }
+        persistActiveQueueSnapshotLocked()
+        true
+    }
+
+    suspend fun reorderEntry(
+        queueId: String,
+        entryId: String,
+        toPlaybackOrder: Int
+    ): Boolean = mutex.withLock {
+        if (queueId != activeQueueId) {
+            val queue = persistence.loadQueue(queueId) ?: return@withLock false
+            if (queue.queue.shuffleEnabled) return@withLock false
+            return@withLock persistence.reorderEntry(
+                queueId,
+                entryId,
+                toPlaybackOrder,
+                updateBaseOrder = true
+            ) != null
+        }
+        val before = runtime.captureSnapshot() ?: return@withLock false
+        if (before.shuffleEnabled) return@withLock false
+        if (!runtime.moveEntry(entryId, toPlaybackOrder)) return@withLock false
+        val after = runtime.captureSnapshot() ?: return@withLock false
+        persistActiveQueueSnapshotLocked(
+            suppliedSnapshot = after.copy(
+                baseEntryIds = after.entries.map(LivePlaybackQueueItem::entryId)
+            )
+        )
+        persistence.reorderEntry(
+            queueId = queueId,
+            entryId = entryId,
+            toPlaybackOrder = toPlaybackOrder,
+            updateBaseOrder = true
+        )
+        true
     }
 
     suspend fun switchToQueue(queueId: String): Boolean = mutex.withLock {
@@ -483,6 +646,15 @@ internal class PlaybackQueueCoordinator(
         playbackOrder = playbackOrder
     )
 
+    private fun PlaybackQueueEntryDraft.toEntity(queueId: String) = PlaybackQueueEntryEntity(
+        entryId = entryId,
+        queueId = queueId,
+        trackIdentityId = trackIdentityId,
+        localTrackBindingId = localTrackBindingId,
+        baseOrder = baseOrder,
+        playbackOrder = playbackOrder
+    )
+
     private data class LiveQueueSignature(
         val queueId: String?,
         val entries: List<Pair<String, String>>,
@@ -505,4 +677,16 @@ internal fun nextDefaultQueueName(existingNames: List<String>): String {
     val existing = existingNames.toSet()
     while ("Queue $number" in existing) number += 1
     return "Queue $number"
+}
+
+private fun Song.toLivePlaybackQueueItem(): LivePlaybackQueueItem {
+    val entryId = java.util.UUID.randomUUID().toString()
+    return LivePlaybackQueueItem(
+        entryId = entryId,
+        evidence = ListeningMediaItemEvidence(
+            itemInstanceId = entryId,
+            referenceKey = membershipKey(),
+            reference = toSongReference()
+        )
+    )
 }

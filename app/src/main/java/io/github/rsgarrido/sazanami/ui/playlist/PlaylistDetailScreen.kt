@@ -71,6 +71,7 @@ import io.github.rsgarrido.sazanami.ui.library.LibraryDetailTopBar
 import io.github.rsgarrido.sazanami.ui.library.LibraryItemAction
 import io.github.rsgarrido.sazanami.ui.library.LibraryItemActionSheet
 import io.github.rsgarrido.sazanami.ui.library.LibraryItemActionSheetTarget
+import io.github.rsgarrido.sazanami.ui.library.LocalLibraryQueueUi
 import io.github.rsgarrido.sazanami.ui.library.LibrarySortDirection
 import io.github.rsgarrido.sazanami.ui.library.ResetLazyListOnSortChange
 
@@ -107,6 +108,7 @@ fun PlaylistDetailScreen(
     modifier: Modifier = Modifier
 ) {
     val homePinUi = LocalHomePinUi.current
+    val libraryQueueUi = LocalLibraryQueueUi.current
     var actionSheetTarget by remember { mutableStateOf<LibraryItemActionSheetTarget?>(null) }
     var renameDialogVisible by remember { mutableStateOf(false) }
     var deleteDialogVisible by remember { mutableStateOf(false) }
@@ -151,6 +153,12 @@ fun PlaylistDetailScreen(
                 add(homePinUi.actionForPlaylist(playlist))
                 add(LibraryItemAction("Add to queue", Icons.AutoMirrored.Filled.QueueMusic) {
                     onAddPlaylistToQueueClick(playlist)
+                })
+                add(LibraryItemAction("Add to another queue...", Icons.AutoMirrored.Filled.QueueMusic) {
+                    libraryQueueUi.onAddPlaylistToAnotherQueue(playlist)
+                })
+                add(LibraryItemAction("Play in new queue", Icons.Filled.PlayArrow) {
+                    libraryQueueUi.onPlayPlaylistInNewQueue(playlist)
                 })
                 if (!isLoading && allowsManualPlaylistActions(playlist)) {
                     add(LibraryItemAction("Add songs", Icons.AutoMirrored.Filled.PlaylistAdd) {

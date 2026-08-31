@@ -233,6 +233,83 @@ class PlaybackQueueRepositoryTest {
         assertEquals("active", repository.getActiveQueueId())
     }
 
+    @Test
+    fun appendingToInactiveQueuePreservesResumeStateAndCreatesDuplicateEntries() = runBlocking {
+        val track = seedIdentity("Append")
+        repository.createQueue(
+            queueId = "target",
+            displayName = "Target",
+            entries = listOf(entry("current", track, 0, 0)),
+            currentEntryId = "current",
+            currentPositionMs = 8_500L
+        )
+
+        val updated = repository.appendEntries(
+            "target",
+            listOf(
+                entry("duplicate-one", track, 0, 0),
+                entry("duplicate-two", track, 1, 1)
+            )
+        )
+
+        assertEquals(listOf("current", "duplicate-one", "duplicate-two"), updated.entries.map { it.entryId })
+        assertEquals(listOf(0, 1, 2), updated.entries.map { it.baseOrder })
+        assertEquals("current", updated.queue.currentEntryId)
+        assertEquals(8_500L, updated.queue.currentPositionMs)
+    }
+
+    @Test
+    fun removingInactiveEntriesUsesEntryIdAndDeterministicCurrentFallback() = runBlocking {
+        val track = seedIdentity("Remove")
+        repository.createQueue(
+            queueId = "saved",
+            displayName = "Saved",
+            entries = listOf(
+                entry("duplicate-before", track, 0, 0),
+                entry("duplicate-current", track, 1, 1),
+                entry("after", track, 2, 2)
+            ),
+            currentEntryId = "duplicate-current",
+            currentPositionMs = 6_000L
+        )
+
+        val duplicateRemoved = checkNotNull(repository.removeEntry("saved", "duplicate-before"))
+        assertEquals(listOf("duplicate-current", "after"), duplicateRemoved.entries.map { it.entryId })
+        assertEquals("duplicate-current", duplicateRemoved.queue.currentEntryId)
+        assertEquals(6_000L, duplicateRemoved.queue.currentPositionMs)
+
+        val currentRemoved = checkNotNull(repository.removeEntry("saved", "duplicate-current"))
+        assertEquals(listOf("after"), currentRemoved.entries.map { it.entryId })
+        assertEquals("after", currentRemoved.queue.currentEntryId)
+        assertEquals(0L, currentRemoved.queue.currentPositionMs)
+    }
+
+    @Test
+    fun inactiveManualReorderUpdatesPlaybackAndBaseOrderButPreservesResumeState() = runBlocking {
+        val track = seedIdentity("Reorder")
+        repository.createQueue(
+            queueId = "saved",
+            displayName = "Saved",
+            entries = listOf(
+                entry("one", track, 0, 0),
+                entry("two", track, 1, 1),
+                entry("three", track, 2, 2)
+            ),
+            currentEntryId = "two",
+            currentPositionMs = 9_999L
+        )
+
+        val reordered = checkNotNull(
+            repository.reorderEntry("saved", "three", 0, updateBaseOrder = true)
+        )
+
+        assertEquals(listOf("three", "one", "two"), reordered.entries.map { it.entryId })
+        assertEquals(listOf(0, 1, 2), reordered.entries.map { it.playbackOrder })
+        assertEquals(listOf(0, 1, 2), reordered.entries.map { it.baseOrder })
+        assertEquals("two", reordered.queue.currentEntryId)
+        assertEquals(9_999L, reordered.queue.currentPositionMs)
+    }
+
     private suspend fun seedIdentity(label: String): Long {
         return database.listeningTrackIdentityDao().insert(
             ListeningTrackIdentityEntity(

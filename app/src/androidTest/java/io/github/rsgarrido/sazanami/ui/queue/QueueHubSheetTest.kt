@@ -6,8 +6,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -96,6 +98,66 @@ class QueueHubSheetTest {
         composeRule.onNodeWithContentDescription("Open queues").performClick()
 
         composeRule.runOnIdle { assertEquals(1, openCount) }
+    }
+
+    @Test
+    fun entryOverflowRemovesTheStableEntryId() {
+        var removed: Pair<String, String>? = null
+        composeRule.setContent {
+            MaterialTheme {
+                QueueHubSheet(
+                    state = state("B").copy(
+                        selectedEntries = listOf(
+                            PlaybackQueueEntryUiState("duplicate-entry-2", null, false)
+                        ),
+                        selectedQueueEntryCount = 1
+                    ),
+                    onDismiss = {},
+                    onQueueSelected = {},
+                    onSwitchSelected = {},
+                    onCreateFromCurrent = {},
+                    onRename = { _, _ -> },
+                    onDelete = {},
+                    onRemoveEntry = { queueId, entryId -> removed = queueId to entryId },
+                    onMessageDismissed = {}
+                )
+            }
+        }
+
+        composeRule.onAllNodesWithContentDescription("Actions for queue entry")[0].performClick()
+        composeRule.onNodeWithText("Remove").performClick()
+
+        composeRule.runOnIdle { assertEquals("B" to "duplicate-entry-2", removed) }
+    }
+
+    @Test
+    fun shuffledQueueExplainsWhyDragReorderIsUnavailable() {
+        val shuffledState = state("B").let { original ->
+            original.copy(
+                queues = original.queues.map { queue ->
+                    if (queue.queueId == "B") queue.copy(shuffleEnabled = true) else queue
+                },
+                selectedEntries = listOf(PlaybackQueueEntryUiState("entry", null, false)),
+                selectedQueueEntryCount = 1
+            )
+        }
+        composeRule.setContent {
+            MaterialTheme {
+                QueueHubSheet(
+                    state = shuffledState,
+                    onDismiss = {},
+                    onQueueSelected = {},
+                    onSwitchSelected = {},
+                    onCreateFromCurrent = {},
+                    onRename = { _, _ -> },
+                    onDelete = {},
+                    onMessageDismissed = {}
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Turn off shuffle to reorder this queue.").assertIsDisplayed()
+        composeRule.onAllNodesWithContentDescription("Reorder queue entry").assertCountEquals(0)
     }
 
     private fun state(selectedQueueId: String): PlaybackQueueHubUiState {

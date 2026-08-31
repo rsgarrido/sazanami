@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -77,6 +78,7 @@ fun SongList(
     }
     val ratingUi = LocalSongRatingUi.current
     val homePinUi = LocalHomePinUi.current
+    val libraryQueueUi = LocalLibraryQueueUi.current
     val rateSongLabel = stringResource(AppR.string.rate_song)
     val rememberedListState = rememberLazyListState()
 
@@ -193,6 +195,10 @@ fun SongList(
                                 isFavorite = isFavorite,
                                 onPlayNextClick = onPlayNextClick,
                                 onAddToQueueClick = onAddToQueueClick,
+                                onAddToAnotherQueueClick = libraryQueueUi.onAddToAnotherQueue,
+                                onPlayInNewQueueClick = { selectedSong ->
+                                    libraryQueueUi.onPlayInNewQueue("", listOf(selectedSong))
+                                },
                                 onToggleFavoriteClick = onToggleFavoriteClick,
                                 onAddToPlaylistClick = onAddToPlaylistClick,
                                 onEditSongTagsClick = onEditSongTagsClick,
@@ -222,6 +228,8 @@ internal fun songActionSheetTarget(
     isFavorite: Boolean,
     onPlayNextClick: (Song) -> Unit,
     onAddToQueueClick: (Song) -> Unit,
+    onAddToAnotherQueueClick: (List<Song>) -> Unit = {},
+    onPlayInNewQueueClick: (Song) -> Unit = {},
     onToggleFavoriteClick: (Song) -> Unit,
     onAddToPlaylistClick: (Song) -> Unit,
     onEditSongTagsClick: (Song) -> Unit,
@@ -255,6 +263,20 @@ internal fun songActionSheetTarget(
                     label = "Add to queue",
                     icon = Icons.AutoMirrored.Filled.QueueMusic,
                     onClick = { onAddToQueueClick(song) }
+                )
+            )
+            add(
+                LibraryItemAction(
+                    label = "Add to another queue...",
+                    icon = Icons.AutoMirrored.Filled.QueueMusic,
+                    onClick = { onAddToAnotherQueueClick(listOf(song)) }
+                )
+            )
+            add(
+                LibraryItemAction(
+                    label = "Play in new queue",
+                    icon = Icons.Filled.PlayArrow,
+                    onClick = { onPlayInNewQueueClick(song) }
                 )
             )
             add(

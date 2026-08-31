@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Share
@@ -72,6 +73,7 @@ import io.github.rsgarrido.sazanami.ui.home.LocalHomePinUi
 import io.github.rsgarrido.sazanami.ui.library.LibraryItemAction
 import io.github.rsgarrido.sazanami.ui.library.LibraryItemActionSheet
 import io.github.rsgarrido.sazanami.ui.library.LibraryItemActionSheetTarget
+import io.github.rsgarrido.sazanami.ui.library.LocalLibraryQueueUi
 import io.github.rsgarrido.sazanami.ui.library.libraryItemActions
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewMode
 import io.github.rsgarrido.sazanami.ui.library.LibrarySortDirection
@@ -111,6 +113,7 @@ fun PlaylistListScreen(
     modifier: Modifier = Modifier
 ) {
     val homePinUi = LocalHomePinUi.current
+    val libraryQueueUi = LocalLibraryQueueUi.current
     var playlistPendingRename by remember { mutableStateOf<Playlist?>(null) }
     var playlistPendingDelete by remember { mutableStateOf<Playlist?>(null) }
     var playlistPendingMove by remember { mutableStateOf<Playlist?>(null) }
@@ -155,6 +158,12 @@ fun PlaylistListScreen(
                 add(homePinUi.actionForPlaylist(playlist))
                 add(LibraryItemAction("Add to queue", Icons.AutoMirrored.Filled.QueueMusic) {
                     onAddPlaylistToQueueClick(playlist)
+                })
+                add(LibraryItemAction("Add to another queue...", Icons.AutoMirrored.Filled.QueueMusic) {
+                    libraryQueueUi.onAddPlaylistToAnotherQueue(playlist)
+                })
+                add(LibraryItemAction("Play in new queue", Icons.Filled.PlayArrow) {
+                    libraryQueueUi.onPlayPlaylistInNewQueue(playlist)
                 })
                 add(LibraryItemAction("Change artwork", Icons.Filled.Image) {
                     onChangeArtworkClick(playlist)
