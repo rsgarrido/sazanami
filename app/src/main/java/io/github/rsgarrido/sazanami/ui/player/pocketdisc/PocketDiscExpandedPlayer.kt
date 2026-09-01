@@ -132,7 +132,7 @@ fun PocketDiscExpandedPlayer(
                 .fillMaxSize()
                 .background(if (renderShell) PocketDiscColors.shell else Color.Transparent)
         ) {
-            val compact = maxHeight < 710.dp || maxWidth < 360.dp
+            val compact = maxHeight < 750.dp || maxWidth < 360.dp
             val horizontalPadding = if (compact) 10.dp else 16.dp
             val gap = if (compact) 8.dp else 12.dp
             val availableMediaWidth = maxWidth - horizontalPadding * 2 - gap
@@ -143,7 +143,11 @@ fun PocketDiscExpandedPlayer(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = horizontalPadding, vertical = if (compact) 7.dp else 11.dp),
-                verticalArrangement = Arrangement.spacedBy(if (compact) 7.dp else 10.dp)
+                verticalArrangement = if (compact) {
+                    Arrangement.spacedBy(7.dp)
+                } else {
+                    Arrangement.SpaceBetween
+                }
             ) {
                 PocketDiscHeader(
                     activeQueueName = activeQueueName,
@@ -185,6 +189,15 @@ fun PocketDiscExpandedPlayer(
 
                 PocketDiscMetadataPanel(
                     currentSong = currentSong,
+                    morphBounds = morphBounds,
+                    sharedOwner = sharedOwner,
+                    compact = compact,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer { alpha = panelReveal.coerceIn(0f, 1f) }
+                )
+
+                PocketDiscPositionPanel(
                     currentPosition = currentPosition,
                     duration = duration,
                     onSeekChange = onSeekChange,
@@ -230,8 +243,6 @@ fun PocketDiscExpandedPlayer(
                         .graphicsLayer { alpha = controlsReveal.coerceIn(0f, 1f) }
                 )
 
-                Spacer(modifier = Modifier.weight(1f))
-
                 PocketDiscLevelMeter(
                     currentSong = currentSong,
                     waveformData = waveformData,
@@ -265,6 +276,7 @@ private fun PocketDiscHeader(
     val colors = PocketDiscColors
     val total = activeQueueCount.coerceAtLeast(1)
     val queuePosition = activeQueuePosition.coerceIn(1, total)
+    val queueDigits = maxOf(2, total.toString().length)
 
     Row(
         modifier = modifier
@@ -291,7 +303,7 @@ private fun PocketDiscHeader(
         )
         Spacer(modifier = Modifier.width(if (compact) 8.dp else 12.dp))
         Text(
-            text = "Q: ${activeQueueName.uppercase(Locale.ROOT)}",
+            text = "QUEUE ${activeQueueName.uppercase(Locale.ROOT)}",
             color = colors.lcdTextMuted,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
@@ -301,7 +313,7 @@ private fun PocketDiscHeader(
             modifier = Modifier.weight(1f)
         )
         Text(
-            text = "${queuePosition.toString().padStart(2, '0')}/${total.toString().padStart(2, '0')}",
+            text = "${queuePosition.toString().padStart(queueDigits, '0')}/${total.toString().padStart(queueDigits, '0')}",
             color = colors.lcdText,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
@@ -358,10 +370,6 @@ private fun PocketDiscArtwork(
 @Composable
 private fun PocketDiscMetadataPanel(
     currentSong: Song?,
-    currentPosition: Int,
-    duration: Int,
-    onSeekChange: (Int) -> Unit,
-    enabled: Boolean,
     morphBounds: PocketDiscMorphBounds?,
     sharedOwner: PocketDiscSharedOwner,
     compact: Boolean,
@@ -369,41 +377,46 @@ private fun PocketDiscMetadataPanel(
 ) {
     val colors = PocketDiscColors
     val sharedAlpha = if (sharedOwner == PocketDiscSharedOwner.TRANSITION) 0f else 1f
-    val remaining = (duration - currentPosition).coerceAtLeast(0)
-    val discLabel = currentSong?.discNumber?.takeIf { it > 0 }?.let { number ->
-        val total = currentSong?.discTotal?.takeIf { it > 0 }
-        if (total != null) "DISC $number/$total" else "DISC $number"
-    } ?: "LOCAL DISC"
-    // Queue identity and position are shown in the device header; this panel keeps
-    // album track/disc metadata separate so multi-queue position is never confused
-    // with embedded track numbering.
     val trackNumber = currentSong?.trackNumber
         ?.takeIf { it > 0 }
         ?.let(::getDisplayTrackNumber)
-        ?: "–"
+        ?: "--"
+    val discNumber = currentSong?.discNumber
+        ?.takeIf { it > 0 }
+        ?.toString()
+        ?: "--"
+    val discTotal = currentSong?.discTotal?.takeIf { it > 0 }
+    val discLabel = if (discTotal != null && discNumber != "--") {
+        "DISC $discNumber/$discTotal"
+    } else {
+        "DISC $discNumber"
+    }
 
     Column(
         modifier = modifier
-            .background(colors.lcdBackground, RoundedCornerShape(7.dp))
-            .border(1.dp, colors.lcdGlowDim.copy(alpha = 0.7f), RoundedCornerShape(7.dp))
-            .padding(horizontal = if (compact) 10.dp else 14.dp, vertical = if (compact) 8.dp else 11.dp),
-        verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp)
+            .background(colors.lcdBackgroundLight, RoundedCornerShape(7.dp))
+            .border(1.dp, colors.lcdGlowDim.copy(alpha = 0.72f), RoundedCornerShape(7.dp))
+            .padding(
+                horizontal = if (compact) 10.dp else 14.dp,
+                vertical = if (compact) 8.dp else 10.dp
+            ),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 5.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = if (currentSong == null) "NO DISC" else "▶",
+                text = if (currentSong == null) "■" else "▶",
                 color = colors.active,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Black,
-                fontSize = if (compact) 12.sp else 14.sp
+                fontSize = if (compact) 11.sp else 13.sp
             )
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(if (compact) 7.dp else 9.dp))
             Text(
-                text = currentSong?.title?.ifBlank { "Unknown title" } ?: "No track loaded",
+                text = currentSong?.title?.ifBlank { "Unknown title" } ?: "NO DISC LOADED",
                 color = colors.lcdText,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
-                fontSize = if (compact) 14.sp else 18.sp,
+                fontSize = if (compact) 14.sp else 17.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
@@ -412,12 +425,6 @@ private fun PocketDiscMetadataPanel(
                         morphBounds?.updateExpandedTitle(coordinates.boundsInRoot())
                     }
                     .graphicsLayer { alpha = sharedAlpha }
-            )
-            Text(
-                text = "TRACK $trackNumber  $discLabel",
-                color = colors.lcdTextMuted,
-                fontFamily = FontFamily.Monospace,
-                fontSize = if (compact) 7.sp else 8.sp
             )
         }
         Text(
@@ -436,26 +443,86 @@ private fun PocketDiscMetadataPanel(
         )
         Text(
             text = currentSong?.album?.ifBlank { "Unknown album" } ?: "",
-            color = colors.lcdTextMuted.copy(alpha = 0.72f),
+            color = colors.lcdTextMuted.copy(alpha = 0.76f),
             fontFamily = FontFamily.Monospace,
             fontSize = if (compact) 8.sp else 9.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
-                text = formatPocketDiscTime(currentPosition),
-                color = colors.lcdText,
+                text = "TRACK $trackNumber",
+                color = colors.lcdTextMuted.copy(alpha = 0.84f),
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
-                fontSize = if (compact) 10.sp else 12.sp
+                fontSize = if (compact) 6.sp else 7.sp
             )
+            Spacer(modifier = Modifier.width(if (compact) 10.dp else 14.dp))
+            Text(
+                text = discLabel,
+                color = colors.lcdTextMuted.copy(alpha = 0.84f),
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = if (compact) 6.sp else 7.sp
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                text = "STEREO",
+                color = colors.lcdTextMuted.copy(alpha = 0.64f),
+                fontFamily = FontFamily.Monospace,
+                fontSize = if (compact) 6.sp else 7.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun PocketDiscPositionPanel(
+    currentPosition: Int,
+    duration: Int,
+    onSeekChange: (Int) -> Unit,
+    enabled: Boolean,
+    morphBounds: PocketDiscMorphBounds?,
+    sharedOwner: PocketDiscSharedOwner,
+    compact: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val colors = PocketDiscColors
+    val sharedAlpha = if (sharedOwner == PocketDiscSharedOwner.TRANSITION) 0f else 1f
+    val remaining = (duration - currentPosition).coerceAtLeast(0)
+
+    Row(
+        modifier = modifier
+            .background(colors.panel, RoundedCornerShape(7.dp))
+            .border(1.dp, colors.edge.copy(alpha = 0.42f), RoundedCornerShape(7.dp))
+            .padding(
+                horizontal = if (compact) 9.dp else 12.dp,
+                vertical = if (compact) 7.dp else 9.dp
+            ),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        PocketDiscSevenSegmentText(
+            text = formatPocketDiscTime(currentPosition),
+            digitWidth = if (compact) 7.dp else 8.dp,
+            digitHeight = if (compact) 16.dp else 19.dp,
+            spacing = if (compact) 1.dp else 1.4.dp,
+            color = colors.lcdText
+        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = if (compact) 8.dp else 11.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(if (compact) 3.dp else 4.dp)
+        ) {
             PocketDiscSegmentedProgress(
                 progress = normalizedPocketDiscProgress(currentPosition, duration),
-                segmentCount = if (compact) 22 else 30,
+                segmentCount = if (compact) 23 else 31,
                 modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 9.dp)
+                    .fillMaxWidth()
                     .onGloballyPositioned { coordinates ->
                         morphBounds?.updateExpandedProgress(coordinates.boundsInRoot())
                     }
@@ -471,13 +538,21 @@ private fun PocketDiscMetadataPanel(
                     }
             )
             Text(
-                text = formatPocketDiscTime(remaining, negative = true),
-                color = colors.lcdText,
+                text = "TRACK POSITION",
+                color = colors.lcdTextMuted.copy(alpha = 0.62f),
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
-                fontSize = if (compact) 10.sp else 12.sp
+                fontSize = if (compact) 5.sp else 6.sp,
+                maxLines = 1
             )
         }
+        PocketDiscSevenSegmentText(
+            text = formatPocketDiscTime(remaining, negative = true),
+            digitWidth = if (compact) 7.dp else 8.dp,
+            digitHeight = if (compact) 16.dp else 19.dp,
+            spacing = if (compact) 1.dp else 1.4.dp,
+            color = colors.lcdText
+        )
     }
 }
 
@@ -691,23 +766,39 @@ private fun PocketDiscLevelMeter(
         updateTraceName = "PocketDiscMeterUpdate"
     )
     val levels = remember { FloatArray(2) }
-    val rowHeight = if (compact) 10.dp else 13.dp
+    val rowHeight = if (compact) 11.dp else 15.dp
 
     Column(
         modifier = modifier
-            .height(if (compact) 58.dp else 72.dp)
+            .height(if (compact) 64.dp else 84.dp)
             .background(colors.panel, RoundedCornerShape(7.dp))
             .border(1.dp, colors.edge.copy(alpha = 0.4f), RoundedCornerShape(7.dp))
-            .padding(horizontal = if (compact) 9.dp else 12.dp, vertical = if (compact) 6.dp else 8.dp),
-        verticalArrangement = Arrangement.spacedBy(if (compact) 3.dp else 4.dp)
+            .padding(
+                horizontal = if (compact) 9.dp else 12.dp,
+                vertical = if (compact) 6.dp else 9.dp
+            ),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 3.dp else 5.dp)
     ) {
-        Text(
-            text = "LEVEL       -30       -15        -6       -3       0 dB",
-            color = colors.lcdTextMuted,
-            fontFamily = FontFamily.Monospace,
-            fontSize = if (compact) 6.sp else 7.sp,
-            maxLines = 1
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "LEVEL",
+                color = colors.lcdTextMuted,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = if (compact) 6.sp else 7.sp
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                text = "-30      -15       -6       -3       0 dB",
+                color = colors.lcdTextMuted.copy(alpha = 0.82f),
+                fontFamily = FontFamily.Monospace,
+                fontSize = if (compact) 5.sp else 6.sp,
+                maxLines = 1
+            )
+        }
         PocketDiscMeterRow(
             label = "L",
             channelIndex = 0,
@@ -786,7 +877,7 @@ private fun PocketDiscMeterRow(
                 else -> 0f
             }
             val gap = 2.dp.toPx()
-            val segmentCount = if (compact) 24 else 32
+            val segmentCount = if (compact) 26 else 36
             val segmentWidth = (size.width - gap * (segmentCount - 1)) / segmentCount
             val activeSegments = (level * segmentCount).toInt().coerceAtLeast(if (isPlaying) 1 else 0)
             repeat(segmentCount) { segment ->
