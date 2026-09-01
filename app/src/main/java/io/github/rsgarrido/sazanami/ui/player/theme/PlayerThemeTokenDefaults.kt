@@ -5,6 +5,7 @@ import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelDefaultTokens
 import io.github.rsgarrido.sazanami.ui.player.pocketcassette.PocketCassetteDefaultTokens
 import io.github.rsgarrido.sazanami.ui.player.pocketflip.PocketFlipDefaultTokens
+import io.github.rsgarrido.sazanami.ui.player.pocketdisc.PocketDiscDefaultTokens
 import io.github.rsgarrido.sazanami.ui.player.retrorack.RetroRackDefaultTokens
 
 internal val DefaultPlayerThemeTokens = PlayerThemeTokens(
@@ -21,4 +22,5 @@ internal fun PlayerTheme.defaultTokens(): PlayerThemeTokens = when (this) {
     PlayerTheme.RETRO_RACK -> RetroRackDefaultTokens
     PlayerTheme.POCKET_FLIP -> PocketFlipDefaultTokens
     PlayerTheme.POCKET_CASSETTE -> PocketCassetteDefaultTokens
+    PlayerTheme.POCKET_DISC -> PocketDiscDefaultTokens
 }

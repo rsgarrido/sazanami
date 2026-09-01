@@ -112,6 +112,30 @@ fun PlayerTheme.colorPresetsFor(
             preset("Blue", 0xFF4C7FAE),
             preset("Cyan", 0xFF43A5A5)
         )
+
+        PlayerTheme.POCKET_DISC to PlayerThemeTokenField.SHELL -> listOf(
+            preset("Slate", 0xFF23374A),
+            preset("Graphite", 0xFF343C46),
+            preset("Navy", 0xFF243B58),
+            preset("Silver", 0xFF747F88),
+            preset("Plum", 0xFF51445E)
+        )
+
+        PlayerTheme.POCKET_DISC to PlayerThemeTokenField.ACCENT -> listOf(
+            preset("Ice", 0xFF87D8F4),
+            preset("Green", 0xFF8ED0A0),
+            preset("Amber", 0xFFE1B65D),
+            preset("Blue", 0xFF79AEE8),
+            preset("Violet", 0xFFB4A0E4)
+        )
+
+        PlayerTheme.POCKET_DISC to PlayerThemeTokenField.SECONDARY_ACCENT -> listOf(
+            preset("Cyan", 0xFF4AA8D1),
+            preset("Green", 0xFF52A66B),
+            preset("Amber", 0xFFC9963C),
+            preset("Blue", 0xFF4D7FB8),
+            preset("Violet", 0xFF7D69B5)
+        )
         else -> emptyList()
     }
 }

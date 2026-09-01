@@ -104,7 +104,7 @@ fun ClassicBatteryIndicator(
 }
 
 @Composable
-private fun rememberBatteryLevel(): State<Int> {
+internal fun rememberBatteryLevel(): State<Int> {
     val context = LocalContext.current
     val batteryLevel = remember {
         mutableIntStateOf(readBatteryLevel(context))

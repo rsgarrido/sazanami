@@ -41,6 +41,12 @@ fun PlayerTheme.customizationOptions(): List<PlayerThemeCustomizationOption> = w
         option(PlayerThemeTokenField.ACCENT, "LCD glow", "LCD display glow"),
         option(PlayerThemeTokenField.SECONDARY_ACCENT, "Active accent", "Active controls and button highlights")
     )
+
+    PlayerTheme.POCKET_DISC -> listOf(
+        option(PlayerThemeTokenField.SHELL, "Body", "Digital player body"),
+        option(PlayerThemeTokenField.ACCENT, "LCD glow", "Display text, segments, and meter glow"),
+        option(PlayerThemeTokenField.SECONDARY_ACCENT, "Active accent", "Active transport and utility controls")
+    )
 }
 
 private fun option(

@@ -49,6 +49,7 @@ import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMorphBoun
 import io.github.rsgarrido.sazanami.ui.player.retrorack.RetroRackMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketflip.PocketFlipMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketcassette.PocketCassetteMorphBounds
+import io.github.rsgarrido.sazanami.ui.player.pocketdisc.PocketDiscMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.mini.DefaultMiniPlayerMorphCallbacks
 import io.github.rsgarrido.sazanami.ui.player.SleepTimerStatusBanner
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
@@ -190,6 +191,7 @@ fun MiniPlayerSection(
     retroRackMorphBounds: RetroRackMorphBounds? = null,
     pocketFlipMorphBounds: PocketFlipMorphBounds? = null,
     pocketCassetteMorphBounds: PocketCassetteMorphBounds? = null,
+    pocketDiscMorphBounds: PocketDiscMorphBounds? = null,
     defaultMorphCallbacks: DefaultMiniPlayerMorphCallbacks? = null,
     morphOwnsVisuals: Boolean = false
 ) {
@@ -231,6 +233,7 @@ fun MiniPlayerSection(
             retroRackMorphBounds = retroRackMorphBounds,
             pocketFlipMorphBounds = pocketFlipMorphBounds,
             pocketCassetteMorphBounds = pocketCassetteMorphBounds,
+            pocketDiscMorphBounds = pocketDiscMorphBounds,
             defaultMorphCallbacks = defaultMorphCallbacks,
             morphOwnsVisuals = morphOwnsVisuals
         )

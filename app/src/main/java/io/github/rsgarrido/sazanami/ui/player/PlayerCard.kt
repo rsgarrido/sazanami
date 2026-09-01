@@ -21,6 +21,7 @@ import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMorphBoun
 import io.github.rsgarrido.sazanami.ui.player.retrorack.RetroRackMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketflip.PocketFlipMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketcassette.PocketCassetteMorphBounds
+import io.github.rsgarrido.sazanami.ui.player.pocketdisc.PocketDiscMorphBounds
 
 @Composable
 fun PlayerCard(
@@ -54,6 +55,7 @@ fun PlayerCard(
     retroRackMorphBounds: RetroRackMorphBounds? = null,
     pocketFlipMorphBounds: PocketFlipMorphBounds? = null,
     pocketCassetteMorphBounds: PocketCassetteMorphBounds? = null,
+    pocketDiscMorphBounds: PocketDiscMorphBounds? = null,
     defaultMorphCallbacks: DefaultMiniPlayerMorphCallbacks? = null,
     morphOwnsVisuals: Boolean = false,
 ) {
@@ -117,6 +119,7 @@ fun PlayerCard(
             retroRackMorphBounds = retroRackMorphBounds,
             pocketFlipMorphBounds = pocketFlipMorphBounds,
             pocketCassetteMorphBounds = pocketCassetteMorphBounds,
+            pocketDiscMorphBounds = pocketDiscMorphBounds,
             defaultMorphCallbacks = defaultMorphCallbacks,
             morphOwnsVisuals = morphOwnsVisuals,
             modifier = modifier

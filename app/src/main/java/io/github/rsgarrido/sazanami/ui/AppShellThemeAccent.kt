@@ -46,6 +46,7 @@ internal fun resolveAppShellAccent(
         PlayerTheme.POCKET_CASSETTE -> tokens?.secondaryAccentColor ?: tokens?.accentColor
         PlayerTheme.POCKET_FLIP -> tokens?.accentColor
         PlayerTheme.RETRO_RACK -> tokens?.accentColor
+        PlayerTheme.POCKET_DISC -> tokens?.secondaryAccentColor ?: tokens?.accentColor
     }
     return ensureReadableShellAccent(tokenAccent ?: fallbackAccent)
 }
