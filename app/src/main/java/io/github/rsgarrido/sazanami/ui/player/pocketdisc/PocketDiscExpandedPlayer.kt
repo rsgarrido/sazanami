@@ -2,6 +2,7 @@ package io.github.rsgarrido.sazanami.ui.player.pocketdisc
 
 import android.R
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -68,6 +70,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import io.github.rsgarrido.sazanami.data.Song
+import io.github.rsgarrido.sazanami.data.knownDiscNumber
+import io.github.rsgarrido.sazanami.data.trackNumberWithinDisc
 import io.github.rsgarrido.sazanami.player.RepeatMode
 import io.github.rsgarrido.sazanami.player.waveform.WaveformData
 import io.github.rsgarrido.sazanami.ui.player.RETRO_VISUALIZER_CADENCE_HZ
@@ -75,7 +79,6 @@ import io.github.rsgarrido.sazanami.ui.player.fillRetroMeterLevels
 import io.github.rsgarrido.sazanami.ui.player.isRetroMeterEffectivelySilent
 import io.github.rsgarrido.sazanami.ui.player.rememberBoundedVisualizerPhase
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
-import io.github.rsgarrido.sazanami.ui.getDisplayTrackNumber
 import kotlin.math.sin
 import java.util.Locale
 
@@ -377,19 +380,16 @@ private fun PocketDiscMetadataPanel(
 ) {
     val colors = PocketDiscColors
     val sharedAlpha = if (sharedOwner == PocketDiscSharedOwner.TRANSITION) 0f else 1f
-    val trackNumber = currentSong?.trackNumber
-        ?.takeIf { it > 0 }
-        ?.let(::getDisplayTrackNumber)
-        ?: "--"
-    val discNumber = currentSong?.discNumber
-        ?.takeIf { it > 0 }
-        ?.toString()
-        ?: "--"
+    // Prefer explicit DISC_NO metadata edited in Sazanami while retaining MediaStore's
+    // legacy encoded disc/track fallback for older library entries.
+    val trackNumber = currentSong?.trackNumberWithinDisc()?.toString() ?: "--"
+    val discNumber = currentSong?.knownDiscNumber()
     val discTotal = currentSong?.discTotal?.takeIf { it > 0 }
-    val discLabel = if (discTotal != null && discNumber != "--") {
-        "DISC $discNumber/$discTotal"
-    } else {
-        "DISC $discNumber"
+    val discLabel = when {
+        discNumber != null && discTotal != null -> "DISC $discNumber/$discTotal"
+        discNumber != null -> "DISC $discNumber"
+        discTotal != null -> "DISC --/$discTotal"
+        else -> "DISC --"
     }
 
     Column(
@@ -418,13 +418,15 @@ private fun PocketDiscMetadataPanel(
                 fontWeight = FontWeight.Bold,
                 fontSize = if (compact) 14.sp else 17.sp,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
                 modifier = Modifier
                     .weight(1f)
                     .onGloballyPositioned { coordinates ->
                         morphBounds?.updateExpandedTitle(coordinates.boundsInRoot())
                     }
                     .graphicsLayer { alpha = sharedAlpha }
+                    .basicMarquee()
             )
         }
         Text(
@@ -496,12 +498,10 @@ private fun PocketDiscPositionPanel(
 
     Row(
         modifier = modifier
+            .height(if (compact) 48.dp else 56.dp)
             .background(colors.panel, RoundedCornerShape(7.dp))
             .border(1.dp, colors.edge.copy(alpha = 0.42f), RoundedCornerShape(7.dp))
-            .padding(
-                horizontal = if (compact) 9.dp else 12.dp,
-                vertical = if (compact) 7.dp else 9.dp
-            ),
+            .padding(horizontal = if (compact) 9.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         PocketDiscSevenSegmentText(
@@ -511,18 +511,19 @@ private fun PocketDiscPositionPanel(
             spacing = if (compact) 1.dp else 1.4.dp,
             color = colors.lcdText
         )
-        Column(
+        Box(
             modifier = Modifier
                 .weight(1f)
-                .padding(horizontal = if (compact) 8.dp else 11.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(if (compact) 3.dp else 4.dp)
+                .fillMaxHeight()
+                .padding(horizontal = if (compact) 8.dp else 11.dp)
         ) {
             PocketDiscSegmentedProgress(
                 progress = normalizedPocketDiscProgress(currentPosition, duration),
                 segmentCount = if (compact) 23 else 31,
                 modifier = Modifier
+                    .align(Alignment.Center)
                     .fillMaxWidth()
+                    .height(if (compact) 7.dp else 8.dp)
                     .onGloballyPositioned { coordinates ->
                         morphBounds?.updateExpandedProgress(coordinates.boundsInRoot())
                     }
@@ -543,7 +544,10 @@ private fun PocketDiscPositionPanel(
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
                 fontSize = if (compact) 5.sp else 6.sp,
-                maxLines = 1
+                maxLines = 1,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = if (compact) 2.dp else 3.dp)
             )
         }
         PocketDiscSevenSegmentText(

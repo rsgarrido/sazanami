@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -91,14 +92,6 @@ internal fun PocketDiscPlayerMorph(
                     .fillMaxSize()
                     .clipPocketDiscShell(geometry, p)
             ) {
-                if (p > 0f && p < 1f && sharedGeometry != null && currentSong != null) {
-                    SharedPocketDiscArtwork(
-                        rect = sharedGeometry.artwork,
-                        song = currentSong,
-                        progress = p
-                    )
-                }
-
                 content(
                     pocketDiscHeaderReveal(p),
                     pocketDiscMediaReveal(p),
@@ -108,6 +101,14 @@ internal fun PocketDiscPlayerMorph(
                 )
 
                 if (p > 0f && p < 1f && sharedGeometry != null && currentSong != null) {
+                    // Draw the shared artwork after the endpoint content. The expanded artwork
+                    // bay keeps its physical frame during the morph, but must not paint over the
+                    // moving album cover as it travels from the mini player.
+                    SharedPocketDiscArtwork(
+                        rect = sharedGeometry.artwork,
+                        song = currentSong,
+                        progress = p
+                    )
                     SharedPocketDiscForeground(
                         geometry = sharedGeometry,
                         progress = p,
@@ -144,7 +145,9 @@ private fun SharedPocketDiscArtwork(
             contentScale = ContentScale.Fit,
             error = painterResource(R.drawable.ic_media_play),
             placeholder = painterResource(R.drawable.ic_media_play),
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .padding((4f * progress).dp)
         )
     }
 }
@@ -195,27 +198,29 @@ private fun SharedPocketDiscForeground(
         modifier = Modifier.atPocketDiscRect(geometry.progress, density)
     )
 
-    Box(
-        modifier = Modifier
-            .atPocketDiscRect(geometry.play, density)
-            .clip(RoundedCornerShape((4f + progress).dp))
-            .background(
-                lerp(
-                    tokens.secondaryAccentColor ?: tokens.accentColor.darken(0.25f),
-                    colors.activeDim,
-                    progress
+    geometry.play?.let { playRect ->
+        Box(
+            modifier = Modifier
+                .atPocketDiscRect(playRect, density)
+                .clip(RoundedCornerShape((4f + progress).dp))
+                .background(
+                    lerp(
+                        tokens.secondaryAccentColor ?: tokens.accentColor.darken(0.25f),
+                        colors.activeDim,
+                        progress
+                    )
                 )
+                .border(1.dp, colors.active, RoundedCornerShape((4f + progress).dp))
+                .clickable(onClick = onPlayPauseClick),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                contentDescription = if (isPlaying) "Pause" else "Play",
+                tint = colors.lcdText,
+                modifier = Modifier.fillMaxSize(0.48f)
             )
-            .border(1.dp, colors.active, RoundedCornerShape((4f + progress).dp))
-            .clickable(onClick = onPlayPauseClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-            contentDescription = if (isPlaying) "Pause" else "Play",
-            tint = colors.lcdText,
-            modifier = Modifier.fillMaxSize(0.48f)
-        )
+        }
     }
 }
 

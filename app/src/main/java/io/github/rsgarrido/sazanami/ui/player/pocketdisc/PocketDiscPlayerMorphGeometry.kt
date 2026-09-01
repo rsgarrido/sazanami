@@ -62,7 +62,7 @@ internal data class PocketDiscSharedGeometry(
     val title: Rect,
     val artist: Rect,
     val progress: Rect,
-    val play: Rect
+    val play: Rect?
 )
 
 enum class PocketDiscSharedOwner { MINI, TRANSITION, EXPANDED }
@@ -83,19 +83,36 @@ internal fun resolvePocketDiscSharedGeometry(
     progress: Float,
     bounds: PocketDiscMorphBounds
 ): PocketDiscSharedGeometry? {
-    val all = listOf(
-        bounds.miniArtwork, bounds.miniTitle, bounds.miniArtist, bounds.miniProgress, bounds.miniPlay,
-        bounds.expandedArtwork, bounds.expandedTitle, bounds.expandedArtist,
-        bounds.expandedProgress, bounds.expandedPlay
+    // Artwork, title, artist, and progress are the essential shared anchors. A temporarily
+    // missing play-button measurement should not downgrade those elements to a cross-fade.
+    val coreBounds = listOf(
+        bounds.miniArtwork,
+        bounds.miniTitle,
+        bounds.miniArtist,
+        bounds.miniProgress,
+        bounds.expandedArtwork,
+        bounds.expandedTitle,
+        bounds.expandedArtist,
+        bounds.expandedProgress
     )
-    if (all.any { !it.isValidPocketDiscRect() }) return null
+    if (coreBounds.any { !it.isValidPocketDiscRect() }) return null
+
     val p = progress.coerceIn(0f, 1f)
+    val play = if (
+        bounds.miniPlay.isValidPocketDiscRect() &&
+        bounds.expandedPlay.isValidPocketDiscRect()
+    ) {
+        interpolateMorphRect(bounds.miniPlay!!, bounds.expandedPlay!!, p)
+    } else {
+        null
+    }
+
     return PocketDiscSharedGeometry(
         artwork = interpolateMorphRect(bounds.miniArtwork!!, bounds.expandedArtwork!!, p),
         title = interpolateMorphRect(bounds.miniTitle!!, bounds.expandedTitle!!, p),
         artist = interpolateMorphRect(bounds.miniArtist!!, bounds.expandedArtist!!, p),
         progress = interpolateMorphRect(bounds.miniProgress!!, bounds.expandedProgress!!, p),
-        play = interpolateMorphRect(bounds.miniPlay!!, bounds.expandedPlay!!, p)
+        play = play
     )
 }
 

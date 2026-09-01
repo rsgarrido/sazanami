@@ -2,6 +2,7 @@ package io.github.rsgarrido.sazanami.ui.player.mini
 
 import android.R
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -81,12 +82,14 @@ fun PocketDiscMiniPlayer(
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.sp,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip,
                     modifier = Modifier
                         .onGloballyPositioned { coordinates ->
                             morphBounds?.updateMiniTitle(coordinates.boundsInRoot())
                         }
                         .graphicsLayer { alpha = sharedAlpha }
+                        .basicMarquee()
                         .then(
                             if (morphOwnsVisuals) Modifier.clearAndSetSemantics { }
                             else Modifier

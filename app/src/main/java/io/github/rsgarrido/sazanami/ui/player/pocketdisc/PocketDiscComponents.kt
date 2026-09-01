@@ -15,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -84,10 +85,16 @@ internal fun PocketDiscCartridge(
 ) {
     val colors = PocketDiscColors
     val radius = if (compact) 7.dp else 10.dp
+    val shape = RoundedCornerShape(radius)
     Box(
         modifier = modifier
-            .background(colors.shellMid, RoundedCornerShape(radius))
-            .border(1.dp, colors.edge, RoundedCornerShape(radius))
+            .shadow(
+                elevation = if (compact) 2.dp else 5.dp,
+                shape = shape,
+                clip = false
+            )
+            .background(colors.shellMid, shape)
+            .border(1.dp, colors.edge, shape)
             .padding(if (compact) 6.dp else 8.dp)
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -103,6 +110,53 @@ internal fun PocketDiscCartridge(
                 cornerRadius = CornerRadius(if (compact) 5.dp.toPx() else 7.dp.toPx()),
                 style = Stroke(stroke)
             )
+
+            // Flat molded bevel: a faint light edge on the top/left and a dark edge
+            // on the bottom/right makes the cartridge read as a separate object.
+            val bevelInset = inset * 1.8f
+            drawLine(
+                color = colors.shellLight.copy(alpha = 0.34f),
+                start = Offset(bevelInset, bevelInset),
+                end = Offset(size.width - bevelInset, bevelInset),
+                strokeWidth = stroke
+            )
+            drawLine(
+                color = colors.shellLight.copy(alpha = 0.24f),
+                start = Offset(bevelInset, bevelInset),
+                end = Offset(bevelInset, size.height - bevelInset),
+                strokeWidth = stroke
+            )
+            drawLine(
+                color = colors.shellDark.copy(alpha = 0.55f),
+                start = Offset(bevelInset, size.height - bevelInset),
+                end = Offset(size.width - bevelInset, size.height - bevelInset),
+                strokeWidth = stroke
+            )
+            drawLine(
+                color = colors.shellDark.copy(alpha = 0.45f),
+                start = Offset(size.width - bevelInset, bevelInset),
+                end = Offset(size.width - bevelInset, size.height - bevelInset),
+                strokeWidth = stroke
+            )
+
+            val dimpleRadius = if (compact) 1.25.dp.toPx() else 1.65.dp.toPx()
+            listOf(
+                Offset(size.width * 0.08f, size.height * 0.12f),
+                Offset(size.width * 0.92f, size.height * 0.12f),
+                Offset(size.width * 0.08f, size.height * 0.82f),
+                Offset(size.width * 0.92f, size.height * 0.82f)
+            ).forEach { center ->
+                drawCircle(
+                    color = colors.shellDark.copy(alpha = 0.50f),
+                    radius = dimpleRadius,
+                    center = center
+                )
+                drawCircle(
+                    color = colors.edge.copy(alpha = 0.34f),
+                    radius = dimpleRadius * 0.55f,
+                    center = center
+                )
+            }
 
             // Small top-center handling notch.
             val notchWidth = size.width * 0.24f
@@ -158,6 +212,27 @@ internal fun PocketDiscCartridge(
                 radius = discRadius * 0.075f,
                 center = discCenter
             )
+            drawCircle(
+                color = colors.edge.copy(alpha = 0.36f),
+                radius = discRadius * 0.84f,
+                center = discCenter,
+                style = Stroke(if (compact) 0.7.dp.toPx() else 1.dp.toPx())
+            )
+            drawCircle(
+                color = colors.shellDark.copy(alpha = 0.46f),
+                radius = discRadius * 0.46f,
+                center = discCenter,
+                style = Stroke(if (compact) 0.65.dp.toPx() else 0.9.dp.toPx())
+            )
+            drawArc(
+                color = colors.lcdGlowDim.copy(alpha = 0.30f),
+                startAngle = 214f,
+                sweepAngle = 98f,
+                useCenter = false,
+                topLeft = Offset(discCenter.x - discRadius * 0.70f, discCenter.y - discRadius * 0.70f),
+                size = Size(discRadius * 1.40f, discRadius * 1.40f),
+                style = Stroke(if (compact) 0.8.dp.toPx() else 1.1.dp.toPx())
+            )
 
             // Sliding shutter overlaps the opening, like the generated concept.
             val shutterWidth = size.width * 0.31f
@@ -185,6 +260,16 @@ internal fun PocketDiscCartridge(
                     strokeWidth = if (compact) 0.8.dp.toPx() else 1.dp.toPx()
                 )
             }
+            val shutterArrowX = shutterLeft + shutterWidth * 0.72f
+            val shutterArrowY = shutterTop + shutterHeight * 0.82f
+            val shutterArrowSize = size.minDimension * 0.026f
+            val shutterArrow = Path().apply {
+                moveTo(shutterArrowX - shutterArrowSize, shutterArrowY - shutterArrowSize * 0.55f)
+                lineTo(shutterArrowX + shutterArrowSize, shutterArrowY - shutterArrowSize * 0.55f)
+                lineTo(shutterArrowX, shutterArrowY + shutterArrowSize)
+                close()
+            }
+            drawPath(shutterArrow, colors.edge.copy(alpha = 0.58f))
 
             // Molded insertion mark and guide line at the bottom of the cartridge.
             val markerX = size.width * 0.08f
@@ -203,6 +288,18 @@ internal fun PocketDiscCartridge(
                 end = Offset(size.width * 0.91f, size.height * 0.895f),
                 strokeWidth = stroke
             )
+
+            // Small molded direction mark on the left edge, echoing physical cartridge guides.
+            val sideX = size.width * 0.035f
+            val sideY = size.height * 0.39f
+            val sideSize = size.minDimension * 0.025f
+            val sideArrow = Path().apply {
+                moveTo(sideX, sideY)
+                lineTo(sideX + sideSize * 1.6f, sideY - sideSize)
+                lineTo(sideX + sideSize * 1.6f, sideY + sideSize)
+                close()
+            }
+            drawPath(sideArrow, colors.lcdTextMuted.copy(alpha = 0.40f))
         }
 
         Text(
