@@ -27,6 +27,11 @@ enum class PlayerTheme(
     POCKET_CASSETTE(
         id = "pocket_cassette",
         displayName = "Pocket Cassette"
+    ),
+
+    POCKET_DISC(
+        id = "pocket_disc",
+        displayName = "Pocket Disc"
     );
 
     companion object {

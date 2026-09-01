@@ -14,6 +14,7 @@ import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMorphBoun
 import io.github.rsgarrido.sazanami.ui.player.retrorack.RetroRackMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketflip.PocketFlipMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketcassette.PocketCassetteMorphBounds
+import io.github.rsgarrido.sazanami.ui.player.pocketdisc.PocketDiscMorphBounds
 
 data class MiniPlayerState(
     val currentSong: Song,
@@ -43,7 +44,8 @@ internal enum class MiniPlayerVariant {
     CLASSIC_WHEEL,
     POCKET_CASSETTE,
     POCKET_FLIP,
-    RETRO_RACK
+    RETRO_RACK,
+    POCKET_DISC
 }
 
 internal fun miniPlayerVariantFor(playerTheme: PlayerTheme): MiniPlayerVariant =
@@ -53,6 +55,7 @@ internal fun miniPlayerVariantFor(playerTheme: PlayerTheme): MiniPlayerVariant =
         PlayerTheme.POCKET_CASSETTE -> MiniPlayerVariant.POCKET_CASSETTE
         PlayerTheme.POCKET_FLIP -> MiniPlayerVariant.POCKET_FLIP
         PlayerTheme.RETRO_RACK -> MiniPlayerVariant.RETRO_RACK
+        PlayerTheme.POCKET_DISC -> MiniPlayerVariant.POCKET_DISC
     }
 
 @Composable
@@ -68,6 +71,7 @@ fun MiniPlayerHost(
     retroRackMorphBounds: RetroRackMorphBounds? = null,
     pocketFlipMorphBounds: PocketFlipMorphBounds? = null,
     pocketCassetteMorphBounds: PocketCassetteMorphBounds? = null,
+    pocketDiscMorphBounds: PocketDiscMorphBounds? = null,
     defaultMorphCallbacks: DefaultMiniPlayerMorphCallbacks? = null,
     morphOwnsVisuals: Boolean = false
 ) {
@@ -121,6 +125,16 @@ fun MiniPlayerHost(
             morphCallbacks = defaultMorphCallbacks,
             morphOwnsVisuals = morphOwnsVisuals,
             morphBounds = retroRackMorphBounds,
+            modifier = measuredModifier
+        )
+
+        MiniPlayerVariant.POCKET_DISC -> PocketDiscMiniPlayer(
+            state = state,
+            callbacks = callbacks,
+            tokens = tokens,
+            morphCallbacks = defaultMorphCallbacks,
+            morphOwnsVisuals = morphOwnsVisuals,
+            morphBounds = pocketDiscMorphBounds,
             modifier = measuredModifier
         )
     }

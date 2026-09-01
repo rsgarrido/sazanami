@@ -19,6 +19,8 @@ import androidx.compose.ui.semantics.semantics
 import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.RepeatMode
+import io.github.rsgarrido.sazanami.ui.library.buildLibraryAlbumGroups
+import io.github.rsgarrido.sazanami.ui.library.findLibraryAlbumGroupForSong
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelExpandedPlayer
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMenuState
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelPlayerMorph
@@ -45,6 +47,16 @@ import io.github.rsgarrido.sazanami.ui.player.pocketcassette.pocketCassetteShare
 import io.github.rsgarrido.sazanami.ui.player.pocketcassette.pocketCassetteMorphTravelDistance
 import io.github.rsgarrido.sazanami.ui.player.pocketcassette.pocketCassetteDistanceThreshold
 import io.github.rsgarrido.sazanami.ui.player.pocketcassette.shouldRunPocketCassetteExpandedWork
+import io.github.rsgarrido.sazanami.ui.player.pocketdisc.PocketDiscExpandedPlayer
+import io.github.rsgarrido.sazanami.ui.player.pocketdisc.PocketDiscPlayerMorph
+import io.github.rsgarrido.sazanami.ui.player.pocketdisc.PocketDiscMorphBounds
+import io.github.rsgarrido.sazanami.ui.player.pocketdisc.PocketDiscMorphSpec
+import io.github.rsgarrido.sazanami.ui.player.pocketdisc.resolvePocketDiscMorphGeometry
+import io.github.rsgarrido.sazanami.ui.player.pocketdisc.resolvePocketDiscSharedGeometry
+import io.github.rsgarrido.sazanami.ui.player.pocketdisc.pocketDiscSharedOwner
+import io.github.rsgarrido.sazanami.ui.player.pocketdisc.pocketDiscMorphTravelDistance
+import io.github.rsgarrido.sazanami.ui.player.pocketdisc.pocketDiscDistanceThreshold
+import io.github.rsgarrido.sazanami.ui.player.pocketdisc.shouldRunPocketDiscExpandedWork
 import io.github.rsgarrido.sazanami.ui.player.pocketflip.PocketFlipExpandedPlayer
 import io.github.rsgarrido.sazanami.ui.player.pocketflip.PocketFlipPlayerMorph
 import io.github.rsgarrido.sazanami.ui.player.pocketflip.PocketFlipMorphBounds
@@ -111,14 +123,19 @@ fun ExpandedPlayerThemeHost(
     songs: List<Song>,
     upcomingSongs: List<Song>,
     activeQueueSongs: List<Song>,
+    activeQueueName: String,
+    activeQueuePosition: Int,
+    activeQueueCount: Int,
     onSongClick: (Song, List<Song>) -> Unit,
+    onOpenCurrentAlbumClick: (Song) -> Unit,
     endpointBounds: PlayerEndpointBounds,
     defaultMorphBounds: DefaultPlayerMorphBounds,
     classicMorphBounds: ClassicWheelMorphBounds,
     classicWheelMenuState: ClassicWheelMenuState,
     retroRackMorphBounds: RetroRackMorphBounds,
     pocketFlipMorphBounds: PocketFlipMorphBounds,
-    pocketCassetteMorphBounds: PocketCassetteMorphBounds
+    pocketCassetteMorphBounds: PocketCassetteMorphBounds,
+    pocketDiscMorphBounds: PocketDiscMorphBounds
 ) {
     val shouldLoadWaveform = shouldLoadExpandedPlayerWaveform(
         selectedPlayerTheme = selectedPlayerTheme,
@@ -126,6 +143,7 @@ fun ExpandedPlayerThemeHost(
     ) && when (selectedPlayerTheme) {
         PlayerTheme.DEFAULT -> shouldRunDefaultExpandedWork(playerMorphState.progress)
         PlayerTheme.POCKET_FLIP -> shouldRunPocketFlipExpandedWork(playerMorphState.progress)
+        PlayerTheme.POCKET_DISC -> shouldRunPocketDiscExpandedWork(playerMorphState.progress)
         else -> true
     }
     val shouldPrefetchWaveforms = selectedPlayerTheme == PlayerTheme.DEFAULT &&
@@ -175,15 +193,15 @@ fun ExpandedPlayerThemeHost(
         )
     }
     val lyricsDragModifier = Modifier.draggable(
-            state = hostDragState,
-            orientation = Orientation.Vertical,
-            enabled = !lyricsTransitionState.lyricsInteractive,
-            onDragStarted = { hostDragOffset = 0f },
-            onDragStopped = { velocity ->
-                lyricsTransitionState.settleOpening(velocity)
-                hostDragOffset = 0f
-            }
-        )
+        state = hostDragState,
+        orientation = Orientation.Vertical,
+        enabled = !lyricsTransitionState.lyricsInteractive,
+        onDragStarted = { hostDragOffset = 0f },
+        onDragStopped = { velocity ->
+            lyricsTransitionState.settleOpening(velocity)
+            hostDragOffset = 0f
+        }
+    )
     val sharedGestureModifier = if (
         selectedPlayerTheme == PlayerTheme.DEFAULT ||
         selectedPlayerTheme == PlayerTheme.CLASSIC_WHEEL
@@ -589,6 +607,104 @@ fun ExpandedPlayerThemeHost(
                 }
             }
 
+            PlayerTheme.POCKET_DISC -> {
+                val albumDurationMs = remember(currentSong, songs) {
+                    currentSong
+                        ?.let { song ->
+                            findLibraryAlbumGroupForSong(
+                                song = song,
+                                albums = buildLibraryAlbumGroups(songs)
+                            )
+                        }
+                        ?.songs
+                        ?.sumOf { song -> song.duration.coerceAtLeast(0L) }
+                        ?: 0L
+                }
+                val geometry = resolvePocketDiscMorphGeometry(
+                    progress = playerMorphState.progress,
+                    endpointBounds = endpointBounds
+                )
+                val sharedGeometry = resolvePocketDiscSharedGeometry(
+                    progress = playerMorphState.progress,
+                    bounds = pocketDiscMorphBounds
+                )
+                val sharedOwner = pocketDiscSharedOwner(
+                    progress = playerMorphState.progress,
+                    geometryReady = sharedGeometry != null
+                )
+                val collapseGestureEnabled =
+                    playerMorphState.progress >= PocketDiscMorphSpec.collapseGestureAt ||
+                            playerMorphState.isDragging
+
+                PocketDiscPlayerMorph(
+                    progress = playerMorphState.progress,
+                    geometry = geometry,
+                    sharedGeometry = sharedGeometry,
+                    currentSong = currentSong,
+                    isPlaying = isPlaying,
+                    currentPosition = currentPosition,
+                    duration = duration,
+                    onPlayPauseClick = onPlayPauseClick,
+                    tokens = tokens
+                ) { headerReveal, mediaReveal, panelReveal, controlsReveal, inputEnabled ->
+                    PocketDiscExpandedPlayer(
+                        currentSong = currentSong,
+                        activeQueueName = activeQueueName,
+                        activeQueuePosition = activeQueuePosition,
+                        activeQueueCount = activeQueueCount,
+                        albumDurationMs = albumDurationMs,
+                        waveformData = waveformData,
+                        isVisualizerWorkAllowed = isVisualizerWorkAllowed &&
+                                shouldRunPocketDiscExpandedWork(playerMorphState.progress),
+                        isPlaying = isPlaying,
+                        isShuffleEnabled = isShuffleEnabled,
+                        repeatMode = repeatMode,
+                        currentPosition = currentPosition,
+                        duration = duration,
+                        isCurrentSongFavorite = isCurrentSongFavorite,
+                        onPlayPauseClick = onPlayPauseClick,
+                        onPreviousClick = onPreviousClick,
+                        onNextClick = onNextClick,
+                        onSeekChange = onSeekChange,
+                        onShuffleClick = onShuffleClick,
+                        onRepeatClick = onRepeatClick,
+                        onCollapseClick = onCollapseClick,
+                        onOpenQueueHubClick = onOpenQueueHubClick,
+                        onOpenAlbumClick = {
+                            currentSong?.let(onOpenCurrentAlbumClick)
+                        },
+                        onToggleFavoriteClick = onToggleFavoriteClick,
+                        tokens = tokens,
+                        renderShell = false,
+                        headerReveal = headerReveal,
+                        mediaReveal = mediaReveal,
+                        panelReveal = panelReveal,
+                        controlsReveal = controlsReveal,
+                        inputEnabled = inputEnabled,
+                        collapseGestureEnabled = collapseGestureEnabled,
+                        morphBounds = pocketDiscMorphBounds,
+                        sharedOwner = sharedOwner,
+                        onMorphDragStart = {
+                            val travel = pocketDiscMorphTravelDistance(endpointBounds)
+                            playerMorphState.beginDragWithRange(
+                                progressRangePx = travel,
+                                distanceThresholdPx = pocketDiscDistanceThreshold(travel)
+                            )
+                        },
+                        onMorphDragBy = playerMorphState::dragBy,
+                        onMorphDragEnd = { velocity ->
+                            playerMorphState.endDragWithVelocityThreshold(
+                                velocityY = velocity,
+                                velocityThresholdPxPerSecond =
+                                    PocketDiscMorphSpec.collapseVelocityThresholdPxPerSecond
+                            )
+                        },
+                        onMorphDragCancel = playerMorphState::cancelDrag
+                    )
+                }
+            }
+
         }
+
     }
 }

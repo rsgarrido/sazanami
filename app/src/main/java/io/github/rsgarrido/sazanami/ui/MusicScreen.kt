@@ -52,6 +52,7 @@ import io.github.rsgarrido.sazanami.player.PlaybackShuffleMode
 import io.github.rsgarrido.sazanami.ui.library.LibraryTab
 import io.github.rsgarrido.sazanami.ui.library.LibraryAlbumGroup
 import io.github.rsgarrido.sazanami.ui.library.buildLibraryAlbumGroups
+import io.github.rsgarrido.sazanami.ui.library.findLibraryAlbumGroupForSong
 import io.github.rsgarrido.sazanami.ui.library.isAlbumGroupAvailable
 import io.github.rsgarrido.sazanami.ui.library.metadataEditingSongs
 import io.github.rsgarrido.sazanami.ui.navigation.MainDestination
@@ -87,6 +88,10 @@ import io.github.rsgarrido.sazanami.ui.player.pocketflip.resolvePocketFlipMorphG
 import io.github.rsgarrido.sazanami.ui.player.pocketflip.resolvePocketFlipSharedGeometry
 import io.github.rsgarrido.sazanami.ui.player.pocketflip.pocketFlipMorphTravelDistance
 import io.github.rsgarrido.sazanami.ui.player.pocketcassette.PocketCassetteMorphBounds
+import io.github.rsgarrido.sazanami.ui.player.pocketdisc.PocketDiscMorphBounds
+import io.github.rsgarrido.sazanami.ui.player.pocketdisc.resolvePocketDiscMorphGeometry
+import io.github.rsgarrido.sazanami.ui.player.pocketdisc.resolvePocketDiscSharedGeometry
+import io.github.rsgarrido.sazanami.ui.player.pocketdisc.pocketDiscMorphTravelDistance
 import io.github.rsgarrido.sazanami.ui.player.pocketcassette.resolvePocketCassetteMorphGeometry
 import io.github.rsgarrido.sazanami.ui.player.pocketcassette.resolvePocketCassetteSharedGeometry
 import io.github.rsgarrido.sazanami.ui.player.pocketcassette.pocketCassetteMorphTravelDistance
@@ -736,6 +741,7 @@ internal fun MusicScreen(
             val retroRackMorphBounds = remember { RetroRackMorphBounds() }
             val pocketFlipMorphBounds = remember { PocketFlipMorphBounds() }
             val pocketCassetteMorphBounds = remember { PocketCassetteMorphBounds() }
+            val pocketDiscMorphBounds = remember { PocketDiscMorphBounds() }
             val defaultMorphGeometry = resolveDefaultPlayerMorphGeometry(
                 progress = playerMorphState.progress,
                 endpointBounds = playerEndpointBounds,
@@ -783,6 +789,17 @@ internal fun MusicScreen(
                             playerMorphState.progress,
                             pocketCassetteMorphBounds
                         ) != null
+            val pocketDiscMorphOwnsVisuals =
+                selectedPlayerTheme == PlayerTheme.POCKET_DISC &&
+                        !playerMorphState.isCollapsedAndIdle &&
+                        resolvePocketDiscMorphGeometry(
+                            playerMorphState.progress,
+                            playerEndpointBounds
+                        ) != null &&
+                        resolvePocketDiscSharedGeometry(
+                            playerMorphState.progress,
+                            pocketDiscMorphBounds
+                        ) != null
             val classicMiniMorphCallbacks = remember(playerMorphState, playerEndpointBounds) {
                 DefaultMiniPlayerMorphCallbacks(
                     onDragStart = {
@@ -820,6 +837,18 @@ internal fun MusicScreen(
                     onDragStart = {
                         playerMorphState.beginDragWithRange(
                             pocketCassetteMorphTravelDistance(playerEndpointBounds)
+                        )
+                    },
+                    onDragBy = playerMorphState::dragBy,
+                    onDragEnd = playerMorphState::endDrag,
+                    onDragCancel = playerMorphState::cancelDrag
+                )
+            }
+            val pocketDiscMiniMorphCallbacks = remember(playerMorphState, playerEndpointBounds) {
+                DefaultMiniPlayerMorphCallbacks(
+                    onDragStart = {
+                        playerMorphState.beginDragWithRange(
+                            pocketDiscMorphTravelDistance(playerEndpointBounds)
                         )
                     },
                     onDragBy = playerMorphState::dragBy,
@@ -1349,19 +1378,21 @@ internal fun MusicScreen(
                         retroRackMorphBounds = retroRackMorphBounds,
                         pocketFlipMorphBounds = pocketFlipMorphBounds,
                         pocketCassetteMorphBounds = pocketCassetteMorphBounds,
+                        pocketDiscMorphBounds = pocketDiscMorphBounds,
                         defaultMorphCallbacks = when (selectedPlayerTheme) {
                             PlayerTheme.DEFAULT -> defaultMiniMorphCallbacks
                             PlayerTheme.CLASSIC_WHEEL -> classicMiniMorphCallbacks
                             PlayerTheme.RETRO_RACK -> retroRackMiniMorphCallbacks
                             PlayerTheme.POCKET_FLIP -> pocketFlipMiniMorphCallbacks
                             PlayerTheme.POCKET_CASSETTE -> pocketCassetteMiniMorphCallbacks
-                            else -> null
+                            PlayerTheme.POCKET_DISC -> pocketDiscMiniMorphCallbacks
                         },
                         morphOwnsVisuals = defaultMorphOwnsVisuals ||
                                 classicWheelMorphOwnsVisuals ||
                                 retroRackMorphOwnsVisuals ||
                                 pocketFlipMorphOwnsVisuals ||
-                                pocketCassetteMorphOwnsVisuals,
+                                pocketCassetteMorphOwnsVisuals ||
+                                pocketDiscMorphOwnsVisuals,
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             .navigationBarsPadding()
@@ -1538,8 +1569,26 @@ internal fun MusicScreen(
                     retroRackMorphBounds = retroRackMorphBounds,
                     pocketFlipMorphBounds = pocketFlipMorphBounds,
                     pocketCassetteMorphBounds = pocketCassetteMorphBounds,
+                    pocketDiscMorphBounds = pocketDiscMorphBounds,
                     songs = songs,
-                    onSongClick = onSongClick
+                    onSongClick = onSongClick,
+                    onOpenCurrentAlbumClick = { song ->
+                        val albumKey = findLibraryAlbumGroupForSong(
+                            song = song,
+                            albums = buildLibraryAlbumGroups(songs)
+                        )?.key
+                        if (albumKey != null) {
+                            lyricsTransitionState.snapToExpanded()
+                            playerMorphState.collapse()
+                            selectedArtistName = null
+                            selectedAlbumKey = albumKey
+                            selectedGenreKey = null
+                            clearPlaylistSelection()
+                            searchQuery = ""
+                            selectedLibraryTab = LibraryTab.ALBUMS
+                            mainDestination = MainDestination.LIBRARY
+                        }
+                    }
                 )
             }
         }

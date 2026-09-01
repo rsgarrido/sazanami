@@ -32,6 +32,7 @@ import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMenuState
 import io.github.rsgarrido.sazanami.ui.player.retrorack.RetroRackMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketflip.PocketFlipMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketcassette.PocketCassetteMorphBounds
+import io.github.rsgarrido.sazanami.ui.player.pocketdisc.PocketDiscMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.lyricsVisualAlpha
 import io.github.rsgarrido.sazanami.ui.player.playerVisualAlpha
 import io.github.rsgarrido.sazanami.ui.player.ImmersiveSystemBarsEffect
@@ -61,6 +62,7 @@ fun MusicScreenOverlays(
     nextPreviewSong: Song?,
     songs: List<Song>,
     onSongClick: (Song, List<Song>) -> Unit,
+    onOpenCurrentAlbumClick: (Song) -> Unit,
     isPlaying: Boolean,
     isShuffleEnabled: Boolean,
     repeatMode: RepeatMode,
@@ -132,7 +134,8 @@ fun MusicScreenOverlays(
     classicWheelMenuState: ClassicWheelMenuState,
     retroRackMorphBounds: RetroRackMorphBounds,
     pocketFlipMorphBounds: PocketFlipMorphBounds,
-    pocketCassetteMorphBounds: PocketCassetteMorphBounds
+    pocketCassetteMorphBounds: PocketCassetteMorphBounds,
+    pocketDiscMorphBounds: PocketDiscMorphBounds
 ) {
     val isPlayerExpanded = playerMorphState.shouldComposeExpanded
     val shouldWarmCurrentWaveform = shouldLoadExpandedPlayerWaveform(
@@ -153,6 +156,19 @@ fun MusicScreenOverlays(
     )
 
     if (isPlayerExpanded && currentSong != null) {
+        val activeQueueCard = playbackQueueHubUiState.queues.firstOrNull { queue -> queue.isActive }
+        val activeQueueSongs = playbackQueueHubUiState.activeEntries
+            .mapNotNull { entry -> entry.song }
+            .ifEmpty { listOfNotNull(currentSong) + queuedSongs + upcomingSongs }
+        val activeQueueName = activeQueueCard?.name
+            ?.takeIf { name -> name.isNotBlank() }
+            ?: "Current Queue"
+        val fallbackActiveQueueCount = activeQueueSongs.size.coerceAtLeast(1)
+        val activeQueuePosition = activeQueueCard?.currentPosition ?: 1
+        val activeQueueCount = activeQueueCard?.entryCount
+            ?.takeIf { count -> count > 0 }
+            ?: fallbackActiveQueueCount
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -208,19 +224,20 @@ fun MusicScreenOverlays(
                     onToggleFavoriteClick = onToggleFavoriteClick,
                     songs = songs,
                     upcomingSongs = upcomingSongs,
-                    activeQueueSongs = playbackQueueHubUiState.activeEntries
-                        .mapNotNull { entry -> entry.song }
-                        .ifEmpty {
-                            listOfNotNull(currentSong) + queuedSongs + upcomingSongs
-                        },
+                    activeQueueSongs = activeQueueSongs,
+                    activeQueueName = activeQueueName,
+                    activeQueuePosition = activeQueuePosition,
+                    activeQueueCount = activeQueueCount,
                     onSongClick = onSongClick,
+                    onOpenCurrentAlbumClick = onOpenCurrentAlbumClick,
                     endpointBounds = playerEndpointBounds,
                     defaultMorphBounds = defaultMorphBounds,
                     classicMorphBounds = classicMorphBounds,
                     classicWheelMenuState = classicWheelMenuState,
                     retroRackMorphBounds = retroRackMorphBounds,
                     pocketFlipMorphBounds = pocketFlipMorphBounds,
-                    pocketCassetteMorphBounds = pocketCassetteMorphBounds
+                    pocketCassetteMorphBounds = pocketCassetteMorphBounds,
+                    pocketDiscMorphBounds = pocketDiscMorphBounds
                 )
             }
         }
@@ -343,7 +360,8 @@ internal fun shouldUseImmersivePlayerSystemBars(
     PlayerTheme.CLASSIC_WHEEL,
     PlayerTheme.RETRO_RACK,
     PlayerTheme.POCKET_FLIP,
-    PlayerTheme.POCKET_CASSETTE -> true
+    PlayerTheme.POCKET_CASSETTE,
+    PlayerTheme.POCKET_DISC -> true
     PlayerTheme.DEFAULT -> false
 }
 
