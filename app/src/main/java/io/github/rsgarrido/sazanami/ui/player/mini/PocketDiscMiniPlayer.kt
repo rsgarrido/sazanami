@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -127,6 +128,7 @@ fun PocketDiscMiniPlayer(
                     activeColor = accent,
                     inactiveColor = accent.copy(alpha = 0.12f),
                     modifier = Modifier
+                        .fillMaxWidth()
                         .height(5.dp)
                         .onGloballyPositioned { coordinates ->
                             morphBounds?.updateMiniProgress(coordinates.pocketDiscBoundsInRoot())
