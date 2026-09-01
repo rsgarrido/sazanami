@@ -19,6 +19,8 @@ import androidx.compose.ui.semantics.semantics
 import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.RepeatMode
+import io.github.rsgarrido.sazanami.ui.library.buildLibraryAlbumGroups
+import io.github.rsgarrido.sazanami.ui.library.findLibraryAlbumGroupForSong
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelExpandedPlayer
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMenuState
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelPlayerMorph
@@ -125,6 +127,7 @@ fun ExpandedPlayerThemeHost(
     activeQueuePosition: Int,
     activeQueueCount: Int,
     onSongClick: (Song, List<Song>) -> Unit,
+    onOpenCurrentAlbumClick: (Song) -> Unit,
     endpointBounds: PlayerEndpointBounds,
     defaultMorphBounds: DefaultPlayerMorphBounds,
     classicMorphBounds: ClassicWheelMorphBounds,
@@ -605,6 +608,18 @@ fun ExpandedPlayerThemeHost(
             }
 
             PlayerTheme.POCKET_DISC -> {
+                val albumDurationMs = remember(currentSong, songs) {
+                    currentSong
+                        ?.let { song ->
+                            findLibraryAlbumGroupForSong(
+                                song = song,
+                                albums = buildLibraryAlbumGroups(songs)
+                            )
+                        }
+                        ?.songs
+                        ?.sumOf { song -> song.duration.coerceAtLeast(0L) }
+                        ?: 0L
+                }
                 val geometry = resolvePocketDiscMorphGeometry(
                     progress = playerMorphState.progress,
                     endpointBounds = endpointBounds
@@ -637,6 +652,7 @@ fun ExpandedPlayerThemeHost(
                         activeQueueName = activeQueueName,
                         activeQueuePosition = activeQueuePosition,
                         activeQueueCount = activeQueueCount,
+                        albumDurationMs = albumDurationMs,
                         waveformData = waveformData,
                         isVisualizerWorkAllowed = isVisualizerWorkAllowed &&
                                 shouldRunPocketDiscExpandedWork(playerMorphState.progress),
@@ -654,6 +670,9 @@ fun ExpandedPlayerThemeHost(
                         onRepeatClick = onRepeatClick,
                         onCollapseClick = onCollapseClick,
                         onOpenQueueHubClick = onOpenQueueHubClick,
+                        onOpenAlbumClick = {
+                            currentSong?.let(onOpenCurrentAlbumClick)
+                        },
                         onToggleFavoriteClick = onToggleFavoriteClick,
                         tokens = tokens,
                         renderShell = false,

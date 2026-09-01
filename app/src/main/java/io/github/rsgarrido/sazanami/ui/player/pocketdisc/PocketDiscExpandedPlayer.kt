@@ -87,6 +87,7 @@ fun PocketDiscExpandedPlayer(
     activeQueueName: String,
     activeQueuePosition: Int,
     activeQueueCount: Int,
+    albumDurationMs: Long,
     waveformData: WaveformData?,
     isVisualizerWorkAllowed: Boolean,
     isPlaying: Boolean,
@@ -103,6 +104,7 @@ fun PocketDiscExpandedPlayer(
     onRepeatClick: () -> Unit,
     onCollapseClick: () -> Unit,
     onOpenQueueHubClick: () -> Unit,
+    onOpenAlbumClick: () -> Unit,
     onToggleFavoriteClick: (Song) -> Unit,
     tokens: PlayerThemeTokens = PocketDiscDefaultTokens,
     renderShell: Boolean = true,
@@ -185,6 +187,10 @@ fun PocketDiscExpandedPlayer(
                     )
                     PocketDiscCartridge(
                         compact = compact,
+                        albumDurationMs = albumDurationMs,
+                        isPlaying = isPlaying,
+                        enabled = inputEnabled,
+                        onClick = onOpenAlbumClick,
                         modifier = Modifier.size(mediaItemSize)
                     )
                 }

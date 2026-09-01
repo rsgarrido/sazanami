@@ -52,6 +52,7 @@ import io.github.rsgarrido.sazanami.player.PlaybackShuffleMode
 import io.github.rsgarrido.sazanami.ui.library.LibraryTab
 import io.github.rsgarrido.sazanami.ui.library.LibraryAlbumGroup
 import io.github.rsgarrido.sazanami.ui.library.buildLibraryAlbumGroups
+import io.github.rsgarrido.sazanami.ui.library.findLibraryAlbumGroupForSong
 import io.github.rsgarrido.sazanami.ui.library.isAlbumGroupAvailable
 import io.github.rsgarrido.sazanami.ui.library.metadataEditingSongs
 import io.github.rsgarrido.sazanami.ui.navigation.MainDestination
@@ -1570,7 +1571,24 @@ internal fun MusicScreen(
                     pocketCassetteMorphBounds = pocketCassetteMorphBounds,
                     pocketDiscMorphBounds = pocketDiscMorphBounds,
                     songs = songs,
-                    onSongClick = onSongClick
+                    onSongClick = onSongClick,
+                    onOpenCurrentAlbumClick = { song ->
+                        val albumKey = findLibraryAlbumGroupForSong(
+                            song = song,
+                            albums = buildLibraryAlbumGroups(songs)
+                        )?.key
+                        if (albumKey != null) {
+                            lyricsTransitionState.snapToExpanded()
+                            playerMorphState.collapse()
+                            selectedArtistName = null
+                            selectedAlbumKey = albumKey
+                            selectedGenreKey = null
+                            clearPlaylistSelection()
+                            searchQuery = ""
+                            selectedLibraryTab = LibraryTab.ALBUMS
+                            mainDestination = MainDestination.LIBRARY
+                        }
+                    }
                 )
             }
         }
