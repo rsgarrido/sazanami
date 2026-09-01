@@ -59,7 +59,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -347,6 +346,8 @@ private fun PocketDiscArtwork(
     modifier: Modifier = Modifier
 ) {
     val colors = PocketDiscColors
+    val transitionOwnsArtwork = sharedOwner == PocketDiscSharedOwner.TRANSITION &&
+            morphBounds?.sharedAvailability()?.artwork == true
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(7.dp))
@@ -354,10 +355,10 @@ private fun PocketDiscArtwork(
             .border(1.dp, colors.edge, RoundedCornerShape(7.dp))
             .padding(4.dp)
             .onGloballyPositioned { coordinates ->
-                morphBounds?.updateExpandedArtwork(coordinates.boundsInRoot())
+                morphBounds?.updateExpandedArtwork(coordinates.pocketDiscBoundsInRoot())
             }
     ) {
-        if (sharedOwner != PocketDiscSharedOwner.TRANSITION) {
+        if (!transitionOwnsArtwork) {
             AsyncImage(
                 model = song?.albumArtUri,
                 contentDescription = "Current album artwork",
@@ -379,7 +380,10 @@ private fun PocketDiscMetadataPanel(
     modifier: Modifier = Modifier
 ) {
     val colors = PocketDiscColors
-    val sharedAlpha = if (sharedOwner == PocketDiscSharedOwner.TRANSITION) 0f else 1f
+    val availability = morphBounds?.sharedAvailability()
+    val transitionActive = sharedOwner == PocketDiscSharedOwner.TRANSITION
+    val titleAlpha = if (transitionActive && availability?.title == true) 0f else 1f
+    val artistAlpha = if (transitionActive && availability?.artist == true) 0f else 1f
     // Prefer explicit DISC_NO metadata edited in Sazanami while retaining MediaStore's
     // legacy encoded disc/track fallback for older library entries.
     val trackNumber = currentSong?.trackNumberWithinDisc()?.toString() ?: "--"
@@ -423,9 +427,9 @@ private fun PocketDiscMetadataPanel(
                 modifier = Modifier
                     .weight(1f)
                     .onGloballyPositioned { coordinates ->
-                        morphBounds?.updateExpandedTitle(coordinates.boundsInRoot())
+                        morphBounds?.updateExpandedTitle(coordinates.pocketDiscBoundsInRoot())
                     }
-                    .graphicsLayer { alpha = sharedAlpha }
+                    .graphicsLayer { alpha = titleAlpha }
                     .basicMarquee()
             )
         }
@@ -439,9 +443,9 @@ private fun PocketDiscMetadataPanel(
             modifier = Modifier
                 .fillMaxWidth()
                 .onGloballyPositioned { coordinates ->
-                    morphBounds?.updateExpandedArtist(coordinates.boundsInRoot())
+                    morphBounds?.updateExpandedArtist(coordinates.pocketDiscBoundsInRoot())
                 }
-                .graphicsLayer { alpha = sharedAlpha }
+                .graphicsLayer { alpha = artistAlpha }
         )
         Text(
             text = currentSong?.album?.ifBlank { "Unknown album" } ?: "",
@@ -493,7 +497,8 @@ private fun PocketDiscPositionPanel(
     modifier: Modifier = Modifier
 ) {
     val colors = PocketDiscColors
-    val sharedAlpha = if (sharedOwner == PocketDiscSharedOwner.TRANSITION) 0f else 1f
+    val transitionOwnsProgress = sharedOwner == PocketDiscSharedOwner.TRANSITION &&
+            morphBounds?.sharedAvailability()?.progress == true
     val remaining = (duration - currentPosition).coerceAtLeast(0)
 
     Row(
@@ -525,9 +530,9 @@ private fun PocketDiscPositionPanel(
                     .fillMaxWidth()
                     .height(if (compact) 7.dp else 8.dp)
                     .onGloballyPositioned { coordinates ->
-                        morphBounds?.updateExpandedProgress(coordinates.boundsInRoot())
+                        morphBounds?.updateExpandedProgress(coordinates.pocketDiscBoundsInRoot())
                     }
-                    .graphicsLayer { alpha = sharedAlpha }
+                    .graphicsLayer { alpha = if (transitionOwnsProgress) 0f else 1f }
                     .pointerInput(duration, enabled) {
                         if (!enabled) return@pointerInput
                         detectTapGestures { offset ->
@@ -576,7 +581,9 @@ private fun PocketDiscTransportControls(
     modifier: Modifier = Modifier
 ) {
     val colors = PocketDiscColors
-    val sharedAlpha = if (sharedOwner == PocketDiscSharedOwner.TRANSITION) 0f else 1f
+    val transitionOwnsPlay = sharedOwner == PocketDiscSharedOwner.TRANSITION &&
+            morphBounds?.sharedAvailability()?.play == true
+    val sharedAlpha = if (transitionOwnsPlay) 0f else 1f
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 9.dp),
@@ -595,13 +602,13 @@ private fun PocketDiscTransportControls(
                 .weight(1.18f)
                 .height(if (compact) 52.dp else 60.dp)
                 .onGloballyPositioned { coordinates ->
-                    morphBounds?.updateExpandedPlay(coordinates.boundsInRoot())
+                    morphBounds?.updateExpandedPlay(coordinates.pocketDiscBoundsInRoot())
                 }
                 .graphicsLayer { alpha = sharedAlpha }
         ) {
             PocketDiscTransportButton(
                 modifier = Modifier.fillMaxSize(),
-                enabled = enabled && sharedOwner != PocketDiscSharedOwner.TRANSITION,
+                enabled = enabled && !transitionOwnsPlay,
                 onClick = onPlayPauseClick,
                 active = true
             ) {

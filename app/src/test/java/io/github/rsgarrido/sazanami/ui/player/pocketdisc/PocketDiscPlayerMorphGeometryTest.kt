@@ -59,10 +59,40 @@ class PocketDiscPlayerMorphGeometryTest {
             it.updateExpandedProgress(Rect(24f, 330f, 376f, 340f))
         }
 
-        val shared = resolvePocketDiscSharedGeometry(.5f, bounds)
+        val coreOnly = resolvePocketDiscSharedGeometry(.5f, bounds)
+        assertNotNull(coreOnly)
+        assertEquals(Rect(17f, 390f, 115f, 488f), coreOnly!!.artwork)
+        assertNull(coreOnly.play)
 
+        bounds.updateMiniPlay(Rect(330f, 706f, 366f, 738f))
+        bounds.updateExpandedPlay(Rect(164f, 390f, 236f, 450f))
+
+        val shared = resolvePocketDiscSharedGeometry(.5f, bounds)
         assertNotNull(shared)
         assertEquals(Rect(17f, 390f, 115f, 488f), shared!!.artwork)
+        assertEquals(Rect(247f, 548f, 301f, 594f), shared.play)
+    }
+
+    @Test
+    fun `each shared element can take transition ownership independently`() {
+        val bounds = PocketDiscMorphBounds().also {
+            it.updateMiniArtwork(Rect(16f, 710f, 60f, 754f))
+            it.updateExpandedArtwork(Rect(18f, 70f, 170f, 222f))
+        }
+
+        val availability = bounds.sharedAvailability()
+        val shared = resolvePocketDiscSharedGeometry(.5f, bounds)
+
+        assertTrue(availability.artwork)
+        assertFalse(availability.title)
+        assertFalse(availability.artist)
+        assertFalse(availability.progress)
+        assertFalse(availability.play)
+        assertNotNull(shared)
+        assertEquals(Rect(17f, 390f, 115f, 488f), shared!!.artwork)
+        assertNull(shared.title)
+        assertNull(shared.artist)
+        assertNull(shared.progress)
         assertNull(shared.play)
     }
 
@@ -85,6 +115,7 @@ class PocketDiscPlayerMorphGeometryTest {
         assertEquals(PocketDiscSharedOwner.MINI, pocketDiscSharedOwner(.5f, false))
         assertEquals(PocketDiscSharedOwner.TRANSITION, pocketDiscSharedOwner(.5f, true))
         assertEquals(PocketDiscSharedOwner.EXPANDED, pocketDiscSharedOwner(1f, true))
+        assertEquals(PocketDiscSharedOwner.EXPANDED, pocketDiscSharedOwner(1f, false))
 
         assertEquals(0f, pocketDiscHeaderReveal(0f))
         assertEquals(1f, pocketDiscHeaderReveal(1f))

@@ -2,8 +2,8 @@ package io.github.rsgarrido.sazanami.ui.player.pocketdisc
 
 import android.R
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
@@ -24,20 +25,20 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.material3.Text
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
@@ -87,6 +88,8 @@ internal fun PocketDiscPlayerMorph(
                 )
             }
 
+            // Only the endpoint hardware is clipped to the morphing shell. Shared elements are
+            // drawn in the overlay below so they remain visibly "floating" as the shell closes.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -99,17 +102,20 @@ internal fun PocketDiscPlayerMorph(
                     pocketDiscControlsReveal(p),
                     pocketDiscExpandedInputEnabled(p)
                 )
+            }
 
-                if (p > 0f && p < 1f && sharedGeometry != null && currentSong != null) {
-                    // Draw the shared artwork after the endpoint content. The expanded artwork
-                    // bay keeps its physical frame during the morph, but must not paint over the
-                    // moving album cover as it travels from the mini player.
-                    SharedPocketDiscArtwork(
-                        rect = sharedGeometry.artwork,
-                        song = currentSong,
-                        progress = p
-                    )
-                    SharedPocketDiscForeground(
+            if (
+                p > 0f &&
+                p < 1f &&
+                sharedGeometry != null &&
+                currentSong != null
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .zIndex(10f)
+                ) {
+                    PocketDiscSharedContent(
                         geometry = sharedGeometry,
                         progress = p,
                         song = currentSong,
@@ -123,6 +129,36 @@ internal fun PocketDiscPlayerMorph(
             }
         }
     }
+}
+
+@Composable
+private fun PocketDiscSharedContent(
+    geometry: PocketDiscSharedGeometry,
+    progress: Float,
+    song: Song,
+    isPlaying: Boolean,
+    currentPosition: Int,
+    duration: Int,
+    onPlayPauseClick: () -> Unit,
+    tokens: PlayerThemeTokens
+) {
+    geometry.artwork?.let { artwork ->
+        SharedPocketDiscArtwork(
+            rect = artwork,
+            song = song,
+            progress = progress
+        )
+    }
+    SharedPocketDiscForeground(
+        geometry = geometry,
+        progress = progress,
+        song = song,
+        isPlaying = isPlaying,
+        currentPosition = currentPosition,
+        duration = duration,
+        onPlayPauseClick = onPlayPauseClick,
+        tokens = tokens
+    )
 }
 
 @Composable
@@ -166,37 +202,43 @@ private fun SharedPocketDiscForeground(
     val density = LocalDensity.current
     val colors = PocketDiscColors
 
-    Text(
-        text = song.title.ifBlank { "Unknown title" },
-        color = lerp(tokens.displayTextColor, colors.lcdText, progress),
-        style = TextStyle(
+    geometry.title?.let { titleRect ->
+        Text(
+            text = song.title.ifBlank { "Unknown title" },
+            color = lerp(tokens.displayTextColor, colors.lcdText, progress),
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = (10f + 7f * progress).sp,
+                lineHeight = (12f + 8f * progress).sp
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.atPocketDiscRect(titleRect, density)
+        )
+    }
+
+    geometry.artist?.let { artistRect ->
+        Text(
+            text = song.artist.ifBlank { "Unknown artist" },
+            color = lerp(tokens.displayTextColor.copy(alpha = 0.66f), colors.lcdTextMuted, progress),
             fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Bold,
-            fontSize = (10f + 7f * progress).sp,
-            lineHeight = (12f + 8f * progress).sp
-        ),
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.atPocketDiscRect(geometry.title, density)
-    )
+            fontSize = (8f + 2f * progress).sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.atPocketDiscRect(artistRect, density)
+        )
+    }
 
-    Text(
-        text = song.artist.ifBlank { "Unknown artist" },
-        color = lerp(tokens.displayTextColor.copy(alpha = 0.66f), colors.lcdTextMuted, progress),
-        fontFamily = FontFamily.Monospace,
-        fontSize = (8f + 2f * progress).sp,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.atPocketDiscRect(geometry.artist, density)
-    )
-
-    PocketDiscSegmentedProgress(
-        progress = normalizedPocketDiscProgress(currentPosition, duration),
-        segmentCount = (18 + 12 * progress).roundToInt(),
-        activeColor = colors.lcdGlow,
-        inactiveColor = colors.lcdGlowDim.copy(alpha = 0.16f),
-        modifier = Modifier.atPocketDiscRect(geometry.progress, density)
-    )
+    geometry.progress?.let { progressRect ->
+        PocketDiscSegmentedProgress(
+            progress = normalizedPocketDiscProgress(currentPosition, duration),
+            segmentCount = (18 + 12 * progress).roundToInt(),
+            activeColor = colors.lcdGlow,
+            inactiveColor = colors.lcdGlowDim.copy(alpha = 0.16f),
+            modifier = Modifier.atPocketDiscRect(progressRect, density)
+        )
+    }
 
     geometry.play?.let { playRect ->
         Box(
@@ -238,7 +280,11 @@ private fun Modifier.clipPocketDiscShell(
     geometry: PocketDiscMorphGeometry?,
     progress: Float
 ): Modifier = drawWithContent {
-    val shell = geometry?.shell ?: return@drawWithContent
+    val shell = geometry?.shell
+    if (shell == null) {
+        drawContent()
+        return@drawWithContent
+    }
     val radius = 9.dp.toPx() * (1f - progress.coerceIn(0f, 1f))
     val path = Path().apply { addRoundRect(RoundRect(shell, CornerRadius(radius, radius))) }
     clipPath(path) { this@drawWithContent.drawContent() }

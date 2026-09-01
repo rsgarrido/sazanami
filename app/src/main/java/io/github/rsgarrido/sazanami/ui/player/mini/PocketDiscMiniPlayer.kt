@@ -23,7 +23,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -36,6 +35,8 @@ import coil.compose.AsyncImage
 import io.github.rsgarrido.sazanami.ui.player.pocketdisc.PocketDiscMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketdisc.PocketDiscSegmentedProgress
 import io.github.rsgarrido.sazanami.ui.player.pocketdisc.normalizedPocketDiscProgress
+import io.github.rsgarrido.sazanami.ui.player.pocketdisc.pocketDiscBoundsInRoot
+import io.github.rsgarrido.sazanami.ui.player.pocketdisc.sharedAvailability
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 import io.github.rsgarrido.sazanami.ui.player.theme.darken
 import io.github.rsgarrido.sazanami.ui.player.theme.lighten
@@ -53,7 +54,12 @@ fun PocketDiscMiniPlayer(
 ) {
     val ink = tokens.displayTextColor
     val accent = tokens.accentColor
-    val sharedAlpha = if (morphOwnsVisuals) 0f else 1f
+    val sharedAvailability = morphBounds?.sharedAvailability()
+    val transitionOwnsArtwork = morphOwnsVisuals && sharedAvailability?.artwork == true
+    val transitionOwnsTitle = morphOwnsVisuals && sharedAvailability?.title == true
+    val transitionOwnsArtist = morphOwnsVisuals && sharedAvailability?.artist == true
+    val transitionOwnsProgress = morphOwnsVisuals && sharedAvailability?.progress == true
+    val transitionOwnsPlay = morphOwnsVisuals && sharedAvailability?.play == true
 
     MiniPlayerScaffold(
         state = state,
@@ -68,7 +74,7 @@ fun PocketDiscMiniPlayer(
             PocketDiscMiniMediaBay(
                 state = displayedState,
                 tokens = tokens,
-                morphOwnsVisuals = morphOwnsVisuals,
+                transitionOwnsArtwork = transitionOwnsArtwork,
                 morphBounds = morphBounds
             )
 
@@ -86,12 +92,12 @@ fun PocketDiscMiniPlayer(
                     overflow = TextOverflow.Clip,
                     modifier = Modifier
                         .onGloballyPositioned { coordinates ->
-                            morphBounds?.updateMiniTitle(coordinates.boundsInRoot())
+                            morphBounds?.updateMiniTitle(coordinates.pocketDiscBoundsInRoot())
                         }
-                        .graphicsLayer { alpha = sharedAlpha }
+                        .graphicsLayer { alpha = if (transitionOwnsTitle) 0f else 1f }
                         .basicMarquee()
                         .then(
-                            if (morphOwnsVisuals) Modifier.clearAndSetSemantics { }
+                            if (transitionOwnsTitle) Modifier.clearAndSetSemantics { }
                             else Modifier
                         )
                 )
@@ -104,11 +110,11 @@ fun PocketDiscMiniPlayer(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
                         .onGloballyPositioned { coordinates ->
-                            morphBounds?.updateMiniArtist(coordinates.boundsInRoot())
+                            morphBounds?.updateMiniArtist(coordinates.pocketDiscBoundsInRoot())
                         }
-                        .graphicsLayer { alpha = sharedAlpha }
+                        .graphicsLayer { alpha = if (transitionOwnsArtist) 0f else 1f }
                         .then(
-                            if (morphOwnsVisuals) Modifier.clearAndSetSemantics { }
+                            if (transitionOwnsArtist) Modifier.clearAndSetSemantics { }
                             else Modifier
                         )
                 )
@@ -123,11 +129,11 @@ fun PocketDiscMiniPlayer(
                     modifier = Modifier
                         .height(5.dp)
                         .onGloballyPositioned { coordinates ->
-                            morphBounds?.updateMiniProgress(coordinates.boundsInRoot())
+                            morphBounds?.updateMiniProgress(coordinates.pocketDiscBoundsInRoot())
                         }
-                        .graphicsLayer { alpha = sharedAlpha }
+                        .graphicsLayer { alpha = if (transitionOwnsProgress) 0f else 1f }
                         .then(
-                            if (morphOwnsVisuals) Modifier.clearAndSetSemantics { }
+                            if (transitionOwnsProgress) Modifier.clearAndSetSemantics { }
                             else Modifier
                         )
                 )
@@ -143,12 +149,12 @@ fun PocketDiscMiniPlayer(
                 modifier = Modifier
                     .size(48.dp)
                     .then(
-                        if (morphOwnsVisuals) Modifier.clearAndSetSemantics { }
+                        if (transitionOwnsPlay) Modifier.clearAndSetSemantics { }
                         else Modifier
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                if (!morphOwnsVisuals) {
+                if (!transitionOwnsPlay) {
                     MiniPlayerPlayPauseButton(
                         isPlaying = displayedState.isPlaying,
                         onClick = callbacks.onPlayPauseClick,
@@ -158,7 +164,7 @@ fun PocketDiscMiniPlayer(
                                 modifier = Modifier
                                     .size(width = 36.dp, height = 32.dp)
                                     .onGloballyPositioned { coordinates ->
-                                        morphBounds?.updateMiniPlay(coordinates.boundsInRoot())
+                                        morphBounds?.updateMiniPlay(coordinates.pocketDiscBoundsInRoot())
                                     }
                                     .background(
                                         tokens.secondaryAccentColor ?: accent.darken(0.25f),
@@ -174,7 +180,7 @@ fun PocketDiscMiniPlayer(
                         modifier = Modifier
                             .size(width = 36.dp, height = 32.dp)
                             .onGloballyPositioned { coordinates ->
-                                morphBounds?.updateMiniPlay(coordinates.boundsInRoot())
+                                morphBounds?.updateMiniPlay(coordinates.pocketDiscBoundsInRoot())
                             }
                     )
                 }
@@ -191,21 +197,15 @@ fun PocketDiscMiniPlayer(
 private fun PocketDiscMiniMediaBay(
     state: MiniPlayerState,
     tokens: PlayerThemeTokens,
-    morphOwnsVisuals: Boolean,
+    transitionOwnsArtwork: Boolean,
     morphBounds: PocketDiscMorphBounds?
 ) {
-    val sharedAlpha = if (morphOwnsVisuals) 0f else 1f
     Row(
         modifier = Modifier
             .width(66.dp)
             .height(44.dp)
             .background(tokens.displayBackgroundColor, RoundedCornerShape(5.dp))
-            .border(1.dp, tokens.accentColor.darken(0.34f), RoundedCornerShape(5.dp))
-            .graphicsLayer { alpha = sharedAlpha }
-            .then(
-                if (morphOwnsVisuals) Modifier.clearAndSetSemantics { }
-                else Modifier
-            ),
+            .border(1.dp, tokens.accentColor.darken(0.34f), RoundedCornerShape(5.dp)),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
@@ -214,10 +214,15 @@ private fun PocketDiscMiniMediaBay(
                 .clip(RoundedCornerShape(3.dp))
                 .background(tokens.displayBackgroundColor)
                 .onGloballyPositioned { coordinates ->
-                    morphBounds?.updateMiniArtwork(coordinates.boundsInRoot())
+                    morphBounds?.updateMiniArtwork(coordinates.pocketDiscBoundsInRoot())
                 }
+                .graphicsLayer { alpha = if (transitionOwnsArtwork) 0f else 1f }
+                .then(
+                    if (transitionOwnsArtwork) Modifier.clearAndSetSemantics { }
+                    else Modifier
+                )
         ) {
-            if (!morphOwnsVisuals) {
+            if (!transitionOwnsArtwork) {
                 AsyncImage(
                     model = state.currentSong.albumArtUri,
                     contentDescription = "Album art for ${state.currentSong.miniTitle}",

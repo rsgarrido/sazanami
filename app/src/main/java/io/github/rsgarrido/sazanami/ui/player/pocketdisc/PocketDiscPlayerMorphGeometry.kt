@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.LayoutCoordinates
 import io.github.rsgarrido.sazanami.ui.player.PlayerBoundsMeasurement
 import io.github.rsgarrido.sazanami.ui.player.PlayerEndpointBounds
 import io.github.rsgarrido.sazanami.ui.player.modern.interpolateMorphRect
@@ -57,13 +58,50 @@ class PocketDiscMorphBounds {
     fun updateExpandedPlay(value: Rect) { expandedPlay = expandedPlay.keepValid(value) }
 }
 
+/**
+ * Measures a shared-element anchor without applying ancestor clipping.
+ *
+ * Pocket Disc lays out its expanded endpoint inside the shell's animated clip. Regular
+ * [androidx.compose.ui.layout.boundsInRoot] measurements can therefore become empty before the
+ * anchor reaches the visible portion of the shell, which prevents the transition renderer from
+ * taking ownership. The endpoint geometry must describe the final layout, not its currently
+ * clipped pixels.
+ */
+internal fun LayoutCoordinates.pocketDiscBoundsInRoot(): Rect {
+    var root = this
+    while (root.parentLayoutCoordinates != null) {
+        root = root.parentLayoutCoordinates!!
+    }
+    return root.localBoundingBoxOf(sourceCoordinates = this, clipBounds = false)
+}
+
 internal data class PocketDiscSharedGeometry(
-    val artwork: Rect,
-    val title: Rect,
-    val artist: Rect,
-    val progress: Rect,
+    val artwork: Rect?,
+    val title: Rect?,
+    val artist: Rect?,
+    val progress: Rect?,
     val play: Rect?
 )
+
+internal data class PocketDiscSharedAvailability(
+    val artwork: Boolean,
+    val title: Boolean,
+    val artist: Boolean,
+    val progress: Boolean,
+    val play: Boolean
+) {
+    val any: Boolean
+        get() = artwork || title || artist || progress || play
+}
+
+internal fun PocketDiscMorphBounds.sharedAvailability(): PocketDiscSharedAvailability =
+    PocketDiscSharedAvailability(
+        artwork = miniArtwork.isValidPocketDiscRect() && expandedArtwork.isValidPocketDiscRect(),
+        title = miniTitle.isValidPocketDiscRect() && expandedTitle.isValidPocketDiscRect(),
+        artist = miniArtist.isValidPocketDiscRect() && expandedArtist.isValidPocketDiscRect(),
+        progress = miniProgress.isValidPocketDiscRect() && expandedProgress.isValidPocketDiscRect(),
+        play = miniPlay.isValidPocketDiscRect() && expandedPlay.isValidPocketDiscRect()
+    )
 
 enum class PocketDiscSharedOwner { MINI, TRANSITION, EXPANDED }
 
@@ -83,42 +121,29 @@ internal fun resolvePocketDiscSharedGeometry(
     progress: Float,
     bounds: PocketDiscMorphBounds
 ): PocketDiscSharedGeometry? {
-    // Artwork, title, artist, and progress are the essential shared anchors. A temporarily
-    // missing play-button measurement should not downgrade those elements to a cross-fade.
-    val coreBounds = listOf(
-        bounds.miniArtwork,
-        bounds.miniTitle,
-        bounds.miniArtist,
-        bounds.miniProgress,
-        bounds.expandedArtwork,
-        bounds.expandedTitle,
-        bounds.expandedArtist,
-        bounds.expandedProgress
-    )
-    if (coreBounds.any { !it.isValidPocketDiscRect() }) return null
-
+    val availability = bounds.sharedAvailability()
+    if (!availability.any) return null
     val p = progress.coerceIn(0f, 1f)
-    val play = if (
-        bounds.miniPlay.isValidPocketDiscRect() &&
-        bounds.expandedPlay.isValidPocketDiscRect()
-    ) {
-        interpolateMorphRect(bounds.miniPlay!!, bounds.expandedPlay!!, p)
+    return PocketDiscSharedGeometry(
+        artwork = interpolatePocketDiscAnchor(bounds.miniArtwork, bounds.expandedArtwork, p),
+        title = interpolatePocketDiscAnchor(bounds.miniTitle, bounds.expandedTitle, p),
+        artist = interpolatePocketDiscAnchor(bounds.miniArtist, bounds.expandedArtist, p),
+        progress = interpolatePocketDiscAnchor(bounds.miniProgress, bounds.expandedProgress, p),
+        play = interpolatePocketDiscAnchor(bounds.miniPlay, bounds.expandedPlay, p)
+    )
+}
+
+private fun interpolatePocketDiscAnchor(start: Rect?, end: Rect?, progress: Float): Rect? =
+    if (start.isValidPocketDiscRect() && end.isValidPocketDiscRect()) {
+        interpolateMorphRect(start!!, end!!, progress)
     } else {
         null
     }
 
-    return PocketDiscSharedGeometry(
-        artwork = interpolateMorphRect(bounds.miniArtwork!!, bounds.expandedArtwork!!, p),
-        title = interpolateMorphRect(bounds.miniTitle!!, bounds.expandedTitle!!, p),
-        artist = interpolateMorphRect(bounds.miniArtist!!, bounds.expandedArtist!!, p),
-        progress = interpolateMorphRect(bounds.miniProgress!!, bounds.expandedProgress!!, p),
-        play = play
-    )
-}
-
 internal fun pocketDiscSharedOwner(progress: Float, geometryReady: Boolean): PocketDiscSharedOwner = when {
-    progress <= 0f || !geometryReady -> PocketDiscSharedOwner.MINI
+    progress <= 0f -> PocketDiscSharedOwner.MINI
     progress >= 1f -> PocketDiscSharedOwner.EXPANDED
+    !geometryReady -> PocketDiscSharedOwner.MINI
     else -> PocketDiscSharedOwner.TRANSITION
 }
 
