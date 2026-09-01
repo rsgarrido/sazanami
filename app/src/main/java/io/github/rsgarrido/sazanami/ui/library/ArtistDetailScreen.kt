@@ -136,6 +136,7 @@ fun ArtistDetailScreen(
     }
     val homePinUi = LocalHomePinUi.current
     val artistPictureUi = LocalArtistPictureUi.current
+    val libraryQueueUi = LocalLibraryQueueUi.current
     val gridState = rememberLazyGridState()
     val showCompactTitle by remember {
         derivedStateOf {
@@ -180,6 +181,8 @@ fun ArtistDetailScreen(
                     onShuffleClick = { _, _ -> onShuffleSongsClick() },
                     onPlayNextClick = onPlayNextSongsClick,
                     onAddToQueueClick = onAddSongsToQueueClick,
+                    onAddToAnotherQueueClick = libraryQueueUi.onAddToAnotherQueue,
+                    onPlayInNewQueueClick = libraryQueueUi.onPlayInNewQueue,
                     onAddToPlaylistClick = { _, songs ->
                         onAddSongsToPlaylistClick(songs)
                     },
@@ -369,6 +372,8 @@ fun ArtistDetailScreen(
                             },
                             onPlayNextClick = onPlayNextSongsClick,
                             onAddToQueueClick = onAddSongsToQueueClick,
+                            onAddToAnotherQueueClick = libraryQueueUi.onAddToAnotherQueue,
+                            onPlayInNewQueueClick = libraryQueueUi.onPlayInNewQueue,
                             onAddToPlaylistClick = { _, songs ->
                                 onAddSongsToPlaylistClick(songs)
                             },

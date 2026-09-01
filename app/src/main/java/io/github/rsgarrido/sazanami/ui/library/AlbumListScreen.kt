@@ -59,6 +59,7 @@ fun AlbumListScreen(
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
     }
     val homePinUi = LocalHomePinUi.current
+    val libraryQueueUi = LocalLibraryQueueUi.current
     val rememberedListState = rememberLazyListState()
 
     LazyColumn(
@@ -118,6 +119,10 @@ fun AlbumListScreen(
                                 onShuffleClick = onAlbumShuffleClick,
                                 onPlayNextClick = onAlbumPlayNextClick,
                                 onAddToQueueClick = onAlbumAddToQueueClick,
+                                onAddToAnotherQueueClick = libraryQueueUi.onAddToAnotherQueue,
+                                onPlayInNewQueueClick = { name, selectedSongs ->
+                                    libraryQueueUi.onPlayInNewQueue(name, selectedSongs)
+                                },
                                 onAddToPlaylistClick = onAlbumAddToPlaylistClick,
                                 homePinAction = homePinUi.actionForAlbum(album)
                             )
@@ -198,6 +203,8 @@ internal fun albumActionSheetTarget(
     onShuffleClick: (String, List<Song>) -> Unit,
     onPlayNextClick: (String, List<Song>) -> Unit,
     onAddToQueueClick: (String, List<Song>) -> Unit,
+    onAddToAnotherQueueClick: (List<Song>) -> Unit = {},
+    onPlayInNewQueueClick: (String, List<Song>) -> Unit = { _, _ -> },
     onAddToPlaylistClick: (String, List<Song>) -> Unit,
     onEditMetadataClick: (() -> Unit)? = null,
     homePinAction: LibraryItemAction? = null
@@ -227,6 +234,16 @@ internal fun albumActionSheetTarget(
                 label = "Add to queue",
                 icon = Icons.AutoMirrored.Filled.QueueMusic,
                 onClick = { onAddToQueueClick(albumTitle, albumSongs) }
+            ))
+            add(LibraryItemAction(
+                label = "Add to another queue...",
+                icon = Icons.AutoMirrored.Filled.QueueMusic,
+                onClick = { onAddToAnotherQueueClick(albumSongs) }
+            ))
+            add(LibraryItemAction(
+                label = "Play in new queue",
+                icon = Icons.Filled.PlayArrow,
+                onClick = { onPlayInNewQueueClick(albumTitle, albumSongs) }
             ))
             add(LibraryItemAction(
                 label = "Add to playlist",

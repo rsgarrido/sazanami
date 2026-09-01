@@ -48,15 +48,17 @@ class MiniPlayerHostTest {
             onPlayPauseClick = { events += "playPause" },
             onPreviousClick = { events += "previous" },
             onNextClick = { events += "next" },
+            onQueueHubClick = { events += "queues" },
             onExpandClick = { events += "expand" }
         )
 
         callbacks.onPlayPauseClick()
         callbacks.onPreviousClick()
         callbacks.onNextClick()
+        callbacks.onQueueHubClick()
         callbacks.onExpandClick()
 
-        assertEquals(listOf("playPause", "previous", "next", "expand"), events)
+        assertEquals(listOf("playPause", "previous", "next", "queues", "expand"), events)
     }
 
     @Test

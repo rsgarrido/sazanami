@@ -44,6 +44,7 @@ fun PlayerCard(
     onShuffleClick: () -> Unit,
     onRepeatClick: () -> Unit,
     onOpenUpNextClick: () -> Unit = {},
+    onOpenQueueHubClick: () -> Unit = {},
     onOpenLyrics: () -> Unit = {},
     isCurrentSongFavorite: Boolean = false,
     onToggleFavoriteClick: (Song) -> Unit = {},
@@ -87,7 +88,7 @@ fun PlayerCard(
             onCollapseClick = onCollapseClick,
             playerMorphState = playerMorphState,
             lyricsTransitionState = lyricsTransitionState,
-            onOpenUpNextClick = onOpenUpNextClick,
+            onOpenUpNextClick = onOpenQueueHubClick,
             onToggleFavoriteClick = onToggleFavoriteClick,
             albumArtSize = albumArtSize,
             modifier = modifier
@@ -107,6 +108,7 @@ fun PlayerCard(
                 onPlayPauseClick = onPlayPauseClick,
                 onPreviousClick = onPreviousClick,
                 onNextClick = onNextClick,
+                onQueueHubClick = onOpenQueueHubClick,
                 onExpandClick = onExpandClick
             ),
             onBoundsChanged = onMiniPlayerBoundsChanged,

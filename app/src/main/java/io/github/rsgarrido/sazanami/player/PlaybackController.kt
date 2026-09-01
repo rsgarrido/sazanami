@@ -50,6 +50,8 @@ class PlaybackController(
     private var librarySongs: List<Song> = emptyList()
     private var playbackContextSongs: List<Song> = emptyList()
     private var pendingExternalPlaybackSelection: PendingExternalPlaybackSelection? = null
+    private var pendingPersistentQueueSwitch = false
+    private var adoptedPersistentQueueEntryId: String? = null
     private var replayGainMode: ReplayGainMode = ReplayGainMode.OFF
     private var replayGainRequestId = 0
     private val _uiState = MutableStateFlow(
@@ -371,6 +373,10 @@ class PlaybackController(
     }
 
     fun skipToPrevious() {
+        if (hasAuthoritativeActiveQueueTimeline()) {
+            musicPlayer.skipToPrevious()
+            return
+        }
         if (musicPlayer.getCurrentPosition() > PREVIOUS_RESTART_THRESHOLD_MS) {
             seekTo(0)
             return
@@ -380,6 +386,10 @@ class PlaybackController(
     }
 
     fun skipToNext() {
+        if (hasAuthoritativeActiveQueueTimeline()) {
+            musicPlayer.skipToNext()
+            return
+        }
         playNextSong()
     }
 
@@ -391,6 +401,79 @@ class PlaybackController(
 
     fun getCurrentPositionForLyrics(): Long =
         musicPlayer.getCurrentPosition().coerceAtLeast(0).toLong()
+
+    fun getActiveQueueId(): String? = PlaybackQueueRuntimeBridge.getActiveQueueId()
+
+    internal fun activeQueueEntryIds(): List<String> =
+        PlaybackQueueRuntimeBridge.getActiveQueueSnapshot()
+            ?.entries
+            ?.map(LivePlaybackQueueItem::entryId)
+            .orEmpty()
+
+    internal fun activeQueueCurrentEntryId(): String? =
+        PlaybackQueueRuntimeBridge.getActiveQueueSnapshot()?.currentEntryId
+
+    private fun hasAuthoritativeActiveQueueTimeline(): Boolean =
+        PlaybackQueueRuntimeBridge.getActiveQueueId() != null &&
+            PlaybackQueueRuntimeBridge.getActiveQueueSnapshot()?.entries?.isNotEmpty() == true
+
+    internal fun playbackContextSongsForPersistence(): List<Song> =
+        playbackContextSongs.toList()
+
+    suspend fun saveActiveQueue(): String? = PlaybackQueueRuntimeBridge.saveActiveQueue()
+
+    suspend fun createQueueFromCurrent(): String? =
+        PlaybackQueueRuntimeBridge.createQueueFromCurrent()
+
+    suspend fun switchActiveQueue(queueId: String): Boolean {
+        val switched = PlaybackQueueRuntimeBridge.switchActiveQueue(queueId)
+        if (switched && pendingPersistentQueueSwitch) {
+            adoptPersistentQueueSwitch(expectTimelineCallback = true)
+        }
+        return switched
+    }
+
+    suspend fun playInNewQueue(displayName: String, songs: List<Song>): String? {
+        val queueId = PlaybackQueueRuntimeBridge.createAndActivateQueue(displayName, songs)
+        if (queueId != null && pendingPersistentQueueSwitch) {
+            adoptPersistentQueueSwitch(expectTimelineCallback = true)
+        }
+        return queueId
+    }
+
+    suspend fun addToInactiveQueue(queueId: String, songs: List<Song>): Boolean =
+        PlaybackQueueRuntimeBridge.appendToInactiveQueue(queueId, songs)
+
+    suspend fun removeQueueEntry(queueId: String, entryId: String): Boolean =
+        PlaybackQueueRuntimeBridge.removeQueueEntry(queueId, entryId)
+
+    internal suspend fun removeQueueEntryForUndo(
+        queueId: String,
+        entryId: String
+    ): PlaybackQueueEntryRemoval? =
+        PlaybackQueueRuntimeBridge.removeQueueEntryForUndo(queueId, entryId)
+
+    internal suspend fun undoRemoveQueueEntry(removal: PlaybackQueueEntryRemoval): Boolean =
+        PlaybackQueueRuntimeBridge.undoRemoveQueueEntry(removal)
+
+    suspend fun playQueueEntry(queueId: String, entryId: String): Boolean =
+        PlaybackQueueRuntimeBridge.playQueueEntry(queueId, entryId)
+
+    suspend fun reorderQueueEntry(
+        queueId: String,
+        entryId: String,
+        toPlaybackOrder: Int
+    ): Boolean = PlaybackQueueRuntimeBridge.reorderQueueEntry(
+        queueId,
+        entryId,
+        toPlaybackOrder
+    )
+
+    internal fun preparePersistentQueueSwitch() {
+        pendingExternalPlaybackSelection = null
+        pendingPersistentQueueSwitch = true
+        adoptedPersistentQueueEntryId = null
+    }
 
     fun toggleShuffle() {
         setSongShuffleEnabled(shuffleMode == PlaybackShuffleMode.OFF)
@@ -426,18 +509,21 @@ class PlaybackController(
         playbackQueueManager.addSongToQueue(song)
         syncServicePlaylistKeepingCurrent()
         savePlayerState()
+        persistActiveQueueStructure()
     }
 
     fun addSongToPlayNext(song: Song) {
         playbackQueueManager.addSongToPlayNext(song)
         syncServicePlaylistKeepingCurrent()
         savePlayerState()
+        persistActiveQueueStructure()
     }
 
     fun removeSongFromQueue(index: Int) {
         if (playbackQueueManager.removeSongFromQueue(index)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
+            persistActiveQueueStructure()
         }
     }
 
@@ -445,6 +531,7 @@ class PlaybackController(
         if (playbackQueueManager.moveQueuedSongUp(index)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
+            persistActiveQueueStructure()
         }
     }
 
@@ -452,6 +539,7 @@ class PlaybackController(
         if (playbackQueueManager.moveQueuedSongDown(index)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
+            persistActiveQueueStructure()
         }
     }
 
@@ -459,6 +547,7 @@ class PlaybackController(
         if (playbackQueueManager.clearQueue()) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
+            persistActiveQueueStructure()
         }
     }
 
@@ -466,6 +555,7 @@ class PlaybackController(
         if (playbackQueueManager.addSongsToPlayNext(songs)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
+            persistActiveQueueStructure()
         }
     }
 
@@ -473,6 +563,7 @@ class PlaybackController(
         if (playbackQueueManager.addSongsToQueue(songs)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
+            persistActiveQueueStructure()
         }
     }
 
@@ -480,6 +571,7 @@ class PlaybackController(
         if (playbackQueueManager.removeFirstMatchingSongsFromQueue(songs)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
+            persistActiveQueueStructure()
         }
     }
 
@@ -487,6 +579,7 @@ class PlaybackController(
         if (playbackQueueManager.removeLastMatchingSongsFromQueue(songs)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
+            persistActiveQueueStructure()
         }
     }
 
@@ -494,6 +587,7 @@ class PlaybackController(
         if (playbackQueueManager.removeLastMatchingSongFromQueue(song)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
+            persistActiveQueueStructure()
         }
     }
 
@@ -501,6 +595,7 @@ class PlaybackController(
         if (playbackQueueManager.removeFirstMatchingSongFromQueue(song)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
+            persistActiveQueueStructure()
         }
     }
 
@@ -794,6 +889,32 @@ class PlaybackController(
     }
 
     private fun handleServiceSongChanged(songId: Long?) {
+        adoptedPersistentQueueEntryId?.let { adoptedEntryId ->
+            adoptedPersistentQueueEntryId = null
+            if (musicPlayer.currentItemInstanceId() == adoptedEntryId) return
+        }
+        if (pendingPersistentQueueSwitch) {
+            adoptPersistentQueueSwitch(expectTimelineCallback = false)
+            return
+        }
+
+        if (hasAuthoritativeActiveQueueTimeline()) {
+            val live = musicPlayer.adoptLiveSession(librarySongs) ?: return
+            currentSong = live.currentSong
+            currentPosition = live.currentPosition
+            duration = live.duration
+            isPlaying = live.isPlaying
+            repeatMode = live.repeatMode
+            synchronizeNavigationHistoryWithLiveTimeline(live)
+            playbackQueueManager.replaceQueue(emptyList())
+            upcomingSongs = live.upcomingSongs
+            applyReplayGainForCurrentSong()
+            startProgressUpdates()
+            savePlayerState()
+            persistActiveQueueStructure()
+            return
+        }
+
         val newSong = librarySongs.firstOrNull { song ->
             song.id == songId
         } ?: return
@@ -861,6 +982,42 @@ class PlaybackController(
 
         startProgressUpdates()
         savePlayerState()
+    }
+
+    private fun persistActiveQueueStructure() {
+        coroutineScope.launch {
+            PlaybackQueueRuntimeBridge.saveActiveQueue()
+        }
+    }
+
+    private fun adoptPersistentQueueSwitch(expectTimelineCallback: Boolean) {
+        pendingPersistentQueueSwitch = false
+        val live = musicPlayer.adoptLiveSession(librarySongs) ?: return
+        adoptedPersistentQueueEntryId = musicPlayer.currentItemInstanceId()
+            .takeIf { expectTimelineCallback }
+        val songsById = librarySongs.associateBy(Song::id)
+        currentSong = live.currentSong
+        currentPosition = live.currentPosition
+        duration = live.duration
+        isPlaying = live.isPlaying
+        shuffleMode = playerStateStorage.getShuffleMode()
+        repeatMode = live.repeatMode
+        playbackContextSongs = playerStateStorage.getPlaybackContextSongIds()
+            .mapNotNull(songsById::get)
+            .ifEmpty { live.playlist }
+        synchronizeNavigationHistoryWithLiveTimeline(live)
+        playbackQueueManager.replaceQueue(emptyList())
+        upcomingSongs = live.upcomingSongs
+        applyReplayGainForCurrentSong()
+        startProgressUpdates()
+        savePlayerState()
+    }
+
+    private fun synchronizeNavigationHistoryWithLiveTimeline(live: LivePlaybackSnapshot) {
+        playbackNavigationHistory.replacePreviousSongs(
+            live.playlist.take(live.currentPlaylistIndex)
+        )
+        playbackNavigationHistory.replaceNextSongs(live.upcomingSongs.asReversed())
     }
 
     private fun startProgressUpdates() {

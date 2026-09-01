@@ -26,6 +26,7 @@ import io.github.rsgarrido.sazanami.ui.equalizer.rememberEqualizerProfilePlatfor
 import io.github.rsgarrido.sazanami.mediaaccess.MediaAccessState
 import io.github.rsgarrido.sazanami.mediaaccess.FolderArtworkAccessState
 import io.github.rsgarrido.sazanami.data.home.HomePin
+import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.buildGenreCollections
 import io.github.rsgarrido.sazanami.data.ArtistIdentity
 import io.github.rsgarrido.sazanami.ui.home.HomePinReplacementDialog
@@ -35,6 +36,9 @@ import io.github.rsgarrido.sazanami.ui.home.resolveHomePins
 import io.github.rsgarrido.sazanami.ui.library.ArtistPictureUiEnvironment
 import io.github.rsgarrido.sazanami.ui.library.LocalArtistPictureUi
 import io.github.rsgarrido.sazanami.ui.library.FolderSelectionScreen
+import io.github.rsgarrido.sazanami.ui.library.AddToAnotherQueueDialog
+import io.github.rsgarrido.sazanami.ui.library.LibraryQueueUiEnvironment
+import io.github.rsgarrido.sazanami.ui.library.LocalLibraryQueueUi
 import io.github.rsgarrido.sazanami.ui.ratings.LocalSongRatingUi
 import io.github.rsgarrido.sazanami.ui.ratings.SongRatingDialog
 import io.github.rsgarrido.sazanami.ui.ratings.SongRatingUiEnvironment
@@ -57,6 +61,8 @@ internal fun MusicRoute(
     modifier: Modifier = Modifier
 ) {
     val playbackUiState by musicViewModel.playbackUiState.collectAsStateWithLifecycle()
+    val playbackQueueHubUiState by
+        musicViewModel.playbackQueueHubUiState.collectAsStateWithLifecycle()
     val libraryUiState by musicViewModel.libraryUiState.collectAsStateWithLifecycle()
     val sleepTimerUiState by musicViewModel.sleepTimerUiState.collectAsStateWithLifecycle()
     val playerAppearanceUiState by
@@ -148,6 +154,7 @@ internal fun MusicRoute(
     }
 
     var pendingHomePin by remember { mutableStateOf<HomePin?>(null) }
+    var pendingAnotherQueueSongs by remember { mutableStateOf<List<Song>?>(null) }
     var pendingArtistPicture by remember { mutableStateOf<ArtistIdentity?>(null) }
     var quickRateMode by remember { mutableStateOf(false) }
     val artistPicturePicker = rememberLauncherForActivityResult(
@@ -221,6 +228,19 @@ internal fun MusicRoute(
                 musicViewModel::openEqualizerImportPreview
         )
 
+    fun preparePlaylistSongs(
+        playlist: io.github.rsgarrido.sazanami.data.Playlist,
+        onPrepared: (List<Song>) -> Unit
+    ) {
+        musicViewModel.preparePlaylistQueueSongs(playlist) { result ->
+            result.onSuccess(onPrepared).onFailure {
+                routeScope.launch {
+                    snackbarHostState.showSnackbar("Unable to load playlist tracks")
+                }
+            }
+        }
+    }
+
     CompositionLocalProvider(
         LocalSongRatingUi provides SongRatingUiEnvironment(
             state = songRatingUiState,
@@ -271,6 +291,29 @@ internal fun MusicRoute(
             state = folderArtworkAccessState,
             onChooseFolder = onChooseFolderArtwork,
             onClearFolder = onClearFolderArtwork
+        ),
+        LocalLibraryQueueUi provides LibraryQueueUiEnvironment(
+            onPlayInNewQueue = { name, selectedSongs ->
+                musicViewModel.playInNewQueue(name, selectedSongs)
+            },
+            onAddToAnotherQueue = { selectedSongs ->
+                pendingAnotherQueueSongs = selectedSongs
+            },
+            onPlayPlaylistNext = { playlist ->
+                preparePlaylistSongs(playlist) { selectedSongs ->
+                    musicViewModel.addSongsToPlayNext(selectedSongs)
+                }
+            },
+            onPlayPlaylistInNewQueue = { playlist ->
+                preparePlaylistSongs(playlist) { selectedSongs ->
+                    musicViewModel.playInNewQueue(playlist.name, selectedSongs)
+                }
+            },
+            onAddPlaylistToAnotherQueue = { playlist ->
+                preparePlaylistSongs(playlist) { selectedSongs ->
+                    pendingAnotherQueueSongs = selectedSongs
+                }
+            }
         )
     ) {
         MusicScreen(
@@ -299,6 +342,34 @@ internal fun MusicRoute(
             lyricsPlaybackUiState = lyricsPlaybackUiState,
             queuedSongs = playbackUiState.queuedSongs,
             upcomingSongs = playbackUiState.upcomingSongs,
+            playbackQueueHubUiState = playbackQueueHubUiState,
+            onPlaybackQueueSelected = musicViewModel::selectPlaybackQueue,
+            onSwitchSelectedPlaybackQueue = { musicViewModel.switchSelectedPlaybackQueue() },
+            onCreatePlaybackQueueFromCurrent = {
+                musicViewModel.createPlaybackQueueFromCurrent()
+            },
+            onRenamePlaybackQueue = { queueId, name ->
+                musicViewModel.renamePlaybackQueue(queueId, name)
+            },
+            onDeletePlaybackQueue = { queueId ->
+                musicViewModel.deletePlaybackQueue(queueId)
+            },
+            onRemovePlaybackQueueEntry = { queueId, entryId ->
+                musicViewModel.removePlaybackQueueEntry(queueId, entryId)
+            },
+            onPlayPlaybackQueueEntry = { queueId, entryId ->
+                musicViewModel.playPlaybackQueueEntry(queueId, entryId)
+            },
+            onUndoPlaybackQueueEntryRemoval = {
+                musicViewModel.undoPlaybackQueueEntryRemoval()
+            },
+            onClearPlaybackQueueEntryRemovalUndo = {
+                musicViewModel.clearPlaybackQueueEntryRemovalUndo()
+            },
+            onReorderPlaybackQueueEntry = { queueId, entryId, toPlaybackOrder ->
+                musicViewModel.reorderPlaybackQueueEntry(queueId, entryId, toPlaybackOrder)
+            },
+            onClearPlaybackQueueMessage = musicViewModel::clearPlaybackQueueMessage,
             snackbarHostState = snackbarHostState,
             modifier = modifier,
             libraryFolders = libraryUiState.folders,
@@ -701,6 +772,17 @@ internal fun MusicRoute(
                 onRatingSelected = musicViewModel::selectSongRating,
                 onSave = musicViewModel::saveSongRating,
                 onClear = musicViewModel::clearSongRating
+            )
+        }
+        pendingAnotherQueueSongs?.let { selectedSongs ->
+            AddToAnotherQueueDialog(
+                queues = playbackQueueHubUiState.queues,
+                activeQueueId = playbackQueueHubUiState.activeQueueId,
+                onQueueSelected = { queueId ->
+                    musicViewModel.addToInactiveQueue(queueId, selectedSongs)
+                    pendingAnotherQueueSongs = null
+                },
+                onDismiss = { pendingAnotherQueueSongs = null }
             )
         }
         pendingHomePin?.let { pin ->

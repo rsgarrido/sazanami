@@ -9,6 +9,8 @@ import io.github.rsgarrido.sazanami.controller.LibraryController
 import io.github.rsgarrido.sazanami.controller.SongRatingUiController
 import io.github.rsgarrido.sazanami.controller.ListeningAnalyticsController
 import io.github.rsgarrido.sazanami.controller.SleepTimerController
+import io.github.rsgarrido.sazanami.controller.PlaybackQueueUiController
+import io.github.rsgarrido.sazanami.controller.RoomPlaybackQueueUiOperations
 import io.github.rsgarrido.sazanami.controller.DefaultSpotifyListeningHistoryImportOperations
 import io.github.rsgarrido.sazanami.controller.ListeningHistoryImportFile
 import io.github.rsgarrido.sazanami.controller.SpotifyListeningHistoryImportController
@@ -28,6 +30,7 @@ import io.github.rsgarrido.sazanami.data.EditableSongTags
 import io.github.rsgarrido.sazanami.data.Playlist
 import io.github.rsgarrido.sazanami.data.PlaylistFolder
 import io.github.rsgarrido.sazanami.data.PlaylistSong
+import io.github.rsgarrido.sazanami.data.PlaybackQueueRepository
 import io.github.rsgarrido.sazanami.data.TagEditorRepository
 import io.github.rsgarrido.sazanami.data.TagEditorResult
 import io.github.rsgarrido.sazanami.data.BatchMetadataExecutor
@@ -616,6 +619,58 @@ class MusicViewModel(
             }
         }
     )
+
+    private val playbackQueueUiController = PlaybackQueueUiController(
+        operations = RoomPlaybackQueueUiOperations(
+            repository = PlaybackQueueRepository(appDatabase),
+            playbackController = playbackController,
+            database = appDatabase,
+            catalogSongs = { libraryController.uiState.value.songs }
+        ),
+        scope = viewModelScope
+    )
+    internal val playbackQueueHubUiState = playbackQueueUiController.state
+
+    internal fun selectPlaybackQueue(queueId: String) =
+        playbackQueueUiController.selectQueue(queueId)
+
+    internal fun switchSelectedPlaybackQueue() =
+        playbackQueueUiController.switchSelectedQueue()
+
+    internal fun createPlaybackQueueFromCurrent() =
+        playbackQueueUiController.createQueueFromCurrent()
+
+    internal fun renamePlaybackQueue(queueId: String, name: String) =
+        playbackQueueUiController.renameQueue(queueId, name)
+
+    internal fun deletePlaybackQueue(queueId: String) =
+        playbackQueueUiController.deleteQueue(queueId)
+
+    internal fun clearPlaybackQueueMessage() = playbackQueueUiController.clearMessage()
+
+    internal fun playInNewQueue(displayName: String, songs: List<Song>) =
+        playbackQueueUiController.playInNewQueue(displayName, songs)
+
+    internal fun addToInactiveQueue(queueId: String, songs: List<Song>) =
+        playbackQueueUiController.addToInactiveQueue(queueId, songs)
+
+    internal fun removePlaybackQueueEntry(queueId: String, entryId: String) =
+        playbackQueueUiController.removeEntry(queueId, entryId)
+
+    internal fun playPlaybackQueueEntry(queueId: String, entryId: String) =
+        playbackQueueUiController.playEntry(queueId, entryId)
+
+    internal fun undoPlaybackQueueEntryRemoval() =
+        playbackQueueUiController.undoLastRemoval()
+
+    internal fun clearPlaybackQueueEntryRemovalUndo() =
+        playbackQueueUiController.clearRemovalUndo()
+
+    internal fun reorderPlaybackQueueEntry(
+        queueId: String,
+        entryId: String,
+        toPlaybackOrder: Int
+    ) = playbackQueueUiController.reorderEntry(queueId, entryId, toPlaybackOrder)
 
     private val batchMetadataOperationController = BatchMetadataOperationController(
         scope = viewModelScope,

@@ -75,6 +75,7 @@ fun SongGrid(
     }
     val ratingUi = LocalSongRatingUi.current
     val homePinUi = LocalHomePinUi.current
+    val libraryQueueUi = LocalLibraryQueueUi.current
     val rateSongLabel = stringResource(R.string.rate_song)
     val rememberedGridState = rememberLazyGridState()
 
@@ -108,6 +109,10 @@ fun SongGrid(
                         isFavorite = song.membershipKey() in favoriteMembershipKeys,
                         onPlayNextClick = onPlayNextClick,
                         onAddToQueueClick = onAddToQueueClick,
+                        onAddToAnotherQueueClick = libraryQueueUi.onAddToAnotherQueue,
+                        onPlayInNewQueueClick = { selectedSong ->
+                            libraryQueueUi.onPlayInNewQueue("", listOf(selectedSong))
+                        },
                         onToggleFavoriteClick = onToggleFavoriteClick,
                         onAddToPlaylistClick = onAddToPlaylistClick,
                         onEditSongTagsClick = onEditSongTagsClick,
@@ -157,6 +162,7 @@ fun AlbumGridScreen(
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
     }
     val homePinUi = LocalHomePinUi.current
+    val libraryQueueUi = LocalLibraryQueueUi.current
     val rememberedGridState = rememberLazyGridState()
 
     LazyVerticalGrid(
@@ -194,6 +200,8 @@ fun AlbumGridScreen(
                         onShuffleClick = onAlbumShuffleClick,
                         onPlayNextClick = onAlbumPlayNextClick,
                         onAddToQueueClick = onAlbumAddToQueueClick,
+                        onAddToAnotherQueueClick = libraryQueueUi.onAddToAnotherQueue,
+                        onPlayInNewQueueClick = libraryQueueUi.onPlayInNewQueue,
                         onAddToPlaylistClick = onAlbumAddToPlaylistClick,
                         homePinAction = homePinUi.actionForAlbum(album)
                     )
@@ -240,6 +248,7 @@ fun ArtistGridScreen(
     }
     val homePinUi = LocalHomePinUi.current
     val artistPictureUi = LocalArtistPictureUi.current
+    val libraryQueueUi = LocalLibraryQueueUi.current
     val rememberedGridState = rememberLazyGridState()
 
     LazyVerticalGrid(
@@ -290,6 +299,8 @@ fun ArtistGridScreen(
                         onShuffleClick = onArtistShuffleClick,
                         onPlayNextClick = onArtistPlayNextClick,
                         onAddToQueueClick = onArtistAddToQueueClick,
+                        onAddToAnotherQueueClick = libraryQueueUi.onAddToAnotherQueue,
+                        onPlayInNewQueueClick = libraryQueueUi.onPlayInNewQueue,
                         onAddToPlaylistClick = onArtistAddToPlaylistClick,
                         homePinAction = homePinUi.actionForArtist(artist)
                     )

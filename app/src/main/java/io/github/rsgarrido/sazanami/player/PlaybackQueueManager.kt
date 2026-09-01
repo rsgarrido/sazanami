@@ -156,14 +156,10 @@ class PlaybackQueueManager {
     }
 
     fun getQueuedSongCountExcludingCurrent(currentSongId: Long?): Int {
-        return playbackQueue.count { queuedSong ->
-            queuedSong.id != currentSongId
-        }
+        return playbackQueue.size
     }
 
     fun getQueuedSongsAfterCurrent(currentSongId: Long): List<Song> {
-        return playbackQueue.filter { queuedSong ->
-            queuedSong.id != currentSongId
-        }
+        return playbackQueue.toList()
     }
 }

@@ -88,6 +88,7 @@ fun RetroRackExpandedPlayer(
     duration: Int,
     isCurrentSongFavorite: Boolean,
     upcomingSongs: List<Song>,
+    activeQueueSongs: List<Song> = listOfNotNull(currentSong) + upcomingSongs,
     onPlayPauseClick: () -> Unit,
     onPreviousClick: () -> Unit,
     onNextClick: () -> Unit,
@@ -112,7 +113,7 @@ fun RetroRackExpandedPlayer(
     onMorphDragCancel: () -> Unit = {}
 ) {
     val palette = remember(tokens) { RetroRackPalette.from(tokens) }
-    val playbackContext = listOfNotNull(currentSong) + upcomingSongs
+    val playbackContext = activeQueueSongs
     val configuration = LocalConfiguration.current
     val compact = configuration.screenHeightDp < 700 || configuration.screenWidthDp < 360
     val fontScale = LocalDensity.current.fontScale
@@ -215,6 +216,7 @@ fun RetroRackExpandedPlayer(
                 RackIconButton(
                     icon = Icons.Filled.List,
                     label = "QUEUE",
+                    contentDescription = "Open queues",
                     active = true,
                     compact = true,
                     onClick = onOpenUpNextClick,
@@ -223,8 +225,6 @@ fun RetroRackExpandedPlayer(
             }
         ) {
             RackPlaylist(
-                currentSong = currentSong,
-                upcomingSongs = upcomingSongs,
                 playbackContext = playbackContext,
                 onSongClick = onSongClick,
                 inputEnabled = inputEnabled && queueReveal > .99f
@@ -510,13 +510,11 @@ private fun DecorativeSpectrum(
 
 @Composable
 private fun RackPlaylist(
-    currentSong: Song?,
-    upcomingSongs: List<Song>,
     playbackContext: List<Song>,
     onSongClick: (Song, List<Song>) -> Unit,
     inputEnabled: Boolean
 ) {
-    val rows = listOfNotNull(currentSong) + upcomingSongs
+    val rows = playbackContext
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -629,6 +627,7 @@ private fun RackModule(
 private fun RackIconButton(
     icon: ImageVector,
     label: String,
+    contentDescription: String = label,
     active: Boolean = false,
     compact: Boolean = false,
     onClick: () -> Unit,
@@ -660,7 +659,7 @@ private fun RackIconButton(
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = label,
+            contentDescription = contentDescription,
             tint = if (active && !isPressed) DisplayBlack else ControlSilver,
             modifier = Modifier.size(if (compact) 14.dp else 16.dp)
         )

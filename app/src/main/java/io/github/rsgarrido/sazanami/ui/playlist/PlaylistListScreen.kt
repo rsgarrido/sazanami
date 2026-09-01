@@ -23,7 +23,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
@@ -61,6 +60,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.data.Playlist
+import io.github.rsgarrido.sazanami.ui.library.playlistQueueActions
 import io.github.rsgarrido.sazanami.data.PlaylistArtworkMode
 import io.github.rsgarrido.sazanami.data.PlaylistFolder
 import io.github.rsgarrido.sazanami.data.PlaylistMembershipBehavior
@@ -72,6 +72,7 @@ import io.github.rsgarrido.sazanami.ui.home.LocalHomePinUi
 import io.github.rsgarrido.sazanami.ui.library.LibraryItemAction
 import io.github.rsgarrido.sazanami.ui.library.LibraryItemActionSheet
 import io.github.rsgarrido.sazanami.ui.library.LibraryItemActionSheetTarget
+import io.github.rsgarrido.sazanami.ui.library.LocalLibraryQueueUi
 import io.github.rsgarrido.sazanami.ui.library.libraryItemActions
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewMode
 import io.github.rsgarrido.sazanami.ui.library.LibrarySortDirection
@@ -111,6 +112,7 @@ fun PlaylistListScreen(
     modifier: Modifier = Modifier
 ) {
     val homePinUi = LocalHomePinUi.current
+    val libraryQueueUi = LocalLibraryQueueUi.current
     var playlistPendingRename by remember { mutableStateOf<Playlist?>(null) }
     var playlistPendingDelete by remember { mutableStateOf<Playlist?>(null) }
     var playlistPendingMove by remember { mutableStateOf<Playlist?>(null) }
@@ -153,9 +155,7 @@ fun PlaylistListScreen(
             artworkDescription = "Artwork for ${playlist.name}",
             actions = buildList {
                 add(homePinUi.actionForPlaylist(playlist))
-                add(LibraryItemAction("Add to queue", Icons.AutoMirrored.Filled.QueueMusic) {
-                    onAddPlaylistToQueueClick(playlist)
-                })
+                addAll(playlistQueueActions(playlist, libraryQueueUi, onAddPlaylistToQueueClick))
                 add(LibraryItemAction("Change artwork", Icons.Filled.Image) {
                     onChangeArtworkClick(playlist)
                 })

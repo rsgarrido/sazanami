@@ -29,12 +29,15 @@ import androidx.room.TypeConverters
         SmartPlaylistCachedSongEntity::class,
         GeneratedPlaylistStateEntity::class,
         GeneratedPlaylistSongEntity::class,
-        ArtistPictureAssignmentEntity::class
+        ArtistPictureAssignmentEntity::class,
+        PlaybackQueueEntity::class,
+        PlaybackQueueEntryEntity::class,
+        PlaybackQueueStateEntity::class
     ],
-    version = 19,
+    version = 20,
     exportSchema = true
 )
-@TypeConverters(ListeningHistoryTypeConverters::class)
+@TypeConverters(ListeningHistoryTypeConverters::class, PlaybackQueueTypeConverters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun favoriteSongDao(): FavoriteSongDao
     abstract fun playlistDao(): PlaylistDao
@@ -55,4 +58,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun listeningImportBatchEventDao(): ListeningImportBatchEventDao
     abstract fun smartPlaylistDao(): SmartPlaylistDao
     abstract fun artistPictureAssignmentDao(): ArtistPictureAssignmentDao
+    abstract fun playbackQueueDao(): PlaybackQueueDao
 }

@@ -44,6 +44,39 @@ internal data class SmoothPlaybackMediaIdentity(
     val uri: String
 )
 
+internal data class ResolvedMediaTimelineSeek(
+    val mediaItemIndex: Int,
+    val positionMs: Long,
+    val seekCommand: Int
+)
+
+internal fun resolveMediaTimelineSeek(
+    currentMediaItemIndex: Int,
+    currentPositionMs: Long,
+    requestedMediaItemIndex: Int,
+    requestedPositionMs: Long,
+    requestedSeekCommand: Int
+): ResolvedMediaTimelineSeek = if (
+    (
+        requestedSeekCommand == Player.COMMAND_SEEK_TO_PREVIOUS ||
+            requestedSeekCommand == Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM
+    ) &&
+    currentMediaItemIndex >= 0 &&
+    currentPositionMs > MEDIA_PREVIOUS_RESTART_THRESHOLD_MS
+) {
+    ResolvedMediaTimelineSeek(
+        mediaItemIndex = currentMediaItemIndex,
+        positionMs = 0L,
+        seekCommand = Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM
+    )
+} else {
+    ResolvedMediaTimelineSeek(
+        mediaItemIndex = requestedMediaItemIndex,
+        positionMs = requestedPositionMs,
+        seekCommand = requestedSeekCommand
+    )
+}
+
 /** Logical command policy for session-local, identity-scoped cosmetic Pause/Resume. */
 internal class SmoothPlayPauseResumePolicy {
     private var resumableIdentity: SmoothPlaybackMediaIdentity? = null
@@ -376,13 +409,24 @@ internal class SmoothPlaybackPlayer(
         seekCommand: @Player.Command Int
     ): ListenableFuture<*> {
         emitLogicalCommand(LogicalPlaybackCommand.SEEK)
+        val resolved = resolveMediaTimelineSeek(
+            currentMediaItemIndex = physicalPlayer.currentMediaItemIndex,
+            currentPositionMs = physicalPlayer.currentPosition,
+            requestedMediaItemIndex = mediaItemIndex,
+            requestedPositionMs = positionMs,
+            requestedSeekCommand = seekCommand
+        )
         val isSeekWithinCurrentAttempt =
-            mediaItemIndex == physicalPlayer.currentMediaItemIndex &&
-                seekCommand == Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM
+            resolved.mediaItemIndex == physicalPlayer.currentMediaItemIndex &&
+                resolved.seekCommand == Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM
         if (!isSeekWithinCurrentAttempt) {
             invalidateSmoothResumeForNewPlaybackAttempt()
         }
-        return super.handleSeek(mediaItemIndex, positionMs, seekCommand)
+        return super.handleSeek(
+            resolved.mediaItemIndex,
+            resolved.positionMs,
+            resolved.seekCommand
+        )
     }
 
     override fun handleSetMediaItems(

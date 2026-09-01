@@ -137,6 +137,7 @@ fun AlbumDetailScreen(
     }
     val homePinUi = LocalHomePinUi.current
     val ratingUi = LocalSongRatingUi.current
+    val libraryQueueUi = LocalLibraryQueueUi.current
     val ratingValues = ratingUi.state.ratingsByReferenceKey
     val rateSongLabel = stringResource(R.string.rate_song)
     var actionSheetTarget by remember {
@@ -232,6 +233,8 @@ fun AlbumDetailScreen(
                         onShuffleClick = { _, _ -> onShuffleAllClick() },
                         onPlayNextClick = onPlayNextSongsClick,
                         onAddToQueueClick = onAddSongsToQueueClick,
+                        onAddToAnotherQueueClick = libraryQueueUi.onAddToAnotherQueue,
+                        onPlayInNewQueueClick = libraryQueueUi.onPlayInNewQueue,
                         onAddToPlaylistClick = { _, _ -> onAddAllToPlaylistClick() },
                         onEditMetadataClick = { onEditAlbumMetadataClick(album) },
                         homePinAction = homePinUi.actionForAlbum(album)
@@ -290,6 +293,10 @@ fun AlbumDetailScreen(
                                     isFavorite = isFavorite,
                                     onPlayNextClick = onPlayNextClick,
                                     onAddToQueueClick = onAddToQueueClick,
+                                    onAddToAnotherQueueClick = libraryQueueUi.onAddToAnotherQueue,
+                                    onPlayInNewQueueClick = { selectedSong ->
+                                        libraryQueueUi.onPlayInNewQueue("", listOf(selectedSong))
+                                    },
                                     onToggleFavoriteClick = onToggleFavoriteClick,
                                     onAddToPlaylistClick = onAddToPlaylistClick,
                                     onEditSongTagsClick = onEditSongTagsClick,

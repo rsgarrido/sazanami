@@ -40,7 +40,8 @@ object DatabaseProvider {
                     MIGRATION_15_16,
                     MIGRATION_16_17,
                     MIGRATION_17_18,
-                    MIGRATION_18_19
+                    MIGRATION_18_19,
+                    MIGRATION_19_20
                 )
                 .addCallback(object : RoomDatabase.Callback() {
                     override fun onOpen(db: SupportSQLiteDatabase) {
@@ -882,6 +883,93 @@ object DatabaseProvider {
                     PRIMARY KEY(`artistKey`)
                 )
                 """.trimIndent()
+            )
+        }
+    }
+
+    val MIGRATION_19_20 = object : Migration(19, 20) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `playback_queues` (
+                    `queueId` TEXT NOT NULL,
+                    `displayName` TEXT NOT NULL,
+                    `createdAt` INTEGER NOT NULL,
+                    `updatedAt` INTEGER NOT NULL,
+                    `lastActiveAt` INTEGER NOT NULL,
+                    `sourceType` TEXT,
+                    `sourceKey` TEXT,
+                    `currentEntryId` TEXT,
+                    `currentPositionMs` INTEGER NOT NULL,
+                    `shuffleEnabled` INTEGER NOT NULL,
+                    `repeatMode` TEXT NOT NULL,
+                    PRIMARY KEY(`queueId`)
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_playback_queues_lastActiveAt` " +
+                    "ON `playback_queues` (`lastActiveAt`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_playback_queues_updatedAt` " +
+                    "ON `playback_queues` (`updatedAt`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_playback_queues_currentEntryId` " +
+                    "ON `playback_queues` (`currentEntryId`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_playback_queues_sourceType_sourceKey` " +
+                    "ON `playback_queues` (`sourceType`, `sourceKey`)"
+            )
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `playback_queue_entries` (
+                    `entryId` TEXT NOT NULL,
+                    `queueId` TEXT NOT NULL,
+                    `trackIdentityId` INTEGER NOT NULL,
+                    `localTrackBindingId` INTEGER,
+                    `baseOrder` INTEGER NOT NULL,
+                    `playbackOrder` INTEGER NOT NULL,
+                    PRIMARY KEY(`entryId`),
+                    FOREIGN KEY(`queueId`) REFERENCES `playback_queues`(`queueId`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                    FOREIGN KEY(`trackIdentityId`) REFERENCES `listening_track_identities`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION,
+                    FOREIGN KEY(`localTrackBindingId`) REFERENCES `local_track_bindings`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_playback_queue_entries_queueId_baseOrder` " +
+                    "ON `playback_queue_entries` (`queueId`, `baseOrder`)"
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_playback_queue_entries_queueId_playbackOrder` " +
+                    "ON `playback_queue_entries` (`queueId`, `playbackOrder`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_playback_queue_entries_trackIdentityId` " +
+                    "ON `playback_queue_entries` (`trackIdentityId`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_playback_queue_entries_localTrackBindingId` " +
+                    "ON `playback_queue_entries` (`localTrackBindingId`)"
+            )
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `playback_queue_state` (
+                    `id` INTEGER NOT NULL,
+                    `activeQueueId` TEXT,
+                    PRIMARY KEY(`id`),
+                    FOREIGN KEY(`activeQueueId`) REFERENCES `playback_queues`(`queueId`) ON UPDATE NO ACTION ON DELETE SET NULL
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_playback_queue_state_activeQueueId` " +
+                    "ON `playback_queue_state` (`activeQueueId`)"
             )
         }
     }

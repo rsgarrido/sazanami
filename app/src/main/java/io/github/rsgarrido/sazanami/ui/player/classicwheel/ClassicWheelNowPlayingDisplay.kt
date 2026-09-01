@@ -212,7 +212,7 @@ fun ClassicWheelNowPlayingDisplay(
                     ) {
                         Icon(
                             imageVector = Icons.Filled.QueueMusic,
-                            contentDescription = "Up Next",
+                            contentDescription = "Open queues",
                             tint = ClassicWheelColors.screenText,
                             modifier = Modifier.size(28.dp)
                         )

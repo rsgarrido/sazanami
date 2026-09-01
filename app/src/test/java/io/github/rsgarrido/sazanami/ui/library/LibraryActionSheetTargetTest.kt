@@ -69,6 +69,8 @@ class LibraryActionSheetTargetTest {
             isFavorite = false,
             onPlayNextClick = { invokedActions += "play_next" },
             onAddToQueueClick = { invokedActions += "queue" },
+            onAddToAnotherQueueClick = { invokedActions += "another" },
+            onPlayInNewQueueClick = { invokedActions += "new" },
             onToggleFavoriteClick = { invokedActions += "favorite" },
             onAddToPlaylistClick = { invokedActions += "playlist" },
             onEditSongTagsClick = { invokedActions += "edit" },
@@ -80,6 +82,8 @@ class LibraryActionSheetTargetTest {
             listOf(
                 "Play next",
                 "Add to queue",
+                "Add to another queue...",
+                "Play in new queue",
                 "Add to favorites",
                 "Rate song",
                 "Add to playlist",
@@ -90,7 +94,7 @@ class LibraryActionSheetTargetTest {
 
         target.actions.forEach { action -> action.onClick() }
         assertEquals(
-            listOf("play_next", "queue", "favorite", "rate", "playlist", "edit"),
+            listOf("play_next", "queue", "another", "new", "favorite", "rate", "playlist", "edit"),
             invokedActions
         )
     }
@@ -126,10 +130,45 @@ class LibraryActionSheetTargetTest {
             onAddToQueueClick = noOp,
             onAddToPlaylistClick = noOp
         )
-        val expected = listOf("Play", "Shuffle", "Play next", "Add to queue", "Add to playlist")
+        val expected = listOf(
+            "Play",
+            "Shuffle",
+            "Play next",
+            "Add to queue",
+            "Add to another queue...",
+            "Play in new queue",
+            "Add to playlist"
+        )
 
         assertEquals(expected, albumTarget.actions.map { action -> action.label })
         assertEquals(expected + "Set artist picture", artistTarget.actions.map { action -> action.label })
+    }
+
+    @Test
+    fun albumQueueActionsForwardTheDeterministicSongOrder() {
+        val songs = listOf(testSong(3L), testSong(1L), testSong(2L))
+        var newQueueSongs = emptyList<Song>()
+        var anotherQueueSongs = emptyList<Song>()
+        val noOp: (String, List<Song>) -> Unit = { _, _ -> }
+        val target = albumActionSheetTarget(
+            albumTitle = "Album",
+            subtitle = "Artist",
+            artworkUri = null,
+            albumSongs = songs,
+            onPlayClick = noOp,
+            onShuffleClick = noOp,
+            onPlayNextClick = noOp,
+            onAddToQueueClick = noOp,
+            onAddToAnotherQueueClick = { anotherQueueSongs = it },
+            onPlayInNewQueueClick = { _, selectedSongs -> newQueueSongs = selectedSongs },
+            onAddToPlaylistClick = noOp
+        )
+
+        target.actions.first { it.label == "Add to another queue..." }.onClick()
+        target.actions.first { it.label == "Play in new queue" }.onClick()
+
+        assertEquals(listOf(3L, 1L, 2L), anotherQueueSongs.map { it.id })
+        assertEquals(listOf(3L, 1L, 2L), newQueueSongs.map { it.id })
     }
 
     @Test
@@ -189,6 +228,8 @@ class LibraryActionSheetTargetTest {
             listOf(
                 "Play next",
                 "Add to queue",
+                "Add to another queue...",
+                "Play in new queue",
                 "Add to favorites",
                 "Pin to Home",
                 "Rate song",
@@ -204,9 +245,9 @@ class LibraryActionSheetTargetTest {
         assertEquals(true, pinInvoked)
     }
 
-    private fun testSong(): Song {
+    private fun testSong(id: Long = 1L): Song {
         return Song(
-            id = 1L,
+            id = id,
             title = "Song",
             artist = "Artist",
             album = "Album",

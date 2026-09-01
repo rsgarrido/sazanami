@@ -133,6 +133,11 @@ fun PocketCassetteMiniPlayer(
                 }
             }
 
+            MiniPlayerQueueButton(
+                onClick = callbacks.onQueueHubClick,
+                iconTint = ink,
+                modifier = if (morphOwnsVisuals) Modifier.clearAndSetSemantics { } else Modifier
+            )
             Box(
                 modifier = Modifier
                     .size(48.dp)

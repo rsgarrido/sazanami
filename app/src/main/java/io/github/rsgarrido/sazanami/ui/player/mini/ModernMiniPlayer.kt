@@ -80,6 +80,10 @@ fun ModernMiniPlayer(
                 )
             }
 
+            MiniPlayerQueueButton(
+                onClick = callbacks.onQueueHubClick,
+                modifier = Modifier.graphicsLayer { alpha = if (morphOwnsVisuals) 0f else 1f }
+            )
             MiniPlayerPlayPauseButton(
                 isPlaying = displayedState.isPlaying,
                 onClick = callbacks.onPlayPauseClick,

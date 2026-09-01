@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
@@ -155,6 +156,24 @@ internal fun MiniPlayerPlayPauseButton(
                 tint = iconTint
             )
         }
+    }
+}
+
+@Composable
+internal fun MiniPlayerQueueButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    iconTint: Color = Color.Unspecified
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = modifier.size(42.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Filled.QueueMusic,
+            contentDescription = "Open queues",
+            tint = iconTint
+        )
     }
 }
 

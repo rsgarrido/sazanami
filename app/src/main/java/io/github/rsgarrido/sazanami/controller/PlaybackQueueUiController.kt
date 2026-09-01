@@ -1,0 +1,727 @@
+package io.github.rsgarrido.sazanami.controller
+
+import io.github.rsgarrido.sazanami.data.PlaybackQueueRepository
+import io.github.rsgarrido.sazanami.data.Song
+import io.github.rsgarrido.sazanami.data.membershipKey
+import io.github.rsgarrido.sazanami.data.local.PlaybackQueueEntity
+import io.github.rsgarrido.sazanami.data.local.PlaybackQueueEntryEntity
+import io.github.rsgarrido.sazanami.player.PlaybackController
+import io.github.rsgarrido.sazanami.player.PlaybackQueueEntryRemoval
+import io.github.rsgarrido.sazanami.player.RoomPlaybackQueueTrackAccess
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+
+data class PlaybackQueueCardUiState(
+    val queueId: String,
+    val name: String,
+    val entryCount: Int,
+    val currentPosition: Int?,
+    val currentTrack: Song?,
+    val representativeTrack: Song?,
+    val lastActiveAt: Long,
+    val shuffleEnabled: Boolean = false,
+    val isActive: Boolean,
+    val isSelected: Boolean
+) {
+    val stateLabel: String?
+        get() = when {
+            isActive -> "PLAYING"
+            isSelected -> "VIEWING"
+            else -> null
+        }
+}
+
+data class PlaybackQueueEntryUiState(
+    val entryId: String,
+    val song: Song?,
+    val isCurrent: Boolean
+)
+
+data class PlaybackQueueHubUiState(
+    val isLoading: Boolean = true,
+    val queues: List<PlaybackQueueCardUiState> = emptyList(),
+    val activeQueueId: String? = null,
+    val selectedQueueId: String? = null,
+    val selectedEntries: List<PlaybackQueueEntryUiState> = emptyList(),
+    val activeEntries: List<PlaybackQueueEntryUiState> = emptyList(),
+    val selectedQueueEntryCount: Int = 0,
+    val isSwitching: Boolean = false,
+    val isCreating: Boolean = false,
+    val message: String? = null,
+    val removalUndoEventId: Long? = null,
+    val swipeResetVersions: Map<String, Long> = emptyMap()
+) {
+    val selectedQueue: PlaybackQueueCardUiState?
+        get() = queues.firstOrNull { queue -> queue.queueId == selectedQueueId }
+}
+
+internal data class LoadedQueueForUi(
+    val queue: PlaybackQueueEntity,
+    val entries: List<LoadedQueueEntryForUi>
+)
+
+internal data class LoadedQueueEntryForUi(
+    val entry: PlaybackQueueEntryEntity,
+    val song: Song?
+)
+
+internal data class LiveActiveQueueForUi(
+    val songs: List<Song>,
+    val entryIds: List<String> = emptyList(),
+    val currentEntryId: String? = null,
+    val shuffleEnabled: Boolean = false
+)
+
+internal interface PlaybackQueueUiOperations {
+    fun observeQueues(): Flow<List<PlaybackQueueEntity>>
+    fun observeLiveActiveQueue(): Flow<LiveActiveQueueForUi?>
+    suspend fun listQueues(): List<PlaybackQueueEntity>
+    suspend fun getActiveQueueId(): String?
+    suspend fun loadQueue(queueId: String): LoadedQueueForUi?
+    suspend fun switchQueue(queueId: String): Boolean
+    suspend fun createQueueFromCurrent(): String?
+    suspend fun renameQueue(queueId: String, name: String): Boolean
+    suspend fun deleteQueue(queueId: String): Boolean
+    suspend fun playInNewQueue(displayName: String, songs: List<Song>): String? = null
+    suspend fun addToInactiveQueue(queueId: String, songs: List<Song>): Boolean = false
+    suspend fun removeEntry(queueId: String, entryId: String): Boolean = false
+    suspend fun removeEntryForUndo(
+        queueId: String,
+        entryId: String
+    ): PlaybackQueueEntryRemoval? = null
+    suspend fun undoRemoveEntry(removal: PlaybackQueueEntryRemoval): Boolean = false
+    suspend fun playEntry(queueId: String, entryId: String): Boolean = false
+    suspend fun reorderEntry(
+        queueId: String,
+        entryId: String,
+        toPlaybackOrder: Int
+    ): Boolean = false
+}
+
+internal class RoomPlaybackQueueUiOperations(
+    private val repository: PlaybackQueueRepository,
+    private val playbackController: PlaybackController,
+    database: io.github.rsgarrido.sazanami.data.local.AppDatabase,
+    catalogSongs: suspend () -> List<Song>
+) : PlaybackQueueUiOperations {
+    private val trackAccess = RoomPlaybackQueueTrackAccess(database, catalogSongs)
+
+    override fun observeQueues(): Flow<List<PlaybackQueueEntity>> = repository.observeQueues()
+
+    override fun observeLiveActiveQueue(): Flow<LiveActiveQueueForUi?> =
+        playbackController.uiState
+            .map { state ->
+                val currentSong = state.currentSong
+                if (!state.isConnected || currentSong == null) {
+                    null
+                } else {
+                    LiveActiveQueueForUi(
+                        songs = buildList {
+                            add(currentSong)
+                            addAll(state.queuedSongs)
+                            addAll(state.upcomingSongs)
+                        },
+                        entryIds = playbackController.activeQueueEntryIds(),
+                        currentEntryId = playbackController.activeQueueCurrentEntryId(),
+                        shuffleEnabled = state.isShuffleEnabled
+                    )
+                }
+            }
+            .distinctUntilChanged()
+
+    override suspend fun listQueues(): List<PlaybackQueueEntity> = repository.listQueues()
+
+    override suspend fun getActiveQueueId(): String? = repository.getActiveQueueId()
+
+    override suspend fun loadQueue(queueId: String): LoadedQueueForUi? {
+        val persisted = repository.loadQueue(queueId) ?: return null
+        val resolvedByEntryId = trackAccess.resolve(persisted.entries)
+            .associate { resolved -> resolved.persistedEntry.entryId to resolved.song }
+        return LoadedQueueForUi(
+            queue = persisted.queue,
+            entries = persisted.entries.map { entry ->
+                LoadedQueueEntryForUi(entry, resolvedByEntryId[entry.entryId])
+            }
+        )
+    }
+
+    override suspend fun switchQueue(queueId: String): Boolean =
+        playbackController.switchActiveQueue(queueId)
+
+    override suspend fun createQueueFromCurrent(): String? =
+        playbackController.createQueueFromCurrent()
+
+    override suspend fun renameQueue(queueId: String, name: String): Boolean =
+        repository.renameQueue(queueId, name)
+
+    override suspend fun deleteQueue(queueId: String): Boolean =
+        repository.deleteInactiveQueueIfNotLast(queueId)
+
+    override suspend fun playInNewQueue(displayName: String, songs: List<Song>): String? =
+        playbackController.playInNewQueue(displayName, songs)
+
+    override suspend fun addToInactiveQueue(queueId: String, songs: List<Song>): Boolean =
+        playbackController.addToInactiveQueue(queueId, songs)
+
+    override suspend fun removeEntry(queueId: String, entryId: String): Boolean =
+        playbackController.removeQueueEntry(queueId, entryId)
+
+    override suspend fun removeEntryForUndo(
+        queueId: String,
+        entryId: String
+    ): PlaybackQueueEntryRemoval? = playbackController.removeQueueEntryForUndo(queueId, entryId)
+
+    override suspend fun undoRemoveEntry(removal: PlaybackQueueEntryRemoval): Boolean =
+        playbackController.undoRemoveQueueEntry(removal)
+
+    override suspend fun playEntry(queueId: String, entryId: String): Boolean =
+        playbackController.playQueueEntry(queueId, entryId)
+
+    override suspend fun reorderEntry(
+        queueId: String,
+        entryId: String,
+        toPlaybackOrder: Int
+    ): Boolean = playbackController.reorderQueueEntry(queueId, entryId, toPlaybackOrder)
+}
+
+internal class PlaybackQueueUiController(
+    private val operations: PlaybackQueueUiOperations,
+    private val scope: CoroutineScope
+) {
+    private val selectedQueueId = MutableStateFlow<String?>(null)
+    private var latestLiveActiveQueue: LiveActiveQueueForUi? = null
+    private var latestLoadedQueues: List<LoadedQueueForUi> = emptyList()
+    private var latestActiveQueueId: String? = null
+    private var hasLoadedPersistedQueues = false
+    private var pendingRemoval: PlaybackQueueEntryRemoval? = null
+    private var nextRemovalUndoEventId = 0L
+    private var nextSwipeResetVersion = 0L
+    private val removalsInFlight = mutableSetOf<Pair<String, String>>()
+    private val _state = MutableStateFlow(PlaybackQueueHubUiState())
+    val state: StateFlow<PlaybackQueueHubUiState> = _state.asStateFlow()
+
+    init {
+        scope.launch {
+            try {
+                operations.observeQueues().collectLatest { queues ->
+                    refresh(queues, latestLiveActiveQueue)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _state.value = _state.value.copy(
+                    isLoading = false,
+                    message = "Unable to load saved queues."
+                )
+            }
+        }
+        scope.launch {
+            try {
+                operations.observeLiveActiveQueue().collectLatest { liveQueue ->
+                    latestLiveActiveQueue = liveQueue
+                    publishCachedState()
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _state.value = _state.value.copy(
+                    message = "Live queue updates are temporarily unavailable."
+                )
+            }
+        }
+    }
+
+    fun selectQueue(queueId: String) {
+        if (_state.value.queues.none { queue -> queue.queueId == queueId }) return
+        selectedQueueId.value = queueId
+        _state.value = _state.value.copy(isLoading = true, message = null)
+        scope.launch { refreshSelection() }
+    }
+
+    fun switchSelectedQueue(): Job = scope.launch {
+        val selected = _state.value.selectedQueue ?: return@launch
+        if (selected.isActive || _state.value.isSwitching) return@launch
+        _state.value = _state.value.copy(isSwitching = true, message = null)
+        val switched = try {
+            operations.switchQueue(selected.queueId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
+        _state.value = _state.value.copy(
+            isSwitching = false,
+            message = if (switched) null else "Unable to switch queues. Current playback was kept."
+        )
+        if (switched) {
+            latestLiveActiveQueue = null
+            refreshSelection()
+        }
+    }
+
+    fun createQueueFromCurrent(): Job = scope.launch {
+        if (_state.value.isCreating) return@launch
+        _state.value = _state.value.copy(isCreating = true, message = null)
+        val createdQueueId = try {
+            operations.createQueueFromCurrent()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+        if (createdQueueId != null) selectedQueueId.value = createdQueueId
+        _state.value = _state.value.copy(
+            isCreating = false,
+            message = if (createdQueueId == null) {
+                "Start playback before creating a queue from the current session."
+            } else {
+                null
+            }
+        )
+        refreshSelection()
+    }
+
+    fun renameQueue(queueId: String, proposedName: String): Job = scope.launch {
+        val validated = validatedQueueName(proposedName)
+        if (validated == null) {
+            _state.value = _state.value.copy(message = "Queue name cannot be blank.")
+            return@launch
+        }
+        val renamed = try {
+            operations.renameQueue(queueId, validated)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
+        _state.value = _state.value.copy(
+            message = if (renamed) null else "Unable to rename queue."
+        )
+    }
+
+    fun deleteQueue(queueId: String): Job = scope.launch {
+        val current = _state.value
+        val queues: List<PlaybackQueueEntity>
+        val activeQueueId: String?
+        try {
+            queues = operations.listQueues()
+            activeQueueId = operations.getActiveQueueId()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            _state.value = current.copy(message = "Unable to delete queue.")
+            return@launch
+        }
+        when {
+            queues.size <= 1 -> {
+                _state.value = current.copy(message = "The only remaining queue cannot be deleted.")
+            }
+            queueId == activeQueueId -> {
+                _state.value = current.copy(message = "The active queue cannot be deleted.")
+            }
+            else -> {
+                val deleted = try {
+                    operations.deleteQueue(queueId)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    false
+                }
+                _state.value = _state.value.copy(
+                    message = if (deleted) null else "Unable to delete queue."
+                )
+            }
+        }
+    }
+
+    fun playInNewQueue(displayName: String, songs: List<Song>): Job = scope.launch {
+        val createdId = try {
+            operations.playInNewQueue(displayName, songs)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+        if (createdId != null) {
+            selectedQueueId.value = createdId
+            latestLiveActiveQueue = LiveActiveQueueForUi(songs)
+        }
+        _state.value = _state.value.copy(
+            message = if (createdId == null) "Unable to create and play the new queue." else null
+        )
+        refreshSelection()
+    }
+
+    fun addToInactiveQueue(queueId: String, songs: List<Song>): Job = scope.launch {
+        val added = try {
+            operations.addToInactiveQueue(queueId, songs)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
+        _state.value = _state.value.copy(
+            message = if (added) null else "Unable to add tracks to that queue."
+        )
+        refreshSelection()
+    }
+
+    fun removeEntry(queueId: String, entryId: String): Job = scope.launch {
+        val removalKey = queueId to entryId
+        if (!removalsInFlight.add(removalKey)) return@launch
+        val activeIndex = _state.value.selectedEntries.indexOfFirst { entry ->
+            entry.entryId == entryId
+        }.takeIf { index -> queueId == _state.value.activeQueueId && index >= 0 }
+        val removal = try {
+            try {
+                operations.removeEntryForUndo(queueId, entryId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+        } finally {
+            removalsInFlight.remove(removalKey)
+        }
+        val removed = removal != null
+        if (removal != null) {
+            pendingRemoval = removal
+            nextRemovalUndoEventId += 1L
+        }
+        val swipeResetVersions = if (!removed) {
+            nextSwipeResetVersion += 1L
+            _state.value.swipeResetVersions + (entryId to nextSwipeResetVersion)
+        } else {
+            _state.value.swipeResetVersions
+        }
+        _state.value = _state.value.copy(
+            message = if (removed) null else "Unable to remove that queue entry.",
+            removalUndoEventId = if (removed) nextRemovalUndoEventId else null,
+            swipeResetVersions = swipeResetVersions
+        )
+        if (removed && activeIndex != null) {
+            latestLiveActiveQueue = latestLiveActiveQueue?.copy(
+                songs = latestLiveActiveQueue?.songs.orEmpty().filterIndexed { index, _ ->
+                    index != activeIndex
+                },
+                entryIds = latestLiveActiveQueue?.entryIds.orEmpty().filterNot { id ->
+                    id == entryId
+                }
+            )
+        }
+        refreshSelection()
+    }
+
+    fun playEntry(queueId: String, entryId: String): Job = scope.launch {
+        if (queueId != _state.value.activeQueueId) return@launch
+        val played = try {
+            operations.playEntry(queueId, entryId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
+        if (!played) {
+            _state.value = _state.value.copy(message = "Unable to play that queue entry.")
+        }
+    }
+
+    fun undoLastRemoval(): Job = scope.launch {
+        val removal = pendingRemoval ?: return@launch
+        pendingRemoval = null
+        val restored = try {
+            operations.undoRemoveEntry(removal)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
+        val swipeResetVersions = if (restored) {
+            nextSwipeResetVersion += 1L
+            _state.value.swipeResetVersions +
+                (removal.entry.entryId to nextSwipeResetVersion)
+        } else {
+            _state.value.swipeResetVersions
+        }
+        _state.value = _state.value.copy(
+            removalUndoEventId = null,
+            message = if (restored) null else "Unable to restore that queue entry.",
+            swipeResetVersions = swipeResetVersions
+        )
+        if (restored && removal.queueId == _state.value.activeQueueId) {
+            removal.resolvedItem?.song?.let { restoredSong ->
+                latestLiveActiveQueue = latestLiveActiveQueue?.let { live ->
+                    val currentTimelineIndex = live.entryIds.indexOf(live.currentEntryId)
+                        .coerceAtLeast(0)
+                    val insertionIndex = (removal.entry.playbackOrder - currentTimelineIndex)
+                        .coerceIn(0, live.songs.size)
+                    live.copy(
+                        songs = live.songs.toMutableList().apply {
+                            add(insertionIndex, restoredSong)
+                        },
+                        entryIds = live.entryIds.toMutableList().apply {
+                            add(
+                                removal.entry.playbackOrder.coerceIn(0, size),
+                                removal.entry.entryId
+                            )
+                        }
+                    )
+                }
+            }
+        }
+        if (restored) refreshSelection()
+    }
+
+    fun clearRemovalUndo() {
+        pendingRemoval = null
+        _state.value = _state.value.copy(removalUndoEventId = null)
+    }
+
+    fun reorderEntry(queueId: String, entryId: String, toPlaybackOrder: Int): Job =
+        scope.launch {
+            val liveBefore = latestLiveActiveQueue
+            val activeFromIndex = _state.value.selectedEntries.indexOfFirst { entry ->
+                entry.entryId == entryId
+            }.takeIf { index -> queueId == _state.value.activeQueueId && index >= 0 }
+            val currentTimelineIndex = liveBefore?.entryIds
+                ?.indexOf(liveBefore.currentEntryId)
+                ?.takeIf { index -> index >= 0 }
+                ?: 0
+            val runtimePlaybackOrder = if (activeFromIndex != null) {
+                currentTimelineIndex + toPlaybackOrder
+            } else {
+                toPlaybackOrder
+            }
+            val reordered = try {
+                operations.reorderEntry(queueId, entryId, runtimePlaybackOrder)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                false
+            }
+            _state.value = _state.value.copy(
+                message = if (reordered) null else "Queue order could not be changed."
+            )
+            if (reordered && activeFromIndex != null) {
+                latestLiveActiveQueue = latestLiveActiveQueue?.let { live ->
+                    val reorderedSongs = live.songs.toMutableList()
+                    if (activeFromIndex in reorderedSongs.indices &&
+                        toPlaybackOrder in reorderedSongs.indices
+                    ) {
+                        reorderedSongs.add(
+                            toPlaybackOrder,
+                            reorderedSongs.removeAt(activeFromIndex)
+                        )
+                    }
+                    val reorderedIds = live.entryIds.toMutableList()
+                    val fullFromIndex = reorderedIds.indexOf(entryId)
+                    if (fullFromIndex in reorderedIds.indices &&
+                        runtimePlaybackOrder in reorderedIds.indices
+                    ) {
+                        reorderedIds.add(
+                            runtimePlaybackOrder,
+                            reorderedIds.removeAt(fullFromIndex)
+                        )
+                    }
+                    live.copy(songs = reorderedSongs, entryIds = reorderedIds)
+                }
+            }
+            refreshSelection()
+        }
+
+    fun clearMessage() {
+        _state.value = _state.value.copy(message = null)
+    }
+
+    private suspend fun refresh(
+        queues: List<PlaybackQueueEntity>,
+        liveActiveQueue: LiveActiveQueueForUi?
+    ) {
+        val activeQueueId = operations.getActiveQueueId()
+        val selectedId = selectedQueueId.value
+            ?.takeIf { candidate -> queues.any { queue -> queue.queueId == candidate } }
+            ?: activeQueueId?.takeIf { candidate -> queues.any { queue -> queue.queueId == candidate } }
+            ?: queues.firstOrNull()?.queueId
+        selectedQueueId.value = selectedId
+
+        var loadFailed = false
+        val loaded = queues.mapNotNull { queue ->
+            try {
+                operations.loadQueue(queue.queueId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                loadFailed = true
+                null
+            }
+        }
+        val loadedById = loaded.associateBy { item -> item.queue.queueId }
+        latestLoadedQueues = queues.mapNotNull { queue -> loadedById[queue.queueId] }
+        latestActiveQueueId = activeQueueId
+        hasLoadedPersistedQueues = true
+        _state.value = buildState(
+            loadedQueues = latestLoadedQueues,
+            activeQueueId = latestActiveQueueId,
+            selectedQueueId = selectedId,
+            liveActiveQueue = liveActiveQueue,
+            previous = _state.value
+        ).let { state ->
+            if (loadFailed && state.message == null) {
+                state.copy(message = "Some queues could not be loaded.")
+            } else {
+                state
+            }
+        }
+    }
+
+    private suspend fun refreshSelection() {
+        refresh(operations.listQueues(), latestLiveActiveQueue)
+    }
+
+    private fun publishCachedState() {
+        if (!hasLoadedPersistedQueues) return
+        _state.value = buildState(
+            loadedQueues = latestLoadedQueues,
+            activeQueueId = latestActiveQueueId,
+            selectedQueueId = selectedQueueId.value,
+            liveActiveQueue = latestLiveActiveQueue,
+            previous = _state.value
+        )
+    }
+}
+
+internal fun validatedQueueName(proposedName: String): String? =
+    proposedName.trim().takeIf(String::isNotEmpty)
+
+internal fun buildState(
+    loadedQueues: List<LoadedQueueForUi>,
+    activeQueueId: String?,
+    selectedQueueId: String?,
+    liveActiveQueue: LiveActiveQueueForUi? = null,
+    previous: PlaybackQueueHubUiState = PlaybackQueueHubUiState()
+): PlaybackQueueHubUiState {
+    val selected = loadedQueues.firstOrNull { loaded ->
+        loaded.queue.queueId == selectedQueueId
+    }
+    val selectedCurrentEntryId = selected?.queue?.currentEntryId
+    val cards = loadedQueues.map { loaded ->
+        val isActive = loaded.queue.queueId == activeQueueId
+        val liveSongs = liveActiveQueue?.songs.takeIf { isActive }
+        val effectiveCurrentEntryId = liveActiveQueue?.currentEntryId
+            ?.takeIf { isActive }
+            ?: loaded.queue.currentEntryId
+        val currentIndex = loaded.entries.indexOfFirst { item ->
+            item.entry.entryId == effectiveCurrentEntryId
+        }.takeIf { index -> index >= 0 }
+        val currentSong = currentIndex?.let { index -> loaded.entries[index].song }
+            ?: liveSongs?.firstOrNull()
+        PlaybackQueueCardUiState(
+            queueId = loaded.queue.queueId,
+            name = loaded.queue.displayName,
+            entryCount = loaded.entries.size.takeIf { it > 0 } ?: (liveSongs?.size ?: 0),
+            currentPosition = currentIndex?.plus(1)
+                ?: 1.takeIf { liveSongs?.isNotEmpty() == true },
+            currentTrack = currentSong,
+            representativeTrack = currentSong
+                ?: loaded.entries.firstNotNullOfOrNull { it.song },
+            lastActiveAt = loaded.queue.lastActiveAt,
+            shuffleEnabled = liveActiveQueue?.shuffleEnabled.takeIf { isActive }
+                ?: loaded.queue.shuffleEnabled,
+            isActive = isActive,
+            isSelected = loaded.queue.queueId == selectedQueueId
+        )
+    }
+    val liveSelectedEntries = liveActiveQueue?.takeIf {
+        selected?.queue?.queueId == activeQueueId
+    }?.let { liveQueue ->
+        buildLiveActiveQueueEntries(
+            persistedEntries = selected?.entries.orEmpty(),
+            liveSongs = liveQueue.songs,
+            liveEntryIds = liveQueue.entryIds,
+            liveCurrentEntryId = liveQueue.currentEntryId
+        )
+    }
+    val selectedEntries = liveSelectedEntries ?: selected?.entries.orEmpty().map { item ->
+        PlaybackQueueEntryUiState(
+            entryId = item.entry.entryId,
+            song = item.song,
+            isCurrent = item.entry.entryId == selectedCurrentEntryId
+        )
+    }
+    val active = loadedQueues.firstOrNull { loaded -> loaded.queue.queueId == activeQueueId }
+    val activeCurrentEntryId = active?.queue?.currentEntryId
+    val activeEntries = liveActiveQueue?.let { liveQueue ->
+        buildLiveActiveQueueEntries(
+            persistedEntries = active?.entries.orEmpty(),
+            liveSongs = liveQueue.songs,
+            liveEntryIds = liveQueue.entryIds,
+            liveCurrentEntryId = liveQueue.currentEntryId
+        )
+    } ?: active?.entries.orEmpty().map { item ->
+        PlaybackQueueEntryUiState(
+            entryId = item.entry.entryId,
+            song = item.song,
+            isCurrent = item.entry.entryId == activeCurrentEntryId
+        )
+    }
+    return previous.copy(
+        isLoading = false,
+        queues = cards,
+        activeQueueId = activeQueueId,
+        selectedQueueId = selected?.queue?.queueId,
+        selectedEntries = selectedEntries,
+        activeEntries = activeEntries,
+        selectedQueueEntryCount = selectedEntries.size
+    )
+}
+
+internal fun buildLiveActiveQueueEntries(
+    persistedEntries: List<LoadedQueueEntryForUi>,
+    liveSongs: List<Song>,
+    liveEntryIds: List<String> = emptyList(),
+    liveCurrentEntryId: String? = null
+): List<PlaybackQueueEntryUiState> {
+    val currentTimelineIndex = liveEntryIds.indexOf(liveCurrentEntryId)
+    val visibleEntryIds = if (currentTimelineIndex >= 0) {
+        liveEntryIds.drop(currentTimelineIndex)
+    } else {
+        liveEntryIds
+    }
+    val persistedByEntryId = persistedEntries.associateBy { item -> item.entry.entryId }
+    if (visibleEntryIds.isNotEmpty()) {
+        return visibleEntryIds.mapIndexed { index, entryId ->
+            PlaybackQueueEntryUiState(
+                entryId = entryId,
+                song = persistedByEntryId[entryId]?.song ?: liveSongs.getOrNull(index),
+                isCurrent = index == 0
+            )
+        }
+    }
+
+    val unmatchedPersistedEntries = persistedEntries.toMutableList()
+    return liveSongs.mapIndexed { index, song ->
+        val membershipKey = song.membershipKey()
+        val persistedIndex = unmatchedPersistedEntries.indexOfFirst { item ->
+            item.song?.membershipKey() == membershipKey
+        }
+        val entryId = if (persistedIndex >= 0) {
+            unmatchedPersistedEntries.removeAt(persistedIndex).entry.entryId
+        } else {
+            "live:$index:$membershipKey"
+        }
+        PlaybackQueueEntryUiState(
+            entryId = entryId,
+            song = song,
+            isCurrent = index == 0
+        )
+    }
+}

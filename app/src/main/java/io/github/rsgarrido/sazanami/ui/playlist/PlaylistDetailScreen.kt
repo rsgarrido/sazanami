@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
@@ -56,6 +55,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.data.Playlist
+import io.github.rsgarrido.sazanami.ui.library.playlistQueueActions
 import io.github.rsgarrido.sazanami.data.PlaylistFolder
 import io.github.rsgarrido.sazanami.data.PlaylistArtworkMode
 import io.github.rsgarrido.sazanami.data.PlaylistSong
@@ -71,6 +71,7 @@ import io.github.rsgarrido.sazanami.ui.library.LibraryDetailTopBar
 import io.github.rsgarrido.sazanami.ui.library.LibraryItemAction
 import io.github.rsgarrido.sazanami.ui.library.LibraryItemActionSheet
 import io.github.rsgarrido.sazanami.ui.library.LibraryItemActionSheetTarget
+import io.github.rsgarrido.sazanami.ui.library.LocalLibraryQueueUi
 import io.github.rsgarrido.sazanami.ui.library.LibrarySortDirection
 import io.github.rsgarrido.sazanami.ui.library.ResetLazyListOnSortChange
 
@@ -107,6 +108,7 @@ fun PlaylistDetailScreen(
     modifier: Modifier = Modifier
 ) {
     val homePinUi = LocalHomePinUi.current
+    val libraryQueueUi = LocalLibraryQueueUi.current
     var actionSheetTarget by remember { mutableStateOf<LibraryItemActionSheetTarget?>(null) }
     var renameDialogVisible by remember { mutableStateOf(false) }
     var deleteDialogVisible by remember { mutableStateOf(false) }
@@ -149,9 +151,7 @@ fun PlaylistDetailScreen(
             artworkDescription = "Artwork for ${playlist.name}",
             actions = buildList {
                 add(homePinUi.actionForPlaylist(playlist))
-                add(LibraryItemAction("Add to queue", Icons.AutoMirrored.Filled.QueueMusic) {
-                    onAddPlaylistToQueueClick(playlist)
-                })
+                addAll(playlistQueueActions(playlist, libraryQueueUi, onAddPlaylistToQueueClick))
                 if (!isLoading && allowsManualPlaylistActions(playlist)) {
                     add(LibraryItemAction("Add songs", Icons.AutoMirrored.Filled.PlaylistAdd) {
                         addSongsVisible = true

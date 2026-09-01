@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +47,7 @@ import io.github.rsgarrido.sazanami.ui.library.LibraryItemActionSheet
 import io.github.rsgarrido.sazanami.ui.library.LibraryItemActionSheetTarget
 import io.github.rsgarrido.sazanami.ui.library.LibraryLayoutMotionDurationMillis
 import io.github.rsgarrido.sazanami.ui.library.libraryItemActions
+import io.github.rsgarrido.sazanami.ui.library.LocalLibraryQueueUi
 import io.github.rsgarrido.sazanami.R as AppR
 import io.github.rsgarrido.sazanami.ui.ratings.LocalSongRatingUi
 import io.github.rsgarrido.sazanami.ui.ratings.CompactRatingIndicator
@@ -76,6 +78,7 @@ fun PlaylistSongList(
     }
     val ratingUi = LocalSongRatingUi.current
     val homePinUi = LocalHomePinUi.current
+    val libraryQueueUi = LocalLibraryQueueUi.current
     val rateSongLabel = stringResource(AppR.string.rate_song)
     val rememberedListState = rememberLazyListState()
 
@@ -183,6 +186,24 @@ fun PlaylistSongList(
                                     label = "Add to queue",
                                     icon = Icons.AutoMirrored.Filled.QueueMusic,
                                     onClick = { onAddToQueueClick(song) }
+                                )
+                            )
+                            add(
+                                LibraryItemAction(
+                                    label = "Add to another queue...",
+                                    icon = Icons.AutoMirrored.Filled.QueueMusic,
+                                    onClick = {
+                                        libraryQueueUi.onAddToAnotherQueue(listOf(song))
+                                    }
+                                )
+                            )
+                            add(
+                                LibraryItemAction(
+                                    label = "Play in new queue",
+                                    icon = Icons.Filled.PlayArrow,
+                                    onClick = {
+                                        libraryQueueUi.onPlayInNewQueue("", listOf(song))
+                                    }
                                 )
                             )
                             add(
