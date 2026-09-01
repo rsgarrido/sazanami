@@ -11,6 +11,7 @@ import io.github.rsgarrido.sazanami.data.local.PlaybackQueueEntryEntity
 import io.github.rsgarrido.sazanami.data.local.PlaybackQueueWithEntries
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.CancellationException
 
 internal data class LivePlaybackQueueItem(
     val entryId: String,
@@ -384,11 +385,20 @@ internal class PlaybackQueueCoordinator(
         val before = runtime.captureSnapshot() ?: return null
         if (before.entries.none { it.entryId == entryId }) return null
         if (!runtime.removeEntry(entryId)) return null
-        if (before.entries.size == 1) {
-            persistence.replaceEntries(queueId, emptyList(), null, 0L)
+        try {
+            if (before.entries.size == 1) {
+                persistence.replaceEntries(queueId, emptyList(), null, 0L)
+                lastLiveSignature = null
+            } else {
+                persistActiveQueueSnapshotLocked()
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Media3 is authoritative for the active queue. Keep the successful live removal
+            // and force the next checkpoint to reconcile Room instead of reporting a false
+            // removal failure after the item has already disappeared from playback.
             lastLiveSignature = null
-        } else {
-            persistActiveQueueSnapshotLocked()
         }
         return PlaybackQueueEntryRemoval(
             queueId,
@@ -402,10 +412,10 @@ internal class PlaybackQueueCoordinator(
 
     suspend fun undoRemoveEntry(removal: PlaybackQueueEntryRemoval): Boolean = mutex.withLock {
         val queue = persistence.loadQueue(removal.queueId) ?: return@withLock false
-        if (queue.entries.any { entry -> entry.entryId == removal.entry.entryId }) {
-            return@withLock true
-        }
         if (removal.queueId != activeQueueId) {
+            if (queue.entries.any { entry -> entry.entryId == removal.entry.entryId }) {
+                return@withLock true
+            }
             return@withLock persistence.restoreEntry(
                 removal.queueId,
                 removal.entry,
@@ -413,6 +423,10 @@ internal class PlaybackQueueCoordinator(
                 removal.originalCurrentPositionMs
             ) != null
         }
+        val liveAlreadyContainsEntry = runtime.captureSnapshot()?.entries?.any { item ->
+            item.entryId == removal.entry.entryId
+        } == true
+        if (liveAlreadyContainsEntry) return@withLock true
         val resolved = removal.resolvedItem ?: return@withLock false
         if (!runtime.insertEntry(resolved, removal.entry.playbackOrder)) return@withLock false
         persistActiveQueueSnapshotLocked()
@@ -447,6 +461,13 @@ internal class PlaybackQueueCoordinator(
         }
         val before = runtime.captureSnapshot() ?: return@withLock false
         if (before.shuffleEnabled) return@withLock false
+        val currentIndex = before.entries.indexOfFirst { item ->
+            item.entryId == before.currentEntryId
+        }
+        val fromIndex = before.entries.indexOfFirst { item -> item.entryId == entryId }
+        if (currentIndex >= 0 && (fromIndex <= currentIndex || toPlaybackOrder <= currentIndex)) {
+            return@withLock false
+        }
         if (!runtime.moveEntry(entryId, toPlaybackOrder)) return@withLock false
         val after = runtime.captureSnapshot() ?: return@withLock false
         persistActiveQueueSnapshotLocked(

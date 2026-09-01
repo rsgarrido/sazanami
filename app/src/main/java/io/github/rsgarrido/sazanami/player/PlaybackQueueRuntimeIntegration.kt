@@ -159,6 +159,10 @@ internal class Media3PlaybackQueueRuntime(
         val fromIndex = (0 until player.mediaItemCount).firstOrNull { candidate ->
             player.getMediaItemAt(candidate).listeningEvidence()?.itemInstanceId == entryId
         } ?: return false
+        val currentIndex = player.currentMediaItemIndex
+        if (currentIndex >= 0 && (fromIndex <= currentIndex || toPlaybackOrder <= currentIndex)) {
+            return false
+        }
         if (fromIndex == toPlaybackOrder) return true
         player.moveMediaItem(fromIndex, toPlaybackOrder)
         return true

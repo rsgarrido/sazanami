@@ -2,6 +2,7 @@ package io.github.rsgarrido.sazanami.ui.queue
 
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -11,6 +12,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
@@ -200,6 +202,7 @@ class QueueHubSheetTest {
     @Test
     fun swipeRemovesUpcomingButNotCurrentEntry() {
         var removed: Pair<String, String>? = null
+        var removeCount = 0
         composeRule.setContent {
             MaterialTheme {
                 QueueHubSheet(
@@ -216,7 +219,10 @@ class QueueHubSheetTest {
                     onCreateFromCurrent = {},
                     onRename = { _, _ -> },
                     onDelete = {},
-                    onRemoveEntry = { queueId, entryId -> removed = queueId to entryId },
+                    onRemoveEntry = { queueId, entryId ->
+                        removeCount += 1
+                        removed = queueId to entryId
+                    },
                     onMessageDismissed = {}
                 )
             }
@@ -228,11 +234,102 @@ class QueueHubSheetTest {
 
         composeRule.onAllNodesWithText("Unavailable track")[1]
             .performTouchInput { swipeLeft() }
-        composeRule.runOnIdle { assertEquals("A" to "upcoming", removed) }
+        composeRule.runOnIdle {
+            assertEquals("A" to "upcoming", removed)
+            assertEquals(1, removeCount)
+        }
+        composeRule.onNodeWithTag("queue-swipe-background-upcoming").assertIsDisplayed()
+        composeRule.onAllNodesWithContentDescription("Remove queue entry").assertCountEquals(1)
+    }
+
+    @Test
+    fun restingSwipeRowsExposeOnlyNormalControls() {
+        composeRule.setContent {
+            MaterialTheme {
+                QueueHubSheet(
+                    state = state("B").copy(
+                        selectedEntries = listOf(
+                            PlaybackQueueEntryUiState("entry", null, false)
+                        ),
+                        selectedQueueEntryCount = 1
+                    ),
+                    onDismiss = {},
+                    onQueueSelected = {},
+                    onSwitchSelected = {},
+                    onCreateFromCurrent = {},
+                    onRename = { _, _ -> },
+                    onDelete = {},
+                    onMessageDismissed = {}
+                )
+            }
+        }
+
+        composeRule.onAllNodesWithContentDescription("Remove queue entry").assertCountEquals(0)
+        composeRule.onAllNodesWithTag("queue-swipe-background-entry").assertCountEquals(0)
+        composeRule.onAllNodesWithContentDescription("Actions for queue entry").assertCountEquals(1)
+    }
+
+    @Test
+    fun successfulUndoRecreatesOnlyRestoredSwipeStateAsSettled() {
+        val restored = PlaybackQueueEntryUiState("restored", null, false)
+        val untouched = PlaybackQueueEntryUiState("untouched", null, false)
+        var hubState by mutableStateOf(
+            state("B").copy(
+                selectedEntries = listOf(restored, untouched),
+                selectedQueueEntryCount = 2
+            )
+        )
+        composeRule.setContent {
+            MaterialTheme {
+                QueueHubSheet(
+                    state = hubState,
+                    onDismiss = {},
+                    onQueueSelected = {},
+                    onSwitchSelected = {},
+                    onCreateFromCurrent = {},
+                    onRename = { _, _ -> },
+                    onDelete = {},
+                    onRemoveEntry = { _, entryId ->
+                        hubState = hubState.copy(
+                            selectedEntries = hubState.selectedEntries.filterNot {
+                                it.entryId == entryId
+                            },
+                            removalUndoEventId = 1L
+                        )
+                    },
+                    onUndoRemove = {
+                        hubState = hubState.copy(
+                            selectedEntries = listOf(restored, untouched),
+                            removalUndoEventId = null,
+                            swipeResetVersions = hubState.swipeResetVersions +
+                                (restored.entryId to 1L)
+                        )
+                    },
+                    onMessageDismissed = {}
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("queue-entry-restored")
+            .performTouchInput { swipeLeft() }
+        composeRule.onNodeWithText("Undo").assertIsDisplayed().performClick()
+
+        composeRule.onNodeWithTag("queue-entry-restored").assertIsDisplayed()
+        composeRule.onNodeWithTag("queue-entry-untouched").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("queue-swipe-background-restored").assertCountEquals(0)
+        composeRule.onAllNodesWithContentDescription("Remove queue entry").assertCountEquals(0)
+        composeRule.runOnIdle {
+            assertEquals(setOf("restored"), hubState.swipeResetVersions.keys)
+            assertEquals(
+                listOf("restored", "untouched"),
+                hubState.selectedEntries.map { it.entryId }
+            )
+        }
     }
 
     @Test
     fun removalSnackbarExposesUndoAction() {
+        assertEquals(SnackbarDuration.Short, queueRemovalSnackbarDuration)
         var undoCount = 0
         composeRule.setContent {
             MaterialTheme {
@@ -250,8 +347,80 @@ class QueueHubSheetTest {
             }
         }
 
+        composeRule.onNodeWithTag("queue-hub-snackbar-overlay").assertIsDisplayed()
         composeRule.onNodeWithText("Undo").assertIsDisplayed().performClick()
         composeRule.runOnIdle { assertEquals(1, undoCount) }
+    }
+
+    @Test
+    fun removalSnackbarTimesOutConsumesEventAndDoesNotReappear() {
+        var hubState by mutableStateOf(state("A").copy(removalUndoEventId = 1L))
+        var dismissedCount = 0
+        composeRule.setContent {
+            MaterialTheme {
+                QueueHubSheet(
+                    state = hubState,
+                    onDismiss = {},
+                    onQueueSelected = {},
+                    onSwitchSelected = {},
+                    onCreateFromCurrent = {},
+                    onRename = { _, _ -> },
+                    onDelete = {},
+                    onUndoDismissed = {
+                        dismissedCount += 1
+                        hubState = hubState.copy(removalUndoEventId = null)
+                    },
+                    onMessageDismissed = {}
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Undo").assertIsDisplayed()
+        composeRule.mainClock.autoAdvance = false
+        composeRule.mainClock.advanceTimeBy(20_000L)
+        composeRule.mainClock.autoAdvance = true
+        composeRule.waitForIdle()
+
+        composeRule.runOnIdle { assertEquals(1, dismissedCount) }
+        composeRule.onAllNodesWithText("Undo").assertCountEquals(0)
+        composeRule.runOnIdle { hubState = hubState.copy(message = "Unrelated update") }
+        composeRule.onAllNodesWithText("Undo").assertCountEquals(0)
+    }
+
+    @Test
+    fun activeDragClampsUpcomingEntryAfterCurrent() {
+        var reorder: Triple<String, String, Int>? = null
+        val entries = listOf(
+            PlaybackQueueEntryUiState("current", null, true),
+            PlaybackQueueEntryUiState("next-1", null, false),
+            PlaybackQueueEntryUiState("next-2", null, false)
+        )
+        composeRule.setContent {
+            MaterialTheme {
+                QueueHubSheet(
+                    state = state("A").copy(
+                        selectedEntries = entries,
+                        selectedQueueEntryCount = entries.size
+                    ),
+                    onDismiss = {},
+                    onQueueSelected = {},
+                    onSwitchSelected = {},
+                    onCreateFromCurrent = {},
+                    onRename = { _, _ -> },
+                    onDelete = {},
+                    onReorderEntry = { queue, entry, order ->
+                        reorder = Triple(queue, entry, order)
+                    },
+                    onMessageDismissed = {}
+                )
+            }
+        }
+
+        composeRule.onAllNodesWithContentDescription("Reorder queue entry").assertCountEquals(2)
+        composeRule.onAllNodesWithContentDescription("Reorder queue entry")[1]
+            .performTouchInput { swipeUp(durationMillis = 150) }
+
+        composeRule.runOnIdle { assertEquals(Triple("A", "next-2", 1), reorder) }
     }
 
     @Test

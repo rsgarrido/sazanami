@@ -5,6 +5,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,12 +16,14 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -47,6 +50,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
@@ -54,27 +58,34 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import io.github.rsgarrido.sazanami.controller.PlaybackQueueCardUiState
 import io.github.rsgarrido.sazanami.controller.PlaybackQueueEntryUiState
 import io.github.rsgarrido.sazanami.controller.PlaybackQueueHubUiState
+import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -97,10 +108,19 @@ fun QueueHubSheet(
     var deleteQueue by remember { mutableStateOf<PlaybackQueueCardUiState?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val snackbarHostState = remember { SnackbarHostState() }
+    val latestOnUndoDismissed by rememberUpdatedState<() -> Unit>(onUndoDismissed)
+
+    DisposableEffect(Unit) {
+        onDispose { latestOnUndoDismissed() }
+    }
 
     LaunchedEffect(state.removalUndoEventId) {
         if (state.removalUndoEventId == null) return@LaunchedEffect
-        when (snackbarHostState.showSnackbar("Queue entry removed", actionLabel = "Undo")) {
+        when (snackbarHostState.showSnackbar(
+            message = "Queue entry removed",
+            actionLabel = "Undo",
+            duration = queueRemovalSnackbarDuration
+        )) {
             SnackbarResult.ActionPerformed -> onUndoRemove()
             SnackbarResult.Dismissed -> onUndoDismissed()
         }
@@ -113,11 +133,12 @@ fun QueueHubSheet(
         dragHandle = null,
         containerColor = MaterialTheme.colorScheme.surfaceContainer
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.94f)
         ) {
+        Column(modifier = Modifier.fillMaxSize()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -291,7 +312,119 @@ fun QueueHubSheet(
                                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
                             )
                         }
+                        val listState = rememberLazyListState()
+                        val density = LocalDensity.current
+                        var draggedOffsetY by remember(selectedQueueId) { mutableStateOf(0f) }
+                        var dragPointerY by remember(selectedQueueId) { mutableStateOf(0f) }
+                        var dragAutoScrollDelta by remember(selectedQueueId) { mutableStateOf(0f) }
+                        val currentBoundaryIndex = displayedEntries.indexOfFirst { it.isCurrent }
+
+                        fun moveDraggedEntryIfNeeded() {
+                            var moved: Boolean
+                            do {
+                                moved = false
+                                val draggedId = draggedEntryId ?: break
+                                val from = displayedEntries.indexOfFirst { it.entryId == draggedId }
+                                if (from < 0) break
+
+                                val visibleItems = listState.layoutInfo.visibleItemsInfo
+                                val draggedInfo = visibleItems.firstOrNull { it.key == draggedId }
+                                val rowHeight = draggedInfo?.size?.toFloat() ?: with(density) { 64.dp.toPx() }
+
+                                val requested = when {
+                                    draggedOffsetY > rowHeight / 2f -> from + 1
+                                    draggedOffsetY < -rowHeight / 2f -> from - 1
+                                    else -> break
+                                }
+
+                                val absoluteTarget = clampQueueReorderTarget(
+                                    requestedIndex = requested,
+                                    lastIndex = displayedEntries.lastIndex,
+                                    activeCurrentIndex = currentBoundaryIndex.takeIf { selected?.isActive == true }
+                                )
+
+                                // CRITICAL FIX: Ensure the swap target is strictly within fully visible items.
+                                val viewportStart = listState.layoutInfo.viewportStartOffset
+                                val viewportEnd = listState.layoutInfo.viewportEndOffset
+
+                                val fullyVisibleItems = visibleItems.filter {
+                                    it.offset >= viewportStart && (it.offset + it.size) <= viewportEnd
+                                }
+
+                                val firstSafeIndex = fullyVisibleItems.firstOrNull()?.index
+                                    ?: visibleItems.firstOrNull()?.index ?: 0
+                                val lastSafeIndex = fullyVisibleItems.lastOrNull()?.index
+                                    ?: visibleItems.lastOrNull()?.index ?: displayedEntries.lastIndex
+
+                                val target = absoluteTarget.coerceIn(firstSafeIndex, lastSafeIndex)
+
+                                if (target == from) {
+                                    // Only snap the visual offset to 0 if we hit the absolute boundaries of the queue.
+                                    if (absoluteTarget == from) {
+                                        draggedOffsetY = when {
+                                            requested < from -> draggedOffsetY.coerceAtLeast(0f)
+                                            requested > from -> draggedOffsetY.coerceAtMost(0f)
+                                            else -> 0f
+                                        }
+                                    }
+                                    break
+                                }
+
+                                displayedEntries = displayedEntries.toMutableList().apply {
+                                    add(target, removeAt(from))
+                                }
+                                draggedOffsetY += if (target > from) -rowHeight else rowHeight
+                                moved = true
+                            } while (moved)
+                        }
+
+                        fun updateAutoScroll() {
+                            val draggedId = draggedEntryId
+                            if (draggedId == null) {
+                                dragAutoScrollDelta = 0f
+                                return
+                            }
+                            dragAutoScrollDelta = queueDragAutoScrollDelta(
+                                pointerY = dragPointerY,
+                                viewportStart = listState.layoutInfo.viewportStartOffset.toFloat(),
+                                viewportEnd = listState.layoutInfo.viewportEndOffset.toFloat(),
+                                edgeZonePx = with(density) { 72.dp.toPx() },
+                                maxScrollPerFramePx = with(density) { 18.dp.toPx() },
+                                canScrollBackward = listState.canScrollBackward,
+                                canScrollForward = listState.canScrollForward
+                            )
+                        }
+
+                        LaunchedEffect(draggedEntryId) {
+                            if (draggedEntryId == null) return@LaunchedEffect
+                            while (draggedEntryId != null) {
+                                withFrameNanos { }
+
+                                if (dragAutoScrollDelta != 0f) {
+                                    val consumed = listState.scrollBy(dragAutoScrollDelta)
+
+                                    // CRITICAL FIX: Decouple visual offset from layout lag.
+                                    // Directly compensate for the scroll movement instead of reading stale layout info.
+                                    draggedOffsetY += consumed
+
+                                    if (!queueDragCanContinueAutoScrolling(
+                                            requestedDelta = dragAutoScrollDelta,
+                                            consumedDelta = consumed,
+                                            canScrollBackward = listState.canScrollBackward,
+                                            canScrollForward = listState.canScrollForward
+                                        )
+                                    ) {
+                                        dragAutoScrollDelta = 0f
+                                    }
+                                }
+
+                                moveDraggedEntryIfNeeded()
+                                updateAutoScroll()
+                            }
+                        }
+
                         LazyColumn(
+                            state = listState,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .weight(1f)
@@ -305,6 +438,9 @@ fun QueueHubSheet(
                                 val index = displayedEntries.indexOfFirst {
                                     candidate -> candidate.entryId == entry.entryId
                                 }
+                                val swipeResetVersion =
+                                    state.swipeResetVersions[entry.entryId] ?: 0L
+                                key(entry.entryId, swipeResetVersion) {
                                 QueueHubEntryRow(
                                     entry = entry,
                                     canPlay = selected?.isActive == true && !entry.isCurrent,
@@ -312,6 +448,20 @@ fun QueueHubSheet(
                                     reorderEnabled = reorderEnabled &&
                                         !(selected?.isActive == true && entry.isCurrent),
                                     isDragging = draggedEntryId == entry.entryId,
+                                    swipeResetVersion = swipeResetVersion,
+                                    modifier = (if (draggedEntryId == entry.entryId) {
+                                        Modifier
+                                    } else {
+                                        Modifier.animateItem()
+                                    })
+                                        .zIndex(if (draggedEntryId == entry.entryId) 1f else 0f)
+                                        .graphicsLayer {
+                                            translationY = if (draggedEntryId == entry.entryId) {
+                                                draggedOffsetY
+                                            } else {
+                                                0f
+                                            }
+                                        },
                                     onRemove = {
                                         selectedQueueId?.let { queueId ->
                                             onRemoveEntry(queueId, entry.entryId)
@@ -325,17 +475,19 @@ fun QueueHubSheet(
                                     onDragStarted = {
                                         draggedEntryId = entry.entryId
                                         dragStartIndex = index
+                                        draggedOffsetY = 0f
+                                        dragPointerY = listState.layoutInfo.visibleItemsInfo
+                                            .firstOrNull { it.key == entry.entryId }
+                                            ?.let { info -> info.offset + info.size / 2f }
+                                            ?: 0f
+                                        dragAutoScrollDelta = 0f
+                                        updateAutoScroll()
                                     },
-                                    onDragStep = { direction ->
-                                        val from = displayedEntries.indexOfFirst { candidate ->
-                                            candidate.entryId == entry.entryId
-                                        }
-                                        val to = (from + direction).coerceIn(displayedEntries.indices)
-                                        if (from >= 0 && from != to) {
-                                            displayedEntries = displayedEntries.toMutableList().apply {
-                                                add(to, removeAt(from))
-                                            }
-                                        }
+                                    onDrag = { deltaY ->
+                                        dragPointerY += deltaY
+                                        draggedOffsetY += deltaY
+                                        moveDraggedEntryIfNeeded()
+                                        updateAutoScroll()
                                     },
                                     onDragFinished = {
                                         val from = dragStartIndex
@@ -344,6 +496,9 @@ fun QueueHubSheet(
                                         }
                                         draggedEntryId = null
                                         dragStartIndex = null
+                                        draggedOffsetY = 0f
+                                        dragPointerY = 0f
+                                        dragAutoScrollDelta = 0f
                                         if (from != null && to >= 0 && from != to) {
                                             selectedQueueId?.let { queueId ->
                                                 onReorderEntry(queueId, entry.entryId, to)
@@ -351,15 +506,21 @@ fun QueueHubSheet(
                                         }
                                     }
                                 )
+                                }
                             }
                         }
                     }
                 }
             }
-            SnackbarHost(
-                hostState = snackbarHostState,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
+        }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .testTag("queue-hub-snackbar-overlay")
+        )
         }
     }
 
@@ -506,36 +667,69 @@ private fun QueueHubEntryRow(
     canSwipeRemove: Boolean,
     reorderEnabled: Boolean,
     isDragging: Boolean,
+    swipeResetVersion: Long,
+    modifier: Modifier = Modifier,
     onRemove: () -> Unit,
     onPlay: () -> Unit,
     onDragStarted: () -> Unit,
-    onDragStep: (Int) -> Unit,
+    onDrag: (Float) -> Unit,
     onDragFinished: () -> Unit
 ) {
     if (canSwipeRemove) {
+        var removalCommitted by remember(entry.entryId, swipeResetVersion) {
+            mutableStateOf(false)
+        }
         val dismissState = rememberSwipeToDismissBoxState(
             confirmValueChange = { target ->
-                if (target == SwipeToDismissBoxValue.EndToStart) onRemove()
-                false
+                when {
+                    target == SwipeToDismissBoxValue.EndToStart && !removalCommitted -> {
+                        removalCommitted = true
+                        onRemove()
+                        true
+                    }
+                    target == SwipeToDismissBoxValue.EndToStart -> true
+                    else -> !removalCommitted
+                }
             }
         )
+        val swipeActive = abs(
+            runCatching { dismissState.requireOffset() }.getOrDefault(0f)
+        ) > 0.5f || dismissState.targetValue == SwipeToDismissBoxValue.EndToStart
         SwipeToDismissBox(
             state = dismissState,
+            modifier = modifier.height(64.dp),
             enableDismissFromStartToEnd = false,
             enableDismissFromEndToStart = true,
             backgroundContent = {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.errorContainer)
+                        .background(
+                            if (swipeActive) {
+                                MaterialTheme.colorScheme.errorContainer
+                            } else {
+                                Color.Transparent
+                            }
+                        )
+                        .then(
+                            if (swipeActive) {
+                                Modifier.testTag("queue-swipe-background-${entry.entryId}")
+                            } else {
+                                Modifier
+                            }
+                        )
                         .padding(end = 24.dp),
                     contentAlignment = Alignment.CenterEnd
                 ) {
-                    Icon(
-                        Icons.Filled.Delete,
-                        contentDescription = "Remove queue entry",
-                        tint = MaterialTheme.colorScheme.onErrorContainer
-                    )
+                    if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart ||
+                        dismissState.currentValue == SwipeToDismissBoxValue.EndToStart
+                    ) {
+                        Icon(
+                            Icons.Filled.Delete,
+                            contentDescription = "Remove queue entry",
+                            tint = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
                 }
             }
         ) {
@@ -547,7 +741,7 @@ private fun QueueHubEntryRow(
                 onRemove = onRemove,
                 onPlay = onPlay,
                 onDragStarted = onDragStarted,
-                onDragStep = onDragStep,
+                onDrag = onDrag,
                 onDragFinished = onDragFinished
             )
         }
@@ -560,8 +754,9 @@ private fun QueueHubEntryRow(
             onRemove = onRemove,
             onPlay = onPlay,
             onDragStarted = onDragStarted,
-            onDragStep = onDragStep,
-            onDragFinished = onDragFinished
+            onDrag = onDrag,
+            onDragFinished = onDragFinished,
+            modifier = modifier
         )
     }
 }
@@ -575,21 +770,25 @@ private fun QueueHubEntryRowContent(
     onRemove: () -> Unit,
     onPlay: () -> Unit,
     onDragStarted: () -> Unit,
-    onDragStep: (Int) -> Unit,
-    onDragFinished: () -> Unit
+    onDrag: (Float) -> Unit,
+    onDragFinished: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
-    val rowStepPx = with(LocalDensity.current) { 64.dp.toPx() }
+    val latestOnDragStarted by rememberUpdatedState<() -> Unit>(onDragStarted)
+    val latestOnDrag by rememberUpdatedState<(Float) -> Unit>(onDrag)
+    val latestOnDragFinished by rememberUpdatedState<() -> Unit>(onDragFinished)
     val background = if (entry.isCurrent) {
         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f)
     } else if (isDragging) {
         MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.42f)
     } else {
-        Color.Transparent
+        MaterialTheme.colorScheme.surfaceContainer
     }
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
+            .testTag("queue-entry-${entry.entryId}")
             .background(background)
             .clickable(enabled = canPlay, onClick = onPlay)
             .padding(horizontal = 20.dp, vertical = 8.dp),
@@ -631,7 +830,6 @@ private fun QueueHubEntryRowContent(
             )
         }
         if (reorderEnabled) {
-            var accumulatedDrag by remember(entry.entryId) { mutableStateOf(0f) }
             Icon(
                 imageVector = Icons.Filled.DragHandle,
                 contentDescription = "Reorder ${entry.song?.title ?: "queue entry"}",
@@ -642,28 +840,17 @@ private fun QueueHubEntryRowContent(
                     .pointerInput(entry.entryId, reorderEnabled) {
                         detectDragGestures(
                             onDragStart = {
-                                accumulatedDrag = 0f
-                                onDragStarted()
+                                latestOnDragStarted()
                             },
                             onDragCancel = {
-                                accumulatedDrag = 0f
-                                onDragFinished()
+                                latestOnDragFinished()
                             },
                             onDragEnd = {
-                                accumulatedDrag = 0f
-                                onDragFinished()
+                                latestOnDragFinished()
                             },
                             onDrag = { change, dragAmount ->
                                 change.consume()
-                                accumulatedDrag += dragAmount.y
-                                while (accumulatedDrag >= rowStepPx) {
-                                    onDragStep(1)
-                                    accumulatedDrag -= rowStepPx
-                                }
-                                while (accumulatedDrag <= -rowStepPx) {
-                                    onDragStep(-1)
-                                    accumulatedDrag += rowStepPx
-                                }
+                                latestOnDrag(dragAmount.y)
                             }
                         )
                     }
@@ -689,6 +876,56 @@ private fun QueueHubEntryRowContent(
         }
     }
 }
+
+internal fun clampQueueReorderTarget(
+    requestedIndex: Int,
+    lastIndex: Int,
+    activeCurrentIndex: Int?
+): Int {
+    if (lastIndex < 0) return 0
+    val minimum = activeCurrentIndex?.plus(1)?.coerceAtMost(lastIndex) ?: 0
+    return requestedIndex.coerceIn(minimum, lastIndex)
+}
+
+internal fun queueDragAutoScrollDelta(
+    pointerY: Float,
+    viewportStart: Float,
+    viewportEnd: Float,
+    edgeZonePx: Float,
+    maxScrollPerFramePx: Float,
+    canScrollBackward: Boolean = true,
+    canScrollForward: Boolean = true
+): Float {
+    if (viewportEnd <= viewportStart || edgeZonePx <= 0f) return 0f
+    return when {
+        pointerY <= viewportStart + edgeZonePx && canScrollBackward -> {
+            val proximity = ((viewportStart + edgeZonePx - pointerY) / edgeZonePx)
+                .coerceIn(MIN_QUEUE_DRAG_AUTO_SCROLL_PROXIMITY, 1f)
+            -maxScrollPerFramePx * proximity
+        }
+        pointerY >= viewportEnd - edgeZonePx && canScrollForward -> {
+            val proximity = ((pointerY - (viewportEnd - edgeZonePx)) / edgeZonePx)
+                .coerceIn(MIN_QUEUE_DRAG_AUTO_SCROLL_PROXIMITY, 1f)
+            maxScrollPerFramePx * proximity
+        }
+        else -> 0f
+    }
+}
+
+internal fun queueDragCanContinueAutoScrolling(
+    requestedDelta: Float,
+    consumedDelta: Float,
+    canScrollBackward: Boolean,
+    canScrollForward: Boolean
+): Boolean = when {
+    requestedDelta < 0f -> consumedDelta != 0f || canScrollBackward
+    requestedDelta > 0f -> consumedDelta != 0f || canScrollForward
+    else -> false
+}
+
+internal val queueRemovalSnackbarDuration: SnackbarDuration = SnackbarDuration.Short
+
+private const val MIN_QUEUE_DRAG_AUTO_SCROLL_PROXIMITY = 0.05f
 
 @Composable
 private fun RenameQueueDialog(

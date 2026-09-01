@@ -7,6 +7,7 @@ import io.github.rsgarrido.sazanami.data.local.PlaybackQueueEntity
 import io.github.rsgarrido.sazanami.data.local.PlaybackQueueEntryEntity
 import io.github.rsgarrido.sazanami.player.PlaybackQueueEntryRemoval
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
@@ -88,6 +89,65 @@ class PlaybackQueueUiControllerTest {
     }
 
     @Test
+    fun activeCurrentAndUpNextStartAtStableLiveCurrentWhilePersistenceStaysComplete() {
+        val songs = (1L..4L).map(::song)
+        val loaded = queueWithEntries(
+            id = "A",
+            name = "A",
+            currentEntry = "A",
+            entries = listOf("A", "B", "C", "D").zip(songs)
+        )
+        val state = buildState(
+            loadedQueues = listOf(loaded),
+            activeQueueId = "A",
+            selectedQueueId = "A",
+            liveActiveQueue = LiveActiveQueueForUi(
+                songs = songs.drop(2),
+                entryIds = listOf("A", "B", "C", "D"),
+                currentEntryId = "C"
+            )
+        )
+
+        assertEquals(listOf("C", "D"), state.selectedEntries.map { it.entryId })
+        assertTrue(state.selectedEntries.first().isCurrent)
+        assertEquals(listOf("C", "D"), state.activeEntries.map { it.entryId })
+        assertEquals(listOf("A", "B", "C", "D"), loaded.entries.map { it.entry.entryId })
+        assertEquals(4, state.selectedQueue?.entryCount)
+        assertEquals(3, state.selectedQueue?.currentPosition)
+    }
+
+    @Test
+    fun activeDuplicateInstancesRemainAddressedByStableEntryIdAfterJumping() = runBlocking {
+        val duplicate = song(7L)
+        val middle = song(8L)
+        val operations = FakeOperations(activeQueueId = "A").apply {
+            add(queueWithEntries(
+                id = "A",
+                name = "A",
+                currentEntry = "duplicate-1",
+                entries = listOf(
+                    "duplicate-1" to duplicate,
+                    "middle" to middle,
+                    "duplicate-2" to duplicate
+                )
+            ))
+            publishLiveTimeline(
+                entryIds = listOf("duplicate-1", "middle", "duplicate-2"),
+                currentEntryId = "middle",
+                songs = arrayOf(middle, duplicate)
+            )
+        }
+        val controller = controller(operations)
+
+        assertEquals(
+            listOf("middle", "duplicate-2"),
+            controller.state.value.selectedEntries.map { it.entryId }
+        )
+        controller.playEntry("A", "duplicate-2").join()
+        assertEquals("A" to "duplicate-2", operations.playedEntry)
+    }
+
+    @Test
     fun activeRemoveAndReorderUpdateHubImmediatelyWithoutRoomEmission() = runBlocking {
         val first = song(1L)
         val second = song(2L)
@@ -98,13 +158,117 @@ class PlaybackQueueUiControllerTest {
         }
         val controller = controller(operations)
 
+        controller.reorderEntry("A", "third", 1).join()
+        assertEquals(
+            listOf("first", "third", "second"),
+            controller.state.value.selectedEntries.map { it.entryId }
+        )
+
         controller.removeEntry("A", "second").join()
         assertEquals(listOf("first", "third"), controller.state.value.selectedEntries.map { it.entryId })
-
-        controller.reorderEntry("A", "third", 0).join()
-        assertEquals(listOf("third", "first"), controller.state.value.selectedEntries.map { it.entryId })
         assertEquals(1, operations.removeEntryCount)
         assertEquals(1, operations.reorderEntryCount)
+        assertNull(controller.state.value.message)
+    }
+
+    @Test
+    fun successfulInactiveRemovalDoesNotPublishFailure() = runBlocking {
+        val operations = FakeOperations(activeQueueId = "A").apply {
+            add(queue("A", "A", "a", song(1L)))
+            add(queue("B", "B", "b", song(2L)))
+        }
+        val controller = controller(operations)
+        controller.selectQueue("B")
+
+        controller.removeEntry("B", "b").join()
+
+        assertEquals(1, operations.removeEntryCount)
+        assertNull(controller.state.value.message)
+        assertTrue(controller.state.value.removalUndoEventId != null)
+    }
+
+    @Test
+    fun genuineRemovalFailureKeepsEntryAndResetsCommittedSwipeState() = runBlocking {
+        val operations = FakeOperations(activeQueueId = "A").apply {
+            add(queue("A", "A", "a", song(1L)))
+            removeSucceeds = false
+        }
+        val controller = controller(operations)
+        val resetBefore = controller.state.value.swipeResetVersions["a"] ?: 0L
+
+        controller.removeEntry("A", "a").join()
+
+        assertEquals(listOf("a"), controller.state.value.selectedEntries.map { it.entryId })
+        assertEquals("Unable to remove that queue entry.", controller.state.value.message)
+        assertTrue(requireNotNull(controller.state.value.swipeResetVersions["a"]) > resetBefore)
+        assertEquals(setOf("a"), controller.state.value.swipeResetVersions.keys)
+    }
+
+    @Test
+    fun removalUndoEventIsOneShotAndClearsPendingRemovalOnDismissal() = runBlocking {
+        val operations = FakeOperations(activeQueueId = "A").apply {
+            add(queue("A", "A", "a", song(1L)))
+        }
+        val controller = controller(operations)
+
+        controller.removeEntry("A", "a").join()
+        val eventId = requireNotNull(controller.state.value.removalUndoEventId)
+        controller.clearRemovalUndo()
+
+        assertNull(controller.state.value.removalUndoEventId)
+        controller.undoLastRemoval().join()
+        assertEquals(0, operations.undoCount)
+
+        controller.removeEntry("A", "a").join()
+        assertTrue(requireNotNull(controller.state.value.removalUndoEventId) > eventId)
+    }
+
+    @Test
+    fun undoRestoresTheExactStableEntryAndOriginalPlaybackPosition() = runBlocking {
+        val operations = FakeOperations(activeQueueId = "A").apply {
+            add(queueWithEntries(
+                id = "A",
+                name = "A",
+                currentEntry = "a",
+                entries = listOf("a" to song(1L), "unrelated" to song(2L))
+            ))
+        }
+        val controller = controller(operations)
+
+        controller.removeEntry("A", "a").join()
+        controller.undoLastRemoval().join()
+
+        assertEquals(1, operations.undoCount)
+        assertEquals("a", operations.lastUndo?.entry?.entryId)
+        assertEquals("first", operations.lastUndo?.originalCurrentEntryId)
+        assertEquals(400L, operations.lastUndo?.originalCurrentPositionMs)
+        assertNull(controller.state.value.removalUndoEventId)
+        assertTrue(controller.state.value.swipeResetVersions.containsKey("a"))
+        assertFalse(controller.state.value.swipeResetVersions.containsKey("unrelated"))
+        assertEquals(
+            listOf("a", "unrelated"),
+            controller.state.value.selectedEntries.map { it.entryId }
+        )
+    }
+
+    @Test
+    fun duplicateRemovalCallbackWhileCommandIsInFlightIsIgnored() = runBlocking {
+        val gate = CompletableDeferred<Unit>()
+        val operations = FakeOperations(activeQueueId = "A").apply {
+            add(queue("A", "A", "a", song(1L)))
+            removeGate = gate
+        }
+        val controller = controller(operations)
+
+        val first = controller.removeEntry("A", "a")
+        val duplicate = controller.removeEntry("A", "a")
+        assertEquals(1, operations.removeEntryCount)
+
+        gate.complete(Unit)
+        first.join()
+        duplicate.join()
+        assertEquals(1, operations.removeEntryCount)
+        assertNull(controller.state.value.message)
     }
 
     @Test
@@ -235,6 +399,10 @@ class PlaybackQueueUiControllerTest {
         var removeEntryCount = 0
         var reorderEntryCount = 0
         var playedEntry: Pair<String, String>? = null
+        var removeSucceeds = true
+        var removeGate: CompletableDeferred<Unit>? = null
+        var undoCount = 0
+        var lastUndo: PlaybackQueueEntryRemoval? = null
 
         fun add(queue: LoadedQueueForUi) {
             loaded[queue.queue.queueId] = queue
@@ -247,6 +415,18 @@ class PlaybackQueueUiControllerTest {
 
         fun publishLiveWithIds(entryIds: List<String>, vararg songs: Song) {
             liveQueueFlow.value = LiveActiveQueueForUi(songs.toList(), entryIds)
+        }
+
+        fun publishLiveTimeline(
+            entryIds: List<String>,
+            currentEntryId: String,
+            vararg songs: Song
+        ) {
+            liveQueueFlow.value = LiveActiveQueueForUi(
+                songs = songs.toList(),
+                entryIds = entryIds,
+                currentEntryId = currentEntryId
+            )
         }
 
         override fun observeQueues(): Flow<List<PlaybackQueueEntity>> = queueFlow
@@ -298,8 +478,10 @@ class PlaybackQueueUiControllerTest {
         override suspend fun removeEntryForUndo(
             queueId: String,
             entryId: String
-        ): PlaybackQueueEntryRemoval {
+        ): PlaybackQueueEntryRemoval? {
             removeEntryCount += 1
+            removeGate?.await()
+            if (!removeSucceeds) return null
             return PlaybackQueueEntryRemoval(
                 queueId = queueId,
                 entry = PlaybackQueueEntryEntity(entryId, queueId, 1L, null, 1, 1),
@@ -313,6 +495,12 @@ class PlaybackQueueUiControllerTest {
         override suspend fun playEntry(queueId: String, entryId: String): Boolean {
             playedEntry = queueId to entryId
             return queueId == activeQueueId
+        }
+
+        override suspend fun undoRemoveEntry(removal: PlaybackQueueEntryRemoval): Boolean {
+            undoCount += 1
+            lastUndo = removal
+            return true
         }
 
         override suspend fun reorderEntry(
@@ -359,6 +547,40 @@ class PlaybackQueueUiControllerTest {
                     )
                 )
             )
+
+        fun queueWithEntries(
+            id: String,
+            name: String,
+            currentEntry: String,
+            entries: List<Pair<String, Song>>
+        ) = LoadedQueueForUi(
+            queue = PlaybackQueueEntity(
+                queueId = id,
+                displayName = name,
+                createdAt = 1L,
+                updatedAt = 2L,
+                lastActiveAt = 3L,
+                sourceType = null,
+                sourceKey = null,
+                currentEntryId = currentEntry,
+                currentPositionMs = 400L,
+                shuffleEnabled = false,
+                repeatMode = PersistedQueueRepeatMode.OFF
+            ),
+            entries = entries.mapIndexed { index, (entryId, entrySong) ->
+                LoadedQueueEntryForUi(
+                    entry = PlaybackQueueEntryEntity(
+                        entryId = entryId,
+                        queueId = id,
+                        trackIdentityId = entrySong.id,
+                        localTrackBindingId = null,
+                        baseOrder = index,
+                        playbackOrder = index
+                    ),
+                    song = entrySong
+                )
+            }
+        )
 
         fun song(id: Long): Song {
             val uri = mock(Uri::class.java)

@@ -373,6 +373,10 @@ class PlaybackController(
     }
 
     fun skipToPrevious() {
+        if (hasAuthoritativeActiveQueueTimeline()) {
+            musicPlayer.skipToPrevious()
+            return
+        }
         if (musicPlayer.getCurrentPosition() > PREVIOUS_RESTART_THRESHOLD_MS) {
             seekTo(0)
             return
@@ -382,6 +386,10 @@ class PlaybackController(
     }
 
     fun skipToNext() {
+        if (hasAuthoritativeActiveQueueTimeline()) {
+            musicPlayer.skipToNext()
+            return
+        }
         playNextSong()
     }
 
@@ -401,6 +409,13 @@ class PlaybackController(
             ?.entries
             ?.map(LivePlaybackQueueItem::entryId)
             .orEmpty()
+
+    internal fun activeQueueCurrentEntryId(): String? =
+        PlaybackQueueRuntimeBridge.getActiveQueueSnapshot()?.currentEntryId
+
+    private fun hasAuthoritativeActiveQueueTimeline(): Boolean =
+        PlaybackQueueRuntimeBridge.getActiveQueueId() != null &&
+            PlaybackQueueRuntimeBridge.getActiveQueueSnapshot()?.entries?.isNotEmpty() == true
 
     internal fun playbackContextSongsForPersistence(): List<Song> =
         playbackContextSongs.toList()
@@ -883,6 +898,23 @@ class PlaybackController(
             return
         }
 
+        if (hasAuthoritativeActiveQueueTimeline()) {
+            val live = musicPlayer.adoptLiveSession(librarySongs) ?: return
+            currentSong = live.currentSong
+            currentPosition = live.currentPosition
+            duration = live.duration
+            isPlaying = live.isPlaying
+            repeatMode = live.repeatMode
+            synchronizeNavigationHistoryWithLiveTimeline(live)
+            playbackQueueManager.replaceQueue(emptyList())
+            upcomingSongs = live.upcomingSongs
+            applyReplayGainForCurrentSong()
+            startProgressUpdates()
+            savePlayerState()
+            persistActiveQueueStructure()
+            return
+        }
+
         val newSong = librarySongs.firstOrNull { song ->
             song.id == songId
         } ?: return
@@ -973,12 +1005,19 @@ class PlaybackController(
         playbackContextSongs = playerStateStorage.getPlaybackContextSongIds()
             .mapNotNull(songsById::get)
             .ifEmpty { live.playlist }
-        playbackNavigationHistory.clearAll()
+        synchronizeNavigationHistoryWithLiveTimeline(live)
         playbackQueueManager.replaceQueue(emptyList())
         upcomingSongs = live.upcomingSongs
         applyReplayGainForCurrentSong()
         startProgressUpdates()
         savePlayerState()
+    }
+
+    private fun synchronizeNavigationHistoryWithLiveTimeline(live: LivePlaybackSnapshot) {
+        playbackNavigationHistory.replacePreviousSongs(
+            live.playlist.take(live.currentPlaylistIndex)
+        )
+        playbackNavigationHistory.replaceNextSongs(live.upcomingSongs.asReversed())
     }
 
     private fun startProgressUpdates() {

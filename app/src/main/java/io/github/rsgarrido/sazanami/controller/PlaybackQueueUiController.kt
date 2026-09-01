@@ -57,7 +57,8 @@ data class PlaybackQueueHubUiState(
     val isSwitching: Boolean = false,
     val isCreating: Boolean = false,
     val message: String? = null,
-    val removalUndoEventId: Long? = null
+    val removalUndoEventId: Long? = null,
+    val swipeResetVersions: Map<String, Long> = emptyMap()
 ) {
     val selectedQueue: PlaybackQueueCardUiState?
         get() = queues.firstOrNull { queue -> queue.queueId == selectedQueueId }
@@ -76,6 +77,7 @@ internal data class LoadedQueueEntryForUi(
 internal data class LiveActiveQueueForUi(
     val songs: List<Song>,
     val entryIds: List<String> = emptyList(),
+    val currentEntryId: String? = null,
     val shuffleEnabled: Boolean = false
 )
 
@@ -129,6 +131,7 @@ internal class RoomPlaybackQueueUiOperations(
                             addAll(state.upcomingSongs)
                         },
                         entryIds = playbackController.activeQueueEntryIds(),
+                        currentEntryId = playbackController.activeQueueCurrentEntryId(),
                         shuffleEnabled = state.isShuffleEnabled
                     )
                 }
@@ -201,6 +204,8 @@ internal class PlaybackQueueUiController(
     private var hasLoadedPersistedQueues = false
     private var pendingRemoval: PlaybackQueueEntryRemoval? = null
     private var nextRemovalUndoEventId = 0L
+    private var nextSwipeResetVersion = 0L
+    private val removalsInFlight = mutableSetOf<Pair<String, String>>()
     private val _state = MutableStateFlow(PlaybackQueueHubUiState())
     val state: StateFlow<PlaybackQueueHubUiState> = _state.asStateFlow()
 
@@ -371,32 +376,45 @@ internal class PlaybackQueueUiController(
     }
 
     fun removeEntry(queueId: String, entryId: String): Job = scope.launch {
+        val removalKey = queueId to entryId
+        if (!removalsInFlight.add(removalKey)) return@launch
         val activeIndex = _state.value.selectedEntries.indexOfFirst { entry ->
             entry.entryId == entryId
         }.takeIf { index -> queueId == _state.value.activeQueueId && index >= 0 }
         val removal = try {
-            operations.removeEntryForUndo(queueId, entryId)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            null
+            try {
+                operations.removeEntryForUndo(queueId, entryId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+        } finally {
+            removalsInFlight.remove(removalKey)
         }
         val removed = removal != null
         if (removal != null) {
             pendingRemoval = removal
             nextRemovalUndoEventId += 1L
         }
+        val swipeResetVersions = if (!removed) {
+            nextSwipeResetVersion += 1L
+            _state.value.swipeResetVersions + (entryId to nextSwipeResetVersion)
+        } else {
+            _state.value.swipeResetVersions
+        }
         _state.value = _state.value.copy(
             message = if (removed) null else "Unable to remove that queue entry.",
-            removalUndoEventId = if (removed) nextRemovalUndoEventId else null
+            removalUndoEventId = if (removed) nextRemovalUndoEventId else null,
+            swipeResetVersions = swipeResetVersions
         )
         if (removed && activeIndex != null) {
             latestLiveActiveQueue = latestLiveActiveQueue?.copy(
                 songs = latestLiveActiveQueue?.songs.orEmpty().filterIndexed { index, _ ->
                     index != activeIndex
                 },
-                entryIds = latestLiveActiveQueue?.entryIds.orEmpty().filterIndexed { index, _ ->
-                    index != activeIndex
+                entryIds = latestLiveActiveQueue?.entryIds.orEmpty().filterNot { id ->
+                    id == entryId
                 }
             )
         }
@@ -427,20 +445,34 @@ internal class PlaybackQueueUiController(
         } catch (_: Exception) {
             false
         }
+        val swipeResetVersions = if (restored) {
+            nextSwipeResetVersion += 1L
+            _state.value.swipeResetVersions +
+                (removal.entry.entryId to nextSwipeResetVersion)
+        } else {
+            _state.value.swipeResetVersions
+        }
         _state.value = _state.value.copy(
             removalUndoEventId = null,
-            message = if (restored) null else "Unable to restore that queue entry."
+            message = if (restored) null else "Unable to restore that queue entry.",
+            swipeResetVersions = swipeResetVersions
         )
         if (restored && removal.queueId == _state.value.activeQueueId) {
             removal.resolvedItem?.song?.let { restoredSong ->
                 latestLiveActiveQueue = latestLiveActiveQueue?.let { live ->
-                    val insertionIndex = removal.entry.playbackOrder.coerceIn(0, live.songs.size)
+                    val currentTimelineIndex = live.entryIds.indexOf(live.currentEntryId)
+                        .coerceAtLeast(0)
+                    val insertionIndex = (removal.entry.playbackOrder - currentTimelineIndex)
+                        .coerceIn(0, live.songs.size)
                     live.copy(
                         songs = live.songs.toMutableList().apply {
                             add(insertionIndex, restoredSong)
                         },
                         entryIds = live.entryIds.toMutableList().apply {
-                            add(insertionIndex, removal.entry.entryId)
+                            add(
+                                removal.entry.playbackOrder.coerceIn(0, size),
+                                removal.entry.entryId
+                            )
                         }
                     )
                 }
@@ -456,11 +488,21 @@ internal class PlaybackQueueUiController(
 
     fun reorderEntry(queueId: String, entryId: String, toPlaybackOrder: Int): Job =
         scope.launch {
+            val liveBefore = latestLiveActiveQueue
             val activeFromIndex = _state.value.selectedEntries.indexOfFirst { entry ->
                 entry.entryId == entryId
             }.takeIf { index -> queueId == _state.value.activeQueueId && index >= 0 }
+            val currentTimelineIndex = liveBefore?.entryIds
+                ?.indexOf(liveBefore.currentEntryId)
+                ?.takeIf { index -> index >= 0 }
+                ?: 0
+            val runtimePlaybackOrder = if (activeFromIndex != null) {
+                currentTimelineIndex + toPlaybackOrder
+            } else {
+                toPlaybackOrder
+            }
             val reordered = try {
-                operations.reorderEntry(queueId, entryId, toPlaybackOrder)
+                operations.reorderEntry(queueId, entryId, runtimePlaybackOrder)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
@@ -481,12 +523,13 @@ internal class PlaybackQueueUiController(
                         )
                     }
                     val reorderedIds = live.entryIds.toMutableList()
-                    if (activeFromIndex in reorderedIds.indices &&
-                        toPlaybackOrder in reorderedIds.indices
+                    val fullFromIndex = reorderedIds.indexOf(entryId)
+                    if (fullFromIndex in reorderedIds.indices &&
+                        runtimePlaybackOrder in reorderedIds.indices
                     ) {
                         reorderedIds.add(
-                            toPlaybackOrder,
-                            reorderedIds.removeAt(activeFromIndex)
+                            runtimePlaybackOrder,
+                            reorderedIds.removeAt(fullFromIndex)
                         )
                     }
                     live.copy(songs = reorderedSongs, entryIds = reorderedIds)
@@ -573,16 +616,20 @@ internal fun buildState(
     val cards = loadedQueues.map { loaded ->
         val isActive = loaded.queue.queueId == activeQueueId
         val liveSongs = liveActiveQueue?.songs.takeIf { isActive }
+        val effectiveCurrentEntryId = liveActiveQueue?.currentEntryId
+            ?.takeIf { isActive }
+            ?: loaded.queue.currentEntryId
         val currentIndex = loaded.entries.indexOfFirst { item ->
-            item.entry.entryId == loaded.queue.currentEntryId
+            item.entry.entryId == effectiveCurrentEntryId
         }.takeIf { index -> index >= 0 }
-        val currentSong = liveSongs?.firstOrNull()
-            ?: currentIndex?.let { index -> loaded.entries[index].song }
+        val currentSong = currentIndex?.let { index -> loaded.entries[index].song }
+            ?: liveSongs?.firstOrNull()
         PlaybackQueueCardUiState(
             queueId = loaded.queue.queueId,
             name = loaded.queue.displayName,
-            entryCount = liveSongs?.size ?: loaded.entries.size,
-            currentPosition = if (liveSongs != null) 1 else currentIndex?.plus(1),
+            entryCount = loaded.entries.size.takeIf { it > 0 } ?: (liveSongs?.size ?: 0),
+            currentPosition = currentIndex?.plus(1)
+                ?: 1.takeIf { liveSongs?.isNotEmpty() == true },
             currentTrack = currentSong,
             representativeTrack = currentSong
                 ?: loaded.entries.firstNotNullOfOrNull { it.song },
@@ -599,7 +646,8 @@ internal fun buildState(
         buildLiveActiveQueueEntries(
             persistedEntries = selected?.entries.orEmpty(),
             liveSongs = liveQueue.songs,
-            liveEntryIds = liveQueue.entryIds
+            liveEntryIds = liveQueue.entryIds,
+            liveCurrentEntryId = liveQueue.currentEntryId
         )
     }
     val selectedEntries = liveSelectedEntries ?: selected?.entries.orEmpty().map { item ->
@@ -615,7 +663,8 @@ internal fun buildState(
         buildLiveActiveQueueEntries(
             persistedEntries = active?.entries.orEmpty(),
             liveSongs = liveQueue.songs,
-            liveEntryIds = liveQueue.entryIds
+            liveEntryIds = liveQueue.entryIds,
+            liveCurrentEntryId = liveQueue.currentEntryId
         )
     } ?: active?.entries.orEmpty().map { item ->
         PlaybackQueueEntryUiState(
@@ -638,17 +687,33 @@ internal fun buildState(
 internal fun buildLiveActiveQueueEntries(
     persistedEntries: List<LoadedQueueEntryForUi>,
     liveSongs: List<Song>,
-    liveEntryIds: List<String> = emptyList()
+    liveEntryIds: List<String> = emptyList(),
+    liveCurrentEntryId: String? = null
 ): List<PlaybackQueueEntryUiState> {
+    val currentTimelineIndex = liveEntryIds.indexOf(liveCurrentEntryId)
+    val visibleEntryIds = if (currentTimelineIndex >= 0) {
+        liveEntryIds.drop(currentTimelineIndex)
+    } else {
+        liveEntryIds
+    }
+    val persistedByEntryId = persistedEntries.associateBy { item -> item.entry.entryId }
+    if (visibleEntryIds.isNotEmpty()) {
+        return visibleEntryIds.mapIndexed { index, entryId ->
+            PlaybackQueueEntryUiState(
+                entryId = entryId,
+                song = persistedByEntryId[entryId]?.song ?: liveSongs.getOrNull(index),
+                isCurrent = index == 0
+            )
+        }
+    }
+
     val unmatchedPersistedEntries = persistedEntries.toMutableList()
     return liveSongs.mapIndexed { index, song ->
         val membershipKey = song.membershipKey()
         val persistedIndex = unmatchedPersistedEntries.indexOfFirst { item ->
             item.song?.membershipKey() == membershipKey
         }
-        val capturedEntryId = liveEntryIds.getOrNull(index)
-            ?.takeIf { liveEntryIds.size == liveSongs.size }
-        val entryId = capturedEntryId ?: if (persistedIndex >= 0) {
+        val entryId = if (persistedIndex >= 0) {
             unmatchedPersistedEntries.removeAt(persistedIndex).entry.entryId
         } else {
             "live:$index:$membershipKey"

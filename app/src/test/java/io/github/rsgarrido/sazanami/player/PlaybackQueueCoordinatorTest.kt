@@ -30,12 +30,57 @@ class PlaybackQueueCoordinatorTest {
 
         assertTrue(coordinator.playEntry("A", "dup-2"))
         assertEquals("dup-2", runtime.seekedEntryId)
+        assertEquals("dup-2", persistence.queue("A").queue.currentEntryId)
+        assertEquals(listOf("dup-1", "dup-2"), persistence.queue("A").entries.map { it.entryId })
         assertEquals(0, runtime.replaceCount)
         assertTrue(coordinator.playEntry("A", "dup-1"))
-        assertEquals(1, runtime.seekCount)
+        assertEquals("dup-1", runtime.seekedEntryId)
+        assertEquals(2, runtime.seekCount)
         assertFalse(coordinator.playEntry("B", "dup-2"))
-        assertEquals(1, runtime.seekCount)
+        assertEquals(2, runtime.seekCount)
     }
+
+    @Test
+    fun jumpCheckpointAndQueueRoundTripRestoreCurrentWithoutConsumingEarlierEntries() =
+        runBlocking {
+            val persistence = FakePersistence(activeQueueId = "A").apply {
+                seed(queue(
+                    "A",
+                    listOf(
+                        spec("A", 1L, 0, 0),
+                        spec("B", 2L, 1, 1),
+                        spec("C", 3L, 2, 2),
+                        spec("D", 4L, 3, 3)
+                    ),
+                    current = "A",
+                    position = 100L
+                ))
+                seed(queue("other", listOf(spec("other", 5L, 0, 0)), "other", 50L))
+            }
+            val runtime = FakeRuntime(
+                liveSnapshot(
+                    listOf("A" to 1L, "B" to 2L, "C" to 3L, "D" to 4L),
+                    "A",
+                    100L,
+                    false
+                )
+            )
+            val coordinator = coordinator(persistence, runtime)
+            coordinator.initialize()
+
+            assertTrue(coordinator.playEntry("A", "C"))
+            runtime.snapshot = runtime.snapshot?.copy(currentPositionMs = 4_321L)
+            coordinator.persistActiveQueueSnapshot()
+            assertTrue(coordinator.switchToQueue("other"))
+            assertTrue(coordinator.switchToQueue("A"))
+
+            assertEquals("C", runtime.snapshot?.currentEntryId)
+            assertEquals(4_321L, runtime.snapshot?.currentPositionMs)
+            assertEquals(
+                listOf("A", "B", "C", "D"),
+                persistence.queue("A").entries.map { it.entryId }
+            )
+        }
 
     @Test
     fun activeRemovalUndoRestoresStableEntryAtPositionWithoutReplacement() = runBlocking {
@@ -76,6 +121,42 @@ class PlaybackQueueCoordinatorTest {
         assertEquals(0, runtime.insertCount)
         assertEquals(0, runtime.replaceCount)
     }
+
+    @Test
+    fun activeRuntimeRemovalRemainsSuccessfulWhenImmediatePersistenceCheckpointFails() =
+        runBlocking {
+            val persistence = FakePersistence(activeQueueId = "A").apply {
+                seed(queue(
+                    "A",
+                    listOf(spec("current", 1L, 0, 0), spec("removed", 2L, 1, 1)),
+                    "current"
+                ))
+                failNextReplace = true
+            }
+            val runtime = FakeRuntime(
+                liveSnapshot(
+                    listOf("current" to 1L, "removed" to 2L),
+                    "current",
+                    321L,
+                    true
+                )
+            )
+            val coordinator = coordinator(persistence, runtime)
+            coordinator.initialize()
+
+            val removal = coordinator.removeEntryForUndo("A", "removed")
+
+            assertTrue(removal != null)
+            assertEquals(listOf("current"), runtime.snapshot?.entries?.map { it.entryId })
+            assertEquals("current", runtime.snapshot?.currentEntryId)
+            assertEquals(321L, runtime.snapshot?.currentPositionMs)
+            assertTrue(coordinator.undoRemoveEntry(requireNotNull(removal)))
+            assertEquals(
+                listOf("current", "removed"),
+                runtime.snapshot?.entries?.map { it.entryId }
+            )
+            assertEquals(0, runtime.replaceCount)
+        }
     @Test
     fun firstMeaningfulTimelineBootstrapsOneActiveQueueWithoutReplacingLiveSession() = runBlocking {
         val persistence = FakePersistence()
@@ -517,18 +598,28 @@ class PlaybackQueueCoordinatorTest {
     }
 
     @Test
-    fun activeRemovalAndReorderUseEntryIdsWithoutReplacingTimeline() = runBlocking {
+    fun activeRemovalAndValidUpcomingReorderUseEntryIdsWithoutReplacingTimeline() = runBlocking {
         val persistence = FakePersistence(activeQueueId = "A").apply {
             seed(queue(
                 "A",
-                listOf(spec("before", 1L, 0, 0), spec("current", 2L, 1, 1), spec("dup", 2L, 2, 2)),
+                listOf(
+                    spec("before", 1L, 0, 0),
+                    spec("current", 2L, 1, 1),
+                    spec("first-upcoming", 3L, 2, 2),
+                    spec("dup", 2L, 3, 3)
+                ),
                 current = "current",
                 position = 4_000L
             ))
         }
         val runtime = FakeRuntime(
             liveSnapshot(
-                listOf("before" to 1L, "current" to 2L, "dup" to 2L),
+                listOf(
+                    "before" to 1L,
+                    "current" to 2L,
+                    "first-upcoming" to 3L,
+                    "dup" to 2L
+                ),
                 "current",
                 4_000L,
                 true
@@ -540,14 +631,56 @@ class PlaybackQueueCoordinatorTest {
         assertTrue(coordinator.removeEntry("A", "before"))
         assertEquals("current", runtime.snapshot?.currentEntryId)
         assertEquals(4_000L, runtime.snapshot?.currentPositionMs)
-        assertEquals(listOf("current", "dup"), runtime.snapshot?.entries?.map { it.entryId })
-        assertTrue(coordinator.reorderEntry("A", "dup", 0))
+        assertEquals(
+            listOf("current", "first-upcoming", "dup"),
+            runtime.snapshot?.entries?.map { it.entryId }
+        )
+        assertTrue(coordinator.reorderEntry("A", "dup", 1))
 
         assertEquals("current", runtime.snapshot?.currentEntryId)
         assertEquals(4_000L, runtime.snapshot?.currentPositionMs)
-        assertEquals(listOf("dup", "current"), runtime.snapshot?.entries?.map { it.entryId })
+        assertEquals(
+            listOf("current", "dup", "first-upcoming"),
+            runtime.snapshot?.entries?.map { it.entryId }
+        )
         assertEquals(0, runtime.replaceCount)
-        assertEquals(listOf("dup", "current"), persistence.queue("A").entries.map { it.entryId })
+        assertEquals(
+            listOf("current", "dup", "first-upcoming"),
+            persistence.queue("A").entries.map { it.entryId }
+        )
+    }
+
+    @Test
+    fun activeReorderRejectsCurrentAndUpcomingMovesAcrossCurrentBoundary() = runBlocking {
+        val persistence = FakePersistence(activeQueueId = "A").apply {
+            seed(queue(
+                "A",
+                listOf(
+                    spec("current", 1L, 0, 0),
+                    spec("upcoming-1", 2L, 1, 1),
+                    spec("upcoming-2", 3L, 2, 2)
+                ),
+                current = "current"
+            ))
+        }
+        val runtime = FakeRuntime(
+            liveSnapshot(
+                listOf("current" to 1L, "upcoming-1" to 2L, "upcoming-2" to 3L),
+                "current",
+                44L,
+                true
+            )
+        )
+        val coordinator = coordinator(persistence, runtime)
+        coordinator.initialize()
+
+        assertFalse(coordinator.reorderEntry("A", "upcoming-2", 0))
+        assertFalse(coordinator.reorderEntry("A", "current", 2))
+        assertEquals(0, runtime.moveCount)
+        assertEquals(
+            listOf("current", "upcoming-1", "upcoming-2"),
+            runtime.snapshot?.entries?.map { it.entryId }
+        )
     }
 
     @Test
@@ -644,6 +777,7 @@ class PlaybackQueueCoordinatorTest {
         var seekedEntryId: String? = null
         var seekCount = 0
         var insertCount = 0
+        var moveCount = 0
 
         override fun captureSnapshot(): LivePlaybackQueueSnapshot? = snapshot
 
@@ -692,6 +826,7 @@ class PlaybackQueueCoordinatorTest {
             if (from < 0 || toPlaybackOrder !in entries.indices) return false
             entries.add(toPlaybackOrder, entries.removeAt(from))
             snapshot = before.copy(entries = entries)
+            moveCount += 1
             return true
         }
 
@@ -756,6 +891,7 @@ class PlaybackQueueCoordinatorTest {
         val queues = linkedMapOf<String, PlaybackQueueWithEntries>()
         var createCount = 0
         var replaceEntriesCount = 0
+        var failNextReplace = false
 
         fun seed(queue: PlaybackQueueWithEntries) {
             queues[queue.queue.queueId] = queue
@@ -807,6 +943,10 @@ class PlaybackQueueCoordinatorTest {
             currentPositionMs: Long
         ): PlaybackQueueWithEntries {
             replaceEntriesCount += 1
+            if (failNextReplace) {
+                failNextReplace = false
+                error("checkpoint failed")
+            }
             val old = queue(queueId)
             val replacement = PlaybackQueueWithEntries(
                 queue = old.queue.copy(

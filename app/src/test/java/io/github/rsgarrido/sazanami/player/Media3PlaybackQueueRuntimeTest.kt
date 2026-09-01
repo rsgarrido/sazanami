@@ -108,6 +108,31 @@ class Media3PlaybackQueueRuntimeTest {
         verify(player, never()).prepare()
     }
 
+    @Test
+    fun moveRejectsCurrentBoundaryAndAllowsUpcomingReorderAfterCurrent() {
+        val player = mock(Player::class.java)
+        `when`(player.mediaItemCount).thenReturn(3)
+        `when`(player.currentMediaItemIndex).thenReturn(0)
+        `when`(player.getMediaItemAt(0)).thenReturn(song(1L).toPlayableMediaItem("current"))
+        `when`(player.getMediaItemAt(1)).thenReturn(song(2L).toPlayableMediaItem("next-1"))
+        `when`(player.getMediaItemAt(2)).thenReturn(song(3L).toPlayableMediaItem("next-2"))
+        val runtime = Media3PlaybackQueueRuntime(
+            player = player,
+            isLogicalShuffleEnabled = { false },
+            logicalBaseSongs = { emptyList() },
+            beforeTimelineReplacement = {},
+            onBaseSongsRestored = { _, _ -> }
+        )
+
+        assertEquals(false, runtime.moveEntry("next-2", 0))
+        assertEquals(false, runtime.moveEntry("current", 2))
+        assertEquals(true, runtime.moveEntry("next-2", 1))
+
+        verify(player, times(1)).moveMediaItem(2, 1)
+        verify(player, never()).moveMediaItem(2, 0)
+        verify(player, never()).moveMediaItem(0, 2)
+    }
+
     private fun restoration(shouldPlay: Boolean) = PlaybackQueueRestoration(
         queueId = "queue",
         entries = listOf(

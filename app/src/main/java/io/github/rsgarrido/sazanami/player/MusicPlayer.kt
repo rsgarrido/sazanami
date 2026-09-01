@@ -11,6 +11,8 @@ import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.membershipKey
 import com.google.common.util.concurrent.ListenableFuture
 
+internal const val MEDIA_PREVIOUS_RESTART_THRESHOLD_MS = 3_000L
+
 internal data class LivePlaybackSnapshot(
     val currentSong: Song,
     val playlist: List<Song>,
@@ -198,7 +200,7 @@ class MusicPlayer(private val context: Context) {
     fun skipToPrevious() {
         val playerController = controller ?: return
 
-        if (playerController.currentPosition > 3_000) {
+        if (playerController.currentPosition > MEDIA_PREVIOUS_RESTART_THRESHOLD_MS) {
             playerController.seekTo(0)
         } else {
             playerController.seekToPreviousMediaItem()
