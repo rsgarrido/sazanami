@@ -63,6 +63,51 @@ class Media3PlaybackQueueRuntimeTest {
         verify(player, never()).play()
     }
 
+    @Test
+    fun seekTargetsExactDuplicateEntryWithoutReplacingOrPreparingTimeline() {
+        val player = mock(Player::class.java)
+        val duplicate = song(7L)
+        `when`(player.mediaItemCount).thenReturn(3)
+        `when`(player.currentMediaItemIndex).thenReturn(0)
+        `when`(player.getMediaItemAt(0)).thenReturn(duplicate.toPlayableMediaItem("duplicate-1"))
+        `when`(player.getMediaItemAt(1)).thenReturn(song(8L).toPlayableMediaItem("other"))
+        `when`(player.getMediaItemAt(2)).thenReturn(duplicate.toPlayableMediaItem("duplicate-2"))
+        val runtime = Media3PlaybackQueueRuntime(
+            player = player,
+            isLogicalShuffleEnabled = { false },
+            logicalBaseSongs = { emptyList() },
+            beforeTimelineReplacement = {},
+            onBaseSongsRestored = { _, _ -> }
+        )
+
+        assertEquals(true, runtime.seekToEntry("duplicate-2"))
+
+        verify(player).seekToDefaultPosition(2)
+        verify(player, never()).setMediaItems(anyList())
+        verify(player, never()).prepare()
+        verify(player, never()).play()
+    }
+
+    @Test
+    fun seekingCurrentEntryIsHarmless() {
+        val player = mock(Player::class.java)
+        `when`(player.mediaItemCount).thenReturn(1)
+        `when`(player.currentMediaItemIndex).thenReturn(0)
+        `when`(player.getMediaItemAt(0)).thenReturn(song(1L).toPlayableMediaItem("current"))
+        val runtime = Media3PlaybackQueueRuntime(
+            player = player,
+            isLogicalShuffleEnabled = { false },
+            logicalBaseSongs = { emptyList() },
+            beforeTimelineReplacement = {},
+            onBaseSongsRestored = { _, _ -> }
+        )
+
+        assertEquals(true, runtime.seekToEntry("current"))
+
+        verify(player, never()).seekToDefaultPosition(0)
+        verify(player, never()).prepare()
+    }
+
     private fun restoration(shouldPlay: Boolean) = PlaybackQueueRestoration(
         queueId = "queue",
         entries = listOf(

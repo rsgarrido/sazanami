@@ -163,6 +163,31 @@ internal class Media3PlaybackQueueRuntime(
         player.moveMediaItem(fromIndex, toPlaybackOrder)
         return true
     }
+
+    override fun seekToEntry(entryId: String): Boolean {
+        val index = (0 until player.mediaItemCount).firstOrNull { candidate ->
+            player.getMediaItemAt(candidate).listeningEvidence()?.itemInstanceId == entryId
+        } ?: return false
+        if (index == player.currentMediaItemIndex) return true
+        player.seekToDefaultPosition(index)
+        return true
+    }
+
+    override fun insertEntry(
+        item: ResolvedPlaybackQueueItem,
+        playbackOrder: Int
+    ): Boolean {
+        if ((0 until player.mediaItemCount).any { candidate ->
+                player.getMediaItemAt(candidate).listeningEvidence()?.itemInstanceId ==
+                    item.persistedEntry.entryId
+            }) return false
+        player.addMediaItem(playbackOrder.coerceIn(0, player.mediaItemCount), mediaItemFactory(item))
+        val restoredBaseSongs = logicalBaseSongs().toMutableList().apply {
+            add(item.persistedEntry.baseOrder.coerceIn(0, size), item.song)
+        }
+        onBaseSongsRestored(restoredBaseSongs, isLogicalShuffleEnabled())
+        return true
+    }
 }
 
 internal object PlaybackQueueRuntimeBridge {
@@ -198,6 +223,17 @@ internal object PlaybackQueueRuntimeBridge {
 
     suspend fun removeQueueEntry(queueId: String, entryId: String): Boolean =
         coordinator?.removeEntry(queueId, entryId) == true
+
+    suspend fun removeQueueEntryForUndo(
+        queueId: String,
+        entryId: String
+    ): PlaybackQueueEntryRemoval? = coordinator?.removeEntryForUndo(queueId, entryId)
+
+    suspend fun undoRemoveQueueEntry(removal: PlaybackQueueEntryRemoval): Boolean =
+        coordinator?.undoRemoveEntry(removal) == true
+
+    suspend fun playQueueEntry(queueId: String, entryId: String): Boolean =
+        coordinator?.playEntry(queueId, entryId) == true
 
     suspend fun reorderQueueEntry(
         queueId: String,

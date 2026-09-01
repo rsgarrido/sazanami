@@ -4,7 +4,7 @@ import android.R
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,10 +44,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -80,12 +87,24 @@ fun QueueHubSheet(
     onRename: (String, String) -> Unit,
     onDelete: (String) -> Unit,
     onRemoveEntry: (String, String) -> Unit = { _, _ -> },
+    onPlayEntry: (String, String) -> Unit = { _, _ -> },
+    onUndoRemove: () -> Unit = {},
+    onUndoDismissed: () -> Unit = {},
     onReorderEntry: (String, String, Int) -> Unit = { _, _, _ -> },
     onMessageDismissed: () -> Unit
 ) {
     var renameQueue by remember { mutableStateOf<PlaybackQueueCardUiState?>(null) }
     var deleteQueue by remember { mutableStateOf<PlaybackQueueCardUiState?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(state.removalUndoEventId) {
+        if (state.removalUndoEventId == null) return@LaunchedEffect
+        when (snackbarHostState.showSnackbar("Queue entry removed", actionLabel = "Undo")) {
+            SnackbarResult.ActionPerformed -> onUndoRemove()
+            SnackbarResult.Dismissed -> onUndoDismissed()
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -288,12 +307,19 @@ fun QueueHubSheet(
                                 }
                                 QueueHubEntryRow(
                                     entry = entry,
+                                    canPlay = selected?.isActive == true && !entry.isCurrent,
+                                    canSwipeRemove = !(selected?.isActive == true && entry.isCurrent),
                                     reorderEnabled = reorderEnabled &&
                                         !(selected?.isActive == true && entry.isCurrent),
                                     isDragging = draggedEntryId == entry.entryId,
                                     onRemove = {
                                         selectedQueueId?.let { queueId ->
                                             onRemoveEntry(queueId, entry.entryId)
+                                        }
+                                    },
+                                    onPlay = {
+                                        selectedQueueId?.let { queueId ->
+                                            onPlayEntry(queueId, entry.entryId)
                                         }
                                     },
                                     onDragStarted = {
@@ -330,6 +356,10 @@ fun QueueHubSheet(
                     }
                 }
             }
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
         }
     }
 
@@ -472,9 +502,78 @@ private fun QueueHubCard(
 @Composable
 private fun QueueHubEntryRow(
     entry: PlaybackQueueEntryUiState,
+    canPlay: Boolean,
+    canSwipeRemove: Boolean,
     reorderEnabled: Boolean,
     isDragging: Boolean,
     onRemove: () -> Unit,
+    onPlay: () -> Unit,
+    onDragStarted: () -> Unit,
+    onDragStep: (Int) -> Unit,
+    onDragFinished: () -> Unit
+) {
+    if (canSwipeRemove) {
+        val dismissState = rememberSwipeToDismissBoxState(
+            confirmValueChange = { target ->
+                if (target == SwipeToDismissBoxValue.EndToStart) onRemove()
+                false
+            }
+        )
+        SwipeToDismissBox(
+            state = dismissState,
+            enableDismissFromStartToEnd = false,
+            enableDismissFromEndToStart = true,
+            backgroundContent = {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.errorContainer)
+                        .padding(end = 24.dp),
+                    contentAlignment = Alignment.CenterEnd
+                ) {
+                    Icon(
+                        Icons.Filled.Delete,
+                        contentDescription = "Remove queue entry",
+                        tint = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+            }
+        ) {
+            QueueHubEntryRowContent(
+                entry = entry,
+                canPlay = canPlay,
+                reorderEnabled = reorderEnabled,
+                isDragging = isDragging,
+                onRemove = onRemove,
+                onPlay = onPlay,
+                onDragStarted = onDragStarted,
+                onDragStep = onDragStep,
+                onDragFinished = onDragFinished
+            )
+        }
+    } else {
+        QueueHubEntryRowContent(
+            entry = entry,
+            canPlay = canPlay,
+            reorderEnabled = reorderEnabled,
+            isDragging = isDragging,
+            onRemove = onRemove,
+            onPlay = onPlay,
+            onDragStarted = onDragStarted,
+            onDragStep = onDragStep,
+            onDragFinished = onDragFinished
+        )
+    }
+}
+
+@Composable
+private fun QueueHubEntryRowContent(
+    entry: PlaybackQueueEntryUiState,
+    canPlay: Boolean,
+    reorderEnabled: Boolean,
+    isDragging: Boolean,
+    onRemove: () -> Unit,
+    onPlay: () -> Unit,
     onDragStarted: () -> Unit,
     onDragStep: (Int) -> Unit,
     onDragFinished: () -> Unit
@@ -492,6 +591,7 @@ private fun QueueHubEntryRow(
         modifier = Modifier
             .fillMaxWidth()
             .background(background)
+            .clickable(enabled = canPlay, onClick = onPlay)
             .padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -540,7 +640,7 @@ private fun QueueHubEntryRow(
                     .size(40.dp)
                     .padding(8.dp)
                     .pointerInput(entry.entryId, reorderEnabled) {
-                        detectDragGesturesAfterLongPress(
+                        detectDragGestures(
                             onDragStart = {
                                 accumulatedDrag = 0f
                                 onDragStarted()

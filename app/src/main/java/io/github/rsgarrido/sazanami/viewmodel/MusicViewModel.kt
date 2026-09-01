@@ -657,6 +657,15 @@ class MusicViewModel(
     internal fun removePlaybackQueueEntry(queueId: String, entryId: String) =
         playbackQueueUiController.removeEntry(queueId, entryId)
 
+    internal fun playPlaybackQueueEntry(queueId: String, entryId: String) =
+        playbackQueueUiController.playEntry(queueId, entryId)
+
+    internal fun undoPlaybackQueueEntryRemoval() =
+        playbackQueueUiController.undoLastRemoval()
+
+    internal fun clearPlaybackQueueEntryRemovalUndo() =
+        playbackQueueUiController.clearRemovalUndo()
+
     internal fun reorderPlaybackQueueEntry(
         queueId: String,
         entryId: String,

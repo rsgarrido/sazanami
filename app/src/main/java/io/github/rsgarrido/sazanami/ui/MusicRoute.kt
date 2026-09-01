@@ -299,6 +299,11 @@ internal fun MusicRoute(
             onAddToAnotherQueue = { selectedSongs ->
                 pendingAnotherQueueSongs = selectedSongs
             },
+            onPlayPlaylistNext = { playlist ->
+                preparePlaylistSongs(playlist) { selectedSongs ->
+                    musicViewModel.addSongsToPlayNext(selectedSongs)
+                }
+            },
             onPlayPlaylistInNewQueue = { playlist ->
                 preparePlaylistSongs(playlist) { selectedSongs ->
                     musicViewModel.playInNewQueue(playlist.name, selectedSongs)
@@ -351,6 +356,15 @@ internal fun MusicRoute(
             },
             onRemovePlaybackQueueEntry = { queueId, entryId ->
                 musicViewModel.removePlaybackQueueEntry(queueId, entryId)
+            },
+            onPlayPlaybackQueueEntry = { queueId, entryId ->
+                musicViewModel.playPlaybackQueueEntry(queueId, entryId)
+            },
+            onUndoPlaybackQueueEntryRemoval = {
+                musicViewModel.undoPlaybackQueueEntryRemoval()
+            },
+            onClearPlaybackQueueEntryRemovalUndo = {
+                musicViewModel.clearPlaybackQueueEntryRemovalUndo()
             },
             onReorderPlaybackQueueEntry = { queueId, entryId, toPlaybackOrder ->
                 musicViewModel.reorderPlaybackQueueEntry(queueId, entryId, toPlaybackOrder)

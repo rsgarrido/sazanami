@@ -285,6 +285,33 @@ class PlaybackQueueRepositoryTest {
     }
 
     @Test
+    fun undoRestorePreservesStableEntryAndIndependentBaseAndPlaybackPositions() = runBlocking {
+        val track = seedIdentity("Undo")
+        repository.createQueue(
+            queueId = "saved",
+            displayName = "Saved",
+            entries = listOf(
+                entry("current", track, base = 0, playback = 0),
+                entry("removed", track, base = 2, playback = 1),
+                entry("middle", track, base = 1, playback = 2)
+            ),
+            currentEntryId = "current",
+            currentPositionMs = 4_321L
+        )
+        val removedEntry = checkNotNull(repository.loadQueue("saved"))
+            .entries.first { it.entryId == "removed" }
+
+        repository.removeEntry("saved", "removed")
+        val restored = checkNotNull(repository.restoreEntry("saved", removedEntry))
+
+        assertEquals(listOf("current", "removed", "middle"), restored.entries.map { it.entryId })
+        assertEquals(2, restored.entries.first { it.entryId == "removed" }.baseOrder)
+        assertEquals(1, restored.entries.first { it.entryId == "removed" }.playbackOrder)
+        assertEquals("current", restored.queue.currentEntryId)
+        assertEquals(4_321L, restored.queue.currentPositionMs)
+    }
+
+    @Test
     fun inactiveManualReorderUpdatesPlaybackAndBaseOrderButPreservesResumeState() = runBlocking {
         val track = seedIdentity("Reorder")
         repository.createQueue(

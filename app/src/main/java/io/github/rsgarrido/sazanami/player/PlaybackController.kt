@@ -432,6 +432,18 @@ class PlaybackController(
     suspend fun removeQueueEntry(queueId: String, entryId: String): Boolean =
         PlaybackQueueRuntimeBridge.removeQueueEntry(queueId, entryId)
 
+    internal suspend fun removeQueueEntryForUndo(
+        queueId: String,
+        entryId: String
+    ): PlaybackQueueEntryRemoval? =
+        PlaybackQueueRuntimeBridge.removeQueueEntryForUndo(queueId, entryId)
+
+    internal suspend fun undoRemoveQueueEntry(removal: PlaybackQueueEntryRemoval): Boolean =
+        PlaybackQueueRuntimeBridge.undoRemoveQueueEntry(removal)
+
+    suspend fun playQueueEntry(queueId: String, entryId: String): Boolean =
+        PlaybackQueueRuntimeBridge.playQueueEntry(queueId, entryId)
+
     suspend fun reorderQueueEntry(
         queueId: String,
         entryId: String,

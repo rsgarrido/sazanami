@@ -18,6 +18,65 @@ import org.mockito.Mockito.mock
 
 class PlaybackQueueCoordinatorTest {
     @Test
+    fun activeEntrySelectionSeeksExactStableEntryWithoutTimelineReplacement() = runBlocking {
+        val persistence = FakePersistence(activeQueueId = "A").apply {
+            seed(queue("A", listOf(spec("dup-1", 1L, 0, 0), spec("dup-2", 1L, 1, 1)), "dup-1"))
+        }
+        val runtime = FakeRuntime(
+            liveSnapshot(listOf("dup-1" to 1L, "dup-2" to 1L), "dup-1", 99L, true)
+        )
+        val coordinator = coordinator(persistence, runtime)
+        coordinator.initialize()
+
+        assertTrue(coordinator.playEntry("A", "dup-2"))
+        assertEquals("dup-2", runtime.seekedEntryId)
+        assertEquals(0, runtime.replaceCount)
+        assertTrue(coordinator.playEntry("A", "dup-1"))
+        assertEquals(1, runtime.seekCount)
+        assertFalse(coordinator.playEntry("B", "dup-2"))
+        assertEquals(1, runtime.seekCount)
+    }
+
+    @Test
+    fun activeRemovalUndoRestoresStableEntryAtPositionWithoutReplacement() = runBlocking {
+        val persistence = FakePersistence(activeQueueId = "A").apply {
+            seed(queue("A", listOf(spec("current", 1L, 0, 0), spec("removed", 2L, 1, 1), spec("last", 3L, 2, 2)), "current"))
+        }
+        val runtime = FakeRuntime(
+            liveSnapshot(listOf("current" to 1L, "removed" to 2L, "last" to 3L), "current", 123L, true)
+        )
+        val coordinator = coordinator(persistence, runtime)
+        coordinator.initialize()
+
+        val removal = requireNotNull(coordinator.removeEntryForUndo("A", "removed"))
+        assertTrue(coordinator.undoRemoveEntry(removal))
+
+        assertEquals(listOf("current", "removed", "last"), runtime.snapshot?.entries?.map { it.entryId })
+        assertEquals("current", runtime.snapshot?.currentEntryId)
+        assertEquals(123L, runtime.snapshot?.currentPositionMs)
+        assertEquals(0, runtime.replaceCount)
+        assertEquals(listOf("current", "removed", "last"), persistence.queue("A").entries.map { it.entryId })
+    }
+
+    @Test
+    fun inactiveRemovalUndoNeverTouchesLiveTimeline() = runBlocking {
+        val persistence = FakePersistence(activeQueueId = "A").apply {
+            seed(queue("A", listOf(spec("active", 1L, 0, 0)), "active"))
+            seed(queue("B", listOf(spec("one", 2L, 0, 0), spec("two", 3L, 1, 1)), "one"))
+        }
+        val runtime = FakeRuntime(liveSnapshot(listOf("active" to 1L), "active", 88L, true))
+        val coordinator = coordinator(persistence, runtime)
+        coordinator.initialize()
+
+        val removal = requireNotNull(coordinator.removeEntryForUndo("B", "two"))
+        assertTrue(coordinator.undoRemoveEntry(removal))
+
+        assertEquals(listOf("one", "two"), persistence.queue("B").entries.map { it.entryId })
+        assertEquals(listOf("active"), runtime.snapshot?.entries?.map { it.entryId })
+        assertEquals(0, runtime.insertCount)
+        assertEquals(0, runtime.replaceCount)
+    }
+    @Test
     fun firstMeaningfulTimelineBootstrapsOneActiveQueueWithoutReplacingLiveSession() = runBlocking {
         val persistence = FakePersistence()
         val runtime = FakeRuntime(
@@ -582,6 +641,9 @@ class PlaybackQueueCoordinatorTest {
         var prepareCount = 0
         var playCount = 0
         var lastRestoration: PlaybackQueueRestoration? = null
+        var seekedEntryId: String? = null
+        var seekCount = 0
+        var insertCount = 0
 
         override fun captureSnapshot(): LivePlaybackQueueSnapshot? = snapshot
 
@@ -630,6 +692,32 @@ class PlaybackQueueCoordinatorTest {
             if (from < 0 || toPlaybackOrder !in entries.indices) return false
             entries.add(toPlaybackOrder, entries.removeAt(from))
             snapshot = before.copy(entries = entries)
+            return true
+        }
+
+        override fun seekToEntry(entryId: String): Boolean {
+            val before = snapshot ?: return false
+            if (before.entries.none { it.entryId == entryId }) return false
+            if (before.currentEntryId != entryId) {
+                seekedEntryId = entryId
+                seekCount += 1
+                snapshot = before.copy(currentEntryId = entryId, currentPositionMs = 0L)
+            }
+            return true
+        }
+
+        override fun insertEntry(
+            item: ResolvedPlaybackQueueItem,
+            playbackOrder: Int
+        ): Boolean {
+            val before = snapshot ?: return false
+            val entries = before.entries.toMutableList()
+            entries.add(playbackOrder.coerceIn(0, entries.size), LivePlaybackQueueItem(
+                item.persistedEntry.entryId,
+                evidence(item.persistedEntry.entryId, item.song.id)
+            ))
+            snapshot = before.copy(entries = entries)
+            insertCount += 1
             return true
         }
     }
@@ -820,6 +908,28 @@ class PlaybackQueueCoordinatorTest {
                     baseOrder = if (updateBaseOrder) index else entry.baseOrder
                 )
             })
+            queues[queueId] = updated
+            return updated.ordered()
+        }
+
+        override suspend fun restoreEntry(
+            queueId: String,
+            entry: PlaybackQueueEntryEntity,
+            restoredCurrentEntryId: String?,
+            restoredCurrentPositionMs: Long?
+        ): PlaybackQueueWithEntries? {
+            val old = queues[queueId] ?: return null
+            val entries = old.entries.filterNot { it.entryId == entry.entryId }.toMutableList()
+            entries.add(entry.playbackOrder.coerceIn(0, entries.size), entry)
+            val updated = old.copy(
+                queue = old.queue.copy(
+                    currentEntryId = restoredCurrentEntryId ?: old.queue.currentEntryId,
+                    currentPositionMs = restoredCurrentPositionMs ?: old.queue.currentPositionMs
+                ),
+                entries = entries.mapIndexed { index, candidate ->
+                    candidate.copy(playbackOrder = index, baseOrder = index)
+                }
+            )
             queues[queueId] = updated
             return updated.ordered()
         }

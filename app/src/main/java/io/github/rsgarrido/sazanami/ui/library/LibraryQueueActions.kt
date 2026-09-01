@@ -13,6 +13,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
@@ -29,11 +33,31 @@ import io.github.rsgarrido.sazanami.data.Song
 data class LibraryQueueUiEnvironment(
     val onPlayInNewQueue: (String, List<Song>) -> Unit = { _, _ -> },
     val onAddToAnotherQueue: (List<Song>) -> Unit = {},
+    val onPlayPlaylistNext: (Playlist) -> Unit = {},
     val onPlayPlaylistInNewQueue: (Playlist) -> Unit = {},
     val onAddPlaylistToAnotherQueue: (Playlist) -> Unit = {}
 )
 
 val LocalLibraryQueueUi = staticCompositionLocalOf { LibraryQueueUiEnvironment() }
+
+internal fun playlistQueueActions(
+    playlist: Playlist,
+    queueUi: LibraryQueueUiEnvironment,
+    onAddToQueue: (Playlist) -> Unit
+): List<LibraryItemAction> = listOf(
+    LibraryItemAction("Play next", Icons.Filled.SkipNext) {
+        queueUi.onPlayPlaylistNext(playlist)
+    },
+    LibraryItemAction("Add to queue", Icons.AutoMirrored.Filled.QueueMusic) {
+        onAddToQueue(playlist)
+    },
+    LibraryItemAction("Add to another queue...", Icons.AutoMirrored.Filled.QueueMusic) {
+        queueUi.onAddPlaylistToAnotherQueue(playlist)
+    },
+    LibraryItemAction("Play in new queue", Icons.Filled.PlayArrow) {
+        queueUi.onPlayPlaylistInNewQueue(playlist)
+    }
+)
 
 @androidx.compose.runtime.Composable
 fun AddToAnotherQueueDialog(

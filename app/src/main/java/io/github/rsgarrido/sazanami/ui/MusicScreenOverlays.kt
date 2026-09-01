@@ -98,6 +98,9 @@ fun MusicScreenOverlays(
     onRenamePlaybackQueue: (String, String) -> Unit,
     onDeletePlaybackQueue: (String) -> Unit,
     onRemovePlaybackQueueEntry: (String, String) -> Unit,
+    onPlayPlaybackQueueEntry: (String, String) -> Unit,
+    onUndoPlaybackQueueEntryRemoval: () -> Unit,
+    onClearPlaybackQueueEntryRemovalUndo: () -> Unit,
     onReorderPlaybackQueueEntry: (String, String, Int) -> Unit,
     onClearPlaybackQueueMessage: () -> Unit,
     onRemoveFromQueueClick: (Int) -> Unit,
@@ -205,6 +208,11 @@ fun MusicScreenOverlays(
                     onToggleFavoriteClick = onToggleFavoriteClick,
                     songs = songs,
                     upcomingSongs = upcomingSongs,
+                    activeQueueSongs = playbackQueueHubUiState.activeEntries
+                        .mapNotNull { entry -> entry.song }
+                        .ifEmpty {
+                            listOfNotNull(currentSong) + queuedSongs + upcomingSongs
+                        },
                     onSongClick = onSongClick,
                     endpointBounds = playerEndpointBounds,
                     defaultMorphBounds = defaultMorphBounds,
@@ -267,6 +275,9 @@ fun MusicScreenOverlays(
             onRename = onRenamePlaybackQueue,
             onDelete = onDeletePlaybackQueue,
             onRemoveEntry = onRemovePlaybackQueueEntry,
+            onPlayEntry = onPlayPlaybackQueueEntry,
+            onUndoRemove = onUndoPlaybackQueueEntryRemoval,
+            onUndoDismissed = onClearPlaybackQueueEntryRemovalUndo,
             onReorderEntry = onReorderPlaybackQueueEntry,
             onMessageDismissed = onClearPlaybackQueueMessage
         )

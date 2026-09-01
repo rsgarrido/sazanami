@@ -5,6 +5,7 @@ import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.local.PersistedQueueRepeatMode
 import io.github.rsgarrido.sazanami.data.local.PlaybackQueueEntity
 import io.github.rsgarrido.sazanami.data.local.PlaybackQueueEntryEntity
+import io.github.rsgarrido.sazanami.player.PlaybackQueueEntryRemoval
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -65,6 +66,25 @@ class PlaybackQueueUiControllerTest {
             controller.state.value.selectedEntries.mapNotNull { entry -> entry.song?.title }
         )
         assertTrue(controller.state.value.selectedEntries.first().isCurrent)
+    }
+
+    @Test
+    fun authoritativeActiveEntriesKeepUpdatingWhileInspectingInactiveQueue() {
+        val active = song(1L)
+        val added = song(2L)
+        val operations = FakeOperations(activeQueueId = "A").apply {
+            add(queue("A", "A", "a", active))
+            add(queue("B", "B", "b", song(3L)))
+            publishLiveWithIds(listOf("a"), active)
+        }
+        val controller = controller(operations)
+        controller.selectQueue("B")
+
+        operations.publishLiveWithIds(listOf("a", "added"), active, added)
+
+        assertEquals("B", controller.state.value.selectedQueueId)
+        assertEquals(listOf("a", "added"), controller.state.value.activeEntries.map { it.entryId })
+        assertEquals(listOf("b"), controller.state.value.selectedEntries.map { it.entryId })
     }
 
     @Test
@@ -214,6 +234,7 @@ class PlaybackQueueUiControllerTest {
         var switchResult = true
         var removeEntryCount = 0
         var reorderEntryCount = 0
+        var playedEntry: Pair<String, String>? = null
 
         fun add(queue: LoadedQueueForUi) {
             loaded[queue.queue.queueId] = queue
@@ -272,6 +293,26 @@ class PlaybackQueueUiControllerTest {
         override suspend fun removeEntry(queueId: String, entryId: String): Boolean {
             removeEntryCount += 1
             return true
+        }
+
+        override suspend fun removeEntryForUndo(
+            queueId: String,
+            entryId: String
+        ): PlaybackQueueEntryRemoval {
+            removeEntryCount += 1
+            return PlaybackQueueEntryRemoval(
+                queueId = queueId,
+                entry = PlaybackQueueEntryEntity(entryId, queueId, 1L, null, 1, 1),
+                resolvedItem = null,
+                wasActive = queueId == activeQueueId,
+                originalCurrentEntryId = "first",
+                originalCurrentPositionMs = 400L
+            )
+        }
+
+        override suspend fun playEntry(queueId: String, entryId: String): Boolean {
+            playedEntry = queueId to entryId
+            return queueId == activeQueueId
         }
 
         override suspend fun reorderEntry(

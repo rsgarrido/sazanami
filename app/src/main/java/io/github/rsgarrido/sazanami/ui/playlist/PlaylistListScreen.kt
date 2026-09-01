@@ -23,7 +23,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
@@ -34,7 +33,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Share
@@ -62,6 +60,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.data.Playlist
+import io.github.rsgarrido.sazanami.ui.library.playlistQueueActions
 import io.github.rsgarrido.sazanami.data.PlaylistArtworkMode
 import io.github.rsgarrido.sazanami.data.PlaylistFolder
 import io.github.rsgarrido.sazanami.data.PlaylistMembershipBehavior
@@ -156,15 +155,7 @@ fun PlaylistListScreen(
             artworkDescription = "Artwork for ${playlist.name}",
             actions = buildList {
                 add(homePinUi.actionForPlaylist(playlist))
-                add(LibraryItemAction("Add to queue", Icons.AutoMirrored.Filled.QueueMusic) {
-                    onAddPlaylistToQueueClick(playlist)
-                })
-                add(LibraryItemAction("Add to another queue...", Icons.AutoMirrored.Filled.QueueMusic) {
-                    libraryQueueUi.onAddPlaylistToAnotherQueue(playlist)
-                })
-                add(LibraryItemAction("Play in new queue", Icons.Filled.PlayArrow) {
-                    libraryQueueUi.onPlayPlaylistInNewQueue(playlist)
-                })
+                addAll(playlistQueueActions(playlist, libraryQueueUi, onAddPlaylistToQueueClick))
                 add(LibraryItemAction("Change artwork", Icons.Filled.Image) {
                     onChangeArtworkClick(playlist)
                 })

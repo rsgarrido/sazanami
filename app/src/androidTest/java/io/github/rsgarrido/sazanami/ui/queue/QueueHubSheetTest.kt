@@ -15,6 +15,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.test.swipeDown
+import androidx.compose.ui.test.swipeLeft
 import io.github.rsgarrido.sazanami.controller.PlaybackQueueCardUiState
 import io.github.rsgarrido.sazanami.controller.PlaybackQueueEntryUiState
 import io.github.rsgarrido.sazanami.controller.PlaybackQueueHubUiState
@@ -158,6 +160,135 @@ class QueueHubSheetTest {
 
         composeRule.onNodeWithText("Turn off shuffle to reorder this queue.").assertIsDisplayed()
         composeRule.onAllNodesWithContentDescription("Reorder queue entry").assertCountEquals(0)
+    }
+
+    @Test
+    fun activeUpcomingRowTapPlaysStableEntryWhileInactiveTapDoesNothing() {
+        var played: Pair<String, String>? = null
+        var selected by mutableStateOf("A")
+        composeRule.setContent {
+            MaterialTheme {
+                QueueHubSheet(
+                    state = state(selected).copy(
+                        selectedEntries = listOf(
+                            PlaybackQueueEntryUiState("current", null, true),
+                            PlaybackQueueEntryUiState("duplicate-2", null, false)
+                        ),
+                        selectedQueueEntryCount = 2
+                    ),
+                    onDismiss = {},
+                    onQueueSelected = { selected = it },
+                    onSwitchSelected = {},
+                    onCreateFromCurrent = {},
+                    onRename = { _, _ -> },
+                    onDelete = {},
+                    onPlayEntry = { queueId, entryId -> played = queueId to entryId },
+                    onMessageDismissed = {}
+                )
+            }
+        }
+
+        composeRule.onAllNodesWithText("Unavailable track")[1].performClick()
+        composeRule.runOnIdle { assertEquals("A" to "duplicate-2", played) }
+
+        played = null
+        composeRule.runOnIdle { selected = "B" }
+        composeRule.onAllNodesWithText("Unavailable track")[1].performClick()
+        composeRule.runOnIdle { assertEquals(null, played) }
+    }
+
+    @Test
+    fun swipeRemovesUpcomingButNotCurrentEntry() {
+        var removed: Pair<String, String>? = null
+        composeRule.setContent {
+            MaterialTheme {
+                QueueHubSheet(
+                    state = state("A").copy(
+                        selectedEntries = listOf(
+                            PlaybackQueueEntryUiState("current", null, true),
+                            PlaybackQueueEntryUiState("upcoming", null, false)
+                        ),
+                        selectedQueueEntryCount = 2
+                    ),
+                    onDismiss = {},
+                    onQueueSelected = {},
+                    onSwitchSelected = {},
+                    onCreateFromCurrent = {},
+                    onRename = { _, _ -> },
+                    onDelete = {},
+                    onRemoveEntry = { queueId, entryId -> removed = queueId to entryId },
+                    onMessageDismissed = {}
+                )
+            }
+        }
+
+        composeRule.onAllNodesWithText("Unavailable track")[0]
+            .performTouchInput { swipeLeft() }
+        composeRule.runOnIdle { assertEquals(null, removed) }
+
+        composeRule.onAllNodesWithText("Unavailable track")[1]
+            .performTouchInput { swipeLeft() }
+        composeRule.runOnIdle { assertEquals("A" to "upcoming", removed) }
+    }
+
+    @Test
+    fun removalSnackbarExposesUndoAction() {
+        var undoCount = 0
+        composeRule.setContent {
+            MaterialTheme {
+                QueueHubSheet(
+                    state = state("A").copy(removalUndoEventId = 1L),
+                    onDismiss = {},
+                    onQueueSelected = {},
+                    onSwitchSelected = {},
+                    onCreateFromCurrent = {},
+                    onRename = { _, _ -> },
+                    onDelete = {},
+                    onUndoRemove = { undoCount += 1 },
+                    onMessageDismissed = {}
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Undo").assertIsDisplayed().performClick()
+        composeRule.runOnIdle { assertEquals(1, undoCount) }
+    }
+
+    @Test
+    fun dragHandleStartsReorderImmediatelyAndRowItselfDoesNotDrag() {
+        var reorder: Triple<String, String, Int>? = null
+        val entries = listOf(
+            PlaybackQueueEntryUiState("first", null, false),
+            PlaybackQueueEntryUiState("second", null, false)
+        )
+        composeRule.setContent {
+            MaterialTheme {
+                QueueHubSheet(
+                    state = state("B").copy(
+                        selectedEntries = entries,
+                        selectedQueueEntryCount = entries.size
+                    ),
+                    onDismiss = {},
+                    onQueueSelected = {},
+                    onSwitchSelected = {},
+                    onCreateFromCurrent = {},
+                    onRename = { _, _ -> },
+                    onDelete = {},
+                    onReorderEntry = { queue, entry, order ->
+                        reorder = Triple(queue, entry, order)
+                    },
+                    onMessageDismissed = {}
+                )
+            }
+        }
+
+        composeRule.onAllNodesWithText("Unavailable track")[0]
+            .performTouchInput { swipeDown(durationMillis = 100) }
+        composeRule.runOnIdle { assertEquals(null, reorder) }
+
+        composeRule.onAllNodesWithContentDescription("Reorder queue entry")[0]
+            .performTouchInput { swipeDown(durationMillis = 100) }
+        composeRule.runOnIdle { assertEquals(Triple("B", "first", 1), reorder) }
     }
 
     private fun state(selectedQueueId: String): PlaybackQueueHubUiState {

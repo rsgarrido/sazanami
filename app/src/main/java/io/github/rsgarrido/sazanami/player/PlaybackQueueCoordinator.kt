@@ -48,11 +48,22 @@ internal data class PlaybackQueueRestoration(
     val repeatMode: PersistedQueueRepeatMode
 )
 
+internal data class PlaybackQueueEntryRemoval(
+    val queueId: String,
+    val entry: PlaybackQueueEntryEntity,
+    val resolvedItem: ResolvedPlaybackQueueItem?,
+    val wasActive: Boolean,
+    val originalCurrentEntryId: String?,
+    val originalCurrentPositionMs: Long
+)
+
 internal interface PlaybackQueueRuntime {
     fun captureSnapshot(): LivePlaybackQueueSnapshot?
     fun replaceTimeline(restoration: PlaybackQueueRestoration)
     fun removeEntry(entryId: String): Boolean = false
     fun moveEntry(entryId: String, toPlaybackOrder: Int): Boolean = false
+    fun seekToEntry(entryId: String): Boolean = false
+    fun insertEntry(item: ResolvedPlaybackQueueItem, playbackOrder: Int): Boolean = false
 }
 
 internal interface PlaybackQueueTrackAccess {
@@ -117,6 +128,13 @@ internal interface PlaybackQueuePersistence {
         toPlaybackOrder: Int,
         updateBaseOrder: Boolean
     ): PlaybackQueueWithEntries? = error("Reordering queue entries is not supported")
+
+    suspend fun restoreEntry(
+        queueId: String,
+        entry: PlaybackQueueEntryEntity,
+        restoredCurrentEntryId: String? = null,
+        restoredCurrentPositionMs: Long? = null
+    ): PlaybackQueueWithEntries? = error("Restoring queue entries is not supported")
 }
 
 internal class RepositoryPlaybackQueuePersistence(
@@ -200,6 +218,18 @@ internal class RepositoryPlaybackQueuePersistence(
         entryId = entryId,
         toPlaybackOrder = toPlaybackOrder,
         updateBaseOrder = updateBaseOrder
+    )
+
+    override suspend fun restoreEntry(
+        queueId: String,
+        entry: PlaybackQueueEntryEntity,
+        restoredCurrentEntryId: String?,
+        restoredCurrentPositionMs: Long?
+    ): PlaybackQueueWithEntries? = repository.restoreEntry(
+        queueId,
+        entry,
+        restoredCurrentEntryId = restoredCurrentEntryId,
+        restoredCurrentPositionMs = restoredCurrentPositionMs
     )
 }
 
@@ -318,17 +348,84 @@ internal class PlaybackQueueCoordinator(
     }
 
     suspend fun removeEntry(queueId: String, entryId: String): Boolean = mutex.withLock {
-        if (queueId != activeQueueId) {
-            return@withLock persistence.removeEntry(queueId, entryId) != null
+        removeEntryForUndoLocked(queueId, entryId) != null
+    }
+
+    suspend fun removeEntryForUndo(
+        queueId: String,
+        entryId: String
+    ): PlaybackQueueEntryRemoval? = mutex.withLock {
+        removeEntryForUndoLocked(queueId, entryId)
+    }
+
+    private suspend fun removeEntryForUndoLocked(
+        queueId: String,
+        entryId: String
+    ): PlaybackQueueEntryRemoval? {
+        val persisted = persistence.loadQueue(queueId) ?: return null
+        val removedEntry = persisted.entries.firstOrNull { it.entryId == entryId } ?: return null
+        val wasActive = queueId == activeQueueId
+        val resolvedItem = if (wasActive) {
+            trackAccess.resolve(listOf(removedEntry)).firstOrNull() ?: return null
+        } else {
+            null
         }
-        val before = runtime.captureSnapshot() ?: return@withLock false
-        if (before.entries.none { it.entryId == entryId }) return@withLock false
-        if (!runtime.removeEntry(entryId)) return@withLock false
+        if (queueId != activeQueueId) {
+            persistence.removeEntry(queueId, entryId) ?: return null
+            return PlaybackQueueEntryRemoval(
+                queueId,
+                removedEntry,
+                null,
+                false,
+                persisted.queue.currentEntryId,
+                persisted.queue.currentPositionMs
+            )
+        }
+        val before = runtime.captureSnapshot() ?: return null
+        if (before.entries.none { it.entryId == entryId }) return null
+        if (!runtime.removeEntry(entryId)) return null
         if (before.entries.size == 1) {
             persistence.replaceEntries(queueId, emptyList(), null, 0L)
             lastLiveSignature = null
+        } else {
+            persistActiveQueueSnapshotLocked()
+        }
+        return PlaybackQueueEntryRemoval(
+            queueId,
+            removedEntry,
+            resolvedItem,
+            true,
+            persisted.queue.currentEntryId,
+            persisted.queue.currentPositionMs
+        )
+    }
+
+    suspend fun undoRemoveEntry(removal: PlaybackQueueEntryRemoval): Boolean = mutex.withLock {
+        val queue = persistence.loadQueue(removal.queueId) ?: return@withLock false
+        if (queue.entries.any { entry -> entry.entryId == removal.entry.entryId }) {
             return@withLock true
         }
+        if (removal.queueId != activeQueueId) {
+            return@withLock persistence.restoreEntry(
+                removal.queueId,
+                removal.entry,
+                removal.originalCurrentEntryId,
+                removal.originalCurrentPositionMs
+            ) != null
+        }
+        val resolved = removal.resolvedItem ?: return@withLock false
+        if (!runtime.insertEntry(resolved, removal.entry.playbackOrder)) return@withLock false
+        persistActiveQueueSnapshotLocked()
+        persistence.restoreEntry(removal.queueId, removal.entry)
+        true
+    }
+
+    suspend fun playEntry(queueId: String, entryId: String): Boolean = mutex.withLock {
+        if (queueId != activeQueueId) return@withLock false
+        val snapshot = runtime.captureSnapshot() ?: return@withLock false
+        if (snapshot.currentEntryId == entryId) return@withLock true
+        if (snapshot.entries.none { item -> item.entryId == entryId }) return@withLock false
+        if (!runtime.seekToEntry(entryId)) return@withLock false
         persistActiveQueueSnapshotLocked()
         true
     }

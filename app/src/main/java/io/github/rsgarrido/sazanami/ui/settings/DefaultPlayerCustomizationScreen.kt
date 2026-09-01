@@ -74,6 +74,7 @@ import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerAppearance
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerBackground
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerDefaults
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerSeekBar
+import io.github.rsgarrido.sazanami.ui.player.modern.ModernQueueHubButton
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerStyle
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernSeekbarColorMode
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernSeekbarStyle
@@ -445,7 +446,7 @@ internal fun DefaultPlayerCustomizationScreen(
 }
 
 @Composable
-private fun ModernPlayerAppearancePreview(
+internal fun ModernPlayerAppearancePreview(
     appearance: ModernPlayerAppearance,
     previewSong: Song?,
     modifier: Modifier = Modifier
@@ -559,6 +560,16 @@ private fun ModernPlayerAppearancePreview(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    ModernQueueHubButton(
+                        onClick = {},
+                        tint = style.contentColor
+                    )
                 }
 
                 Spacer(

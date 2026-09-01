@@ -193,6 +193,44 @@ class PlaybackQueueRepository(
         )
     }
 
+    suspend fun restoreEntry(
+        queueId: String,
+        entry: PlaybackQueueEntryEntity,
+        baseOrder: Int = entry.baseOrder,
+        playbackOrder: Int = entry.playbackOrder,
+        restoredCurrentEntryId: String? = null,
+        restoredCurrentPositionMs: Long? = null
+    ): PlaybackQueueWithEntries? = database.withTransaction {
+        val existing = loadQueueWithinTransaction(queueId) ?: return@withTransaction null
+        require(entry.queueId == queueId) { "The restored entry must belong to the queue" }
+
+        val withoutEntry = existing.entries.filterNot { candidate ->
+            candidate.entryId == entry.entryId
+        }
+        val playbackOrdered = withoutEntry.sortedBy { it.playbackOrder }.toMutableList().apply {
+            add(playbackOrder.coerceIn(0, size), entry)
+        }
+        val baseOrdered = withoutEntry.sortedBy { it.baseOrder }.toMutableList().apply {
+            add(baseOrder.coerceIn(0, size), entry)
+        }
+        val playbackOrderById = playbackOrdered.withIndex()
+            .associate { indexed -> indexed.value.entryId to indexed.index }
+        val baseOrderById = baseOrdered.withIndex()
+            .associate { indexed -> indexed.value.entryId to indexed.index }
+        val restoredEntries = playbackOrdered.map { candidate ->
+            candidate.copy(
+                baseOrder = checkNotNull(baseOrderById[candidate.entryId]),
+                playbackOrder = checkNotNull(playbackOrderById[candidate.entryId])
+            )
+        }
+        replaceEntriesWithinTransaction(
+            queue = existing,
+            entries = restoredEntries,
+            currentEntryId = restoredCurrentEntryId ?: existing.queue.currentEntryId,
+            currentPositionMs = restoredCurrentPositionMs ?: existing.queue.currentPositionMs
+        )
+    }
+
     suspend fun reorderEntry(
         queueId: String,
         entryId: String,
