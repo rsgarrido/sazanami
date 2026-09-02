@@ -87,7 +87,7 @@ fun SongsTabContent(
             LibrarySelectionEntity.SONG,
             emptyList(),
             searchActive = true,
-            onMoreClick = null
+            selectionActionTarget = null
         )
         Column(
             modifier = Modifier.padding(16.dp),
@@ -103,7 +103,7 @@ fun SongsTabContent(
             LibrarySelectionEntity.SONG,
             emptyList(),
             searchActive = true,
-            onMoreClick = null
+            selectionActionTarget = null
         )
         Text(
             text = "No songs match your search.",
@@ -231,7 +231,7 @@ fun RatedSongsTabContent(
             LibrarySelectionEntity.SONG,
             emptyList(),
             searchActive = searchQuery.isNotBlank() || selectedFilter != RatedSongFilter.ALL,
-            onMoreClick = null
+            selectionActionTarget = null
         )
         Text(
             ratedCollectionEmptyMessage(
@@ -333,7 +333,7 @@ fun FavoritesTabContent(
             LibrarySelectionEntity.SONG,
             emptyList(),
             searchActive = searchQuery.isNotBlank(),
-            onMoreClick = null
+            selectionActionTarget = null
         )
         Text(
             text = "No favorite songs yet.",
@@ -344,7 +344,7 @@ fun FavoritesTabContent(
             LibrarySelectionEntity.SONG,
             emptyList(),
             searchActive = true,
-            onMoreClick = null
+            selectionActionTarget = null
         )
         Text(
             text = "No favorite songs match your search.",
@@ -615,7 +615,7 @@ fun AlbumsTabContent(
                 LibrarySelectionEntity.ALBUM,
                 emptyList(),
                 searchActive = true,
-                onMoreClick = null
+                selectionActionTarget = null
             )
             Text(
                 text = "No albums match your search.",

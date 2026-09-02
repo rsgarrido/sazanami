@@ -313,7 +313,7 @@ fun MusicLibraryContent(
                     LibrarySelectionEntity.SONG,
                     emptyList(),
                     searchActive = false,
-                    onMoreClick = null
+                    selectionActionTarget = null
                 )
                 EmptyHistoryMessage(
                     message = "No recently played songs yet.",
@@ -355,7 +355,7 @@ fun MusicLibraryContent(
                     LibrarySelectionEntity.SONG,
                     emptyList(),
                     searchActive = searchQuery.isNotBlank(),
-                    onMoreClick = null
+                    selectionActionTarget = null
                 )
                 EmptyHistoryMessage(
                     message = stringResource(R.string.recently_added_empty),
@@ -416,7 +416,7 @@ fun MusicLibraryContent(
                     LibrarySelectionEntity.SONG,
                     emptyList(),
                     searchActive = false,
-                    onMoreClick = null
+                    selectionActionTarget = null
                 )
                 EmptyHistoryMessage(
                     message = "No most played songs yet.",

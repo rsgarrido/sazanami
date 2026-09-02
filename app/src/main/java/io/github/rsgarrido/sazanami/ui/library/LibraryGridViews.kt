@@ -97,9 +97,10 @@ fun SongGrid(
                 entity = LibrarySelectionEntity.SONG,
                 displayedKeys = displayedKeys,
                 searchActive = searchActive,
-                onMoreClick = {
-                    resolvedSelectedSongs().singleOrNull()?.let { selectedSong ->
-                        val base = songActionSheetTarget(
+                selectionActionTarget = {
+                    val selectedSongs = resolvedSelectedSongs()
+                    val singleSongTarget = selectedSongs.singleOrNull()?.let { selectedSong ->
+                        songActionSheetTarget(
                             song = selectedSong,
                             wasRecentlyAdded = selectedSong.id in recentlyAddedSongIds,
                             isFavorite = selectedSong.membershipKey() in favoriteMembershipKeys,
@@ -112,17 +113,17 @@ fun SongGrid(
                             onRateSongClick = ratingUi.onOpen,
                             homePinAction = homePinUi.actionForSong(selectedSong)
                         )
-                        actionSheetTarget = base.copy(
-                            actions = base.actions.filter { action ->
-                                isSongSelectionMoreAction(action.label, rateSongLabel)
-                            }.map { action ->
-                                action.copy(onClick = {
-                                    selectionUi.onClear()
-                                    action.onClick()
-                                })
-                            }
-                        )
                     }
+                    songSelectionActionSheetTarget(
+                        selectedSongs = selectedSongs,
+                        singleSongTarget = singleSongTarget,
+                        favoriteMembershipKeys = selectionUi.favoriteMembershipKeys,
+                        rateSongLabel = rateSongLabel,
+                        onAddToAnotherQueue = selectionUi.onAddToAnotherQueue,
+                        onPlayInNewQueue = selectionUi.onPlayInNewQueue,
+                        onApplyFavoriteBatch = selectionUi.onApplyFavoriteBatch,
+                        onClearSelection = selectionUi.onClear
+                    )
                 }
             )
         }
@@ -201,7 +202,6 @@ fun SongGrid(
             LibrarySelectionActionBar(
                 selectedSongs = resolvedSelectedSongs,
                 onAddToPlaylist = onAddSongsToPlaylistClick,
-                favoritesEnabled = true,
                 modifier = Modifier.padding(bottom = bottomContentPadding)
             )
         }
@@ -260,9 +260,10 @@ fun AlbumGridScreen(
                 entity = LibrarySelectionEntity.ALBUM,
                 displayedKeys = displayedKeys,
                 searchActive = searchActive,
-                onMoreClick = {
-                    resolvedSelectedAlbums().singleOrNull()?.let { album ->
-                        val base = albumActionSheetTarget(
+                selectionActionTarget = {
+                    val selectedAlbums = resolvedSelectedAlbums()
+                    val singleAlbumTarget = selectedAlbums.singleOrNull()?.let { album ->
+                        albumActionSheetTarget(
                             albumTitle = album.title,
                             subtitle = album.artistText,
                             artworkUri = album.songs.firstOrNull()?.albumArtUri,
@@ -274,17 +275,14 @@ fun AlbumGridScreen(
                             onAddToPlaylistClick = onAlbumAddToPlaylistClick,
                             homePinAction = homePinUi.actionForAlbum(album)
                         )
-                        actionSheetTarget = base.copy(
-                            actions = base.actions.filter { action ->
-                                isAlbumSelectionMoreAction(action.label)
-                            }.map { action ->
-                                action.copy(onClick = {
-                                    selectionUi.onClear()
-                                    action.onClick()
-                                })
-                            }
-                        )
                     }
+                    albumSelectionActionSheetTarget(
+                        selectedAlbums = selectedAlbums,
+                        singleAlbumTarget = singleAlbumTarget,
+                        onAddToAnotherQueue = selectionUi.onAddToAnotherQueue,
+                        onPlayInNewQueue = selectionUi.onPlayInNewQueue,
+                        onClearSelection = selectionUi.onClear
+                    )
                 }
             )
         }
@@ -362,8 +360,6 @@ fun AlbumGridScreen(
                 onAddToPlaylist = { selectedSongs ->
                     onAlbumAddToPlaylistClick("Selected albums", selectedSongs)
                 },
-                favoritesEnabled = false,
-                newQueueName = { resolvedSelectedAlbums().singleOrNull()?.title.orEmpty() },
                 modifier = Modifier.padding(bottom = bottomContentPadding)
             )
         }

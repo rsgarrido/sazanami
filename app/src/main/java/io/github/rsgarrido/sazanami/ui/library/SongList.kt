@@ -101,9 +101,10 @@ fun SongList(
                 entity = LibrarySelectionEntity.SONG,
                 displayedKeys = displayedKeys,
                 searchActive = searchActive,
-                onMoreClick = {
-                    resolvedSelectedSongs().singleOrNull()?.let { selectedSong ->
-                        val base = songActionSheetTarget(
+                selectionActionTarget = {
+                    val selectedSongs = resolvedSelectedSongs()
+                    val singleSongTarget = selectedSongs.singleOrNull()?.let { selectedSong ->
+                        songActionSheetTarget(
                             song = selectedSong,
                             wasRecentlyAdded = selectedSong.id in recentlyAddedSongIds,
                             isFavorite = selectedSong.membershipKey() in favoriteMembershipKeys,
@@ -116,19 +117,17 @@ fun SongList(
                             onRateSongClick = ratingUi.onOpen,
                             homePinAction = homePinUi.actionForSong(selectedSong)
                         )
-                        actionSheetTarget = base.copy(
-                            actions = base.actions
-                                .filter { action ->
-                                    isSongSelectionMoreAction(action.label, rateSongLabel)
-                                }
-                                .map { action ->
-                                    action.copy(onClick = {
-                                        selectionUi.onClear()
-                                        action.onClick()
-                                    })
-                                }
-                        )
                     }
+                    songSelectionActionSheetTarget(
+                        selectedSongs = selectedSongs,
+                        singleSongTarget = singleSongTarget,
+                        favoriteMembershipKeys = selectionUi.favoriteMembershipKeys,
+                        rateSongLabel = rateSongLabel,
+                        onAddToAnotherQueue = selectionUi.onAddToAnotherQueue,
+                        onPlayInNewQueue = selectionUi.onPlayInNewQueue,
+                        onApplyFavoriteBatch = selectionUi.onApplyFavoriteBatch,
+                        onClearSelection = selectionUi.onClear
+                    )
                 }
             )
         }
@@ -300,7 +299,6 @@ fun SongList(
             LibrarySelectionActionBar(
                 selectedSongs = resolvedSelectedSongs,
                 onAddToPlaylist = onAddSongsToPlaylistClick,
-                favoritesEnabled = true,
                 modifier = Modifier.padding(bottom = bottomContentPadding)
             )
         }

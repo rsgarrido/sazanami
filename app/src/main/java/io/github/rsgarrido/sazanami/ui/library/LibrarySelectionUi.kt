@@ -14,11 +14,10 @@ import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,14 +31,15 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import io.github.rsgarrido.sazanami.data.FavoriteBatchOperation
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.membershipKey
+import io.github.rsgarrido.sazanami.data.planFavoriteBatch
 import io.github.rsgarrido.sazanami.ui.state.LibrarySelectionEntity
 import io.github.rsgarrido.sazanami.ui.state.LibrarySelectionUiState
 
@@ -75,26 +75,44 @@ class LibrarySelectionHeaderState {
     var binding by mutableStateOf<LibrarySelectionHeaderBinding?>(null)
         private set
 
-    private var moreAction: (() -> Unit)? = null
+    var activeActionTarget by mutableStateOf<LibraryItemActionSheetTarget?>(null)
+        private set
+
+    private var actionTargetProvider: (() -> LibraryItemActionSheetTarget?)? = null
 
     fun bind(
         entity: LibrarySelectionEntity,
         displayedKeys: List<String>,
         searchActive: Boolean,
-        onMoreClick: (() -> Unit)?
+        selectionActionTarget: (() -> LibraryItemActionSheetTarget?)?
     ) {
-        moreAction = onMoreClick
+        if (binding?.entity != entity) {
+            actionTargetProvider = null
+            activeActionTarget = null
+        }
+        if (selectionActionTarget != null) {
+            actionTargetProvider = selectionActionTarget
+        }
         val updated = LibrarySelectionHeaderBinding(
             entity = entity,
             displayedKeys = displayedKeys,
             searchActive = searchActive,
-            hasMoreAction = onMoreClick != null
+            hasMoreAction = actionTargetProvider != null
         )
         if (binding != updated) binding = updated
     }
 
     fun showMore() {
-        moreAction?.invoke()
+        activeActionTarget = actionTargetProvider?.invoke()
+    }
+
+    fun dismissActions() {
+        activeActionTarget = null
+    }
+
+    fun resetActions() {
+        actionTargetProvider = null
+        activeActionTarget = null
     }
 }
 
@@ -114,23 +132,170 @@ internal fun resolveSelectedAlbums(
     .distinctBy(LibraryAlbumGroup::key)
     .filter { it.key in selectedKeys }
 
-internal fun isSongSelectionMoreAction(label: String, rateLabel: String): Boolean =
-    label == rateLabel || label == "Edit tags" || "Home" in label
+internal fun songSelectionActionSheetTarget(
+    selectedSongs: List<Song>,
+    singleSongTarget: LibraryItemActionSheetTarget?,
+    favoriteMembershipKeys: Set<String>,
+    rateSongLabel: String,
+    onAddToAnotherQueue: (List<Song>) -> Unit,
+    onPlayInNewQueue: (String, List<Song>) -> Unit,
+    onApplyFavoriteBatch: (List<Song>) -> Unit,
+    onClearSelection: () -> Unit
+): LibraryItemActionSheetTarget? {
+    val songs = selectedSongs.distinctBy(Song::membershipKey)
+    if (songs.isEmpty()) return null
 
-internal fun isAlbumSelectionMoreAction(label: String): Boolean =
-    label == "Play" || label == "Shuffle" || label == "Edit album metadata" ||
-        "Home" in label
+    val favoriteOperation = planFavoriteBatch(songs, favoriteMembershipKeys).operation
+    val removeFromFavorites = favoriteOperation == FavoriteBatchOperation.REMOVE_SELECTED
+    val exactActions = singleSongTarget?.actions.orEmpty()
+    val directSelectionActions = buildList {
+        add(
+            LibraryItemAction(
+                label = "Add to another queue...",
+                icon = Icons.AutoMirrored.Filled.QueueMusic,
+                onClick = { onAddToAnotherQueue(songs) }
+            )
+        )
+        add(
+            LibraryItemAction(
+                label = "Play in new queue",
+                icon = Icons.Filled.PlayArrow,
+                onClick = {
+                    onPlayInNewQueue("", songs)
+                    onClearSelection()
+                }
+            )
+        )
+        add(
+            LibraryItemAction(
+                label = if (removeFromFavorites) {
+                    "Remove from favorites"
+                } else {
+                    "Add to favorites"
+                },
+                icon = if (removeFromFavorites) {
+                    Icons.Filled.Favorite
+                } else {
+                    Icons.Filled.FavoriteBorder
+                },
+                onClick = {
+                    onApplyFavoriteBatch(songs)
+                    onClearSelection()
+                }
+            )
+        )
+        if (songs.size == 1) {
+            addExactSelectionAction(exactActions, onClearSelection) { "Home" in it.label }
+            addExactSelectionAction(exactActions, onClearSelection) {
+                it.label == rateSongLabel
+            }
+            addExactSelectionAction(exactActions, onClearSelection) {
+                it.label == "Edit tags"
+            }
+        }
+    }
+
+    return if (songs.size == 1 && singleSongTarget != null) {
+        singleSongTarget.copy(actions = directSelectionActions)
+    } else {
+        LibraryItemActionSheetTarget(
+            title = "${songs.size} songs selected",
+            subtitle = "Actions apply to the current selection",
+            artworkUri = null,
+            artworkDescription = "${songs.size} selected songs",
+            actions = directSelectionActions
+        )
+    }
+}
+
+internal fun albumSelectionActionSheetTarget(
+    selectedAlbums: List<LibraryAlbumGroup>,
+    singleAlbumTarget: LibraryItemActionSheetTarget?,
+    onAddToAnotherQueue: (List<Song>) -> Unit,
+    onPlayInNewQueue: (String, List<Song>) -> Unit,
+    onClearSelection: () -> Unit
+): LibraryItemActionSheetTarget? {
+    val albums = selectedAlbums.distinctBy(LibraryAlbumGroup::key)
+    if (albums.isEmpty()) return null
+
+    val songs = albums.flatMap(LibraryAlbumGroup::songs)
+    val exactActions = singleAlbumTarget?.actions.orEmpty()
+    val directSelectionActions = buildList {
+        add(
+            LibraryItemAction(
+                label = "Add to another queue...",
+                icon = Icons.AutoMirrored.Filled.QueueMusic,
+                onClick = { onAddToAnotherQueue(songs) }
+            )
+        )
+        add(
+            LibraryItemAction(
+                label = "Play in new queue",
+                icon = Icons.Filled.PlayArrow,
+                onClick = {
+                    onPlayInNewQueue(albums.singleOrNull()?.title.orEmpty(), songs)
+                    onClearSelection()
+                }
+            )
+        )
+        if (albums.size == 1) {
+            addExactSelectionAction(exactActions, onClearSelection) { it.label == "Play" }
+            addExactSelectionAction(exactActions, onClearSelection) { it.label == "Shuffle" }
+            addExactSelectionAction(exactActions, onClearSelection) { "Home" in it.label }
+            addExactSelectionAction(exactActions, onClearSelection) {
+                it.label == "Edit album metadata"
+            }
+        }
+    }
+
+    return if (albums.size == 1 && singleAlbumTarget != null) {
+        singleAlbumTarget.copy(actions = directSelectionActions)
+    } else {
+        LibraryItemActionSheetTarget(
+            title = "${albums.size} albums selected",
+            subtitle = "Actions apply to the current selection",
+            artworkUri = null,
+            artworkDescription = "${albums.size} selected albums",
+            actions = directSelectionActions
+        )
+    }
+}
+
+private fun MutableList<LibraryItemAction>.addExactSelectionAction(
+    actions: List<LibraryItemAction>,
+    onClearSelection: () -> Unit,
+    predicate: (LibraryItemAction) -> Boolean
+) {
+    actions.firstOrNull(predicate)?.let { action ->
+        add(
+            action.copy(onClick = {
+                onClearSelection()
+                action.onClick()
+            })
+        )
+    }
+}
 
 @Composable
 internal fun LibrarySelectionHeader(
     entity: LibrarySelectionEntity,
     displayedKeys: List<String>,
     searchActive: Boolean,
-    onMoreClick: (() -> Unit)?
+    selectionActionTarget: (() -> LibraryItemActionSheetTarget?)?
 ) {
     val selection = LocalLibrarySelectionUi.current
     SideEffect {
-        selection.headerState.bind(entity, displayedKeys, searchActive, onMoreClick)
+        if (selection.state.isActive) {
+            selection.headerState.bind(
+                entity,
+                displayedKeys,
+                searchActive,
+                selectionActionTarget
+            )
+        } else {
+            selection.headerState.resetActions()
+            selection.headerState.bind(entity, displayedKeys, searchActive, selectionActionTarget)
+        }
     }
 }
 
@@ -163,12 +328,19 @@ internal fun LibrarySelectionHeaderContent(modifier: Modifier = Modifier) {
             ) {
                 Text(if (binding.searchActive) "Select results" else "Select all")
             }
-            if (selection.state.selectedCount == 1 && binding.hasMoreAction) {
+            if (binding.hasMoreAction) {
                 IconButton(onClick = selection.headerState::showMore) {
-                    Icon(Icons.Filled.MoreVert, contentDescription = "More actions")
+                    Icon(Icons.Filled.MoreVert, contentDescription = "Selection actions")
                 }
             }
         }
+    }
+
+    selection.headerState.activeActionTarget?.let { target ->
+        LibraryItemActionSheet(
+            target = target,
+            onDismissRequest = selection.headerState::dismissActions
+        )
     }
 }
 
@@ -194,12 +366,9 @@ internal fun LibrarySelectionCheckBadge(modifier: Modifier = Modifier) {
 internal fun LibrarySelectionActionBar(
     selectedSongs: () -> List<Song>,
     onAddToPlaylist: (List<Song>) -> Unit,
-    favoritesEnabled: Boolean,
-    newQueueName: () -> String = { "" },
     modifier: Modifier = Modifier
 ) {
     val selection = LocalLibrarySelectionUi.current
-    var overflowExpanded by remember { mutableStateOf(false) }
 
     Surface(modifier = modifier, tonalElevation = 6.dp) {
         Row(
@@ -244,57 +413,6 @@ internal fun LibrarySelectionActionBar(
             }) {
                 Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null)
                 Text("Playlist")
-            }
-            IconButton(onClick = { overflowExpanded = true }) {
-                Icon(Icons.Filled.MoreVert, contentDescription = "More batch actions")
-            }
-            DropdownMenu(
-                expanded = overflowExpanded,
-                onDismissRequest = { overflowExpanded = false }
-            ) {
-                DropdownMenuItem(
-                    text = { Text("Add to another queue...") },
-                    leadingIcon = {
-                        Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null)
-                    },
-                    onClick = {
-                        overflowExpanded = false
-                        val songs = selectedSongs()
-                        if (songs.isNotEmpty()) selection.onAddToAnotherQueue(songs)
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text("Play in new queue") },
-                    leadingIcon = { Icon(Icons.Filled.PlayArrow, contentDescription = null) },
-                    onClick = {
-                        overflowExpanded = false
-                        val songs = selectedSongs()
-                        if (songs.isNotEmpty()) {
-                            selection.onPlayInNewQueue(newQueueName(), songs)
-                            selection.onClear()
-                        }
-                    }
-                )
-                if (favoritesEnabled) {
-                    val allFavorite = selection.state.selectedKeys.isNotEmpty() &&
-                        selection.state.selectedKeys.all {
-                            it in selection.favoriteMembershipKeys
-                        }
-                    DropdownMenuItem(
-                        text = {
-                            Text(if (allFavorite) "Remove from favorites" else "Add to favorites")
-                        },
-                        leadingIcon = { Icon(Icons.Filled.Favorite, contentDescription = null) },
-                        onClick = {
-                            overflowExpanded = false
-                            val songs = selectedSongs()
-                            if (songs.isNotEmpty()) {
-                                selection.onApplyFavoriteBatch(songs)
-                                selection.onClear()
-                            }
-                        }
-                    )
-                }
             }
         }
     }

@@ -88,9 +88,10 @@ fun AlbumListScreen(
                 entity = LibrarySelectionEntity.ALBUM,
                 displayedKeys = displayedKeys,
                 searchActive = searchActive,
-                onMoreClick = {
-                    resolvedSelectedAlbums().singleOrNull()?.let { album ->
-                        val base = albumActionSheetTarget(
+                selectionActionTarget = {
+                    val selectedAlbums = resolvedSelectedAlbums()
+                    val singleAlbumTarget = selectedAlbums.singleOrNull()?.let { album ->
+                        albumActionSheetTarget(
                             albumTitle = album.title,
                             subtitle = album.artistText,
                             artworkUri = album.songs.firstOrNull()?.albumArtUri,
@@ -102,17 +103,14 @@ fun AlbumListScreen(
                             onAddToPlaylistClick = onAlbumAddToPlaylistClick,
                             homePinAction = homePinUi.actionForAlbum(album)
                         )
-                        actionSheetTarget = base.copy(
-                            actions = base.actions.filter { action ->
-                                isAlbumSelectionMoreAction(action.label)
-                            }.map { action ->
-                                action.copy(onClick = {
-                                    selectionUi.onClear()
-                                    action.onClick()
-                                })
-                            }
-                        )
                     }
+                    albumSelectionActionSheetTarget(
+                        selectedAlbums = selectedAlbums,
+                        singleAlbumTarget = singleAlbumTarget,
+                        onAddToAnotherQueue = selectionUi.onAddToAnotherQueue,
+                        onPlayInNewQueue = selectionUi.onPlayInNewQueue,
+                        onClearSelection = selectionUi.onClear
+                    )
                 }
             )
         }
@@ -218,8 +216,6 @@ fun AlbumListScreen(
                 onAddToPlaylist = { selectedSongs ->
                     onAlbumAddToPlaylistClick("Selected albums", selectedSongs)
                 },
-                favoritesEnabled = false,
-                newQueueName = { resolvedSelectedAlbums().singleOrNull()?.title.orEmpty() },
                 modifier = Modifier.padding(bottom = bottomContentPadding)
             )
         }
