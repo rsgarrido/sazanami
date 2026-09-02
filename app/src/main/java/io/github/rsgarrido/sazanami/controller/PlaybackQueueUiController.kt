@@ -93,6 +93,7 @@ internal interface PlaybackQueueUiOperations {
     suspend fun renameQueue(queueId: String, name: String): Boolean
     suspend fun deleteQueue(queueId: String): Boolean
     suspend fun playInNewQueue(displayName: String, songs: List<Song>): String? = null
+    suspend fun createInactiveQueue(songs: List<Song>): String? = null
     suspend fun addToInactiveQueue(queueId: String, songs: List<Song>): Boolean = false
     suspend fun removeEntry(queueId: String, entryId: String): Boolean = false
     suspend fun removeEntryForUndo(
@@ -156,6 +157,9 @@ internal class RoomPlaybackQueueUiOperations(
 
     override suspend fun playInNewQueue(displayName: String, songs: List<Song>): String? =
         playbackController.playInNewQueue(displayName, songs)
+
+    override suspend fun createInactiveQueue(songs: List<Song>): String? =
+        playbackController.createInactiveQueue(songs)
 
     override suspend fun addToInactiveQueue(queueId: String, songs: List<Song>): Boolean =
         playbackController.addToInactiveQueue(queueId, songs)
@@ -375,7 +379,36 @@ internal class PlaybackQueueUiController(
         refreshSelection()
     }
 
-    fun addToInactiveQueue(queueId: String, songs: List<Song>): Job = scope.launch {
+    fun createInactiveQueue(
+        songs: List<Song>,
+        onComplete: (String?) -> Unit = {}
+    ): Job = scope.launch {
+        if (_state.value.isCreating) return@launch
+        _state.value = _state.value.copy(isCreating = true, message = null)
+        val createdId = try {
+            operations.createInactiveQueue(songs)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+        _state.value = _state.value.copy(
+            isCreating = false,
+            message = if (createdId == null) {
+                "Unable to create the new queue."
+            } else {
+                null
+            }
+        )
+        onComplete(createdId)
+        refreshSelection()
+    }
+
+    fun addToInactiveQueue(
+        queueId: String,
+        songs: List<Song>,
+        onComplete: (Boolean) -> Unit = {}
+    ): Job = scope.launch {
         val added = try {
             operations.addToInactiveQueue(queueId, songs)
         } catch (cancelled: CancellationException) {
@@ -386,6 +419,7 @@ internal class PlaybackQueueUiController(
         _state.value = _state.value.copy(
             message = if (added) null else "Unable to add tracks to that queue."
         )
+        onComplete(added)
         refreshSelection()
     }
 

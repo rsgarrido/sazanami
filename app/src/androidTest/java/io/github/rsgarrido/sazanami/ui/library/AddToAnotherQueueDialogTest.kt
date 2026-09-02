@@ -25,6 +25,8 @@ class AddToAnotherQueueDialogTest {
                     queues = listOf(card("active", "Playing", true), card("saved", "Road trip", false)),
                     activeQueueId = "active",
                     onQueueSelected = { selectedId = it },
+                    onCreateNewQueue = {},
+                    isCreatingQueue = false,
                     onDismiss = {}
                 )
             }
@@ -32,26 +34,30 @@ class AddToAnotherQueueDialogTest {
 
         composeRule.onNodeWithText("Playing").assertDoesNotExist()
         composeRule.onNodeWithText("Road trip").assertIsDisplayed()
+        composeRule.onNodeWithText("Create new queue").assertIsDisplayed()
         composeRule.onNodeWithText("Add").performClick()
         composeRule.runOnIdle { assertEquals("saved", selectedId) }
     }
 
     @Test
-    fun noInactiveQueuesShowsHelpfulEmptyState() {
+    fun createNewQueueIsAvailableWhenThereAreNoInactiveQueues() {
+        var createCount = 0
         composeRule.setContent {
             MaterialTheme {
                 AddToAnotherQueueDialog(
                     queues = listOf(card("active", "Playing", true)),
                     activeQueueId = "active",
                     onQueueSelected = {},
+                    onCreateNewQueue = { createCount += 1 },
+                    isCreatingQueue = false,
                     onDismiss = {}
                 )
             }
         }
 
-        composeRule.onNodeWithText(
-            "There are no inactive queues. The only available queue is already playing."
-        ).assertIsDisplayed()
+        composeRule.onNodeWithText("No other queues available").assertIsDisplayed()
+        composeRule.onNodeWithText("Create new queue").assertIsDisplayed().performClick()
+        composeRule.runOnIdle { assertEquals(1, createCount) }
     }
 
     private fun card(id: String, name: String, active: Boolean) = PlaybackQueueCardUiState(

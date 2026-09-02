@@ -828,13 +828,44 @@ internal fun MusicRoute(
                 queues = playbackQueueHubUiState.queues,
                 activeQueueId = playbackQueueHubUiState.activeQueueId,
                 onQueueSelected = { queueId ->
-                    musicViewModel.addToInactiveQueue(queueId, selectedSongs)
-                    if (pendingAnotherQueueFromSelection) {
-                        musicViewModel.clearLibrarySelection()
+                    val clearSelectionOnSuccess = pendingAnotherQueueFromSelection
+                    musicViewModel.addToInactiveQueue(queueId, selectedSongs) { added ->
+                        if (added) {
+                            if (clearSelectionOnSuccess) {
+                                musicViewModel.clearLibrarySelection()
+                            }
+                            pendingAnotherQueueFromSelection = false
+                            pendingAnotherQueueSongs = null
+                        } else {
+                            routeScope.launch {
+                                snackbarHostState.showSnackbar(
+                                    "Unable to add tracks to that queue."
+                                )
+                                musicViewModel.clearPlaybackQueueMessage()
+                            }
+                        }
                     }
-                    pendingAnotherQueueFromSelection = false
-                    pendingAnotherQueueSongs = null
                 },
+                onCreateNewQueue = {
+                    val clearSelectionOnSuccess = pendingAnotherQueueFromSelection
+                    musicViewModel.createInactiveQueue(selectedSongs) { createdQueueId ->
+                        if (createdQueueId != null) {
+                            if (clearSelectionOnSuccess) {
+                                musicViewModel.clearLibrarySelection()
+                            }
+                            pendingAnotherQueueFromSelection = false
+                            pendingAnotherQueueSongs = null
+                        } else {
+                            routeScope.launch {
+                                snackbarHostState.showSnackbar(
+                                    "Unable to create the new queue."
+                                )
+                                musicViewModel.clearPlaybackQueueMessage()
+                            }
+                        }
+                    }
+                },
+                isCreatingQueue = playbackQueueHubUiState.isCreating,
                 onDismiss = {
                     pendingAnotherQueueFromSelection = false
                     pendingAnotherQueueSongs = null

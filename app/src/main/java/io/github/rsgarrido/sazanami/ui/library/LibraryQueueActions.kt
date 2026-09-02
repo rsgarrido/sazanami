@@ -2,19 +2,24 @@ package io.github.rsgarrido.sazanami.ui.library
 
 import android.R
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.runtime.Immutable
@@ -64,6 +69,8 @@ fun AddToAnotherQueueDialog(
     queues: List<PlaybackQueueCardUiState>,
     activeQueueId: String?,
     onQueueSelected: (String) -> Unit,
+    onCreateNewQueue: () -> Unit,
+    isCreatingQueue: Boolean,
     onDismiss: () -> Unit
 ) {
     val availableQueues = queues.filterNot { queue -> queue.queueId == activeQueueId }
@@ -72,7 +79,7 @@ fun AddToAnotherQueueDialog(
         title = { Text("Add to another queue") },
         text = {
             if (availableQueues.isEmpty()) {
-                Text("There are no inactive queues. The only available queue is already playing.")
+                Text("No other queues available")
             } else {
                 LazyColumn(
                     modifier = Modifier
@@ -113,7 +120,23 @@ fun AddToAnotherQueueDialog(
                 }
             }
         },
-        confirmButton = {},
+        confirmButton = {
+            TextButton(
+                onClick = onCreateNewQueue,
+                enabled = !isCreatingQueue
+            ) {
+                if (isCreatingQueue) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(Icons.Filled.Add, contentDescription = null)
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(if (isCreatingQueue) "Creating..." else "Create new queue")
+            }
+        },
         dismissButton = {
             TextButton(
                 onClick = onDismiss,

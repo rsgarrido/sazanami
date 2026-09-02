@@ -224,6 +224,9 @@ internal object PlaybackQueueRuntimeBridge {
     suspend fun createAndActivateQueue(displayName: String, songs: List<Song>): String? =
         coordinator?.createAndActivateQueue(displayName, songs)?.queue?.queueId
 
+    suspend fun createInactiveQueue(songs: List<Song>): String? =
+        coordinator?.createInactiveQueue(songs)?.queue?.queueId
+
     suspend fun appendToInactiveQueue(queueId: String, songs: List<Song>): Boolean =
         coordinator?.appendToInactiveQueue(queueId, songs) != null
 

@@ -449,6 +449,9 @@ class PlaybackController(
         return queueId
     }
 
+    suspend fun createInactiveQueue(songs: List<Song>): String? =
+        PlaybackQueueRuntimeBridge.createInactiveQueue(songs)
+
     suspend fun addToInactiveQueue(queueId: String, songs: List<Song>): Boolean =
         PlaybackQueueRuntimeBridge.appendToInactiveQueue(queueId, songs)
 

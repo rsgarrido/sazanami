@@ -435,6 +435,82 @@ class PlaybackQueueUiControllerTest {
     }
 
     @Test
+    fun createInactiveQueueReportsSuccessWithoutChangingActiveOrViewedQueue() = runBlocking {
+        val selectedSongs = listOf(song(3L), song(2L), song(3L))
+        val operations = FakeOperations(activeQueueId = "A").apply {
+            add(queue("A", "Queue 1", "a", song(1L)))
+            createInactiveResult = queue("B", "Queue 2", "b", song(3L))
+        }
+        val controller = controller(operations)
+        val completions = mutableListOf<String?>()
+
+        controller.createInactiveQueue(selectedSongs, completions::add).join()
+
+        assertEquals(1, operations.createInactiveCount)
+        assertEquals(listOf(3L, 2L, 3L), operations.createInactiveSongs.map(Song::id))
+        assertEquals(listOf("B"), completions)
+        assertEquals("A", controller.state.value.activeQueueId)
+        assertEquals("A", controller.state.value.selectedQueueId)
+        assertNull(controller.state.value.message)
+    }
+
+    @Test
+    fun failedInactiveQueueCreationReportsFailureForSelectionRetention() = runBlocking {
+        val operations = FakeOperations(activeQueueId = "A").apply {
+            add(queue("A", "Queue 1", "a", song(1L)))
+        }
+        val controller = controller(operations)
+        val completions = mutableListOf<String?>()
+
+        controller.createInactiveQueue(listOf(song(2L)), completions::add).join()
+
+        assertEquals(listOf<String?>(null), completions)
+        assertEquals("A", controller.state.value.activeQueueId)
+        assertEquals("A", controller.state.value.selectedQueueId)
+        assertEquals("Unable to create the new queue.", controller.state.value.message)
+    }
+
+    @Test
+    fun existingInactiveQueueAppendStillReportsCompletionNormally() = runBlocking {
+        val selectedSongs = listOf(song(4L), song(5L))
+        val operations = FakeOperations(activeQueueId = "A").apply {
+            add(queue("A", "Queue 1", "a", song(1L)))
+            add(queue("B", "Road trip", "b", song(2L)))
+        }
+        val controller = controller(operations)
+        val completions = mutableListOf<Boolean>()
+
+        controller.addToInactiveQueue("B", selectedSongs, completions::add).join()
+
+        assertEquals(1, operations.addInactiveCount)
+        assertEquals("B", operations.addInactiveQueueId)
+        assertEquals(listOf(4L, 5L), operations.addInactiveSongs.map(Song::id))
+        assertEquals(listOf(true), completions)
+        assertEquals("A", controller.state.value.activeQueueId)
+        assertNull(controller.state.value.message)
+    }
+
+    @Test
+    fun failedExistingQueueAppendReportsFailureForSelectionRetention() = runBlocking {
+        val operations = FakeOperations(activeQueueId = "A").apply {
+            add(queue("A", "Queue 1", "a", song(1L)))
+            add(queue("B", "Road trip", "b", song(2L)))
+            addInactiveResult = false
+        }
+        val controller = controller(operations)
+        val completions = mutableListOf<Boolean>()
+
+        controller.addToInactiveQueue("B", listOf(song(4L)), completions::add).join()
+
+        assertEquals(listOf(false), completions)
+        assertEquals("A", controller.state.value.activeQueueId)
+        assertEquals(
+            "Unable to add tracks to that queue.",
+            controller.state.value.message
+        )
+    }
+
+    @Test
     fun renameTrimsInputAndRejectsBlankNames() = runBlocking {
         val operations = FakeOperations(activeQueueId = "A").apply {
             add(queue("A", "Queue 1", "a", song(1L)))
@@ -504,6 +580,13 @@ class PlaybackQueueUiControllerTest {
         var deleteCount = 0
         var renamedName: String? = null
         var createResult: LoadedQueueForUi? = null
+        var createInactiveResult: LoadedQueueForUi? = null
+        var createInactiveCount = 0
+        var createInactiveSongs = emptyList<Song>()
+        var addInactiveCount = 0
+        var addInactiveQueueId: String? = null
+        var addInactiveSongs = emptyList<Song>()
+        var addInactiveResult = true
         var switchResult = true
         var removeEntryCount = 0
         var reorderEntryCount = 0
@@ -561,6 +644,21 @@ class PlaybackQueueUiControllerTest {
             val created = createResult ?: return null
             add(created)
             return created.queue.queueId
+        }
+
+        override suspend fun createInactiveQueue(songs: List<Song>): String? {
+            createInactiveCount += 1
+            createInactiveSongs = songs
+            val created = createInactiveResult ?: return null
+            add(created)
+            return created.queue.queueId
+        }
+
+        override suspend fun addToInactiveQueue(queueId: String, songs: List<Song>): Boolean {
+            addInactiveCount += 1
+            addInactiveQueueId = queueId
+            addInactiveSongs = songs
+            return addInactiveResult
         }
 
         override suspend fun renameQueue(queueId: String, name: String): Boolean {

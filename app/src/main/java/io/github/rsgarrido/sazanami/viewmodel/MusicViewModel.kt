@@ -655,8 +655,16 @@ class MusicViewModel(
     internal fun playInNewQueue(displayName: String, songs: List<Song>) =
         playbackQueueUiController.playInNewQueue(displayName, songs)
 
-    internal fun addToInactiveQueue(queueId: String, songs: List<Song>) =
-        playbackQueueUiController.addToInactiveQueue(queueId, songs)
+    internal fun createInactiveQueue(
+        songs: List<Song>,
+        onComplete: (String?) -> Unit = {}
+    ) = playbackQueueUiController.createInactiveQueue(songs, onComplete)
+
+    internal fun addToInactiveQueue(
+        queueId: String,
+        songs: List<Song>,
+        onComplete: (Boolean) -> Unit = {}
+    ) = playbackQueueUiController.addToInactiveQueue(queueId, songs, onComplete)
 
     internal fun removePlaybackQueueEntry(queueId: String, entryId: String) =
         playbackQueueUiController.removeEntry(queueId, entryId)
