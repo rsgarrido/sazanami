@@ -23,8 +23,6 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -98,7 +96,7 @@ fun SongList(
     }
 
     Column(modifier = modifier) {
-        if (selectionActive) {
+        if (selectionEnabled) {
             LibrarySelectionHeader(
                 entity = LibrarySelectionEntity.SONG,
                 displayedKeys = displayedKeys,
@@ -217,11 +215,7 @@ fun SongList(
                 },
                 trailingContent = when {
                     isSelectionSelected -> ({
-                        Icon(
-                            imageVector = Icons.Filled.CheckCircle,
-                            contentDescription = "Selected",
-                            tint = AppShellAccent
-                        )
+                        LibrarySelectionCheckBadge()
                     })
                     quickRatingMode -> null
                     rating != null -> ({

@@ -1,14 +1,18 @@
 package io.github.rsgarrido.sazanami.ui.library
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
@@ -24,6 +28,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,11 +43,12 @@ import io.github.rsgarrido.sazanami.data.membershipKey
 import io.github.rsgarrido.sazanami.ui.state.LibrarySelectionEntity
 import io.github.rsgarrido.sazanami.ui.state.LibrarySelectionUiState
 
-@Immutable
+@Stable
 data class LibrarySelectionUiEnvironment(
     val state: LibrarySelectionUiState = LibrarySelectionUiState(),
     val allSongs: List<Song> = emptyList(),
     val favoriteMembershipKeys: Set<String> = emptySet(),
+    val headerState: LibrarySelectionHeaderState = LibrarySelectionHeaderState(),
     val onEnter: (LibrarySelectionEntity, String) -> Unit = { _, _ -> },
     val onToggle: (LibrarySelectionEntity, String) -> Unit = { _, _ -> },
     val onSelectDisplayed: (LibrarySelectionEntity, Collection<String>) -> Unit = { _, _ -> },
@@ -54,6 +61,42 @@ data class LibrarySelectionUiEnvironment(
 )
 
 val LocalLibrarySelectionUi = staticCompositionLocalOf { LibrarySelectionUiEnvironment() }
+
+@Immutable
+data class LibrarySelectionHeaderBinding(
+    val entity: LibrarySelectionEntity,
+    val displayedKeys: List<String>,
+    val searchActive: Boolean,
+    val hasMoreAction: Boolean
+)
+
+@Stable
+class LibrarySelectionHeaderState {
+    var binding by mutableStateOf<LibrarySelectionHeaderBinding?>(null)
+        private set
+
+    private var moreAction: (() -> Unit)? = null
+
+    fun bind(
+        entity: LibrarySelectionEntity,
+        displayedKeys: List<String>,
+        searchActive: Boolean,
+        onMoreClick: (() -> Unit)?
+    ) {
+        moreAction = onMoreClick
+        val updated = LibrarySelectionHeaderBinding(
+            entity = entity,
+            displayedKeys = displayedKeys,
+            searchActive = searchActive,
+            hasMoreAction = onMoreClick != null
+        )
+        if (binding != updated) binding = updated
+    }
+
+    fun showMore() {
+        moreAction?.invoke()
+    }
+}
 
 internal fun resolveSelectedSongs(
     selectedKeys: Set<String>,
@@ -86,9 +129,18 @@ internal fun LibrarySelectionHeader(
     onMoreClick: (() -> Unit)?
 ) {
     val selection = LocalLibrarySelectionUi.current
-    if (selection.state.entity != entity || !selection.state.isActive) return
+    SideEffect {
+        selection.headerState.bind(entity, displayedKeys, searchActive, onMoreClick)
+    }
+}
 
-    Surface(tonalElevation = 3.dp) {
+@Composable
+internal fun LibrarySelectionHeaderContent(modifier: Modifier = Modifier) {
+    val selection = LocalLibrarySelectionUi.current
+    val binding = selection.headerState.binding ?: return
+    if (selection.state.entity != binding.entity || !selection.state.isActive) return
+
+    Surface(modifier = modifier, tonalElevation = 3.dp) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -104,17 +156,37 @@ internal fun LibrarySelectionHeader(
                 modifier = Modifier.weight(1f)
             )
             TextButton(
-                onClick = { selection.onSelectDisplayed(entity, displayedKeys) },
-                enabled = displayedKeys.isNotEmpty()
+                onClick = {
+                    selection.onSelectDisplayed(binding.entity, binding.displayedKeys)
+                },
+                enabled = binding.displayedKeys.isNotEmpty()
             ) {
-                Text(if (searchActive) "Select results" else "Select all")
+                Text(if (binding.searchActive) "Select results" else "Select all")
             }
-            if (selection.state.selectedCount == 1 && onMoreClick != null) {
-                IconButton(onClick = onMoreClick) {
+            if (selection.state.selectedCount == 1 && binding.hasMoreAction) {
+                IconButton(onClick = selection.headerState::showMore) {
                     Icon(Icons.Filled.MoreVert, contentDescription = "More actions")
                 }
             }
         }
+    }
+}
+
+@Composable
+internal fun LibrarySelectionCheckBadge(modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier.size(30.dp),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary,
+        shadowElevation = 4.dp,
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.surface)
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Check,
+            contentDescription = "Selected",
+            modifier = Modifier.padding(4.dp)
+        )
     }
 }
 

@@ -21,8 +21,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -85,7 +83,7 @@ fun AlbumListScreen(
     val resolvedSelectedSongs = { resolvedSelectedAlbums().flatMap(LibraryAlbumGroup::songs) }
 
     Column(modifier = modifier.fillMaxSize()) {
-        if (selectionActive) {
+        if (selectionEnabled) {
             LibrarySelectionHeader(
                 entity = LibrarySelectionEntity.ALBUM,
                 displayedKeys = displayedKeys,
@@ -157,7 +155,7 @@ fun AlbumListScreen(
                     Text(text = "${album.artistText} • $songCountText")
                 },
                 trailingContent = if (isSelectionSelected) ({
-                    Icon(Icons.Filled.CheckCircle, "Selected", tint = AppShellAccent)
+                    LibrarySelectionCheckBadge()
                 }) else null,
                 colors = ListItemDefaults.colors(
                     containerColor = if (isSelectionSelected) {

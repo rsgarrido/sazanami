@@ -3,6 +3,13 @@ package io.github.rsgarrido.sazanami.ui
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.layout.WindowInsets
@@ -108,6 +115,7 @@ import io.github.rsgarrido.sazanami.data.ListeningTrendMetric
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewCategory
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewOption
 import io.github.rsgarrido.sazanami.ui.library.LocalLibrarySelectionUi
+import io.github.rsgarrido.sazanami.ui.library.LibrarySelectionHeaderState
 import io.github.rsgarrido.sazanami.ui.state.LibrarySelectionEntity
 import io.github.rsgarrido.sazanami.ui.equalizer.EqualizerScreenState
 import io.github.rsgarrido.sazanami.ui.equalizer.EqualizerUiActions
@@ -298,6 +306,7 @@ internal fun MusicScreen(
 ) {
     val context = LocalContext.current
     val librarySelectionUi = LocalLibrarySelectionUi.current
+    val librarySelectionHeaderState = remember { LibrarySelectionHeaderState() }
     val navigationState = rememberMusicNavigationState()
     var mainDestination by navigationState.mainDestination
     var selectedLibraryTab by navigationState.selectedLibraryTab
@@ -734,6 +743,7 @@ internal fun MusicScreen(
     CompositionLocalProvider(
         LocalAppShellAccent provides appShellAccent,
         LocalLibrarySelectionUi provides librarySelectionUi.copy(
+            headerState = librarySelectionHeaderState,
             onPlayNext = { selectedSongs ->
                 queueSnackbarActions.playNextSongs("Selection", selectedSongs)
             },
@@ -909,7 +919,9 @@ internal fun MusicScreen(
             val selectedSongForTagEdit = songPendingTagEdit
             val selectedBatchEditorState = batchMetadataEditorState
             val selectedBatchExecutionState = batchMetadataOperationState
+            val isLibrarySelectionActive = librarySelectionUi.state.isActive
             val shouldShowBottomMiniPlayer = currentSong != null &&
+                    !isLibrarySelectionActive &&
                     !isFolderScreenVisible &&
                     !isDiagnosticsScreenVisible &&
                     !isEqualizerScreenVisible &&
@@ -932,7 +944,8 @@ internal fun MusicScreen(
                 isSettingsScreenVisible = isSettingsScreenVisible,
                 isTagEditorVisible = selectedSongForTagEdit != null ||
                         selectedBatchEditorState != null ||
-                        selectedBatchExecutionState != null
+                        selectedBatchExecutionState != null,
+                isLibrarySelectionActive = isLibrarySelectionActive
             )
             LaunchedEffect(shouldShowBottomMiniPlayer) {
                 if (!shouldShowBottomMiniPlayer) {
@@ -946,13 +959,19 @@ internal fun MusicScreen(
             val navigationBarInset = WindowInsets.navigationBars
                 .asPaddingValues()
                 .calculateBottomPadding()
-            val bottomContentPadding = navigationBarInset +
+            val targetBottomContentPadding = navigationBarInset +
                     (if (shouldShowBottomNavigation) AppBottomNavigationHeight else 0.dp) +
                     when {
+                        isLibrarySelectionActive -> 8.dp
                         !shouldShowBottomMiniPlayer -> 24.dp
                         isSleepTimerActive -> 176.dp
                         else -> 96.dp
                     }
+            val bottomContentPadding by animateDpAsState(
+                targetValue = targetBottomContentPadding,
+                animationSpec = tween(220),
+                label = "libraryChromeBottomPadding"
+            )
 
             if (selectedBatchExecutionState != null) {
                 BatchMetadataExecutionScreen(
@@ -1362,7 +1381,17 @@ internal fun MusicScreen(
                 )
             }
 
-            if (shouldShowBottomMiniPlayer) {
+            AnimatedVisibility(
+                visible = shouldShowBottomMiniPlayer,
+                enter = slideInVertically(tween(220)) { height -> height } +
+                    fadeIn(tween(160)),
+                exit = slideOutVertically(tween(200)) { height -> height } +
+                    fadeOut(tween(140)),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = AppBottomNavigationHeight)
+            ) {
                 PlaybackProgress(playbackProgressUiState) { progress ->
                     MiniPlayerSection(
                         currentSong = currentSong,
@@ -1421,16 +1450,23 @@ internal fun MusicScreen(
                                 pocketFlipMorphOwnsVisuals ||
                                 pocketCassetteMorphOwnsVisuals ||
                                 pocketDiscMorphOwnsVisuals,
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .navigationBarsPadding()
-                            .padding(bottom = AppBottomNavigationHeight)
-                            .playerEndpointInput(playerMorphState.isCollapsedAndIdle)
+                        modifier = Modifier.playerEndpointInput(
+                            playerMorphState.isCollapsedAndIdle
+                        )
                     )
                 }
             }
 
-            if (shouldShowBottomNavigation) {
+            AnimatedVisibility(
+                visible = shouldShowBottomNavigation,
+                enter = slideInVertically(tween(220)) { height -> height } +
+                    fadeIn(tween(160)),
+                exit = slideOutVertically(tween(200)) { height -> height } +
+                    fadeOut(tween(140)),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+            ) {
                 AppBottomNavigation(
                     selectedDestination = mainDestination,
                     onDestinationSelected = { destination ->
@@ -1455,8 +1491,6 @@ internal fun MusicScreen(
                         mainDestination = destination
                     },
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .navigationBarsPadding()
                 )
             }
 
@@ -1652,7 +1686,8 @@ internal fun shouldShowPrimaryBottomNavigation(
     isListeningHistoryImportVisible: Boolean,
     isListeningHistoryReconciliationVisible: Boolean,
     isSettingsScreenVisible: Boolean,
-    isTagEditorVisible: Boolean
+    isTagEditorVisible: Boolean,
+    isLibrarySelectionActive: Boolean = false
 ): Boolean = !isPlayerExpanded &&
         !isFolderScreenVisible &&
         !isDiagnosticsScreenVisible &&
@@ -1661,4 +1696,5 @@ internal fun shouldShowPrimaryBottomNavigation(
         !isListeningHistoryImportVisible &&
         !isListeningHistoryReconciliationVisible &&
         !isSettingsScreenVisible &&
-        !isTagEditorVisible
+        !isTagEditorVisible &&
+        !isLibrarySelectionActive

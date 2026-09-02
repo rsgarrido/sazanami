@@ -19,6 +19,7 @@ import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.PlaybackShuffleMode
 import io.github.rsgarrido.sazanami.ui.playlist.PlaylistsTabContent
 import io.github.rsgarrido.sazanami.ui.queue.QueueScreen
+import io.github.rsgarrido.sazanami.ui.state.LibrarySelectionEntity
 
 @Composable
 fun MusicLibraryContent(
@@ -308,6 +309,12 @@ fun MusicLibraryContent(
 
         LibraryTab.RECENTLY_PLAYED -> {
             if (recentlyPlayedSongs.isEmpty()) {
+                LibrarySelectionHeader(
+                    LibrarySelectionEntity.SONG,
+                    emptyList(),
+                    searchActive = false,
+                    onMoreClick = null
+                )
                 EmptyHistoryMessage(
                     message = "No recently played songs yet.",
                     modifier = modifier
@@ -344,6 +351,12 @@ fun MusicLibraryContent(
             )
             val scrollStates = rememberLibrarySortScrollStates(selectedSongSortState)
             if (displayedSongs.isEmpty()) {
+                LibrarySelectionHeader(
+                    LibrarySelectionEntity.SONG,
+                    emptyList(),
+                    searchActive = searchQuery.isNotBlank(),
+                    onMoreClick = null
+                )
                 EmptyHistoryMessage(
                     message = stringResource(R.string.recently_added_empty),
                     modifier = modifier
@@ -399,6 +412,12 @@ fun MusicLibraryContent(
 
         LibraryTab.MOST_PLAYED -> {
             if (mostPlayedSongs.isEmpty()) {
+                LibrarySelectionHeader(
+                    LibrarySelectionEntity.SONG,
+                    emptyList(),
+                    searchActive = false,
+                    onMoreClick = null
+                )
                 EmptyHistoryMessage(
                     message = "No most played songs yet.",
                     modifier = modifier

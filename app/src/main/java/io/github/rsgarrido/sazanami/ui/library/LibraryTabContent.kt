@@ -25,6 +25,7 @@ import io.github.rsgarrido.sazanami.ui.filterSongsForSearch
 import io.github.rsgarrido.sazanami.ui.sortSongsForArtistDetail
 import io.github.rsgarrido.sazanami.ui.sortSongsForLibrary
 import io.github.rsgarrido.sazanami.ui.ratings.LocalSongRatingUi
+import io.github.rsgarrido.sazanami.ui.state.LibrarySelectionEntity
 import androidx.compose.ui.res.stringResource
 
 @Composable
@@ -82,6 +83,12 @@ fun SongsTabContent(
             modifier = Modifier.padding(16.dp)
         )
     } else if (metadataFilteredSongs.isEmpty() && filterState.isActive) {
+        LibrarySelectionHeader(
+            LibrarySelectionEntity.SONG,
+            emptyList(),
+            searchActive = true,
+            onMoreClick = null
+        )
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -92,6 +99,12 @@ fun SongsTabContent(
             }
         }
     } else if (filteredSongs.isEmpty()) {
+        LibrarySelectionHeader(
+            LibrarySelectionEntity.SONG,
+            emptyList(),
+            searchActive = true,
+            onMoreClick = null
+        )
         Text(
             text = "No songs match your search.",
             modifier = Modifier.padding(16.dp)
@@ -214,6 +227,12 @@ fun RatedSongsTabContent(
             modifier = modifier.fillMaxSize()
         )
     } else if (quickRateActive || projectedSongs.isEmpty() || searchedSongs.isEmpty()) {
+        LibrarySelectionHeader(
+            LibrarySelectionEntity.SONG,
+            emptyList(),
+            searchActive = searchQuery.isNotBlank() || selectedFilter != RatedSongFilter.ALL,
+            onMoreClick = null
+        )
         Text(
             ratedCollectionEmptyMessage(
                 filter = selectedFilter,
@@ -310,11 +329,23 @@ fun FavoritesTabContent(
     val scrollStates = rememberLibrarySortScrollStates(sortState)
 
     if (favoriteSongs.isEmpty()) {
+        LibrarySelectionHeader(
+            LibrarySelectionEntity.SONG,
+            emptyList(),
+            searchActive = searchQuery.isNotBlank(),
+            onMoreClick = null
+        )
         Text(
             text = "No favorite songs yet.",
             modifier = Modifier.padding(16.dp)
         )
     } else if (filteredSongs.isEmpty()) {
+        LibrarySelectionHeader(
+            LibrarySelectionEntity.SONG,
+            emptyList(),
+            searchActive = true,
+            onMoreClick = null
+        )
         Text(
             text = "No favorite songs match your search.",
             modifier = Modifier.padding(16.dp)
@@ -580,6 +611,12 @@ fun AlbumsTabContent(
         )
     } else if (selectedAlbumKey == null) {
         if (albumSearchSongs.isEmpty()) {
+            LibrarySelectionHeader(
+                LibrarySelectionEntity.ALBUM,
+                emptyList(),
+                searchActive = true,
+                onMoreClick = null
+            )
             Text(
                 text = "No albums match your search.",
                 modifier = Modifier.padding(16.dp)

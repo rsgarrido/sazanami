@@ -3,6 +3,7 @@ package io.github.rsgarrido.sazanami.ui.library
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,8 +20,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -93,7 +92,7 @@ fun SongGrid(
     }
 
     Column(modifier = modifier.fillMaxSize()) {
-        if (selectionActive) {
+        if (selectionEnabled) {
             LibrarySelectionHeader(
                 entity = LibrarySelectionEntity.SONG,
                 displayedKeys = displayedKeys,
@@ -256,7 +255,7 @@ fun AlbumGridScreen(
     val resolvedSelectedSongs = { resolvedSelectedAlbums().flatMap(LibraryAlbumGroup::songs) }
 
     Column(modifier = modifier.fillMaxSize()) {
-        if (selectionActive) {
+        if (selectionEnabled) {
             LibrarySelectionHeader(
                 entity = LibrarySelectionEntity.ALBUM,
                 displayedKeys = displayedKeys,
@@ -524,6 +523,15 @@ private fun LibraryGridCard(
                 .aspectRatio(1f)
                 .clip(RoundedCornerShape(gridMetrics.artworkCornerRadius))
                 .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                .then(
+                    if (selectionSelected) {
+                        Modifier.border(
+                            width = 3.dp,
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = RoundedCornerShape(gridMetrics.artworkCornerRadius)
+                        )
+                    } else Modifier
+                )
         ) {
             Icon(
                 imageVector = AppShellIcons.AlbumStack,
@@ -558,13 +566,12 @@ private fun LibraryGridCard(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(AppShellAccent.copy(alpha = 0.24f))
+                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.20f))
                 )
-                Icon(
-                    imageVector = Icons.Filled.CheckCircle,
-                    contentDescription = "Selected",
-                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
-                    tint = AppShellAccent
+                LibrarySelectionCheckBadge(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp)
                 )
             }
         }
