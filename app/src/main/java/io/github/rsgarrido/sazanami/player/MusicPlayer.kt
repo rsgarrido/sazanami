@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import io.github.rsgarrido.sazanami.data.Song
@@ -33,10 +34,12 @@ class MusicPlayer(private val context: Context) {
 
     private var currentSong: Song? = null
     private var currentPlaylist: List<Song> = emptyList()
+    private var pendingPublishedTimelineMediaIds: List<String>? = null
 
     var onSongCompleted: (() -> Unit)? = null
     var onPlaybackStateChanged: ((Boolean) -> Unit)? = null
     var onCurrentSongChanged: ((Long?) -> Unit)? = null
+    var onTimelineChanged: (() -> Unit)? = null
 
     fun connect(onConnected: (() -> Unit)? = null) {
         val sessionToken = SessionToken(
@@ -63,6 +66,17 @@ class MusicPlayer(private val context: Context) {
 
                         override fun onIsPlayingChanged(isPlaying: Boolean) {
                             onPlaybackStateChanged?.invoke(isPlaying)
+                        }
+
+                        override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+                            val expectedMediaIds = pendingPublishedTimelineMediaIds
+                            if (
+                                expectedMediaIds == null ||
+                                timelineMediaIds() == expectedMediaIds
+                            ) {
+                                pendingPublishedTimelineMediaIds = null
+                                this@MusicPlayer.onTimelineChanged?.invoke()
+                            }
                         }
 
                         override fun onMediaItemTransition(
@@ -282,6 +296,18 @@ class MusicPlayer(private val context: Context) {
         }
 
         val current = currentSong ?: return
+        val requestedUpcomingIds = upcomingSongs.map { song -> song.id.toString() }
+        val requestedTimelineIds = listOf(current.id.toString()) + requestedUpcomingIds
+        currentPlaylist = listOf(current) + upcomingSongs
+        if (currentIndex == 0 && timelineMediaIds() == requestedTimelineIds) return
+
+        val reusableUpcomingEvidence = (0 until playerController.mediaItemCount)
+            .filter { index -> index != currentIndex }
+            .mapNotNull { index ->
+                playerController.getMediaItemAt(index).listeningEvidence()
+            }
+            .toMutableList()
+        pendingPublishedTimelineMediaIds = requestedTimelineIds
         val transaction = if (
             origin == ControllerSynchronizationOrigin.CROSSFADE_HANDOFF_INTERNAL
         ) {
@@ -305,19 +331,10 @@ class MusicPlayer(private val context: Context) {
             val existingUpcomingIds = (1 until playerController.mediaItemCount).map { index ->
                 playerController.getMediaItemAt(index).mediaId
             }
-            val requestedUpcomingIds = upcomingSongs.map { song -> song.id.toString() }
-
-            currentPlaylist = listOf(current) + upcomingSongs
-
             if (existingUpcomingIds == requestedUpcomingIds) {
                 return
             }
 
-            val reusableUpcomingEvidence = (1 until playerController.mediaItemCount)
-                .mapNotNull { index ->
-                    playerController.getMediaItemAt(index).listeningEvidence()
-                }
-                .toMutableList()
             val upcomingMediaItems = upcomingSongs.map { song ->
                 val referenceKey = song.membershipKey()
                 val reusableIndex = reusableUpcomingEvidence.indexOfFirst { evidence ->
@@ -345,8 +362,18 @@ class MusicPlayer(private val context: Context) {
                 replaceToIndex,
                 upcomingMediaItems
             )
+        } catch (error: Exception) {
+            pendingPublishedTimelineMediaIds = null
+            throw error
         } finally {
             transaction?.let(LogicalPlaylistMutationTransactions::seal)
+        }
+    }
+
+    private fun timelineMediaIds(): List<String> {
+        val playerController = controller ?: return emptyList()
+        return (0 until playerController.mediaItemCount).map { index ->
+            playerController.getMediaItemAt(index).mediaId
         }
     }
 

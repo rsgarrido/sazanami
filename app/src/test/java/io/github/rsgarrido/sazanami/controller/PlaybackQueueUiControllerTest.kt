@@ -6,12 +6,18 @@ import io.github.rsgarrido.sazanami.data.local.PersistedQueueRepeatMode
 import io.github.rsgarrido.sazanami.data.local.PlaybackQueueEntity
 import io.github.rsgarrido.sazanami.data.local.PlaybackQueueEntryEntity
 import io.github.rsgarrido.sazanami.player.PlaybackQueueEntryRemoval
-import kotlinx.coroutines.CoroutineScope
+import io.github.rsgarrido.sazanami.ui.state.PlaybackUiState
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -54,7 +60,7 @@ class PlaybackQueueUiControllerTest {
         val first = song(1L)
         val added = song(2L)
         val operations = FakeOperations(activeQueueId = "A").apply {
-            add(queue("A", "A", "a", first))
+            add(queueWithEntries("A", "A", "a", listOf("a" to first, "added" to added)))
             publishLive(first)
         }
         val controller = controller(operations)
@@ -70,11 +76,109 @@ class PlaybackQueueUiControllerTest {
     }
 
     @Test
+    fun timelineRevisionRepublishesAppendedEntryIdsWithoutAMediaTransition() = runBlocking {
+        val first = song(1L)
+        val added = song(2L)
+        val playbackStates = MutableStateFlow(
+            PlaybackUiState(
+                isConnected = true,
+                currentSong = first,
+                queuedSongs = listOf(added)
+            )
+        )
+        val timelineRevisions = MutableStateFlow(0L)
+        var entryIds = listOf("first")
+        val emissions = Channel<LiveActiveQueueForUi?>(Channel.UNLIMITED)
+        val collection = launch(start = CoroutineStart.UNDISPATCHED) {
+            observeLiveActiveQueueForUi(
+                playbackStates = playbackStates,
+                timelineRevisions = timelineRevisions,
+                activeQueueEntryIds = { entryIds },
+                activeQueueCurrentEntryId = { "first" }
+            ).collect { emission -> emissions.send(emission) }
+        }
+        val initial = emissions.receive()
+
+        entryIds = listOf("first", "added")
+        timelineRevisions.value = 1L
+        val revised = emissions.receive()
+        collection.cancelAndJoin()
+        emissions.close()
+
+        assertEquals(listOf("first"), initial?.entryIds)
+        assertEquals(listOf("first", "added"), revised?.entryIds)
+        assertEquals(listOf(1L, 2L), revised?.songs?.map(Song::id))
+        assertEquals(first, playbackStates.value.currentSong)
+    }
+
+    @Test
+    fun timelineRevisionPublishesAFullBatchAppendInSuppliedOrder() = runBlocking {
+        val first = song(1L)
+        val appended = (2L..15L).map(::song)
+        val playbackStates = MutableStateFlow(
+            PlaybackUiState(
+                isConnected = true,
+                currentSong = first,
+                queuedSongs = appended
+            )
+        )
+        val timelineRevisions = MutableStateFlow(0L)
+        var entryIds = listOf("entry-1")
+        val emissions = Channel<LiveActiveQueueForUi?>(Channel.UNLIMITED)
+        val collection = launch(start = CoroutineStart.UNDISPATCHED) {
+            observeLiveActiveQueueForUi(
+                playbackStates = playbackStates,
+                timelineRevisions = timelineRevisions,
+                activeQueueEntryIds = { entryIds },
+                activeQueueCurrentEntryId = { "entry-1" }
+            ).collect { emission -> emissions.send(emission) }
+        }
+        emissions.receive()
+
+        entryIds = (1L..15L).map { id -> "entry-$id" }
+        timelineRevisions.value = 1L
+        val revised = emissions.receive()
+        collection.cancelAndJoin()
+        emissions.close()
+
+        assertEquals(
+            (1L..15L).map { id -> "entry-$id" },
+            revised?.entryIds
+        )
+        assertEquals((1L..15L).toList(), revised?.songs?.map(Song::id))
+        assertEquals("entry-1", revised?.currentEntryId)
+    }
+
+    @Test
+    fun liveProjectionRejectsRuntimeEntryIdsMissingFromAuthoritativePersistence() {
+        val persisted = queueWithEntries(
+            id = "A",
+            name = "A",
+            currentEntry = "first",
+            entries = listOf("first" to song(1L), "survivor" to song(2L))
+        )
+
+        val state = buildState(
+            loadedQueues = listOf(persisted),
+            activeQueueId = "A",
+            selectedQueueId = "A",
+            liveActiveQueue = LiveActiveQueueForUi(
+                songs = listOf(song(1L), song(2L), song(3L)),
+                entryIds = listOf("first", "survivor", "removed-ghost"),
+                currentEntryId = "first"
+            )
+        )
+
+        assertEquals(listOf("first", "survivor"), state.selectedEntries.map { it.entryId })
+        assertEquals(2, state.selectedQueueEntryCount)
+    }
+
+    @Test
     fun authoritativeActiveEntriesKeepUpdatingWhileInspectingInactiveQueue() {
         val active = song(1L)
         val added = song(2L)
         val operations = FakeOperations(activeQueueId = "A").apply {
-            add(queue("A", "A", "a", active))
+            add(queueWithEntries("A", "A", "a", listOf("a" to active, "added" to added)))
             add(queue("B", "B", "b", song(3L)))
             publishLiveWithIds(listOf("a"), active)
         }
@@ -153,7 +257,12 @@ class PlaybackQueueUiControllerTest {
         val second = song(2L)
         val third = song(3L)
         val operations = FakeOperations(activeQueueId = "A").apply {
-            add(queue("A", "A", "first", first))
+            add(queueWithEntries(
+                "A",
+                "A",
+                "first",
+                listOf("first" to first, "second" to second, "third" to third)
+            ))
             publishLiveWithIds(listOf("first", "second", "third"), first, second, third)
         }
         val controller = controller(operations)

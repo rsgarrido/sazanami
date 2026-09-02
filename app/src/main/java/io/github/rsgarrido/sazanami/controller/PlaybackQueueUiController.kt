@@ -8,6 +8,7 @@ import io.github.rsgarrido.sazanami.data.local.PlaybackQueueEntryEntity
 import io.github.rsgarrido.sazanami.player.PlaybackController
 import io.github.rsgarrido.sazanami.player.PlaybackQueueEntryRemoval
 import io.github.rsgarrido.sazanami.player.RoomPlaybackQueueTrackAccess
+import io.github.rsgarrido.sazanami.ui.state.PlaybackUiState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -15,9 +16,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 data class PlaybackQueueCardUiState(
@@ -118,25 +119,12 @@ internal class RoomPlaybackQueueUiOperations(
     override fun observeQueues(): Flow<List<PlaybackQueueEntity>> = repository.observeQueues()
 
     override fun observeLiveActiveQueue(): Flow<LiveActiveQueueForUi?> =
-        playbackController.uiState
-            .map { state ->
-                val currentSong = state.currentSong
-                if (!state.isConnected || currentSong == null) {
-                    null
-                } else {
-                    LiveActiveQueueForUi(
-                        songs = buildList {
-                            add(currentSong)
-                            addAll(state.queuedSongs)
-                            addAll(state.upcomingSongs)
-                        },
-                        entryIds = playbackController.activeQueueEntryIds(),
-                        currentEntryId = playbackController.activeQueueCurrentEntryId(),
-                        shuffleEnabled = state.isShuffleEnabled
-                    )
-                }
-            }
-            .distinctUntilChanged()
+        observeLiveActiveQueueForUi(
+            playbackStates = playbackController.uiState,
+            timelineRevisions = playbackController.activeQueueTimelineRevision,
+            activeQueueEntryIds = playbackController::activeQueueEntryIds,
+            activeQueueCurrentEntryId = playbackController::activeQueueCurrentEntryId
+        )
 
     override suspend fun listQueues(): List<PlaybackQueueEntity> = repository.listQueues()
 
@@ -192,6 +180,32 @@ internal class RoomPlaybackQueueUiOperations(
         toPlaybackOrder: Int
     ): Boolean = playbackController.reorderQueueEntry(queueId, entryId, toPlaybackOrder)
 }
+
+internal fun observeLiveActiveQueueForUi(
+    playbackStates: Flow<PlaybackUiState>,
+    timelineRevisions: Flow<Long>,
+    activeQueueEntryIds: () -> List<String>,
+    activeQueueCurrentEntryId: () -> String?
+): Flow<LiveActiveQueueForUi?> = combine(
+    playbackStates,
+    timelineRevisions
+) { state, _ ->
+    val currentSong = state.currentSong
+    if (!state.isConnected || currentSong == null) {
+        null
+    } else {
+        LiveActiveQueueForUi(
+            songs = buildList {
+                add(currentSong)
+                addAll(state.queuedSongs)
+                addAll(state.upcomingSongs)
+            },
+            entryIds = activeQueueEntryIds(),
+            currentEntryId = activeQueueCurrentEntryId(),
+            shuffleEnabled = state.isShuffleEnabled
+        )
+    }
+}.distinctUntilChanged()
 
 internal class PlaybackQueueUiController(
     private val operations: PlaybackQueueUiOperations,
@@ -690,19 +704,25 @@ internal fun buildLiveActiveQueueEntries(
     liveEntryIds: List<String> = emptyList(),
     liveCurrentEntryId: String? = null
 ): List<PlaybackQueueEntryUiState> {
+    val persistedByEntryId = persistedEntries.associateBy { item -> item.entry.entryId }
+    val liveSongByEntryId = liveEntryIds.zip(liveSongs).toMap()
     val currentTimelineIndex = liveEntryIds.indexOf(liveCurrentEntryId)
-    val visibleEntryIds = if (currentTimelineIndex >= 0) {
+    val timelineEntryIds = if (currentTimelineIndex >= 0) {
         liveEntryIds.drop(currentTimelineIndex)
     } else {
         liveEntryIds
     }
-    val persistedByEntryId = persistedEntries.associateBy { item -> item.entry.entryId }
+    val visibleEntryIds = if (persistedEntries.isEmpty()) {
+        timelineEntryIds
+    } else {
+        timelineEntryIds.filter(persistedByEntryId::containsKey)
+    }
     if (visibleEntryIds.isNotEmpty()) {
-        return visibleEntryIds.mapIndexed { index, entryId ->
+        return visibleEntryIds.map { entryId ->
             PlaybackQueueEntryUiState(
                 entryId = entryId,
-                song = persistedByEntryId[entryId]?.song ?: liveSongs.getOrNull(index),
-                isCurrent = index == 0
+                song = persistedByEntryId[entryId]?.song ?: liveSongByEntryId[entryId],
+                isCurrent = entryId == liveCurrentEntryId
             )
         }
     }

@@ -1,9 +1,10 @@
 package io.github.rsgarrido.sazanami.player
 
 import android.net.Uri
-import androidx.media3.common.Player
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import io.github.rsgarrido.sazanami.data.Song
+import io.github.rsgarrido.sazanami.data.SongReference
 import io.github.rsgarrido.sazanami.data.local.PersistedQueueRepeatMode
 import io.github.rsgarrido.sazanami.data.local.PlaybackQueueEntryEntity
 import org.junit.Assert.assertEquals
@@ -66,18 +67,26 @@ class Media3PlaybackQueueRuntimeTest {
     @Test
     fun seekTargetsExactDuplicateEntryWithoutReplacingOrPreparingTimeline() {
         val player = mock(Player::class.java)
-        val duplicate = song(7L)
+        val firstDuplicateItem = mock(MediaItem::class.java)
+        val otherItem = mock(MediaItem::class.java)
+        val secondDuplicateItem = mock(MediaItem::class.java)
+        val evidenceByItem = mapOf(
+            firstDuplicateItem to evidence("duplicate-1", 7L),
+            otherItem to evidence("other", 8L),
+            secondDuplicateItem to evidence("duplicate-2", 7L)
+        )
         `when`(player.mediaItemCount).thenReturn(3)
         `when`(player.currentMediaItemIndex).thenReturn(0)
-        `when`(player.getMediaItemAt(0)).thenReturn(duplicate.toPlayableMediaItem("duplicate-1"))
-        `when`(player.getMediaItemAt(1)).thenReturn(song(8L).toPlayableMediaItem("other"))
-        `when`(player.getMediaItemAt(2)).thenReturn(duplicate.toPlayableMediaItem("duplicate-2"))
+        `when`(player.getMediaItemAt(0)).thenReturn(firstDuplicateItem)
+        `when`(player.getMediaItemAt(1)).thenReturn(otherItem)
+        `when`(player.getMediaItemAt(2)).thenReturn(secondDuplicateItem)
         val runtime = Media3PlaybackQueueRuntime(
             player = player,
             isLogicalShuffleEnabled = { false },
             logicalBaseSongs = { emptyList() },
             beforeTimelineReplacement = {},
-            onBaseSongsRestored = { _, _ -> }
+            onBaseSongsRestored = { _, _ -> },
+            evidenceReader = evidenceByItem::get
         )
 
         assertEquals(true, runtime.seekToEntry("duplicate-2"))
@@ -91,15 +100,18 @@ class Media3PlaybackQueueRuntimeTest {
     @Test
     fun seekingCurrentEntryIsHarmless() {
         val player = mock(Player::class.java)
+        val currentItem = mock(MediaItem::class.java)
+        val evidenceByItem = mapOf(currentItem to evidence("current", 1L))
         `when`(player.mediaItemCount).thenReturn(1)
         `when`(player.currentMediaItemIndex).thenReturn(0)
-        `when`(player.getMediaItemAt(0)).thenReturn(song(1L).toPlayableMediaItem("current"))
+        `when`(player.getMediaItemAt(0)).thenReturn(currentItem)
         val runtime = Media3PlaybackQueueRuntime(
             player = player,
             isLogicalShuffleEnabled = { false },
             logicalBaseSongs = { emptyList() },
             beforeTimelineReplacement = {},
-            onBaseSongsRestored = { _, _ -> }
+            onBaseSongsRestored = { _, _ -> },
+            evidenceReader = evidenceByItem::get
         )
 
         assertEquals(true, runtime.seekToEntry("current"))
@@ -111,17 +123,26 @@ class Media3PlaybackQueueRuntimeTest {
     @Test
     fun moveRejectsCurrentBoundaryAndAllowsUpcomingReorderAfterCurrent() {
         val player = mock(Player::class.java)
+        val currentItem = mock(MediaItem::class.java)
+        val firstUpcomingItem = mock(MediaItem::class.java)
+        val secondUpcomingItem = mock(MediaItem::class.java)
+        val evidenceByItem = mapOf(
+            currentItem to evidence("current", 1L),
+            firstUpcomingItem to evidence("next-1", 2L),
+            secondUpcomingItem to evidence("next-2", 3L)
+        )
         `when`(player.mediaItemCount).thenReturn(3)
         `when`(player.currentMediaItemIndex).thenReturn(0)
-        `when`(player.getMediaItemAt(0)).thenReturn(song(1L).toPlayableMediaItem("current"))
-        `when`(player.getMediaItemAt(1)).thenReturn(song(2L).toPlayableMediaItem("next-1"))
-        `when`(player.getMediaItemAt(2)).thenReturn(song(3L).toPlayableMediaItem("next-2"))
+        `when`(player.getMediaItemAt(0)).thenReturn(currentItem)
+        `when`(player.getMediaItemAt(1)).thenReturn(firstUpcomingItem)
+        `when`(player.getMediaItemAt(2)).thenReturn(secondUpcomingItem)
         val runtime = Media3PlaybackQueueRuntime(
             player = player,
             isLogicalShuffleEnabled = { false },
             logicalBaseSongs = { emptyList() },
             beforeTimelineReplacement = {},
-            onBaseSongsRestored = { _, _ -> }
+            onBaseSongsRestored = { _, _ -> },
+            evidenceReader = evidenceByItem::get
         )
 
         assertEquals(false, runtime.moveEntry("next-2", 0))
@@ -161,6 +182,12 @@ class Media3PlaybackQueueRuntimeTest {
             playbackOrder = playback
         ),
         song = song
+    )
+
+    private fun evidence(entryId: String, songId: Long) = ListeningMediaItemEvidence(
+        itemInstanceId = entryId,
+        referenceKey = "test-song-$songId",
+        reference = SongReference(mediaStoreId = songId)
     )
 
     private fun song(id: Long): Song {
