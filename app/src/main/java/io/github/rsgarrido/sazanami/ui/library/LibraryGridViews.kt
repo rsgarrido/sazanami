@@ -19,6 +19,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -50,6 +52,7 @@ import io.github.rsgarrido.sazanami.ui.AppShellTypography
 import io.github.rsgarrido.sazanami.ui.ratings.CompactRatingIndicator
 import io.github.rsgarrido.sazanami.ui.ratings.LocalSongRatingUi
 import io.github.rsgarrido.sazanami.ui.home.LocalHomePinUi
+import io.github.rsgarrido.sazanami.ui.state.LibrarySelectionEntity
 
 @Composable
 fun SongGrid(
@@ -64,6 +67,9 @@ fun SongGrid(
     onToggleFavoriteClick: (Song) -> Unit,
     onAddToPlaylistClick: (Song) -> Unit,
     onEditSongTagsClick: (Song) -> Unit,
+    onAddSongsToPlaylistClick: (List<Song>) -> Unit = {},
+    selectionEnabled: Boolean = false,
+    searchActive: Boolean = false,
     bottomContentPadding: Dp,
     modifier: Modifier = Modifier,
     ratingValuesByReferenceKey: Map<String, Int> = emptyMap(),
@@ -78,12 +84,58 @@ fun SongGrid(
     val libraryQueueUi = LocalLibraryQueueUi.current
     val rateSongLabel = stringResource(R.string.rate_song)
     val rememberedGridState = rememberLazyGridState()
+    val selectionUi = LocalLibrarySelectionUi.current
+    val selectionActive = selectionEnabled &&
+        selectionUi.state.entity == LibrarySelectionEntity.SONG && selectionUi.state.isActive
+    val displayedKeys = remember(songs) { songs.map(Song::membershipKey) }
+    val resolvedSelectedSongs = {
+        resolveSelectedSongs(selectionUi.state.selectedKeys, songs, selectionUi.allSongs)
+    }
+
+    Column(modifier = modifier.fillMaxSize()) {
+        if (selectionActive) {
+            LibrarySelectionHeader(
+                entity = LibrarySelectionEntity.SONG,
+                displayedKeys = displayedKeys,
+                searchActive = searchActive,
+                onMoreClick = {
+                    resolvedSelectedSongs().singleOrNull()?.let { selectedSong ->
+                        val base = songActionSheetTarget(
+                            song = selectedSong,
+                            wasRecentlyAdded = selectedSong.id in recentlyAddedSongIds,
+                            isFavorite = selectedSong.membershipKey() in favoriteMembershipKeys,
+                            onPlayNextClick = onPlayNextClick,
+                            onAddToQueueClick = onAddToQueueClick,
+                            onToggleFavoriteClick = onToggleFavoriteClick,
+                            onAddToPlaylistClick = onAddToPlaylistClick,
+                            onEditSongTagsClick = onEditSongTagsClick,
+                            rateSongLabel = rateSongLabel,
+                            onRateSongClick = ratingUi.onOpen,
+                            homePinAction = homePinUi.actionForSong(selectedSong)
+                        )
+                        actionSheetTarget = base.copy(
+                            actions = base.actions.filter { action ->
+                                isSongSelectionMoreAction(action.label, rateSongLabel)
+                            }.map { action ->
+                                action.copy(onClick = {
+                                    selectionUi.onClear()
+                                    action.onClick()
+                                })
+                            }
+                        )
+                    }
+                }
+            )
+        }
 
     LazyVerticalGrid(
         state = gridState ?: rememberedGridState,
         columns = GridCells.Fixed(gridMetrics.columnCount),
-        modifier = modifier.fillMaxSize(),
-        contentPadding = libraryGridPadding(bottomContentPadding, gridMetrics),
+        modifier = Modifier.weight(1f).fillMaxWidth(),
+        contentPadding = libraryGridPadding(
+            if (selectionActive) 0.dp else bottomContentPadding,
+            gridMetrics
+        ),
         horizontalArrangement = Arrangement.spacedBy(gridMetrics.horizontalSpacing),
         verticalArrangement = Arrangement.spacedBy(gridMetrics.verticalSpacing)
     ) {
@@ -92,6 +144,8 @@ fun SongGrid(
             key = { song -> song.stableUiKey() }
         ) { song ->
             val isCurrentSong = song.id == currentSongId
+            val isSelectionSelected = selectionActive &&
+                song.membershipKey() in selectionUi.state.selectedKeys
             LibraryGridCard(
                 artworkUri = song.albumArtUri,
                 artworkDescription = "Album art for ${song.title}",
@@ -100,6 +154,19 @@ fun SongGrid(
                 clickLabel = "Play ${song.title}",
                 gridMetrics = gridMetrics,
                 selected = isCurrentSong,
+                selectionEnabled = selectionEnabled,
+                selectionActive = selectionActive,
+                selectionSelected = isSelectionSelected,
+                onToggleSelection = {
+                    selectionUi.onToggle(LibrarySelectionEntity.SONG, song.membershipKey())
+                },
+                onEnterSelection = {
+                    if (selectionActive) {
+                        selectionUi.onToggle(LibrarySelectionEntity.SONG, song.membershipKey())
+                    } else {
+                        selectionUi.onEnter(LibrarySelectionEntity.SONG, song.membershipKey())
+                    }
+                },
                 rating = ratingValuesByReferenceKey[song.membershipKey()],
                 onClick = { onSongClick(song, songs) },
                 onShowActions = {
@@ -131,6 +198,16 @@ fun SongGrid(
         }
     }
 
+        if (selectionActive) {
+            LibrarySelectionActionBar(
+                selectedSongs = resolvedSelectedSongs,
+                onAddToPlaylist = onAddSongsToPlaylistClick,
+                favoritesEnabled = true,
+                modifier = Modifier.padding(bottom = bottomContentPadding)
+            )
+        }
+    }
+
     actionSheetTarget?.let { target ->
         LibraryItemActionSheet(
             target = target,
@@ -152,6 +229,8 @@ fun AlbumGridScreen(
     onAlbumPlayNextClick: (String, List<Song>) -> Unit,
     onAlbumAddToQueueClick: (String, List<Song>) -> Unit,
     onAlbumAddToPlaylistClick: (String, List<Song>) -> Unit,
+    selectionEnabled: Boolean = false,
+    searchActive: Boolean = false,
     bottomContentPadding: Dp,
     gridState: LazyGridState? = null,
     modifier: Modifier = Modifier
@@ -164,12 +243,61 @@ fun AlbumGridScreen(
     val homePinUi = LocalHomePinUi.current
     val libraryQueueUi = LocalLibraryQueueUi.current
     val rememberedGridState = rememberLazyGridState()
+    val selectionUi = LocalLibrarySelectionUi.current
+    val selectionActive = selectionEnabled &&
+        selectionUi.state.entity == LibrarySelectionEntity.ALBUM && selectionUi.state.isActive
+    val displayedKeys = remember(albums) { albums.map(LibraryAlbumGroup::key) }
+    val fallbackAlbums = remember(selectionUi.allSongs, sortState) {
+        sortedLibraryAlbumGroups(selectionUi.allSongs, sortState)
+    }
+    val resolvedSelectedAlbums = {
+        resolveSelectedAlbums(selectionUi.state.selectedKeys, albums, fallbackAlbums)
+    }
+    val resolvedSelectedSongs = { resolvedSelectedAlbums().flatMap(LibraryAlbumGroup::songs) }
+
+    Column(modifier = modifier.fillMaxSize()) {
+        if (selectionActive) {
+            LibrarySelectionHeader(
+                entity = LibrarySelectionEntity.ALBUM,
+                displayedKeys = displayedKeys,
+                searchActive = searchActive,
+                onMoreClick = {
+                    resolvedSelectedAlbums().singleOrNull()?.let { album ->
+                        val base = albumActionSheetTarget(
+                            albumTitle = album.title,
+                            subtitle = album.artistText,
+                            artworkUri = album.songs.firstOrNull()?.albumArtUri,
+                            albumSongs = album.songs,
+                            onPlayClick = onAlbumPlayClick,
+                            onShuffleClick = onAlbumShuffleClick,
+                            onPlayNextClick = onAlbumPlayNextClick,
+                            onAddToQueueClick = onAlbumAddToQueueClick,
+                            onAddToPlaylistClick = onAlbumAddToPlaylistClick,
+                            homePinAction = homePinUi.actionForAlbum(album)
+                        )
+                        actionSheetTarget = base.copy(
+                            actions = base.actions.filter { action ->
+                                isAlbumSelectionMoreAction(action.label)
+                            }.map { action ->
+                                action.copy(onClick = {
+                                    selectionUi.onClear()
+                                    action.onClick()
+                                })
+                            }
+                        )
+                    }
+                }
+            )
+        }
 
     LazyVerticalGrid(
         state = gridState ?: rememberedGridState,
         columns = GridCells.Fixed(gridMetrics.columnCount),
-        modifier = modifier.fillMaxSize(),
-        contentPadding = libraryGridPadding(bottomContentPadding, gridMetrics),
+        modifier = Modifier.weight(1f).fillMaxWidth(),
+        contentPadding = libraryGridPadding(
+            if (selectionActive) 0.dp else bottomContentPadding,
+            gridMetrics
+        ),
         horizontalArrangement = Arrangement.spacedBy(gridMetrics.horizontalSpacing),
         verticalArrangement = Arrangement.spacedBy(gridMetrics.verticalSpacing)
     ) {
@@ -189,6 +317,19 @@ fun AlbumGridScreen(
                 subtitle = "${album.artistText} • $songCountText",
                 clickLabel = "Open ${album.title}",
                 gridMetrics = gridMetrics,
+                selectionEnabled = selectionEnabled,
+                selectionActive = selectionActive,
+                selectionSelected = selectionActive && album.key in selectionUi.state.selectedKeys,
+                onToggleSelection = {
+                    selectionUi.onToggle(LibrarySelectionEntity.ALBUM, album.key)
+                },
+                onEnterSelection = {
+                    if (selectionActive) {
+                        selectionUi.onToggle(LibrarySelectionEntity.ALBUM, album.key)
+                    } else {
+                        selectionUi.onEnter(LibrarySelectionEntity.ALBUM, album.key)
+                    }
+                },
                 onClick = { onAlbumClick(album.key) },
                 onShowActions = {
                     actionSheetTarget = albumActionSheetTarget(
@@ -212,6 +353,19 @@ fun AlbumGridScreen(
                         easing = FastOutSlowInEasing
                     )
                 )
+            )
+        }
+    }
+
+        if (selectionActive) {
+            LibrarySelectionActionBar(
+                selectedSongs = resolvedSelectedSongs,
+                onAddToPlaylist = { selectedSongs ->
+                    onAlbumAddToPlaylistClick("Selected albums", selectedSongs)
+                },
+                favoritesEnabled = false,
+                newQueueName = { resolvedSelectedAlbums().singleOrNull()?.title.orEmpty() },
+                modifier = Modifier.padding(bottom = bottomContentPadding)
             )
         }
     }
@@ -338,15 +492,29 @@ private fun LibraryGridCard(
     onShowActions: () -> Unit,
     modifier: Modifier = Modifier,
     selected: Boolean = false,
+    selectionEnabled: Boolean = false,
+    selectionActive: Boolean = false,
+    selectionSelected: Boolean = false,
+    onToggleSelection: () -> Unit = {},
+    onEnterSelection: () -> Unit = {},
     rating: Int? = null
 ) {
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .libraryItemActions(
-                clickLabel = clickLabel,
-                onClick = onClick,
-                onShowActions = onShowActions
+            .then(
+                if (selectionEnabled) Modifier.librarySelectableItem(
+                    clickLabel = clickLabel,
+                    selectionActive = selectionActive,
+                    selected = selectionSelected,
+                    onClick = onClick,
+                    onToggleSelection = onToggleSelection,
+                    onEnterSelection = onEnterSelection
+                ) else Modifier.libraryItemActions(
+                    clickLabel = clickLabel,
+                    onClick = onClick,
+                    onShowActions = onShowActions
+                )
             ),
         verticalArrangement = Arrangement.spacedBy(gridMetrics.metadataSpacing)
     ) {
@@ -384,6 +552,19 @@ private fun LibraryGridCard(
                         .size(width = gridMetrics.selectedAccentWidth, height = 3.dp)
                         .clip(RoundedCornerShape(2.dp))
                         .background(AppShellAccent)
+                )
+            }
+            if (selectionSelected) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(AppShellAccent.copy(alpha = 0.24f))
+                )
+                Icon(
+                    imageVector = Icons.Filled.CheckCircle,
+                    contentDescription = "Selected",
+                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+                    tint = AppShellAccent
                 )
             }
         }

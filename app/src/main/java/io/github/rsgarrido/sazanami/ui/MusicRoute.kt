@@ -7,6 +7,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -27,6 +28,7 @@ import io.github.rsgarrido.sazanami.mediaaccess.MediaAccessState
 import io.github.rsgarrido.sazanami.mediaaccess.FolderArtworkAccessState
 import io.github.rsgarrido.sazanami.data.home.HomePin
 import io.github.rsgarrido.sazanami.data.Song
+import io.github.rsgarrido.sazanami.data.membershipKey
 import io.github.rsgarrido.sazanami.data.buildGenreCollections
 import io.github.rsgarrido.sazanami.data.ArtistIdentity
 import io.github.rsgarrido.sazanami.ui.home.HomePinReplacementDialog
@@ -39,6 +41,10 @@ import io.github.rsgarrido.sazanami.ui.library.FolderSelectionScreen
 import io.github.rsgarrido.sazanami.ui.library.AddToAnotherQueueDialog
 import io.github.rsgarrido.sazanami.ui.library.LibraryQueueUiEnvironment
 import io.github.rsgarrido.sazanami.ui.library.LocalLibraryQueueUi
+import io.github.rsgarrido.sazanami.ui.library.LibrarySelectionUiEnvironment
+import io.github.rsgarrido.sazanami.ui.library.LocalLibrarySelectionUi
+import io.github.rsgarrido.sazanami.ui.library.buildLibraryAlbumGroups
+import io.github.rsgarrido.sazanami.ui.state.LibrarySelectionEntity
 import io.github.rsgarrido.sazanami.ui.ratings.LocalSongRatingUi
 import io.github.rsgarrido.sazanami.ui.ratings.SongRatingDialog
 import io.github.rsgarrido.sazanami.ui.ratings.SongRatingUiEnvironment
@@ -64,6 +70,8 @@ internal fun MusicRoute(
     val playbackQueueHubUiState by
         musicViewModel.playbackQueueHubUiState.collectAsStateWithLifecycle()
     val libraryUiState by musicViewModel.libraryUiState.collectAsStateWithLifecycle()
+    val librarySelectionUiState by
+        musicViewModel.librarySelectionUiState.collectAsStateWithLifecycle()
     val sleepTimerUiState by musicViewModel.sleepTimerUiState.collectAsStateWithLifecycle()
     val playerAppearanceUiState by
     musicViewModel.playerAppearanceUiState.collectAsStateWithLifecycle()
@@ -155,8 +163,24 @@ internal fun MusicRoute(
 
     var pendingHomePin by remember { mutableStateOf<HomePin?>(null) }
     var pendingAnotherQueueSongs by remember { mutableStateOf<List<Song>?>(null) }
+    var pendingAnotherQueueFromSelection by remember { mutableStateOf(false) }
     var pendingArtistPicture by remember { mutableStateOf<ArtistIdentity?>(null) }
     var quickRateMode by remember { mutableStateOf(false) }
+
+    LaunchedEffect(libraryUiState.songs, librarySelectionUiState.entity) {
+        when (librarySelectionUiState.entity) {
+            LibrarySelectionEntity.SONG -> musicViewModel.reconcileLibrarySelection(
+                LibrarySelectionEntity.SONG,
+                libraryUiState.songs.mapTo(mutableSetOf(), Song::membershipKey)
+            )
+            LibrarySelectionEntity.ALBUM -> musicViewModel.reconcileLibrarySelection(
+                LibrarySelectionEntity.ALBUM,
+                buildLibraryAlbumGroups(libraryUiState.songs)
+                    .mapTo(mutableSetOf()) { it.key }
+            )
+            else -> Unit
+        }
+    }
     val artistPicturePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
@@ -252,7 +276,10 @@ internal fun MusicRoute(
             onClear = musicViewModel::clearSongRating,
             onFilterSelected = musicViewModel::selectSongRatingFilter,
             quickRateMode = quickRateMode,
-            onQuickRateModeChanged = { quickRateMode = it },
+            onQuickRateModeChanged = { enabled ->
+                quickRateMode = enabled
+                if (enabled) musicViewModel.clearLibrarySelection()
+            },
             onSetDirectRating = musicViewModel::setSongRatingDirect
         ),
         LocalSmartPlaylistUi provides SmartPlaylistUiEnvironment(
@@ -297,6 +324,7 @@ internal fun MusicRoute(
                 musicViewModel.playInNewQueue(name, selectedSongs)
             },
             onAddToAnotherQueue = { selectedSongs ->
+                pendingAnotherQueueFromSelection = false
                 pendingAnotherQueueSongs = selectedSongs
             },
             onPlayPlaylistNext = { playlist ->
@@ -314,6 +342,26 @@ internal fun MusicRoute(
                     pendingAnotherQueueSongs = selectedSongs
                 }
             }
+        ),
+        LocalLibrarySelectionUi provides LibrarySelectionUiEnvironment(
+            state = librarySelectionUiState,
+            allSongs = libraryUiState.songs,
+            favoriteMembershipKeys = libraryUiState.favoriteMembershipKeys,
+            onEnter = { entity, key ->
+                quickRateMode = false
+                musicViewModel.enterLibrarySelection(entity, key)
+            },
+            onToggle = musicViewModel::toggleLibrarySelection,
+            onSelectDisplayed = musicViewModel::selectDisplayedLibraryItems,
+            onClear = musicViewModel::clearLibrarySelection,
+            onPlayNext = musicViewModel::addSongsToPlayNext,
+            onAddToQueue = musicViewModel::addSongsToQueue,
+            onAddToAnotherQueue = { selectedSongs ->
+                pendingAnotherQueueFromSelection = true
+                pendingAnotherQueueSongs = selectedSongs
+            },
+            onPlayInNewQueue = musicViewModel::playInNewQueue,
+            onApplyFavoriteBatch = musicViewModel::applyFavoriteBatch
         )
     ) {
         MusicScreen(
@@ -477,6 +525,7 @@ internal fun MusicRoute(
                     playlistName = playlistName,
                     initialSongs = initialSongs
                 ) { result ->
+                    result.onSuccess { musicViewModel.clearLibrarySelection() }
                     routeScope.launch {
                         snackbarHostState.showSnackbar(
                             result.fold(
@@ -780,9 +829,16 @@ internal fun MusicRoute(
                 activeQueueId = playbackQueueHubUiState.activeQueueId,
                 onQueueSelected = { queueId ->
                     musicViewModel.addToInactiveQueue(queueId, selectedSongs)
+                    if (pendingAnotherQueueFromSelection) {
+                        musicViewModel.clearLibrarySelection()
+                    }
+                    pendingAnotherQueueFromSelection = false
                     pendingAnotherQueueSongs = null
                 },
-                onDismiss = { pendingAnotherQueueSongs = null }
+                onDismiss = {
+                    pendingAnotherQueueFromSelection = false
+                    pendingAnotherQueueSongs = null
+                }
             )
         }
         pendingHomePin?.let { pin ->

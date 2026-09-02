@@ -113,6 +113,7 @@ fun MusicLibraryContent(
                 favoriteMembershipKeys = favoriteMembershipKeys,
                 onToggleFavoriteClick = onToggleFavoriteClick,
                 onAddToPlaylistClick = onAddToPlaylistClick,
+                onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
                 onEditSongTagsClick = onEditSongTagsClick,
                 onClearFilters = onClearSongFilters,
                 ratingFeaturesEnabled = ratingFeaturesEnabled,
@@ -137,6 +138,7 @@ fun MusicLibraryContent(
                 onAddToQueueClick = onAddToQueueClick,
                 onToggleFavoriteClick = onToggleFavoriteClick,
                 onAddToPlaylistClick = onAddToPlaylistClick,
+                onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
                 onEditSongTagsClick = onEditSongTagsClick,
                 ratingFeaturesEnabled = ratingFeaturesEnabled,
                 bottomContentPadding = bottomContentPadding,
@@ -321,6 +323,8 @@ fun MusicLibraryContent(
                     onAddToQueueClick = onAddToQueueClick,
                     onToggleFavoriteClick = onToggleFavoriteClick,
                     onAddToPlaylistClick = onAddToPlaylistClick,
+                    onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
+                    selectionEnabled = true,
                     onEditSongTagsClick = onEditSongTagsClick,
                     bottomContentPadding = bottomContentPadding,
                     modifier = modifier
@@ -360,6 +364,9 @@ fun MusicLibraryContent(
                             onAddToQueueClick = onAddToQueueClick,
                             onToggleFavoriteClick = onToggleFavoriteClick,
                             onAddToPlaylistClick = onAddToPlaylistClick,
+                            onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
+                            selectionEnabled = true,
+                            searchActive = searchQuery.isNotBlank(),
                             onEditSongTagsClick = onEditSongTagsClick,
                             bottomContentPadding = bottomContentPadding,
                             modifier = Modifier.fillMaxSize()
@@ -378,6 +385,9 @@ fun MusicLibraryContent(
                             onAddToQueueClick = onAddToQueueClick,
                             onToggleFavoriteClick = onToggleFavoriteClick,
                             onAddToPlaylistClick = onAddToPlaylistClick,
+                            onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
+                            selectionEnabled = true,
+                            searchActive = searchQuery.isNotBlank(),
                             onEditSongTagsClick = onEditSongTagsClick,
                             bottomContentPadding = bottomContentPadding,
                             modifier = Modifier.fillMaxSize()
@@ -404,6 +414,8 @@ fun MusicLibraryContent(
                     onAddToQueueClick = onAddToQueueClick,
                     onToggleFavoriteClick = onToggleFavoriteClick,
                     onAddToPlaylistClick = onAddToPlaylistClick,
+                    onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
+                    selectionEnabled = true,
                     onEditSongTagsClick = onEditSongTagsClick,
                     bottomContentPadding = bottomContentPadding,
                     modifier = modifier

@@ -4,8 +4,11 @@ import android.R
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -18,7 +21,11 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -35,6 +42,8 @@ import androidx.compose.ui.unit.Dp
 import coil.compose.AsyncImage
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.ui.home.LocalHomePinUi
+import io.github.rsgarrido.sazanami.ui.AppShellAccent
+import io.github.rsgarrido.sazanami.ui.state.LibrarySelectionEntity
 import io.github.rsgarrido.sazanami.R as AppR
 
 @Composable
@@ -46,6 +55,8 @@ fun AlbumListScreen(
     onAlbumPlayNextClick: (String, List<Song>) -> Unit,
     onAlbumAddToQueueClick: (String, List<Song>) -> Unit,
     onAlbumAddToPlaylistClick: (String, List<Song>) -> Unit,
+    selectionEnabled: Boolean = false,
+    searchActive: Boolean = false,
     modifier: Modifier = Modifier,
     sortState: LibrarySortState = LibrarySortState(
         LibrarySortOption.TITLE,
@@ -61,11 +72,57 @@ fun AlbumListScreen(
     val homePinUi = LocalHomePinUi.current
     val libraryQueueUi = LocalLibraryQueueUi.current
     val rememberedListState = rememberLazyListState()
+    val selectionUi = LocalLibrarySelectionUi.current
+    val selectionActive = selectionEnabled &&
+        selectionUi.state.entity == LibrarySelectionEntity.ALBUM && selectionUi.state.isActive
+    val displayedKeys = remember(albums) { albums.map(LibraryAlbumGroup::key) }
+    val fallbackAlbums = remember(selectionUi.allSongs, sortState) {
+        sortedLibraryAlbumGroups(selectionUi.allSongs, sortState)
+    }
+    val resolvedSelectedAlbums = {
+        resolveSelectedAlbums(selectionUi.state.selectedKeys, albums, fallbackAlbums)
+    }
+    val resolvedSelectedSongs = { resolvedSelectedAlbums().flatMap(LibraryAlbumGroup::songs) }
+
+    Column(modifier = modifier.fillMaxSize()) {
+        if (selectionActive) {
+            LibrarySelectionHeader(
+                entity = LibrarySelectionEntity.ALBUM,
+                displayedKeys = displayedKeys,
+                searchActive = searchActive,
+                onMoreClick = {
+                    resolvedSelectedAlbums().singleOrNull()?.let { album ->
+                        val base = albumActionSheetTarget(
+                            albumTitle = album.title,
+                            subtitle = album.artistText,
+                            artworkUri = album.songs.firstOrNull()?.albumArtUri,
+                            albumSongs = album.songs,
+                            onPlayClick = onAlbumPlayClick,
+                            onShuffleClick = onAlbumShuffleClick,
+                            onPlayNextClick = onAlbumPlayNextClick,
+                            onAddToQueueClick = onAlbumAddToQueueClick,
+                            onAddToPlaylistClick = onAlbumAddToPlaylistClick,
+                            homePinAction = homePinUi.actionForAlbum(album)
+                        )
+                        actionSheetTarget = base.copy(
+                            actions = base.actions.filter { action ->
+                                isAlbumSelectionMoreAction(action.label)
+                            }.map { action ->
+                                action.copy(onClick = {
+                                    selectionUi.onClear()
+                                    action.onClick()
+                                })
+                            }
+                        )
+                    }
+                }
+            )
+        }
 
     LazyColumn(
         state = listState ?: rememberedListState,
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = bottomContentPadding)
+        modifier = Modifier.weight(1f).fillMaxWidth(),
+        contentPadding = PaddingValues(bottom = if (selectionActive) 0.dp else bottomContentPadding)
     ) {
         items(
             items = albums,
@@ -77,6 +134,8 @@ fun AlbumListScreen(
                 album.songs.size,
                 album.songs.size
             )
+            val isSelectionSelected = selectionActive &&
+                album.key in selectionUi.state.selectedKeys
 
             ListItem(
                 leadingContent = {
@@ -97,6 +156,14 @@ fun AlbumListScreen(
                 supportingContent = {
                     Text(text = "${album.artistText} • $songCountText")
                 },
+                trailingContent = if (isSelectionSelected) ({
+                    Icon(Icons.Filled.CheckCircle, "Selected", tint = AppShellAccent)
+                }) else null,
+                colors = ListItemDefaults.colors(
+                    containerColor = if (isSelectionSelected) {
+                        AppShellAccent.copy(alpha = 0.28f)
+                    } else MaterialTheme.colorScheme.surface
+                ),
                 modifier = Modifier
                     .animateItem(
                         placementSpec = tween(
@@ -104,12 +171,26 @@ fun AlbumListScreen(
                             easing = FastOutSlowInEasing
                         )
                     )
-                    .libraryItemActions(
-                        clickLabel = "Open ${album.title}",
-                        onClick = {
-                            onAlbumClick(album.key)
-                        },
-                        onShowActions = {
+                    .then(
+                        if (selectionEnabled) Modifier.librarySelectableItem(
+                            clickLabel = "Open ${album.title}",
+                            selectionActive = selectionActive,
+                            selected = isSelectionSelected,
+                            onClick = { onAlbumClick(album.key) },
+                            onToggleSelection = {
+                                selectionUi.onToggle(LibrarySelectionEntity.ALBUM, album.key)
+                            },
+                            onEnterSelection = {
+                                if (selectionActive) {
+                                    selectionUi.onToggle(LibrarySelectionEntity.ALBUM, album.key)
+                                } else {
+                                    selectionUi.onEnter(LibrarySelectionEntity.ALBUM, album.key)
+                                }
+                            }
+                        ) else Modifier.libraryItemActions(
+                            clickLabel = "Open ${album.title}",
+                            onClick = { onAlbumClick(album.key) },
+                            onShowActions = {
                             actionSheetTarget = albumActionSheetTarget(
                                 albumTitle = album.title,
                                 subtitle = "${album.artistText} • $songCountText",
@@ -126,8 +207,22 @@ fun AlbumListScreen(
                                 onAddToPlaylistClick = onAlbumAddToPlaylistClick,
                                 homePinAction = homePinUi.actionForAlbum(album)
                             )
-                        }
+                            }
+                        )
                     )
+            )
+        }
+    }
+
+        if (selectionActive) {
+            LibrarySelectionActionBar(
+                selectedSongs = resolvedSelectedSongs,
+                onAddToPlaylist = { selectedSongs ->
+                    onAlbumAddToPlaylistClick("Selected albums", selectedSongs)
+                },
+                favoritesEnabled = false,
+                newQueueName = { resolvedSelectedAlbums().singleOrNull()?.title.orEmpty() },
+                modifier = Modifier.padding(bottom = bottomContentPadding)
             )
         }
     }

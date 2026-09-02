@@ -12,6 +12,31 @@ import org.mockito.Mockito.mock
 
 class FavoritesRepositoryReconciliationTest {
     @Test
+    fun bulkAddDeduplicatesAndUsesOneDaoBatch() = runBlocking {
+        val selected = song(11)
+        val dao = FakeFavoriteDao(mutableListOf())
+
+        FavoritesRepository(dao).addFavorites(listOf(selected, selected))
+
+        assertEquals(1, dao.bulkInsertCalls)
+        assertEquals(listOf(selected.membershipKey()), dao.rows.map { it.referenceKey })
+    }
+
+    @Test
+    fun bulkRemoveUsesOneDaoBatch() = runBlocking {
+        val first = song(12)
+        val second = song(13)
+        val dao = FakeFavoriteDao(mutableListOf())
+        val repository = FavoritesRepository(dao)
+        repository.addFavorites(listOf(first, second))
+
+        repository.removeFavorites(listOf(first, second))
+
+        assertEquals(1, dao.bulkDeleteCalls)
+        assertTrue(dao.rows.isEmpty())
+    }
+
+    @Test
     fun uniqueLegacyFavoriteBackfillsAndReconciliationIsIdempotent() = runBlocking {
         val song = song(7)
         val dao = FakeFavoriteDao(mutableListOf(legacyFavorite(song)))
@@ -86,6 +111,8 @@ class FavoritesRepositoryReconciliationTest {
 private class FakeFavoriteDao(
     val rows: MutableList<FavoriteSongEntity>
 ) : FavoriteSongDao {
+    var bulkInsertCalls: Int = 0
+    var bulkDeleteCalls: Int = 0
     override suspend fun getAllFavorites(): List<FavoriteSongEntity> = rows.sortedByDescending {
         it.createdAt
     }
@@ -96,10 +123,12 @@ private class FakeFavoriteDao(
     }
 
     override suspend fun insertFavorites(favorites: List<FavoriteSongEntity>) {
+        bulkInsertCalls += 1
         favorites.forEach { insertFavorite(it) }
     }
 
     override suspend fun deleteFavoritesByReferenceKeys(referenceKeys: List<String>) {
+        bulkDeleteCalls += 1
         rows.removeAll { it.referenceKey in referenceKeys }
     }
 

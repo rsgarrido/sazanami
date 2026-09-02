@@ -54,33 +54,22 @@ class FavoritesRepository(
     }
 
     suspend fun addFavorite(song: Song) {
-        val reference = song.toSongReference()
-        favoriteSongDao.insertFavorite(
-            FavoriteSongEntity(
-                referenceKey = song.membershipKey(),
-                songKey = reference.legacyStableKey,
-                title = reference.title,
-                artist = reference.artist,
-                album = reference.album,
-                duration = reference.duration,
-                createdAt = System.currentTimeMillis(),
-                mediaStoreId = reference.mediaStoreId,
-                volumeName = reference.volumeName,
-                contentUri = reference.contentUri,
-                relativePath = reference.relativePath,
-                displayName = reference.displayName,
-                fileSizeBytes = reference.fileSizeBytes,
-                dateModifiedEpochSeconds = reference.dateModifiedEpochSeconds,
-                albumArtist = reference.albumArtist,
-                portableKey = reference.portableKey,
-                portableKeyVersion = reference.portableKeyVersion
-            )
-        )
+        favoriteSongDao.insertFavorite(song.toFavoriteEntity())
+    }
+
+    suspend fun addFavorites(songs: List<Song>) {
+        val rows = songs.distinctBy(Song::membershipKey).map { it.toFavoriteEntity() }
+        if (rows.isNotEmpty()) favoriteSongDao.insertFavorites(rows)
     }
 
     suspend fun removeFavorite(song: Song) {
         favoriteSongDao.deleteFavoriteByReferenceKey(song.membershipKey())
         favoriteSongDao.deleteFavoriteByKey(song.stableKey())
+    }
+
+    suspend fun removeFavorites(songs: List<Song>) {
+        val keys = songs.map(Song::membershipKey).distinct()
+        if (keys.isNotEmpty()) favoriteSongDao.deleteFavoritesByReferenceKeys(keys)
     }
 
     suspend fun updateSongReferenceAfterTagEdit(
@@ -117,6 +106,29 @@ class FavoritesRepository(
             favoriteSongDao.deleteFavoriteByReferenceKey(old.referenceKey)
         }
     }
+}
+
+private fun Song.toFavoriteEntity(): FavoriteSongEntity {
+    val reference = toSongReference()
+    return FavoriteSongEntity(
+        referenceKey = membershipKey(),
+        songKey = reference.legacyStableKey,
+        title = reference.title,
+        artist = reference.artist,
+        album = reference.album,
+        duration = reference.duration,
+        createdAt = System.currentTimeMillis(),
+        mediaStoreId = reference.mediaStoreId,
+        volumeName = reference.volumeName,
+        contentUri = reference.contentUri,
+        relativePath = reference.relativePath,
+        displayName = reference.displayName,
+        fileSizeBytes = reference.fileSizeBytes,
+        dateModifiedEpochSeconds = reference.dateModifiedEpochSeconds,
+        albumArtist = reference.albumArtist,
+        portableKey = reference.portableKey,
+        portableKeyVersion = reference.portableKeyVersion
+    )
 }
 
 private fun BackupFavoriteSong.toLegacyEntity(): FavoriteSongEntity {

@@ -6,6 +6,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -21,6 +23,8 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -50,6 +54,7 @@ import io.github.rsgarrido.sazanami.ui.ratings.CompactRatingIndicator
 import io.github.rsgarrido.sazanami.ui.ratings.QuickRatingControl
 import io.github.rsgarrido.sazanami.ui.home.LocalHomePinUi
 import io.github.rsgarrido.sazanami.ui.ratings.LocalSongRatingUi
+import io.github.rsgarrido.sazanami.ui.state.LibrarySelectionEntity
 
 @Composable
 fun SongList(
@@ -63,6 +68,9 @@ fun SongList(
     onToggleFavoriteClick: (Song) -> Unit,
     onAddToPlaylistClick: (Song) -> Unit,
     onEditSongTagsClick: (Song) -> Unit,
+    onAddSongsToPlaylistClick: (List<Song>) -> Unit = {},
+    selectionEnabled: Boolean = false,
+    searchActive: Boolean = false,
     modifier: Modifier = Modifier,
     showAlbumName: Boolean = false,
     showTrackNumbers: Boolean = false,
@@ -81,11 +89,56 @@ fun SongList(
     val libraryQueueUi = LocalLibraryQueueUi.current
     val rateSongLabel = stringResource(AppR.string.rate_song)
     val rememberedListState = rememberLazyListState()
+    val selectionUi = LocalLibrarySelectionUi.current
+    val selectionActive = selectionEnabled &&
+        selectionUi.state.entity == LibrarySelectionEntity.SONG && selectionUi.state.isActive
+    val displayedKeys = remember(songs) { songs.map(Song::membershipKey) }
+    val resolvedSelectedSongs = {
+        resolveSelectedSongs(selectionUi.state.selectedKeys, songs, selectionUi.allSongs)
+    }
+
+    Column(modifier = modifier) {
+        if (selectionActive) {
+            LibrarySelectionHeader(
+                entity = LibrarySelectionEntity.SONG,
+                displayedKeys = displayedKeys,
+                searchActive = searchActive,
+                onMoreClick = {
+                    resolvedSelectedSongs().singleOrNull()?.let { selectedSong ->
+                        val base = songActionSheetTarget(
+                            song = selectedSong,
+                            wasRecentlyAdded = selectedSong.id in recentlyAddedSongIds,
+                            isFavorite = selectedSong.membershipKey() in favoriteMembershipKeys,
+                            onPlayNextClick = onPlayNextClick,
+                            onAddToQueueClick = onAddToQueueClick,
+                            onToggleFavoriteClick = onToggleFavoriteClick,
+                            onAddToPlaylistClick = onAddToPlaylistClick,
+                            onEditSongTagsClick = onEditSongTagsClick,
+                            rateSongLabel = rateSongLabel,
+                            onRateSongClick = ratingUi.onOpen,
+                            homePinAction = homePinUi.actionForSong(selectedSong)
+                        )
+                        actionSheetTarget = base.copy(
+                            actions = base.actions
+                                .filter { action ->
+                                    isSongSelectionMoreAction(action.label, rateSongLabel)
+                                }
+                                .map { action ->
+                                    action.copy(onClick = {
+                                        selectionUi.onClear()
+                                        action.onClick()
+                                    })
+                                }
+                        )
+                    }
+                }
+            )
+        }
 
     LazyColumn(
         state = listState ?: rememberedListState,
-        modifier = modifier,
-        contentPadding = PaddingValues(bottom = bottomContentPadding)
+        modifier = Modifier.weight(1f).fillMaxWidth(),
+        contentPadding = PaddingValues(bottom = if (selectionActive) 0.dp else bottomContentPadding)
     ) {
         headerContent?.let { content ->
             item(key = "library-song-list-header") {
@@ -109,6 +162,8 @@ fun SongList(
             val wasRecentlyAdded = song.id in recentlyAddedSongIds
             val isFavorite = song.membershipKey() in favoriteMembershipKeys
             val rating = ratingValuesByReferenceKey[song.membershipKey()]
+            val isSelectionSelected = selectionActive &&
+                song.membershipKey() in selectionUi.state.selectedKeys
 
             ListItem(
                 leadingContent = {
@@ -160,20 +215,29 @@ fun SongList(
                         }
                     }
                 },
-                trailingContent = if (quickRatingMode) null else rating?.let { value ->
-                    {
+                trailingContent = when {
+                    isSelectionSelected -> ({
+                        Icon(
+                            imageVector = Icons.Filled.CheckCircle,
+                            contentDescription = "Selected",
+                            tint = AppShellAccent
+                        )
+                    })
+                    quickRatingMode -> null
+                    rating != null -> ({
                         CompactRatingIndicator(
-                            rating = value,
+                            rating = rating,
                             iconFirst = true,
                             modifier = Modifier.clickable { ratingUi.onOpen(song) }
                         )
-                    }
+                    })
+                    else -> null
                 },
                 colors = ListItemDefaults.colors(
-                    containerColor = if (isCurrentSong) {
-                        AppShellAccent.copy(alpha = 0.16f)
-                    } else {
-                        MaterialTheme.colorScheme.surface
+                    containerColor = when {
+                        isSelectionSelected -> AppShellAccent.copy(alpha = 0.28f)
+                        isCurrentSong -> AppShellAccent.copy(alpha = 0.14f)
+                        else -> MaterialTheme.colorScheme.surface
                     }
                 ),
                 modifier = Modifier
@@ -183,12 +247,37 @@ fun SongList(
                             easing = FastOutSlowInEasing
                         )
                     )
-                    .libraryItemActions(
-                        clickLabel = "Play ${song.title}",
-                        onClick = {
-                            onSongClick(song, songs)
-                        },
-                        onShowActions = {
+                    .then(
+                        if (selectionEnabled) {
+                            Modifier.librarySelectableItem(
+                                clickLabel = "Play ${song.title}",
+                                selectionActive = selectionActive,
+                                selected = isSelectionSelected,
+                                onClick = { onSongClick(song, songs) },
+                                onToggleSelection = {
+                                    selectionUi.onToggle(
+                                        LibrarySelectionEntity.SONG,
+                                        song.membershipKey()
+                                    )
+                                },
+                                onEnterSelection = {
+                                    if (selectionActive) {
+                                        selectionUi.onToggle(
+                                            LibrarySelectionEntity.SONG,
+                                            song.membershipKey()
+                                        )
+                                    } else {
+                                        selectionUi.onEnter(
+                                            LibrarySelectionEntity.SONG,
+                                            song.membershipKey()
+                                        )
+                                    }
+                                }
+                            )
+                        } else Modifier.libraryItemActions(
+                            clickLabel = "Play ${song.title}",
+                            onClick = { onSongClick(song, songs) },
+                            onShowActions = {
                             actionSheetTarget = songActionSheetTarget(
                                 song = song,
                                 wasRecentlyAdded = wasRecentlyAdded,
@@ -206,8 +295,19 @@ fun SongList(
                                 onRateSongClick = ratingUi.onOpen,
                                 homePinAction = homePinUi.actionForSong(song)
                             )
-                        }
+                            }
+                        )
                     )
+            )
+        }
+    }
+
+        if (selectionActive) {
+            LibrarySelectionActionBar(
+                selectedSongs = resolvedSelectedSongs,
+                onAddToPlaylist = onAddSongsToPlaylistClick,
+                favoritesEnabled = true,
+                modifier = Modifier.padding(bottom = bottomContentPadding)
             )
         }
     }

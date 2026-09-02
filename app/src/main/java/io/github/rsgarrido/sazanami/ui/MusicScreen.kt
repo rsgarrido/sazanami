@@ -107,6 +107,8 @@ import io.github.rsgarrido.sazanami.data.ListeningRankingCategory
 import io.github.rsgarrido.sazanami.data.ListeningTrendMetric
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewCategory
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewOption
+import io.github.rsgarrido.sazanami.ui.library.LocalLibrarySelectionUi
+import io.github.rsgarrido.sazanami.ui.state.LibrarySelectionEntity
 import io.github.rsgarrido.sazanami.ui.equalizer.EqualizerScreenState
 import io.github.rsgarrido.sazanami.ui.equalizer.EqualizerUiActions
 import io.github.rsgarrido.sazanami.ui.queue.rememberQueueSnackbarActions
@@ -295,6 +297,7 @@ internal fun MusicScreen(
     spotifyImportActions: SpotifyImportUiActions
 ) {
     val context = LocalContext.current
+    val librarySelectionUi = LocalLibrarySelectionUi.current
     val navigationState = rememberMusicNavigationState()
     var mainDestination by navigationState.mainDestination
     var selectedLibraryTab by navigationState.selectedLibraryTab
@@ -619,6 +622,7 @@ internal fun MusicScreen(
                 selectedAlbumKey != null ||
                 selectedGenreKey != null ||
                 selectedPlaylistId != null ||
+                librarySelectionUi.state.isActive ||
                 mainDestination != MainDestination.HOME
     ) {
         when {
@@ -653,6 +657,10 @@ internal fun MusicScreen(
 
             isQueueHubVisible -> {
                 isQueueHubVisible = false
+            }
+
+            librarySelectionUi.state.isActive -> {
+                librarySelectionUi.onClear()
             }
 
             playerMorphState.shouldConsumeBack -> {
@@ -723,7 +731,17 @@ internal fun MusicScreen(
         playerTheme = selectedPlayerTheme,
         tokens = selectedPlayerThemeTokens
     )
-    CompositionLocalProvider(LocalAppShellAccent provides appShellAccent) {
+    CompositionLocalProvider(
+        LocalAppShellAccent provides appShellAccent,
+        LocalLibrarySelectionUi provides librarySelectionUi.copy(
+            onPlayNext = { selectedSongs ->
+                queueSnackbarActions.playNextSongs("Selection", selectedSongs)
+            },
+            onAddToQueue = { selectedSongs ->
+                queueSnackbarActions.addSongsToQueue("Selection", selectedSongs)
+            }
+        )
+    ) {
         PlayerMorphHost(
             morphState = playerMorphState,
             modifier = modifier
@@ -1101,9 +1119,13 @@ internal fun MusicScreen(
                     statisticsListState = statisticsListState,
                     queueSnackbarActions = queueSnackbarActions,
                     onSettingsClick = {
+                        librarySelectionUi.onClear()
                         isSettingsScreenVisible = true
                     },
                     onOpenLibrary = { tab ->
+                        if (librarySelectionUi.state.entity != tab.selectionEntity()) {
+                            librarySelectionUi.onClear()
+                        }
                         selectedLibraryTab = tab
                         selectedArtistName = null
                         selectedAlbumKey = null
@@ -1175,9 +1197,11 @@ internal fun MusicScreen(
                         selectedFavoriteSortState = state
                     },
                     onExpandPlayerClick = {
+                        librarySelectionUi.onClear()
                         playerMorphState.expand()
                     },
                     onMiniPlayerUpNextClick = {
+                        librarySelectionUi.onClear()
                         selectedLibraryTab = LibraryTab.QUEUE
                         selectedArtistName = null
                         selectedAlbumKey = null
@@ -1207,12 +1231,14 @@ internal fun MusicScreen(
                         songsPendingPlaylistAdd = songs
                     },
                     onArtistSelected = { artistName ->
+                        librarySelectionUi.onClear()
                         selectedArtistName = artistName
                     },
                     onBackFromArtist = {
                         selectedArtistName = null
                     },
                     onAlbumSelected = { albumKey ->
+                        librarySelectionUi.onClear()
                         selectedAlbumKey = albumKey
                         selectedLibraryTab = LibraryTab.ALBUMS
                     },
@@ -1223,6 +1249,7 @@ internal fun MusicScreen(
                         }
                     },
                     onGenreSelected = { genreKey ->
+                        librarySelectionUi.onClear()
                         selectedGenreKey = genreKey
                     },
                     onBackFromGenre = {
@@ -1246,6 +1273,7 @@ internal fun MusicScreen(
                     onMovePlaylistToFolderClick = onMovePlaylistToFolderClick,
                     onRenamePlaylistClick = onRenamePlaylistClick,
                     onPlaylistClick = { playlist ->
+                        librarySelectionUi.onClear()
                         selectedPlaylistId = playlist.playlistId
                         onPlaylistSelected(playlist)
                     },
@@ -1406,6 +1434,14 @@ internal fun MusicScreen(
                 AppBottomNavigation(
                     selectedDestination = mainDestination,
                     onDestinationSelected = { destination ->
+                        val targetEntity = when (destination) {
+                            MainDestination.SEARCH -> LibrarySelectionEntity.SONG
+                            MainDestination.LIBRARY -> selectedLibraryTab.selectionEntity()
+                            else -> null
+                        }
+                        if (librarySelectionUi.state.entity != targetEntity) {
+                            librarySelectionUi.onClear()
+                        }
                         selectedArtistName = null
                         selectedAlbumKey = null
                         selectedGenreKey = null
@@ -1549,6 +1585,7 @@ internal fun MusicScreen(
                     },
                     onAddSongsToPlaylistClick = { playlist, songs ->
                         playlistSnackbarActions.addSongsToPlaylist(playlist, songs)
+                        librarySelectionUi.onClear()
                     },
                     isSleepTimerDialogVisible = isSleepTimerDialogVisible,
                     isSleepTimerActive = isSleepTimerActive,
@@ -1593,6 +1630,17 @@ internal fun MusicScreen(
             }
         }
     }
+}
+
+private fun LibraryTab.selectionEntity(): LibrarySelectionEntity? = when (this) {
+    LibraryTab.SONGS,
+    LibraryTab.FAVORITES,
+    LibraryTab.RATED,
+    LibraryTab.RECENTLY_ADDED,
+    LibraryTab.RECENTLY_PLAYED,
+    LibraryTab.MOST_PLAYED -> LibrarySelectionEntity.SONG
+    LibraryTab.ALBUMS -> LibrarySelectionEntity.ALBUM
+    else -> null
 }
 
 internal fun shouldShowPrimaryBottomNavigation(
