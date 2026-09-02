@@ -2,6 +2,7 @@ package io.github.rsgarrido.sazanami.ui
 
 import android.net.Uri
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -67,6 +68,8 @@ import io.github.rsgarrido.sazanami.ui.library.LibraryGridColumns
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewOptionsButton
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewOptionsSheet
 import io.github.rsgarrido.sazanami.ui.library.MusicLibraryContent
+import io.github.rsgarrido.sazanami.ui.library.LibrarySelectionHeaderContent
+import io.github.rsgarrido.sazanami.ui.library.LocalLibrarySelectionUi
 import io.github.rsgarrido.sazanami.ui.library.normalizeRatedSongFilterForQuickRateMode
 import io.github.rsgarrido.sazanami.ui.library.viewCategory
 import io.github.rsgarrido.sazanami.ui.ratings.LocalSongRatingUi
@@ -563,6 +566,14 @@ internal fun MusicScreenBody(
                     } else {
                         currentGridColumnCount
                     }
+                    val selectionUi = LocalLibrarySelectionUi.current
+                    val showSelectionHeader = shouldShowLibrarySelectionHeader(
+                        selectionActive = selectionUi.state.isActive,
+                        isLibraryDetail = isLibraryDetail,
+                        hasAudioAccess = mediaAccessState.hasAudioAccess,
+                        bindingMatchesSelection = selectionUi.headerState.binding?.entity ==
+                            selectionUi.state.entity
+                    )
 
                     Column(
                         modifier = modifier
@@ -570,76 +581,97 @@ internal fun MusicScreenBody(
                             .animateContentSize()
                     ) {
                         if (!isLibraryDetail || !mediaAccessState.hasAudioAccess) {
-                            MusicScreenHeader(
-                                title = when {
-                                    isSearchDestination -> "Search"
-                                    selectedLibraryTab == LibraryTab.QUEUE -> "Up Next"
-                                    else -> "Library"
-                                },
-                                onBackClick = null,
-                                onSettingsClick = onSettingsClick,
-                                modifier = Modifier.statusBarsPadding(),
-                                batchMetadataAction = if (!isSearchDestination &&
-                                    !isLibraryDetail &&
-                                    selectedLibraryTab == LibraryTab.SONGS &&
-                                    songs.size >= 2
-                                ) {
-                                    {
-                                        AppShellIconButton(
-                                            onClick = onBatchMetadataClick,
-                                            imageVector = Icons.Filled.EditNote,
-                                            contentDescription = "Select tracks to edit metadata"
-                                        )
-                                    }
+                            Crossfade(
+                                targetState = showSelectionHeader,
+                                animationSpec = tween(180),
+                                label = "librarySelectionHeader"
+                            ) { selectionHeaderVisible ->
+                                if (selectionHeaderVisible) {
+                                    LibrarySelectionHeaderContent(
+                                        modifier = Modifier.statusBarsPadding()
+                                    )
                                 } else {
-                                    null
-                                },
-                                viewModeAction = if (!isSearchDestination &&
-                                    !isLibraryDetail &&
-                                    selectedLibraryTab.viewCategory() != null
-                                ) {
-                                    {
-                                        LibraryViewOptionsButton(
-                                            viewMode = selectedViewMode,
-                                            gridColumnCount = selectedGridColumnCount,
-                                            adaptiveGrid =
-                                                selectedLibraryTab == LibraryTab.PLAYLISTS,
-                                            onClick = {
-                                                isLibraryViewOptionsVisible = true
-                                            }
-                                        )
-                                    }
-                                } else {
-                                    null
-                                },
-                                organizeAction = {
-                                    LibraryOrganizeAction(
-                                        songs = songs,
-                                        selectedLibraryTab = selectedLibraryTab,
-                                        selectedArtistName = selectedArtistName,
-                                        selectedAlbumKey = selectedAlbumKey,
-                                        selectedSongSortState = selectedCollectionSortState,
-                                        selectedArtistSortState = selectedArtistSortState,
-                                        selectedAlbumSortState = selectedAlbumSortState,
-                                        selectedFavoriteSortState = selectedFavoriteSortState,
-                                        selectedSongFilterState = selectedSongFilterState,
-                                        onSongSortStateChanged = { state ->
-                                            when (selectedLibraryTab) {
-                                                LibraryTab.RATED -> selectedRatedSortState = state
-                                                LibraryTab.RECENTLY_ADDED ->
-                                                    selectedAddedSortState = state
-                                                else -> onSongSortStateChanged(state)
-                                            }
+                                    MusicScreenHeader(
+                                        title = when {
+                                            isSearchDestination -> "Search"
+                                            selectedLibraryTab == LibraryTab.QUEUE -> "Up Next"
+                                            else -> "Library"
                                         },
-                                        onArtistSortStateChanged = onArtistSortStateChanged,
-                                        onAlbumSortStateChanged = onAlbumSortStateChanged,
-                                        onFavoriteSortStateChanged = onFavoriteSortStateChanged,
-                                        onSongFilterStateChanged = onSongFilterStateChanged,
-                                        songFiltersEnabled = !isSearchDestination,
-                                        ratingFeaturesEnabled = !isSearchDestination
+                                        onBackClick = null,
+                                        onSettingsClick = onSettingsClick,
+                                        modifier = Modifier.statusBarsPadding(),
+                                        batchMetadataAction = if (!isSearchDestination &&
+                                            !isLibraryDetail &&
+                                            selectedLibraryTab == LibraryTab.SONGS &&
+                                            songs.size >= 2
+                                        ) {
+                                            {
+                                                AppShellIconButton(
+                                                    onClick = onBatchMetadataClick,
+                                                    imageVector = Icons.Filled.EditNote,
+                                                    contentDescription =
+                                                        "Select tracks to edit metadata"
+                                                )
+                                            }
+                                        } else {
+                                            null
+                                        },
+                                        viewModeAction = if (!isSearchDestination &&
+                                            !isLibraryDetail &&
+                                            selectedLibraryTab.viewCategory() != null
+                                        ) {
+                                            {
+                                                LibraryViewOptionsButton(
+                                                    viewMode = selectedViewMode,
+                                                    gridColumnCount = selectedGridColumnCount,
+                                                    adaptiveGrid = selectedLibraryTab ==
+                                                        LibraryTab.PLAYLISTS,
+                                                    onClick = {
+                                                        isLibraryViewOptionsVisible = true
+                                                    }
+                                                )
+                                            }
+                                        } else {
+                                            null
+                                        },
+                                        organizeAction = {
+                                            LibraryOrganizeAction(
+                                                songs = songs,
+                                                selectedLibraryTab = selectedLibraryTab,
+                                                selectedArtistName = selectedArtistName,
+                                                selectedAlbumKey = selectedAlbumKey,
+                                                selectedSongSortState =
+                                                    selectedCollectionSortState,
+                                                selectedArtistSortState = selectedArtistSortState,
+                                                selectedAlbumSortState = selectedAlbumSortState,
+                                                selectedFavoriteSortState =
+                                                    selectedFavoriteSortState,
+                                                selectedSongFilterState = selectedSongFilterState,
+                                                onSongSortStateChanged = { state ->
+                                                    when (selectedLibraryTab) {
+                                                        LibraryTab.RATED ->
+                                                            selectedRatedSortState = state
+                                                        LibraryTab.RECENTLY_ADDED ->
+                                                            selectedAddedSortState = state
+                                                        else ->
+                                                            onSongSortStateChanged(state)
+                                                    }
+                                                },
+                                                onArtistSortStateChanged =
+                                                    onArtistSortStateChanged,
+                                                onAlbumSortStateChanged =
+                                                    onAlbumSortStateChanged,
+                                                onFavoriteSortStateChanged =
+                                                    onFavoriteSortStateChanged,
+                                                onSongFilterStateChanged =
+                                                    onSongFilterStateChanged,
+                                                songFiltersEnabled = !isSearchDestination,
+                                                ratingFeaturesEnabled = !isSearchDestination
+                                            )
+                                        }
                                     )
                                 }
-                            )
+                            }
                         }
 
                         if (!mediaAccessState.hasAudioAccess) {
@@ -805,3 +837,13 @@ internal fun MusicScreenBody(
         }
     }
 }
+
+internal fun shouldShowLibrarySelectionHeader(
+    selectionActive: Boolean,
+    isLibraryDetail: Boolean,
+    hasAudioAccess: Boolean,
+    bindingMatchesSelection: Boolean
+): Boolean = selectionActive &&
+    !isLibraryDetail &&
+    hasAudioAccess &&
+    bindingMatchesSelection

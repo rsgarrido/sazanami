@@ -18,10 +18,15 @@ class MusicBottomNavigationVisibilityTest {
         assertFalse(visibility(isSettingsScreenVisible = true))
     }
 
+    @Test fun librarySelectionHidesBottomNavigationWithoutChangingDestination() {
+        assertFalse(visibility(isLibrarySelectionActive = true))
+    }
+
     private fun visibility(
         isListeningHistoryImportVisible: Boolean = false,
         isListeningHistoryReconciliationVisible: Boolean = false,
-        isSettingsScreenVisible: Boolean = false
+        isSettingsScreenVisible: Boolean = false,
+        isLibrarySelectionActive: Boolean = false
     ) = shouldShowPrimaryBottomNavigation(
         isPlayerExpanded = false,
         isFolderScreenVisible = false,
@@ -31,6 +36,7 @@ class MusicBottomNavigationVisibilityTest {
         isListeningHistoryImportVisible = isListeningHistoryImportVisible,
         isListeningHistoryReconciliationVisible = isListeningHistoryReconciliationVisible,
         isSettingsScreenVisible = isSettingsScreenVisible,
-        isTagEditorVisible = false
+        isTagEditorVisible = false,
+        isLibrarySelectionActive = isLibrarySelectionActive
     )
 }

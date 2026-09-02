@@ -19,6 +19,7 @@ import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.PlaybackShuffleMode
 import io.github.rsgarrido.sazanami.ui.playlist.PlaylistsTabContent
 import io.github.rsgarrido.sazanami.ui.queue.QueueScreen
+import io.github.rsgarrido.sazanami.ui.state.LibrarySelectionEntity
 
 @Composable
 fun MusicLibraryContent(
@@ -113,6 +114,7 @@ fun MusicLibraryContent(
                 favoriteMembershipKeys = favoriteMembershipKeys,
                 onToggleFavoriteClick = onToggleFavoriteClick,
                 onAddToPlaylistClick = onAddToPlaylistClick,
+                onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
                 onEditSongTagsClick = onEditSongTagsClick,
                 onClearFilters = onClearSongFilters,
                 ratingFeaturesEnabled = ratingFeaturesEnabled,
@@ -137,6 +139,7 @@ fun MusicLibraryContent(
                 onAddToQueueClick = onAddToQueueClick,
                 onToggleFavoriteClick = onToggleFavoriteClick,
                 onAddToPlaylistClick = onAddToPlaylistClick,
+                onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
                 onEditSongTagsClick = onEditSongTagsClick,
                 ratingFeaturesEnabled = ratingFeaturesEnabled,
                 bottomContentPadding = bottomContentPadding,
@@ -306,6 +309,12 @@ fun MusicLibraryContent(
 
         LibraryTab.RECENTLY_PLAYED -> {
             if (recentlyPlayedSongs.isEmpty()) {
+                LibrarySelectionHeader(
+                    LibrarySelectionEntity.SONG,
+                    emptyList(),
+                    searchActive = false,
+                    selectionActionTarget = null
+                )
                 EmptyHistoryMessage(
                     message = "No recently played songs yet.",
                     modifier = modifier
@@ -321,6 +330,8 @@ fun MusicLibraryContent(
                     onAddToQueueClick = onAddToQueueClick,
                     onToggleFavoriteClick = onToggleFavoriteClick,
                     onAddToPlaylistClick = onAddToPlaylistClick,
+                    onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
+                    selectionEnabled = true,
                     onEditSongTagsClick = onEditSongTagsClick,
                     bottomContentPadding = bottomContentPadding,
                     modifier = modifier
@@ -340,6 +351,12 @@ fun MusicLibraryContent(
             )
             val scrollStates = rememberLibrarySortScrollStates(selectedSongSortState)
             if (displayedSongs.isEmpty()) {
+                LibrarySelectionHeader(
+                    LibrarySelectionEntity.SONG,
+                    emptyList(),
+                    searchActive = searchQuery.isNotBlank(),
+                    selectionActionTarget = null
+                )
                 EmptyHistoryMessage(
                     message = stringResource(R.string.recently_added_empty),
                     modifier = modifier
@@ -360,6 +377,9 @@ fun MusicLibraryContent(
                             onAddToQueueClick = onAddToQueueClick,
                             onToggleFavoriteClick = onToggleFavoriteClick,
                             onAddToPlaylistClick = onAddToPlaylistClick,
+                            onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
+                            selectionEnabled = true,
+                            searchActive = searchQuery.isNotBlank(),
                             onEditSongTagsClick = onEditSongTagsClick,
                             bottomContentPadding = bottomContentPadding,
                             modifier = Modifier.fillMaxSize()
@@ -378,6 +398,9 @@ fun MusicLibraryContent(
                             onAddToQueueClick = onAddToQueueClick,
                             onToggleFavoriteClick = onToggleFavoriteClick,
                             onAddToPlaylistClick = onAddToPlaylistClick,
+                            onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
+                            selectionEnabled = true,
+                            searchActive = searchQuery.isNotBlank(),
                             onEditSongTagsClick = onEditSongTagsClick,
                             bottomContentPadding = bottomContentPadding,
                             modifier = Modifier.fillMaxSize()
@@ -389,6 +412,12 @@ fun MusicLibraryContent(
 
         LibraryTab.MOST_PLAYED -> {
             if (mostPlayedSongs.isEmpty()) {
+                LibrarySelectionHeader(
+                    LibrarySelectionEntity.SONG,
+                    emptyList(),
+                    searchActive = false,
+                    selectionActionTarget = null
+                )
                 EmptyHistoryMessage(
                     message = "No most played songs yet.",
                     modifier = modifier
@@ -404,6 +433,8 @@ fun MusicLibraryContent(
                     onAddToQueueClick = onAddToQueueClick,
                     onToggleFavoriteClick = onToggleFavoriteClick,
                     onAddToPlaylistClick = onAddToPlaylistClick,
+                    onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
+                    selectionEnabled = true,
                     onEditSongTagsClick = onEditSongTagsClick,
                     bottomContentPadding = bottomContentPadding,
                     modifier = modifier

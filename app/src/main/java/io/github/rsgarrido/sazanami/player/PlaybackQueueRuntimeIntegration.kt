@@ -83,12 +83,14 @@ internal class Media3PlaybackQueueRuntime(
         item.song.toPlayableMediaItem(
             itemInstanceId = item.persistedEntry.entryId
         )
-    }
+    },
+    private val evidenceReader: (MediaItem) -> ListeningMediaItemEvidence? =
+        MediaItem::listeningEvidence
 ) : PlaybackQueueRuntime {
     override fun captureSnapshot(): LivePlaybackQueueSnapshot? {
         if (player.mediaItemCount == 0) return null
         val entries = (0 until player.mediaItemCount).mapNotNull { index ->
-            val evidence = player.getMediaItemAt(index).listeningEvidence()
+            val evidence = evidenceReader(player.getMediaItemAt(index))
                 ?: return@mapNotNull null
             LivePlaybackQueueItem(
                 entryId = evidence.itemInstanceId,
@@ -108,7 +110,7 @@ internal class Media3PlaybackQueueRuntime(
             addAll(unmatchedEntries.map(LivePlaybackQueueItem::entryId))
         }
         val currentEntryId = player.currentMediaItem
-            ?.listeningEvidence()
+            ?.let(evidenceReader)
             ?.itemInstanceId
         return LivePlaybackQueueSnapshot(
             entries = entries,
@@ -148,7 +150,7 @@ internal class Media3PlaybackQueueRuntime(
 
     override fun removeEntry(entryId: String): Boolean {
         val index = (0 until player.mediaItemCount).firstOrNull { candidate ->
-            player.getMediaItemAt(candidate).listeningEvidence()?.itemInstanceId == entryId
+            evidenceReader(player.getMediaItemAt(candidate))?.itemInstanceId == entryId
         } ?: return false
         player.removeMediaItem(index)
         return true
@@ -157,7 +159,7 @@ internal class Media3PlaybackQueueRuntime(
     override fun moveEntry(entryId: String, toPlaybackOrder: Int): Boolean {
         if (toPlaybackOrder !in 0 until player.mediaItemCount) return false
         val fromIndex = (0 until player.mediaItemCount).firstOrNull { candidate ->
-            player.getMediaItemAt(candidate).listeningEvidence()?.itemInstanceId == entryId
+            evidenceReader(player.getMediaItemAt(candidate))?.itemInstanceId == entryId
         } ?: return false
         val currentIndex = player.currentMediaItemIndex
         if (currentIndex >= 0 && (fromIndex <= currentIndex || toPlaybackOrder <= currentIndex)) {
@@ -170,7 +172,7 @@ internal class Media3PlaybackQueueRuntime(
 
     override fun seekToEntry(entryId: String): Boolean {
         val index = (0 until player.mediaItemCount).firstOrNull { candidate ->
-            player.getMediaItemAt(candidate).listeningEvidence()?.itemInstanceId == entryId
+            evidenceReader(player.getMediaItemAt(candidate))?.itemInstanceId == entryId
         } ?: return false
         if (index == player.currentMediaItemIndex) return true
         player.seekToDefaultPosition(index)
@@ -182,7 +184,7 @@ internal class Media3PlaybackQueueRuntime(
         playbackOrder: Int
     ): Boolean {
         if ((0 until player.mediaItemCount).any { candidate ->
-                player.getMediaItemAt(candidate).listeningEvidence()?.itemInstanceId ==
+                evidenceReader(player.getMediaItemAt(candidate))?.itemInstanceId ==
                     item.persistedEntry.entryId
             }) return false
         player.addMediaItem(playbackOrder.coerceIn(0, player.mediaItemCount), mediaItemFactory(item))
@@ -221,6 +223,9 @@ internal object PlaybackQueueRuntimeBridge {
 
     suspend fun createAndActivateQueue(displayName: String, songs: List<Song>): String? =
         coordinator?.createAndActivateQueue(displayName, songs)?.queue?.queueId
+
+    suspend fun createInactiveQueue(songs: List<Song>): String? =
+        coordinator?.createInactiveQueue(songs)?.queue?.queueId
 
     suspend fun appendToInactiveQueue(queueId: String, songs: List<Song>): Boolean =
         coordinator?.appendToInactiveQueue(queueId, songs) != null

@@ -524,6 +524,62 @@ class PlaybackQueueCoordinatorTest {
     }
 
     @Test
+    fun createInactiveQueuePreservesSelectionOrderAndLeavesActivePlaybackUntouched() = runBlocking {
+        val persistence = FakePersistence(activeQueueId = "A").apply {
+            seed(queue("A", listOf(spec("active", 1L, 0, 0)), "active", position = 900L))
+        }
+        val original = liveSnapshot(
+            ids = listOf("active" to 1L),
+            currentEntryId = "active",
+            positionMs = 900L,
+            shouldPlay = true,
+            shuffle = true,
+            repeat = PersistedQueueRepeatMode.ONE
+        )
+        val runtime = FakeRuntime(original)
+        val coordinator = coordinator(persistence, runtime)
+        coordinator.initialize()
+
+        val created = requireNotNull(
+            coordinator.createInactiveQueue(listOf(song(3L), song(2L), song(3L)))
+        )
+
+        assertEquals("Queue 2", created.queue.displayName)
+        assertEquals(listOf(3L, 2L, 3L), created.entries.map { it.trackIdentityId })
+        assertEquals(listOf(0, 1, 2), created.entries.map { it.baseOrder })
+        assertEquals(listOf(0, 1, 2), created.entries.map { it.playbackOrder })
+        assertEquals(3, created.entries.map { it.entryId }.distinct().size)
+        assertEquals(created.entries.first().entryId, created.queue.currentEntryId)
+        assertEquals(0L, created.queue.currentPositionMs)
+        assertFalse(created.queue.shuffleEnabled)
+        assertEquals(PersistedQueueRepeatMode.OFF, created.queue.repeatMode)
+        assertEquals("A", persistence.activeQueueId)
+        assertEquals(listOf("active"), persistence.queue("A").entries.map { it.entryId })
+        assertEquals(900L, persistence.queue("A").queue.currentPositionMs)
+        assertEquals(original, runtime.snapshot)
+        assertEquals(0, runtime.replaceCount)
+    }
+
+    @Test
+    fun failedInactiveQueueResolutionCreatesNothingAndLeavesPlaybackUntouched() = runBlocking {
+        val persistence = FakePersistence(activeQueueId = "A").apply {
+            seed(queue("A", listOf(spec("active", 1L, 0, 0)), "active"))
+        }
+        val original = liveSnapshot(listOf("active" to 1L), "active", 400L, true)
+        val runtime = FakeRuntime(original)
+        val access = FakeTrackAccess().apply { unresolvedIdentityIds += 2L }
+        val coordinator = coordinator(persistence, runtime, access)
+        coordinator.initialize()
+
+        assertNull(coordinator.createInactiveQueue(listOf(song(2L))))
+
+        assertEquals(listOf("A"), persistence.queues.keys.toList())
+        assertEquals("A", persistence.activeQueueId)
+        assertEquals(original, runtime.snapshot)
+        assertEquals(0, runtime.replaceCount)
+    }
+
+    @Test
     fun playInNewQueuePreservesOldQueueActivatesNewQueueAndKeepsSongOrder() = runBlocking {
         val persistence = FakePersistence(activeQueueId = "A").apply {
             seed(queue("A", listOf(spec("a", 1L, 0, 0)), current = "a", position = 900L))

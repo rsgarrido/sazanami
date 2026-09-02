@@ -25,6 +25,7 @@ import io.github.rsgarrido.sazanami.ui.filterSongsForSearch
 import io.github.rsgarrido.sazanami.ui.sortSongsForArtistDetail
 import io.github.rsgarrido.sazanami.ui.sortSongsForLibrary
 import io.github.rsgarrido.sazanami.ui.ratings.LocalSongRatingUi
+import io.github.rsgarrido.sazanami.ui.state.LibrarySelectionEntity
 import androidx.compose.ui.res.stringResource
 
 @Composable
@@ -43,6 +44,7 @@ fun SongsTabContent(
     favoriteMembershipKeys: Set<String>,
     onToggleFavoriteClick: (Song) -> Unit,
     onAddToPlaylistClick: (Song) -> Unit,
+    onAddSongsToPlaylistClick: (List<Song>) -> Unit = {},
     onEditSongTagsClick: (Song) -> Unit,
     onClearFilters: () -> Unit = {},
     ratingFeaturesEnabled: Boolean = true,
@@ -81,6 +83,12 @@ fun SongsTabContent(
             modifier = Modifier.padding(16.dp)
         )
     } else if (metadataFilteredSongs.isEmpty() && filterState.isActive) {
+        LibrarySelectionHeader(
+            LibrarySelectionEntity.SONG,
+            emptyList(),
+            searchActive = true,
+            selectionActionTarget = null
+        )
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -91,6 +99,12 @@ fun SongsTabContent(
             }
         }
     } else if (filteredSongs.isEmpty()) {
+        LibrarySelectionHeader(
+            LibrarySelectionEntity.SONG,
+            emptyList(),
+            searchActive = true,
+            selectionActionTarget = null
+        )
         Text(
             text = "No songs match your search.",
             modifier = Modifier.padding(16.dp)
@@ -111,6 +125,9 @@ fun SongsTabContent(
                     onToggleFavoriteClick = onToggleFavoriteClick,
                     favoriteMembershipKeys = favoriteMembershipKeys,
                     onAddToPlaylistClick = onAddToPlaylistClick,
+                    onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
+                    selectionEnabled = true,
+                    searchActive = searchQuery.isNotBlank() || filterState.isActive,
                     onEditSongTagsClick = onEditSongTagsClick,
                     bottomContentPadding = bottomContentPadding,
                     quickRatingMode = false,
@@ -130,6 +147,9 @@ fun SongsTabContent(
                     onAddToQueueClick = onAddToQueueClick,
                     onToggleFavoriteClick = onToggleFavoriteClick,
                     onAddToPlaylistClick = onAddToPlaylistClick,
+                    onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
+                    selectionEnabled = true,
+                    searchActive = searchQuery.isNotBlank() || filterState.isActive,
                     onEditSongTagsClick = onEditSongTagsClick,
                     bottomContentPadding = bottomContentPadding,
                     modifier = Modifier.fillMaxSize()
@@ -155,6 +175,7 @@ fun RatedSongsTabContent(
     onAddToQueueClick: (Song) -> Unit,
     onToggleFavoriteClick: (Song) -> Unit,
     onAddToPlaylistClick: (Song) -> Unit,
+    onAddSongsToPlaylistClick: (List<Song>) -> Unit = {},
     onEditSongTagsClick: (Song) -> Unit,
     ratingFeaturesEnabled: Boolean = true,
     bottomContentPadding: Dp = 0.dp,
@@ -196,6 +217,9 @@ fun RatedSongsTabContent(
             onToggleFavoriteClick = onToggleFavoriteClick,
             favoriteMembershipKeys = favoriteMembershipKeys,
             onAddToPlaylistClick = onAddToPlaylistClick,
+            onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
+            selectionEnabled = true,
+            searchActive = searchQuery.isNotBlank() || selectedFilter != RatedSongFilter.ALL,
             onEditSongTagsClick = onEditSongTagsClick,
             bottomContentPadding = bottomContentPadding,
             ratingValuesByReferenceKey = ratings,
@@ -203,6 +227,12 @@ fun RatedSongsTabContent(
             modifier = modifier.fillMaxSize()
         )
     } else if (quickRateActive || projectedSongs.isEmpty() || searchedSongs.isEmpty()) {
+        LibrarySelectionHeader(
+            LibrarySelectionEntity.SONG,
+            emptyList(),
+            searchActive = searchQuery.isNotBlank() || selectedFilter != RatedSongFilter.ALL,
+            selectionActionTarget = null
+        )
         Text(
             ratedCollectionEmptyMessage(
                 filter = selectedFilter,
@@ -227,6 +257,9 @@ fun RatedSongsTabContent(
                     onToggleFavoriteClick = onToggleFavoriteClick,
                     favoriteMembershipKeys = favoriteMembershipKeys,
                     onAddToPlaylistClick = onAddToPlaylistClick,
+                    onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
+                    selectionEnabled = true,
+                    searchActive = searchQuery.isNotBlank() || selectedFilter != RatedSongFilter.ALL,
                     onEditSongTagsClick = onEditSongTagsClick,
                     bottomContentPadding = bottomContentPadding,
                     ratingValuesByReferenceKey = ratings,
@@ -246,6 +279,9 @@ fun RatedSongsTabContent(
                     onAddToQueueClick = onAddToQueueClick,
                     onToggleFavoriteClick = onToggleFavoriteClick,
                     onAddToPlaylistClick = onAddToPlaylistClick,
+                    onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
+                    selectionEnabled = true,
+                    searchActive = searchQuery.isNotBlank() || selectedFilter != RatedSongFilter.ALL,
                     onEditSongTagsClick = onEditSongTagsClick,
                     bottomContentPadding = bottomContentPadding,
                     ratingValuesByReferenceKey = ratings,
@@ -293,11 +329,23 @@ fun FavoritesTabContent(
     val scrollStates = rememberLibrarySortScrollStates(sortState)
 
     if (favoriteSongs.isEmpty()) {
+        LibrarySelectionHeader(
+            LibrarySelectionEntity.SONG,
+            emptyList(),
+            searchActive = searchQuery.isNotBlank(),
+            selectionActionTarget = null
+        )
         Text(
             text = "No favorite songs yet.",
             modifier = Modifier.padding(16.dp)
         )
     } else if (filteredSongs.isEmpty()) {
+        LibrarySelectionHeader(
+            LibrarySelectionEntity.SONG,
+            emptyList(),
+            searchActive = true,
+            selectionActionTarget = null
+        )
         Text(
             text = "No favorite songs match your search.",
             modifier = Modifier.padding(16.dp)
@@ -331,6 +379,9 @@ fun FavoritesTabContent(
                         onAddToQueueClick = onAddToQueueClick,
                         onToggleFavoriteClick = onToggleFavoriteClick,
                         onAddToPlaylistClick = onAddToPlaylistClick,
+                        onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
+                        selectionEnabled = true,
+                        searchActive = searchQuery.isNotBlank(),
                         onEditSongTagsClick = onEditSongTagsClick,
                         bottomContentPadding = bottomContentPadding,
                         modifier = Modifier.fillMaxSize()
@@ -349,6 +400,9 @@ fun FavoritesTabContent(
                         onAddToQueueClick = onAddToQueueClick,
                         onToggleFavoriteClick = onToggleFavoriteClick,
                         onAddToPlaylistClick = onAddToPlaylistClick,
+                        onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
+                        selectionEnabled = true,
+                        searchActive = searchQuery.isNotBlank(),
                         onEditSongTagsClick = onEditSongTagsClick,
                         bottomContentPadding = bottomContentPadding,
                         modifier = Modifier.fillMaxSize()
@@ -557,6 +611,12 @@ fun AlbumsTabContent(
         )
     } else if (selectedAlbumKey == null) {
         if (albumSearchSongs.isEmpty()) {
+            LibrarySelectionHeader(
+                LibrarySelectionEntity.ALBUM,
+                emptyList(),
+                searchActive = true,
+                selectionActionTarget = null
+            )
             Text(
                 text = "No albums match your search.",
                 modifier = Modifier.padding(16.dp)
@@ -595,6 +655,8 @@ fun AlbumsTabContent(
                         onAlbumPlayNextClick = onAlbumPlayNext,
                         onAlbumAddToQueueClick = onAlbumAddToQueue,
                         onAlbumAddToPlaylistClick = onAlbumAddToPlaylist,
+                        selectionEnabled = true,
+                        searchActive = searchQuery.isNotBlank(),
                         bottomContentPadding = bottomContentPadding,
                         modifier = Modifier.fillMaxSize()
                     )
@@ -611,6 +673,8 @@ fun AlbumsTabContent(
                         onAlbumPlayNextClick = onAlbumPlayNext,
                         onAlbumAddToQueueClick = onAlbumAddToQueue,
                         onAlbumAddToPlaylistClick = onAlbumAddToPlaylist,
+                        selectionEnabled = true,
+                        searchActive = searchQuery.isNotBlank(),
                         bottomContentPadding = bottomContentPadding,
                         modifier = Modifier.fillMaxSize()
                     )

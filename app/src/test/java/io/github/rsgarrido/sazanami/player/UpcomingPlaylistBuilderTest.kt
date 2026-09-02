@@ -9,6 +9,46 @@ import org.mockito.Mockito.mock
 class UpcomingPlaylistBuilderTest {
 
     @Test
+    fun authoritativeReconciliationDropsRemovedIdsBeforeShuffleRebuild() {
+        val songs = (1L..7L).map(::song)
+        val survivingSongs = songs.take(2)
+        val baseSongs = baseOrderedActiveQueueSongs(
+            timelineSongs = survivingSongs,
+            timelineEntryIds = listOf("one", "two"),
+            baseEntryIds = listOf("one", "two", "removed-3", "removed-4")
+        )
+
+        val shuffledUpcoming = UpcomingPlaylistBuilder { candidates -> candidates.reversed() }
+            .buildUpcomingPlaylistAfterCurrent(
+                startSong = survivingSongs.first(),
+                playbackSourceSongs = baseSongs,
+                queuedSongsAfterCurrent = emptyList(),
+                currentUpcomingSongs = songs.drop(1),
+                shuffleMode = PlaybackShuffleMode.SONGS,
+                repeatMode = RepeatMode.OFF,
+                preserveExistingShuffleOrder = false
+            )
+
+        assertEquals(listOf(1L, 2L), (listOf(survivingSongs.first()) + shuffledUpcoming).map(Song::id))
+    }
+
+    @Test
+    fun authoritativeReconciliationRestoresBaseOrderWithoutChangingShuffledMembership() {
+        val songs = (1L..5L).map(::song)
+        val timelineSongs = listOf(songs[0], songs[3], songs[1], songs[4], songs[2])
+        val timelineIds = listOf("one", "four", "two", "five", "three")
+
+        val baseSongs = baseOrderedActiveQueueSongs(
+            timelineSongs = timelineSongs,
+            timelineEntryIds = timelineIds,
+            baseEntryIds = listOf("one", "two", "three", "four", "five")
+        )
+
+        assertEquals((1L..5L).toList(), baseSongs.map(Song::id))
+        assertEquals(timelineSongs.map(Song::id).toSet(), baseSongs.map(Song::id).toSet())
+    }
+
+    @Test
     fun preservingShuffleKeepsRemainingExistingOrder() {
         val builder = UpcomingPlaylistBuilder { songs -> songs.reversed() }
         val songA = song(1)
@@ -79,9 +119,13 @@ class UpcomingPlaylistBuilderTest {
         val repeatAll = builder.buildUpcomingPlaylistAfterCurrent(
             songs[2], songs, emptyList(), emptyList(), PlaybackShuffleMode.OFF, RepeatMode.ALL, false
         )
+        val repeatOne = builder.buildUpcomingPlaylistAfterCurrent(
+            songs[2], songs, emptyList(), emptyList(), PlaybackShuffleMode.OFF, RepeatMode.ONE, false
+        )
 
         assertEquals(listOf(songs[3], songs[0], songs[1]), repeatOff)
         assertEquals(repeatOff, repeatAll)
+        assertEquals(repeatOff, repeatOne)
     }
 
     @Test
@@ -98,7 +142,7 @@ class UpcomingPlaylistBuilderTest {
     }
 
     @Test
-    fun duplicateQueueEntriesArePreservedAndExcludedFromContextById() {
+    fun duplicateQueueEntriesArePreservedAndExcludedFromContextByOccurrence() {
         val builder = UpcomingPlaylistBuilder()
         val queued = song(2)
 
@@ -113,6 +157,25 @@ class UpcomingPlaylistBuilderTest {
         )
 
         assertEquals(listOf(2L, 2L, 3L), upcoming.map { it.id })
+    }
+
+    @Test
+    fun shuffleRebuildPreservesAdditionalInstancesOfTheCurrentSong() {
+        val builder = UpcomingPlaylistBuilder { songs -> songs.reversed() }
+        val duplicate = song(2)
+        val source = listOf(song(1), duplicate, duplicate, song(3))
+
+        val upcoming = builder.buildUpcomingPlaylistAfterCurrent(
+            startSong = duplicate,
+            playbackSourceSongs = source,
+            queuedSongsAfterCurrent = emptyList(),
+            currentUpcomingSongs = emptyList(),
+            shuffleMode = PlaybackShuffleMode.SONGS,
+            repeatMode = RepeatMode.OFF,
+            preserveExistingShuffleOrder = false
+        )
+
+        assertEquals(listOf(2L, 1L, 3L, 2L), (listOf(duplicate) + upcoming).map(Song::id))
     }
 
     @Test

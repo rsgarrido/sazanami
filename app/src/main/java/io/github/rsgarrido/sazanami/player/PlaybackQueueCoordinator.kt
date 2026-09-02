@@ -284,27 +284,12 @@ internal class PlaybackQueueCoordinator(
     ): PlaybackQueueWithEntries? = mutex.withLock {
         if (songs.isEmpty()) return@withLock null
         persistActiveQueueSnapshotLocked()
-
-        val liveItems = songs.map { song -> song.toLivePlaybackQueueItem() }
-        val identified = trackAccess.identify(liveItems)
-        if (identified.size != songs.size) return@withLock null
-        val queueId = queueIdFactory()
-        val resolvedDisplayName = displayName.trim().takeIf(String::isNotEmpty)
-            ?: nextDefaultQueueName(
-                persistence.listQueues().map(PlaybackQueueEntity::displayName)
-            )
-        val drafts = identified.mapIndexed { index, item ->
-            item.toDraft(baseOrder = index, playbackOrder = index)
-        }
-        val created = persistence.createQueue(
-            queueId = queueId,
-            displayName = resolvedDisplayName,
-            entries = drafts,
-            currentEntryId = drafts.first().entryId,
-            currentPositionMs = 0L,
-            shuffleEnabled = false,
-            repeatMode = PersistedQueueRepeatMode.OFF
-        )
+        val creation = createPopulatedQueueLocked(displayName, songs)
+            ?: return@withLock null
+        val created = creation.queue
+        val drafts = creation.drafts
+        val identified = creation.identified
+        val queueId = created.queue.queueId
         val restorationEntries = identified.mapIndexed { index, item ->
             ResolvedPlaybackQueueItem(
                 persistedEntry = drafts[index].toEntity(queueId),
@@ -331,6 +316,12 @@ internal class PlaybackQueueCoordinator(
         )
         onActiveQueueChanged(queueId)
         created
+    }
+
+    suspend fun createInactiveQueue(
+        songs: List<Song>
+    ): PlaybackQueueWithEntries? = mutex.withLock {
+        createPopulatedQueueLocked(displayName = "", songs = songs)?.queue
     }
 
     suspend fun appendToInactiveQueue(
@@ -667,6 +658,35 @@ internal class PlaybackQueueCoordinator(
         )
     }
 
+    private suspend fun createPopulatedQueueLocked(
+        displayName: String,
+        songs: List<Song>
+    ): PopulatedQueueCreation? {
+        if (songs.isEmpty()) return null
+        val identified = trackAccess.identify(songs.map { song ->
+            song.toLivePlaybackQueueItem()
+        })
+        if (identified.size != songs.size) return null
+        val queueId = queueIdFactory()
+        val resolvedDisplayName = displayName.trim().takeIf(String::isNotEmpty)
+            ?: nextDefaultQueueName(
+                persistence.listQueues().map(PlaybackQueueEntity::displayName)
+            )
+        val drafts = identified.mapIndexed { index, item ->
+            item.toDraft(baseOrder = index, playbackOrder = index)
+        }
+        val created = persistence.createQueue(
+            queueId = queueId,
+            displayName = resolvedDisplayName,
+            entries = drafts,
+            currentEntryId = drafts.first().entryId,
+            currentPositionMs = 0L,
+            shuffleEnabled = false,
+            repeatMode = PersistedQueueRepeatMode.OFF
+        )
+        return PopulatedQueueCreation(created, drafts, identified)
+    }
+
     private fun buildReplacementDrafts(
         liveItems: List<IdentifiedLivePlaybackQueueItem>,
         existingEntries: List<PlaybackQueueEntryEntity>,
@@ -777,6 +797,12 @@ internal class PlaybackQueueCoordinator(
         val queueId: String?,
         val entries: List<Pair<String, String>>,
         val baseEntryIds: List<String>
+    )
+
+    private data class PopulatedQueueCreation(
+        val queue: PlaybackQueueWithEntries,
+        val drafts: List<PlaybackQueueEntryDraft>,
+        val identified: List<IdentifiedLivePlaybackQueueItem>
     )
 
     companion object {

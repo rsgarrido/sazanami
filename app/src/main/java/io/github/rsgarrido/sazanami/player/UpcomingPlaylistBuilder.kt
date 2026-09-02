@@ -15,14 +15,6 @@ class UpcomingPlaylistBuilder(
         repeatMode: RepeatMode,
         preserveExistingShuffleOrder: Boolean
     ): List<Song> {
-        val excludedSongIds = mutableSetOf<Long>()
-        excludedSongIds.add(startSong.id)
-        excludedSongIds.addAll(
-            queuedSongsAfterCurrent.map { song ->
-                song.id
-            }
-        )
-
         val startIndex = playbackSourceSongs.indexOfFirst { song ->
             song.id == startSong.id
         }
@@ -61,8 +53,18 @@ class UpcomingPlaylistBuilder(
             }
         }
 
+        val queuedOccurrencesBySongId = queuedSongsAfterCurrent
+            .groupingBy(Song::id)
+            .eachCount()
+            .toMutableMap()
         val remainingContextSongs = songsAfterCurrent.filter { song ->
-            song.id !in excludedSongIds
+            val queuedOccurrences = queuedOccurrencesBySongId[song.id] ?: 0
+            if (queuedOccurrences > 0) {
+                queuedOccurrencesBySongId[song.id] = queuedOccurrences - 1
+                false
+            } else {
+                true
+            }
         }
 
         val shouldCreateNewShuffleOrder =

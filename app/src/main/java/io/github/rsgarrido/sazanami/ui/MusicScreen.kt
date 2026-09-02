@@ -3,6 +3,13 @@ package io.github.rsgarrido.sazanami.ui
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.layout.WindowInsets
@@ -107,6 +114,9 @@ import io.github.rsgarrido.sazanami.data.ListeningRankingCategory
 import io.github.rsgarrido.sazanami.data.ListeningTrendMetric
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewCategory
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewOption
+import io.github.rsgarrido.sazanami.ui.library.LocalLibrarySelectionUi
+import io.github.rsgarrido.sazanami.ui.library.LibrarySelectionHeaderState
+import io.github.rsgarrido.sazanami.ui.state.LibrarySelectionEntity
 import io.github.rsgarrido.sazanami.ui.equalizer.EqualizerScreenState
 import io.github.rsgarrido.sazanami.ui.equalizer.EqualizerUiActions
 import io.github.rsgarrido.sazanami.ui.queue.rememberQueueSnackbarActions
@@ -295,6 +305,8 @@ internal fun MusicScreen(
     spotifyImportActions: SpotifyImportUiActions
 ) {
     val context = LocalContext.current
+    val librarySelectionUi = LocalLibrarySelectionUi.current
+    val librarySelectionHeaderState = remember { LibrarySelectionHeaderState() }
     val navigationState = rememberMusicNavigationState()
     var mainDestination by navigationState.mainDestination
     var selectedLibraryTab by navigationState.selectedLibraryTab
@@ -619,6 +631,7 @@ internal fun MusicScreen(
                 selectedAlbumKey != null ||
                 selectedGenreKey != null ||
                 selectedPlaylistId != null ||
+                librarySelectionUi.state.isActive ||
                 mainDestination != MainDestination.HOME
     ) {
         when {
@@ -653,6 +666,10 @@ internal fun MusicScreen(
 
             isQueueHubVisible -> {
                 isQueueHubVisible = false
+            }
+
+            librarySelectionUi.state.isActive -> {
+                librarySelectionUi.onClear()
             }
 
             playerMorphState.shouldConsumeBack -> {
@@ -723,7 +740,18 @@ internal fun MusicScreen(
         playerTheme = selectedPlayerTheme,
         tokens = selectedPlayerThemeTokens
     )
-    CompositionLocalProvider(LocalAppShellAccent provides appShellAccent) {
+    CompositionLocalProvider(
+        LocalAppShellAccent provides appShellAccent,
+        LocalLibrarySelectionUi provides librarySelectionUi.copy(
+            headerState = librarySelectionHeaderState,
+            onPlayNext = { selectedSongs ->
+                queueSnackbarActions.playNextSongs("Selection", selectedSongs)
+            },
+            onAddToQueue = { selectedSongs ->
+                queueSnackbarActions.addSongsToQueue("Selection", selectedSongs)
+            }
+        )
+    ) {
         PlayerMorphHost(
             morphState = playerMorphState,
             modifier = modifier
@@ -891,7 +919,9 @@ internal fun MusicScreen(
             val selectedSongForTagEdit = songPendingTagEdit
             val selectedBatchEditorState = batchMetadataEditorState
             val selectedBatchExecutionState = batchMetadataOperationState
+            val isLibrarySelectionActive = librarySelectionUi.state.isActive
             val shouldShowBottomMiniPlayer = currentSong != null &&
+                    !isLibrarySelectionActive &&
                     !isFolderScreenVisible &&
                     !isDiagnosticsScreenVisible &&
                     !isEqualizerScreenVisible &&
@@ -914,7 +944,8 @@ internal fun MusicScreen(
                 isSettingsScreenVisible = isSettingsScreenVisible,
                 isTagEditorVisible = selectedSongForTagEdit != null ||
                         selectedBatchEditorState != null ||
-                        selectedBatchExecutionState != null
+                        selectedBatchExecutionState != null,
+                isLibrarySelectionActive = isLibrarySelectionActive
             )
             LaunchedEffect(shouldShowBottomMiniPlayer) {
                 if (!shouldShowBottomMiniPlayer) {
@@ -928,13 +959,19 @@ internal fun MusicScreen(
             val navigationBarInset = WindowInsets.navigationBars
                 .asPaddingValues()
                 .calculateBottomPadding()
-            val bottomContentPadding = navigationBarInset +
+            val targetBottomContentPadding = navigationBarInset +
                     (if (shouldShowBottomNavigation) AppBottomNavigationHeight else 0.dp) +
                     when {
+                        isLibrarySelectionActive -> 8.dp
                         !shouldShowBottomMiniPlayer -> 24.dp
                         isSleepTimerActive -> 176.dp
                         else -> 96.dp
                     }
+            val bottomContentPadding by animateDpAsState(
+                targetValue = targetBottomContentPadding,
+                animationSpec = tween(220),
+                label = "libraryChromeBottomPadding"
+            )
 
             if (selectedBatchExecutionState != null) {
                 BatchMetadataExecutionScreen(
@@ -1101,9 +1138,13 @@ internal fun MusicScreen(
                     statisticsListState = statisticsListState,
                     queueSnackbarActions = queueSnackbarActions,
                     onSettingsClick = {
+                        librarySelectionUi.onClear()
                         isSettingsScreenVisible = true
                     },
                     onOpenLibrary = { tab ->
+                        if (librarySelectionUi.state.entity != tab.selectionEntity()) {
+                            librarySelectionUi.onClear()
+                        }
                         selectedLibraryTab = tab
                         selectedArtistName = null
                         selectedAlbumKey = null
@@ -1175,9 +1216,11 @@ internal fun MusicScreen(
                         selectedFavoriteSortState = state
                     },
                     onExpandPlayerClick = {
+                        librarySelectionUi.onClear()
                         playerMorphState.expand()
                     },
                     onMiniPlayerUpNextClick = {
+                        librarySelectionUi.onClear()
                         selectedLibraryTab = LibraryTab.QUEUE
                         selectedArtistName = null
                         selectedAlbumKey = null
@@ -1207,12 +1250,14 @@ internal fun MusicScreen(
                         songsPendingPlaylistAdd = songs
                     },
                     onArtistSelected = { artistName ->
+                        librarySelectionUi.onClear()
                         selectedArtistName = artistName
                     },
                     onBackFromArtist = {
                         selectedArtistName = null
                     },
                     onAlbumSelected = { albumKey ->
+                        librarySelectionUi.onClear()
                         selectedAlbumKey = albumKey
                         selectedLibraryTab = LibraryTab.ALBUMS
                     },
@@ -1223,6 +1268,7 @@ internal fun MusicScreen(
                         }
                     },
                     onGenreSelected = { genreKey ->
+                        librarySelectionUi.onClear()
                         selectedGenreKey = genreKey
                     },
                     onBackFromGenre = {
@@ -1246,6 +1292,7 @@ internal fun MusicScreen(
                     onMovePlaylistToFolderClick = onMovePlaylistToFolderClick,
                     onRenamePlaylistClick = onRenamePlaylistClick,
                     onPlaylistClick = { playlist ->
+                        librarySelectionUi.onClear()
                         selectedPlaylistId = playlist.playlistId
                         onPlaylistSelected(playlist)
                     },
@@ -1334,7 +1381,17 @@ internal fun MusicScreen(
                 )
             }
 
-            if (shouldShowBottomMiniPlayer) {
+            AnimatedVisibility(
+                visible = shouldShowBottomMiniPlayer,
+                enter = slideInVertically(tween(220)) { height -> height } +
+                    fadeIn(tween(160)),
+                exit = slideOutVertically(tween(200)) { height -> height } +
+                    fadeOut(tween(140)),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = AppBottomNavigationHeight)
+            ) {
                 PlaybackProgress(playbackProgressUiState) { progress ->
                     MiniPlayerSection(
                         currentSong = currentSong,
@@ -1393,19 +1450,34 @@ internal fun MusicScreen(
                                 pocketFlipMorphOwnsVisuals ||
                                 pocketCassetteMorphOwnsVisuals ||
                                 pocketDiscMorphOwnsVisuals,
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .navigationBarsPadding()
-                            .padding(bottom = AppBottomNavigationHeight)
-                            .playerEndpointInput(playerMorphState.isCollapsedAndIdle)
+                        modifier = Modifier.playerEndpointInput(
+                            playerMorphState.isCollapsedAndIdle
+                        )
                     )
                 }
             }
 
-            if (shouldShowBottomNavigation) {
+            AnimatedVisibility(
+                visible = shouldShowBottomNavigation,
+                enter = slideInVertically(tween(220)) { height -> height } +
+                    fadeIn(tween(160)),
+                exit = slideOutVertically(tween(200)) { height -> height } +
+                    fadeOut(tween(140)),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+            ) {
                 AppBottomNavigation(
                     selectedDestination = mainDestination,
                     onDestinationSelected = { destination ->
+                        val targetEntity = when (destination) {
+                            MainDestination.SEARCH -> LibrarySelectionEntity.SONG
+                            MainDestination.LIBRARY -> selectedLibraryTab.selectionEntity()
+                            else -> null
+                        }
+                        if (librarySelectionUi.state.entity != targetEntity) {
+                            librarySelectionUi.onClear()
+                        }
                         selectedArtistName = null
                         selectedAlbumKey = null
                         selectedGenreKey = null
@@ -1419,8 +1491,6 @@ internal fun MusicScreen(
                         mainDestination = destination
                     },
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .navigationBarsPadding()
                 )
             }
 
@@ -1549,6 +1619,7 @@ internal fun MusicScreen(
                     },
                     onAddSongsToPlaylistClick = { playlist, songs ->
                         playlistSnackbarActions.addSongsToPlaylist(playlist, songs)
+                        librarySelectionUi.onClear()
                     },
                     isSleepTimerDialogVisible = isSleepTimerDialogVisible,
                     isSleepTimerActive = isSleepTimerActive,
@@ -1595,6 +1666,17 @@ internal fun MusicScreen(
     }
 }
 
+private fun LibraryTab.selectionEntity(): LibrarySelectionEntity? = when (this) {
+    LibraryTab.SONGS,
+    LibraryTab.FAVORITES,
+    LibraryTab.RATED,
+    LibraryTab.RECENTLY_ADDED,
+    LibraryTab.RECENTLY_PLAYED,
+    LibraryTab.MOST_PLAYED -> LibrarySelectionEntity.SONG
+    LibraryTab.ALBUMS -> LibrarySelectionEntity.ALBUM
+    else -> null
+}
+
 internal fun shouldShowPrimaryBottomNavigation(
     isPlayerExpanded: Boolean,
     isFolderScreenVisible: Boolean,
@@ -1604,7 +1686,8 @@ internal fun shouldShowPrimaryBottomNavigation(
     isListeningHistoryImportVisible: Boolean,
     isListeningHistoryReconciliationVisible: Boolean,
     isSettingsScreenVisible: Boolean,
-    isTagEditorVisible: Boolean
+    isTagEditorVisible: Boolean,
+    isLibrarySelectionActive: Boolean = false
 ): Boolean = !isPlayerExpanded &&
         !isFolderScreenVisible &&
         !isDiagnosticsScreenVisible &&
@@ -1613,4 +1696,5 @@ internal fun shouldShowPrimaryBottomNavigation(
         !isListeningHistoryImportVisible &&
         !isListeningHistoryReconciliationVisible &&
         !isSettingsScreenVisible &&
-        !isTagEditorVisible
+        !isTagEditorVisible &&
+        !isLibrarySelectionActive

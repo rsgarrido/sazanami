@@ -61,6 +61,9 @@ class PlaybackController(
         )
     )
     val uiState: StateFlow<PlaybackUiState> = _uiState.asStateFlow()
+    private val _activeQueueTimelineRevision = MutableStateFlow(0L)
+    internal val activeQueueTimelineRevision: StateFlow<Long> =
+        _activeQueueTimelineRevision.asStateFlow()
 
     private val _progressState = MutableStateFlow(PlaybackProgressUiState.Empty)
     val progressState: StateFlow<PlaybackProgressUiState> = _progressState.asStateFlow()
@@ -205,6 +208,11 @@ class PlaybackController(
 
         musicPlayer.onCurrentSongChanged = { songId ->
             handleServiceSongChanged(songId)
+        }
+
+        musicPlayer.onTimelineChanged = {
+            reconcileLogicalStateWithActiveQueue()
+            _activeQueueTimelineRevision.update { revision -> revision + 1L }
         }
     }
 
@@ -441,20 +449,38 @@ class PlaybackController(
         return queueId
     }
 
+    suspend fun createInactiveQueue(songs: List<Song>): String? =
+        PlaybackQueueRuntimeBridge.createInactiveQueue(songs)
+
     suspend fun addToInactiveQueue(queueId: String, songs: List<Song>): Boolean =
         PlaybackQueueRuntimeBridge.appendToInactiveQueue(queueId, songs)
 
-    suspend fun removeQueueEntry(queueId: String, entryId: String): Boolean =
-        PlaybackQueueRuntimeBridge.removeQueueEntry(queueId, entryId)
+    suspend fun removeQueueEntry(queueId: String, entryId: String): Boolean {
+        val removed = PlaybackQueueRuntimeBridge.removeQueueEntry(queueId, entryId)
+        if (removed && queueId == getActiveQueueId()) {
+            reconcileLogicalStateWithActiveQueue()
+        }
+        return removed
+    }
 
     internal suspend fun removeQueueEntryForUndo(
         queueId: String,
         entryId: String
-    ): PlaybackQueueEntryRemoval? =
-        PlaybackQueueRuntimeBridge.removeQueueEntryForUndo(queueId, entryId)
+    ): PlaybackQueueEntryRemoval? {
+        val removal = PlaybackQueueRuntimeBridge.removeQueueEntryForUndo(queueId, entryId)
+        if (removal?.wasActive == true) {
+            reconcileLogicalStateWithActiveQueue()
+        }
+        return removal
+    }
 
-    internal suspend fun undoRemoveQueueEntry(removal: PlaybackQueueEntryRemoval): Boolean =
-        PlaybackQueueRuntimeBridge.undoRemoveQueueEntry(removal)
+    internal suspend fun undoRemoveQueueEntry(removal: PlaybackQueueEntryRemoval): Boolean {
+        val restored = PlaybackQueueRuntimeBridge.undoRemoveQueueEntry(removal)
+        if (restored && removal.wasActive) {
+            reconcileLogicalStateWithActiveQueue()
+        }
+        return restored
+    }
 
     suspend fun playQueueEntry(queueId: String, entryId: String): Boolean =
         PlaybackQueueRuntimeBridge.playQueueEntry(queueId, entryId)
@@ -482,6 +508,7 @@ class PlaybackController(
     fun setSongShuffleEnabled(enabled: Boolean) {
         val target = if (enabled) PlaybackShuffleMode.SONGS else PlaybackShuffleMode.OFF
         if (shuffleMode == target) return
+        reconcileLogicalStateWithActiveQueue()
         shuffleMode = target
         playbackNavigationHistory.clearAll()
         syncServicePlaylistKeepingCurrent(preserveExistingShuffleOrder = false)
@@ -501,7 +528,11 @@ class PlaybackController(
     fun setRepeatModeFromExternalController(mode: RepeatMode) {
         if (repeatMode == mode) return
         repeatMode = mode
-        syncServicePlaylistKeepingCurrent()
+        musicPlayer.synchronizeNavigationPolicy(
+            shuffleEnabled = shuffleMode.usesDynamicSongShuffle,
+            repeatMode = repeatMode,
+            origin = ControllerSynchronizationOrigin.EXTERNAL
+        )
         savePlayerState()
     }
 
@@ -906,8 +937,7 @@ class PlaybackController(
             isPlaying = live.isPlaying
             repeatMode = live.repeatMode
             synchronizeNavigationHistoryWithLiveTimeline(live)
-            playbackQueueManager.replaceQueue(emptyList())
-            upcomingSongs = live.upcomingSongs
+            reconcileLogicalStateWithActiveQueue(live)
             applyReplayGainForCurrentSong()
             startProgressUpdates()
             savePlayerState()
@@ -1018,6 +1048,21 @@ class PlaybackController(
             live.playlist.take(live.currentPlaylistIndex)
         )
         playbackNavigationHistory.replaceNextSongs(live.upcomingSongs.asReversed())
+    }
+
+    private fun reconcileLogicalStateWithActiveQueue(
+        suppliedLive: LivePlaybackSnapshot? = null
+    ) {
+        if (!hasAuthoritativeActiveQueueTimeline()) return
+        val snapshot = PlaybackQueueRuntimeBridge.getActiveQueueSnapshot() ?: return
+        val live = suppliedLive ?: musicPlayer.adoptLiveSession(librarySongs) ?: return
+        playbackContextSongs = baseOrderedActiveQueueSongs(
+            timelineSongs = live.playlist,
+            timelineEntryIds = snapshot.entries.map(LivePlaybackQueueItem::entryId),
+            baseEntryIds = snapshot.baseEntryIds
+        )
+        playbackQueueManager.replaceQueue(emptyList())
+        upcomingSongs = live.upcomingSongs
     }
 
     private fun startProgressUpdates() {
@@ -1296,6 +1341,28 @@ class PlaybackController(
     companion object {
         private const val PREVIOUS_RESTART_THRESHOLD_MS = 3_000
     }
+}
+
+internal fun baseOrderedActiveQueueSongs(
+    timelineSongs: List<Song>,
+    timelineEntryIds: List<String>,
+    baseEntryIds: List<String>
+): List<Song> {
+    if (
+        timelineSongs.size != timelineEntryIds.size ||
+        timelineEntryIds.toSet().size != timelineEntryIds.size
+    ) {
+        return timelineSongs
+    }
+
+    val songsByEntryId = timelineEntryIds.zip(timelineSongs).toMap()
+    val normalizedBaseIds = buildList {
+        addAll(baseEntryIds.filter(songsByEntryId::containsKey).distinct())
+        addAll(timelineEntryIds.filterNot { entryId -> entryId in this })
+    }
+    return normalizedBaseIds.mapNotNull(songsByEntryId::get)
+        .takeIf { songs -> songs.size == timelineSongs.size }
+        ?: timelineSongs
 }
 
 internal fun replacementSong(song: Song, updatedSongs: List<Song>): Song? {

@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.rsgarrido.sazanami.controller.LibraryController
+import io.github.rsgarrido.sazanami.controller.LibrarySelectionController
 import io.github.rsgarrido.sazanami.controller.SongRatingUiController
 import io.github.rsgarrido.sazanami.controller.ListeningAnalyticsController
 import io.github.rsgarrido.sazanami.controller.SleepTimerController
@@ -119,6 +120,7 @@ import io.github.rsgarrido.sazanami.ui.state.LibraryAppearanceUiState
 import io.github.rsgarrido.sazanami.ui.state.LibraryCategoryAppearance
 import io.github.rsgarrido.sazanami.ui.state.PlayerAppearanceUiState
 import io.github.rsgarrido.sazanami.ui.state.category
+import io.github.rsgarrido.sazanami.ui.state.LibrarySelectionEntity
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewCategory
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewOption
 import io.github.rsgarrido.sazanami.ui.library.SongRatingFilter
@@ -619,6 +621,8 @@ class MusicViewModel(
             }
         }
     )
+    private val librarySelectionController = LibrarySelectionController()
+    val librarySelectionUiState = librarySelectionController.uiState
 
     private val playbackQueueUiController = PlaybackQueueUiController(
         operations = RoomPlaybackQueueUiOperations(
@@ -651,8 +655,16 @@ class MusicViewModel(
     internal fun playInNewQueue(displayName: String, songs: List<Song>) =
         playbackQueueUiController.playInNewQueue(displayName, songs)
 
-    internal fun addToInactiveQueue(queueId: String, songs: List<Song>) =
-        playbackQueueUiController.addToInactiveQueue(queueId, songs)
+    internal fun createInactiveQueue(
+        songs: List<Song>,
+        onComplete: (String?) -> Unit = {}
+    ) = playbackQueueUiController.createInactiveQueue(songs, onComplete)
+
+    internal fun addToInactiveQueue(
+        queueId: String,
+        songs: List<Song>,
+        onComplete: (Boolean) -> Unit = {}
+    ) = playbackQueueUiController.addToInactiveQueue(queueId, songs, onComplete)
 
     internal fun removePlaybackQueueEntry(queueId: String, entryId: String) =
         playbackQueueUiController.removeEntry(queueId, entryId)
@@ -1116,6 +1128,22 @@ class MusicViewModel(
     fun toggleFavorite(song: Song) {
         libraryController.toggleFavorite(song)
     }
+
+    fun applyFavoriteBatch(songs: List<Song>) = libraryController.applyFavoriteBatch(songs)
+
+    fun enterLibrarySelection(entity: LibrarySelectionEntity, key: String) =
+        librarySelectionController.enter(entity, key)
+
+    fun toggleLibrarySelection(entity: LibrarySelectionEntity, key: String) =
+        librarySelectionController.toggle(entity, key)
+
+    fun selectDisplayedLibraryItems(entity: LibrarySelectionEntity, keys: Collection<String>) =
+        librarySelectionController.selectDisplayed(entity, keys)
+
+    fun reconcileLibrarySelection(entity: LibrarySelectionEntity, validKeys: Set<String>) =
+        librarySelectionController.reconcile(entity, validKeys)
+
+    fun clearLibrarySelection() = librarySelectionController.clear()
 
     fun createPlaylist(playlistName: String, folderId: Long? = null) {
         libraryController.createPlaylist(playlistName, folderId)

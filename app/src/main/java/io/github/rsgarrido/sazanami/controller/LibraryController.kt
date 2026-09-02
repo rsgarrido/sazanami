@@ -13,6 +13,8 @@ import io.github.rsgarrido.sazanami.data.ArtistPictureAssignment
 import io.github.rsgarrido.sazanami.data.ArtistPictureRepository
 import io.github.rsgarrido.sazanami.data.DuplicateListeningHistoryResolution
 import io.github.rsgarrido.sazanami.data.FavoritesRepository
+import io.github.rsgarrido.sazanami.data.FavoriteBatchOperation
+import io.github.rsgarrido.sazanami.data.planFavoriteBatch
 import io.github.rsgarrido.sazanami.data.FolderSelection
 import io.github.rsgarrido.sazanami.data.FolderSelectionMode
 import io.github.rsgarrido.sazanami.data.FolderArtworkResolver
@@ -698,6 +700,23 @@ class LibraryController(
                 favoritesRepository.addFavorite(song)
             } else {
                 favoritesRepository.removeFavorite(song)
+            }
+        }
+    }
+
+    fun applyFavoriteBatch(songs: List<Song>) {
+        val plan = planFavoriteBatch(songs, favoriteMembershipKeys)
+        if (plan.songs.isEmpty()) return
+        val keys = plan.songs.mapTo(mutableSetOf(), Song::membershipKey)
+        favoriteMembershipKeys = when (plan.operation) {
+            FavoriteBatchOperation.ADD_MISSING -> favoriteMembershipKeys + keys
+            FavoriteBatchOperation.REMOVE_SELECTED -> favoriteMembershipKeys - keys
+        }
+        coroutineScope.launch {
+            when (plan.operation) {
+                FavoriteBatchOperation.ADD_MISSING -> favoritesRepository.addFavorites(plan.songs)
+                FavoriteBatchOperation.REMOVE_SELECTED ->
+                    favoritesRepository.removeFavorites(plan.songs)
             }
         }
     }

@@ -33,6 +33,7 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -83,6 +84,40 @@ fun Modifier.libraryItemActions(
                 label = "Show actions",
                 action = {
                     onShowActions()
+                    true
+                }
+            )
+        )
+    }
+}
+
+@Composable
+fun Modifier.librarySelectableItem(
+    clickLabel: String,
+    selectionActive: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onToggleSelection: () -> Unit,
+    onEnterSelection: () -> Unit
+): Modifier {
+    val hapticFeedback = LocalHapticFeedback.current
+    val select = {
+        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+        onEnterSelection()
+    }
+    return combinedClickable(
+        role = Role.Button,
+        onClickLabel = if (selectionActive) "Toggle selection" else clickLabel,
+        onLongClickLabel = "Select",
+        onLongClick = select,
+        onClick = if (selectionActive) onToggleSelection else onClick
+    ).semantics {
+        this.selected = selected
+        customActions = listOf(
+            CustomAccessibilityAction(
+                label = if (selected) "Deselect" else "Select",
+                action = {
+                    if (selectionActive) onToggleSelection() else onEnterSelection()
                     true
                 }
             )
