@@ -3,12 +3,14 @@ package io.github.rsgarrido.sazanami.player
 import android.content.ContentResolver
 import android.os.Handler
 import android.os.SystemClock
+import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Timeline
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import io.github.rsgarrido.sazanami.player.equalizer.EqualizerAudioProcessor
 import io.github.rsgarrido.sazanami.player.equalizer.EqualizerDspRuntime
@@ -25,6 +27,7 @@ internal enum class PhysicalPlayerRole(
 }
 
 /** One long-lived physical playback pipeline whose role can change without sharing audio state. */
+@OptIn(UnstableApi::class)
 internal class PhysicalPlayerPipeline(
     initialRole: PhysicalPlayerRole,
     val player: ExoPlayer,
@@ -86,6 +89,7 @@ internal class PhysicalPlayerPipeline(
     fun clearForStandbyReuse() {
         enforceSilence()
         player.stop()
+        player.pauseAtEndOfMediaItems = false
         player.clearMediaItems()
         baselineMediaKey = null
         baselineVolume = 1f
@@ -355,7 +359,8 @@ private data class PendingInternalNavigationCallback(
     val value: String
 )
 
-/** Owns reusable A/B roles, optional controlled overlap, and non-overlap fallback. */
+/** Owns reusable A/B roles for overlap; ordinary item progression stays on the active player. */
+@OptIn(UnstableApi::class)
 internal class DualPlayerPlaybackCoordinator(
     initialActive: PhysicalPlayerPipeline,
     initialStandby: PhysicalPlayerPipeline,
@@ -400,6 +405,13 @@ internal class DualPlayerPlaybackCoordinator(
                     standby.enforceSilence()
                     standby.prepareBaseline(plan.key)
                     standby.player.setMediaItems(plan.playlist, plan.startIndex, 0L)
+                    updateEndOfItemPolicy(
+                        ActivePlaylistSnapshot(
+                            plan.playlist, plan.startIndex,
+                            active.player.repeatMode, active.player.shuffleModeEnabled
+                        ),
+                        pipeline = standby
+                    )
                     standby.player.prepare()
                     true
                 } catch (_: RuntimeException) {
@@ -538,9 +550,36 @@ internal class DualPlayerPlaybackCoordinator(
 
     fun synchronizeStandby() {
         if (released || handoffInProgress) return
-        standbyPreparation.synchronize(activeSnapshot())
+        val snapshot = activeSnapshot()
+        updateEndOfItemPolicy(snapshot)
+        standbyPreparation.synchronize(snapshot)
         requestStandbyBaselineIfNeeded()
         crossfadeTransition.reevaluate()
+    }
+
+    private fun updateEndOfItemPolicy(
+        snapshot: ActivePlaylistSnapshot,
+        pipeline: PhysicalPlayerPipeline = active
+    ) {
+        if (activeCrossfade != null) return
+        val plan = StandbyTargetResolver.resolvePlan(snapshot)
+        val preserveAlbum = plan != null && crossfadeConfiguration.preserveAlbumTransitions &&
+            NaturalAlbumTransitionPolicy.isConfidentContinuation(
+                snapshot.mediaItems, snapshot.currentMediaItemIndex, plan.startIndex
+            )
+        val duration = pipeline.player.duration
+        val guardCrossfadeEnd = crossfadeConfiguration.enabled && plan != null &&
+            !preserveAlbum &&
+            (duration == C.TIME_UNSET || duration > crossfadeConfiguration.durationMillis) &&
+            snapshot.mediaItems.getOrNull(snapshot.currentMediaItemIndex)
+                ?.let(StandbyTargetResolver::key) !=
+                crossfadeCancelledMediaKey
+        // Select this before renderer read-ahead, not at overlap start: enabling Media3's
+        // pause guard after it has read the next item can flush the outgoing renderer.
+        // A native boundary must never wait for an application-thread EOS callback.
+        if (pipeline.player.pauseAtEndOfMediaItems != guardCrossfadeEnd) {
+            pipeline.player.pauseAtEndOfMediaItems = guardCrossfadeEnd
+        }
     }
 
     fun onLogicalCommand(command: LogicalPlaybackCommand) =
@@ -689,9 +728,6 @@ internal class DualPlayerPlaybackCoordinator(
     private fun selectTelemetry(pipeline: PhysicalPlayerPipeline) {
         EqualizerRuntimeBridge.selectTelemetryRuntime(pipeline.equalizerRuntime)
     }
-
-    internal fun attemptNaturalHandoffForTest(): Boolean =
-        attemptNaturalHandoff()
 
     internal fun markStandbyReadyForTest() {
         standbyPreparation.onReady()
@@ -868,7 +904,15 @@ internal class DualPlayerPlaybackCoordinator(
                     "outgoingBaseline=${outgoing.baselineVolume} repeatMode=" +
                     "${outgoing.player.repeatMode} shuffleMode=$shuffleEnabled " +
                     "nextTargetAvailable=${expectedPlan != null} preservedAlbumTransition=" +
-                    "$preserveNaturalAlbumTransition albumReason=${albumDecision.reason}"
+                    "$preserveNaturalAlbumTransition albumReason=${albumDecision.reason} " +
+                    "crossfadeEnabled=${crossfadeConfiguration.enabled} " +
+                    "preserveAlbumEnabled=${crossfadeConfiguration.preserveAlbumTransitions} " +
+                    "naturalAlbumAdjacency=${albumDecision.preserve} " +
+                    "path=${if (outgoing.player.pauseAtEndOfMediaItems) "dual_player_crossfade" else "native_sequential"} " +
+                    "active=${System.identityHashCode(outgoing.player)} " +
+                    "standby=${System.identityHashCode(incoming.player)} " +
+                    "timelineSize=${outgoing.player.mediaItemCount} " +
+                    "nextIndex=${outgoing.player.nextMediaItemIndex}"
             )
         }
         return CrossfadePlaybackSnapshot(
@@ -1031,6 +1075,7 @@ internal class DualPlayerPlaybackCoordinator(
             handoffInProgress = false
             crossfadeCancelledMediaKey = null
             runCatching {
+                updateEndOfItemPolicy(activeSnapshot())
                 standbyPreparation.synchronize(activeSnapshot())
                 requestStandbyBaselineIfNeeded()
             }
@@ -1111,18 +1156,21 @@ internal class DualPlayerPlaybackCoordinator(
         activeCrossfade = null
         handoffInProgress = false
         runCatching {
+            updateEndOfItemPolicy(activeSnapshot())
             standbyPreparation.synchronize(activeSnapshot())
             requestStandbyBaselineIfNeeded()
         }
-        traceNewActive()
+        traceNewActive(roleSwapPerformed = authoritative === context.incoming)
     }
 
-    private fun traceNewActive() {
+    private fun traceNewActive(roleSwapPerformed: Boolean = true) {
         val key = active.player.currentMediaItem
             ?.let(StandbyTargetResolver::key)
         CrossfadeTrace.log(
             "NEW_ACTIVE mediaId=${key?.mediaId.orEmpty()} " +
-                "futureCrossfadeSuppressed=${key != null && key == crossfadeCancelledMediaKey}"
+                "futureCrossfadeSuppressed=${key != null && key == crossfadeCancelledMediaKey} " +
+                "path=dual_player_crossfade roleSwap=$roleSwapPerformed " +
+                "source=logical_crossfade_handoff"
         )
     }
 
@@ -1146,106 +1194,6 @@ internal class DualPlayerPlaybackCoordinator(
                 "operation=${operation.name} value=$value action=keep_crossfade"
         )
         return true
-    }
-
-    private fun attemptNaturalHandoff(): Boolean {
-        if (released || handoffInProgress) return false
-        val logical = logicalPlayer ?: return resumeActiveFallback()
-        val integration = activeIntegration ?: return resumeActiveFallback()
-        if (!logical.logicalPlayWhenReady) return false
-
-        val expectedPlan = StandbyTargetResolver.resolvePlan(activeSnapshot())
-            ?: return resumeActiveFallback()
-        val incomingPlan = standbyPreparation.consumeReady(expectedPlan)
-            ?: return resumeActiveFallback()
-        val incomingItem = standby.player.currentMediaItem
-            ?: return resumeActiveFallback()
-        if (
-            standby.player.playbackState != Player.STATE_READY ||
-            standby.player.playerError != null ||
-            StandbyTargetResolver.key(incomingItem) != incomingPlan.key
-        ) {
-            return resumeActiveFallback()
-        }
-
-        handoffInProgress = true
-        val outgoing = active
-        val incoming = standby
-        val outgoingItem = outgoing.player.currentMediaItem
-        val logicalIntent = logical.logicalPlayWhenReady
-        return try {
-            outgoing.enforceSilence()
-            integration.unbind(outgoing)
-            incoming.player.repeatMode = outgoing.player.repeatMode
-            incoming.player.shuffleModeEnabled = outgoing.player.shuffleModeEnabled
-            incoming.player.playbackParameters = outgoing.player.playbackParameters
-            incoming.player.trackSelectionParameters =
-                outgoing.player.trackSelectionParameters
-            detachRoleListeners()
-            outgoing.assignRole(PhysicalPlayerRole.STANDBY)
-            incoming.assignRole(PhysicalPlayerRole.ACTIVE)
-            active = incoming
-            standby = outgoing
-            logicalPipeline = incoming
-            attachRoleListeners()
-            selectActiveTelemetry()
-
-            logical.rebindPhysicalPlayer(
-                newPhysicalPlayer = incoming.player,
-                baselineVolume = incoming.baselineFor(incomingPlan.key),
-                logicalPlayWhenReady = logicalIntent
-            )
-            integration.bind(
-                pipeline = incoming,
-                transition = AuthoritativeRoleTransition(
-                    outgoingMediaItem = outgoingItem,
-                    incomingMediaItem = incomingPlan.target
-                )
-            )
-            logical.activateReboundPhysicalPlayer()
-            check(incoming.player.playerError == null) {
-                "Incoming physical player failed during role promotion"
-            }
-            outgoing.clearForStandbyReuse()
-            crossfadeCancelledMediaKey = null
-            crossfadeTransition.reset()
-            synchronizeStandbyAfterHandoff()
-            true
-        } catch (_: RuntimeException) {
-            runCatching { integration.unbind(incoming) }
-            detachRoleListeners()
-            active = outgoing
-            standby = incoming
-            logicalPipeline = outgoing
-            incoming.assignRole(PhysicalPlayerRole.STANDBY)
-            outgoing.assignRole(PhysicalPlayerRole.ACTIVE)
-            attachRoleListeners()
-            selectActiveTelemetry()
-            logical.rebindPhysicalPlayer(
-                newPhysicalPlayer = outgoing.player,
-                baselineVolume = outgoing.baselineFor(
-                    outgoing.player.currentMediaItem?.let(StandbyTargetResolver::key)
-                ),
-                logicalPlayWhenReady = logicalIntent
-            )
-            integration.bind(outgoing, transition = null)
-            logical.activateReboundPhysicalPlayer()
-            synchronizeStandbyAfterHandoff()
-            false
-        } finally {
-            handoffInProgress = false
-        }
-    }
-
-    private fun resumeActiveFallback(): Boolean {
-        if (!released) active.player.playWhenReady = true
-        return false
-    }
-
-    private fun synchronizeStandbyAfterHandoff() {
-        handoffInProgress = false
-        synchronizeStandby()
-        handoffInProgress = true
     }
 
     private fun activeSnapshot() = ActivePlaylistSnapshot(
@@ -1273,6 +1221,14 @@ internal class DualPlayerPlaybackCoordinator(
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 if (!isCurrent()) return
+                CrossfadeTrace.log(
+                    "ITEM_TRANSITION source=active_physical reason=$reason " +
+                        "to=${mediaItem?.mediaId.orEmpty()} " +
+                        "active=${System.identityHashCode(activeAtBinding.player)} " +
+                        "timelineSize=${activeAtBinding.player.mediaItemCount} " +
+                        "index=${activeAtBinding.player.currentMediaItemIndex} " +
+                        "nextIndex=${activeAtBinding.player.nextMediaItemIndex} roleSwap=false"
+                )
                 if (activeCrossfade != null) {
                     crossfadeTransition.cancel(
                         permanent = true,
@@ -1291,6 +1247,13 @@ internal class DualPlayerPlaybackCoordinator(
                 reason: Int
             ) {
                 if (!isCurrent()) return
+                if (reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION) {
+                    CrossfadeTrace.log(
+                        "NATIVE_BOUNDARY from=${oldPosition.mediaItem?.mediaId.orEmpty()} " +
+                            "to=${newPosition.mediaItem?.mediaId.orEmpty()} " +
+                            "source=active_physical roleSwap=false"
+                    )
+                }
                 val currentKey = activeAtBinding.player.currentMediaItem
                     ?.let(StandbyTargetResolver::key)
                 if (activeCrossfade != null) {
@@ -1380,7 +1343,9 @@ internal class DualPlayerPlaybackCoordinator(
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
-                if (isCurrent()) crossfadeTransition.reevaluate()
+                if (!isCurrent()) return
+                if (activeCrossfade == null) updateEndOfItemPolicy(activeSnapshot())
+                crossfadeTransition.reevaluate()
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -1393,9 +1358,17 @@ internal class DualPlayerPlaybackCoordinator(
                     !playWhenReady &&
                     reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM
                 ) {
-                    if (!crossfadeTransition.completeAtNaturalEnd()) {
-                        CrossfadeTrace.log("FALLBACK reason=crossfade_not_active_at_eos")
-                        attemptNaturalHandoff()
+                    if (
+                        !crossfadeTransition.completeAtNaturalEnd() &&
+                        isCurrent() && logicalPipeline === activeAtBinding
+                    ) {
+                        // A failed/unavailable intended overlap can still reach its EOS guard.
+                        // Continue the existing playlist; never promote a silent standby here.
+                        CrossfadeTrace.log("FALLBACK path=native_sequential reason=crossfade_not_active_at_eos roleSwap=false")
+                        activeAtBinding.player.pauseAtEndOfMediaItems = false
+                        if (logicalPlayer?.logicalPlayWhenReady == true) {
+                            activeAtBinding.player.playWhenReady = true
+                        }
                     }
                 }
             }

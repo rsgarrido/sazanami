@@ -1,9 +1,11 @@
 package io.github.rsgarrido.sazanami.player
 
 import android.net.Uri
+import android.os.Bundle
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionParameters
@@ -19,7 +21,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.ArgumentCaptor
-import org.mockito.Mockito.inOrder
 import org.mockito.Mockito.atLeastOnce
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
@@ -440,243 +441,299 @@ class DualPlayerPlaybackCoordinatorTest {
     }
 
     @Test
-    fun naturalHandoffsAlternateAtoBtoAWithoutLeakingStandbyAuthority() {
-        val first = localItem("first")
-        val second = localItem("second")
-        val third = localItem("third")
-        val playerA = mock(ExoPlayer::class.java)
-        val playerB = mock(ExoPlayer::class.java)
-        var currentItemA = first
-        var currentIndexA = 0
-        stubPlaylist(playerA, listOf(first, second, third), 0)
-        stubPlaylist(playerB, listOf(first, second, third), 1)
-        `when`(playerA.currentMediaItemIndex).thenAnswer { currentIndexA }
-        `when`(playerA.currentMediaItem).thenAnswer { currentItemA }
-        `when`(playerB.currentMediaItem).thenReturn(second)
-        `when`(playerA.currentPosition).thenReturn(111L)
-        `when`(playerB.currentPosition).thenReturn(222L)
-        `when`(playerA.playbackState).thenReturn(Player.STATE_READY)
-        `when`(playerB.playbackState).thenReturn(Player.STATE_READY)
-        val pipelineA = pipeline(PhysicalPlayerRole.ACTIVE, playerA)
-        val pipelineB = pipeline(PhysicalPlayerRole.STANDBY, playerB)
-        val coordinator = DualPlayerPlaybackCoordinator(pipelineA, pipelineB)
-        val logical = RecordingLogicalPlayer(playerA)
-        val integration = RecordingIntegration()
-        coordinator.selectActiveTelemetry()
-        coordinator.attachLogicalPlayer(logical, integration)
-
-        assertSame(playerA, coordinator.logicalPhysicalPlayer)
-        assertSame(first, coordinator.logicalPhysicalPlayer.currentMediaItem)
-        assertEquals(111L, coordinator.logicalPhysicalPlayer.currentPosition)
-        assertTrue(logical.reboundPlayers.isEmpty())
-        assertTrue(integration.transitions.isEmpty())
-
-        coordinator.markStandbyReadyForTest()
-        assertTrue(coordinator.attemptNaturalHandoffForTest())
-
-        assertSame(pipelineB, coordinator.active)
-        assertSame(pipelineA, coordinator.standby)
-        assertSame(playerB, coordinator.logicalPhysicalPlayer)
-        assertSame(
-            pipelineB.equalizerRuntime,
-            EqualizerRuntimeBridge.selectedTelemetryRuntime()
-        )
-        assertSame(second, coordinator.logicalPhysicalPlayer.currentMediaItem)
-        assertEquals(222L, coordinator.logicalPhysicalPlayer.currentPosition)
-        assertEquals(PhysicalPlayerRole.ACTIVE, pipelineB.role)
-        assertEquals(PhysicalPlayerRole.STANDBY, pipelineA.role)
-        assertEquals(1, listOf(pipelineA, pipelineB).count {
-            it.role == PhysicalPlayerRole.ACTIVE
-        })
-        assertEquals(listOf(playerB), logical.reboundPlayers)
-        assertEquals(listOf(second), integration.transitions.map {
-            it?.incomingMediaItem
-        })
-        assertTrue(integration.logicalHandoffs.isEmpty())
-        assertTrue(integration.audibleStarts.isEmpty())
-        assertTrue(integration.completedOutgoing.isEmpty())
-        val firstPromotionOrder = inOrder(playerA, playerB)
-        firstPromotionOrder.verify(playerA).volume = 0f
-        firstPromotionOrder.verify(playerA).playWhenReady = false
-        firstPromotionOrder.verify(playerB).volume = 1f
-        firstPromotionOrder.verify(playerB).playWhenReady = true
-        verify(playerA).setMediaItems(listOf(first, second, third), 2, 0L)
-
-        currentItemA = third
-        currentIndexA = 2
-        coordinator.markStandbyReadyForTest()
-        assertTrue(coordinator.attemptNaturalHandoffForTest())
-
-        assertSame(pipelineA, coordinator.active)
-        assertSame(pipelineB, coordinator.standby)
-        assertSame(playerA, coordinator.logicalPhysicalPlayer)
-        assertEquals(listOf(playerB, playerA), logical.reboundPlayers)
-        assertEquals(listOf(second, third), integration.transitions.map {
-            it?.incomingMediaItem
-        })
-        assertEquals(2, logical.activationCount)
-        assertEquals(listOf(pipelineA, pipelineB), integration.unbound)
-        assertEquals(1, listOf(pipelineA, pipelineB).count {
-            it.role == PhysicalPlayerRole.ACTIVE
-        })
-
-        coordinator.release()
+    fun crossfadeDisabledUsesNativePlaylistWithoutEosPauseOrRoleSwap() {
+        assertNativeTransition(CrossfadeRuntimeConfiguration.DISABLED)
     }
 
     @Test
-    fun staleQueueTargetAndFailedStandbyFallBackToCurrentPlayer() {
-        val first = localItem("first")
-        val prepared = localItem("prepared")
-        val replacement = localItem("replacement")
-        val playerA = mock(ExoPlayer::class.java)
-        val playerB = mock(ExoPlayer::class.java)
-        `when`(playerA.mediaItemCount).thenReturn(2)
-        `when`(playerA.currentMediaItemIndex).thenReturn(0)
-        `when`(playerA.getMediaItemAt(0)).thenReturn(first)
-        `when`(playerA.getMediaItemAt(1)).thenReturn(prepared, replacement)
-        `when`(playerA.currentMediaItem).thenReturn(first)
-        `when`(playerA.repeatMode).thenReturn(Player.REPEAT_MODE_OFF)
-        `when`(playerA.shuffleModeEnabled).thenReturn(false)
-        `when`(playerB.currentMediaItem).thenReturn(prepared)
-        `when`(playerB.playbackState).thenReturn(Player.STATE_READY)
-        val pipelineA = pipeline(PhysicalPlayerRole.ACTIVE, playerA)
-        val pipelineB = pipeline(PhysicalPlayerRole.STANDBY, playerB)
-        val coordinator = DualPlayerPlaybackCoordinator(pipelineA, pipelineB)
-        val integration = RecordingIntegration()
-        coordinator.attachLogicalPlayer(RecordingLogicalPlayer(playerA), integration)
-        coordinator.markStandbyReadyForTest()
-
-        assertFalse(coordinator.attemptNaturalHandoffForTest())
-        assertSame(pipelineA, coordinator.active)
-        assertEquals(PhysicalPlayerRole.STANDBY, pipelineB.role)
-        assertTrue(integration.transitions.isEmpty())
-        verify(playerA).playWhenReady = true
-
-        coordinator.markStandbyFailedForTest()
-        assertFalse(coordinator.attemptNaturalHandoffForTest())
-        assertSame(pipelineA, coordinator.active)
-
-        coordinator.release()
+    fun preservedAlbumUsesNativePlaylistEvenWithReadyStandby() {
+        assertNativeTransition(
+            CrossfadeRuntimeConfiguration.TEST_ENABLED,
+            items = listOf(albumItem("intro", 1), albumItem("six_feet_deep", 2))
+        )
     }
 
     @Test
-    fun replayGainBaselinesRemainRoleAndMediaKeyScoped() {
-        val first = localItem("first")
-        val second = localItem("second")
-        val third = localItem("third")
-        val firstKey = checkNotNull(StandbyTargetResolver.key(first))
-        val secondKey = checkNotNull(StandbyTargetResolver.key(second))
-        val playerA = mock(ExoPlayer::class.java)
-        val playerB = mock(ExoPlayer::class.java)
-        stubPlaylist(playerA, listOf(first, second, third), 0)
-        stubPlaylist(playerB, listOf(first, second, third), 1)
-        `when`(playerA.currentMediaItem).thenReturn(first)
-        `when`(playerB.currentMediaItem).thenReturn(second)
-        `when`(playerB.playbackState).thenReturn(Player.STATE_READY)
-        val pipelineA = pipeline(PhysicalPlayerRole.ACTIVE, playerA)
-        pipelineA.prepareBaseline(firstKey)
-        assertTrue(pipelineA.updateBaseline(firstKey, 0.62f))
-        val pipelineB = pipeline(PhysicalPlayerRole.STANDBY, playerB)
-        val coordinator = DualPlayerPlaybackCoordinator(pipelineA, pipelineB)
-        val logical = RecordingLogicalPlayer(playerA)
-        coordinator.attachLogicalPlayer(logical, RecordingIntegration())
-
-        assertTrue(coordinator.updateStandbyBaseline(secondKey, 0.35f))
-        assertEquals(0.62f, pipelineA.baselineVolume, 0f)
-        assertEquals(0.35f, pipelineB.baselineVolume, 0f)
-        assertFalse(coordinator.updateStandbyBaseline(firstKey, 0.9f))
-        assertEquals(0.35f, pipelineB.baselineVolume, 0f)
-        verify(playerB, never()).volume = 0.35f
-
-        coordinator.markStandbyReadyForTest()
-        assertTrue(coordinator.attemptNaturalHandoffForTest())
-
-        assertEquals(listOf(0.35f), logical.reboundBaselines)
-        assertEquals(0.35f, pipelineB.baselineVolume, 0f)
-        assertFalse(coordinator.updateStandbyBaseline(secondKey, 0.8f))
-        assertEquals(1f, pipelineA.baselineVolume, 0f)
-
-        coordinator.release()
+    fun repeatOneAndNativeShuffleDoNotGuardOrHandoffAtItemEnd() {
+        assertNativeTransition(
+            CrossfadeRuntimeConfiguration.TEST_ENABLED,
+            repeatMode = Player.REPEAT_MODE_ONE,
+            nextIndex = 0
+        )
+        assertNativeTransition(
+            CrossfadeRuntimeConfiguration.TEST_ENABLED,
+            items = listOf(localItem("first"), localItem("second"), localItem("third")),
+            shuffle = true,
+            nextIndex = 2
+        )
     }
 
     @Test
-    fun promotionFailureRollsBackToExactlyOneActiveRole() {
-        val first = localItem("first")
-        val second = localItem("second")
-        val playerA = mock(ExoPlayer::class.java)
-        val playerB = mock(ExoPlayer::class.java)
-        stubPlaylist(playerA, listOf(first, second), 0)
-        stubPlaylist(playerB, listOf(first, second), 1)
-        `when`(playerA.currentMediaItem).thenReturn(first)
-        `when`(playerB.currentMediaItem).thenReturn(second)
-        `when`(playerB.playbackState).thenReturn(Player.STATE_READY)
-        val pipelineA = pipeline(PhysicalPlayerRole.ACTIVE, playerA)
-        val pipelineB = pipeline(PhysicalPlayerRole.STANDBY, playerB)
-        val coordinator = DualPlayerPlaybackCoordinator(pipelineA, pipelineB)
-        val logical = RecordingLogicalPlayer(playerA)
-        coordinator.attachLogicalPlayer(logical, FailingOnceIntegration())
-        coordinator.markStandbyReadyForTest()
-
-        assertFalse(coordinator.attemptNaturalHandoffForTest())
-
-        assertSame(pipelineA, coordinator.active)
-        assertSame(pipelineB, coordinator.standby)
-        assertEquals(PhysicalPlayerRole.ACTIVE, pipelineA.role)
-        assertEquals(PhysicalPlayerRole.STANDBY, pipelineB.role)
-        assertEquals(1, listOf(pipelineA, pipelineB).count {
-            it.role == PhysicalPlayerRole.ACTIVE
-        })
-        assertEquals(listOf(playerB, playerA), logical.reboundPlayers)
-        verify(playerB, atLeastOnce()).playWhenReady = false
-        verify(playerA).playWhenReady = true
-
-        coordinator.release()
+    fun repeatAllWrapAndDuplicateQueueEntriesStayOnNativeTimeline() {
+        assertNativeTransition(
+            CrossfadeRuntimeConfiguration.DISABLED,
+            repeatMode = Player.REPEAT_MODE_ALL,
+            currentIndex = 1,
+            nextIndex = 0
+        )
+        // Same media ID is legal for distinct queue occurrences; indices stay authoritative.
+        assertNativeTransition(
+            CrossfadeRuntimeConfiguration.TEST_ENABLED,
+            items = listOf(localItem("duplicate"), localItem("duplicate"))
+        )
     }
 
     @Test
-    fun telemetryListenersAndLifecycleFollowOnlyThePromotedRole() {
-        val first = localItem("first")
-        val second = localItem("second")
-        val playerA = mock(ExoPlayer::class.java)
-        val playerB = mock(ExoPlayer::class.java)
-        stubPlaylist(playerA, listOf(first, second), 0)
-        stubPlaylist(playerB, listOf(first, second), 1)
-        `when`(playerA.currentMediaItem).thenReturn(first)
-        `when`(playerB.currentMediaItem).thenReturn(second)
-        `when`(playerB.playbackState).thenReturn(Player.STATE_READY)
-        val pipelineA = pipeline(PhysicalPlayerRole.ACTIVE, playerA)
-        val pipelineB = pipeline(PhysicalPlayerRole.STANDBY, playerB)
-        val coordinator = DualPlayerPlaybackCoordinator(pipelineA, pipelineB)
-        val logical = RecordingLogicalPlayer(playerA)
-        val integration = RecordingIntegration()
-        coordinator.attachLogicalPlayer(logical, integration)
-        coordinator.selectActiveTelemetry()
-        assertSame(
-            pipelineA.equalizerRuntime,
-            EqualizerRuntimeBridge.selectedTelemetryRuntime()
+    fun unrelatedAlbumKeepsConfiguredCrossfadeAndPromotionRestoresNativeProgression() {
+        val fixture = TransitionFixture(
+            items = listOf(albumItem("first", 1), albumItem("second", 2, album = "Other"))
         )
-        val oldListener = ArgumentCaptor.forClass(Player.Listener::class.java)
-        verify(playerA).addListener(oldListener.capture())
+        fixture.startOverlap()
+        assertEquals(CrossfadeTransitionState.CROSSFADING, fixture.coordinator.crossfadeState)
+        verify(fixture.playerA, atLeastOnce()).pauseAtEndOfMediaItems = true
+        assertTrue(fixture.integration.transitions.isEmpty())
+        fixture.finishAtEos()
 
-        coordinator.markStandbyReadyForTest()
-        assertTrue(coordinator.attemptNaturalHandoffForTest())
-        assertSame(
-            pipelineB.equalizerRuntime,
-            EqualizerRuntimeBridge.selectedTelemetryRuntime()
+        assertSame(fixture.playerB, fixture.coordinator.logicalPhysicalPlayer)
+        assertEquals(listOf(fixture.items[1]), fixture.integration.logicalHandoffs)
+        assertEquals(listOf(fixture.items[0]), fixture.integration.completedOutgoing)
+        assertEquals(0.4f, fixture.pipelineB.baselineVolume, 0f)
+        assertEquals(listOf(0.4f), fixture.logical.reboundBaselines)
+        assertFalse(fixture.playerB.pauseAtEndOfMediaItems)
+        assertFalse(fixture.playerA.pauseAtEndOfMediaItems)
+        assertEquals(0, fixture.logical.activationCount)
+        fixture.coordinator.release()
+    }
+
+    @Test
+    fun disablingAlbumPreservationStillAllowsIntentionalAlbumCrossfade() {
+        val fixture = TransitionFixture(
+            items = listOf(albumItem("intro", 1), albumItem("six_feet_deep", 2)),
+            configuration = CrossfadeRuntimeConfiguration.TEST_ENABLED.copy(
+                preserveAlbumTransitions = false, durationMillis = 9_000L
+            )
         )
-        val bindsBeforeStaleCallback = integration.bound.size
-        oldListener.value.onPlayWhenReadyChanged(
-            false,
-            Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM
+        fixture.startOverlap()
+        assertEquals(CrossfadeTransitionState.CROSSFADING, fixture.coordinator.crossfadeState)
+        fixture.finishAtEos()
+        assertSame(fixture.playerB, fixture.coordinator.logicalPhysicalPlayer)
+        fixture.coordinator.release()
+    }
+
+    @Test
+    fun crossfadeIntoAlbumLeavesItsFollowingNativeBoundaryUnguarded() {
+        val fixture = TransitionFixture(items = listOf(
+            localItem("mixed"), albumItem("intro", 1), albumItem("six_feet_deep", 2)
+        ))
+        fixture.startOverlap()
+        fixture.finishAtEos()
+        assertSame(fixture.playerB, fixture.coordinator.logicalPhysicalPlayer)
+        assertFalse(fixture.playerB.pauseAtEndOfMediaItems)
+        val listener = ArgumentCaptor.forClass(Player.Listener::class.java)
+        verify(fixture.playerB, atLeastOnce()).addListener(listener.capture())
+        `when`(fixture.playerB.currentMediaItemIndex).thenReturn(2)
+        `when`(fixture.playerB.currentMediaItem).thenReturn(fixture.items[2])
+        listener.allValues.last().onMediaItemTransition(
+            fixture.items[2], Player.MEDIA_ITEM_TRANSITION_REASON_AUTO
         )
-        assertEquals(bindsBeforeStaleCallback, integration.bound.size)
+        assertSame(fixture.playerB, fixture.coordinator.logicalPhysicalPlayer)
+        assertEquals(1, fixture.integration.logicalHandoffs.size)
+        assertEquals(1, fixture.integration.transitions.size)
+        fixture.coordinator.release()
+    }
 
-        coordinator.release()
+    @Test
+    fun failedStandbyAtGuardedEosContinuesExistingPlaylistWithoutPromotion() {
+        val fixture = TransitionFixture()
+        fixture.coordinator.markStandbyFailedForTest()
+        fixture.finishAtEos()
+        assertSame(fixture.playerA, fixture.coordinator.logicalPhysicalPlayer)
+        assertTrue(fixture.integration.transitions.isEmpty())
+        assertTrue(fixture.logical.reboundPlayers.isEmpty())
+        verify(fixture.playerA).playWhenReady = true
+        verify(fixture.playerB, never()).playWhenReady = true
+        assertFalse(fixture.playerA.pauseAtEndOfMediaItems)
+        fixture.coordinator.release()
+    }
 
-        verify(playerA, times(1)).release()
-        verify(playerB, times(1)).release()
+    @Test
+    fun crossfadeCancellationRestoresNativeBoundaryBeforeAndAfterMidpoint() {
+        for (pastMidpoint in listOf(false, true)) {
+            val fixture = TransitionFixture()
+            fixture.startOverlap()
+            if (pastMidpoint) {
+                fixture.position = 7_500L
+                fixture.scheduler.runNext()
+            }
+            fixture.coordinator.updateCrossfadeConfiguration(CrossfadeRuntimeConfiguration.DISABLED)
+            val survivor = if (pastMidpoint) fixture.playerB else fixture.playerA
+            assertSame(survivor, fixture.coordinator.logicalPhysicalPlayer)
+            assertFalse(survivor.pauseAtEndOfMediaItems)
+            assertFalse(fixture.playerA.pauseAtEndOfMediaItems)
+            assertFalse(fixture.playerB.pauseAtEndOfMediaItems)
+            fixture.coordinator.release()
+        }
+    }
+
+    @Test
+    fun staleOutgoingCallbacksCannotPublishAnotherTransitionAfterCrossfade() {
+        val fixture = TransitionFixture()
+        fixture.startOverlap()
+        fixture.finishAtEos()
+        val binds = fixture.integration.bound.size
+        fixture.activeListener.onMediaItemTransition(fixture.items[1], Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+        fixture.finishAtEos()
+        assertEquals(binds, fixture.integration.bound.size)
+        assertEquals(1, fixture.integration.logicalHandoffs.size)
+        assertFalse(fixture.coordinator.isActive(fixture.playerA))
+        assertTrue(fixture.coordinator.isActive(fixture.playerB))
+        assertSame(fixture.pipelineB.equalizerRuntime, EqualizerRuntimeBridge.selectedTelemetryRuntime())
+        fixture.coordinator.release()
+        verify(fixture.playerA, times(1)).release()
+        verify(fixture.playerB, times(1)).release()
         assertEquals(0, EqualizerRuntimeBridge.registeredRuntimeCountForTest())
-        assertNull(EqualizerRuntimeBridge.selectedTelemetryRuntime())
+    }
+
+    @Test
+    fun failedCrossfadePromotionReturnsToOneNativeActivePipeline() {
+        val fixture = TransitionFixture(integrationOverride = FailingOnceIntegration())
+        fixture.startOverlap()
+        fixture.finishAtEos()
+        assertSame(fixture.playerA, fixture.coordinator.logicalPhysicalPlayer)
+        assertEquals(PhysicalPlayerRole.ACTIVE, fixture.pipelineA.role)
+        assertEquals(PhysicalPlayerRole.STANDBY, fixture.pipelineB.role)
+        assertFalse(fixture.playerA.pauseAtEndOfMediaItems)
+        fixture.coordinator.release()
+    }
+
+    private fun assertNativeTransition(
+        configuration: CrossfadeRuntimeConfiguration,
+        items: List<MediaItem> = listOf(localItem("first"), localItem("second")),
+        repeatMode: Int = Player.REPEAT_MODE_OFF,
+        shuffle: Boolean = false,
+        currentIndex: Int = 0,
+        nextIndex: Int = 1
+    ) {
+        val fixture = TransitionFixture(
+            items, configuration, repeatMode, shuffle, currentIndex,
+            initialPauseAtEnd = true
+        )
+        fixture.coordinator.markStandbyReadyForTest()
+        fixture.coordinator.synchronizeStandby()
+        assertEquals(CrossfadeTransitionState.IDLE, fixture.coordinator.crossfadeState)
+        assertFalse(fixture.playerA.pauseAtEndOfMediaItems)
+        verify(fixture.playerA, never()).pauseAtEndOfMediaItems = true
+        verify(fixture.playerB, never()).playWhenReady = true
+        `when`(fixture.playerA.currentMediaItemIndex).thenReturn(nextIndex)
+        `when`(fixture.playerA.currentMediaItem).thenReturn(items[nextIndex])
+        fixture.activeListener.onMediaItemTransition(
+            items[nextIndex],
+            if (repeatMode == Player.REPEAT_MODE_ONE) Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
+            else Player.MEDIA_ITEM_TRANSITION_REASON_AUTO
+        )
+        assertSame(fixture.playerA, fixture.coordinator.logicalPhysicalPlayer)
+        assertSame(items[nextIndex], fixture.coordinator.logicalPhysicalPlayer.currentMediaItem)
+        assertTrue(fixture.logical.reboundPlayers.isEmpty())
+        assertTrue(fixture.integration.transitions.isEmpty())
+        assertTrue(fixture.integration.logicalHandoffs.isEmpty())
+        assertEquals(items, List(fixture.playerA.mediaItemCount, fixture.playerA::getMediaItemAt))
+        val destructiveCalls = org.mockito.Mockito.mockingDetails(fixture.playerA).invocations
+            .filter { it.method.name in setOf(
+                "setMediaItems", "setMediaItem", "replaceMediaItems", "clearMediaItems",
+                "removeMediaItems", "stop", "prepare", "pause", "seekTo", "setPlayWhenReady"
+            ) }
+        assertTrue(destructiveCalls.toString(), destructiveCalls.isEmpty())
+        assertEquals(0, fixture.scheduler.runUntilEmpty())
+        fixture.coordinator.release()
+    }
+
+    private inner class TransitionFixture(
+        val items: List<MediaItem> = listOf(localItem("first"), localItem("second")),
+        configuration: CrossfadeRuntimeConfiguration = CrossfadeRuntimeConfiguration.TEST_ENABLED,
+        repeatMode: Int = Player.REPEAT_MODE_OFF,
+        shuffle: Boolean = false,
+        currentIndex: Int = 0,
+        integrationOverride: ActivePlayerIntegration? = null,
+        initialPauseAtEnd: Boolean = false
+    ) {
+        val playerA = mock(ExoPlayer::class.java)
+        val playerB = mock(ExoPlayer::class.java)
+        val clock = ManualCrossfadeClock()
+        val scheduler = ManualCrossfadeScheduler(clock)
+        var position = 0L
+        val pipelineA: PhysicalPlayerPipeline
+        val pipelineB: PhysicalPlayerPipeline
+        val coordinator: DualPlayerPlaybackCoordinator
+        val logical = RecordingLogicalPlayer(playerA)
+        val integration = RecordingIntegration()
+        val activeListener: Player.Listener
+
+        init {
+            stubPlaylist(playerA, items, currentIndex)
+            stubPlaylist(playerB, items, 1)
+            `when`(playerA.currentMediaItem).thenReturn(items[currentIndex])
+            `when`(playerB.currentMediaItem).thenReturn(items[1])
+            `when`(playerA.repeatMode).thenReturn(repeatMode)
+            `when`(playerA.shuffleModeEnabled).thenReturn(shuffle)
+            `when`(playerA.duration).thenReturn(10_000L)
+            `when`(playerA.currentPosition).thenAnswer { position }
+            for (player in listOf(playerA, playerB)) {
+                `when`(player.playbackState).thenReturn(Player.STATE_READY)
+                `when`(player.isPlaying).thenReturn(true)
+                var guarded = initialPauseAtEnd
+                `when`(player.pauseAtEndOfMediaItems).thenAnswer { guarded }
+                org.mockito.Mockito.doAnswer { invocation ->
+                    guarded = invocation.getArgument(0)
+                    null
+                }.`when`(player).pauseAtEndOfMediaItems = org.mockito.ArgumentMatchers.anyBoolean()
+            }
+            pipelineA = pipeline(PhysicalPlayerRole.ACTIVE, playerA)
+            pipelineB = pipeline(PhysicalPlayerRole.STANDBY, playerB)
+            val firstKey = checkNotNull(StandbyTargetResolver.key(items[currentIndex]))
+            pipelineA.prepareBaseline(firstKey)
+            pipelineA.updateBaseline(firstKey, 0.6f)
+            coordinator = DualPlayerPlaybackCoordinator(
+                pipelineA, pipelineB,
+                standbyBaselinePreparer = StandbyBaselinePreparer { _, ready -> ready(0.4f); true },
+                crossfadeClock = clock,
+                crossfadeScheduler = scheduler,
+                initialCrossfadeConfiguration = configuration
+            )
+            coordinator.attachLogicalPlayer(logical, integrationOverride ?: integration)
+            val captor = ArgumentCaptor.forClass(Player.Listener::class.java)
+            verify(playerA).addListener(captor.capture())
+            activeListener = captor.value
+        }
+
+        fun startOverlap() {
+            position = 5_000L
+            coordinator.markStandbyReadyForTest()
+            coordinator.synchronizeStandby()
+        }
+
+        fun finishAtEos() = activeListener.onPlayWhenReadyChanged(
+            false, Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM
+        )
+    }
+
+    private fun albumItem(id: String, track: Int, album: String = "Live"): MediaItem {
+        val extras = mock(Bundle::class.java)
+        val values = mapOf(
+            ListeningMediaItemMetadata.ITEM_INSTANCE_ID to id,
+            ListeningMediaItemMetadata.REFERENCE_KEY to id,
+            ListeningMediaItemMetadata.FILE_SIZE_BYTES to 1L,
+            ListeningMediaItemMetadata.DATE_MODIFIED_SECONDS to 1L,
+            ListeningMediaItemMetadata.DURATION_MS to 10_000L,
+            ListeningMediaItemMetadata.PORTABLE_KEY_VERSION to 1,
+            ListeningMediaItemMetadata.ALBUM to album,
+            ListeningMediaItemMetadata.ALBUM_ARTIST to "The Warning"
+        )
+        for ((key, value) in values) `when`(extras.get(key)).thenReturn(value)
+        `when`(extras.containsKey(AlbumTransitionMetadata.RAW_TRACK_NUMBER)).thenReturn(true)
+        `when`(extras.getInt(AlbumTransitionMetadata.RAW_TRACK_NUMBER)).thenReturn(track)
+        `when`(extras.getString(AlbumTransitionMetadata.FOLDER_PATH)).thenReturn("Music/Live")
+        return localItem(id).buildUpon()
+            .setMediaMetadata(MediaMetadata.Builder().setExtras(extras).build()).build()
     }
 
     @Test
@@ -800,8 +857,9 @@ class DualPlayerPlaybackCoordinatorTest {
         verify(playerA).setMediaItems(playlist, 2, 0L)
         assertTrue(
             trace.any { entry ->
-                entry ==
+                entry.startsWith(
                     "NEW_ACTIVE mediaId=second futureCrossfadeSuppressed=false"
+                )
             }
         )
         coordinator.onLogicalCommand(
@@ -945,8 +1003,9 @@ class DualPlayerPlaybackCoordinatorTest {
         assertEquals(listOf(first, second, third), integration.completedOutgoing)
         assertTrue(
             trace.any { entry ->
-                entry ==
+                entry.startsWith(
                     "NEW_ACTIVE mediaId=fourth futureCrossfadeSuppressed=false"
+                )
             }
         )
         coordinator.onLogicalCommand(
