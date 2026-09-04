@@ -911,7 +911,9 @@ class PlaybackService : MediaLibraryService() {
                 .setHandleAudioBecomingNoisy(
                     role.handlesAudioBecomingNoisy
                 )
-                .setPauseAtEndOfMediaItems(true)
+                // Native playlist progression is the default. The coordinator guards EOS
+                // only for an intended crossfade, never for a sequential album boundary.
+                .setPauseAtEndOfMediaItems(false)
                 .build()
             if (role == PhysicalPlayerRole.STANDBY) {
                 physicalPlayer.volume = 0f
