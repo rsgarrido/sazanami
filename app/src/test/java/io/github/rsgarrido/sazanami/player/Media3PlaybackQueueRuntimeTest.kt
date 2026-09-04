@@ -19,6 +19,26 @@ import org.mockito.Mockito.`when`
 
 class Media3PlaybackQueueRuntimeTest {
     @Test
+    fun duplicateRestorationUsesEntryIdentityInPlaybackOrderForEveryRepeatMode() {
+        PersistedQueueRepeatMode.entries.forEach { repeat ->
+            val player = mock(Player::class.java)
+            val runtime = Media3PlaybackQueueRuntime(player, { true }, { emptyList() }, {}, { _, _ -> },
+                mediaItemFactory = { mock(MediaItem::class.java) })
+            val repeated = song(7L)
+            runtime.replaceTimeline(PlaybackQueueRestoration(
+                queueId = "queue",
+                entries = listOf(
+                    resolved("first-copy", repeated, 0, 2),
+                    resolved("other", song(8L), 1, 0),
+                    resolved("second-copy", repeated, 2, 1)),
+                currentEntryId = "second-copy", currentPositionMs = 4321L,
+                shouldPlay = false, shuffleEnabled = true, repeatMode = repeat))
+            verify(player).setMediaItems(anyList(), eq(1), eq(4321L))
+            verify(player, never()).seekToDefaultPosition(1)
+        }
+    }
+
+    @Test
     fun playingSwitchUsesOneSetPrepareAndPlayPath() {
         val player = mock(Player::class.java)
         `when`(player.playWhenReady).thenReturn(true)

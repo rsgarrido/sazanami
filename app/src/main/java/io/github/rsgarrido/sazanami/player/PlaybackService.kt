@@ -9,7 +9,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.provider.MediaStore
 import android.util.Log
 import androidx.annotation.OptIn
 import android.content.Intent
@@ -65,6 +64,9 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
@@ -91,6 +93,9 @@ class PlaybackService : MediaLibraryService() {
     @Volatile
     private var androidAutoCatalogSnapshot: AndroidAutoCatalogSnapshot = AndroidAutoCatalogSnapshot.EMPTY
     private var servicePlaybackContextSongs: List<Song> = emptyList()
+    private var artworkJob: Job? = null
+    private val autoSubscriptions = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val autoShell by lazy { buildBrowseTree(AndroidAutoCatalogSnapshot.EMPTY) }
     private lateinit var audioManager: AudioManager
     private var isRemotePlayback = false
     private var activeServiceBinding: ActiveServiceBinding? = null
@@ -336,9 +341,11 @@ class PlaybackService : MediaLibraryService() {
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
             params: LibraryParams?
-        ): ListenableFuture<LibraryResult<MediaItem>> = serviceBackgroundFuture {
-            val catalog = loadAndroidAutoCatalog()
-            LibraryResult.ofItem(buildBrowseTree(catalog).toMediaItem(), params)
+        ): ListenableFuture<LibraryResult<MediaItem>> {
+            val started = SystemClock.elapsedRealtime()
+            val result = LibraryResult.ofItem(autoShell.toMediaItem(), params)
+            AndroidAutoDiagnostics.log("root elapsedMs=${SystemClock.elapsedRealtime() - started}")
+            return Futures.immediateFuture(result)
         }
 
         override fun onGetItem(
@@ -346,9 +353,10 @@ class PlaybackService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             mediaId: String
         ): ListenableFuture<LibraryResult<MediaItem>> = serviceBackgroundFuture {
-            val item = buildBrowseTree(loadAndroidAutoCatalog()).findNode(mediaId)
+            val item = autoShell.findNode(mediaId)
+                ?: buildBrowseTree(loadAndroidAutoCatalog()).findNode(mediaId)
             if (item != null) {
-                LibraryResult.ofItem(item.toMediaItem(), null)
+                LibraryResult.ofItem(item.withPreparedArtwork().toMediaItem(), null)
             } else {
                 LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
             }
@@ -362,16 +370,31 @@ class PlaybackService : MediaLibraryService() {
             pageSize: Int,
             params: LibraryParams?
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = serviceBackgroundFuture {
-            val children = buildBrowseTree(loadAndroidAutoCatalog())
+            if (page < 0 || pageSize <= 0) return@serviceBackgroundFuture LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
+            val started = SystemClock.elapsedRealtime()
+            val children = (if (parentId == ROOT_ID) autoShell else buildBrowseTree(loadAndroidAutoCatalog()))
                 .findNode(parentId)
                 ?.children
                 .orEmpty()
-            val fromIndex = (page * pageSize).coerceAtMost(children.size)
-            val toIndex = (fromIndex + pageSize).coerceAtMost(children.size)
+            val fromIndex = (page.toLong() * pageSize).coerceAtMost(children.size.toLong()).toInt()
+            val toIndex = (fromIndex.toLong() + pageSize).coerceAtMost(children.size.toLong()).toInt()
+            val items = children.subList(fromIndex, toIndex).map { it.withPreparedArtwork().toMediaItem() }
+            AndroidAutoDiagnostics.log("children parent=$parentId elapsedMs=${SystemClock.elapsedRealtime() - started} count=${items.size}")
             LibraryResult.ofItemList(
-                children.subList(fromIndex, toIndex).map { it.toMediaItem() },
+                items,
                 params
             )
+        }
+
+        override fun onSubscribe(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            parentId: String,
+            params: LibraryParams?
+        ): ListenableFuture<LibraryResult<Void>> {
+            autoSubscriptions.add(parentId)
+            // Preserve Media3's parent validation and initial modern-browser notification.
+            return super.onSubscribe(session, browser, parentId, params)
         }
 
         override fun onSearch(
@@ -394,15 +417,17 @@ class PlaybackService : MediaLibraryService() {
             pageSize: Int,
             params: LibraryParams?
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = serviceBackgroundFuture {
+            if (page < 0 || pageSize <= 0) return@serviceBackgroundFuture LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
             val results = AndroidAutoSearchResolver.searchSongs(
                 query = query,
                 catalog = loadAndroidAutoCatalog()
             )
-            val fromIndex = (page * pageSize).coerceAtMost(results.size)
-            val toIndex = (fromIndex + pageSize).coerceAtMost(results.size)
+            val fromIndex = (page.toLong() * pageSize).coerceAtMost(results.size.toLong()).toInt()
+            val toIndex = (fromIndex.toLong() + pageSize).coerceAtMost(results.size.toLong()).toInt()
             LibraryResult.ofItemList(
                 results.subList(fromIndex, toIndex).map { song ->
-                    song.toAndroidAutoSearchMediaItem(query)
+                    val artwork = song.albumArtUri ?: androidAutoCatalogRepository.artworkUriFor(song)
+                    song.copy(albumArtUri = artwork).toAndroidAutoSearchMediaItem(query)
                 },
                 params
             )
@@ -424,6 +449,30 @@ class PlaybackService : MediaLibraryService() {
                     SessionResult(SessionResult.RESULT_SUCCESS)
                 }
                 else -> super.onCustomCommand(session, controller, customCommand, args)
+            }
+        }
+
+        override fun onAddMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: List<MediaItem>
+        ): ListenableFuture<List<MediaItem>> {
+            if (mediaItems.all { it.localConfiguration != null }) return Futures.immediateFuture(mediaItems)
+            return serviceBackgroundFuture {
+                val catalog = loadAndroidAutoCatalog()
+                mediaItems.flatMap { item ->
+                    if (item.localConfiguration != null) return@flatMap listOf(item)
+                    val browse = resolveBrowseSelection(item.mediaId, catalog)
+                    val songId = item.mediaId.substringAfterLast(':').toLongOrNull()
+                    val selected = browse ?: songId?.let { AndroidAutoSearchResolver.resolveSongSelection(it, catalog) }
+                    if (selected != null) return@flatMap listOf(selected.selectedSong.toPlayableMediaItem())
+                    if (item.mediaId.isNotBlank() && item.requestMetadata.searchQuery == null) {
+                        throw IllegalArgumentException("Unknown media ID")
+                    }
+                    AndroidAutoSearchResolver.resolvePlayback(item.toAndroidAutoSearchRequest(), catalog)
+                        ?.songs?.map { it.toPlayableMediaItem() }
+                        ?: throw IllegalArgumentException("No matching media found")
+                }
             }
         }
 
@@ -454,6 +503,7 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onCreate() {
+        val serviceStarted = SystemClock.elapsedRealtime()
         super.onCreate()
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
@@ -503,11 +553,13 @@ class PlaybackService : MediaLibraryService() {
         audioManager = getSystemService(AudioManager::class.java)
         playerStateStorage = PlayerStateStorage(this)
         val database = DatabaseProvider.getDatabase(this)
+        val catalogStarted = SystemClock.elapsedRealtime()
         androidAutoCatalogRepository = AndroidAutoCatalogRepository(
             context = this,
             database = database,
             preferencesRepository = appPreferencesRepository
         )
+        AndroidAutoDiagnostics.log("catalogInit elapsedMs=${SystemClock.elapsedRealtime() - catalogStarted}")
         listeningAdapter = PlaybackServiceListeningAdapter(
             trackResolver = ListeningNativeTrackResolver(database),
             eventRepository = ListeningEventRepository(database.listeningEventDao())
@@ -546,7 +598,16 @@ class PlaybackService : MediaLibraryService() {
             onActiveQueueChanged = PlaybackQueueRuntimeBridge::updateActiveQueueId
         )
         PlaybackQueueRuntimeBridge.register(playbackQueueCoordinator)
-        serviceScope.launch { playbackQueueCoordinator.initialize() }
+        serviceScope.launch {
+            try {
+                playbackQueueCoordinator.initialize()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                // A temporarily unavailable cached queue must not take down the browse service.
+                AndroidAutoDiagnostics.log("queue restore unavailable type=${error.javaClass.simpleName}")
+            }
+        }
         bindActivePipeline(activePipeline, transition = null)
         audioManager.registerAudioDeviceCallback(audioDeviceCallback, checkpointHandler)
         applyAudioOffloadPreference(AudioOffloadPreference.DISABLED)
@@ -567,6 +628,7 @@ class PlaybackService : MediaLibraryService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        val sessionStarted = SystemClock.elapsedRealtime()
         mediaSession = MediaLibrarySession.Builder(this, sessionPlayer, libraryCallback)
             .setSessionActivity(sessionActivity)
             .setMediaButtonPreferences(
@@ -576,11 +638,19 @@ class PlaybackService : MediaLibraryService() {
                 )
             )
             .build()
+        AndroidAutoDiagnostics.log("session elapsedMs=${SystemClock.elapsedRealtime() - sessionStarted}")
+        sessionPlayer.addListener(AndroidAutoPlayerDiagnostics(sessionPlayer))
+        sessionPlayer.addListener(object : Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = refreshAutoArtwork()
+            override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) = refreshAutoArtwork()
+        })
+        observeAndroidAutoCatalog()
         PlaybackLibraryBridge.registerPlaybackPolicyListener { shuffleEnabled, repeatMode ->
             serviceScope.launch {
                 updateAndroidAutoMediaButtonPreferences(shuffleEnabled, repeatMode)
             }
         }
+        AndroidAutoDiagnostics.log("service elapsedMs=${SystemClock.elapsedRealtime() - serviceStarted}")
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
@@ -596,6 +666,7 @@ class PlaybackService : MediaLibraryService() {
         audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)
         PlaybackLibraryBridge.unregisterPlaybackPolicyListener()
         PlaybackQueueRuntimeBridge.unregister(playbackQueueCoordinator)
+        androidAutoCatalogRepository.close()
         mediaSession?.release()
         mediaSession = null
         sessionPlayer.releaseTransitionResources()
@@ -939,12 +1010,81 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private fun buildBrowseTree(catalog: AndroidAutoCatalogSnapshot): AutoBrowseNode {
-        return buildAndroidAutoBrowseTree(
-            songs = catalog.songs,
-            rootTitle = getString(R.string.app_name),
-            playlists = catalog.playlists,
-            artistArtworkUris = catalog.artistArtworkUris
-        )
+        val started = SystemClock.elapsedRealtime()
+        return tracePerformance("CDP.Auto.browseIndex") {
+            catalog.browseTree(getString(R.string.app_name))
+        }.also {
+            AndroidAutoDiagnostics.log("browseIndex elapsedMs=${SystemClock.elapsedRealtime() - started} songs=${catalog.songs.size}")
+        }
+    }
+
+    private fun observeAndroidAutoCatalog() {
+        serviceScope.launch {
+            try {
+                kotlinx.coroutines.withContext(Dispatchers.IO) { androidAutoCatalogRepository.startObserving() }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                AndroidAutoDiagnostics.log("catalog observer unavailable type=${error.javaClass.simpleName}")
+            }
+            var announcedSnapshot = AndroidAutoCatalogSnapshot.EMPTY
+            combine(
+                androidAutoCatalogRepository.changes,
+                PlaybackLibraryBridge.catalogPublication,
+                appPreferencesRepository.state.filter { it.isLoaded }
+                    .map { it.folderSelectionMode to it.selectedLibraryFolders }
+                    .distinctUntilChanged()
+            ) { revision, publication, selection -> Triple(revision, publication, selection) }
+                .collectLatest {
+                    // Coalesce a burst of Room/phone publications; this is not a periodic refresh.
+                    delay(150)
+                    try {
+                        val previous = announcedSnapshot
+                        val snapshot = loadAndroidAutoCatalog()
+                        announcedSnapshot = snapshot
+                        refreshAutoArtwork()
+                        if (previous != snapshot && autoSubscriptions.isNotEmpty()) {
+                            val oldTree = kotlinx.coroutines.withContext(Dispatchers.Default) { buildBrowseTree(previous) }
+                            val newTree = kotlinx.coroutines.withContext(Dispatchers.Default) { buildBrowseTree(snapshot) }
+                            autoSubscriptions.forEach { parentId ->
+                                val children = newTree.findNode(parentId)?.children.orEmpty()
+                                if (oldTree.findNode(parentId)?.children != children) {
+                                    mediaSession?.notifyChildrenChanged(parentId, children.size, null)
+                                }
+                            }
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        AndroidAutoDiagnostics.log("catalog unavailable type=${error.javaClass.simpleName}")
+                    }
+                }
+        }.invokeOnCompletion { androidAutoCatalogRepository.close() }
+    }
+
+    private suspend fun AutoBrowseNode.withPreparedArtwork(): AutoBrowseNode {
+        if (artworkUri != null) return this
+        val candidate = song ?: children.firstNotNullOfOrNull { it.song } ?: return this
+        return copy(artworkUri = androidAutoCatalogRepository.artworkUriFor(candidate))
+    }
+
+    private fun refreshAutoArtwork() {
+        artworkJob?.cancel()
+        val item = sessionPlayer.currentMediaItem ?: return
+        artworkJob = serviceScope.launch {
+            try {
+                val song = androidAutoCatalogSnapshot.songs.firstOrNull {
+                    it.id.toString() == item.mediaId && it.uri == item.localConfiguration?.uri
+                }
+                val artwork = if (song != null) androidAutoCatalogRepository.artworkUriFor(song)
+                    else androidAutoCatalogRepository.externallyReadableArtwork(item.mediaMetadata.artworkUri)
+                if (sessionPlayer.currentMediaItem == item) sessionPlayer.updateArtwork(item, artwork)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                AndroidAutoDiagnostics.log("artwork unavailable type=${error.javaClass.simpleName}")
+            }
+        }
     }
 
     private fun AutoBrowseNode.toMediaItem(): MediaItem {
@@ -1008,11 +1148,8 @@ class PlaybackService : MediaLibraryService() {
         startPositionMs: Long
     ): MediaSession.MediaItemsWithStartPosition {
         val resolutionStartedAt = SystemClock.elapsedRealtime()
-        val cachedCatalog = androidAutoCatalogSnapshot.takeIf { snapshot ->
-            snapshot.songs.isNotEmpty()
-        }
-        val catalog = cachedCatalog ?: loadAndroidAutoCatalog()
-        val catalogSource = if (cachedCatalog != null) "snapshot" else "repository"
+        val catalog = loadAndroidAutoCatalog()
+        val catalogSource = "repository"
         if (catalog.songs.isEmpty() || mediaItems.isEmpty()) {
             return MediaSession.MediaItemsWithStartPosition(
                 mediaItems,
@@ -1118,13 +1255,12 @@ class PlaybackService : MediaLibraryService() {
         val orderedSongs = if (logicalShuffleMode.isEnabled) {
             buildList {
                 add(selectedSong)
-                addAll(match.songs.filterNot { song -> song.id == selectedSong.id }.shuffled())
+                addAll(match.songs.filterIndexed { index, _ -> index != match.startIndex }.shuffled())
             }
         } else {
             match.songs
         }
-        val resolvedIndex = orderedSongs.indexOfFirst { song -> song.id == selectedSong.id }
-            .coerceAtLeast(0)
+        val resolvedIndex = if (logicalShuffleMode.isEnabled) 0 else match.startIndex
         if (hasSearchRequest) {
             Log.i(
                 ANDROID_AUTO_VOICE_TAG,
@@ -1147,31 +1283,13 @@ class PlaybackService : MediaLibraryService() {
         val tree = buildBrowseTree(catalog)
         val selectedNode = tree.findNode(requestedMediaId) ?: return null
         val selectedSong = selectedNode.song ?: return null
-        val contextSongs = tree.findParent(requestedMediaId)
-            ?.children
-            ?.mapNotNull(AutoBrowseNode::song)
-            .orEmpty()
+        val contextNodes = tree.findParent(requestedMediaId)?.children.orEmpty()
+            .filter { it.song != null }
+        val contextSongs = contextNodes.mapNotNull(AutoBrowseNode::song)
             .ifEmpty { listOf(selectedSong) }
-        val selectedIndex = contextSongs.indexOfFirst { song -> song.id == selectedSong.id }
+        val selectedIndex = contextNodes.indexOfFirst { it.id == requestedMediaId }
             .coerceAtLeast(0)
         return AndroidAutoPlaybackMatch(contextSongs, selectedIndex)
-    }
-
-    @Suppress("DEPRECATION")
-    private fun MediaItem.toAndroidAutoSearchRequest(): AndroidAutoSearchRequest {
-        val extras = requestMetadata.extras
-        val query = requestMetadata.searchQuery
-        return AndroidAutoSearchRequest(
-            query = query,
-            title = extras?.getString(MediaStore.EXTRA_MEDIA_TITLE)
-                ?: query?.let { mediaMetadata.title?.toString() },
-            artist = extras?.getString(MediaStore.EXTRA_MEDIA_ARTIST)
-                ?: query?.let { mediaMetadata.artist?.toString() },
-            album = extras?.getString(MediaStore.EXTRA_MEDIA_ALBUM)
-                ?: query?.let { mediaMetadata.albumTitle?.toString() },
-            playlist = extras?.getString(MediaStore.EXTRA_MEDIA_PLAYLIST),
-            genre = extras?.getString(MediaStore.EXTRA_MEDIA_GENRE)
-        )
     }
 
     private suspend fun toggleAndroidAutoShuffle() {

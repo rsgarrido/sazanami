@@ -2,6 +2,7 @@ package io.github.rsgarrido.sazanami.player
 
 import android.os.Handler
 import android.os.SystemClock
+import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.ForwardingSimpleBasePlayer
@@ -305,6 +306,15 @@ internal class SmoothPlaybackPlayer(
 ) : ForwardingSimpleBasePlayer(initialPhysicalPlayer), LogicalPlayerRoleBinding {
 
     private var physicalPlayer: Player = initialPhysicalPlayer
+    private var artworkOverride: Pair<SmoothPlaybackMediaIdentity, Uri?>? = null
+
+    fun updateArtwork(mediaItem: MediaItem, uri: Uri?) {
+        val identity = mediaItem.smoothPlaybackIdentity() ?: return
+        val updated = identity to uri
+        if (artworkOverride == updated) return
+        artworkOverride = updated
+        invalidateState()
+    }
 
     private var logicalPlayWhenReadyChangeReason =
         Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
@@ -343,8 +353,19 @@ internal class SmoothPlaybackPlayer(
         get() = transitionCoordinator.logicalPlayWhenReady
 
     override fun getState(): SimpleBasePlayer.State {
-        return super.getState()
+        val state = super.getState()
+        val artwork = artworkOverride?.takeIf {
+            it.first == physicalPlayer.currentMediaItem.smoothPlaybackIdentity()
+        }
+        return state
             .buildUpon()
+            // Keep Media3's exact timeline/UIDs; only enrich the current session metadata.
+            .setPlaylist(
+                state.timeline,
+                state.currentTracks,
+                if (artwork != null) state.currentMetadata.buildUpon()
+                    .setArtworkUri(artwork.second).build() else state.currentMetadata
+            )
             .setPlayWhenReady(
                 transitionCoordinator.logicalPlayWhenReady,
                 logicalPlayWhenReadyChangeReason

@@ -102,6 +102,58 @@ class AndroidAutoSearchResolverTest {
         assertEquals(catalog.songs.map(Song::id), match.songs.map(Song::id))
     }
 
+    @Test
+    fun `exact song beats partial playlist and exact artist beats partial album`() {
+        val expanded = catalog.copy(
+            songs = catalog.songs + song(9, "Other", "Other", "Slipknot Covers", 1),
+            playlists = catalog.playlists + AutoPlaylistEntry(99, "Left Behind Mix", listOf(warning))
+        )
+        assertEquals(leftBehind.id, AndroidAutoSearchResolver.resolvePlayback(
+            AndroidAutoSearchRequest(query = "Left Behind"), expanded
+        )!!.selectedSong.id)
+        assertEquals(setOf(1L, 2L), AndroidAutoSearchResolver.resolvePlayback(
+            AndroidAutoSearchRequest(query = "Slipknot"), expanded
+        )!!.songs.map(Song::id).toSet())
+    }
+
+    @Test
+    fun `genre and playlist searches produce playable browser results`() {
+        val rockCatalog = catalog.copy(songs = listOf(leftBehind.copy(genres = listOf("Rock")), warning))
+        assertEquals(listOf(1L), AndroidAutoSearchResolver.resolvePlayback(
+            AndroidAutoSearchRequest(query = "play rock"), rockCatalog
+        )!!.songs.map(Song::id))
+        assertEquals(listOf(1L), AndroidAutoSearchResolver.searchSongs("rock", rockCatalog).map(Song::id))
+        assertEquals(setOf(1L, 3L), AndroidAutoSearchResolver.searchSongs("Heavy Rotation", catalog).map(Song::id).toSet())
+    }
+
+    @Test
+    fun `cold and warm artwork differences do not affect any voice category`() {
+        val cold = catalog.copy(songs = catalog.songs.map { it.copy(genres = listOf("Rock")) })
+        val warm = cold.copy(songs = cold.songs.map { it.copy(albumArtUri = mock(Uri::class.java)) })
+        listOf(
+            AndroidAutoSearchRequest(query = "Left Behind"),
+            AndroidAutoSearchRequest(artist = "Slipknot"),
+            AndroidAutoSearchRequest(album = "Iowa"),
+            AndroidAutoSearchRequest(playlist = "Heavy Rotation"),
+            AndroidAutoSearchRequest(genre = "Rock"),
+            AndroidAutoSearchRequest(query = "play music")
+        ).forEach { request ->
+            val coldMatch = AndroidAutoSearchResolver.resolvePlayback(request, cold)!!
+            val warmMatch = AndroidAutoSearchResolver.resolvePlayback(request, warm)!!
+            assertEquals(coldMatch.songs.map(Song::id), warmMatch.songs.map(Song::id))
+            assertEquals(coldMatch.startIndex, warmMatch.startIndex)
+        }
+    }
+
+    @Test
+    fun `ambiguous titles use deterministic voice ranking`() {
+        val other = leftBehind.copy(id = 99L, album = "Z Compilation")
+        val expanded = catalog.copy(songs = listOf(other) + catalog.songs)
+        assertEquals(leftBehind.id, AndroidAutoSearchResolver.resolvePlayback(
+            AndroidAutoSearchRequest(query = "Left Behind"), expanded
+        )!!.selectedSong.id)
+    }
+
     private fun song(
         id: Long,
         title: String,
