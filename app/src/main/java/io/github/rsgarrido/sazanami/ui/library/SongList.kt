@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -77,7 +78,11 @@ fun SongList(
     quickRatingMode: Boolean = false,
     listState: LazyListState? = null,
     headerContent: (@Composable () -> Unit)? = null,
-    emptyContent: (@Composable () -> Unit)? = null
+    emptyContent: (@Composable () -> Unit)? = null,
+    beforeSongsContent: (androidx.compose.foundation.lazy.LazyListScope.() -> Unit)? = null,
+    afterSongsContent: (androidx.compose.foundation.lazy.LazyListScope.() -> Unit)? = null,
+    showOverflowActions: Boolean = false,
+    additionalSongActions: (Song) -> List<LibraryItemAction> = { emptyList() }
 ) {
     var actionSheetTarget by remember {
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
@@ -137,6 +142,7 @@ fun SongList(
         modifier = Modifier.weight(1f).fillMaxWidth(),
         contentPadding = PaddingValues(bottom = if (selectionActive) 0.dp else bottomContentPadding)
     ) {
+        beforeSongsContent?.invoke(this)
         headerContent?.let { content ->
             item(key = "library-song-list-header") {
                 content()
@@ -216,6 +222,31 @@ fun SongList(
                     isSelectionSelected -> ({
                         LibrarySelectionCheckBadge()
                     })
+                    showOverflowActions && !selectionActive -> ({
+                        androidx.compose.material3.IconButton(onClick = {
+                            val target = songActionSheetTarget(
+                                song = song,
+                                wasRecentlyAdded = wasRecentlyAdded,
+                                isFavorite = isFavorite,
+                                onPlayNextClick = onPlayNextClick,
+                                onAddToQueueClick = onAddToQueueClick,
+                                onAddToAnotherQueueClick = libraryQueueUi.onAddToAnotherQueue,
+                                onPlayInNewQueueClick = { libraryQueueUi.onPlayInNewQueue("", listOf(it)) },
+                                onToggleFavoriteClick = onToggleFavoriteClick,
+                                onAddToPlaylistClick = onAddToPlaylistClick,
+                                onEditSongTagsClick = onEditSongTagsClick,
+                                rateSongLabel = rateSongLabel,
+                                onRateSongClick = ratingUi.onOpen,
+                                homePinAction = homePinUi.actionForSong(song)
+                            )
+                            actionSheetTarget = target.copy(actions = target.actions + additionalSongActions(song))
+                        }) {
+                            androidx.compose.material3.Icon(
+                                androidx.compose.material.icons.Icons.Filled.MoreVert,
+                                contentDescription = "Actions for ${song.title}"
+                            )
+                        }
+                    })
                     quickRatingMode -> null
                     rating != null -> ({
                         CompactRatingIndicator(
@@ -293,6 +324,7 @@ fun SongList(
                     )
             )
         }
+        afterSongsContent?.invoke(this)
     }
 
         if (selectionActive) {

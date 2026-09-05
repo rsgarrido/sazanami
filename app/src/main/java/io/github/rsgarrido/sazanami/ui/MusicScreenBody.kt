@@ -719,6 +719,38 @@ internal fun MusicScreenBody(
                                     message = libraryErrorMessage,
                                     modifier = Modifier.padding(16.dp)
                                 )
+                                isSearchDestination -> io.github.rsgarrido.sazanami.ui.library.LibrarySearchContent(
+                                    songs = songs,
+                                    playlists = playlists,
+                                    query = searchQuery,
+                                    currentSong = currentSong,
+                                    recentlyAddedSongIds = recentlyAddedSongIds,
+                                    favoriteMembershipKeys = favoriteMembershipKeys,
+                                    onSongClick = onSongClick,
+                                    onPlaySongsClick = onPlaySongsClick,
+                                    onPlayNextSongsClick = { label, tracks -> queueSnackbarActions.playNextSongs(label, tracks) },
+                                    onAddSongsToQueueClick = { label, tracks -> queueSnackbarActions.addSongsToQueue(label, tracks) },
+                                    onPlayNextClick = { queueSnackbarActions.playNext(it) },
+                                    onAddToQueueClick = { queueSnackbarActions.addToQueue(it) },
+                                    onToggleFavoriteClick = onToggleFavoriteClick,
+                                    onAddToPlaylistClick = onAddToPlaylistClick,
+                                    onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
+                                    onEditSongTagsClick = onEditSongTagsClick,
+                                    onAlbumSelected = { key ->
+                                        onOpenLibrary(LibraryTab.ALBUMS)
+                                        onAlbumSelected(key)
+                                    },
+                                    onArtistSelected = { name ->
+                                        onOpenLibrary(LibraryTab.ARTISTS)
+                                        onArtistSelected(name)
+                                    },
+                                    onPlaylistSelected = { playlist ->
+                                        onOpenLibrary(LibraryTab.PLAYLISTS)
+                                        onPlaylistClick(playlist)
+                                    },
+                                    bottomContentPadding = bottomContentPadding,
+                                    modifier = Modifier.weight(1f)
+                                )
                                 songs.isEmpty() -> EmptyLibraryNotice(
                                     modifier = Modifier.padding(16.dp)
                                 )
