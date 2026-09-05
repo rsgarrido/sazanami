@@ -537,7 +537,7 @@ internal fun MusicScreen(
 
     fun clearPlaylistSelection() {
         val hadSelection = selectedPlaylistId != null || selectedPlaylistStateId != null
-        selectedPlaylistId = null
+        navigationState.closePlaylist()
         if (hadSelection) {
             onPlaylistCleared()
         }
@@ -712,14 +712,11 @@ internal fun MusicScreen(
             }
 
             selectedAlbumKey != null -> {
-                selectedAlbumKey = null
-                if (selectedArtistName != null) {
-                    selectedLibraryTab = LibraryTab.ARTISTS
-                }
+                navigationState.closeAlbum()
             }
 
             selectedArtistName != null -> {
-                selectedArtistName = null
+                navigationState.closeArtist()
             }
 
             selectedGenreKey != null -> {
@@ -1089,6 +1086,8 @@ internal fun MusicScreen(
                     selectedGenreKey = selectedGenreKey,
                     selectedPlaylistId = selectedPlaylistId,
                     searchQuery = searchQuery,
+                    searchCategory = navigationState.searchCategory.value,
+                    onSearchCategoryChange = { navigationState.searchCategory.value = it },
                     selectedSongFilterState = selectedSongFilterState,
                     selectedSongSortState = selectedSongSortState,
                     selectedArtistSortState = selectedArtistSortState,
@@ -1251,21 +1250,17 @@ internal fun MusicScreen(
                     },
                     onArtistSelected = { artistName ->
                         librarySelectionUi.onClear()
-                        selectedArtistName = artistName
+                        navigationState.openArtist(artistName)
                     },
                     onBackFromArtist = {
-                        selectedArtistName = null
+                        navigationState.closeArtist()
                     },
                     onAlbumSelected = { albumKey ->
                         librarySelectionUi.onClear()
-                        selectedAlbumKey = albumKey
-                        selectedLibraryTab = LibraryTab.ALBUMS
+                        navigationState.openAlbum(albumKey)
                     },
                     onBackFromAlbum = {
-                        selectedAlbumKey = null
-                        if (selectedArtistName != null) {
-                            selectedLibraryTab = LibraryTab.ARTISTS
-                        }
+                        navigationState.closeAlbum()
                     },
                     onGenreSelected = { genreKey ->
                         librarySelectionUi.onClear()
@@ -1293,7 +1288,7 @@ internal fun MusicScreen(
                     onRenamePlaylistClick = onRenamePlaylistClick,
                     onPlaylistClick = { playlist ->
                         librarySelectionUi.onClear()
-                        selectedPlaylistId = playlist.playlistId
+                        navigationState.openPlaylist(playlist.playlistId)
                         onPlaylistSelected(playlist)
                     },
                     onDeletePlaylistClick = onDeletePlaylistClick,

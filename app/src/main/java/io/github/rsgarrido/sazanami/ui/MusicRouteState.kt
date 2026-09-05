@@ -13,6 +13,7 @@ import io.github.rsgarrido.sazanami.ui.library.LibrarySortStateSaver
 import io.github.rsgarrido.sazanami.ui.library.LibrarySongFilterState
 import io.github.rsgarrido.sazanami.ui.library.LibrarySongFilterStateSaver
 import io.github.rsgarrido.sazanami.ui.library.LibraryTab
+import io.github.rsgarrido.sazanami.ui.library.SearchCategory
 import io.github.rsgarrido.sazanami.ui.navigation.MainDestination
 import io.github.rsgarrido.sazanami.ui.navigation.PlaybackLaunchContext
 import io.github.rsgarrido.sazanami.ui.navigation.playbackLaunchContextSaver
@@ -33,8 +34,34 @@ class MusicNavigationState internal constructor(
     val selectedSongSortState: MutableState<LibrarySortState>,
     val selectedArtistSortState: MutableState<LibrarySortState>,
     val selectedAlbumSortState: MutableState<LibrarySortState>,
-    val selectedFavoriteSortState: MutableState<LibrarySortState>
-)
+    val selectedFavoriteSortState: MutableState<LibrarySortState>,
+    val searchCategory: MutableState<SearchCategory> = mutableStateOf(SearchCategory.ALL)
+) {
+    // Detail selection is layered over the current main destination, which remains the origin.
+    fun openAlbum(key: String) {
+        selectedAlbumKey.value = key
+        selectedLibraryTab.value = LibraryTab.ALBUMS
+    }
+
+    fun openArtist(name: String) {
+        selectedArtistName.value = name
+        selectedLibraryTab.value = LibraryTab.ARTISTS
+    }
+
+    fun openPlaylist(id: Long) {
+        selectedPlaylistId.value = id
+        selectedLibraryTab.value = LibraryTab.PLAYLISTS
+    }
+
+    fun closeAlbum() {
+        selectedAlbumKey.value = null
+        if (selectedArtistName.value != null) selectedLibraryTab.value = LibraryTab.ARTISTS
+    }
+
+    fun closeArtist() { selectedArtistName.value = null }
+
+    fun closePlaylist() { selectedPlaylistId.value = null }
+}
 
 @Composable
 fun rememberMusicNavigationState(): MusicNavigationState {
@@ -48,6 +75,7 @@ fun rememberMusicNavigationState(): MusicNavigationState {
     val selectedGenreKey = rememberSaveable { mutableStateOf<String?>(null) }
     val selectedPlaylistId = rememberSaveable { mutableStateOf<Long?>(null) }
     val searchQuery = rememberSaveable { mutableStateOf("") }
+    val searchCategory = rememberSaveable { mutableStateOf(SearchCategory.ALL) }
     val selectedSongFilterState = rememberSaveable(stateSaver = LibrarySongFilterStateSaver) {
         mutableStateOf(LibrarySongFilterState())
     }
@@ -80,6 +108,7 @@ fun rememberMusicNavigationState(): MusicNavigationState {
         selectedGenreKey,
         selectedPlaylistId,
         searchQuery,
+        searchCategory,
         selectedSongFilterState,
         selectedSongSortState,
         selectedArtistSortState,
@@ -99,7 +128,8 @@ fun rememberMusicNavigationState(): MusicNavigationState {
             selectedSongSortState,
             selectedArtistSortState,
             selectedAlbumSortState,
-            selectedFavoriteSortState
+            selectedFavoriteSortState,
+            searchCategory
         )
     }
 }

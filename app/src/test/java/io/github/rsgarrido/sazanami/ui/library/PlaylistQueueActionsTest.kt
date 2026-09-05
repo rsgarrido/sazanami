@@ -6,6 +6,20 @@ import org.junit.Test
 
 class PlaylistQueueActionsTest {
     @Test
+    fun everySharedPlaylistQueueActionDispatchesTheOriginalPlaylist() {
+        val playlist = Playlist(4, "Road Trip", 3)
+        val received = mutableListOf<Pair<String, Playlist>>()
+        val actions = playlistQueueActions(playlist, LibraryQueueUiEnvironment(
+            onPlayPlaylistNext = { received += "next" to it },
+            onAddPlaylistToAnotherQueue = { received += "another" to it },
+            onPlayPlaylistInNewQueue = { received += "new" to it }
+        ), onAddToQueue = { received += "queue" to it })
+        actions.forEach { it.onClick() }
+        assertEquals(listOf("next", "queue", "another", "new"), received.map { it.first })
+        received.forEach { assertEquals(playlist, it.second) }
+    }
+
+    @Test
     fun playNextIsPresentAndUsesTheSharedPlaylistQueueCallback() {
         val playlist = Playlist(playlistId = 4L, name = "Road Trip", songCount = 3)
         var playedNext: Playlist? = null

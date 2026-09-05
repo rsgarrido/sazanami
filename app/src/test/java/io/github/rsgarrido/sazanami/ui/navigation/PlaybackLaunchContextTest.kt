@@ -6,6 +6,19 @@ import org.junit.Test
 
 class PlaybackLaunchContextTest {
     @Test
+    fun searchOwnedDetailsKeepTheirEntityPlaybackContext() {
+        assertEquals(PlaybackLaunchContext.AlbumDetail("album"), capturePlaybackLaunchContext(
+            MainDestination.SEARCH, LibraryTab.ALBUMS, "album", null, null, null, "the"
+        ))
+        assertEquals(PlaybackLaunchContext.ArtistDetail("artist"), capturePlaybackLaunchContext(
+            MainDestination.SEARCH, LibraryTab.ARTISTS, null, "artist", null, null, "the"
+        ))
+        assertEquals(PlaybackLaunchContext.PlaylistDetail(42), capturePlaybackLaunchContext(
+            MainDestination.SEARCH, LibraryTab.PLAYLISTS, null, null, null, 42, "the"
+        ))
+    }
+
+    @Test
     fun capturePrefersAlbumDetailOverSearch() {
         val context = capturePlaybackLaunchContext(
             mainDestination = MainDestination.LIBRARY,
