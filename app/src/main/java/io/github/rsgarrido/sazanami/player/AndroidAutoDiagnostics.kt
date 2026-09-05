@@ -12,10 +12,19 @@ import java.util.concurrent.atomic.AtomicInteger
 /** Opt in with adb shell setprop log.tag.SazanamiAuto DEBUG. Never logs position ticks. */
 internal object AndroidAutoDiagnostics {
     private const val TAG = "SazanamiAuto"
+    private const val VOICE_TAG = "SazanamiVoiceSearch"
     private val cookies = AtomicInteger()
+    private val voiceRequests = AtomicInteger()
 
     fun log(message: String) {
         if (Log.isLoggable(TAG, Log.DEBUG)) Log.d(TAG, message)
+    }
+
+    fun nextVoiceRequestId(): Int = voiceRequests.incrementAndGet()
+
+    fun voice(message: String) {
+        if (!Log.isLoggable(VOICE_TAG, Log.DEBUG)) return
+        Log.d(VOICE_TAG, message)
     }
 
     // Async slices remain correctly paired even when a suspended read resumes on another thread.

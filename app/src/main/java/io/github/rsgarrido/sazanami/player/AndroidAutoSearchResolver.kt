@@ -12,7 +12,11 @@ data class AndroidAutoSearchRequest(
     val artist: String? = null,
     val album: String? = null,
     val playlist: String? = null,
-    val genre: String? = null
+    val genre: String? = null,
+    val mediaId: String? = null,
+    val focus: String? = null,
+    val mediaType: Int? = null,
+    val requestType: AndroidAutoRequestType = AndroidAutoRequestType.UNKNOWN
 )
 
 data class AndroidAutoPlaybackMatch(
@@ -84,7 +88,7 @@ object AndroidAutoSearchResolver {
             if (genreSongs.isNotEmpty()) return genreSongs.toPlaybackMatch(preferredSongId)
         }
 
-        val rawQuery = request.query.cleanQuery()?.stripVoicePlayPrefix()
+        val rawQuery = request.query.voiceEntityQuery()
         if (rawQuery != null) {
             if (rawQuery.isGenericLibraryRequest()) {
                 return catalog.songs.toPlaybackMatch(preferredSongId)
@@ -94,6 +98,10 @@ object AndroidAutoSearchResolver {
                 bestSongMatch(catalog.songs, title, artist)?.let { song ->
                     return contextForSong(song, catalog.songs)
                 }
+                buildLibraryAlbumGroups(catalog.songs)
+                    .filter { group -> textMatches(group.artistText, artist) }
+                    .bestNamedMatch(title) { group -> group.title }
+                    ?.let { album -> return album.songs.toPlaybackMatch(preferredSongId) }
             }
 
             // Voice ranking is deliberately separate from durable identity resolution.
@@ -150,7 +158,7 @@ object AndroidAutoSearchResolver {
         catalog: AndroidAutoCatalogSnapshot,
         limit: Int = 100
     ): List<Song> {
-        val cleaned = query.cleanQuery()?.stripVoicePlayPrefix() ?: return emptyList()
+        val cleaned = query.voiceEntityQuery() ?: return emptyList()
         if (cleaned.isGenericLibraryRequest()) return catalog.songs.take(limit.coerceAtLeast(0))
         val titleByArtist = parseTitleByArtist(cleaned)
         val queryTokens = normalized(cleaned).split(' ').filter(String::isNotBlank)
@@ -246,10 +254,6 @@ object AndroidAutoSearchResolver {
         val artist = normalizedSpacing.substring(match.range.last + 1).trim()
         return if (title.isNotBlank() && artist.isNotBlank()) title to artist else null
     }
-
-    private fun String.stripVoicePlayPrefix(): String =
-        replace(Regex("^(please\\s+)?(play|listen\\s+to)(\\s+me)?\\s+", RegexOption.IGNORE_CASE), "")
-            .trim()
 
     private fun String.isGenericLibraryRequest(): Boolean = normalized(this) in setOf(
         "music",

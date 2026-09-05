@@ -331,9 +331,20 @@ class PlaybackService : MediaLibraryService() {
                 .add(AUTO_TOGGLE_SHUFFLE_COMMAND)
                 .add(AUTO_TOGGLE_REPEAT_ALL_COMMAND)
                 .build()
+            val isMediaNotificationController = session.isMediaNotificationController(controller)
+            val isAutoCompanionController = session.isAutoCompanionController(controller)
+            val playerCommands = AndroidAutoControllerCommandPolicy.playerCommands(
+                availableCommands = result.availablePlayerCommands,
+                isMediaNotificationController = isMediaNotificationController
+            )
+            AndroidAutoDiagnostics.log(
+                "connect controller=${controller.diagnosticIdentity()} " +
+                        "notification=$isMediaNotificationController auto=$isAutoCompanionController " +
+                        "timeline=${playerCommands.contains(Player.COMMAND_GET_TIMELINE)}"
+            )
             return MediaSession.ConnectionResult.accept(
                 commands,
-                result.availablePlayerCommands
+                playerCommands
             )
         }
 
@@ -458,13 +469,20 @@ class PlaybackService : MediaLibraryService() {
             mediaItems: List<MediaItem>
         ): ListenableFuture<List<MediaItem>> {
             if (mediaItems.all { it.localConfiguration != null }) return Futures.immediateFuture(mediaItems)
+            val traceId = AndroidAutoDiagnostics.nextVoiceRequestId()
+            AndroidAutoDiagnostics.voice(
+                "voice[$traceId] path=onAddMediaItems controller=${controller.diagnosticIdentity()} " +
+                        "items=${mediaItems.joinToString(" | ") { it.rawVoiceMetadataSummary() }}"
+            )
             return serviceBackgroundFuture {
                 val catalog = loadAndroidAutoCatalog()
                 mediaItems.flatMap { item ->
                     if (item.localConfiguration != null) return@flatMap listOf(item)
                     val browse = resolveBrowseSelection(item.mediaId, catalog)
                     val songId = item.mediaId.substringAfterLast(':').toLongOrNull()
-                    val selected = browse ?: songId?.let { AndroidAutoSearchResolver.resolveSongSelection(it, catalog) }
+                    val selected = browse ?: songId?.let {
+                        AndroidAutoSearchResolver.resolveSongSelection(it, catalog)
+                    }
                     if (selected != null) return@flatMap listOf(selected.selectedSong.toPlayableMediaItem())
                     if (item.mediaId.isNotBlank() && item.requestMetadata.searchQuery == null) {
                         throw IllegalArgumentException("Unknown media ID")
@@ -492,14 +510,22 @@ class PlaybackService : MediaLibraryService() {
                     startPositionMs
                 )
             }
+            val traceId = AndroidAutoDiagnostics.nextVoiceRequestId()
+            AndroidAutoDiagnostics.voice(
+                "voice[$traceId] path=onSetMediaItems controller=${controller.diagnosticIdentity()} " +
+                        "requestedStartIndex=$startIndex requestedStartPositionMs=$startPositionMs " +
+                        "items=${mediaItems.joinToString(" | ") { it.rawVoiceMetadataSummary() }}"
+            )
             return serviceFuture {
                 resolveAndroidAutoMediaItems(
                     mediaItems = mediaItems,
                     startIndex = startIndex,
-                    startPositionMs = startPositionMs
+                    startPositionMs = startPositionMs,
+                    traceId = traceId
                 )
             }
         }
+
     }
 
     override fun onCreate() {
@@ -1145,17 +1171,16 @@ class PlaybackService : MediaLibraryService() {
     private suspend fun resolveAndroidAutoMediaItems(
         mediaItems: List<MediaItem>,
         startIndex: Int,
-        startPositionMs: Long
+        startPositionMs: Long,
+        traceId: Int
     ): MediaSession.MediaItemsWithStartPosition {
         val resolutionStartedAt = SystemClock.elapsedRealtime()
         val catalog = loadAndroidAutoCatalog()
-        val catalogSource = "repository"
-        if (catalog.songs.isEmpty() || mediaItems.isEmpty()) {
-            return MediaSession.MediaItemsWithStartPosition(
-                mediaItems,
-                startIndex.coerceAtLeast(0),
-                startPositionMs
-            )
+        if (mediaItems.isEmpty()) {
+            throw IllegalArgumentException("No media items were supplied for the external request")
+        }
+        if (catalog.songs.isEmpty()) {
+            throw IllegalStateException("No playable media is available for the external request")
         }
 
         val selectedIndex = startIndex.takeIf { it in mediaItems.indices } ?: 0
@@ -1169,10 +1194,8 @@ class PlaybackService : MediaLibraryService() {
                 !searchRequest.playlist.isNullOrBlank() ||
                 !searchRequest.genre.isNullOrBlank()
         if (hasSearchRequest) {
-            Log.i(
-                ANDROID_AUTO_VOICE_TAG,
-                "Received media search query=${searchRequest.query.orEmpty()} " +
-                        "title=${searchRequest.title.orEmpty()} artist=${searchRequest.artist.orEmpty()}"
+            AndroidAutoDiagnostics.voice(
+                "voice[$traceId] parsed ${searchRequest.diagnosticSummary()}"
             )
         }
 
@@ -1203,7 +1226,7 @@ class PlaybackService : MediaLibraryService() {
             ) ?: preferredSongId?.let { songId ->
                 AndroidAutoSearchResolver.resolveSongSelection(songId, catalog)
             }
-        } ?: if (!hasSearchRequest) {
+        } ?: if (!hasSearchRequest && requestedItem.mediaId.isBlank()) {
             AndroidAutoSearchResolver.resolvePlayback(
                 request = AndroidAutoSearchRequest(),
                 catalog = catalog,
@@ -1216,17 +1239,12 @@ class PlaybackService : MediaLibraryService() {
         if (match == null) {
             if (hasSearchRequest) {
                 val elapsedMs = SystemClock.elapsedRealtime() - resolutionStartedAt
-                Log.w(
-                    ANDROID_AUTO_VOICE_TAG,
-                    "No confident media search match after ${elapsedMs}ms; rejecting request"
+                AndroidAutoDiagnostics.voice(
+                    "voice[$traceId] selected=none elapsedMs=$elapsedMs; rejecting request"
                 )
                 throw IllegalArgumentException("No matching media found for voice search request")
             }
-            return MediaSession.MediaItemsWithStartPosition(
-                mediaItems,
-                selectedIndex,
-                startPositionMs
-            )
+            throw IllegalArgumentException("No playable media found for external request")
         }
 
         servicePlaybackContextSongs = match.songs
@@ -1262,11 +1280,10 @@ class PlaybackService : MediaLibraryService() {
         }
         val resolvedIndex = if (logicalShuffleMode.isEnabled) 0 else match.startIndex
         if (hasSearchRequest) {
-            Log.i(
-                ANDROID_AUTO_VOICE_TAG,
-                "Resolved media search to ${selectedSong.title} by ${selectedSong.artist} " +
+            AndroidAutoDiagnostics.voice(
+                        "voice[$traceId] selected=${selectedSong.id}:${selectedSong.title}:${selectedSong.artist} " +
                         "in ${SystemClock.elapsedRealtime() - resolutionStartedAt}ms " +
-                        "using $catalogSource catalog (${orderedSongs.size} items)"
+                        "using repository catalog (${orderedSongs.size} items)"
             )
         }
         return MediaSession.MediaItemsWithStartPosition(
@@ -1443,8 +1460,9 @@ class PlaybackService : MediaLibraryService() {
 
 }
 
+private fun MediaSession.ControllerInfo.diagnosticIdentity(): String =
+    "$packageName:uid=$uid:controllerVersion=$controllerVersion"
 
-private const val ANDROID_AUTO_VOICE_TAG = "SazanamiVoiceSearch"
 private const val AUTO_TOGGLE_SHUFFLE_ACTION =
     "io.github.rsgarrido.sazanami.action.AUTO_TOGGLE_SHUFFLE"
 private const val AUTO_TOGGLE_REPEAT_ALL_ACTION =

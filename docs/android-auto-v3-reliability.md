@@ -6,9 +6,9 @@ Branch: `android-auto-v3`. No commit or push. Media3 remains at 1.10.1.
 
 The defects below were found by tracing the current code and adding focused regression tests.
 There was no connected Android device or configured emulator during this investigation. Actual
-vehicle startup timings, the session listener event sequence on the vehicle, audible gapless
-playback, and the remaining queue-scroll symptom still need the manual checks below. Code-path
-evidence is not a measurement of the owner's drive.
+vehicle startup timings, the session listener event sequence on the vehicle, and audible gapless
+playback still need the manual checks below. Queue-button suppression has been confirmed in-car.
+Code-path evidence is not a measurement of the owner's drive.
 
 ## 1. Root causes found
 
@@ -101,22 +101,29 @@ First-load decoding and host artwork caching still require real-car verification
 
 Activity voice intents now preserve query/extras and send the request through a MediaController
 to the same service callback used by Auto. Initial launch and `onNewIntent` are both handled;
-controller resources are released with the Activity. Ordinary phone playback with resolved local
-items keeps its immediate callback path.
+controller resources use Media3's ordinary Activity lifecycle handling. Ordinary phone playback
+with resolved local items keeps its immediate callback path. No Assistant-specific retry, delay,
+dynamic command policy, or lifecycle workaround is retained.
 
 The shared parser accepts `RequestMetadata.searchQuery`, query extras, title/artist/album/playlist/
-genre fields, and media focus. Artist focus ignores incidental title metadata. Set requests stage
-the existing phone context and let Media3 apply/prepare/play once; add requests resolve items
-without replacing the current queue. Search/result callbacks include playlist and genre songs.
+genre fields, media focus, and Media3 media type. It also handles Assistant phrases that retain
+the app qualifier and album-by-artist phrases. Artist focus ignores incidental song metadata. Set
+requests stage the existing phone context and let Media3 apply/prepare/play once; add requests
+resolve items without replacing the current queue. Search/result callbacks include playlist and
+genre songs.
 
 Unfocused exact-match priority is song title, playlist, album, artist, then genre, before partial
 collection matches. Ambiguous song titles retain deterministic human-search tie breaking.
-Unmatched explicit queries are rejected. Empty/generic music requests retain library fallback.
+Unmatched explicit queries are rejected, as are unresolved media IDs and an unavailable catalog;
+no unresolved `MediaItem` is returned as a successful callback result. Empty/generic music
+requests retain library fallback.
 Canonical identity, history reconciliation, and strict playlist reference resolution are unchanged.
 
 Cached title/artist/album/playlist data supports the same resolution when the phone is cold.
 Cached genres are preserved if enrichment completed; a never-enriched cache cannot support an
 unknown genre. Tests compare cold and warm sources, including differing artwork enrichment.
+Google Assistant routing and acknowledgement remain best-effort host behavior rather than an
+Android Auto v3 release gate.
 
 ## 6. Queue current-index diagnosis
 
@@ -140,19 +147,18 @@ runtime's atomic index/position arguments and queue switching/restoration behavi
 Auto playlist browse IDs now distinguish repeated occurrences. Unshuffled playback uses the
 selected occurrence's index; shuffled playback removes only that occurrence when moving it first.
 
-## 7. Queue scrolling conclusion
+## 7. Android Auto Queue policy
 
-No periodic app-side timeline replacement was found in source inspection. The phone's 500 ms
-progress task reads position/duration and checkpoints persistence; it does not set a playlist.
-Normal logical-player state refreshes forward the existing timeline. The diagnostics attach to
-the exact logical player used by the session and log timeline reasons, equality, UID changes,
-window count, current index/media ID, transitions, and play/pause boundaries.
+No periodic app-side timeline replacement was found in source inspection. Because the playing-only
+scroll reset matches upstream issue #2192, Sazanami now withholds only
+`Player.COMMAND_GET_TIMELINE` from Media3's media-notification controller. Media3 uses that
+controller's commands to populate the framework session queue read by Android Auto, so the built-in
+Queue button should be absent. `isAutoCompanionController` is recorded for diagnosis but does not
+lose commands; the notification controller is the narrower supported policy described by Media3.
 
-There is no measured vehicle event trace yet, so an absolute claim that this installation emits
-zero excess events would be premature. If the scroll resets while the event count stays stable,
-that strongly supports #2192. SOURCE_UPDATE events from real media preparation and changes from
-actual user edits are distinct from gratuitous PLAYLIST_CHANGED events. No speculative scroll
-workaround, synthetic queue, periodic seek, or Media3 upgrade was introduced.
+The actual player timeline, `SmoothPlaybackPlayer`, Room queues, Queue Hub, named queues, and queue
+restoration are unchanged. Play/Pause, Previous, Next, shuffle, and repeat commands are retained.
+The existing timeline diagnostics remain available if the upstream behavior is revisited.
 
 ## 8. Gapless safety
 
@@ -168,7 +174,8 @@ Paths below are relative to this repository.
 
 | File | Purpose |
 | --- | --- |
-| `app/src/main/java/io/github/rsgarrido/sazanami/MainActivity.kt` | Forward initial/subsequent voice intents and release the controller |
+| `app/src/main/java/io/github/rsgarrido/sazanami/MainActivity.kt` | Forward initial/subsequent voice intents through the ordinary Media3 controller path |
+| `app/src/main/java/io/github/rsgarrido/sazanami/player/AndroidAutoControllerCommandPolicy.kt` | Hide the framework queue through a notification-controller capability |
 | `app/src/main/java/io/github/rsgarrido/sazanami/player/AndroidAutoBrowseTree.kt` | Valid empty containers; distinguish repeated playlist occurrences |
 | `app/src/main/java/io/github/rsgarrido/sazanami/player/AndroidAutoCatalogRepository.kt` | Shared cached snapshots/tree, invalidation, cheap collage fallback, visible artwork preparation |
 | `app/src/main/java/io/github/rsgarrido/sazanami/player/AndroidAutoDiagnostics.kt` | Opt-in timings and session-facing player event diagnostics |
@@ -180,6 +187,8 @@ Paths below are relative to this repository.
 | `app/src/test/java/io/github/rsgarrido/sazanami/player/AndroidAutoBrowseTreeTest.kt` | Empty root/category and duplicate browse ID regressions |
 | `app/src/test/java/io/github/rsgarrido/sazanami/player/AndroidAutoCatalogRepositoryTest.kt` | Cold/concurrent reads, empty/failure recovery, live refresh, folder selection |
 | `app/src/test/java/io/github/rsgarrido/sazanami/player/AndroidAutoSearchResolverTest.kt` | Ranking, genre/playlist, cold/warm and ambiguity regressions |
+| `app/src/test/java/io/github/rsgarrido/sazanami/player/AndroidAutoControllerCommandPolicyTest.kt` | Notification queue suppression and retained transport-command policy |
+| `app/src/test/java/io/github/rsgarrido/sazanami/player/AndroidAutoRequestMetadataTest.kt` | Assistant query/focus/media-type request shapes |
 | `app/src/test/java/io/github/rsgarrido/sazanami/player/Media3PlaybackQueueRuntimeTest.kt` | Exact duplicate restoration index under every repeat mode |
 | `app/src/androidTest/java/io/github/rsgarrido/sazanami/player/AndroidAutoLogicalPlayerTest.kt` | Actual logical-player index, stable timeline and crossfade exposure |
 | `app/src/androidTest/java/io/github/rsgarrido/sazanami/player/AndroidAutoMetadataContractTest.kt` | Activity/session voice equivalence and cold provider-backed playable artwork |
@@ -204,7 +213,7 @@ instrumentation failures. Its lint analyzer stopped making observable progress i
 traversal, so the wrapper/daemon for that build were stopped. Validation was retried with
 `--continue --offline --no-daemon --console=plain` in a fresh Gradle process.
 
-- Full unit results: 1,534 tests, zero failures/errors, seven skipped.
+- Full unit results: 1,548 tests, zero failures/errors, seven skipped.
 - Instrumentation assembly: blocked by the existing unresolved `assertDoesNotExist` import in
   `AddToAnotherQueueDialogTest.kt` and `onAllNodesWithText` calls in `QueueHubSheetTest.kt`.
   Those files were not edited. The device tests added here remain unexecuted.
@@ -217,9 +226,12 @@ Final application verification after the exception-handling changes:
 .\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --offline --no-daemon --console=plain
 ```
 
-Result: **BUILD SUCCESSFUL in 4m 48s**. Unit tests: 1,534 total, zero failures/errors, seven skipped.
+Final refinement result: unit tests **BUILD SUCCESSFUL** with 1,548 total, zero failures/errors,
+and seven skipped; lint **BUILD SUCCESSFUL** with zero errors; debug APK assembly
+**BUILD SUCCESSFUL**. The instrumentation assembly still stops only on the unchanged
+`AddToAnotherQueueDialogTest.kt` and `QueueHubSheetTest.kt` compile errors described above.
 Lint: zero errors, 162 warnings, four hints. Debug APK:
-`app/build/outputs/apk/debug/app-debug.apk` (34,312,016 bytes).
+`app/build/outputs/apk/debug/app-debug.apk` (34,319,225 bytes).
 
 Logs are retained under `build/reports/android-auto-v3/`: `focused.log`, `first-validation.log`,
 `final-validation.log` (combined run with the known instrumentation failure), and
@@ -237,15 +249,17 @@ JUnit reports remain under `app/build/reports/`.
 - [ ] Check first-presentation artwork in Now Playing, albums, songs, playlists, and custom
   playlist/artist art. Include phone-started playback, Auto-started playback, embedded covers,
   and granted folder covers. Compare a fully enriched cached library with a partial first scan.
-- [ ] Try “Play Six Feet Deep on Sazanami”, “Play The Warning on Sazanami”, “Play ERROR on Sazanami”,
-  a known playlist, a known genre, and “Play music on Sazanami”. Repeat cold and warm; record
-  whether the Activity intent or service request was used and the selected content.
+- [ ] As a best-effort voice sanity check, try “Play Shattered Heart by The Warning on Sazanami”,
+  “Play Avril Lavigne on Sazanami”, and “Play The Best Damn Thing by Avril Lavigne on Sazanami”.
+  If Assistant routes the request, confirm song, artist context, and album order and optionally save
+  the `SazanamiVoiceSearch` trace. Inconsistent Assistant discovery or acknowledgement is not a
+  release blocker for this milestone.
 - [ ] Start well below the first entries of a long queue. Restore it and switch away/back. Check
   the actual playing entry, saved position, and logged index/window count. Include a repeated
   track occurrence, shuffled playback order, and repeat off/all/one.
-- [ ] While playing, scroll far down the Auto queue for at least 20 seconds; pause and repeat.
-  Correlate snapping with timeline events. If only active playback snaps and no extra timeline
-  changes occur, record a match to #2192 rather than claiming this branch fixed scrolling.
+- [ ] Verify Android Auto does not show its built-in Queue button. Confirm Previous/Next still
+  traverse the real Sazanami queue, and verify the phone Queue Hub, notification, lock screen,
+  named queue switching, shuffle, and repeat behavior remain intact.
 - [ ] With crossfade off, play a known gapless album across several boundaries and confirm the
   same physical player/native automatic transition. Check next/previous, notification, lock
   screen, Bluetooth, queue switching, restoration, shuffle/repeat, and listening history.
@@ -257,8 +271,9 @@ Enable the opt-in log before connecting the car:
 
 ```powershell
 adb shell setprop log.tag.SazanamiAuto DEBUG
+adb shell setprop log.tag.SazanamiVoiceSearch DEBUG
 adb shell setprop log.tag.CrossfadeTrace DEBUG
-adb logcat -v threadtime SazanamiAuto:D CrossfadeTrace:D SazanamiVoiceSearch:I '*:S'
+adb logcat -v threadtime SazanamiAuto:D CrossfadeTrace:D SazanamiVoiceSearch:D '*:S'
 ```
 
 Record the timestamps for the scenarios above and save a system trace with the app's existing
@@ -267,5 +282,6 @@ Perfetto configuration if needed (`tools/performance/sazanami-perfetto.pbtx`). A
 
 ```powershell
 adb shell setprop log.tag.SazanamiAuto INFO
+adb shell setprop log.tag.SazanamiVoiceSearch INFO
 adb shell setprop log.tag.CrossfadeTrace INFO
 ```
