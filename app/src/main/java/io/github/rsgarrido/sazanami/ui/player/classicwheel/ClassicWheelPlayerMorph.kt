@@ -31,7 +31,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 import io.github.rsgarrido.sazanami.data.Song
-import coil.compose.AsyncImage
+import io.github.rsgarrido.sazanami.ui.player.RetainedArtworkImage
 import kotlin.math.roundToInt
 
 /**
@@ -110,7 +110,7 @@ private fun ClassicWheelMorphSharedContent(
 ) {
     val density = LocalDensity.current
     val artworkRadius = (8f - 5f * progress).coerceAtLeast(3f).dp
-    AsyncImage(
+    RetainedArtworkImage(
         model = song.albumArtUri,
         contentDescription = "Album art for ${song.title}",
         modifier = Modifier

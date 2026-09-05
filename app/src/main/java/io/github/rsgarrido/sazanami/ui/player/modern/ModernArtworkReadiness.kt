@@ -143,35 +143,3 @@ internal fun ModernExpandedArtworkPreloader(
         }
     }
 }
-
-internal enum class ModernArtworkQuality {
-    Temporary,
-    Expanded
-}
-
-internal data class ModernArtworkReadyLayer<T>(
-    val artworkIdentity: String,
-    val quality: ModernArtworkQuality,
-    val value: T
-)
-
-internal data class ModernArtworkReadinessState<T>(
-    val currentArtworkIdentity: String?,
-    val temporary: ModernArtworkReadyLayer<T>? = null,
-    val expanded: ModernArtworkReadyLayer<T>? = null
-)
-
-internal fun <T> acceptModernArtworkReadyLayer(
-    state: ModernArtworkReadinessState<T>,
-    layer: ModernArtworkReadyLayer<T>
-): ModernArtworkReadinessState<T> {
-    if (layer.artworkIdentity != state.currentArtworkIdentity) return state
-    return when (layer.quality) {
-        ModernArtworkQuality.Temporary -> state.copy(temporary = layer)
-        ModernArtworkQuality.Expanded -> state.copy(expanded = layer)
-    }
-}
-
-internal fun <T> preferredModernArtworkReadyLayer(
-    state: ModernArtworkReadinessState<T>
-): ModernArtworkReadyLayer<T>? = state.expanded ?: state.temporary

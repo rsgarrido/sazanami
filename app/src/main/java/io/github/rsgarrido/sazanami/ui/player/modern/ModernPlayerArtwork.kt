@@ -15,25 +15,21 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
-import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
 import coil.size.Precision
 import io.github.rsgarrido.sazanami.data.Song
+import io.github.rsgarrido.sazanami.ui.player.RetainedArtworkImage
 
 internal enum class ModernArtworkRenderingPolicy {
     Slide,
@@ -358,7 +354,6 @@ internal fun ModernPlayerAlbumImage(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
     transitionDurationMillis: Int = ModernPlayerDefaults.SongTransitionDurationMillis,
-    retainCurrentPainterDuringRefinement: Boolean = true,
     requestSizePx: Int? = null
 ) {
     val context = LocalContext.current
@@ -367,19 +362,7 @@ internal fun ModernPlayerAlbumImage(
         expandedTargetSizePx = requestSizePx,
         artworkIdentity = artworkIdentity
     )
-    var readinessState by remember(artworkIdentity) {
-        mutableStateOf(
-            ModernArtworkReadinessState<Painter>(
-                currentArtworkIdentity = artworkIdentity
-            )
-        )
-    }
-    val requestQuality = if (requestPolicy.exactSize) {
-        ModernArtworkQuality.Expanded
-    } else {
-        ModernArtworkQuality.Temporary
-    }
-    val request = remember(currentSong.id, currentSong.albumArtUri, requestPolicy) {
+    val request = remember(currentSong.albumArtUri, requestPolicy) {
         ImageRequest.Builder(context)
             .data(currentSong.albumArtUri)
             .crossfade(transitionDurationMillis)
@@ -402,44 +385,12 @@ internal fun ModernPlayerAlbumImage(
             .build()
     }
 
-    AsyncImage(
+    RetainedArtworkImage(
         model = request,
+        artworkIdentity = artworkIdentity,
+        requestKey = requestPolicy,
         contentDescription = contentDescription,
         modifier = modifier,
-        transform = { state ->
-            val readyPainter = if (retainCurrentPainterDuringRefinement) {
-                preferredModernArtworkReadyLayer(readinessState)?.value
-            } else {
-                null
-            }
-            when (state) {
-                is AsyncImagePainter.State.Loading -> readyPainter?.let { painter ->
-                    state.copy(painter = painter)
-                } ?: state
-                is AsyncImagePainter.State.Error -> readyPainter?.let { painter ->
-                    state.copy(painter = painter)
-                } ?: state
-                else -> state
-            }
-        },
-        onState = { state ->
-            when (state) {
-                is AsyncImagePainter.State.Success -> {
-                    val identity = artworkIdentity
-                    if (identity != null) {
-                        readinessState = acceptModernArtworkReadyLayer(
-                            state = readinessState,
-                            layer = ModernArtworkReadyLayer(
-                                artworkIdentity = identity,
-                                quality = requestQuality,
-                                value = state.painter
-                            )
-                        )
-                    }
-                }
-                else -> Unit
-            }
-        },
         contentScale = contentScale
     )
 }

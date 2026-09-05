@@ -39,7 +39,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import coil.compose.AsyncImage
+import io.github.rsgarrido.sazanami.ui.player.RetainedArtworkImage
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 import io.github.rsgarrido.sazanami.ui.player.theme.darken
@@ -175,7 +175,7 @@ private fun SharedPocketDiscArtwork(
             .background(PocketDiscColors.panelDeep)
             .border(1.dp, PocketDiscColors.edge, RoundedCornerShape((4f + progress * 3f).dp))
     ) {
-        AsyncImage(
+        RetainedArtworkImage(
             model = song.albumArtUri,
             contentDescription = "Current album artwork",
             contentScale = ContentScale.Fit,

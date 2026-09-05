@@ -35,7 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
+import io.github.rsgarrido.sazanami.ui.player.RetainedArtworkImage
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.performance.PerformanceTraceNames
 import io.github.rsgarrido.sazanami.performance.VisualizerPerformanceCounters
@@ -134,7 +134,7 @@ internal fun PocketCassetteWindow(
                     )
             ) {
                 if (sharedOwner == PocketCassetteSharedOwner.EXPANDED) {
-                    AsyncImage(
+                    RetainedArtworkImage(
                         model = currentSong?.albumArtUri,
                         contentDescription = "Album artwork cassette label",
                         contentScale = ContentScale.Crop,

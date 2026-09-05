@@ -48,7 +48,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import io.github.rsgarrido.sazanami.ui.player.RetainedArtworkImage
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.RepeatMode
 import kotlin.math.roundToInt
@@ -85,7 +85,7 @@ fun ClassicWheelNowPlayingDisplay(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.Top
         ) {
-            AsyncImage(
+            RetainedArtworkImage(
                 model = currentSong?.albumArtUri,
                 contentDescription = currentSong?.let { song ->
                     "Album art for ${song.title}"

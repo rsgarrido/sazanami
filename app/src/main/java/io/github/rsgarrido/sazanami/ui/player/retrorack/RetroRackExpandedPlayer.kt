@@ -60,7 +60,7 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import coil.compose.AsyncImage
+import io.github.rsgarrido.sazanami.ui.player.RetainedArtworkImage
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.RepeatMode
 import io.github.rsgarrido.sazanami.player.waveform.WaveformData
@@ -287,7 +287,7 @@ private fun MainDeck(
                     .then(modifier)
             ) {
                 if (sharedOwner == RetroRackSharedOwner.EXPANDED) {
-                    AsyncImage(
+                    RetainedArtworkImage(
                         model = currentSong?.albumArtUri,
                         contentDescription = "Current album artwork",
                         modifier = Modifier.fillMaxSize()
