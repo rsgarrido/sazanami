@@ -45,7 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
+import io.github.rsgarrido.sazanami.ui.player.RetainedArtworkImage
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.waveform.WaveformData
 
@@ -286,7 +286,7 @@ private fun PocketFlipArtwork(
         contentAlignment = Alignment.Center
     ) {
         if (renderContent && song?.albumArtUri != null) {
-            AsyncImage(
+            RetainedArtworkImage(
                 model = song.albumArtUri,
                 contentDescription = "Current album artwork",
                 contentScale = ContentScale.Fit,

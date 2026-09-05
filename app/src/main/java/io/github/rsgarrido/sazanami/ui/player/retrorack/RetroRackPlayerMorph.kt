@@ -31,7 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
-import coil.compose.AsyncImage
+import io.github.rsgarrido.sazanami.ui.player.RetainedArtworkImage
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 import kotlin.math.roundToInt
@@ -86,7 +86,7 @@ private fun RetroRackSharedContent(
     fun Modifier.at(rect: androidx.compose.ui.geometry.Rect) = this
         .offset { IntOffset(rect.left.roundToInt(), rect.top.roundToInt()) }
         .size(with(density) { rect.width.toDp() }, with(density) { rect.height.toDp() })
-    AsyncImage(
+    RetainedArtworkImage(
         model = song.albumArtUri,
         contentDescription = "Album art for ${song.title}",
         contentScale = ContentScale.Crop,
