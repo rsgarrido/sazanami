@@ -28,6 +28,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -61,6 +62,7 @@ import io.github.rsgarrido.sazanami.ui.library.LibrarySortState
 import io.github.rsgarrido.sazanami.ui.library.LibrarySortStateSaver
 import io.github.rsgarrido.sazanami.ui.library.LibrarySongFilterState
 import io.github.rsgarrido.sazanami.ui.library.LibraryTab
+import io.github.rsgarrido.sazanami.ui.library.SearchCategory
 import io.github.rsgarrido.sazanami.ui.library.RatedSongFilter
 import io.github.rsgarrido.sazanami.ui.library.RatedSongFilterRow
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewMode
@@ -143,6 +145,8 @@ internal fun MusicScreenBody(
     selectedGenreKey: String?,
     selectedPlaylistId: Long?,
     searchQuery: String,
+    searchCategory: SearchCategory,
+    onSearchCategoryChange: (SearchCategory) -> Unit,
     selectedSongFilterState: LibrarySongFilterState,
     selectedSongSortState: LibrarySortState,
     selectedArtistSortState: LibrarySortState,
@@ -275,6 +279,7 @@ internal fun MusicScreenBody(
     bottomContentPadding: Dp = 24.dp,
     modifier: Modifier = Modifier
 ) {
+    val searchStateHolder = rememberSaveableStateHolder()
     var isLibraryViewOptionsVisible by rememberSaveable {
         mutableStateOf(false)
     }
@@ -550,12 +555,12 @@ internal fun MusicScreenBody(
                         bottomContentPadding = bottomContentPadding
                     )
                 } else {
-                    val isSearchDestination = destination == MainDestination.SEARCH
                     val isGroupedLibraryDetail = selectedArtistName != null ||
                             selectedAlbumKey != null ||
                             selectedGenreKey != null
                     val isLibraryDetail = isGroupedLibraryDetail ||
                             selectedPlaylistId != null
+                    val isSearchDestination = destination == MainDestination.SEARCH && !isLibraryDetail
                     val selectedViewMode = if (isSearchDestination) {
                         LibraryViewMode.LIST
                     } else {
@@ -634,7 +639,8 @@ internal fun MusicScreenBody(
                                         } else {
                                             null
                                         },
-                                        organizeAction = {
+                                        organizeAction = if (!shouldOfferLibraryOrganize(destination)) null else {
+                                          {
                                             LibraryOrganizeAction(
                                                 songs = songs,
                                                 selectedLibraryTab = selectedLibraryTab,
@@ -668,6 +674,7 @@ internal fun MusicScreenBody(
                                                 songFiltersEnabled = !isSearchDestination,
                                                 ratingFeaturesEnabled = !isSearchDestination
                                             )
+                                          }
                                         }
                                     )
                                 }
@@ -719,10 +726,13 @@ internal fun MusicScreenBody(
                                     message = libraryErrorMessage,
                                     modifier = Modifier.padding(16.dp)
                                 )
-                                isSearchDestination -> io.github.rsgarrido.sazanami.ui.library.LibrarySearchContent(
+                                isSearchDestination -> searchStateHolder.SaveableStateProvider("search-results") {
+                                  io.github.rsgarrido.sazanami.ui.library.LibrarySearchContent(
                                     songs = songs,
                                     playlists = playlists,
                                     query = searchQuery,
+                                    category = searchCategory,
+                                    onCategoryChange = onSearchCategoryChange,
                                     currentSong = currentSong,
                                     recentlyAddedSongIds = recentlyAddedSongIds,
                                     favoriteMembershipKeys = favoriteMembershipKeys,
@@ -736,28 +746,22 @@ internal fun MusicScreenBody(
                                     onAddToPlaylistClick = onAddToPlaylistClick,
                                     onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
                                     onEditSongTagsClick = onEditSongTagsClick,
-                                    onAlbumSelected = { key ->
-                                        onOpenLibrary(LibraryTab.ALBUMS)
-                                        onAlbumSelected(key)
-                                    },
-                                    onArtistSelected = { name ->
-                                        onOpenLibrary(LibraryTab.ARTISTS)
-                                        onArtistSelected(name)
-                                    },
-                                    onPlaylistSelected = { playlist ->
-                                        onOpenLibrary(LibraryTab.PLAYLISTS)
-                                        onPlaylistClick(playlist)
-                                    },
+                                    onAlbumSelected = onAlbumSelected,
+                                    onArtistSelected = onArtistSelected,
+                                    onPlaylistSelected = onPlaylistClick,
+                                    onAddPlaylistToQueueClick = onAddPlaylistToQueueClick,
+                                    onExportPlaylistClick = onExportPlaylistClick,
                                     bottomContentPadding = bottomContentPadding,
                                     modifier = Modifier.weight(1f)
                                 )
+                                }
                                 songs.isEmpty() -> EmptyLibraryNotice(
                                     modifier = Modifier.padding(16.dp)
                                 )
                                 else -> MusicLibraryContent(
                                     selectedLibraryTab = selectedLibraryTab,
                                     songs = songs,
-                                    searchQuery = searchQuery,
+                                    searchQuery = if (destination == MainDestination.SEARCH) "" else searchQuery,
                                     selectedSongFilterState = if (isSearchDestination) {
                                         LibrarySongFilterState()
                                     } else {
@@ -869,6 +873,9 @@ internal fun MusicScreenBody(
         }
     }
 }
+
+internal fun shouldOfferLibraryOrganize(destination: MainDestination): Boolean =
+    destination != MainDestination.SEARCH
 
 internal fun shouldShowLibrarySelectionHeader(
     selectionActive: Boolean,

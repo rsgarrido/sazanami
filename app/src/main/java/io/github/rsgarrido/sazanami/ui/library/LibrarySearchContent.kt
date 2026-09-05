@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -25,6 +26,8 @@ import io.github.rsgarrido.sazanami.data.Playlist
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.membershipKey
 import io.github.rsgarrido.sazanami.ui.playlist.PlaylistArtwork
+import io.github.rsgarrido.sazanami.ui.playlist.playlistMetadataText
+import io.github.rsgarrido.sazanami.ui.home.LocalHomePinUi
 import io.github.rsgarrido.sazanami.player.PlaybackShuffleMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -36,6 +39,8 @@ fun LibrarySearchContent(
     songs: List<Song>,
     playlists: List<Playlist>,
     query: String,
+    category: SearchCategory,
+    onCategoryChange: (SearchCategory) -> Unit,
     currentSong: Song?,
     recentlyAddedSongIds: Set<Long>,
     favoriteMembershipKeys: Set<String>,
@@ -52,11 +57,12 @@ fun LibrarySearchContent(
     onAlbumSelected: (String) -> Unit,
     onArtistSelected: (String) -> Unit,
     onPlaylistSelected: (Playlist) -> Unit,
+    onAddPlaylistToQueueClick: (Playlist) -> Unit,
+    onExportPlaylistClick: (Playlist) -> Unit,
     bottomContentPadding: Dp,
     modifier: Modifier = Modifier
 ) {
     val selection = LocalLibrarySelectionUi.current
-    var category by rememberSaveable { mutableStateOf(SearchCategory.ALL) }
     // A snapshot is independent of the query: grouping and normalization never run per row.
     val index by produceState<LibrarySearchIndex?>(null, songs, playlists) {
         value = null
@@ -71,10 +77,16 @@ fun LibrarySearchContent(
     val searching = index == null || response?.first !== index || response?.second != query
     val results = if (searching) LibrarySearchResults() else response?.third ?: LibrarySearchResults()
     val listState = rememberLazyListState()
+    var previousQuery by rememberSaveable { mutableStateOf(query) }
+    var previousCategory by rememberSaveable { mutableStateOf(category) }
     LaunchedEffect(query, category) {
         selection.onClear()
         selection.headerState.resetActions()
-        listState.scrollToItem(0)
+        if (previousQuery != query || previousCategory != category) {
+            listState.scrollToItem(0)
+            previousQuery = query
+            previousCategory = category
+        }
     }
     val matchingSongs = remember(results) {
         results.inCategory(SearchCategory.SONGS).map { (it as LibrarySearchResult.Track).song }
@@ -93,7 +105,7 @@ fun LibrarySearchContent(
     fun selectCategory(next: SearchCategory) {
         selection.onClear()
         selection.headerState.resetActions()
-        category = next
+        onCategoryChange(next)
     }
 
     val sections = if (category == SearchCategory.ALL) results.sectionOrder else listOf(category)
@@ -110,7 +122,7 @@ fun LibrarySearchContent(
                         SearchEntityRow(result, enabled = !selection.state.isActive,
                             onAlbumSelected, onArtistSelected, onPlaylistSelected,
                             onPlaySongsClick, onPlayNextSongsClick, onAddSongsToQueueClick,
-                            onAddSongsToPlaylistClick)
+                            onAddSongsToPlaylistClick, onAddPlaylistToQueueClick, onExportPlaylistClick)
                     }
                     if (category == SearchCategory.ALL && matches.size > SEARCH_PREVIEW_LIMIT) {
                         item(key = "search-more-$section") {
@@ -132,6 +144,11 @@ fun LibrarySearchContent(
                         label = { Text(option.label) })
                 }
             }
+        }
+        // Do not attach the restored scroll state to a temporarily empty list while rebuilding.
+        if (searching && !idle) {
+            Text("Searching…", Modifier.padding(24.dp))
+            return@Column
         }
         SongList(
             songs = if (idle) emptyList() else visibleSongs,
@@ -201,11 +218,14 @@ private fun SearchEntityRow(
     onPlaySongsClick: (List<Song>, PlaybackShuffleMode) -> Unit,
     onPlayNextSongsClick: (String, List<Song>) -> Unit,
     onAddSongsToQueueClick: (String, List<Song>) -> Unit,
-    onAddSongsToPlaylistClick: (List<Song>) -> Unit
+    onAddSongsToPlaylistClick: (List<Song>) -> Unit,
+    onAddPlaylistToQueueClick: (Playlist) -> Unit,
+    onExportPlaylistClick: (Playlist) -> Unit
 ) {
     var actionTarget by remember(result) { mutableStateOf<LibraryItemActionSheetTarget?>(null) }
     val queueUi = LocalLibraryQueueUi.current
     val pictureUi = LocalArtistPictureUi.current
+    val homeUi = LocalHomePinUi.current
     val artworkModifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp))
     ListItem(
         headlineContent = { Text(result.title) },
@@ -228,7 +248,7 @@ private fun SearchEntityRow(
             }
         },
         trailingContent = {
-            if (enabled && (result is LibrarySearchResult.Album || result is LibrarySearchResult.Artist)) {
+            if (enabled && result !is LibrarySearchResult.Track) {
                 IconButton(onClick = {
                     actionTarget = when (result) {
                         is LibrarySearchResult.Album -> albumActionSheetTarget(
@@ -260,6 +280,20 @@ private fun SearchEntityRow(
                             onAddToAnotherQueueClick = queueUi.onAddToAnotherQueue,
                             onPlayInNewQueueClick = queueUi.onPlayInNewQueue,
                             onAddToPlaylistClick = { _, tracks -> onAddSongsToPlaylistClick(tracks) }
+                        )
+                        is LibrarySearchResult.PlaylistItem -> LibraryItemActionSheetTarget(
+                            title = result.title,
+                            subtitle = playlistMetadataText(result.playlist),
+                            artworkUri = null,
+                            artworkDescription = "Artwork for ${result.title}",
+                            artworkContent = {
+                                PlaylistArtwork(result.playlist, "Artwork for ${result.title}", Modifier.fillMaxSize())
+                            },
+                            actions = listOf(homeUi.actionForPlaylist(result.playlist)) +
+                                playlistQueueActions(result.playlist, queueUi, onAddPlaylistToQueueClick) +
+                                LibraryItemAction("Export as M3U8", Icons.Filled.Share) {
+                                    onExportPlaylistClick(result.playlist)
+                                }
                         )
                         else -> null
                     }

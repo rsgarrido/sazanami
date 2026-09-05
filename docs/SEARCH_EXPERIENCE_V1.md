@@ -80,3 +80,70 @@ and APK assembly to finish despite the Android test compilation failure. Logs ar
 
 No device or emulator validation was performed. Persistent search history, fuzzy matching,
 and mixed-entity selection remain outside this milestone's scope.
+
+## Final refinement
+
+Album, artist, and playlist selection now layers the existing detail screen over the
+current main destination. Search no longer calls `onOpenLibrary` when opening an entity,
+so the main destination and query remain Search. Both system Back and detail toolbar Back
+use the same `MusicNavigationState` close methods. Library origins remain Library, and a
+nested Artist → Album → Back returns to the artist before returning to Search.
+
+Search category lives in the existing saveable navigation state. A Compose saveable state
+holder retains Search's list position. Query/category changes still reset scroll and clear
+selection; returning with the same query/category does not reset scroll. The restored list
+state is not attached to an empty loading list while the search snapshot rebuilds. Results
+are recomputed from the current library using the unchanged ranking/index, rather than
+persisting stale domain objects. Entity playback-source capture still identifies the detail.
+
+Search hides Organize Library while retaining Settings. Library's existing Organize
+eligibility remains unchanged. Playlist search rows now expose the shared Home, Play next,
+Add to queue, Add to another queue, Play in new queue, and Export as M3U8 actions. Playlist
+administration remains available on the existing Library/detail screens. Song selection
+continues to disable non-song row navigation and overflow actions.
+
+### Build-time sanity check
+
+The original Search commit and this refinement contain Kotlin/Compose, tests, and
+documentation changes only. There are no changes to Gradle configuration, dependencies,
+source sets, generated sources/resources, KSP configuration, or task wiring. No Gradle
+configuration was changed during diagnosis.
+
+Two `:app:assembleDebug --profile` runs were performed after focused-test compilation:
+
+| Run | Total profile time | Main task costs |
+| --- | --- | --- |
+| First assembly after refinement | 18.824s | dexBuilderDebug 12.270s; mergeProjectDexDebug 2.975s; packageDebug 0.407s |
+| Immediate warm assembly | 2.377s | Kotlin, KSP, dex, and packaging up-to-date; no substantial slow task |
+
+The source compilation earlier in this session took 50s; the subsequent focused-test build
+took 24s. The assembly profiles are warm-cache measurements, not clean/cold builds.
+The 13m51 Android Studio build was not reproduced. No branch-specific build-graph cause
+was found; the observation is consistent with a one-time cache/invalidation/daemon or
+environment event, but the original build log would be needed to identify its exact cause.
+No further benchmarking or build optimization was performed.
+
+Profile reports: `build/reports/profile/profile-2026-09-05-00-30-00.html` and
+`build/reports/profile/profile-2026-09-05-00-30-39.html`.
+
+### Refinement manual checklist
+
+Refinement validation passed: focused navigation/Search/selection/playlist/playback-source
+tests; full unit suite (1,565 tests, 0 failures/errors, 7 skipped); lint (0 errors,
+162 warnings, 4 hints); both profiled debug assemblies; and `git diff --check`.
+Six new test methods cover origin-aware returns, all saved categories and query retention,
+nested navigation, Search-only Organize suppression, playlist queue callback dispatch,
+and detail playback-source identity. Full tests plus lint took 3m46s, separately from
+the assembly measurements above. Android test compilation was not rerun: the previously
+identified unrelated queue-test references remain unchanged.
+
+1. Search for `the`, choose a category, and scroll.
+2. Open an Album, Artist, and Playlist; use toolbar Back and system Back to return to Search.
+3. Verify the query, category, and scroll position survive; test Artist → Album → Back too.
+4. Verify Library → Album/Artist/Playlist → Back still returns to Library.
+5. Check Organize is absent from Search and still available where appropriate in Library;
+   Settings remains available.
+6. Check Playlist overflow, then a quick song multi-select/queue/playlist action.
+7. Cancel selection, change query/category, open an entity, and return; check no selection leaks.
+
+No device or emulator validation was performed for this refinement.

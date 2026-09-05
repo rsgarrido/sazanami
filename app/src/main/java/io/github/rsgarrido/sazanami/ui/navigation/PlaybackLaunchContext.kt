@@ -96,7 +96,7 @@ fun capturePlaybackLaunchContext(
 ): PlaybackLaunchContext {
     when (mainDestination) {
         MainDestination.HOME -> return PlaybackLaunchContext.Home
-        MainDestination.SEARCH -> return PlaybackLaunchContext.Search(searchQuery)
+        MainDestination.SEARCH -> Unit // Search can own an open library detail.
         MainDestination.LIBRARY -> Unit
     }
 
@@ -108,7 +108,8 @@ fun capturePlaybackLaunchContext(
         selectedArtistName != null -> PlaybackLaunchContext.ArtistDetail(selectedArtistName)
         selectedGenreKey != null -> PlaybackLaunchContext.GenreDetail(selectedGenreKey)
         selectedPlaylistId != null -> PlaybackLaunchContext.PlaylistDetail(selectedPlaylistId)
-        searchQuery.isNotBlank() -> PlaybackLaunchContext.Search(searchQuery)
+        mainDestination == MainDestination.SEARCH || searchQuery.isNotBlank() ->
+            PlaybackLaunchContext.Search(searchQuery)
         else -> PlaybackLaunchContext.LibrarySection(selectedLibraryTab)
     }
 }
