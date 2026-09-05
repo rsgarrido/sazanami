@@ -1,12 +1,19 @@
 package io.github.rsgarrido.sazanami.player
 
 import io.github.rsgarrido.sazanami.data.Song
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 /** Shares the live phone library/state with the playback service when the UI process is active. */
 object PlaybackLibraryBridge {
     private var playbackController: PlaybackController? = null
     private var playbackPolicyListener: ((Boolean, RepeatMode) -> Unit)? = null
 
+    private val publication = MutableStateFlow(0L)
+    val catalogPublication = publication.asStateFlow()
+
+    @Volatile
     var songs: List<Song> = emptyList()
         private set
 
@@ -24,6 +31,7 @@ object PlaybackLibraryBridge {
 
     fun updateSongs(filteredSongs: List<Song>) {
         songs = filteredSongs
+        publication.update { it + 1 }
     }
 
     fun hasPlaybackController(): Boolean = playbackController != null

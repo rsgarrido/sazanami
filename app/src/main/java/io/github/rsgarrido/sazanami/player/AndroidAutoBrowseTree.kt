@@ -29,7 +29,8 @@ data class AutoBrowseNode(
     val browsableChildrenStyle: AutoBrowseContentStyle? = null,
     val playableChildrenStyle: AutoBrowseContentStyle? = null
 ) {
-    val isBrowsable: Boolean get() = children.isNotEmpty()
+    // Empty containers are still browsable, including before the cached library is ready.
+    val isBrowsable: Boolean get() = song == null
     val isPlayable: Boolean get() = song != null
 }
 
@@ -44,12 +45,15 @@ fun buildAndroidAutoBrowseTree(
         .sortedBy { playlist -> playlist.name.lowercase(Locale.ROOT) }
         .map { playlist ->
             val parentId = "playlist:${playlist.playlistId}"
+            val seenSongIds = mutableSetOf<Long>()
             AutoBrowseNode(
                 id = parentId,
                 title = playlist.name,
                 subtitle = songCountSubtitle(playlist.songs.size),
                 artworkUri = playlist.artworkUri ?: firstArtworkUri(playlist.songs),
-                children = playlist.songs.map { song -> songNode(song, parentId) },
+                children = playlist.songs.mapIndexed { index, song ->
+                    songNode(song, if (seenSongIds.add(song.id)) parentId else "$parentId:entry:$index")
+                },
                 playableChildrenStyle = AutoBrowseContentStyle.LIST
             )
         }

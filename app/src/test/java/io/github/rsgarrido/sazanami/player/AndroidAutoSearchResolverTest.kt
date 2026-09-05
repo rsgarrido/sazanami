@@ -102,6 +102,132 @@ class AndroidAutoSearchResolverTest {
         assertEquals(catalog.songs.map(Song::id), match.songs.map(Song::id))
     }
 
+    @Test
+    fun `exact song beats partial playlist and exact artist beats partial album`() {
+        val expanded = catalog.copy(
+            songs = catalog.songs + song(9, "Other", "Other", "Slipknot Covers", 1),
+            playlists = catalog.playlists + AutoPlaylistEntry(99, "Left Behind Mix", listOf(warning))
+        )
+        assertEquals(leftBehind.id, AndroidAutoSearchResolver.resolvePlayback(
+            AndroidAutoSearchRequest(query = "Left Behind"), expanded
+        )!!.selectedSong.id)
+        assertEquals(setOf(1L, 2L), AndroidAutoSearchResolver.resolvePlayback(
+            AndroidAutoSearchRequest(query = "Slipknot"), expanded
+        )!!.songs.map(Song::id).toSet())
+    }
+
+    @Test
+    fun `real car song phrase resolves one valid playback application`() {
+        val shatteredHeart = song(20, "Shattered Heart", "The Warning", "XXI Century Blood", 4)
+        val expanded = catalog.copy(songs = catalog.songs + shatteredHeart)
+
+        val match = AndroidAutoSearchResolver.resolvePlayback(
+            AndroidAutoSearchRequest(
+                query = "Play Shattered Heart by The Warning on Sazanami"
+            ),
+            expanded
+        )
+
+        assertNotNull(match)
+        assertEquals(shatteredHeart.id, match!!.selectedSong.id)
+        assertEquals(match.selectedSong.id, match.songs[match.startIndex].id)
+    }
+
+    @Test
+    fun `real car artist phrase expands normal artist context`() {
+        val first = song(30, "Girlfriend", "Avril Lavigne", "The Best Damn Thing", 1)
+        val second = song(31, "When You're Gone", "Avril Lavigne", "The Best Damn Thing", 2)
+        val expanded = catalog.copy(songs = catalog.songs + listOf(second, first))
+
+        val match = AndroidAutoSearchResolver.resolvePlayback(
+            AndroidAutoSearchRequest(query = "Play Avril Lavigne on Sazanami"),
+            expanded
+        )
+
+        assertEquals(listOf(first.id, second.id), match!!.songs.map(Song::id))
+        assertEquals(first.id, match.selectedSong.id)
+    }
+
+    @Test
+    fun `real car album by artist phrase expands album track order`() {
+        val first = song(30, "Girlfriend", "Avril Lavigne", "The Best Damn Thing", 1)
+        val second = song(31, "When You're Gone", "Avril Lavigne", "The Best Damn Thing", 2)
+        val expanded = catalog.copy(songs = catalog.songs + listOf(second, first))
+
+        val match = AndroidAutoSearchResolver.resolvePlayback(
+            AndroidAutoSearchRequest(
+                query = "Play The Best Damn Thing by Avril Lavigne on Sazanami"
+            ),
+            expanded
+        )
+
+        assertEquals(listOf(first.id, second.id), match!!.songs.map(Song::id))
+        assertEquals(0, match.startIndex)
+    }
+
+    @Test
+    fun `focused artist and album requests resolve identically cold and warm`() {
+        val first = song(30, "Girlfriend", "Avril Lavigne", "The Best Damn Thing", 1)
+        val second = song(31, "When You're Gone", "Avril Lavigne", "The Best Damn Thing", 2)
+        val cold = catalog.copy(songs = catalog.songs + listOf(second, first))
+        val warm = cold.copy(songs = cold.songs.map { it.copy(albumArtUri = mock(Uri::class.java)) })
+
+        listOf(
+            AndroidAutoSearchRequest(
+                artist = "Avril Lavigne",
+                requestType = AndroidAutoRequestType.ARTIST
+            ),
+            AndroidAutoSearchRequest(
+                album = "The Best Damn Thing",
+                artist = "Avril Lavigne",
+                requestType = AndroidAutoRequestType.ALBUM
+            )
+        ).forEach { request ->
+            val coldMatch = AndroidAutoSearchResolver.resolvePlayback(request, cold)!!
+            val warmMatch = AndroidAutoSearchResolver.resolvePlayback(request, warm)!!
+            assertEquals(coldMatch.songs.map(Song::id), warmMatch.songs.map(Song::id))
+            assertEquals(coldMatch.startIndex, warmMatch.startIndex)
+        }
+    }
+
+    @Test
+    fun `genre and playlist searches produce playable browser results`() {
+        val rockCatalog = catalog.copy(songs = listOf(leftBehind.copy(genres = listOf("Rock")), warning))
+        assertEquals(listOf(1L), AndroidAutoSearchResolver.resolvePlayback(
+            AndroidAutoSearchRequest(query = "play rock"), rockCatalog
+        )!!.songs.map(Song::id))
+        assertEquals(listOf(1L), AndroidAutoSearchResolver.searchSongs("rock", rockCatalog).map(Song::id))
+        assertEquals(setOf(1L, 3L), AndroidAutoSearchResolver.searchSongs("Heavy Rotation", catalog).map(Song::id).toSet())
+    }
+
+    @Test
+    fun `cold and warm artwork differences do not affect any voice category`() {
+        val cold = catalog.copy(songs = catalog.songs.map { it.copy(genres = listOf("Rock")) })
+        val warm = cold.copy(songs = cold.songs.map { it.copy(albumArtUri = mock(Uri::class.java)) })
+        listOf(
+            AndroidAutoSearchRequest(query = "Left Behind"),
+            AndroidAutoSearchRequest(artist = "Slipknot"),
+            AndroidAutoSearchRequest(album = "Iowa"),
+            AndroidAutoSearchRequest(playlist = "Heavy Rotation"),
+            AndroidAutoSearchRequest(genre = "Rock"),
+            AndroidAutoSearchRequest(query = "play music")
+        ).forEach { request ->
+            val coldMatch = AndroidAutoSearchResolver.resolvePlayback(request, cold)!!
+            val warmMatch = AndroidAutoSearchResolver.resolvePlayback(request, warm)!!
+            assertEquals(coldMatch.songs.map(Song::id), warmMatch.songs.map(Song::id))
+            assertEquals(coldMatch.startIndex, warmMatch.startIndex)
+        }
+    }
+
+    @Test
+    fun `ambiguous titles use deterministic voice ranking`() {
+        val other = leftBehind.copy(id = 99L, album = "Z Compilation")
+        val expanded = catalog.copy(songs = listOf(other) + catalog.songs)
+        assertEquals(leftBehind.id, AndroidAutoSearchResolver.resolvePlayback(
+            AndroidAutoSearchRequest(query = "Left Behind"), expanded
+        )!!.selectedSong.id)
+    }
+
     private fun song(
         id: Long,
         title: String,

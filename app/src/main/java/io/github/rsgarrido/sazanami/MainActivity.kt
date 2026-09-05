@@ -1,6 +1,12 @@
 package io.github.rsgarrido.sazanami
 
 import android.content.Intent
+import android.content.ComponentName
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.ListenableFuture
+import io.github.rsgarrido.sazanami.player.PlaybackService
+import io.github.rsgarrido.sazanami.player.androidAutoVoiceItem
 import android.graphics.Color as AndroidColor
 import android.net.Uri
 import android.os.Build
@@ -49,6 +55,7 @@ import io.github.rsgarrido.sazanami.viewmodel.MusicViewModel
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private var voiceControllerFuture: ListenableFuture<MediaController>? = null
 
     private var mediaAccessState by mutableStateOf(
         MediaAccessPolicy.evaluate(
@@ -103,6 +110,7 @@ class MainActivity : ComponentActivity() {
         val splashScreen = installSplashScreen()
 
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) handleVoiceIntent(intent)
 
         // Resolve persisted access and start cache restoration before the first draw. This keeps
         // the splash handoff tied to the same state MusicRoute needs rather than an arbitrary
@@ -217,6 +225,39 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleVoiceIntent(intent)
+    }
+
+    private fun handleVoiceIntent(intent: Intent) {
+        val item = intent.androidAutoVoiceItem() ?: return
+        val future = voiceControllerFuture ?: MediaController.Builder(
+            this, SessionToken(this, ComponentName(this, PlaybackService::class.java))
+        ).buildAsync().also { voiceControllerFuture = it }
+        future.addListener({
+            if (isDestroyed || future.isCancelled) return@addListener
+            try {
+                future.get().apply {
+                    setMediaItem(item)
+                    prepare()
+                    play()
+                }
+            } catch (error: Exception) {
+                if (voiceControllerFuture === future) voiceControllerFuture = null
+                MediaController.releaseFuture(future)
+                Log.w("SazanamiVoiceSearch", "Voice controller connection failed", error)
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    override fun onDestroy() {
+        voiceControllerFuture?.let(MediaController::releaseFuture)
+        voiceControllerFuture = null
+        super.onDestroy()
     }
 
     override fun onResume() {

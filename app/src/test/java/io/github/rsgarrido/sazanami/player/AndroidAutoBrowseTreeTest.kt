@@ -10,6 +10,29 @@ import org.mockito.Mockito.mock
 
 class AndroidAutoBrowseTreeTest {
     @Test
+    fun `empty cold catalog still exposes browsable root and categories`() {
+        val root = AndroidAutoCatalogSnapshot.EMPTY.browseTree("Sazanami")
+        assertEquals(true, root.isBrowsable)
+        assertEquals(listOf(PLAYLISTS_ID, ALBUMS_ID, ARTISTS_ID, SONGS_ID), root.children.map { it.id })
+        root.children.forEach {
+            assertEquals(true, it.isBrowsable)
+            assertEquals(false, it.isPlayable)
+            assertEquals(emptyList<AutoBrowseNode>(), it.children)
+        }
+    }
+
+    @Test
+    fun `duplicate playlist tracks have distinct selectable browse ids`() {
+        val repeated = song(1, "Repeated", "Artist", "Album", "/music")
+        val root = buildAndroidAutoBrowseTree(listOf(repeated), "Sazanami",
+            listOf(AutoPlaylistEntry(7, "Duplicates", listOf(repeated, repeated))))
+        val entries = root.findNode("playlist:7")!!.children
+        assertNotEquals(entries[0].id, entries[1].id)
+        assertEquals(entries[1], root.findNode(entries[1].id))
+        assertEquals("playlist:7", root.findParent(entries[1].id)!!.id)
+    }
+
+    @Test
     fun `builds playlist album artist grids and a song list`() {
         val included = song(1, "Included", "Artist B", "Album", "/selected/album")
         val otherArtist = song(2, "First", "Artist A", "Other", "/selected/other")

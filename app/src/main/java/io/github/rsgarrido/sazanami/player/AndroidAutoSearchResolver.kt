@@ -12,7 +12,11 @@ data class AndroidAutoSearchRequest(
     val artist: String? = null,
     val album: String? = null,
     val playlist: String? = null,
-    val genre: String? = null
+    val genre: String? = null,
+    val mediaId: String? = null,
+    val focus: String? = null,
+    val mediaType: Int? = null,
+    val requestType: AndroidAutoRequestType = AndroidAutoRequestType.UNKNOWN
 )
 
 data class AndroidAutoPlaybackMatch(
@@ -84,7 +88,7 @@ object AndroidAutoSearchResolver {
             if (genreSongs.isNotEmpty()) return genreSongs.toPlaybackMatch(preferredSongId)
         }
 
-        val rawQuery = request.query.cleanQuery()?.stripVoicePlayPrefix()
+        val rawQuery = request.query.voiceEntityQuery()
         if (rawQuery != null) {
             if (rawQuery.isGenericLibraryRequest()) {
                 return catalog.songs.toPlaybackMatch(preferredSongId)
@@ -94,25 +98,47 @@ object AndroidAutoSearchResolver {
                 bestSongMatch(catalog.songs, title, artist)?.let { song ->
                     return contextForSong(song, catalog.songs)
                 }
+                buildLibraryAlbumGroups(catalog.songs)
+                    .filter { group -> textMatches(group.artistText, artist) }
+                    .bestNamedMatch(title) { group -> group.title }
+                    ?.let { album -> return album.songs.toPlaybackMatch(preferredSongId) }
             }
 
-            catalog.playlists.bestNamedMatch(rawQuery)?.let { playlist ->
-                return playlist.songs.toPlaybackMatch(preferredSongId)
-            }
-
+            // Voice ranking is deliberately separate from durable identity resolution.
+            // Exact title > exact playlist > exact album > exact artist > exact genre;
+            // a partial collection name must never steal an exact match of another kind.
             catalog.songs
                 .filter { song -> normalized(song.title) == normalized(rawQuery) }
                 .sortedWith(songSearchTieBreaker)
                 .firstOrNull()
                 ?.let { song -> return contextForSong(song, catalog.songs) }
 
-            buildLibraryAlbumGroups(catalog.songs)
-                .bestNamedMatch(rawQuery) { group -> group.title }
+            catalog.playlists.exactNamedMatch(rawQuery) { it.name }?.let { playlist ->
+                return playlist.songs.toPlaybackMatch(preferredSongId)
+            }
+
+            val albums = buildLibraryAlbumGroups(catalog.songs)
+            val artists = buildLibraryArtistGroups(catalog.songs)
+            albums.exactNamedMatch(rawQuery) { group -> group.title }
                 ?.let { album -> return album.songs.toPlaybackMatch(preferredSongId) }
 
-            buildLibraryArtistGroups(catalog.songs)
-                .bestNamedMatch(rawQuery) { group -> group.name }
+            artists.exactNamedMatch(rawQuery) { group -> group.name }
                 ?.let { artist -> return artist.songs.toPlaybackMatch(preferredSongId) }
+
+            val genreSongs = catalog.songs.filter { song ->
+                song.genres.any { normalized(it) == normalized(rawQuery) }
+            }
+            if (genreSongs.isNotEmpty()) return genreSongs.toPlaybackMatch(preferredSongId)
+
+            catalog.playlists.bestNamedMatch(rawQuery)?.let {
+                return it.songs.toPlaybackMatch(preferredSongId)
+            }
+            albums.bestNamedMatch(rawQuery) { it.title }?.let {
+                return it.songs.toPlaybackMatch(preferredSongId)
+            }
+            artists.bestNamedMatch(rawQuery) { it.name }?.let {
+                return it.songs.toPlaybackMatch(preferredSongId)
+            }
 
             searchSongs(rawQuery, catalog, limit = 1).firstOrNull()?.let { song ->
                 return contextForSong(song, catalog.songs)
@@ -132,11 +158,17 @@ object AndroidAutoSearchResolver {
         catalog: AndroidAutoCatalogSnapshot,
         limit: Int = 100
     ): List<Song> {
-        val cleaned = query.cleanQuery()?.stripVoicePlayPrefix() ?: return emptyList()
+        val cleaned = query.voiceEntityQuery() ?: return emptyList()
+        if (cleaned.isGenericLibraryRequest()) return catalog.songs.take(limit.coerceAtLeast(0))
         val titleByArtist = parseTitleByArtist(cleaned)
         val queryTokens = normalized(cleaned).split(' ').filter(String::isNotBlank)
+        val playlistSongs = catalog.playlists.bestNamedMatch(cleaned)?.songs.orEmpty().map { it.id }.toSet()
         return catalog.songs
-            .map { song -> song to searchScore(song, cleaned, titleByArtist, queryTokens) }
+            .map { song -> song to maxOf(
+                searchScore(song, cleaned, titleByArtist, queryTokens),
+                if (song.id in playlistSongs) 60 else 0,
+                if (song.genres.any { textMatches(it, cleaned) }) 60 else 0
+            ) }
             .filter { (_, score) -> score > 0 }
             .sortedWith(
                 compareByDescending<Pair<Song, Int>> { (_, score) -> score }
@@ -223,10 +255,6 @@ object AndroidAutoSearchResolver {
         return if (title.isNotBlank() && artist.isNotBlank()) title to artist else null
     }
 
-    private fun String.stripVoicePlayPrefix(): String =
-        replace(Regex("^(please\\s+)?(play|listen\\s+to)(\\s+me)?\\s+", RegexOption.IGNORE_CASE), "")
-            .trim()
-
     private fun String.isGenericLibraryRequest(): Boolean = normalized(this) in setOf(
         "music",
         "my music",
@@ -268,9 +296,14 @@ object AndroidAutoSearchResolver {
 
     private fun <T> List<T>.bestNamedMatch(query: String, name: (T) -> String): T? {
         val requested = normalized(query)
-        return firstOrNull { item -> normalized(name(item)) == requested }
-            ?: firstOrNull { item -> normalized(name(item)).contains(requested) }
+        val ordered = sortedBy { normalized(name(it)) }
+        return ordered.firstOrNull { item -> normalized(name(item)) == requested }
+            ?: ordered.firstOrNull { item -> normalized(name(item)).startsWith(requested) }
+            ?: ordered.firstOrNull { item -> normalized(name(item)).contains(requested) }
     }
+
+    private fun <T> List<T>.exactNamedMatch(query: String, name: (T) -> String): T? =
+        firstOrNull { normalized(name(it)) == normalized(query) }
 
     private val songSearchTieBreaker = compareBy<Song>(
         { song -> song.album.lowercase(Locale.ROOT) },
