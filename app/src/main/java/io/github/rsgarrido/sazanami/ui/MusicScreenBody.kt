@@ -3,6 +3,8 @@ package io.github.rsgarrido.sazanami.ui
 import android.net.Uri
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -71,6 +73,7 @@ import io.github.rsgarrido.sazanami.ui.library.LibraryGridColumns
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewOptionsButton
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewOptionsSheet
 import io.github.rsgarrido.sazanami.ui.library.MusicLibraryContent
+import io.github.rsgarrido.sazanami.ui.library.libraryContentPresentation
 import io.github.rsgarrido.sazanami.ui.library.libraryContentTransitionSpec
 import io.github.rsgarrido.sazanami.ui.library.LibrarySelectionHeaderContent
 import io.github.rsgarrido.sazanami.ui.library.LocalLibrarySelectionUi
@@ -180,6 +183,9 @@ internal fun MusicScreenBody(
     onListeningAnalyticsTrendMetricSelected: (ListeningTrendMetric) -> Unit,
     onListeningAnalyticsRankingCategorySelected: (ListeningRankingCategory) -> Unit,
     onOpenLibrary: (LibraryTab) -> Unit,
+    onPinnedAlbumSelected: (String) -> Unit,
+    onPinnedArtistSelected: (String) -> Unit,
+    onPinnedPlaylistSelected: (Playlist) -> Unit,
     onFolderBackClick: () -> Unit,
     onSettingsBackClick: () -> Unit,
     onDiagnosticsClick: () -> Unit,
@@ -280,6 +286,7 @@ internal fun MusicScreenBody(
     libraryAppearanceUiState: LibraryAppearanceUiState,
     onLibraryViewOptionSelected: (LibraryViewCategory, LibraryViewOption) -> Unit,
     settingsScrollState: ScrollState = rememberScrollState(),
+    homeListState: LazyListState,
     statisticsListState: LazyListState,
     bottomContentPadding: Dp = 24.dp,
     modifier: Modifier = Modifier
@@ -481,25 +488,38 @@ internal fun MusicScreenBody(
                 libraryAppearanceUiState.gridColumnCountFor(selectedLibraryTab)
 
             LibrarySharedTransitionHost(
-                targetState = mainDestination,
+                targetState = MusicShellTransitionState(
+                    destination = mainDestination,
+                    artistName = selectedArtistName,
+                    albumKey = selectedAlbumKey,
+                    playlistId = selectedPlaylistId
+                ),
+                contentKey = MusicShellTransitionState::destination,
                 transitionSpec = {
-                    val direction = if (targetState.ordinal > initialState.ordinal) 1 else -1
+                    if (targetState.destination == initialState.destination) {
+                        EnterTransition.None.togetherWith(ExitTransition.None)
+                    } else {
+                        val direction = if (
+                            targetState.destination.ordinal > initialState.destination.ordinal
+                        ) 1 else -1
 
-                    (fadeIn(tween(190)) +
-                            scaleIn(tween(210), initialScale = 0.985f) +
-                            slideInHorizontally(tween(210)) { width ->
-                                direction * width / 28
-                            })
-                        .togetherWith(
-                            fadeOut(tween(145)) +
-                                    scaleOut(tween(170), targetScale = 0.995f) +
-                                    slideOutHorizontally(tween(175)) { width ->
-                                        -direction * width / 36
-                                    }
-                        )
+                        (fadeIn(tween(190)) +
+                                scaleIn(tween(210), initialScale = 0.985f) +
+                                slideInHorizontally(tween(210)) { width ->
+                                    direction * width / 28
+                                })
+                            .togetherWith(
+                                fadeOut(tween(145)) +
+                                        scaleOut(tween(170), targetScale = 0.995f) +
+                                        slideOutHorizontally(tween(175)) { width ->
+                                            -direction * width / 36
+                                        }
+                            )
+                    }
                 },
                 label = "appShellDestination"
-            ) { destination ->
+            ) { shellState ->
+                val destination = shellState.destination
                 if (destination == MainDestination.HOME) {
                     HomeScreen(
                         mediaAccessState = mediaAccessState,
@@ -533,16 +553,13 @@ internal fun MusicScreenBody(
                             onSongClick(song, songs)
                         },
                         onPinnedAlbumClick = { albumKey ->
-                            onOpenLibrary(LibraryTab.ALBUMS)
-                            onAlbumSelected(albumKey)
+                            onPinnedAlbumSelected(albumKey)
                         },
                         onPinnedArtistClick = { artistName ->
-                            onOpenLibrary(LibraryTab.ARTISTS)
-                            onArtistSelected(artistName)
+                            onPinnedArtistSelected(artistName)
                         },
                         onPinnedPlaylistClick = { playlist ->
-                            onOpenLibrary(LibraryTab.PLAYLISTS)
-                            onPlaylistClick(playlist)
+                            onPinnedPlaylistSelected(playlist)
                         },
                         onRecentlyPlayedSongClick = { song ->
                             onSongClick(song, recentlyPlayedSongs)
@@ -559,14 +576,15 @@ internal fun MusicScreenBody(
                             )
                         },
                         modifier = modifier,
+                        listState = homeListState,
                         bottomContentPadding = bottomContentPadding
                     )
                 } else {
-                    val isGroupedLibraryDetail = selectedArtistName != null ||
-                            selectedAlbumKey != null ||
+                    val isGroupedLibraryDetail = shellState.artistName != null ||
+                            shellState.albumKey != null ||
                             selectedGenreKey != null
                     val isLibraryDetail = isGroupedLibraryDetail ||
-                            selectedPlaylistId != null
+                            shellState.playlistId != null
                     val isSearchDestination = destination == MainDestination.SEARCH && !isLibraryDetail
                     val selectedViewMode = if (isSearchDestination) {
                         LibraryViewMode.LIST
@@ -651,8 +669,8 @@ internal fun MusicScreenBody(
                                             LibraryOrganizeAction(
                                                 songs = songs,
                                                 selectedLibraryTab = selectedLibraryTab,
-                                                selectedArtistName = selectedArtistName,
-                                                selectedAlbumKey = selectedAlbumKey,
+                                                selectedArtistName = shellState.artistName,
+                                                selectedAlbumKey = shellState.albumKey,
                                                 selectedSongSortState =
                                                     selectedCollectionSortState,
                                                 selectedArtistSortState = selectedArtistSortState,
@@ -769,10 +787,34 @@ internal fun MusicScreenBody(
                                     targetState = selectedLibraryTab,
                                     modifier = Modifier.weight(1f),
                                     transitionSpec = {
-                                        libraryContentTransitionSpec(initialState, targetState)
+                                        libraryContentTransitionSpec(
+                                            initialTab = initialState,
+                                            targetTab = targetState,
+                                            initialPresentation = libraryContentPresentation(
+                                                viewMode = libraryAppearanceUiState.modeFor(
+                                                    initialState
+                                                ),
+                                                gridColumnCount = libraryAppearanceUiState
+                                                    .gridColumnCountFor(initialState),
+                                                adaptiveGrid = initialState == LibraryTab.PLAYLISTS
+                                            ),
+                                            targetPresentation = libraryContentPresentation(
+                                                viewMode = libraryAppearanceUiState.modeFor(
+                                                    targetState
+                                                ),
+                                                gridColumnCount = libraryAppearanceUiState
+                                                    .gridColumnCountFor(targetState),
+                                                adaptiveGrid = targetState == LibraryTab.PLAYLISTS
+                                            )
+                                        )
                                     },
                                     label = "libraryTabContent"
                                 ) { visibleLibraryTab ->
+                                    val visibleViewMode = libraryAppearanceUiState.modeFor(
+                                        visibleLibraryTab
+                                    )
+                                    val visibleGridColumnCount = libraryAppearanceUiState
+                                        .gridColumnCountFor(visibleLibraryTab)
                                     MusicLibraryContent(
                                         selectedLibraryTab = visibleLibraryTab,
                                     songs = songs,
@@ -787,12 +829,12 @@ internal fun MusicScreenBody(
                                     selectedArtistSortState = selectedArtistSortState,
                                     selectedAlbumSortState = selectedAlbumSortState,
                                     selectedFavoriteSortState = selectedFavoriteSortState,
-                                    viewMode = selectedViewMode,
-                                    gridColumnCount = selectedGridColumnCount,
-                                    selectedArtistName = selectedArtistName,
-                                    selectedAlbumKey = selectedAlbumKey,
+                                    viewMode = visibleViewMode,
+                                    gridColumnCount = visibleGridColumnCount,
+                                    selectedArtistName = shellState.artistName,
+                                    selectedAlbumKey = shellState.albumKey,
                                     selectedGenreKey = selectedGenreKey,
-                                    selectedPlaylistId = selectedPlaylistId,
+                                    selectedPlaylistId = shellState.playlistId,
                                     playlists = playlists,
                                     playlistFolders = playlistFolders,
                                     selectedPlaylistStateId = selectedPlaylistStateId,
@@ -892,6 +934,13 @@ internal fun MusicScreenBody(
 
 internal fun shouldOfferLibraryOrganize(destination: MainDestination): Boolean =
     destination != MainDestination.SEARCH
+
+private data class MusicShellTransitionState(
+    val destination: MainDestination,
+    val artistName: String?,
+    val albumKey: String?,
+    val playlistId: Long?
+)
 
 internal fun shouldShowLibrarySelectionHeader(
     selectionActive: Boolean,

@@ -12,11 +12,22 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.key
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.foundation.layout.fillMaxSize
+
+private const val SharedArtworkDurationMillis = 280
+private const val SharedSourceReplicaAlpha = 0.24f
 
 internal sealed interface LibrarySharedArtworkKey {
     data class Album(val albumKey: String) : LibrarySharedArtworkKey
@@ -41,6 +52,7 @@ private val LocalLibraryAnimatedVisibilityScope =
 internal fun <S> LibrarySharedTransitionHost(
     targetState: S,
     transitionSpec: AnimatedContentTransitionScope<S>.() -> ContentTransform,
+    contentKey: (S) -> Any? = { it },
     modifier: Modifier = Modifier,
     label: String = "librarySharedTransitionHost",
     content: @Composable (S) -> Unit
@@ -49,6 +61,7 @@ internal fun <S> LibrarySharedTransitionHost(
         AnimatedContent(
             targetState = targetState,
             transitionSpec = transitionSpec,
+            contentKey = contentKey,
             modifier = Modifier.fillMaxSize(),
             label = label
         ) animatedContent@{ visibleState ->
@@ -81,16 +94,19 @@ internal fun <S> LibraryDetailAnimatedContent(
         targetState = targetState,
         modifier = modifier,
         transitionSpec = {
-            fadeIn(tween(durationMillis = 180))
-                .togetherWith(fadeOut(tween(durationMillis = 130)))
+            fadeIn(tween(durationMillis = 190, delayMillis = 40))
+                .togetherWith(fadeOut(tween(durationMillis = 110)))
         },
         label = label
     ) animatedContent@{ visibleState ->
         val localTransitionIsRunning = transition.currentState != transition.targetState
-        val visibilityScope = if (localTransitionIsRunning) {
-            this@animatedContent
-        } else {
-            inheritedVisibilityScope ?: this@animatedContent
+        val inheritedTransitionIsRunning = inheritedVisibilityScope?.transition?.let {
+            it.currentState != it.targetState
+        } == true
+        val visibilityScope = when {
+            inheritedTransitionIsRunning -> inheritedVisibilityScope
+            localTransitionIsRunning -> this@animatedContent
+            else -> inheritedVisibilityScope ?: this@animatedContent
         }
 
         CompositionLocalProvider(
@@ -106,20 +122,94 @@ internal fun <S> LibraryDetailAnimatedContent(
 internal fun Modifier.librarySharedArtwork(
     key: LibrarySharedArtworkKey?
 ): Modifier {
-    if (key == null) return this
-    val sharedTransitionScope = LocalLibrarySharedTransitionScope.current ?: return this
-    val animatedVisibilityScope = LocalLibraryAnimatedVisibilityScope.current ?: return this
+    val state = rememberLibrarySharedArtworkState(key) ?: return this
+    return librarySharedArtwork(state)
+}
 
-    return with(sharedTransitionScope) {
-        sharedElement(
-            sharedContentState = rememberSharedContentState(key = key),
-            animatedVisibilityScope = animatedVisibilityScope,
-            boundsTransform = { _, _ ->
-                tween(
-                    durationMillis = 220,
-                    easing = FastOutSlowInEasing
-                )
+/**
+ * Keeps a short-lived, subdued source-slot replica under the shared overlay. Compose intentionally
+ * lifts the matched element out of its original draw layer; without this mask the reserved source
+ * bounds expose the grid placeholder or an empty list slot before the collection fade completes.
+ */
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+internal fun LibrarySharedArtworkSource(
+    key: LibrarySharedArtworkKey,
+    shape: Shape,
+    modifier: Modifier = Modifier,
+    content: @Composable (Modifier) -> Unit
+) {
+    val state = rememberLibrarySharedArtworkState(key)
+
+    Box(modifier = modifier.clip(shape)) {
+        if (state?.sharedContentState?.isMatchFound == true) {
+            key("shared-source-replica") {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                        .clearAndSetSemantics {}
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .graphicsLayer { alpha = SharedSourceReplicaAlpha }
+                    ) {
+                        content(Modifier.fillMaxSize())
+                    }
+                }
             }
-        )
+        }
+
+        key("shared-source-content") {
+            content(
+                Modifier
+                    .fillMaxSize()
+                    .then(if (state == null) Modifier else Modifier.librarySharedArtwork(state))
+                    .clip(shape)
+            )
+        }
     }
 }
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+private fun rememberLibrarySharedArtworkState(
+    key: LibrarySharedArtworkKey?
+): LibrarySharedArtworkState? {
+    if (key == null) return null
+    val sharedTransitionScope = LocalLibrarySharedTransitionScope.current ?: return null
+    val animatedVisibilityScope = LocalLibraryAnimatedVisibilityScope.current ?: return null
+    val sharedContentState = with(sharedTransitionScope) {
+        rememberSharedContentState(key = key)
+    }
+
+    return LibrarySharedArtworkState(
+        sharedTransitionScope = sharedTransitionScope,
+        animatedVisibilityScope = animatedVisibilityScope,
+        sharedContentState = sharedContentState
+    )
+}
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+private fun Modifier.librarySharedArtwork(
+    state: LibrarySharedArtworkState
+): Modifier = with(state.sharedTransitionScope) {
+    sharedElement(
+        sharedContentState = state.sharedContentState,
+        animatedVisibilityScope = state.animatedVisibilityScope,
+        boundsTransform = { _, _ ->
+            tween(
+                durationMillis = SharedArtworkDurationMillis,
+                easing = FastOutSlowInEasing
+            )
+        }
+    )
+}
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+private data class LibrarySharedArtworkState(
+    val sharedTransitionScope: SharedTransitionScope,
+    val animatedVisibilityScope: AnimatedVisibilityScope,
+    val sharedContentState: SharedTransitionScope.SharedContentState
+)

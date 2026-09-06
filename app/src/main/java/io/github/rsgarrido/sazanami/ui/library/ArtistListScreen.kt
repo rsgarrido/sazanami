@@ -26,7 +26,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
@@ -82,16 +81,19 @@ fun ArtistListScreen(
 
             ListItem(
                 leadingContent = {
-                    ArtistPicture(
-                        identity = artist.identity,
-                        fallbackModel = firstSong?.albumArtUri,
-                        contentDescription = "Artwork for ${artist.name}",
-                        modifier = Modifier
-                            .size(56.dp)
-                            .librarySharedArtwork(LibrarySharedArtworkKey.Artist(artist.key))
-                            .clip(RoundedCornerShape(8.dp)),
-                        variant = VisualAssetVariant.THUMBNAIL
-                    )
+                    LibrarySharedArtworkSource(
+                        key = LibrarySharedArtworkKey.Artist(artist.key),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.size(56.dp)
+                    ) { artworkModifier ->
+                        ArtistPicture(
+                            identity = artist.identity,
+                            fallbackModel = firstSong?.albumArtUri,
+                            contentDescription = "Artwork for ${artist.name}",
+                            modifier = artworkModifier,
+                            variant = VisualAssetVariant.THUMBNAIL
+                        )
+                    }
                 },
                 headlineContent = {
                     Text(text = artist.name)

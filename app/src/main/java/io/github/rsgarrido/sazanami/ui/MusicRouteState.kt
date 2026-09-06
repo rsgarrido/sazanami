@@ -20,6 +20,18 @@ import io.github.rsgarrido.sazanami.ui.navigation.playbackLaunchContextSaver
 import io.github.rsgarrido.sazanami.ui.player.PlayerMorphState
 import io.github.rsgarrido.sazanami.ui.player.rememberPlayerMorphState
 
+internal enum class DetailEntryOrigin {
+    LIBRARY,
+    SEARCH,
+    HOME_PINNED
+}
+
+internal fun detailReturnDestination(origin: DetailEntryOrigin): MainDestination = when (origin) {
+    DetailEntryOrigin.LIBRARY -> MainDestination.LIBRARY
+    DetailEntryOrigin.SEARCH -> MainDestination.SEARCH
+    DetailEntryOrigin.HOME_PINNED -> MainDestination.HOME
+}
+
 @Stable
 class MusicNavigationState internal constructor(
     val mainDestination: MutableState<MainDestination>,
@@ -35,32 +47,97 @@ class MusicNavigationState internal constructor(
     val selectedArtistSortState: MutableState<LibrarySortState>,
     val selectedAlbumSortState: MutableState<LibrarySortState>,
     val selectedFavoriteSortState: MutableState<LibrarySortState>,
-    val searchCategory: MutableState<SearchCategory> = mutableStateOf(SearchCategory.ALL)
+    val searchCategory: MutableState<SearchCategory> = mutableStateOf(SearchCategory.ALL),
+    internal val albumDetailOrigin: MutableState<DetailEntryOrigin> =
+        mutableStateOf(DetailEntryOrigin.LIBRARY),
+    internal val artistDetailOrigin: MutableState<DetailEntryOrigin> =
+        mutableStateOf(DetailEntryOrigin.LIBRARY),
+    internal val playlistDetailOrigin: MutableState<DetailEntryOrigin> =
+        mutableStateOf(DetailEntryOrigin.LIBRARY)
 ) {
-    // Detail selection is layered over the current main destination, which remains the origin.
+    private fun currentDetailOrigin(): DetailEntryOrigin = when (mainDestination.value) {
+        MainDestination.SEARCH -> DetailEntryOrigin.SEARCH
+        else -> DetailEntryOrigin.LIBRARY
+    }
+
     fun openAlbum(key: String) {
+        openAlbum(key, currentDetailOrigin())
+    }
+
+    internal fun openAlbum(key: String, origin: DetailEntryOrigin) {
+        albumDetailOrigin.value = origin
         selectedAlbumKey.value = key
         selectedLibraryTab.value = LibraryTab.ALBUMS
     }
 
     fun openArtist(name: String) {
+        openArtist(name, currentDetailOrigin())
+    }
+
+    internal fun openArtist(name: String, origin: DetailEntryOrigin) {
+        artistDetailOrigin.value = origin
         selectedArtistName.value = name
         selectedLibraryTab.value = LibraryTab.ARTISTS
     }
 
     fun openPlaylist(id: Long) {
+        openPlaylist(id, currentDetailOrigin())
+    }
+
+    internal fun openPlaylist(id: Long, origin: DetailEntryOrigin) {
+        playlistDetailOrigin.value = origin
         selectedPlaylistId.value = id
         selectedLibraryTab.value = LibraryTab.PLAYLISTS
     }
 
-    fun closeAlbum() {
-        selectedAlbumKey.value = null
-        if (selectedArtistName.value != null) selectedLibraryTab.value = LibraryTab.ARTISTS
+    fun openPinnedAlbum(key: String) {
+        openAlbum(key, DetailEntryOrigin.HOME_PINNED)
+        mainDestination.value = MainDestination.LIBRARY
     }
 
-    fun closeArtist() { selectedArtistName.value = null }
+    fun openPinnedArtist(name: String) {
+        openArtist(name, DetailEntryOrigin.HOME_PINNED)
+        mainDestination.value = MainDestination.LIBRARY
+    }
 
-    fun closePlaylist() { selectedPlaylistId.value = null }
+    fun openPinnedPlaylist(id: Long) {
+        openPlaylist(id, DetailEntryOrigin.HOME_PINNED)
+        mainDestination.value = MainDestination.LIBRARY
+    }
+
+    fun clearAlbum() {
+        selectedAlbumKey.value = null
+        albumDetailOrigin.value = DetailEntryOrigin.LIBRARY
+    }
+
+    fun clearArtist() {
+        selectedArtistName.value = null
+        artistDetailOrigin.value = DetailEntryOrigin.LIBRARY
+    }
+
+    fun clearPlaylist() {
+        selectedPlaylistId.value = null
+        playlistDetailOrigin.value = DetailEntryOrigin.LIBRARY
+    }
+
+    fun closeAlbum() {
+        val returnDestination = detailReturnDestination(albumDetailOrigin.value)
+        clearAlbum()
+        if (selectedArtistName.value != null) selectedLibraryTab.value = LibraryTab.ARTISTS
+        mainDestination.value = returnDestination
+    }
+
+    fun closeArtist() {
+        val returnDestination = detailReturnDestination(artistDetailOrigin.value)
+        clearArtist()
+        mainDestination.value = returnDestination
+    }
+
+    fun closePlaylist() {
+        val returnDestination = detailReturnDestination(playlistDetailOrigin.value)
+        clearPlaylist()
+        mainDestination.value = returnDestination
+    }
 }
 
 @Composable
@@ -74,6 +151,15 @@ fun rememberMusicNavigationState(): MusicNavigationState {
     val selectedAlbumKey = rememberSaveable { mutableStateOf<String?>(null) }
     val selectedGenreKey = rememberSaveable { mutableStateOf<String?>(null) }
     val selectedPlaylistId = rememberSaveable { mutableStateOf<Long?>(null) }
+    val albumDetailOrigin = rememberSaveable {
+        mutableStateOf(DetailEntryOrigin.LIBRARY)
+    }
+    val artistDetailOrigin = rememberSaveable {
+        mutableStateOf(DetailEntryOrigin.LIBRARY)
+    }
+    val playlistDetailOrigin = rememberSaveable {
+        mutableStateOf(DetailEntryOrigin.LIBRARY)
+    }
     val searchQuery = rememberSaveable { mutableStateOf("") }
     val searchCategory = rememberSaveable { mutableStateOf(SearchCategory.ALL) }
     val selectedSongFilterState = rememberSaveable(stateSaver = LibrarySongFilterStateSaver) {
@@ -107,6 +193,9 @@ fun rememberMusicNavigationState(): MusicNavigationState {
         selectedAlbumKey,
         selectedGenreKey,
         selectedPlaylistId,
+        albumDetailOrigin,
+        artistDetailOrigin,
+        playlistDetailOrigin,
         searchQuery,
         searchCategory,
         selectedSongFilterState,
@@ -129,7 +218,10 @@ fun rememberMusicNavigationState(): MusicNavigationState {
             selectedArtistSortState,
             selectedAlbumSortState,
             selectedFavoriteSortState,
-            searchCategory
+            searchCategory,
+            albumDetailOrigin,
+            artistDetailOrigin,
+            playlistDetailOrigin
         )
     }
 }

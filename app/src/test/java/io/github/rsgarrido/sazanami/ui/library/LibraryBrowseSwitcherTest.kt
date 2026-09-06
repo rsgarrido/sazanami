@@ -100,4 +100,67 @@ class LibraryBrowseSwitcherTest {
         )
         assertNull(libraryContentMotion(LibraryTab.QUEUE, LibraryTab.SONGS))
     }
+
+    @Test
+    fun matchingPresentationsKeepDirectionalPrimaryMotion() {
+        assertEquals(
+            LibraryContentTransitionStyle.DIRECTIONAL,
+            libraryContentTransitionStyle(
+                LibraryContentPresentation.List,
+                LibraryContentPresentation.List
+            )
+        )
+        assertEquals(
+            LibraryContentTransitionStyle.DIRECTIONAL,
+            libraryContentTransitionStyle(
+                LibraryContentPresentation.Grid(columns = 3),
+                LibraryContentPresentation.Grid(columns = 3)
+            )
+        )
+    }
+
+    @Test
+    fun materiallyDifferentPresentationsUseFadeThrough() {
+        assertEquals(
+            LibraryContentTransitionStyle.FADE_THROUGH,
+            libraryContentTransitionStyle(
+                LibraryContentPresentation.Grid(columns = 4),
+                LibraryContentPresentation.List
+            )
+        )
+        assertEquals(
+            LibraryContentTransitionStyle.FADE_THROUGH,
+            libraryContentTransitionStyle(
+                LibraryContentPresentation.Grid(columns = 2),
+                LibraryContentPresentation.Grid(columns = 4)
+            )
+        )
+        assertEquals(
+            LibraryContentTransitionStyle.FADE_THROUGH,
+            libraryContentTransitionStyle(
+                LibraryContentPresentation.Grid(columns = 2),
+                LibraryContentPresentation.AdaptiveGrid
+            )
+        )
+    }
+
+    @Test
+    fun presentationFactoryDistinguishesFixedAndAdaptiveGrids() {
+        assertEquals(
+            LibraryContentPresentation.List,
+            libraryContentPresentation(LibraryViewMode.LIST, gridColumnCount = 4)
+        )
+        assertEquals(
+            LibraryContentPresentation.Grid(columns = 3),
+            libraryContentPresentation(LibraryViewMode.GRID, gridColumnCount = 3)
+        )
+        assertEquals(
+            LibraryContentPresentation.AdaptiveGrid,
+            libraryContentPresentation(
+                LibraryViewMode.GRID,
+                gridColumnCount = 3,
+                adaptiveGrid = true
+            )
+        )
+    }
 }

@@ -31,7 +31,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
@@ -135,17 +134,20 @@ fun AlbumListScreen(
 
             ListItem(
                 leadingContent = {
-                    AsyncImage(
-                        model = firstSong?.albumArtUri,
-                        contentDescription = "Album art for ${album.title}",
-                        modifier = Modifier
-                            .size(56.dp)
-                            .librarySharedArtwork(LibrarySharedArtworkKey.Album(album.key))
-                            .clip(RoundedCornerShape(8.dp)),
-                        contentScale = ContentScale.Crop,
-                        error = painterResource(R.drawable.ic_media_play),
-                        placeholder = painterResource(R.drawable.ic_media_play)
-                    )
+                    LibrarySharedArtworkSource(
+                        key = LibrarySharedArtworkKey.Album(album.key),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.size(56.dp)
+                    ) { artworkModifier ->
+                        AsyncImage(
+                            model = firstSong?.albumArtUri,
+                            contentDescription = "Album art for ${album.title}",
+                            modifier = artworkModifier,
+                            contentScale = ContentScale.Crop,
+                            error = painterResource(R.drawable.ic_media_play),
+                            placeholder = painterResource(R.drawable.ic_media_play)
+                        )
+                    }
                 },
                 headlineContent = {
                     Text(text = album.title)

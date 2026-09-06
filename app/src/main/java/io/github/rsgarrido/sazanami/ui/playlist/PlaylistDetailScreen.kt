@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
@@ -252,33 +251,9 @@ fun PlaylistDetailScreen(
                 modifier = Modifier.fillMaxSize()
             )
 
-            isLoading -> LazyColumn(modifier = Modifier.fillMaxSize()) {
-                item(key = "playlist-loading-header") {
-                    PlaylistDetailHero(
-                        playlist = playlist,
-                        hasSongs = false,
-                        sortField = sortField,
-                        sortDirection = sortDirection,
-                        onSortFieldSelected = { field -> sortFieldName = field.name },
-                        onSortDirectionToggle = {
-                            sortDirectionName = sortDirection.toggled().name
-                        },
-                        onPlayClick = {},
-                        onShuffleClick = {},
-                        isRefreshingSnapshot = false,
-                        onRefreshClick = null
-                    )
-                }
-                item(key = "playlist-loading-progress") {
-                    PlaylistLoadingState(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp)
-                    )
-                }
-            }
-
             else -> PlaylistSongList(
-                playlistSongs = displayedSongs,
-                playlistSongRows = displayedRows,
+                playlistSongs = if (isLoading) emptyList() else displayedSongs,
+                playlistSongRows = if (isLoading) emptyList() else displayedRows,
                 currentSongId = currentSongId,
                 recentlyAddedSongIds = recentlyAddedSongIds,
                 favoriteMembershipKeys = favoriteMembershipKeys,
@@ -293,17 +268,21 @@ fun PlaylistDetailScreen(
                 headerContent = {
                     PlaylistDetailHero(
                         playlist = playlist,
-                        hasSongs = displayedSongs.isNotEmpty(),
+                        hasSongs = !isLoading && displayedSongs.isNotEmpty(),
                         sortField = sortField,
                         sortDirection = sortDirection,
                         onSortFieldSelected = { field -> sortFieldName = field.name },
                         onSortDirectionToggle = {
                             sortDirectionName = sortDirection.toggled().name
                         },
-                        onPlayClick = { onPlayAllClick(displayedSongs) },
-                        onShuffleClick = { onShuffleAllClick(displayedSongs) },
-                        isRefreshingSnapshot = isRefreshingSnapshot,
-                        onRefreshClick = if (
+                        onPlayClick = {
+                            if (!isLoading) onPlayAllClick(displayedSongs)
+                        },
+                        onShuffleClick = {
+                            if (!isLoading) onShuffleAllClick(displayedSongs)
+                        },
+                        isRefreshingSnapshot = !isLoading && isRefreshingSnapshot,
+                        onRefreshClick = if (!isLoading &&
                             playlist.membershipBehavior == PlaylistMembershipBehavior.GENERATED_SMART_SNAPSHOT
                         ) {
                             {
@@ -337,9 +316,15 @@ fun PlaylistDetailScreen(
                     )
                 },
                 emptyContent = {
-                    PlaylistDetailEmptyState(
-                        playlist = playlist
-                    )
+                    if (isLoading) {
+                        PlaylistLoadingState(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 40.dp)
+                        )
+                    } else {
+                        PlaylistDetailEmptyState(playlist = playlist)
+                    }
                 },
                 bottomContentPadding = bottomContentPadding,
                 modifier = Modifier.fillMaxSize()

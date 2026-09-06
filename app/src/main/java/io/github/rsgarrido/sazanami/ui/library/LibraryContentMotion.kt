@@ -21,6 +21,39 @@ internal data class LibraryContentMotion(
     val level: LibraryContentMotionLevel
 )
 
+internal sealed interface LibraryContentPresentation {
+    data object List : LibraryContentPresentation
+    data class Grid(val columns: Int) : LibraryContentPresentation
+    data object AdaptiveGrid : LibraryContentPresentation
+}
+
+internal enum class LibraryContentTransitionStyle {
+    DIRECTIONAL,
+    FADE_THROUGH
+}
+
+internal fun libraryContentPresentation(
+    viewMode: LibraryViewMode,
+    gridColumnCount: Int,
+    adaptiveGrid: Boolean = false
+): LibraryContentPresentation = when (viewMode) {
+    LibraryViewMode.LIST -> LibraryContentPresentation.List
+    LibraryViewMode.GRID -> if (adaptiveGrid) {
+        LibraryContentPresentation.AdaptiveGrid
+    } else {
+        LibraryContentPresentation.Grid(gridColumnCount)
+    }
+}
+
+internal fun libraryContentTransitionStyle(
+    initial: LibraryContentPresentation,
+    target: LibraryContentPresentation
+): LibraryContentTransitionStyle = if (initial == target) {
+    LibraryContentTransitionStyle.DIRECTIONAL
+} else {
+    LibraryContentTransitionStyle.FADE_THROUGH
+}
+
 internal fun libraryContentMotion(
     initialTab: LibraryTab,
     targetTab: LibraryTab
@@ -58,23 +91,37 @@ internal fun libraryContentMotion(
 
 internal fun libraryContentTransitionSpec(
     initialTab: LibraryTab,
-    targetTab: LibraryTab
+    targetTab: LibraryTab,
+    initialPresentation: LibraryContentPresentation,
+    targetPresentation: LibraryContentPresentation
 ): ContentTransform {
     val motion = libraryContentMotion(initialTab, targetTab)
         ?: return EnterTransition.None togetherWith ExitTransition.None
 
     return when (motion.level) {
         LibraryContentMotionLevel.PRIMARY -> {
-            (fadeIn(animationSpec = tween(190)) +
-                    slideInHorizontally(
-                        animationSpec = tween(210, easing = FastOutSlowInEasing)
-                    ) { width -> motion.direction * width / 28 })
-                .togetherWith(
-                    fadeOut(animationSpec = tween(145)) +
-                            slideOutHorizontally(
-                                animationSpec = tween(175, easing = FastOutSlowInEasing)
-                            ) { width -> -motion.direction * width / 36 }
-                )
+            when (libraryContentTransitionStyle(initialPresentation, targetPresentation)) {
+                LibraryContentTransitionStyle.DIRECTIONAL -> {
+                    (fadeIn(animationSpec = tween(190)) +
+                            slideInHorizontally(
+                                animationSpec = tween(210, easing = FastOutSlowInEasing)
+                            ) { width -> motion.direction * width / 28 })
+                        .togetherWith(
+                            fadeOut(animationSpec = tween(145)) +
+                                    slideOutHorizontally(
+                                        animationSpec = tween(
+                                            175,
+                                            easing = FastOutSlowInEasing
+                                        )
+                                    ) { width -> -motion.direction * width / 36 }
+                        )
+                }
+
+                LibraryContentTransitionStyle.FADE_THROUGH -> {
+                    fadeIn(animationSpec = tween(durationMillis = 160, delayMillis = 70))
+                        .togetherWith(fadeOut(animationSpec = tween(durationMillis = 90)))
+                }
+            }
         }
 
         LibraryContentMotionLevel.SECONDARY -> {

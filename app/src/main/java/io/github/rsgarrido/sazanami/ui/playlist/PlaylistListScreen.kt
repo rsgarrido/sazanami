@@ -75,6 +75,7 @@ import io.github.rsgarrido.sazanami.ui.library.LibraryItemAction
 import io.github.rsgarrido.sazanami.ui.library.LibraryItemActionSheet
 import io.github.rsgarrido.sazanami.ui.library.LibraryItemActionSheetTarget
 import io.github.rsgarrido.sazanami.ui.library.LibrarySharedArtworkKey
+import io.github.rsgarrido.sazanami.ui.library.LibrarySharedArtworkSource
 import io.github.rsgarrido.sazanami.ui.library.LocalLibraryQueueUi
 import io.github.rsgarrido.sazanami.ui.library.libraryItemActions
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewMode
@@ -84,7 +85,6 @@ import io.github.rsgarrido.sazanami.ui.library.ResetLazyGridOnSortChange
 import io.github.rsgarrido.sazanami.ui.library.ResetLazyListOnSortChange
 import io.github.rsgarrido.sazanami.ui.library.compareKnownPositiveLong
 import io.github.rsgarrido.sazanami.ui.library.compareLibraryText
-import io.github.rsgarrido.sazanami.ui.library.librarySharedArtwork
 
 internal object PlaylistGridLayout {
     val minimumTileWidth = 148.dp
@@ -604,15 +604,17 @@ private fun PlaylistRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            PlaylistArtwork(
-                playlist = playlist,
-                contentDescription = "Artwork for ${playlist.name}",
-                modifier = Modifier
-                    .size(72.dp)
-                    .librarySharedArtwork(
-                        LibrarySharedArtworkKey.Playlist(playlist.playlistId)
-                    )
-            )
+            LibrarySharedArtworkSource(
+                key = LibrarySharedArtworkKey.Playlist(playlist.playlistId),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.size(72.dp)
+            ) { artworkModifier ->
+                PlaylistArtwork(
+                    playlist = playlist,
+                    contentDescription = "Artwork for ${playlist.name}",
+                    modifier = artworkModifier
+                )
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = playlist.name,
@@ -722,15 +724,17 @@ private fun PlaylistGridTile(
     ) {
         Column(modifier = Modifier.padding(10.dp)) {
             Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f)) {
-                PlaylistArtwork(
-                    playlist = playlist,
-                    contentDescription = "Artwork for ${playlist.name}",
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .librarySharedArtwork(
-                            LibrarySharedArtworkKey.Playlist(playlist.playlistId)
-                        )
-                )
+                LibrarySharedArtworkSource(
+                    key = LibrarySharedArtworkKey.Playlist(playlist.playlistId),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) { artworkModifier ->
+                    PlaylistArtwork(
+                        playlist = playlist,
+                        contentDescription = "Artwork for ${playlist.name}",
+                        modifier = artworkModifier
+                    )
+                }
                 IconButton(onClick = onMoreClick, modifier = Modifier.align(Alignment.TopEnd)) {
                     Icon(Icons.Filled.MoreVert, contentDescription = "More options for ${playlist.name}")
                 }

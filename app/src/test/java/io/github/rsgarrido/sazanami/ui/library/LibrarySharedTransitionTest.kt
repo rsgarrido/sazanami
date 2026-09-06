@@ -19,5 +19,13 @@ class LibrarySharedTransitionTest {
             LibrarySharedArtworkKey.Artist("42"),
             LibrarySharedArtworkKey.Playlist(42L)
         )
+        assertEquals(
+            LibrarySharedArtworkKey.Playlist(42L),
+            LibrarySharedArtworkKey.Playlist(42L)
+        )
+        assertNotEquals(
+            LibrarySharedArtworkKey.Playlist(42L),
+            LibrarySharedArtworkKey.Playlist(43L)
+        )
     }
 }

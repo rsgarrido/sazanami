@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -69,6 +70,7 @@ internal fun HomeScreen(
     onRecentlyPlayedSongClick: (Song) -> Unit,
     onRecentlyAddedSongClick: (Song) -> Unit,
     onFavoriteSongClick: (Song) -> Unit,
+    listState: LazyListState,
     modifier: Modifier = Modifier,
     bottomContentPadding: Dp = 24.dp
 ) {
@@ -79,6 +81,7 @@ internal fun HomeScreen(
     val visibleRecentlyAddedSongs = recentlyAddedShelfSongs(recentlyAddedSongs)
 
     LazyColumn(
+        state = listState,
         modifier = modifier
             .fillMaxSize(),
         contentPadding = PaddingValues(bottom = bottomContentPadding),

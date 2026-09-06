@@ -311,17 +311,18 @@ fun AlbumGridScreen(
                 artworkUri = album.songs.firstOrNull()?.albumArtUri,
                 artworkDescription = "Album art for ${album.title}",
                 artworkContent = {
-                    AsyncImage(
-                        model = album.songs.firstOrNull()?.albumArtUri,
-                        contentDescription = "Album art for ${album.title}",
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .librarySharedArtwork(
-                                LibrarySharedArtworkKey.Album(album.key)
-                            )
-                            .clip(RoundedCornerShape(gridMetrics.artworkCornerRadius)),
-                        contentScale = ContentScale.Crop
-                    )
+                    LibrarySharedArtworkSource(
+                        key = LibrarySharedArtworkKey.Album(album.key),
+                        shape = RoundedCornerShape(gridMetrics.artworkCornerRadius),
+                        modifier = Modifier.fillMaxSize()
+                    ) { artworkModifier ->
+                        AsyncImage(
+                            model = album.songs.firstOrNull()?.albumArtUri,
+                            contentDescription = "Album art for ${album.title}",
+                            modifier = artworkModifier,
+                            contentScale = ContentScale.Crop
+                        )
+                    }
                 },
                 title = album.title,
                 subtitle = "${album.artistText} • $songCountText",
@@ -436,18 +437,19 @@ fun ArtistGridScreen(
                 artworkUri = artist.songs.firstOrNull()?.albumArtUri,
                 artworkDescription = "Artwork for ${artist.name}",
                 artworkContent = {
-                    ArtistPicture(
-                        identity = artist.identity,
-                        fallbackModel = artist.songs.firstOrNull()?.albumArtUri,
-                        contentDescription = "Artwork for ${artist.name}",
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .librarySharedArtwork(
-                                LibrarySharedArtworkKey.Artist(artist.key)
-                            )
-                            .clip(RoundedCornerShape(gridMetrics.artworkCornerRadius)),
-                        variant = VisualAssetVariant.THUMBNAIL
-                    )
+                    LibrarySharedArtworkSource(
+                        key = LibrarySharedArtworkKey.Artist(artist.key),
+                        shape = RoundedCornerShape(gridMetrics.artworkCornerRadius),
+                        modifier = Modifier.fillMaxSize()
+                    ) { artworkModifier ->
+                        ArtistPicture(
+                            identity = artist.identity,
+                            fallbackModel = artist.songs.firstOrNull()?.albumArtUri,
+                            contentDescription = "Artwork for ${artist.name}",
+                            modifier = artworkModifier,
+                            variant = VisualAssetVariant.THUMBNAIL
+                        )
+                    }
                 },
                 title = artist.name,
                 subtitle = songCountText,
