@@ -5,6 +5,8 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
@@ -19,7 +21,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -136,6 +137,7 @@ private fun AppBottomNavigationItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val itemShape = RoundedCornerShape(20.dp)
     val contentColor by animateColorAsState(
         targetValue = if (selected) {
             AppShellAccent
@@ -148,13 +150,14 @@ private fun AppBottomNavigationItem(
     Surface(
         modifier = modifier
             .height(AppBottomNavigationItemHeight)
+            .clip(itemShape)
             .selectable(
                 selected = selected,
                 role = Role.Tab,
                 onClick = onClick
             ),
         color = Color.Transparent,
-        shape = RoundedCornerShape(20.dp)
+        shape = itemShape
     ) {
         Column(
             modifier = Modifier

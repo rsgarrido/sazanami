@@ -195,10 +195,10 @@ fun HomePinnedShelf(
                         )
 
                         val dragScale by animateFloatAsState(
-                            targetValue = if (isDragged) 1.045f else 1f,
+                            targetValue = if (isDragged) 1.025f else 1f,
                             animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                stiffness = Spring.StiffnessMedium
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMediumLow
                             ),
                             label = "homePinDragScale-${pin.pin.id}"
                         )

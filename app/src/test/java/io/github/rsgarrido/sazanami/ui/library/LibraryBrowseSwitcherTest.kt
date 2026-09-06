@@ -67,4 +67,37 @@ class LibraryBrowseSwitcherTest {
         assertFalse(notMeasured.showStart)
         assertFalse(notMeasured.showEnd)
     }
+
+    @Test
+    fun primaryLibraryMotionFollowsPrimaryTabOrder() {
+        assertEquals(
+            LibraryContentMotion(1, LibraryContentMotionLevel.PRIMARY),
+            libraryContentMotion(LibraryTab.SONGS, LibraryTab.PLAYLISTS)
+        )
+        assertEquals(
+            LibraryContentMotion(-1, LibraryContentMotionLevel.PRIMARY),
+            libraryContentMotion(LibraryTab.GENRES, LibraryTab.ALBUMS)
+        )
+    }
+
+    @Test
+    fun songCollectionMotionIsLighterAndFollowsFilterOrder() {
+        assertEquals(
+            LibraryContentMotion(1, LibraryContentMotionLevel.SECONDARY),
+            libraryContentMotion(LibraryTab.SONGS, LibraryTab.RECENTLY_PLAYED)
+        )
+        assertEquals(
+            LibraryContentMotion(-1, LibraryContentMotionLevel.SECONDARY),
+            libraryContentMotion(LibraryTab.MOST_PLAYED, LibraryTab.FAVORITES)
+        )
+    }
+
+    @Test
+    fun crossingFromSongCollectionToAnotherPrimaryUsesPrimaryMotion() {
+        assertEquals(
+            LibraryContentMotion(1, LibraryContentMotionLevel.PRIMARY),
+            libraryContentMotion(LibraryTab.RATED, LibraryTab.ARTISTS)
+        )
+        assertNull(libraryContentMotion(LibraryTab.QUEUE, LibraryTab.SONGS))
+    }
 }

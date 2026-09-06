@@ -33,7 +33,7 @@ fun PressableHomeCard(
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.975f else 1f,
+        targetValue = if (isPressed) 0.985f else 1f,
         animationSpec = tween(PressAnimationDurationMillis),
         label = "homeCardScale"
     )

@@ -71,6 +71,7 @@ import io.github.rsgarrido.sazanami.ui.library.LibraryGridColumns
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewOptionsButton
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewOptionsSheet
 import io.github.rsgarrido.sazanami.ui.library.MusicLibraryContent
+import io.github.rsgarrido.sazanami.ui.library.libraryContentTransitionSpec
 import io.github.rsgarrido.sazanami.ui.library.LibrarySelectionHeaderContent
 import io.github.rsgarrido.sazanami.ui.library.LocalLibrarySelectionUi
 import io.github.rsgarrido.sazanami.ui.library.normalizeRatedSongFilterForQuickRateMode
@@ -763,8 +764,16 @@ internal fun MusicScreenBody(
                                 songs.isEmpty() -> EmptyLibraryNotice(
                                     modifier = Modifier.padding(16.dp)
                                 )
-                                else -> MusicLibraryContent(
-                                    selectedLibraryTab = selectedLibraryTab,
+                                else -> AnimatedContent(
+                                    targetState = selectedLibraryTab,
+                                    modifier = Modifier.weight(1f),
+                                    transitionSpec = {
+                                        libraryContentTransitionSpec(initialState, targetState)
+                                    },
+                                    label = "libraryTabContent"
+                                ) { visibleLibraryTab ->
+                                    MusicLibraryContent(
+                                        selectedLibraryTab = visibleLibraryTab,
                                     songs = songs,
                                     searchQuery = if (destination == MainDestination.SEARCH) "" else searchQuery,
                                     selectedSongFilterState = if (isSearchDestination) {
@@ -851,8 +860,9 @@ internal fun MusicScreenBody(
                                     recentlyAddedSongs = recentlyAddedLibrarySongs,
                                     mostPlayedSongs = mostPlayedSongs,
                                     bottomContentPadding = bottomContentPadding,
-                                    modifier = Modifier.weight(1f)
-                                )
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
                             }
                         }
                     }

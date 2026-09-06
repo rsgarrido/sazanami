@@ -1,5 +1,7 @@
 package io.github.rsgarrido.sazanami.ui.playlist
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -75,6 +77,7 @@ import io.github.rsgarrido.sazanami.ui.library.LibraryItemActionSheetTarget
 import io.github.rsgarrido.sazanami.ui.library.LocalLibraryQueueUi
 import io.github.rsgarrido.sazanami.ui.library.libraryItemActions
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewMode
+import io.github.rsgarrido.sazanami.ui.library.LibraryLayoutMotionDurationMillis
 import io.github.rsgarrido.sazanami.ui.library.LibrarySortDirection
 import io.github.rsgarrido.sazanami.ui.library.ResetLazyGridOnSortChange
 import io.github.rsgarrido.sazanami.ui.library.ResetLazyListOnSortChange
@@ -357,7 +360,13 @@ fun PlaylistListScreen(
                         PlaylistFolderRow(
                             folder = folder,
                             onClick = { onFolderSelected(folder.folderId) },
-                            onMoreClick = { showFolderActions(folder) }
+                            onMoreClick = { showFolderActions(folder) },
+                            modifier = Modifier.animateItem(
+                                placementSpec = tween(
+                                    durationMillis = LibraryLayoutMotionDurationMillis,
+                                    easing = FastOutSlowInEasing
+                                )
+                            )
                         )
                     }
                 }
@@ -368,7 +377,13 @@ fun PlaylistListScreen(
                     PlaylistRow(
                         playlist = playlist,
                         onClick = { onPlaylistClick(playlist) },
-                        onMoreClick = { showPlaylistActions(playlist) }
+                        onMoreClick = { showPlaylistActions(playlist) },
+                        modifier = Modifier.animateItem(
+                            placementSpec = tween(
+                                durationMillis = LibraryLayoutMotionDurationMillis,
+                                easing = FastOutSlowInEasing
+                            )
+                        )
                     )
                 }
             }
@@ -393,7 +408,13 @@ fun PlaylistListScreen(
                         PlaylistFolderGridTile(
                             folder = folder,
                             onClick = { onFolderSelected(folder.folderId) },
-                            onMoreClick = { showFolderActions(folder) }
+                            onMoreClick = { showFolderActions(folder) },
+                            modifier = Modifier.animateItem(
+                                placementSpec = tween(
+                                    durationMillis = LibraryLayoutMotionDurationMillis,
+                                    easing = FastOutSlowInEasing
+                                )
+                            )
                         )
                     }
                 }
@@ -404,7 +425,13 @@ fun PlaylistListScreen(
                     PlaylistGridTile(
                         playlist = playlist,
                         onClick = { onPlaylistClick(playlist) },
-                        onMoreClick = { showPlaylistActions(playlist) }
+                        onMoreClick = { showPlaylistActions(playlist) },
+                        modifier = Modifier.animateItem(
+                            placementSpec = tween(
+                                durationMillis = LibraryLayoutMotionDurationMillis,
+                                easing = FastOutSlowInEasing
+                            )
+                        )
                     )
                 }
             }
@@ -498,10 +525,11 @@ fun PlaylistListScreen(
 private fun PlaylistFolderRow(
     folder: PlaylistFolder,
     onClick: () -> Unit,
-    onMoreClick: () -> Unit
+    onMoreClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 5.dp)
             .libraryItemActions(
@@ -550,10 +578,11 @@ private fun PlaylistFolderRow(
 private fun PlaylistRow(
     playlist: Playlist,
     onClick: () -> Unit,
-    onMoreClick: () -> Unit
+    onMoreClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 5.dp)
             .libraryItemActions(
@@ -612,10 +641,11 @@ private fun PlaylistRow(
 private fun PlaylistFolderGridTile(
     folder: PlaylistFolder,
     onClick: () -> Unit,
-    onMoreClick: () -> Unit
+    onMoreClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .libraryItemActions(
                 clickLabel = "Open ${folder.name}",
@@ -669,10 +699,11 @@ private fun PlaylistFolderGridTile(
 private fun PlaylistGridTile(
     playlist: Playlist,
     onClick: () -> Unit,
-    onMoreClick: () -> Unit
+    onMoreClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .libraryItemActions(
                 clickLabel = "Open ${playlist.name}",

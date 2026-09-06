@@ -1,5 +1,7 @@
 package io.github.rsgarrido.sazanami.ui.library
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -16,8 +18,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -43,9 +47,38 @@ fun RatedSongFilterRow(
             key = RatedSongFilter::name
         ) { filter ->
             val selected = filter == selectedFilter
+            val shape = MaterialTheme.shapes.medium
+            val containerColor by animateColorAsState(
+                targetValue = if (selected) {
+                    AppShellAccent.copy(alpha = 0.16f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                },
+                animationSpec = tween(180),
+                label = "ratedFilterContainerColor"
+            )
+            val contentColor by animateColorAsState(
+                targetValue = if (selected) {
+                    AppShellAccent
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                animationSpec = tween(180),
+                label = "ratedFilterContentColor"
+            )
+            val borderColor by animateColorAsState(
+                targetValue = if (selected) {
+                    AppShellAccent.copy(alpha = 0.46f)
+                } else {
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f)
+                },
+                animationSpec = tween(180),
+                label = "ratedFilterBorderColor"
+            )
             Surface(
                 modifier = Modifier
                     .height(32.dp)
+                    .clip(shape)
                     .selectable(
                         selected = selected,
                         role = Role.RadioButton,
@@ -54,25 +87,10 @@ fun RatedSongFilterRow(
                     .semantics(mergeDescendants = true) {
                         contentDescription = filter.label
                     },
-                shape = MaterialTheme.shapes.medium,
-                color = if (selected) {
-                    AppShellAccent.copy(alpha = 0.16f)
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                },
-                contentColor = if (selected) {
-                    AppShellAccent
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                border = BorderStroke(
-                    1.dp,
-                    if (selected) {
-                        AppShellAccent.copy(alpha = 0.46f)
-                    } else {
-                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f)
-                    }
-                )
+                shape = shape,
+                color = containerColor,
+                contentColor = contentColor,
+                border = BorderStroke(1.dp, borderColor)
             ) {
                 androidx.compose.foundation.layout.Row(
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
