@@ -625,6 +625,7 @@ private data class LibraryGridMetrics(
     val showSubtitle: Boolean
 )
 
+@Composable
 private fun libraryGridMetrics(columnCount: Int): LibraryGridMetrics {
     return when (LibraryGridColumns.normalize(columnCount)) {
         2 -> LibraryGridMetrics(

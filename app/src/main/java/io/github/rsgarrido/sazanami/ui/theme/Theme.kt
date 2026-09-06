@@ -4,6 +4,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import io.github.rsgarrido.sazanami.data.preferences.AppFont
 
 private val DarkColorScheme = darkColorScheme(
     primary = SazanamiAccent,
@@ -46,13 +47,14 @@ private val LightColorScheme = lightColorScheme(
 @Composable
 fun SazanamiTheme(
     darkTheme: Boolean = true,
+    appFont: AppFont = AppFont.SAZANAMI,
     content: @Composable () -> Unit
 ) {
     val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography,
+        typography = typographyFor(appFont),
         content = content
     )
 }

@@ -38,6 +38,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.width
 import io.github.rsgarrido.sazanami.data.preferences.CrossfadePreferences
+import io.github.rsgarrido.sazanami.data.preferences.AppFont
 import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.data.FolderSelectionMode
 import io.github.rsgarrido.sazanami.data.PlayerTheme
@@ -81,6 +82,8 @@ fun SettingsScreen(
     sleepTimerDisplayText: String,
     onSleepTimerClick: () -> Unit,
     selectedPlayerTheme: PlayerTheme,
+    selectedAppFont: AppFont = AppFont.SAZANAMI,
+    onAppFontSelected: (AppFont) -> Unit = {},
     selectedPlayerThemeTokens: PlayerThemeTokens,
     onPlayerThemeSelected: (PlayerTheme) -> Unit,
     onUpdatePlayerThemeTokenOverride: (PlayerTheme, PlayerThemeTokenField, Color) -> Unit,
@@ -107,6 +110,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     var isPlayerThemeDialogVisible by remember { mutableStateOf(false) }
+    var isFontDialogVisible by remember { mutableStateOf(false) }
     var isReplayGainDialogVisible by remember { mutableStateOf(false) }
     var isAudioOffloadDialogVisible by remember { mutableStateOf(false) }
     var isThemeCustomizationDialogVisible by remember { mutableStateOf(false) }
@@ -410,6 +414,17 @@ fun SettingsScreen(
             icon = AppShellIcons.Palette
         ) {
             SettingsRow(
+                title = "Font",
+                summary = selectedAppFont.displayName,
+                icon = AppShellIcons.Palette,
+                onClick = { isFontDialogVisible = true },
+                emphasizeSummary = true,
+                navigationContentDescription = "Choose application font"
+            )
+
+            SettingsDivider()
+
+            SettingsRow(
                 title = "Player Theme",
                 summary = selectedPlayerTheme.displayName,
                 icon = AppShellIcons.Deck,
@@ -529,6 +544,53 @@ fun SettingsScreen(
         }
 
         Spacer(modifier = Modifier.height(32.dp))
+    }
+
+    if (isFontDialogVisible) {
+        AlertDialog(
+            onDismissRequest = { isFontDialogVisible = false },
+            title = { Text(text = "Font") },
+            text = {
+                Column {
+                    AppFont.entries.forEach { appFont ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onAppFontSelected(appFont)
+                                    isFontDialogVisible = false
+                                }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selectedAppFont == appFont,
+                                onClick = {
+                                    onAppFontSelected(appFont)
+                                    isFontDialogVisible = false
+                                }
+                            )
+
+                            Column(
+                                modifier = Modifier.padding(start = 4.dp)
+                            ) {
+                                Text(text = appFont.displayName)
+
+                                Text(
+                                    text = appFont.description,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { isFontDialogVisible = false }) {
+                    Text(text = "Close")
+                }
+            }
+        )
     }
 
     if (isReplayGainDialogVisible) {
@@ -791,6 +853,18 @@ fun SettingsScreen(
         )
     }
 }
+
+private val AppFont.displayName: String
+    get() = when (this) {
+        AppFont.SAZANAMI -> "Sazanami"
+        AppFont.DEVICE -> "Device font"
+    }
+
+private val AppFont.description: String
+    get() = when (this) {
+        AppFont.SAZANAMI -> "Space Grotesk, Sazanami's default typeface."
+        AppFont.DEVICE -> "Use your device's configured font."
+    }
 
 private fun LibraryRefreshSummary.settingsSummary(): String {
     if (!successfulCompleteScan) {
