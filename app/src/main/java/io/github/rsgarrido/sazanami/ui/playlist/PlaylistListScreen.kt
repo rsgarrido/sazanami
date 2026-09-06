@@ -76,6 +76,7 @@ import io.github.rsgarrido.sazanami.ui.library.LibraryItemActionSheet
 import io.github.rsgarrido.sazanami.ui.library.LibraryItemActionSheetTarget
 import io.github.rsgarrido.sazanami.ui.library.LibrarySharedArtworkKey
 import io.github.rsgarrido.sazanami.ui.library.LibrarySharedArtworkSource
+import io.github.rsgarrido.sazanami.ui.library.LibrarySharedArtworkSourceSlotTreatment
 import io.github.rsgarrido.sazanami.ui.library.LocalLibraryQueueUi
 import io.github.rsgarrido.sazanami.ui.library.libraryItemActions
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewMode
@@ -607,7 +608,8 @@ private fun PlaylistRow(
             LibrarySharedArtworkSource(
                 key = LibrarySharedArtworkKey.Playlist(playlist.playlistId),
                 shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.size(72.dp)
+                modifier = Modifier.size(72.dp),
+                slotTreatment = LibrarySharedArtworkSourceSlotTreatment.SUBDUED_ARTWORK
             ) { artworkModifier ->
                 PlaylistArtwork(
                     playlist = playlist,
@@ -727,7 +729,8 @@ private fun PlaylistGridTile(
                 LibrarySharedArtworkSource(
                     key = LibrarySharedArtworkKey.Playlist(playlist.playlistId),
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    slotTreatment = LibrarySharedArtworkSourceSlotTreatment.SUBDUED_ARTWORK
                 ) { artworkModifier ->
                     PlaylistArtwork(
                         playlist = playlist,

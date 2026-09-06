@@ -6,6 +6,31 @@ import org.junit.Test
 
 class LibrarySharedTransitionTest {
     @Test
+    fun sourceReplica_requiresBothAMatchAndSubduedArtworkTreatment() {
+        assertEquals(
+            false,
+            shouldDrawSharedArtworkSourceReplica(
+                matchFound = false,
+                treatment = LibrarySharedArtworkSourceSlotTreatment.SUBDUED_ARTWORK
+            )
+        )
+        assertEquals(
+            false,
+            shouldDrawSharedArtworkSourceReplica(
+                matchFound = true,
+                treatment = LibrarySharedArtworkSourceSlotTreatment.NEUTRAL_SURFACE
+            )
+        )
+        assertEquals(
+            true,
+            shouldDrawSharedArtworkSourceReplica(
+                matchFound = true,
+                treatment = LibrarySharedArtworkSourceSlotTreatment.SUBDUED_ARTWORK
+            )
+        )
+    }
+
+    @Test
     fun artworkKeys_matchOnlyTheSameEntityAndIdentity() {
         assertEquals(
             LibrarySharedArtworkKey.Album("collection-42"),

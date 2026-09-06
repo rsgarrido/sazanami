@@ -29,6 +29,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 private const val SharedArtworkDurationMillis = 280
 private const val SharedSourceReplicaAlpha = 0.24f
 
+internal enum class LibrarySharedArtworkSourceSlotTreatment {
+    NEUTRAL_SURFACE,
+    SUBDUED_ARTWORK
+}
+
+internal fun shouldDrawSharedArtworkSourceReplica(
+    matchFound: Boolean,
+    treatment: LibrarySharedArtworkSourceSlotTreatment
+): Boolean = matchFound &&
+    treatment == LibrarySharedArtworkSourceSlotTreatment.SUBDUED_ARTWORK
+
 internal sealed interface LibrarySharedArtworkKey {
     data class Album(val albumKey: String) : LibrarySharedArtworkKey
     data class Artist(val artistKey: String) : LibrarySharedArtworkKey
@@ -127,9 +138,9 @@ internal fun Modifier.librarySharedArtwork(
 }
 
 /**
- * Keeps a short-lived, subdued source-slot replica under the shared overlay. Compose intentionally
- * lifts the matched element out of its original draw layer; without this mask the reserved source
- * bounds expose the grid placeholder or an empty list slot before the collection fade completes.
+ * Keeps a short-lived source-slot mask under the shared overlay. Compose intentionally lifts the
+ * matched element out of its original draw layer; the treatment selects either a neutral surface
+ * or the subdued artwork needed by Playlist while the collection fade completes.
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -137,12 +148,14 @@ internal fun LibrarySharedArtworkSource(
     key: LibrarySharedArtworkKey,
     shape: Shape,
     modifier: Modifier = Modifier,
+    slotTreatment: LibrarySharedArtworkSourceSlotTreatment,
     content: @Composable (Modifier) -> Unit
 ) {
     val state = rememberLibrarySharedArtworkState(key)
+    val matchFound = state?.sharedContentState?.isMatchFound == true
 
     Box(modifier = modifier.clip(shape)) {
-        if (state?.sharedContentState?.isMatchFound == true) {
+        if (matchFound) {
             key("shared-source-replica") {
                 Box(
                     modifier = Modifier
@@ -150,12 +163,14 @@ internal fun LibrarySharedArtworkSource(
                         .background(MaterialTheme.colorScheme.surfaceContainerHighest)
                         .clearAndSetSemantics {}
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .graphicsLayer { alpha = SharedSourceReplicaAlpha }
-                    ) {
-                        content(Modifier.fillMaxSize())
+                    if (shouldDrawSharedArtworkSourceReplica(matchFound, slotTreatment)) {
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .graphicsLayer { alpha = SharedSourceReplicaAlpha }
+                        ) {
+                            content(Modifier.fillMaxSize())
+                        }
                     }
                 }
             }

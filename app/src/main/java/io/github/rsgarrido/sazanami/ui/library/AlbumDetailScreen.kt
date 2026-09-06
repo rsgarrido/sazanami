@@ -359,6 +359,7 @@ private fun AlbumDetailHero(
                 .fillMaxWidth(0.84f)
                 .widthIn(max = 360.dp)
                 .aspectRatio(1f)
+                .librarySharedArtwork(LibrarySharedArtworkKey.Album(album.key))
                 .clip(RoundedCornerShape(26.dp))
                 .background(MaterialTheme.colorScheme.surfaceContainerHighest),
             contentAlignment = Alignment.Center
@@ -372,10 +373,7 @@ private fun AlbumDetailHero(
             AsyncImage(
                 model = album.songs.firstOrNull()?.albumArtUri,
                 contentDescription = "Album art for ${album.title}",
-                modifier = Modifier
-                    .fillMaxSize()
-                    .librarySharedArtwork(LibrarySharedArtworkKey.Album(album.key))
-                    .clip(RoundedCornerShape(26.dp)),
+                modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
         }
