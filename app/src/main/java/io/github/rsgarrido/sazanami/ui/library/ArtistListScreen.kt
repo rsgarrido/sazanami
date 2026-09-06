@@ -90,7 +90,9 @@ fun ArtistListScreen(
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.size(56.dp),
                         slotTreatment =
-                            LibrarySharedArtworkSourceSlotTreatment.NEUTRAL_SURFACE
+                            LibrarySharedArtworkSourceSlotTreatment.NEUTRAL_SURFACE,
+                        hasResolvedArtwork = artist.key in artistPictureUi.assignments ||
+                                firstSong?.albumArtUri != null
                     ) { artworkModifier ->
                         ArtistPicture(
                             identity = artist.identity,

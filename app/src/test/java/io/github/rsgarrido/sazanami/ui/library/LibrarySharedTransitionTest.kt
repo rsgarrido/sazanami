@@ -33,6 +33,42 @@ class LibrarySharedTransitionTest {
     }
 
     @Test
+    fun sourceHandoff_requiresMatchedResolvedArtworkAndNeutralTreatment() {
+        assertEquals(
+            true,
+            shouldRetainSharedArtworkSourceHandoff(
+                matchFound = true,
+                treatment = LibrarySharedArtworkSourceSlotTreatment.NEUTRAL_SURFACE,
+                hasResolvedArtwork = true
+            )
+        )
+        assertEquals(
+            false,
+            shouldRetainSharedArtworkSourceHandoff(
+                matchFound = false,
+                treatment = LibrarySharedArtworkSourceSlotTreatment.NEUTRAL_SURFACE,
+                hasResolvedArtwork = true
+            )
+        )
+        assertEquals(
+            false,
+            shouldRetainSharedArtworkSourceHandoff(
+                matchFound = true,
+                treatment = LibrarySharedArtworkSourceSlotTreatment.NEUTRAL_SURFACE,
+                hasResolvedArtwork = false
+            )
+        )
+        assertEquals(
+            false,
+            shouldRetainSharedArtworkSourceHandoff(
+                matchFound = true,
+                treatment = LibrarySharedArtworkSourceSlotTreatment.SUBDUED_ARTWORK,
+                hasResolvedArtwork = true
+            )
+        )
+    }
+
+    @Test
     fun artworkKeysRemainEntityAndIdentityIsolated() {
         val scope = LibrarySharedArtworkSourceScope.LIBRARY_COLLECTION
 

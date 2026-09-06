@@ -143,7 +143,8 @@ fun AlbumListScreen(
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.size(56.dp),
                         slotTreatment =
-                            LibrarySharedArtworkSourceSlotTreatment.NEUTRAL_SURFACE
+                            LibrarySharedArtworkSourceSlotTreatment.NEUTRAL_SURFACE,
+                        hasResolvedArtwork = firstSong?.albumArtUri != null
                     ) { artworkModifier ->
                         AsyncImage(
                             model = firstSong?.albumArtUri,

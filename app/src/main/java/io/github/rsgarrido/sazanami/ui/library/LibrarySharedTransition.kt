@@ -10,7 +10,9 @@ import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -18,8 +20,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,6 +35,7 @@ import androidx.compose.ui.unit.dp
 
 private const val SharedArtworkDurationMillis = 280
 private const val SharedSourceReplicaAlpha = 0.24f
+private const val SharedSourceHandoffDurationMillis = 48
 
 internal enum class LibrarySharedArtworkSourceSlotTreatment {
     NEUTRAL_SURFACE,
@@ -42,6 +47,14 @@ internal fun shouldDrawSharedArtworkSourceReplica(
     treatment: LibrarySharedArtworkSourceSlotTreatment
 ): Boolean = matchFound &&
     treatment == LibrarySharedArtworkSourceSlotTreatment.SUBDUED_ARTWORK
+
+internal fun shouldRetainSharedArtworkSourceHandoff(
+    matchFound: Boolean,
+    treatment: LibrarySharedArtworkSourceSlotTreatment,
+    hasResolvedArtwork: Boolean
+): Boolean = matchFound &&
+    treatment == LibrarySharedArtworkSourceSlotTreatment.NEUTRAL_SURFACE &&
+    hasResolvedArtwork
 
 internal enum class LibrarySharedArtworkSourceScope {
     HOME_PINNED,
@@ -202,7 +215,8 @@ internal fun Modifier.librarySharedArtwork(
 /**
  * Keeps a short-lived source-slot mask under the shared overlay. Compose intentionally lifts the
  * matched element out of its original draw layer; the treatment selects either a neutral surface
- * or the subdued artwork needed by Playlist while the collection fade completes.
+ * or the subdued artwork needed by Playlist while the collection fade completes. Resolved neutral
+ * sources briefly retain the same content above that surface to bridge the overlay handoff.
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -211,10 +225,31 @@ internal fun LibrarySharedArtworkSource(
     shape: Shape,
     modifier: Modifier = Modifier,
     slotTreatment: LibrarySharedArtworkSourceSlotTreatment,
+    hasResolvedArtwork: Boolean = false,
     content: @Composable (Modifier) -> Unit
 ) {
     val state = rememberLibrarySharedArtworkState(key)
     val matchFound = state?.sharedContentState?.isMatchFound == true
+    val retainSourceHandoff = shouldRetainSharedArtworkSourceHandoff(
+        matchFound = matchFound,
+        treatment = slotTreatment,
+        hasResolvedArtwork = hasResolvedArtwork
+    )
+    val retainedArtworkAlpha = if (retainSourceHandoff) {
+        val alpha = remember { Animatable(1f) }
+        LaunchedEffect(Unit) {
+            alpha.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(
+                    durationMillis = SharedSourceHandoffDurationMillis,
+                    easing = LinearEasing
+                )
+            )
+        }
+        alpha
+    } else {
+        null
+    }
 
     Box(modifier = modifier.clip(shape)) {
         if (matchFound) {
@@ -234,6 +269,19 @@ internal fun LibrarySharedArtworkSource(
                             content(Modifier.fillMaxSize())
                         }
                     }
+                }
+            }
+        }
+
+        if (retainedArtworkAlpha != null && retainedArtworkAlpha.value > 0f) {
+            key("shared-source-handoff") {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .graphicsLayer { alpha = retainedArtworkAlpha.value }
+                        .clearAndSetSemantics {}
+                ) {
+                    content(Modifier.fillMaxSize())
                 }
             }
         }

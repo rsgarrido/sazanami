@@ -320,7 +320,8 @@ fun AlbumGridScreen(
                         shape = RoundedCornerShape(gridMetrics.artworkCornerRadius),
                         modifier = Modifier.fillMaxSize(),
                         slotTreatment =
-                            LibrarySharedArtworkSourceSlotTreatment.NEUTRAL_SURFACE
+                            LibrarySharedArtworkSourceSlotTreatment.NEUTRAL_SURFACE,
+                        hasResolvedArtwork = album.songs.firstOrNull()?.albumArtUri != null
                     ) { artworkModifier ->
                         AsyncImage(
                             model = album.songs.firstOrNull()?.albumArtUri,
@@ -452,7 +453,9 @@ fun ArtistGridScreen(
                         shape = RoundedCornerShape(gridMetrics.artworkCornerRadius),
                         modifier = Modifier.fillMaxSize(),
                         slotTreatment =
-                            LibrarySharedArtworkSourceSlotTreatment.NEUTRAL_SURFACE
+                            LibrarySharedArtworkSourceSlotTreatment.NEUTRAL_SURFACE,
+                        hasResolvedArtwork = artist.key in artistPictureUi.assignments ||
+                                artist.songs.firstOrNull()?.albumArtUri != null
                     ) { artworkModifier ->
                         ArtistPicture(
                             identity = artist.identity,
