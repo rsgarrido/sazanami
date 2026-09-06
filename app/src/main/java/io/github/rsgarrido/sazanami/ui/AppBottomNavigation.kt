@@ -1,17 +1,24 @@
 package io.github.rsgarrido.sazanami.ui
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +37,8 @@ import io.github.rsgarrido.sazanami.ui.navigation.MainDestination
 val AppBottomNavigationHeight = 82.dp
 
 private val AppBottomNavigationBarHeight = 68.dp
+private val AppBottomNavigationItemHeight = 50.dp
+private val AppBottomNavigationItemSpacing = 6.dp
 
 private data class AppNavigationItem(
     val destination: MainDestination,
@@ -65,22 +74,55 @@ fun AppBottomNavigation(
             tonalElevation = 4.dp,
             shadowElevation = 14.dp
         ) {
-            Row(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(AppBottomNavigationBarHeight)
                     .padding(horizontal = 8.dp, vertical = 8.dp)
-                    .selectableGroup(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
             ) {
-                appNavigationItems.forEach { item ->
-                    AppBottomNavigationItem(
-                        item = item,
-                        selected = selectedDestination == item.destination,
-                        onClick = { onDestinationSelected(item.destination) },
-                        modifier = Modifier.weight(1f)
-                    )
+                val itemWidth = (
+                        maxWidth - AppBottomNavigationItemSpacing *
+                                (appNavigationItems.size - 1)
+                        ) / appNavigationItems.size
+                val selectedIndex = appNavigationItems.indexOfFirst { item ->
+                    item.destination == selectedDestination
+                }.coerceAtLeast(0)
+                val indicatorOffset by animateDpAsState(
+                    targetValue = (itemWidth + AppBottomNavigationItemSpacing) * selectedIndex,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow
+                    ),
+                    label = "bottomNavigationIndicatorOffset"
+                )
+
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .offset(x = indicatorOffset)
+                        .width(itemWidth)
+                        .height(AppBottomNavigationItemHeight),
+                    color = AppShellAccent.copy(alpha = 0.16f),
+                    shape = RoundedCornerShape(20.dp)
+                ) {}
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .selectableGroup(),
+                    horizontalArrangement = Arrangement.spacedBy(
+                        AppBottomNavigationItemSpacing
+                    ),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    appNavigationItems.forEach { item ->
+                        AppBottomNavigationItem(
+                            item = item,
+                            selected = selectedDestination == item.destination,
+                            onClick = { onDestinationSelected(item.destination) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
             }
         }
@@ -105,17 +147,13 @@ private fun AppBottomNavigationItem(
 
     Surface(
         modifier = modifier
-            .height(50.dp)
+            .height(AppBottomNavigationItemHeight)
             .selectable(
                 selected = selected,
                 role = Role.Tab,
                 onClick = onClick
             ),
-        color = if (selected) {
-            AppShellAccent.copy(alpha = 0.16f)
-        } else {
-            Color.Transparent
-        },
+        color = Color.Transparent,
         shape = RoundedCornerShape(20.dp)
     ) {
         Column(
