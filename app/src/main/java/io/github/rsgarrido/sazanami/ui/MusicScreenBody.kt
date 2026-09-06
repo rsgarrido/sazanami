@@ -74,6 +74,7 @@ import io.github.rsgarrido.sazanami.ui.library.MusicLibraryContent
 import io.github.rsgarrido.sazanami.ui.library.libraryContentTransitionSpec
 import io.github.rsgarrido.sazanami.ui.library.LibrarySelectionHeaderContent
 import io.github.rsgarrido.sazanami.ui.library.LocalLibrarySelectionUi
+import io.github.rsgarrido.sazanami.ui.library.LibrarySharedTransitionHost
 import io.github.rsgarrido.sazanami.ui.library.normalizeRatedSongFilterForQuickRateMode
 import io.github.rsgarrido.sazanami.ui.library.viewCategory
 import io.github.rsgarrido.sazanami.ui.ratings.LocalSongRatingUi
@@ -479,7 +480,7 @@ internal fun MusicScreenBody(
             val currentGridColumnCount =
                 libraryAppearanceUiState.gridColumnCountFor(selectedLibraryTab)
 
-            AnimatedContent(
+            LibrarySharedTransitionHost(
                 targetState = mainDestination,
                 transitionSpec = {
                     val direction = if (targetState.ordinal > initialState.ordinal) 1 else -1

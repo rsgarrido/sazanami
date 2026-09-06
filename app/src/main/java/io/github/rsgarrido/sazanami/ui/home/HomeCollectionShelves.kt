@@ -68,7 +68,9 @@ import io.github.rsgarrido.sazanami.ui.AppShellAccent
 import io.github.rsgarrido.sazanami.ui.AppShellIcons
 import io.github.rsgarrido.sazanami.ui.AppShellTypography
 import io.github.rsgarrido.sazanami.ui.library.ArtistPicture
+import io.github.rsgarrido.sazanami.ui.library.LibrarySharedArtworkKey
 import io.github.rsgarrido.sazanami.ui.library.LocalArtistPictureUi
+import io.github.rsgarrido.sazanami.ui.library.librarySharedArtwork
 import io.github.rsgarrido.sazanami.ui.playlist.PlaylistArtwork
 import kotlin.math.roundToInt
 
@@ -415,6 +417,13 @@ private fun HomePinnedCard(
     modifier: Modifier = Modifier
 ) {
     val artistPictureAssignments = LocalArtistPictureUi.current.assignments
+    val sharedArtworkKey = when (val target = pin.target) {
+        is HomePinTarget.AlbumTarget -> LibrarySharedArtworkKey.Album(target.album.key)
+        is HomePinTarget.ArtistTarget -> LibrarySharedArtworkKey.Artist(target.artist.key)
+        is HomePinTarget.PlaylistTarget ->
+            LibrarySharedArtworkKey.Playlist(target.playlist.playlistId)
+        is HomePinTarget.SongTarget, null -> null
+    }
     PressableHomeCard(
         onClick = onClick,
         modifier = modifier,
@@ -429,6 +438,7 @@ private fun HomePinnedCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
+                    .librarySharedArtwork(sharedArtworkKey)
                     .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest)
             ) {

@@ -310,6 +310,19 @@ fun AlbumGridScreen(
             LibraryGridCard(
                 artworkUri = album.songs.firstOrNull()?.albumArtUri,
                 artworkDescription = "Album art for ${album.title}",
+                artworkContent = {
+                    AsyncImage(
+                        model = album.songs.firstOrNull()?.albumArtUri,
+                        contentDescription = "Album art for ${album.title}",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .librarySharedArtwork(
+                                LibrarySharedArtworkKey.Album(album.key)
+                            )
+                            .clip(RoundedCornerShape(gridMetrics.artworkCornerRadius)),
+                        contentScale = ContentScale.Crop
+                    )
+                },
                 title = album.title,
                 subtitle = "${album.artistText} • $songCountText",
                 clickLabel = "Open ${album.title}",
@@ -427,7 +440,12 @@ fun ArtistGridScreen(
                         identity = artist.identity,
                         fallbackModel = artist.songs.firstOrNull()?.albumArtUri,
                         contentDescription = "Artwork for ${artist.name}",
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .librarySharedArtwork(
+                                LibrarySharedArtworkKey.Artist(artist.key)
+                            )
+                            .clip(RoundedCornerShape(gridMetrics.artworkCornerRadius)),
                         variant = VisualAssetVariant.THUMBNAIL
                     )
                 },

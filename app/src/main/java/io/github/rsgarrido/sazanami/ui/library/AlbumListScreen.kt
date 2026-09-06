@@ -140,6 +140,7 @@ fun AlbumListScreen(
                         contentDescription = "Album art for ${album.title}",
                         modifier = Modifier
                             .size(56.dp)
+                            .librarySharedArtwork(LibrarySharedArtworkKey.Album(album.key))
                             .clip(RoundedCornerShape(8.dp)),
                         contentScale = ContentScale.Crop,
                         error = painterResource(R.drawable.ic_media_play),

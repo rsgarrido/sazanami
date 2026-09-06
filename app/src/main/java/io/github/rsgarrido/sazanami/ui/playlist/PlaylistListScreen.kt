@@ -74,6 +74,7 @@ import io.github.rsgarrido.sazanami.ui.home.LocalHomePinUi
 import io.github.rsgarrido.sazanami.ui.library.LibraryItemAction
 import io.github.rsgarrido.sazanami.ui.library.LibraryItemActionSheet
 import io.github.rsgarrido.sazanami.ui.library.LibraryItemActionSheetTarget
+import io.github.rsgarrido.sazanami.ui.library.LibrarySharedArtworkKey
 import io.github.rsgarrido.sazanami.ui.library.LocalLibraryQueueUi
 import io.github.rsgarrido.sazanami.ui.library.libraryItemActions
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewMode
@@ -83,6 +84,7 @@ import io.github.rsgarrido.sazanami.ui.library.ResetLazyGridOnSortChange
 import io.github.rsgarrido.sazanami.ui.library.ResetLazyListOnSortChange
 import io.github.rsgarrido.sazanami.ui.library.compareKnownPositiveLong
 import io.github.rsgarrido.sazanami.ui.library.compareLibraryText
+import io.github.rsgarrido.sazanami.ui.library.librarySharedArtwork
 
 internal object PlaylistGridLayout {
     val minimumTileWidth = 148.dp
@@ -605,7 +607,11 @@ private fun PlaylistRow(
             PlaylistArtwork(
                 playlist = playlist,
                 contentDescription = "Artwork for ${playlist.name}",
-                modifier = Modifier.size(72.dp)
+                modifier = Modifier
+                    .size(72.dp)
+                    .librarySharedArtwork(
+                        LibrarySharedArtworkKey.Playlist(playlist.playlistId)
+                    )
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -719,7 +725,11 @@ private fun PlaylistGridTile(
                 PlaylistArtwork(
                     playlist = playlist,
                     contentDescription = "Artwork for ${playlist.name}",
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .librarySharedArtwork(
+                            LibrarySharedArtworkKey.Playlist(playlist.playlistId)
+                        )
                 )
                 IconButton(onClick = onMoreClick, modifier = Modifier.align(Alignment.TopEnd)) {
                     Icon(Icons.Filled.MoreVert, contentDescription = "More options for ${playlist.name}")

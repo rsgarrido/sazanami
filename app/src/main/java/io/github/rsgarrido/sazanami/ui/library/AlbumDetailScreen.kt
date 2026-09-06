@@ -372,7 +372,10 @@ private fun AlbumDetailHero(
             AsyncImage(
                 model = album.songs.firstOrNull()?.albumArtUri,
                 contentDescription = "Album art for ${album.title}",
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .librarySharedArtwork(LibrarySharedArtworkKey.Album(album.key))
+                    .clip(RoundedCornerShape(26.dp)),
                 contentScale = ContentScale.Crop
             )
         }

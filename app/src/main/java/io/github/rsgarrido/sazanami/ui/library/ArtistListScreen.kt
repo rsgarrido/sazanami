@@ -88,6 +88,7 @@ fun ArtistListScreen(
                         contentDescription = "Artwork for ${artist.name}",
                         modifier = Modifier
                             .size(56.dp)
+                            .librarySharedArtwork(LibrarySharedArtworkKey.Artist(artist.key))
                             .clip(RoundedCornerShape(8.dp)),
                         variant = VisualAssetVariant.THUMBNAIL
                     )

@@ -11,8 +11,10 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.data.Playlist
@@ -20,6 +22,7 @@ import io.github.rsgarrido.sazanami.data.PlaylistFolder
 import io.github.rsgarrido.sazanami.data.PlaylistSong
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.PlaybackShuffleMode
+import io.github.rsgarrido.sazanami.ui.library.LibraryDetailAnimatedContent
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewMode
 
 @Composable
@@ -68,6 +71,7 @@ fun PlaylistsTabContent(
     var creationChooserVisible by remember { mutableStateOf(false) }
     var creationFolderId by remember { mutableStateOf<Long?>(null) }
     var smartEditorRequest by remember { mutableStateOf<SmartPlaylistEditorRequest?>(null) }
+    val playlistCollectionStateHolder = rememberSaveableStateHolder()
     val returnToPlaylistRoot = { selectedFolderId = null }
 
     BackHandler(enabled = selectedPlaylistId == null && selectedFolderId != null) {
@@ -91,7 +95,13 @@ fun PlaylistsTabContent(
         )
     }
 
-    if (selectedPlaylistId == null) {
+    LibraryDetailAnimatedContent(
+        targetState = selectedPlaylistId,
+        modifier = modifier,
+        label = "playlistCollectionDetail"
+    ) { visiblePlaylistId ->
+    if (visiblePlaylistId == null) {
+        playlistCollectionStateHolder.SaveableStateProvider("playlist-collection") {
         PlaylistListScreen(
             playlists = playlists,
             folders = playlistFolders,
@@ -117,10 +127,11 @@ fun PlaylistsTabContent(
             onRenamePlaylistClick = onRenamePlaylistClick,
             viewMode = viewMode,
             bottomContentPadding = bottomContentPadding,
-            modifier = modifier
+            modifier = Modifier.fillMaxSize()
         )
+        }
     } else {
-        val stateMatchesSelection = selectedPlaylistStateId == selectedPlaylistId
+        val stateMatchesSelection = selectedPlaylistStateId == visiblePlaylistId
         val scopedPlaylistSongRows = if (stateMatchesSelection) {
             selectedPlaylistSongs
         } else {
@@ -129,9 +140,9 @@ fun PlaylistsTabContent(
         val availablePlaylistSongRows = scopedPlaylistSongRows.filter { it.resolvedSong != null }
         val availablePlaylistSongs = availablePlaylistSongRows.mapNotNull(PlaylistSong::resolvedSong)
         val selectedPlaylist = playlists.firstOrNull { playlist ->
-            playlist.playlistId == selectedPlaylistId
+            playlist.playlistId == visiblePlaylistId
         } ?: Playlist(
-            playlistId = selectedPlaylistId,
+            playlistId = visiblePlaylistId,
             name = if (stateMatchesSelection) selectedPlaylistName else "Playlist",
             songCount = scopedPlaylistSongRows.size,
             totalDuration = scopedPlaylistSongRows.sumOf { it.duration.coerceAtLeast(0L) },
@@ -144,7 +155,7 @@ fun PlaylistsTabContent(
             }.take(4)
         )
 
-        key(selectedPlaylistId) {
+        key(visiblePlaylistId) {
             PlaylistDetailScreen(
                 playlist = selectedPlaylist,
                 allPlaylists = playlists,
@@ -196,9 +207,10 @@ fun PlaylistsTabContent(
                     onAddSongsToCurrentPlaylistClick(selectedPlaylist, selectedSongs)
                 },
                 bottomContentPadding = bottomContentPadding,
-                modifier = modifier
+                modifier = Modifier.fillMaxSize()
             )
         }
+    }
     }
 
     if (creationChooserVisible) {
