@@ -1094,6 +1094,12 @@ internal fun MusicScreen(
                     selectedAlbumKey = selectedAlbumKey,
                     selectedGenreKey = selectedGenreKey,
                     selectedPlaylistId = selectedPlaylistId,
+                    albumSharedArtworkSourceScope =
+                        navigationState.albumDetailOrigin.value.sharedArtworkSourceScope(),
+                    artistSharedArtworkSourceScope =
+                        navigationState.artistDetailOrigin.value.sharedArtworkSourceScope(),
+                    playlistSharedArtworkSourceScope =
+                        navigationState.playlistDetailOrigin.value.sharedArtworkSourceScope(),
                     searchQuery = searchQuery,
                     searchCategory = navigationState.searchCategory.value,
                     onSearchCategoryChange = { navigationState.searchCategory.value = it },

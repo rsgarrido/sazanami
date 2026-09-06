@@ -12,6 +12,7 @@ import io.github.rsgarrido.sazanami.ui.library.LibrarySortState
 import io.github.rsgarrido.sazanami.ui.library.LibrarySortStateSaver
 import io.github.rsgarrido.sazanami.ui.library.LibrarySongFilterState
 import io.github.rsgarrido.sazanami.ui.library.LibrarySongFilterStateSaver
+import io.github.rsgarrido.sazanami.ui.library.LibrarySharedArtworkSourceScope
 import io.github.rsgarrido.sazanami.ui.library.LibraryTab
 import io.github.rsgarrido.sazanami.ui.library.SearchCategory
 import io.github.rsgarrido.sazanami.ui.navigation.MainDestination
@@ -31,6 +32,13 @@ internal fun detailReturnDestination(origin: DetailEntryOrigin): MainDestination
     DetailEntryOrigin.SEARCH -> MainDestination.SEARCH
     DetailEntryOrigin.HOME_PINNED -> MainDestination.HOME
 }
+
+internal fun DetailEntryOrigin.sharedArtworkSourceScope(): LibrarySharedArtworkSourceScope =
+    when (this) {
+        DetailEntryOrigin.HOME_PINNED -> LibrarySharedArtworkSourceScope.HOME_PINNED
+        DetailEntryOrigin.LIBRARY,
+        DetailEntryOrigin.SEARCH -> LibrarySharedArtworkSourceScope.LIBRARY_COLLECTION
+    }
 
 @Stable
 class MusicNavigationState internal constructor(

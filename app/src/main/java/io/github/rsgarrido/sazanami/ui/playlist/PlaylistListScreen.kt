@@ -76,6 +76,7 @@ import io.github.rsgarrido.sazanami.ui.library.LibraryItemActionSheet
 import io.github.rsgarrido.sazanami.ui.library.LibraryItemActionSheetTarget
 import io.github.rsgarrido.sazanami.ui.library.LibrarySharedArtworkKey
 import io.github.rsgarrido.sazanami.ui.library.LibrarySharedArtworkSource
+import io.github.rsgarrido.sazanami.ui.library.LibrarySharedArtworkSourceScope
 import io.github.rsgarrido.sazanami.ui.library.LibrarySharedArtworkSourceSlotTreatment
 import io.github.rsgarrido.sazanami.ui.library.LocalLibraryQueueUi
 import io.github.rsgarrido.sazanami.ui.library.libraryItemActions
@@ -606,7 +607,10 @@ private fun PlaylistRow(
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             LibrarySharedArtworkSource(
-                key = LibrarySharedArtworkKey.Playlist(playlist.playlistId),
+                key = LibrarySharedArtworkKey.Playlist(
+                    playlistId = playlist.playlistId,
+                    sourceScope = LibrarySharedArtworkSourceScope.LIBRARY_COLLECTION
+                ),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.size(72.dp),
                 slotTreatment = LibrarySharedArtworkSourceSlotTreatment.SUBDUED_ARTWORK
@@ -727,7 +731,10 @@ private fun PlaylistGridTile(
         Column(modifier = Modifier.padding(10.dp)) {
             Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f)) {
                 LibrarySharedArtworkSource(
-                    key = LibrarySharedArtworkKey.Playlist(playlist.playlistId),
+                    key = LibrarySharedArtworkKey.Playlist(
+                        playlistId = playlist.playlistId,
+                        sourceScope = LibrarySharedArtworkSourceScope.LIBRARY_COLLECTION
+                    ),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxSize(),
                     slotTreatment = LibrarySharedArtworkSourceSlotTreatment.SUBDUED_ARTWORK

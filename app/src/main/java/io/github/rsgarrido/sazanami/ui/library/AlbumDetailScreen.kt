@@ -359,7 +359,7 @@ private fun AlbumDetailHero(
                 .fillMaxWidth(0.84f)
                 .widthIn(max = 360.dp)
                 .aspectRatio(1f)
-                .librarySharedArtwork(LibrarySharedArtworkKey.Album(album.key))
+                .librarySharedArtwork(albumDetailSharedArtworkKey(album.key))
                 .clip(RoundedCornerShape(26.dp))
                 .background(MaterialTheme.colorScheme.surfaceContainerHighest),
             contentAlignment = Alignment.Center

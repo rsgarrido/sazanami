@@ -69,6 +69,7 @@ import io.github.rsgarrido.sazanami.ui.AppShellIcons
 import io.github.rsgarrido.sazanami.ui.AppShellTypography
 import io.github.rsgarrido.sazanami.ui.library.ArtistPicture
 import io.github.rsgarrido.sazanami.ui.library.LibrarySharedArtworkKey
+import io.github.rsgarrido.sazanami.ui.library.LibrarySharedArtworkSourceScope
 import io.github.rsgarrido.sazanami.ui.library.LocalArtistPictureUi
 import io.github.rsgarrido.sazanami.ui.library.librarySharedArtwork
 import io.github.rsgarrido.sazanami.ui.playlist.PlaylistArtwork
@@ -418,10 +419,19 @@ private fun HomePinnedCard(
 ) {
     val artistPictureAssignments = LocalArtistPictureUi.current.assignments
     val sharedArtworkKey = when (val target = pin.target) {
-        is HomePinTarget.AlbumTarget -> LibrarySharedArtworkKey.Album(target.album.key)
-        is HomePinTarget.ArtistTarget -> LibrarySharedArtworkKey.Artist(target.artist.key)
+        is HomePinTarget.AlbumTarget -> LibrarySharedArtworkKey.Album(
+            albumKey = target.album.key,
+            sourceScope = LibrarySharedArtworkSourceScope.HOME_PINNED
+        )
+        is HomePinTarget.ArtistTarget -> LibrarySharedArtworkKey.Artist(
+            artistKey = target.artist.key,
+            sourceScope = LibrarySharedArtworkSourceScope.HOME_PINNED
+        )
         is HomePinTarget.PlaylistTarget ->
-            LibrarySharedArtworkKey.Playlist(target.playlist.playlistId)
+            LibrarySharedArtworkKey.Playlist(
+                playlistId = target.playlist.playlistId,
+                sourceScope = LibrarySharedArtworkSourceScope.HOME_PINNED
+            )
         is HomePinTarget.SongTarget, null -> null
     }
     PressableHomeCard(

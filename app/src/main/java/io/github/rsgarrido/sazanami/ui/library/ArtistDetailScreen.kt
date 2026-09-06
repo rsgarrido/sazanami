@@ -225,7 +225,7 @@ fun ArtistDetailScreen(
                             modifier = Modifier
                                 .size(artistImageSize)
                                 .librarySharedArtwork(
-                                    LibrarySharedArtworkKey.Artist(artistGroup.key)
+                                    artistDetailSharedArtworkKey(artistGroup.key)
                                 )
                                 .clip(RoundedCornerShape(26.dp)),
                             variant = VisualAssetVariant.DISPLAY

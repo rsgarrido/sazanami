@@ -40,11 +40,36 @@ internal fun shouldDrawSharedArtworkSourceReplica(
 ): Boolean = matchFound &&
     treatment == LibrarySharedArtworkSourceSlotTreatment.SUBDUED_ARTWORK
 
-internal sealed interface LibrarySharedArtworkKey {
-    data class Album(val albumKey: String) : LibrarySharedArtworkKey
-    data class Artist(val artistKey: String) : LibrarySharedArtworkKey
-    data class Playlist(val playlistId: Long) : LibrarySharedArtworkKey
+internal enum class LibrarySharedArtworkSourceScope {
+    HOME_PINNED,
+    LIBRARY_COLLECTION
 }
+
+internal sealed interface LibrarySharedArtworkKey {
+    data class Album(
+        val albumKey: String,
+        val sourceScope: LibrarySharedArtworkSourceScope
+    ) : LibrarySharedArtworkKey
+
+    data class Artist(
+        val artistKey: String,
+        val sourceScope: LibrarySharedArtworkSourceScope
+    ) : LibrarySharedArtworkKey
+
+    data class Playlist(
+        val playlistId: Long,
+        val sourceScope: LibrarySharedArtworkSourceScope
+    ) : LibrarySharedArtworkKey
+}
+
+internal data class LibrarySharedArtworkDetailSourceScopes(
+    val album: LibrarySharedArtworkSourceScope =
+        LibrarySharedArtworkSourceScope.LIBRARY_COLLECTION,
+    val artist: LibrarySharedArtworkSourceScope =
+        LibrarySharedArtworkSourceScope.LIBRARY_COLLECTION,
+    val playlist: LibrarySharedArtworkSourceScope =
+        LibrarySharedArtworkSourceScope.LIBRARY_COLLECTION
+)
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 private val LocalLibrarySharedTransitionScope =
@@ -54,6 +79,9 @@ private val LocalLibrarySharedTransitionScope =
 private val LocalLibraryAnimatedVisibilityScope =
     compositionLocalOf<AnimatedVisibilityScope?> { null }
 
+private val LocalLibrarySharedArtworkDetailSourceScopes =
+    compositionLocalOf { LibrarySharedArtworkDetailSourceScopes() }
+
 /**
  * Provides one shared-element registry across Home and the normal library shell. The existing
  * destination transition remains the owner of Home/Library/Search motion.
@@ -62,6 +90,7 @@ private val LocalLibraryAnimatedVisibilityScope =
 @Composable
 internal fun <S> LibrarySharedTransitionHost(
     targetState: S,
+    detailSourceScopes: (S) -> LibrarySharedArtworkDetailSourceScopes,
     transitionSpec: AnimatedContentTransitionScope<S>.() -> ContentTransform,
     contentKey: (S) -> Any? = { it },
     modifier: Modifier = Modifier,
@@ -78,13 +107,36 @@ internal fun <S> LibrarySharedTransitionHost(
         ) animatedContent@{ visibleState ->
             CompositionLocalProvider(
                 LocalLibrarySharedTransitionScope provides this@sharedTransition,
-                LocalLibraryAnimatedVisibilityScope provides this@animatedContent
+                LocalLibraryAnimatedVisibilityScope provides this@animatedContent,
+                LocalLibrarySharedArtworkDetailSourceScopes provides
+                    detailSourceScopes(visibleState)
             ) {
                 content(visibleState)
             }
         }
     }
 }
+
+@Composable
+internal fun albumDetailSharedArtworkKey(albumKey: String): LibrarySharedArtworkKey =
+    LibrarySharedArtworkKey.Album(
+        albumKey = albumKey,
+        sourceScope = LocalLibrarySharedArtworkDetailSourceScopes.current.album
+    )
+
+@Composable
+internal fun artistDetailSharedArtworkKey(artistKey: String): LibrarySharedArtworkKey =
+    LibrarySharedArtworkKey.Artist(
+        artistKey = artistKey,
+        sourceScope = LocalLibrarySharedArtworkDetailSourceScopes.current.artist
+    )
+
+@Composable
+internal fun playlistDetailSharedArtworkKey(playlistId: Long): LibrarySharedArtworkKey =
+    LibrarySharedArtworkKey.Playlist(
+        playlistId = playlistId,
+        sourceScope = LocalLibrarySharedArtworkDetailSourceScopes.current.playlist
+    )
 
 /**
  * Keeps collection and detail content alive together during a local transition. When a detail is

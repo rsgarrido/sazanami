@@ -135,7 +135,11 @@ fun AlbumListScreen(
             ListItem(
                 leadingContent = {
                     LibrarySharedArtworkSource(
-                        key = LibrarySharedArtworkKey.Album(album.key),
+                        key = LibrarySharedArtworkKey.Album(
+                            albumKey = album.key,
+                            sourceScope =
+                                LibrarySharedArtworkSourceScope.LIBRARY_COLLECTION
+                        ),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.size(56.dp),
                         slotTreatment =

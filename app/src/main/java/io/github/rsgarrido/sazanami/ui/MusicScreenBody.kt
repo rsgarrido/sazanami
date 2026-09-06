@@ -78,6 +78,8 @@ import io.github.rsgarrido.sazanami.ui.library.libraryContentTransitionSpec
 import io.github.rsgarrido.sazanami.ui.library.LibrarySelectionHeaderContent
 import io.github.rsgarrido.sazanami.ui.library.LocalLibrarySelectionUi
 import io.github.rsgarrido.sazanami.ui.library.LibrarySharedTransitionHost
+import io.github.rsgarrido.sazanami.ui.library.LibrarySharedArtworkDetailSourceScopes
+import io.github.rsgarrido.sazanami.ui.library.LibrarySharedArtworkSourceScope
 import io.github.rsgarrido.sazanami.ui.library.normalizeRatedSongFilterForQuickRateMode
 import io.github.rsgarrido.sazanami.ui.library.viewCategory
 import io.github.rsgarrido.sazanami.ui.ratings.LocalSongRatingUi
@@ -150,6 +152,9 @@ internal fun MusicScreenBody(
     selectedAlbumKey: String?,
     selectedGenreKey: String?,
     selectedPlaylistId: Long?,
+    albumSharedArtworkSourceScope: LibrarySharedArtworkSourceScope,
+    artistSharedArtworkSourceScope: LibrarySharedArtworkSourceScope,
+    playlistSharedArtworkSourceScope: LibrarySharedArtworkSourceScope,
     searchQuery: String,
     searchCategory: SearchCategory,
     onSearchCategoryChange: (SearchCategory) -> Unit,
@@ -492,8 +497,18 @@ internal fun MusicScreenBody(
                     destination = mainDestination,
                     artistName = selectedArtistName,
                     albumKey = selectedAlbumKey,
-                    playlistId = selectedPlaylistId
+                    playlistId = selectedPlaylistId,
+                    albumSharedArtworkSourceScope = albumSharedArtworkSourceScope,
+                    artistSharedArtworkSourceScope = artistSharedArtworkSourceScope,
+                    playlistSharedArtworkSourceScope = playlistSharedArtworkSourceScope
                 ),
+                detailSourceScopes = { shellState ->
+                    LibrarySharedArtworkDetailSourceScopes(
+                        album = shellState.albumSharedArtworkSourceScope,
+                        artist = shellState.artistSharedArtworkSourceScope,
+                        playlist = shellState.playlistSharedArtworkSourceScope
+                    )
+                },
                 contentKey = MusicShellTransitionState::destination,
                 transitionSpec = {
                     if (targetState.destination == initialState.destination) {
@@ -939,7 +954,10 @@ private data class MusicShellTransitionState(
     val destination: MainDestination,
     val artistName: String?,
     val albumKey: String?,
-    val playlistId: Long?
+    val playlistId: Long?,
+    val albumSharedArtworkSourceScope: LibrarySharedArtworkSourceScope,
+    val artistSharedArtworkSourceScope: LibrarySharedArtworkSourceScope,
+    val playlistSharedArtworkSourceScope: LibrarySharedArtworkSourceScope
 )
 
 internal fun shouldShowLibrarySelectionHeader(

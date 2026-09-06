@@ -82,7 +82,11 @@ fun ArtistListScreen(
             ListItem(
                 leadingContent = {
                     LibrarySharedArtworkSource(
-                        key = LibrarySharedArtworkKey.Artist(artist.key),
+                        key = LibrarySharedArtworkKey.Artist(
+                            artistKey = artist.key,
+                            sourceScope =
+                                LibrarySharedArtworkSourceScope.LIBRARY_COLLECTION
+                        ),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.size(56.dp),
                         slotTreatment =

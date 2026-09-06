@@ -70,7 +70,7 @@ import io.github.rsgarrido.sazanami.ui.library.LibraryDetailTopBar
 import io.github.rsgarrido.sazanami.ui.library.LibraryItemAction
 import io.github.rsgarrido.sazanami.ui.library.LibraryItemActionSheet
 import io.github.rsgarrido.sazanami.ui.library.LibraryItemActionSheetTarget
-import io.github.rsgarrido.sazanami.ui.library.LibrarySharedArtworkKey
+import io.github.rsgarrido.sazanami.ui.library.playlistDetailSharedArtworkKey
 import io.github.rsgarrido.sazanami.ui.library.LocalLibraryQueueUi
 import io.github.rsgarrido.sazanami.ui.library.LibrarySortDirection
 import io.github.rsgarrido.sazanami.ui.library.ResetLazyListOnSortChange
@@ -435,7 +435,7 @@ private fun PlaylistDetailHero(
                 .widthIn(max = 320.dp)
                 .aspectRatio(1f)
                 .librarySharedArtwork(
-                    LibrarySharedArtworkKey.Playlist(playlist.playlistId)
+                    playlistDetailSharedArtworkKey(playlist.playlistId)
                 ),
             variant = VisualAssetVariant.DISPLAY
         )

@@ -312,7 +312,11 @@ fun AlbumGridScreen(
                 artworkDescription = "Album art for ${album.title}",
                 artworkContent = {
                     LibrarySharedArtworkSource(
-                        key = LibrarySharedArtworkKey.Album(album.key),
+                        key = LibrarySharedArtworkKey.Album(
+                            albumKey = album.key,
+                            sourceScope =
+                                LibrarySharedArtworkSourceScope.LIBRARY_COLLECTION
+                        ),
                         shape = RoundedCornerShape(gridMetrics.artworkCornerRadius),
                         modifier = Modifier.fillMaxSize(),
                         slotTreatment =
@@ -440,7 +444,11 @@ fun ArtistGridScreen(
                 artworkDescription = "Artwork for ${artist.name}",
                 artworkContent = {
                     LibrarySharedArtworkSource(
-                        key = LibrarySharedArtworkKey.Artist(artist.key),
+                        key = LibrarySharedArtworkKey.Artist(
+                            artistKey = artist.key,
+                            sourceScope =
+                                LibrarySharedArtworkSourceScope.LIBRARY_COLLECTION
+                        ),
                         shape = RoundedCornerShape(gridMetrics.artworkCornerRadius),
                         modifier = Modifier.fillMaxSize(),
                         slotTreatment =
