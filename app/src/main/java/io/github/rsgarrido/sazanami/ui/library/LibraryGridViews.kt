@@ -390,7 +390,9 @@ fun ArtistGridScreen(
     gridState: LazyGridState? = null,
     modifier: Modifier = Modifier
 ) {
-    val artists = sortedLibraryArtistGroups(songs, sortState)
+    val artists = remember(songs, sortState) {
+        sortedLibraryArtistGroups(songs, sortState)
+    }
     val gridMetrics = libraryGridMetrics(gridColumnCount)
     var actionSheetTarget by remember {
         mutableStateOf<LibraryItemActionSheetTarget?>(null)

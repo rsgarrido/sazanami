@@ -53,7 +53,9 @@ fun ArtistListScreen(
     listState: LazyListState? = null,
     bottomContentPadding: Dp = 0.dp
 ) {
-    val artists = sortedLibraryArtistGroups(songs, sortState)
+    val artists = remember(songs, sortState) {
+        sortedLibraryArtistGroups(songs, sortState)
+    }
     var actionSheetTarget by remember {
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
     }

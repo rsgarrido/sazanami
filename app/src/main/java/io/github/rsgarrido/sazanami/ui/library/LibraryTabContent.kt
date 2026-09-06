@@ -440,10 +440,12 @@ fun ArtistsTabContent(
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
-    val artistSearchSongs = filterSongsByArtistSearch(
-        songs = songs,
-        searchQuery = searchQuery
-    )
+    val artistSearchSongs = remember(songs, searchQuery) {
+        filterSongsByArtistSearch(
+            songs = songs,
+            searchQuery = searchQuery
+        )
+    }
     val scrollStates = rememberLibrarySortScrollStates(sortState)
 
     if (songs.isEmpty()) {
@@ -519,11 +521,13 @@ fun ArtistsTabContent(
         } else {
             artistIdentity(selectedArtistName)
         }
-        val artistSongs = sortSongsForArtistDetail(
-            songs.filter { song ->
-                artistIdentity(song.artist) == selectedArtistIdentity
-            }
-        )
+        val artistSongs = remember(songs, selectedArtistIdentity) {
+            sortSongsForArtistDetail(
+                songs.filter { song ->
+                    artistIdentity(song.artist) == selectedArtistIdentity
+                }
+            )
+        }
 
         ArtistDetailScreen(
             artistName = selectedArtistName,
