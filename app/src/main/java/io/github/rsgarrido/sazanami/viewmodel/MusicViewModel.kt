@@ -119,6 +119,7 @@ import java.time.ZoneId
 import io.github.rsgarrido.sazanami.ui.state.LibraryAppearanceUiState
 import io.github.rsgarrido.sazanami.ui.state.LibraryCategoryAppearance
 import io.github.rsgarrido.sazanami.ui.state.PlayerAppearanceUiState
+import io.github.rsgarrido.sazanami.data.preferences.AppFont
 import io.github.rsgarrido.sazanami.ui.state.category
 import io.github.rsgarrido.sazanami.ui.state.LibrarySelectionEntity
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewCategory
@@ -345,6 +346,10 @@ class MusicViewModel(
             AudioOffloadPreference.DISABLED
         )
 
+    val appFont = appPreferencesRepository.state
+        .map { preferences -> preferences.appFont }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, AppFont.SAZANAMI)
+
     val smoothPlayPauseEnabled = appPreferencesRepository.state
         .map { preferences -> preferences.smoothPlayPauseEnabled }
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
@@ -363,6 +368,10 @@ class MusicViewModel(
 
     fun selectPlayerTheme(playerTheme: PlayerTheme) {
         viewModelScope.launch { appPreferencesRepository.setSelectedPlayerTheme(playerTheme) }
+    }
+
+    fun selectAppFont(appFont: AppFont) {
+        viewModelScope.launch { appPreferencesRepository.setAppFont(appFont) }
     }
 
     fun selectModernArtworkTransitionStyle(style: ModernArtworkTransitionStyle) {

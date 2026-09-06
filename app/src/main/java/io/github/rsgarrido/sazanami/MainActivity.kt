@@ -39,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.content.pm.PackageManager
 import io.github.rsgarrido.sazanami.mediaaccess.MediaAccessEffect
 import io.github.rsgarrido.sazanami.mediaaccess.MediaAccessPolicy
@@ -190,7 +191,8 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            SazanamiTheme {
+            val appFont by musicViewModel.appFont.collectAsStateWithLifecycle()
+            SazanamiTheme(appFont = appFont) {
                 val snackbarHostState = remember { SnackbarHostState() }
 
                 CompositionLocalProvider(

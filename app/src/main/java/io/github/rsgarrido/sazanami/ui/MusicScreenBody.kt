@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.data.LibraryFolder
 import io.github.rsgarrido.sazanami.data.FolderSelectionMode
 import io.github.rsgarrido.sazanami.data.PlayerTheme
+import io.github.rsgarrido.sazanami.data.preferences.AppFont
 import io.github.rsgarrido.sazanami.data.Playlist
 import io.github.rsgarrido.sazanami.data.PlaylistFolder
 import io.github.rsgarrido.sazanami.data.PlaylistSong
@@ -248,6 +249,8 @@ internal fun MusicScreenBody(
     recentlyPlayedSongs: List<Song>,
     mostPlayedSongs: List<Song>,
     selectedPlayerTheme: PlayerTheme,
+    selectedAppFont: AppFont,
+    onAppFontSelected: (AppFont) -> Unit,
     selectedPlayerThemeTokens: PlayerThemeTokens,
     onPlayerThemeSelected: (PlayerTheme) -> Unit,
     onUpdatePlayerThemeTokenOverride: (PlayerTheme, PlayerThemeTokenField, Color) -> Unit,
@@ -437,6 +440,8 @@ internal fun MusicScreenBody(
                 sleepTimerDisplayText = sleepTimerDisplayText,
                 onSleepTimerClick = onSleepTimerClick,
                 selectedPlayerTheme = selectedPlayerTheme,
+                selectedAppFont = selectedAppFont,
+                onAppFontSelected = onAppFontSelected,
                 selectedPlayerThemeTokens = selectedPlayerThemeTokens,
                 onPlayerThemeSelected = onPlayerThemeSelected,
                 onUpdatePlayerThemeTokenOverride = onUpdatePlayerThemeTokenOverride,

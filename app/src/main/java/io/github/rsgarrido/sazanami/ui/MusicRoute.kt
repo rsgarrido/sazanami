@@ -27,6 +27,7 @@ import io.github.rsgarrido.sazanami.ui.equalizer.rememberEqualizerProfilePlatfor
 import io.github.rsgarrido.sazanami.mediaaccess.MediaAccessState
 import io.github.rsgarrido.sazanami.mediaaccess.FolderArtworkAccessState
 import io.github.rsgarrido.sazanami.data.home.HomePin
+import io.github.rsgarrido.sazanami.data.preferences.AppFont
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.membershipKey
 import io.github.rsgarrido.sazanami.data.buildGenreCollections
@@ -75,6 +76,7 @@ internal fun MusicRoute(
     val sleepTimerUiState by musicViewModel.sleepTimerUiState.collectAsStateWithLifecycle()
     val playerAppearanceUiState by
     musicViewModel.playerAppearanceUiState.collectAsStateWithLifecycle()
+    val appFont by musicViewModel.appFont.collectAsStateWithLifecycle()
     val libraryAppearanceUiState by
     musicViewModel.libraryAppearanceUiState.collectAsStateWithLifecycle()
     val audioOffloadPreference by
@@ -619,6 +621,8 @@ internal fun MusicRoute(
                 musicViewModel.cancelSleepTimer()
             },
             selectedPlayerTheme = playerAppearanceUiState.selectedTheme,
+            selectedAppFont = appFont,
+            onAppFontSelected = musicViewModel::selectAppFont,
             selectedPlayerThemeTokens = playerAppearanceUiState.themeTokens,
             onPlayerThemeSelected = { playerTheme ->
                 musicViewModel.selectPlayerTheme(playerTheme)

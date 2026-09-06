@@ -81,6 +81,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 data class AppPreferencesState(
+    val appFont: AppFont = AppFont.SAZANAMI,
     val selectedPlayerTheme: PlayerTheme = PlayerTheme.DEFAULT,
     val playerThemeTokenOverrides: Map<PlayerTheme, PlayerThemeTokenOverrides> = emptyMap(),
     val modernArtworkTransitionStyle: ModernArtworkTransitionStyle =
@@ -127,6 +128,10 @@ class AppPreferencesRepository private constructor(
 
     suspend fun setSelectedPlayerTheme(theme: PlayerTheme) = edit {
         it[Keys.selectedPlayerTheme] = theme.id
+    }
+
+    suspend fun setAppFont(appFont: AppFont) = edit {
+        it.writeAppFont(appFont)
     }
 
     suspend fun setModernArtworkTransitionStyle(style: ModernArtworkTransitionStyle) = edit {
@@ -554,6 +559,7 @@ class AppPreferencesRepository private constructor(
 
     suspend fun replaceAll(restored: AppPreferencesState) = edit { preferences ->
         preferences.clear()
+        preferences.writeAppFont(restored.appFont)
         preferences[Keys.selectedPlayerTheme] = restored.selectedPlayerTheme.id
         preferences[Keys.modernArtworkTransitionStyle] =
             restored.modernArtworkTransitionStyle.storageValue
@@ -635,6 +641,7 @@ internal fun decodeAppPreferences(preferences: Preferences): AppPreferencesState
         storedFolders = storedFolders
     )
     return AppPreferencesState(
+        appFont = AppFont.fromStorageValue(preferences[Keys.appFont]),
         selectedPlayerTheme = PlayerTheme.fromId(preferences[Keys.selectedPlayerTheme]),
         playerThemeTokenOverrides = PlayerTheme.entries.associateWith { emptyOverrides() }
             .mapValues { (theme, _) ->
@@ -752,6 +759,10 @@ internal fun decodeAppPreferences(preferences: Preferences): AppPreferencesState
         showRecentlyAddedOnHome = preferences[Keys.showRecentlyAddedOnHome] ?: true,
         isLoaded = true
     )
+}
+
+internal fun MutablePreferences.writeAppFont(appFont: AppFont) {
+    this[Keys.appFont] = appFont.storageValue
 }
 
 private fun decodeHomePins(encoded: String): List<HomePin> = sanitizeHomePins(
@@ -1168,6 +1179,7 @@ private val preferencesJson = Json {
 }
 
 private object Keys {
+    val appFont = stringPreferencesKey("app_font")
     val selectedPlayerTheme = stringPreferencesKey("selected_player_theme")
     val modernArtworkTransitionStyle = stringPreferencesKey("artwork_transition_style")
     val modernSeekbarStyle = stringPreferencesKey("seekbar_style")

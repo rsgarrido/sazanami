@@ -50,6 +50,7 @@ class AppPreferencesStateTest {
     @Test
     fun invalidEnumsAndGridCountsFallBackSafely() {
         val preferences = mutablePreferencesOf(
+            stringPreferencesKey("app_font") to "missing-font",
             stringPreferencesKey("selected_player_theme") to "missing-theme",
             stringPreferencesKey("replay_gain_mode") to "LOUDER_THAN_INFINITY",
             stringPreferencesKey("audio_offload_preference") to "REQUIRED",
@@ -76,6 +77,7 @@ class AppPreferencesStateTest {
 
         val state = decodeAppPreferences(preferences)
 
+        assertEquals(AppFont.SAZANAMI, state.appFont)
         assertEquals(PlayerTheme.DEFAULT, state.selectedPlayerTheme)
         assertEquals(ReplayGainMode.OFF, state.replayGainMode)
         assertEquals(AudioOffloadPreference.DISABLED, state.audioOffloadPreference)
@@ -88,6 +90,32 @@ class AppPreferencesStateTest {
         assertEquals(ModernSeekbarStyle.WAVEFORM_PREVIEW, state.modernSeekbarStyle)
         assertEquals(2, state.songsGridColumnCount)
         assertTrue(state.isLoaded)
+    }
+
+    @Test
+    fun missingAppFontUsesSazanami() {
+        assertEquals(
+            AppFont.SAZANAMI,
+            decodeAppPreferences(mutablePreferencesOf()).appFont
+        )
+    }
+
+    @Test
+    fun deviceAppFontRoundTripsWithoutChangingOtherAppearanceSettings() {
+        val preferences = mutablePreferencesOf(
+            stringPreferencesKey("selected_player_theme") to PlayerTheme.POCKET_FLIP.id,
+            stringPreferencesKey("artwork_transition_style") to "cover_flow"
+        )
+
+        preferences.writeAppFont(AppFont.DEVICE)
+        val restored = decodeAppPreferences(preferences)
+
+        assertEquals(AppFont.DEVICE, restored.appFont)
+        assertEquals(PlayerTheme.POCKET_FLIP, restored.selectedPlayerTheme)
+        assertEquals(
+            ModernArtworkTransitionStyle.COVER_FLOW,
+            restored.modernArtworkTransitionStyle
+        )
     }
 
     @Test
