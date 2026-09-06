@@ -437,6 +437,7 @@ fun ArtistsTabContent(
     onAddToPlaylistClick: (Song) -> Unit,
     onAddSongsToPlaylistClick: (List<Song>) -> Unit,
     onEditSongTagsClick: (Song) -> Unit,
+    collectionContentTopPadding: Dp = 0.dp,
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
@@ -451,7 +452,10 @@ fun ArtistsTabContent(
     LibraryDetailAnimatedContent(
         targetState = selectedArtistName,
         modifier = modifier,
-        label = "artistCollectionDetail"
+        label = "artistCollectionDetail",
+        contentTopPadding = { visibleArtistName ->
+            if (visibleArtistName == null) collectionContentTopPadding else 0.dp
+        }
     ) { visibleArtistName ->
         if (songs.isEmpty()) {
             Text(
@@ -605,6 +609,7 @@ fun AlbumsTabContent(
     onAddSongsToPlaylistClick: (List<Song>) -> Unit,
     onEditAlbumMetadataClick: (LibraryAlbumGroup) -> Unit,
     onEditSongTagsClick: (Song) -> Unit,
+    collectionContentTopPadding: Dp = 0.dp,
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
@@ -617,7 +622,10 @@ fun AlbumsTabContent(
     LibraryDetailAnimatedContent(
         targetState = selectedAlbumKey,
         modifier = modifier,
-        label = "albumCollectionDetail"
+        label = "albumCollectionDetail",
+        contentTopPadding = { visibleAlbumKey ->
+            if (visibleAlbumKey == null) collectionContentTopPadding else 0.dp
+        }
     ) { visibleAlbumKey ->
     if (songs.isEmpty()) {
         Text(

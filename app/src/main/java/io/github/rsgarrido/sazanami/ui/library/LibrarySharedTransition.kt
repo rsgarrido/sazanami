@@ -14,6 +14,8 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
@@ -24,7 +26,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 
 private const val SharedArtworkDurationMillis = 280
 private const val SharedSourceReplicaAlpha = 0.24f
@@ -149,6 +152,7 @@ internal fun <S> LibraryDetailAnimatedContent(
     targetState: S,
     modifier: Modifier = Modifier,
     label: String,
+    contentTopPadding: (S) -> Dp = { 0.dp },
     content: @Composable (S) -> Unit
 ) {
     val inheritedVisibilityScope = LocalLibraryAnimatedVisibilityScope.current
@@ -175,7 +179,13 @@ internal fun <S> LibraryDetailAnimatedContent(
         CompositionLocalProvider(
             LocalLibraryAnimatedVisibilityScope provides visibilityScope
         ) {
-            content(visibleState)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = contentTopPadding(visibleState))
+            ) {
+                content(visibleState)
+            }
         }
     }
 }

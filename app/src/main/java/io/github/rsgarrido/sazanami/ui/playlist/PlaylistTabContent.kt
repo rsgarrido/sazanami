@@ -62,6 +62,7 @@ fun PlaylistsTabContent(
     onReorderPlaylistSongs: (Long, List<Long>) -> Unit,
     onAddSongsToCurrentPlaylistClick: (Playlist, List<Song>) -> Unit,
     onEditSongTagsClick: (Song) -> Unit,
+    collectionContentTopPadding: Dp = 0.dp,
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
@@ -98,7 +99,10 @@ fun PlaylistsTabContent(
     LibraryDetailAnimatedContent(
         targetState = selectedPlaylistId,
         modifier = modifier,
-        label = "playlistCollectionDetail"
+        label = "playlistCollectionDetail",
+        contentTopPadding = { visiblePlaylistId ->
+            if (visiblePlaylistId == null) collectionContentTopPadding else 0.dp
+        }
     ) { visiblePlaylistId ->
     if (visiblePlaylistId == null) {
         playlistCollectionStateHolder.SaveableStateProvider("playlist-collection") {

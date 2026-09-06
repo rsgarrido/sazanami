@@ -5,7 +5,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -17,6 +18,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -28,12 +30,18 @@ import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.data.LibraryFolder
@@ -110,6 +118,8 @@ import io.github.rsgarrido.sazanami.ui.library.LibraryViewOption
 import kotlinx.coroutines.flow.StateFlow
 import io.github.rsgarrido.sazanami.mediaaccess.MediaAccessState
 import java.time.LocalDate
+
+private const val LibraryDetailChromeDurationMillis = 280
 
 @Composable
 internal fun MusicScreenBody(
@@ -619,13 +629,26 @@ internal fun MusicScreenBody(
                         bindingMatchesSelection = selectionUi.headerState.binding?.entity ==
                             selectionUi.state.entity
                     )
+                    val choreographLibraryDetailChrome =
+                        shouldChoreographLibraryDetailChrome(
+                            destination = destination,
+                            selectedLibraryTab = selectedLibraryTab,
+                            selectedArtistName = shellState.artistName,
+                            selectedAlbumKey = shellState.albumKey,
+                            selectedPlaylistId = shellState.playlistId,
+                            artistSourceScope = shellState.artistSharedArtworkSourceScope,
+                            albumSourceScope = shellState.albumSharedArtworkSourceScope,
+                            playlistSourceScope = shellState.playlistSharedArtworkSourceScope
+                        )
+                    val composeLibraryChrome = !isLibraryDetail ||
+                            choreographLibraryDetailChrome ||
+                            !mediaAccessState.hasAudioAccess
 
-                    Column(
-                        modifier = modifier
-                            .fillMaxSize()
-                            .animateContentSize()
-                    ) {
-                        if (!isLibraryDetail || !mediaAccessState.hasAudioAccess) {
+                    LibraryDetailChromeLayout(
+                        chromeVisible = !choreographLibraryDetailChrome,
+                        composeChrome = composeLibraryChrome,
+                        modifier = modifier.fillMaxSize(),
+                        chrome = {
                             Crossfade(
                                 targetState = showSelectionHeader,
                                 animationSpec = tween(180),
@@ -646,7 +669,6 @@ internal fun MusicScreenBody(
                                         onSettingsClick = onSettingsClick,
                                         modifier = Modifier.statusBarsPadding(),
                                         batchMetadataAction = if (!isSearchDestination &&
-                                            !isLibraryDetail &&
                                             selectedLibraryTab == LibraryTab.SONGS &&
                                             songs.size >= 2
                                         ) {
@@ -662,7 +684,6 @@ internal fun MusicScreenBody(
                                             null
                                         },
                                         viewModeAction = if (!isSearchDestination &&
-                                            !isLibraryDetail &&
                                             selectedLibraryTab.viewCategory() != null
                                         ) {
                                             {
@@ -679,59 +700,55 @@ internal fun MusicScreenBody(
                                         } else {
                                             null
                                         },
-                                        organizeAction = if (!shouldOfferLibraryOrganize(destination)) null else {
-                                          {
-                                            LibraryOrganizeAction(
-                                                songs = songs,
-                                                selectedLibraryTab = selectedLibraryTab,
-                                                selectedArtistName = shellState.artistName,
-                                                selectedAlbumKey = shellState.albumKey,
-                                                selectedSongSortState =
-                                                    selectedCollectionSortState,
-                                                selectedArtistSortState = selectedArtistSortState,
-                                                selectedAlbumSortState = selectedAlbumSortState,
-                                                selectedFavoriteSortState =
-                                                    selectedFavoriteSortState,
-                                                selectedSongFilterState = selectedSongFilterState,
-                                                onSongSortStateChanged = { state ->
-                                                    when (selectedLibraryTab) {
-                                                        LibraryTab.RATED ->
-                                                            selectedRatedSortState = state
-                                                        LibraryTab.RECENTLY_ADDED ->
-                                                            selectedAddedSortState = state
-                                                        else ->
-                                                            onSongSortStateChanged(state)
-                                                    }
-                                                },
-                                                onArtistSortStateChanged =
-                                                    onArtistSortStateChanged,
-                                                onAlbumSortStateChanged =
-                                                    onAlbumSortStateChanged,
-                                                onFavoriteSortStateChanged =
-                                                    onFavoriteSortStateChanged,
-                                                onSongFilterStateChanged =
-                                                    onSongFilterStateChanged,
-                                                songFiltersEnabled = !isSearchDestination,
-                                                ratingFeaturesEnabled = !isSearchDestination
-                                            )
-                                          }
-                                        }
+                                        organizeAction =
+                                            if (!shouldOfferLibraryOrganize(destination)) null else {
+                                                {
+                                                    LibraryOrganizeAction(
+                                                        songs = songs,
+                                                        selectedLibraryTab = selectedLibraryTab,
+                                                        selectedArtistName =
+                                                            shellState.artistName,
+                                                        selectedAlbumKey = shellState.albumKey,
+                                                        selectedSongSortState =
+                                                            selectedCollectionSortState,
+                                                        selectedArtistSortState =
+                                                            selectedArtistSortState,
+                                                        selectedAlbumSortState =
+                                                            selectedAlbumSortState,
+                                                        selectedFavoriteSortState =
+                                                            selectedFavoriteSortState,
+                                                        selectedSongFilterState =
+                                                            selectedSongFilterState,
+                                                        onSongSortStateChanged = { state ->
+                                                            when (selectedLibraryTab) {
+                                                                LibraryTab.RATED ->
+                                                                    selectedRatedSortState = state
+                                                                LibraryTab.RECENTLY_ADDED ->
+                                                                    selectedAddedSortState = state
+                                                                else ->
+                                                                    onSongSortStateChanged(state)
+                                                            }
+                                                        },
+                                                        onArtistSortStateChanged =
+                                                            onArtistSortStateChanged,
+                                                        onAlbumSortStateChanged =
+                                                            onAlbumSortStateChanged,
+                                                        onFavoriteSortStateChanged =
+                                                            onFavoriteSortStateChanged,
+                                                        onSongFilterStateChanged =
+                                                            onSongFilterStateChanged,
+                                                        songFiltersEnabled = !isSearchDestination,
+                                                        ratingFeaturesEnabled =
+                                                            !isSearchDestination
+                                                    )
+                                                }
+                                            }
                                     )
                                 }
                             }
-                        }
 
-                        if (!mediaAccessState.hasAudioAccess) {
-                            MediaAccessNotice(
-                                state = mediaAccessState,
-                                onRequestAudioAccess = onRequestAudioAccess,
-                                onRequestArtworkAccess = onRequestArtworkAccess,
-                                onOpenAppSettings = onOpenAppSettings,
-                                modifier = Modifier.padding(16.dp)
-                            )
-                        } else {
-                            if (!isSearchDestination &&
-                                !isLibraryDetail &&
+                            if (mediaAccessState.hasAudioAccess &&
+                                !isSearchDestination &&
                                 selectedLibraryTab != LibraryTab.QUEUE
                             ) {
                                 LibraryBrowseSwitcher(
@@ -750,7 +767,35 @@ internal fun MusicScreenBody(
                                     )
                                 }
                             }
-
+                        }
+                    ) { collectionContentTopPadding ->
+                        val nonSearchContentTopPadding = if (isSearchDestination) {
+                            0.dp
+                        } else {
+                            collectionContentTopPadding
+                        }
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(
+                                    top = if (isSearchDestination) {
+                                        collectionContentTopPadding
+                                    } else {
+                                        0.dp
+                                    }
+                                )
+                        ) {
+                        if (!mediaAccessState.hasAudioAccess) {
+                            MediaAccessNotice(
+                                state = mediaAccessState,
+                                onRequestAudioAccess = onRequestAudioAccess,
+                                onRequestArtworkAccess = onRequestArtworkAccess,
+                                onOpenAppSettings = onOpenAppSettings,
+                                modifier = Modifier
+                                    .padding(top = collectionContentTopPadding)
+                                    .padding(16.dp)
+                            )
+                        } else {
                             LibrarySearchControl(
                                 selectedLibraryTab = selectedLibraryTab,
                                 isSearchVisible = isSearchDestination,
@@ -760,11 +805,15 @@ internal fun MusicScreenBody(
 
                             when {
                                 isLibraryLoading -> LibraryLoadingNotice(
-                                    modifier = Modifier.padding(16.dp)
+                                    modifier = Modifier
+                                        .padding(top = nonSearchContentTopPadding)
+                                        .padding(16.dp)
                                 )
                                 libraryErrorMessage != null -> LibraryErrorNotice(
                                     message = libraryErrorMessage,
-                                    modifier = Modifier.padding(16.dp)
+                                    modifier = Modifier
+                                        .padding(top = nonSearchContentTopPadding)
+                                        .padding(16.dp)
                                 )
                                 isSearchDestination -> searchStateHolder.SaveableStateProvider("search-results") {
                                   io.github.rsgarrido.sazanami.ui.library.LibrarySearchContent(
@@ -796,7 +845,9 @@ internal fun MusicScreenBody(
                                 )
                                 }
                                 songs.isEmpty() -> EmptyLibraryNotice(
-                                    modifier = Modifier.padding(16.dp)
+                                    modifier = Modifier
+                                        .padding(top = nonSearchContentTopPadding)
+                                        .padding(16.dp)
                                 )
                                 else -> AnimatedContent(
                                     targetState = selectedLibraryTab,
@@ -830,6 +881,10 @@ internal fun MusicScreenBody(
                                     )
                                     val visibleGridColumnCount = libraryAppearanceUiState
                                         .gridColumnCountFor(visibleLibraryTab)
+                                    val usesArtworkDetailHost = visibleLibraryTab ==
+                                            LibraryTab.ARTISTS ||
+                                            visibleLibraryTab == LibraryTab.ALBUMS ||
+                                            visibleLibraryTab == LibraryTab.PLAYLISTS
                                     MusicLibraryContent(
                                         selectedLibraryTab = visibleLibraryTab,
                                     songs = songs,
@@ -917,11 +972,24 @@ internal fun MusicScreenBody(
                                     recentlyPlayedSongs = recentlyPlayedSongs,
                                     recentlyAddedSongs = recentlyAddedLibrarySongs,
                                     mostPlayedSongs = mostPlayedSongs,
+                                    collectionContentTopPadding =
+                                        collectionContentTopPadding,
                                     bottomContentPadding = bottomContentPadding,
-                                        modifier = Modifier.fillMaxSize()
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .then(
+                                                if (usesArtworkDetailHost) {
+                                                    Modifier
+                                                } else {
+                                                    Modifier.padding(
+                                                        top = collectionContentTopPadding
+                                                    )
+                                                }
+                                            )
                                     )
                                 }
                             }
+                        }
                         }
                     }
                 }
@@ -944,6 +1012,73 @@ internal fun MusicScreenBody(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun LibraryDetailChromeLayout(
+    chromeVisible: Boolean,
+    composeChrome: Boolean,
+    modifier: Modifier = Modifier,
+    chrome: @Composable () -> Unit,
+    content: @Composable (Dp) -> Unit
+) {
+    var chromeHeightPx by remember { mutableIntStateOf(0) }
+    val chromeTransitionProgress by animateFloatAsState(
+        targetValue = if (chromeVisible) 0f else 1f,
+        animationSpec = tween(
+            durationMillis = LibraryDetailChromeDurationMillis,
+            easing = FastOutSlowInEasing
+        ),
+        label = "libraryDetailChromeProgress"
+    )
+    val chromeHeight = with(LocalDensity.current) { chromeHeightPx.toDp() }
+
+    Box(modifier = modifier) {
+        // Collection children always receive the measured final chrome inset. Detail children
+        // consume no inset, so both sides keep stable bounds throughout their shared transition.
+        content(if (composeChrome) chromeHeight else 0.dp)
+
+        if (composeChrome) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .onSizeChanged { measuredSize ->
+                        if (chromeHeightPx != measuredSize.height) {
+                            chromeHeightPx = measuredSize.height
+                        }
+                    }
+                    .graphicsLayer {
+                        translationY = -chromeHeightPx * chromeTransitionProgress
+                        alpha = 1f - chromeTransitionProgress
+                    }
+            ) {
+                chrome()
+            }
+        }
+    }
+}
+
+internal fun shouldChoreographLibraryDetailChrome(
+    destination: MainDestination,
+    selectedLibraryTab: LibraryTab,
+    selectedArtistName: String?,
+    selectedAlbumKey: String?,
+    selectedPlaylistId: Long?,
+    artistSourceScope: LibrarySharedArtworkSourceScope,
+    albumSourceScope: LibrarySharedArtworkSourceScope,
+    playlistSourceScope: LibrarySharedArtworkSourceScope
+): Boolean {
+    if (destination != MainDestination.LIBRARY) return false
+
+    return when (selectedLibraryTab) {
+        LibraryTab.ARTISTS -> selectedArtistName != null &&
+                artistSourceScope == LibrarySharedArtworkSourceScope.LIBRARY_COLLECTION
+        LibraryTab.ALBUMS -> selectedAlbumKey != null &&
+                albumSourceScope == LibrarySharedArtworkSourceScope.LIBRARY_COLLECTION
+        LibraryTab.PLAYLISTS -> selectedPlaylistId != null &&
+                playlistSourceScope == LibrarySharedArtworkSourceScope.LIBRARY_COLLECTION
+        else -> false
     }
 }
 
