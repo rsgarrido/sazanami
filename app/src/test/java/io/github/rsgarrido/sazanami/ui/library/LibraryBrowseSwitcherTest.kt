@@ -1,5 +1,6 @@
 package io.github.rsgarrido.sazanami.ui.library
 
+import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -26,6 +27,59 @@ class LibraryBrowseSwitcherTest {
     @Test
     fun queueDoesNotAppearInLibraryCategorySwitcher() {
         assertNull(LibraryTab.QUEUE.primaryBrowseTab())
+    }
+
+    @Test
+    fun songsCollectionsShowTheSecondaryFilterRow() {
+        listOf(
+            LibraryTab.SONGS,
+            LibraryTab.FAVORITES,
+            LibraryTab.RATED,
+            LibraryTab.RECENTLY_ADDED,
+            LibraryTab.RECENTLY_PLAYED,
+            LibraryTab.MOST_PLAYED
+        ).forEach { tab ->
+            assertTrue(tab.showsSongsFilterRow())
+        }
+
+        listOf(
+            LibraryTab.ALBUMS,
+            LibraryTab.ARTISTS,
+            LibraryTab.PLAYLISTS,
+            LibraryTab.GENRES,
+            LibraryTab.QUEUE
+        ).forEach { tab ->
+            assertFalse(tab.showsSongsFilterRow())
+        }
+    }
+
+    @Test
+    fun contentPaddingOnlyIncludesTheReservedFilterSlotForSongsCollections() {
+        val chromeTopPadding = 160.dp
+
+        assertEquals(
+            chromeTopPadding,
+            libraryContentTopPadding(chromeTopPadding, LibraryTab.SONGS)
+        )
+        assertEquals(
+            chromeTopPadding,
+            libraryContentTopPadding(chromeTopPadding, LibraryTab.FAVORITES)
+        )
+        listOf(
+            LibraryTab.ALBUMS,
+            LibraryTab.ARTISTS,
+            LibraryTab.PLAYLISTS,
+            LibraryTab.GENRES
+        ).forEach { tab ->
+            assertEquals(
+                118.dp,
+                libraryContentTopPadding(chromeTopPadding, tab)
+            )
+        }
+        assertEquals(
+            chromeTopPadding,
+            libraryContentTopPadding(chromeTopPadding, LibraryTab.QUEUE)
+        )
     }
 
     @Test

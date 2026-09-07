@@ -302,13 +302,20 @@ fun AlbumGridScreen(
             items = albums,
             key = { album -> album.key }
         ) { album ->
+            val artworkModel = album.songs.firstOrNull()?.albumArtUri
+            val artworkRequest = rememberLibraryArtworkRequest(
+                ownerType = LibraryArtworkOwnerType.ALBUM,
+                ownerKey = album.key,
+                model = artworkModel,
+                variant = VisualAssetVariant.THUMBNAIL
+            )
             val songCountText = pluralStringResource(
                 R.plurals.song_count,
                 album.songs.size,
                 album.songs.size
             )
             LibraryGridCard(
-                artworkUri = album.songs.firstOrNull()?.albumArtUri,
+                artworkUri = artworkModel,
                 artworkDescription = "Album art for ${album.title}",
                 artworkContent = {
                     LibrarySharedArtworkSource(
@@ -321,10 +328,10 @@ fun AlbumGridScreen(
                         modifier = Modifier.fillMaxSize(),
                         slotTreatment =
                             LibrarySharedArtworkSourceSlotTreatment.NEUTRAL_SURFACE,
-                        hasResolvedArtwork = album.songs.firstOrNull()?.albumArtUri != null
+                        hasResolvedArtwork = artworkRequest != null
                     ) { artworkModifier ->
                         AsyncImage(
-                            model = album.songs.firstOrNull()?.albumArtUri,
+                            model = artworkRequest,
                             contentDescription = "Album art for ${album.title}",
                             modifier = artworkModifier,
                             contentScale = ContentScale.Crop

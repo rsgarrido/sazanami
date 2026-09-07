@@ -5,6 +5,10 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -33,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -50,8 +55,10 @@ import io.github.rsgarrido.sazanami.ui.AppShellTypography
 import io.github.rsgarrido.sazanami.ui.AppShellAccent
 
 private const val LibrarySelectionColorDurationMillis = 180
+private const val LibrarySongsFilterMotionDurationMillis = 180
 private val LibraryPrimaryIndicatorHeight = 42.dp
 private val LibraryFilterIndicatorHeight = 34.dp
+internal val LibrarySongsFilterRowSlotHeight = 42.dp
 
 val primaryLibraryTabs = listOf(
     LibraryTab.SONGS,
@@ -187,34 +194,51 @@ fun LibraryBrowseSwitcher(
             }
         }
 
-        if (selectedPrimaryTab == LibraryTab.SONGS) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(filterScrollState)
-                    .padding(horizontal = 16.dp)
-                    .selectableGroup()
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(LibraryFilterIndicatorHeight)
+                .clipToBounds()
+        ) {
+            androidx.compose.animation.AnimatedVisibility(
+                visible = selectedTab.showsSongsFilterRow(),
+                enter = slideInVertically(
+                    animationSpec = tween(LibrarySongsFilterMotionDurationMillis),
+                    initialOffsetY = { height -> -height }
+                ) + fadeIn(tween(LibrarySongsFilterMotionDurationMillis)),
+                exit = slideOutVertically(
+                    animationSpec = tween(LibrarySongsFilterMotionDurationMillis),
+                    targetOffsetY = { height -> -height }
+                ) + fadeOut(tween(LibrarySongsFilterMotionDurationMillis))
             ) {
-                MovingSelectionIndicator(
-                    targetBounds = filterBounds[selectedTab],
-                    height = LibraryFilterIndicatorHeight,
-                    shape = RoundedCornerShape(14.dp),
-                    color = AppShellAccent.copy(alpha = 0.16f),
-                    border = BorderStroke(1.dp, AppShellAccent.copy(alpha = 0.42f))
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(filterScrollState)
+                        .padding(horizontal = 16.dp)
+                        .selectableGroup()
+                ) {
+                    MovingSelectionIndicator(
+                        targetBounds = filterBounds[selectedTab],
+                        height = LibraryFilterIndicatorHeight,
+                        shape = RoundedCornerShape(14.dp),
+                        color = AppShellAccent.copy(alpha = 0.16f),
+                        border = BorderStroke(1.dp, AppShellAccent.copy(alpha = 0.42f))
+                    )
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    songCollectionTabs.forEach { tab ->
-                        LibraryFilterPill(
-                            tab = tab,
-                            selected = selectedTab == tab,
-                            onClick = { onTabSelected(tab) },
-                            onBoundsChanged = { bounds ->
-                                if (filterBounds[tab] != bounds) {
-                                    filterBounds[tab] = bounds
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        songCollectionTabs.forEach { tab ->
+                            LibraryFilterPill(
+                                tab = tab,
+                                selected = selectedTab == tab,
+                                onClick = { onTabSelected(tab) },
+                                onBoundsChanged = { bounds ->
+                                    if (filterBounds[tab] != bounds) {
+                                        filterBounds[tab] = bounds
+                                    }
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
@@ -348,6 +372,18 @@ private fun LibraryFilterPill(
             )
         }
     }
+}
+
+internal fun LibraryTab.showsSongsFilterRow(): Boolean =
+    primaryBrowseTab() == LibraryTab.SONGS
+
+internal fun libraryContentTopPadding(
+    chromeTopPadding: Dp,
+    visibleTab: LibraryTab
+): Dp = if (visibleTab.primaryBrowseTab() == null || visibleTab.showsSongsFilterRow()) {
+    chromeTopPadding
+} else {
+    maxOf(0.dp, chromeTopPadding - LibrarySongsFilterRowSlotHeight)
 }
 
 @Composable

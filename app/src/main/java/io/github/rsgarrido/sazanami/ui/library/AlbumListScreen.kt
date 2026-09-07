@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import coil.compose.AsyncImage
 import io.github.rsgarrido.sazanami.data.Song
+import io.github.rsgarrido.sazanami.data.visual.VisualAssetVariant
 import io.github.rsgarrido.sazanami.ui.home.LocalHomePinUi
 import io.github.rsgarrido.sazanami.ui.AppShellAccent
 import io.github.rsgarrido.sazanami.ui.state.LibrarySelectionEntity
@@ -124,6 +125,12 @@ fun AlbumListScreen(
             key = { album -> album.key }
         ) { album ->
             val firstSong = album.songs.firstOrNull()
+            val artworkRequest = rememberLibraryArtworkRequest(
+                ownerType = LibraryArtworkOwnerType.ALBUM,
+                ownerKey = album.key,
+                model = firstSong?.albumArtUri,
+                variant = VisualAssetVariant.THUMBNAIL
+            )
             val songCountText = pluralStringResource(
                 AppR.plurals.song_count,
                 album.songs.size,
@@ -144,10 +151,10 @@ fun AlbumListScreen(
                         modifier = Modifier.size(56.dp),
                         slotTreatment =
                             LibrarySharedArtworkSourceSlotTreatment.NEUTRAL_SURFACE,
-                        hasResolvedArtwork = firstSong?.albumArtUri != null
+                        hasResolvedArtwork = artworkRequest != null
                     ) { artworkModifier ->
                         AsyncImage(
-                            model = firstSong?.albumArtUri,
+                            model = artworkRequest,
                             contentDescription = "Album art for ${album.title}",
                             modifier = artworkModifier,
                             contentScale = ContentScale.Crop,

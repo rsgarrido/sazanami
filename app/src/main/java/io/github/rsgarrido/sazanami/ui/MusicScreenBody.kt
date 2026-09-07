@@ -82,6 +82,7 @@ import io.github.rsgarrido.sazanami.ui.library.LibraryViewOptionsButton
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewOptionsSheet
 import io.github.rsgarrido.sazanami.ui.library.MusicLibraryContent
 import io.github.rsgarrido.sazanami.ui.library.libraryContentPresentation
+import io.github.rsgarrido.sazanami.ui.library.libraryContentTopPadding
 import io.github.rsgarrido.sazanami.ui.library.libraryContentTransitionSpec
 import io.github.rsgarrido.sazanami.ui.library.LibrarySelectionHeaderContent
 import io.github.rsgarrido.sazanami.ui.library.LocalLibrarySelectionUi
@@ -772,7 +773,10 @@ internal fun MusicScreenBody(
                         val nonSearchContentTopPadding = if (isSearchDestination) {
                             0.dp
                         } else {
-                            collectionContentTopPadding
+                            libraryContentTopPadding(
+                                chromeTopPadding = collectionContentTopPadding,
+                                visibleTab = selectedLibraryTab
+                            )
                         }
                         Column(
                             modifier = Modifier
@@ -881,6 +885,10 @@ internal fun MusicScreenBody(
                                     )
                                     val visibleGridColumnCount = libraryAppearanceUiState
                                         .gridColumnCountFor(visibleLibraryTab)
+                                    val visibleContentTopPadding = libraryContentTopPadding(
+                                        chromeTopPadding = collectionContentTopPadding,
+                                        visibleTab = visibleLibraryTab
+                                    )
                                     val usesArtworkDetailHost = visibleLibraryTab ==
                                             LibraryTab.ARTISTS ||
                                             visibleLibraryTab == LibraryTab.ALBUMS ||
@@ -973,7 +981,7 @@ internal fun MusicScreenBody(
                                     recentlyAddedSongs = recentlyAddedLibrarySongs,
                                     mostPlayedSongs = mostPlayedSongs,
                                     collectionContentTopPadding =
-                                        collectionContentTopPadding,
+                                        visibleContentTopPadding,
                                     bottomContentPadding = bottomContentPadding,
                                         modifier = Modifier
                                             .fillMaxSize()
@@ -982,7 +990,7 @@ internal fun MusicScreenBody(
                                                     Modifier
                                                 } else {
                                                     Modifier.padding(
-                                                        top = collectionContentTopPadding
+                                                        top = visibleContentTopPadding
                                                     )
                                                 }
                                             )
