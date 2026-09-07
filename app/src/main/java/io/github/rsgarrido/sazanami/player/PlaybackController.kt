@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import io.github.rsgarrido.sazanami.data.Song
+import io.github.rsgarrido.sazanami.data.membershipKey
 import io.github.rsgarrido.sazanami.data.knownDiscNumber
 import io.github.rsgarrido.sazanami.data.SongReferenceResolution
 import io.github.rsgarrido.sazanami.data.SongReferenceResolver
@@ -359,7 +360,8 @@ class PlaybackController(
 
         startSongPlayback(
             song = song,
-            playlist = buildPlaybackPlaylist(song)
+            playlist = buildPlaybackPlaylist(song),
+            newPlaybackContextBaseSongs = playbackContext
         )
     }
 
@@ -508,11 +510,81 @@ class PlaybackController(
     fun setSongShuffleEnabled(enabled: Boolean) {
         val target = if (enabled) PlaybackShuffleMode.SONGS else PlaybackShuffleMode.OFF
         if (shuffleMode == target) return
+        val previousMode = shuffleMode
         reconcileLogicalStateWithActiveQueue()
         shuffleMode = target
         playbackNavigationHistory.clearAll()
-        syncServicePlaylistKeepingCurrent(preserveExistingShuffleOrder = false)
+        val preservesSpecializedArtistShuffle =
+            previousMode == PlaybackShuffleMode.ALBUMS ||
+                previousMode == PlaybackShuffleMode.ALBUMS_AND_SONGS
+        val appliedStableOrder = !preservesSpecializedArtistShuffle &&
+            applyStableSongShuffleOrder(enabled)
+        if (appliedStableOrder) {
+            musicPlayer.synchronizeNavigationPolicy(
+                shuffleEnabled = enabled,
+                repeatMode = repeatMode,
+                origin = ControllerSynchronizationOrigin.EXTERNAL
+            )
+        } else {
+            syncServicePlaylistKeepingCurrent(preserveExistingShuffleOrder = false)
+        }
         savePlayerState()
+        persistActiveQueueStructure()
+    }
+
+    private fun applyStableSongShuffleOrder(enabled: Boolean): Boolean {
+        val snapshot = PlaybackQueueRuntimeBridge.getActiveQueueSnapshot() ?: return false
+        val currentEntryId = snapshot.currentEntryId ?: return false
+        val timelineEntryIds = snapshot.entries.map(LivePlaybackQueueItem::entryId)
+        if (
+            timelineEntryIds.size != snapshot.baseEntryIds.size ||
+            timelineEntryIds.toSet() != snapshot.baseEntryIds.toSet()
+        ) {
+            return false
+        }
+        val live = musicPlayer.adoptLiveSession(librarySongs) ?: return false
+        if (live.playlist.size != timelineEntryIds.size) return false
+
+        val queuedEntryIds = queuedEntryIdsForShuffle(snapshot)
+        val targetEntryIds = buildSongShufflePlaybackOrder(
+            baseEntryIds = snapshot.baseEntryIds,
+            currentEntryId = currentEntryId,
+            queuedEntryIds = queuedEntryIds,
+            shuffleEnabled = enabled
+        ) ?: return false
+        val songByEntryId = timelineEntryIds.zip(live.playlist).toMap()
+        val targetSongs = targetEntryIds.map { entryId ->
+            songByEntryId[entryId] ?: return false
+        }
+
+        if (!musicPlayer.reorderTimelineKeepingCurrent(targetEntryIds)) return false
+
+        val currentTargetIndex = targetEntryIds.indexOf(currentEntryId)
+        playbackNavigationHistory.replacePreviousSongs(targetSongs.take(currentTargetIndex))
+        upcomingSongs = targetSongs.drop(currentTargetIndex + 1)
+        return true
+    }
+
+    private fun queuedEntryIdsForShuffle(
+        snapshot: LivePlaybackQueueSnapshot
+    ): List<String> {
+        if (playbackQueue.isEmpty()) return emptyList()
+        val currentIndex = snapshot.entries.indexOfFirst { item ->
+            item.entryId == snapshot.currentEntryId
+        }
+        if (currentIndex < 0) return emptyList()
+
+        val unmatchedUpcoming = snapshot.entries.drop(currentIndex + 1).toMutableList()
+        return buildList {
+            playbackQueue.forEach { queuedSong ->
+                val matchIndex = unmatchedUpcoming.indexOfFirst { item ->
+                    item.evidence.referenceKey == queuedSong.membershipKey()
+                }
+                if (matchIndex >= 0) {
+                    add(unmatchedUpcoming.removeAt(matchIndex).entryId)
+                }
+            }
+        }
     }
 
     fun cycleRepeatMode() {
@@ -1055,10 +1127,13 @@ class PlaybackController(
     ) {
         if (!hasAuthoritativeActiveQueueTimeline()) return
         val snapshot = PlaybackQueueRuntimeBridge.getActiveQueueSnapshot() ?: return
+        val snapshotEntryIds = snapshot.entries.map(LivePlaybackQueueItem::entryId)
+        val controllerEntryIds = musicPlayer.currentTimelineEntryIds() ?: return
+        if (!activeQueueTimelinesMatch(controllerEntryIds, snapshotEntryIds)) return
         val live = suppliedLive ?: musicPlayer.adoptLiveSession(librarySongs) ?: return
         playbackContextSongs = baseOrderedActiveQueueSongs(
             timelineSongs = live.playlist,
-            timelineEntryIds = snapshot.entries.map(LivePlaybackQueueItem::entryId),
+            timelineEntryIds = snapshotEntryIds,
             baseEntryIds = snapshot.baseEntryIds
         )
         playbackQueueManager.replaceQueue(emptyList())
@@ -1105,7 +1180,8 @@ class PlaybackController(
 
     private fun startSongPlayback(
         song: Song,
-        playlist: List<Song>
+        playlist: List<Song>,
+        newPlaybackContextBaseSongs: List<Song>? = null
     ) {
         currentSong = song
         isPlaying = true
@@ -1114,7 +1190,8 @@ class PlaybackController(
 
         musicPlayer.playSong(
             song = song,
-            playlist = playlist
+            playlist = playlist,
+            canonicalBaseSongs = newPlaybackContextBaseSongs
         )
 
         musicPlayer.setShuffleEnabled(shuffleMode.usesDynamicSongShuffle)
@@ -1342,6 +1419,11 @@ class PlaybackController(
         private const val PREVIOUS_RESTART_THRESHOLD_MS = 3_000
     }
 }
+
+internal fun activeQueueTimelinesMatch(
+    controllerEntryIds: List<String>,
+    serviceEntryIds: List<String>
+): Boolean = controllerEntryIds.isNotEmpty() && controllerEntryIds == serviceEntryIds
 
 internal fun baseOrderedActiveQueueSongs(
     timelineSongs: List<Song>,

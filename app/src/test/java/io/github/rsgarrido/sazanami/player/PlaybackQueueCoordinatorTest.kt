@@ -200,6 +200,156 @@ class PlaybackQueueCoordinatorTest {
     }
 
     @Test
+    fun liveSnapshotRetainsPersistedBaseIdentityForDuplicateOccurrences() = runBlocking {
+        val persistence = FakePersistence(activeQueueId = "A").apply {
+            seed(queue(
+                id = "A",
+                specs = listOf(
+                    spec("duplicate-1", 1L, base = 0, playback = 2),
+                    spec("middle", 2L, base = 1, playback = 1),
+                    spec("duplicate-2", 1L, base = 2, playback = 0)
+                ),
+                current = "duplicate-2",
+                shuffle = true
+            ))
+        }
+        val runtime = FakeRuntime(
+            liveSnapshot(
+                ids = listOf("duplicate-2" to 1L, "middle" to 2L, "duplicate-1" to 1L),
+                currentEntryId = "duplicate-2",
+                positionMs = 2_345L,
+                shouldPlay = true,
+                shuffle = true,
+                baseEntryIds = listOf("duplicate-2", "middle", "duplicate-1")
+            )
+        )
+        val coordinator = coordinator(persistence, runtime)
+
+        coordinator.initialize()
+
+        assertEquals(
+            listOf("duplicate-1", "middle", "duplicate-2"),
+            coordinator.captureActiveQueueSnapshot()?.baseEntryIds
+        )
+        assertEquals(0, runtime.replaceCount)
+    }
+
+    @Test
+    fun newAlbumContextReplacesStaleIdentityMatchedBaseOrderInDefaultQueue() = runBlocking {
+        val persistence = FakePersistence(activeQueueId = "A").apply {
+            seed(queue(
+                id = "A",
+                specs = listOf(
+                    spec("old-c", 3L, base = 0, playback = 0),
+                    spec("old-a", 1L, base = 1, playback = 1),
+                    spec("old-d", 4L, base = 2, playback = 2),
+                    spec("old-b", 2L, base = 3, playback = 3)
+                ),
+                current = "old-c",
+                shuffle = true
+            ))
+        }
+        val oldTimeline = liveSnapshot(
+            ids = listOf("old-c" to 3L, "old-a" to 1L, "old-d" to 4L, "old-b" to 2L),
+            currentEntryId = "old-c",
+            positionMs = 500L,
+            shouldPlay = true,
+            shuffle = true,
+            baseEntryIds = listOf("old-c", "old-a", "old-d", "old-b")
+        )
+        val runtime = FakeRuntime(oldTimeline)
+        val coordinator = coordinator(persistence, runtime)
+        coordinator.initialize()
+        val canonicalBase = listOf("new-a", "new-b", "new-c", "new-d")
+
+        coordinator.prepareNewPlaybackContext(canonicalBase)
+
+        assertEquals(
+            listOf("old-c", "old-a", "old-d", "old-b"),
+            coordinator.captureActiveQueueSnapshot()?.baseEntryIds
+        )
+        runtime.snapshot = liveSnapshot(
+            ids = listOf("new-c" to 3L, "new-a" to 1L, "new-d" to 4L, "new-b" to 2L),
+            currentEntryId = "new-c",
+            positionMs = 0L,
+            shouldPlay = true,
+            shuffle = true,
+            baseEntryIds = listOf("new-c", "new-a", "new-d", "new-b")
+        )
+
+        assertEquals(canonicalBase, coordinator.captureActiveQueueSnapshot()?.baseEntryIds)
+        coordinator.persistActiveQueueSnapshot()
+
+        val shuffled = persistence.queue("A")
+        assertEquals(
+            canonicalBase,
+            shuffled.entries.sortedBy(PlaybackQueueEntryEntity::baseOrder)
+                .map(PlaybackQueueEntryEntity::entryId)
+        )
+        assertEquals(
+            listOf("new-c", "new-a", "new-d", "new-b"),
+            shuffled.entries.map(PlaybackQueueEntryEntity::entryId)
+        )
+        assertTrue(shuffled.queue.shuffleEnabled)
+
+        runtime.snapshot = liveSnapshot(
+            ids = listOf("new-a" to 1L, "new-b" to 2L, "new-c" to 3L, "new-d" to 4L),
+            currentEntryId = "new-c",
+            positionMs = 7_654L,
+            shouldPlay = true,
+            shuffle = false,
+            baseEntryIds = canonicalBase
+        )
+        coordinator.persistActiveQueueSnapshot()
+
+        val restored = persistence.queue("A")
+        assertEquals(canonicalBase, restored.entries.map(PlaybackQueueEntryEntity::entryId))
+        assertEquals(
+            canonicalBase,
+            restored.entries.sortedBy(PlaybackQueueEntryEntity::baseOrder)
+                .map(PlaybackQueueEntryEntity::entryId)
+        )
+        assertFalse(restored.queue.shuffleEnabled)
+        assertEquals("new-c", restored.queue.currentEntryId)
+        assertEquals(7_654L, restored.queue.currentPositionMs)
+    }
+
+    @Test
+    fun albumPlayPublishesCanonicalBaseAndPlaybackOrderWithShuffleOff() = runBlocking {
+        val persistence = FakePersistence(activeQueueId = "A").apply {
+            seed(queue(
+                "A",
+                listOf(spec("old-b", 2L, 0, 0), spec("old-a", 1L, 1, 1)),
+                current = "old-b",
+                shuffle = true
+            ))
+        }
+        val runtime = FakeRuntime(
+            liveSnapshot(listOf("old-b" to 2L, "old-a" to 1L), "old-b", 20L, true, true)
+        )
+        val coordinator = coordinator(persistence, runtime)
+        coordinator.initialize()
+        val canonicalBase = listOf("new-a", "new-b", "new-c")
+        coordinator.prepareNewPlaybackContext(canonicalBase)
+        runtime.snapshot = liveSnapshot(
+            ids = listOf("new-a" to 1L, "new-b" to 2L, "new-c" to 3L),
+            currentEntryId = "new-a",
+            positionMs = 0L,
+            shouldPlay = true,
+            shuffle = false,
+            baseEntryIds = canonicalBase
+        )
+
+        coordinator.persistActiveQueueSnapshot()
+
+        val albumPlay = persistence.queue("A")
+        assertEquals(canonicalBase, albumPlay.entries.map(PlaybackQueueEntryEntity::entryId))
+        assertEquals(listOf(0, 1, 2), albumPlay.entries.map(PlaybackQueueEntryEntity::baseOrder))
+        assertEquals(listOf(0, 1, 2), albumPlay.entries.map(PlaybackQueueEntryEntity::playbackOrder))
+        assertFalse(albumPlay.queue.shuffleEnabled)
+    }
+
+    @Test
     fun liveTimelineThatAppearsDuringStartupResolutionWinsTheInitializationRace() = runBlocking {
         val persistence = FakePersistence(activeQueueId = "A").apply {
             seed(queue("A", listOf(spec("a", 1L, 0, 0)), current = "a"))
@@ -407,6 +557,54 @@ class PlaybackQueueCoordinatorTest {
                 it.baseOrder
             })
             assertEquals(2, persistence.replaceEntriesCount)
+        }
+
+    @Test
+    fun shuffleOffCheckpointRestoresPlaybackOrderToBaseWithoutChangingCurrentOrPosition() =
+        runBlocking {
+            val persistence = FakePersistence(activeQueueId = "A").apply {
+                seed(queue(
+                    id = "A",
+                    specs = listOf(
+                        spec("a", 1L, base = 0, playback = 2),
+                        spec("b", 2L, base = 1, playback = 0),
+                        spec("c", 3L, base = 2, playback = 1)
+                    ),
+                    current = "b",
+                    position = 7_654L,
+                    shuffle = true
+                ))
+            }
+            val runtime = FakeRuntime(
+                liveSnapshot(
+                    ids = listOf("b" to 2L, "c" to 3L, "a" to 1L),
+                    currentEntryId = "b",
+                    positionMs = 7_654L,
+                    shouldPlay = true,
+                    shuffle = true,
+                    baseEntryIds = listOf("a", "b", "c")
+                )
+            )
+            val coordinator = coordinator(persistence, runtime)
+            coordinator.initialize()
+
+            runtime.snapshot = liveSnapshot(
+                ids = listOf("a" to 1L, "b" to 2L, "c" to 3L),
+                currentEntryId = "b",
+                positionMs = 7_654L,
+                shouldPlay = true,
+                shuffle = false,
+                baseEntryIds = listOf("a", "b", "c")
+            )
+            coordinator.persistActiveQueueSnapshot()
+
+            val restored = persistence.queue("A")
+            assertEquals(listOf("a", "b", "c"), restored.entries.map { it.entryId })
+            assertEquals(listOf(0, 1, 2), restored.entries.map { it.baseOrder })
+            assertEquals(listOf(0, 1, 2), restored.entries.map { it.playbackOrder })
+            assertEquals("b", restored.queue.currentEntryId)
+            assertEquals(7_654L, restored.queue.currentPositionMs)
+            assertFalse(restored.queue.shuffleEnabled)
         }
 
     @Test
