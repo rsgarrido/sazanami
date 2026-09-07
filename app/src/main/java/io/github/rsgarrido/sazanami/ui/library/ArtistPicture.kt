@@ -76,7 +76,19 @@ fun ArtistPicture(
         }
     }
     val model = preferredArtistPictureModel(managedFile, fallbackModel)
-    val request = remember(model, assetIdentity, variant) {
+    val fallbackRequestPolicy = remember(identity.key, model, assetIdentity, variant) {
+        if (assetIdentity == null) {
+            libraryArtworkRequestPolicy(
+                ownerType = LibraryArtworkOwnerType.ARTIST_FALLBACK,
+                ownerKey = identity.key,
+                modelIdentity = model?.toString(),
+                variant = variant
+            )
+        } else {
+            null
+        }
+    }
+    val request = remember(model, assetIdentity, fallbackRequestPolicy, variant) {
         if (model == null) null else ImageRequest.Builder(context)
             .data(model)
             .apply {
@@ -84,6 +96,11 @@ fun ArtistPicture(
                     assetIdentity?.requestPolicy(variant)?.let { policy ->
                         memoryCacheKey(policy.cacheKey)
                         diskCacheKey(policy.cacheKey)
+                        policy.placeholderMemoryCacheKey?.let(::placeholderMemoryCacheKey)
+                    }
+                } else {
+                    fallbackRequestPolicy?.let { policy ->
+                        memoryCacheKey(policy.cacheKey)
                         policy.placeholderMemoryCacheKey?.let(::placeholderMemoryCacheKey)
                     }
                 }

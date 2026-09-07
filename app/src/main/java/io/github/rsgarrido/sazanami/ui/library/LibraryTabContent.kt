@@ -437,137 +437,151 @@ fun ArtistsTabContent(
     onAddToPlaylistClick: (Song) -> Unit,
     onAddSongsToPlaylistClick: (List<Song>) -> Unit,
     onEditSongTagsClick: (Song) -> Unit,
+    collectionContentTopPadding: Dp = 0.dp,
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
-    val artistSearchSongs = filterSongsByArtistSearch(
-        songs = songs,
-        searchQuery = searchQuery
-    )
+    val artistSearchSongs = remember(songs, searchQuery) {
+        filterSongsByArtistSearch(
+            songs = songs,
+            searchQuery = searchQuery
+        )
+    }
     val scrollStates = rememberLibrarySortScrollStates(sortState)
 
-    if (songs.isEmpty()) {
-        Text(
-            text = "No artists found.",
-            modifier = Modifier.padding(16.dp)
-        )
-    } else if (selectedArtistName == null) {
-        if (artistSearchSongs.isEmpty()) {
+    LibraryDetailAnimatedContent(
+        targetState = selectedArtistName,
+        modifier = modifier,
+        label = "artistCollectionDetail",
+        contentTopPadding = { visibleArtistName ->
+            if (visibleArtistName == null) collectionContentTopPadding else 0.dp
+        }
+    ) { visibleArtistName ->
+        if (songs.isEmpty()) {
             Text(
-                text = "No artists match your search.",
+                text = "No artists found.",
                 modifier = Modifier.padding(16.dp)
             )
-        } else {
-            val onArtistPlay: (String, List<Song>) -> Unit = { _, artistSongs ->
-                onPlaySongsClick(artistSongs, PlaybackShuffleMode.OFF)
-            }
-            val onArtistShuffle: (String, List<Song>) -> Unit = { _, artistSongs ->
-                onPlaySongsClick(artistSongs, PlaybackShuffleMode.SONGS)
-            }
-            val onArtistPlayNext: (String, List<Song>) -> Unit =
-                { artistName, artistSongs ->
-                    onPlayNextSongsClick(artistName, artistSongs)
+        } else if (visibleArtistName == null) {
+            if (artistSearchSongs.isEmpty()) {
+                Text(
+                    text = "No artists match your search.",
+                    modifier = Modifier.padding(16.dp)
+                )
+            } else {
+                val onArtistPlay: (String, List<Song>) -> Unit = { _, artistSongs ->
+                    onPlaySongsClick(artistSongs, PlaybackShuffleMode.OFF)
                 }
-            val onArtistAddToQueue: (String, List<Song>) -> Unit =
-                { artistName, artistSongs ->
-                    onAddSongsToQueueClick(artistName, artistSongs)
+                val onArtistShuffle: (String, List<Song>) -> Unit = { _, artistSongs ->
+                    onPlaySongsClick(artistSongs, PlaybackShuffleMode.SONGS)
                 }
-            val onArtistAddToPlaylist: (String, List<Song>) -> Unit =
-                { _, artistSongs ->
-                    onAddSongsToPlaylistClick(artistSongs)
-                }
+                val onArtistPlayNext: (String, List<Song>) -> Unit =
+                    { artistName, artistSongs ->
+                        onPlayNextSongsClick(artistName, artistSongs)
+                    }
+                val onArtistAddToQueue: (String, List<Song>) -> Unit =
+                    { artistName, artistSongs ->
+                        onAddSongsToQueueClick(artistName, artistSongs)
+                    }
+                val onArtistAddToPlaylist: (String, List<Song>) -> Unit =
+                    { _, artistSongs ->
+                        onAddSongsToPlaylistClick(artistSongs)
+                    }
 
-            LibraryLayoutTransition(
-                viewMode = viewMode,
-                modifier = modifier,
-                listContent = {
-                    ArtistListScreen(
-                        songs = artistSearchSongs,
-                        onArtistClick = onArtistSelected,
-                        sortState = sortState,
-                        listState = scrollStates.list,
-                        onArtistPlayClick = onArtistPlay,
-                        onArtistShuffleClick = onArtistShuffle,
-                        onArtistPlayNextClick = onArtistPlayNext,
-                        onArtistAddToQueueClick = onArtistAddToQueue,
-                        onArtistAddToPlaylistClick = onArtistAddToPlaylist,
-                        bottomContentPadding = bottomContentPadding,
-                        modifier = Modifier.fillMaxSize()
+                LibraryLayoutTransition(
+                    viewMode = viewMode,
+                    modifier = Modifier.fillMaxSize(),
+                    listContent = {
+                        ArtistListScreen(
+                            songs = artistSearchSongs,
+                            onArtistClick = onArtistSelected,
+                            sortState = sortState,
+                            listState = scrollStates.list,
+                            onArtistPlayClick = onArtistPlay,
+                            onArtistShuffleClick = onArtistShuffle,
+                            onArtistPlayNextClick = onArtistPlayNext,
+                            onArtistAddToQueueClick = onArtistAddToQueue,
+                            onArtistAddToPlaylistClick = onArtistAddToPlaylist,
+                            bottomContentPadding = bottomContentPadding,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    },
+                    gridContent = {
+                        ArtistGridScreen(
+                            songs = artistSearchSongs,
+                            onArtistClick = onArtistSelected,
+                            sortState = sortState,
+                            gridState = scrollStates.grid,
+                            gridColumnCount = gridColumnCount,
+                            onArtistPlayClick = onArtistPlay,
+                            onArtistShuffleClick = onArtistShuffle,
+                            onArtistPlayNextClick = onArtistPlayNext,
+                            onArtistAddToQueueClick = onArtistAddToQueue,
+                            onArtistAddToPlaylistClick = onArtistAddToPlaylist,
+                            bottomContentPadding = bottomContentPadding,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                )
+            }
+        } else {
+            val selectedArtistIdentity = if (visibleArtistName == UNKNOWN_ARTIST_DISPLAY_NAME) {
+                UNKNOWN_ARTIST_IDENTITY
+            } else {
+                artistIdentity(visibleArtistName)
+            }
+            val artistSongs = remember(songs, selectedArtistIdentity) {
+                sortSongsForArtistDetail(
+                    songs.filter { song ->
+                        artistIdentity(song.artist) == selectedArtistIdentity
+                    }
+                )
+            }
+
+            ArtistDetailScreen(
+                artistName = visibleArtistName,
+                artistIdentity = selectedArtistIdentity,
+                artistSongs = artistSongs,
+                librarySongs = songs,
+                onBackClick = onBackFromArtist,
+                onAlbumClick = onAlbumSelected,
+                onPlayAllClick = {
+                    onPlaySongsClick(artistSongs, PlaybackShuffleMode.OFF)
+                },
+                onPlayAlbumClick = { albumSongs ->
+                    onPlaySongsClick(albumSongs, PlaybackShuffleMode.OFF)
+                },
+                onShuffleAlbumClick = { albumSongs ->
+                    onPlaySongsClick(albumSongs, PlaybackShuffleMode.SONGS)
+                },
+                onShuffleSongsClick = {
+                    onPlaySongsClick(artistSongs, PlaybackShuffleMode.SONGS)
+                },
+                onShuffleAlbumsClick = {
+                    onPlaySongsClick(
+                        buildArtistAlbumShuffleQueue(
+                            artistSongs = artistSongs,
+                            shuffleSongsWithinAlbums = false
+                        ),
+                        PlaybackShuffleMode.ALBUMS
                     )
                 },
-                gridContent = {
-                    ArtistGridScreen(
-                        songs = artistSearchSongs,
-                        onArtistClick = onArtistSelected,
-                        sortState = sortState,
-                        gridState = scrollStates.grid,
-                        gridColumnCount = gridColumnCount,
-                        onArtistPlayClick = onArtistPlay,
-                        onArtistShuffleClick = onArtistShuffle,
-                        onArtistPlayNextClick = onArtistPlayNext,
-                        onArtistAddToQueueClick = onArtistAddToQueue,
-                        onArtistAddToPlaylistClick = onArtistAddToPlaylist,
-                        bottomContentPadding = bottomContentPadding,
-                        modifier = Modifier.fillMaxSize()
+                onShuffleAlbumsAndSongsClick = {
+                    onPlaySongsClick(
+                        buildArtistAlbumShuffleQueue(
+                            artistSongs = artistSongs,
+                            shuffleSongsWithinAlbums = true
+                        ),
+                        PlaybackShuffleMode.ALBUMS_AND_SONGS
                     )
-                }
+                },
+                onPlayNextSongsClick = onPlayNextSongsClick,
+                onAddSongsToQueueClick = onAddSongsToQueueClick,
+                onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
+                bottomContentPadding = bottomContentPadding,
+                modifier = Modifier.fillMaxSize()
             )
         }
-    } else {
-        val selectedArtistIdentity = if (selectedArtistName == UNKNOWN_ARTIST_DISPLAY_NAME) {
-            UNKNOWN_ARTIST_IDENTITY
-        } else {
-            artistIdentity(selectedArtistName)
-        }
-        val artistSongs = sortSongsForArtistDetail(
-            songs.filter { song ->
-                artistIdentity(song.artist) == selectedArtistIdentity
-            }
-        )
-
-        ArtistDetailScreen(
-            artistName = selectedArtistName,
-            artistIdentity = selectedArtistIdentity,
-            artistSongs = artistSongs,
-            librarySongs = songs,
-            onBackClick = onBackFromArtist,
-            onAlbumClick = onAlbumSelected,
-            onPlayAllClick = {
-                onPlaySongsClick(artistSongs, PlaybackShuffleMode.OFF)
-            },
-            onPlayAlbumClick = { albumSongs ->
-                onPlaySongsClick(albumSongs, PlaybackShuffleMode.OFF)
-            },
-            onShuffleAlbumClick = { albumSongs ->
-                onPlaySongsClick(albumSongs, PlaybackShuffleMode.SONGS)
-            },
-            onShuffleSongsClick = {
-                onPlaySongsClick(artistSongs, PlaybackShuffleMode.SONGS)
-            },
-            onShuffleAlbumsClick = {
-                onPlaySongsClick(
-                    buildArtistAlbumShuffleQueue(
-                        artistSongs = artistSongs,
-                        shuffleSongsWithinAlbums = false
-                    ),
-                    PlaybackShuffleMode.ALBUMS
-                )
-            },
-            onShuffleAlbumsAndSongsClick = {
-                onPlaySongsClick(
-                    buildArtistAlbumShuffleQueue(
-                        artistSongs = artistSongs,
-                        shuffleSongsWithinAlbums = true
-                    ),
-                    PlaybackShuffleMode.ALBUMS_AND_SONGS
-                )
-            },
-            onPlayNextSongsClick = onPlayNextSongsClick,
-            onAddSongsToQueueClick = onAddSongsToQueueClick,
-            onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
-            bottomContentPadding = bottomContentPadding,
-            modifier = modifier
-        )
     }
 }
 
@@ -595,6 +609,7 @@ fun AlbumsTabContent(
     onAddSongsToPlaylistClick: (List<Song>) -> Unit,
     onEditAlbumMetadataClick: (LibraryAlbumGroup) -> Unit,
     onEditSongTagsClick: (Song) -> Unit,
+    collectionContentTopPadding: Dp = 0.dp,
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
@@ -604,12 +619,20 @@ fun AlbumsTabContent(
     )
     val scrollStates = rememberLibrarySortScrollStates(sortState)
 
+    LibraryDetailAnimatedContent(
+        targetState = selectedAlbumKey,
+        modifier = modifier,
+        label = "albumCollectionDetail",
+        contentTopPadding = { visibleAlbumKey ->
+            if (visibleAlbumKey == null) collectionContentTopPadding else 0.dp
+        }
+    ) { visibleAlbumKey ->
     if (songs.isEmpty()) {
         Text(
             text = "No albums found.",
             modifier = Modifier.padding(16.dp)
         )
-    } else if (selectedAlbumKey == null) {
+    } else if (visibleAlbumKey == null) {
         if (albumSearchSongs.isEmpty()) {
             LibrarySelectionHeader(
                 LibrarySelectionEntity.ALBUM,
@@ -643,7 +666,7 @@ fun AlbumsTabContent(
 
             LibraryLayoutTransition(
                 viewMode = viewMode,
-                modifier = modifier,
+                modifier = Modifier.fillMaxSize(),
                 listContent = {
                     AlbumListScreen(
                         songs = albumSearchSongs,
@@ -682,8 +705,10 @@ fun AlbumsTabContent(
             )
         }
     } else {
-        val album = buildLibraryAlbumGroups(songs).firstOrNull { candidate ->
-            candidate.key == selectedAlbumKey
+        val album = remember(songs, visibleAlbumKey) {
+            buildLibraryAlbumGroups(songs).firstOrNull { candidate ->
+                candidate.key == visibleAlbumKey
+            }
         }
         val albumSongs = album?.songs.orEmpty()
 
@@ -718,9 +743,10 @@ fun AlbumsTabContent(
                 onEditAlbumMetadataClick = onEditAlbumMetadataClick,
                 onEditSongTagsClick = onEditSongTagsClick,
                 bottomContentPadding = bottomContentPadding,
-                modifier = modifier
+                modifier = Modifier.fillMaxSize()
             )
         }
+    }
     }
 }
 

@@ -302,14 +302,42 @@ fun AlbumGridScreen(
             items = albums,
             key = { album -> album.key }
         ) { album ->
+            val artworkModel = album.songs.firstOrNull()?.albumArtUri
+            val artworkRequest = rememberLibraryArtworkRequest(
+                ownerType = LibraryArtworkOwnerType.ALBUM,
+                ownerKey = album.key,
+                model = artworkModel,
+                variant = VisualAssetVariant.THUMBNAIL
+            )
             val songCountText = pluralStringResource(
                 R.plurals.song_count,
                 album.songs.size,
                 album.songs.size
             )
             LibraryGridCard(
-                artworkUri = album.songs.firstOrNull()?.albumArtUri,
+                artworkUri = artworkModel,
                 artworkDescription = "Album art for ${album.title}",
+                artworkContent = {
+                    LibrarySharedArtworkSource(
+                        key = LibrarySharedArtworkKey.Album(
+                            albumKey = album.key,
+                            sourceScope =
+                                LibrarySharedArtworkSourceScope.LIBRARY_COLLECTION
+                        ),
+                        shape = RoundedCornerShape(gridMetrics.artworkCornerRadius),
+                        modifier = Modifier.fillMaxSize(),
+                        slotTreatment =
+                            LibrarySharedArtworkSourceSlotTreatment.NEUTRAL_SURFACE,
+                        hasResolvedArtwork = artworkRequest != null
+                    ) { artworkModifier ->
+                        AsyncImage(
+                            model = artworkRequest,
+                            contentDescription = "Album art for ${album.title}",
+                            modifier = artworkModifier,
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+                },
                 title = album.title,
                 subtitle = "${album.artistText} • $songCountText",
                 clickLabel = "Open ${album.title}",
@@ -390,7 +418,9 @@ fun ArtistGridScreen(
     gridState: LazyGridState? = null,
     modifier: Modifier = Modifier
 ) {
-    val artists = sortedLibraryArtistGroups(songs, sortState)
+    val artists = remember(songs, sortState) {
+        sortedLibraryArtistGroups(songs, sortState)
+    }
     val gridMetrics = libraryGridMetrics(gridColumnCount)
     var actionSheetTarget by remember {
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
@@ -421,13 +451,27 @@ fun ArtistGridScreen(
                 artworkUri = artist.songs.firstOrNull()?.albumArtUri,
                 artworkDescription = "Artwork for ${artist.name}",
                 artworkContent = {
-                    ArtistPicture(
-                        identity = artist.identity,
-                        fallbackModel = artist.songs.firstOrNull()?.albumArtUri,
-                        contentDescription = "Artwork for ${artist.name}",
+                    LibrarySharedArtworkSource(
+                        key = LibrarySharedArtworkKey.Artist(
+                            artistKey = artist.key,
+                            sourceScope =
+                                LibrarySharedArtworkSourceScope.LIBRARY_COLLECTION
+                        ),
+                        shape = RoundedCornerShape(gridMetrics.artworkCornerRadius),
                         modifier = Modifier.fillMaxSize(),
-                        variant = VisualAssetVariant.THUMBNAIL
-                    )
+                        slotTreatment =
+                            LibrarySharedArtworkSourceSlotTreatment.NEUTRAL_SURFACE,
+                        hasResolvedArtwork = artist.key in artistPictureUi.assignments ||
+                                artist.songs.firstOrNull()?.albumArtUri != null
+                    ) { artworkModifier ->
+                        ArtistPicture(
+                            identity = artist.identity,
+                            fallbackModel = artist.songs.firstOrNull()?.albumArtUri,
+                            contentDescription = "Artwork for ${artist.name}",
+                            modifier = artworkModifier,
+                            variant = VisualAssetVariant.THUMBNAIL
+                        )
+                    }
                 },
                 title = artist.name,
                 subtitle = songCountText,

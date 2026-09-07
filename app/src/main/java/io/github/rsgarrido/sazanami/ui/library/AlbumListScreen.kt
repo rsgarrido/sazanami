@@ -31,7 +31,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
@@ -39,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import coil.compose.AsyncImage
 import io.github.rsgarrido.sazanami.data.Song
+import io.github.rsgarrido.sazanami.data.visual.VisualAssetVariant
 import io.github.rsgarrido.sazanami.ui.home.LocalHomePinUi
 import io.github.rsgarrido.sazanami.ui.AppShellAccent
 import io.github.rsgarrido.sazanami.ui.state.LibrarySelectionEntity
@@ -125,6 +125,12 @@ fun AlbumListScreen(
             key = { album -> album.key }
         ) { album ->
             val firstSong = album.songs.firstOrNull()
+            val artworkRequest = rememberLibraryArtworkRequest(
+                ownerType = LibraryArtworkOwnerType.ALBUM,
+                ownerKey = album.key,
+                model = firstSong?.albumArtUri,
+                variant = VisualAssetVariant.THUMBNAIL
+            )
             val songCountText = pluralStringResource(
                 AppR.plurals.song_count,
                 album.songs.size,
@@ -135,16 +141,27 @@ fun AlbumListScreen(
 
             ListItem(
                 leadingContent = {
-                    AsyncImage(
-                        model = firstSong?.albumArtUri,
-                        contentDescription = "Album art for ${album.title}",
-                        modifier = Modifier
-                            .size(56.dp)
-                            .clip(RoundedCornerShape(8.dp)),
-                        contentScale = ContentScale.Crop,
-                        error = painterResource(R.drawable.ic_media_play),
-                        placeholder = painterResource(R.drawable.ic_media_play)
-                    )
+                    LibrarySharedArtworkSource(
+                        key = LibrarySharedArtworkKey.Album(
+                            albumKey = album.key,
+                            sourceScope =
+                                LibrarySharedArtworkSourceScope.LIBRARY_COLLECTION
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.size(56.dp),
+                        slotTreatment =
+                            LibrarySharedArtworkSourceSlotTreatment.NEUTRAL_SURFACE,
+                        hasResolvedArtwork = artworkRequest != null
+                    ) { artworkModifier ->
+                        AsyncImage(
+                            model = artworkRequest,
+                            contentDescription = "Album art for ${album.title}",
+                            modifier = artworkModifier,
+                            contentScale = ContentScale.Crop,
+                            error = painterResource(R.drawable.ic_media_play),
+                            placeholder = painterResource(R.drawable.ic_media_play)
+                        )
+                    }
                 },
                 headlineContent = {
                     Text(text = album.title)

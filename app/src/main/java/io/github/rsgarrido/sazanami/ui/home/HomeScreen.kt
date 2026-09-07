@@ -1,5 +1,7 @@
 package io.github.rsgarrido.sazanami.ui.home
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -10,6 +12,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -37,6 +41,9 @@ import io.github.rsgarrido.sazanami.ui.LibraryErrorNotice
 import io.github.rsgarrido.sazanami.ui.LibraryLoadingNotice
 import io.github.rsgarrido.sazanami.ui.MediaAccessNotice
 
+private const val HomeSectionFadeDurationMillis = 180
+private const val HomeSectionPlacementDurationMillis = 220
+
 @Composable
 internal fun HomeScreen(
     mediaAccessState: MediaAccessState,
@@ -63,6 +70,7 @@ internal fun HomeScreen(
     onRecentlyPlayedSongClick: (Song) -> Unit,
     onRecentlyAddedSongClick: (Song) -> Unit,
     onFavoriteSongClick: (Song) -> Unit,
+    listState: LazyListState,
     modifier: Modifier = Modifier,
     bottomContentPadding: Dp = 24.dp
 ) {
@@ -70,14 +78,16 @@ internal fun HomeScreen(
         .filterNot { song -> song.id == currentSongId }
         .ifEmpty { recentlyPlayedSongs }
     val homePinUi = LocalHomePinUi.current
+    val visibleRecentlyAddedSongs = recentlyAddedShelfSongs(recentlyAddedSongs)
 
     LazyColumn(
+        state = listState,
         modifier = modifier
             .fillMaxSize(),
         contentPadding = PaddingValues(bottom = bottomContentPadding),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        item {
+        item(key = "home-header") {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 HomeHeader(
                     onStatisticsClick = onStatisticsClick,
@@ -116,7 +126,7 @@ internal fun HomeScreen(
         }
 
         if (!mediaAccessState.hasAudioAccess) {
-            item {
+            item(key = "home-library-status") {
                 MediaAccessNotice(
                     state = mediaAccessState,
                     onRequestAudioAccess = onRequestAudioAccess,
@@ -126,22 +136,22 @@ internal fun HomeScreen(
                 )
             }
         } else if (isLibraryLoading) {
-            item {
+            item(key = "home-library-status") {
                 LibraryLoadingNotice(modifier = Modifier.padding(horizontal = 16.dp))
             }
         } else if (libraryErrorMessage != null) {
-            item {
+            item(key = "home-library-status") {
                 LibraryErrorNotice(
                     message = libraryErrorMessage,
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
             }
         } else if (songCount == 0) {
-            item {
+            item(key = "home-library-status") {
                 EmptyLibraryNotice(modifier = Modifier.padding(horizontal = 16.dp))
             }
         } else if (!mediaAccessState.hasArtworkAccess) {
-            item {
+            item(key = "home-library-status") {
                 MediaAccessNotice(
                     state = mediaAccessState,
                     onRequestAudioAccess = onRequestAudioAccess,
@@ -153,48 +163,51 @@ internal fun HomeScreen(
         }
 
         if (homePinUi.pins.isNotEmpty()) {
-            item {
+            item(key = "home-pinned") {
                 HomePinnedShelf(
                     pins = homePinUi.pins,
                     onSongClick = onPinnedSongClick,
                     onAlbumClick = onPinnedAlbumClick,
                     onArtistClick = onPinnedArtistClick,
-                    onPlaylistClick = onPinnedPlaylistClick
+                    onPlaylistClick = onPinnedPlaylistClick,
+                    modifier = homeSectionItemMotion()
                 )
             }
         }
 
         if (visibleRecentlyPlayedSongs.isNotEmpty()) {
-            item {
+            item(key = "home-recently-played") {
                 HomeRecentlyPlayedShelf(
                     songs = visibleRecentlyPlayedSongs.take(8),
                     onSeeAllClick = {
                         onOpenLibrary(LibraryTab.RECENTLY_PLAYED)
                     },
-                    onSongClick = onRecentlyPlayedSongClick
+                    onSongClick = onRecentlyPlayedSongClick,
+                    modifier = homeSectionItemMotion()
                 )
             }
         }
 
-        val visibleRecentlyAddedSongs = recentlyAddedShelfSongs(recentlyAddedSongs)
         if (homePinUi.showRecentlyAddedOnHome && visibleRecentlyAddedSongs.isNotEmpty()) {
-            item {
+            item(key = "home-recently-added") {
                 HomeRecentlyAddedShelf(
                     songs = visibleRecentlyAddedSongs,
                     onSeeAllClick = { onOpenLibrary(LibraryTab.RECENTLY_ADDED) },
-                    onSongClick = onRecentlyAddedSongClick
+                    onSongClick = onRecentlyAddedSongClick,
+                    modifier = homeSectionItemMotion()
                 )
             }
         }
 
         if (favoriteSongs.isNotEmpty()) {
-            item {
+            item(key = "home-favorites") {
                 HomeFavoritesShelf(
                     songs = favoriteSongs.take(8),
                     onSeeAllClick = {
                         onOpenLibrary(LibraryTab.FAVORITES)
                     },
-                    onSongClick = onFavoriteSongClick
+                    onSongClick = onFavoriteSongClick,
+                    modifier = homeSectionItemMotion()
                 )
             }
         }
@@ -203,10 +216,11 @@ internal fun HomeScreen(
             (visibleRecentlyAddedSongs.isEmpty() || !homePinUi.showRecentlyAddedOnHome) &&
             favoriteSongs.isEmpty() && homePinUi.pins.isEmpty()
         ) {
-            item {
+            item(key = "home-empty-history") {
                 Text(
                     text = "Choose something from Library to start building your listening history.",
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    modifier = homeSectionItemMotion()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -214,6 +228,15 @@ internal fun HomeScreen(
         }
     }
 }
+
+private fun LazyItemScope.homeSectionItemMotion(): Modifier = Modifier.animateItem(
+    fadeInSpec = tween(durationMillis = HomeSectionFadeDurationMillis),
+    placementSpec = tween(
+        durationMillis = HomeSectionPlacementDurationMillis,
+        easing = FastOutSlowInEasing
+    ),
+    fadeOutSpec = tween(durationMillis = HomeSectionFadeDurationMillis)
+)
 
 @Composable
 internal fun HomeHeader(

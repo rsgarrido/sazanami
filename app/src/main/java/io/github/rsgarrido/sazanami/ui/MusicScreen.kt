@@ -327,6 +327,7 @@ internal fun MusicScreen(
 
     val overlayState = rememberMusicOverlayState()
     val settingsScrollState = rememberScrollState()
+    val homeListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     val statisticsListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     val coroutineScope = rememberCoroutineScope()
     val playerMorphState = overlayState.playerMorphState
@@ -513,7 +514,7 @@ internal fun MusicScreen(
         batchMetadataEditorState = null
         val albumContext = batchMetadataEditorContext as? BatchMetadataEditorContext.Album
         if (albumContext != null && !isAlbumGroupAvailable(albumContext.albumKey, songs)) {
-            selectedAlbumKey = null
+            navigationState.clearAlbum()
             selectedLibraryTab = LibraryTab.ALBUMS
         }
         batchMetadataEditorContext = BatchMetadataEditorContext.SongSelection
@@ -538,9 +539,13 @@ internal fun MusicScreen(
         )
     }
 
-    fun clearPlaylistSelection() {
+    fun clearPlaylistSelection(returnToOrigin: Boolean = false) {
         val hadSelection = selectedPlaylistId != null || selectedPlaylistStateId != null
-        navigationState.closePlaylist()
+        if (returnToOrigin) {
+            navigationState.closePlaylist()
+        } else {
+            navigationState.clearPlaylist()
+        }
         if (hadSelection) {
             onPlaylistCleared()
         }
@@ -559,8 +564,11 @@ internal fun MusicScreen(
         )
 
         lyricsTransitionState.snapToExpanded()
-        selectedArtistName = null
-        selectedAlbumKey = null
+        val restoredAlbumOrigin = navigationState.albumDetailOrigin.value
+        val restoredArtistOrigin = navigationState.artistDetailOrigin.value
+        val restoredPlaylistOrigin = navigationState.playlistDetailOrigin.value
+        navigationState.clearArtist()
+        navigationState.clearAlbum()
         selectedGenreKey = null
         clearPlaylistSelection()
 
@@ -576,15 +584,13 @@ internal fun MusicScreen(
             }
 
             is PlaybackLaunchContext.AlbumDetail -> {
-                selectedLibraryTab = LibraryTab.ALBUMS
-                selectedAlbumKey = validContext.albumKey
+                navigationState.openAlbum(validContext.albumKey, restoredAlbumOrigin)
                 searchQuery = ""
                 mainDestination = MainDestination.LIBRARY
             }
 
             is PlaybackLaunchContext.ArtistDetail -> {
-                selectedLibraryTab = LibraryTab.ARTISTS
-                selectedArtistName = validContext.artistName
+                navigationState.openArtist(validContext.artistName, restoredArtistOrigin)
                 searchQuery = ""
                 mainDestination = MainDestination.LIBRARY
             }
@@ -601,7 +607,7 @@ internal fun MusicScreen(
                 playlists.firstOrNull { playlist ->
                     playlist.playlistId == validContext.playlistId
                 }?.let { playlist ->
-                    selectedPlaylistId = playlist.playlistId
+                    navigationState.openPlaylist(playlist.playlistId, restoredPlaylistOrigin)
                     onPlaylistSelected(playlist)
                 }
                 searchQuery = ""
@@ -727,7 +733,7 @@ internal fun MusicScreen(
             }
 
             selectedPlaylistId != null -> {
-                clearPlaylistSelection()
+                clearPlaylistSelection(returnToOrigin = true)
             }
 
             mainDestination != MainDestination.HOME -> {
@@ -1088,6 +1094,12 @@ internal fun MusicScreen(
                     selectedAlbumKey = selectedAlbumKey,
                     selectedGenreKey = selectedGenreKey,
                     selectedPlaylistId = selectedPlaylistId,
+                    albumSharedArtworkSourceScope =
+                        navigationState.albumDetailOrigin.value.sharedArtworkSourceScope(),
+                    artistSharedArtworkSourceScope =
+                        navigationState.artistDetailOrigin.value.sharedArtworkSourceScope(),
+                    playlistSharedArtworkSourceScope =
+                        navigationState.playlistDetailOrigin.value.sharedArtworkSourceScope(),
                     searchQuery = searchQuery,
                     searchCategory = navigationState.searchCategory.value,
                     onSearchCategoryChange = { navigationState.searchCategory.value = it },
@@ -1138,6 +1150,7 @@ internal fun MusicScreen(
                     onListeningAnalyticsRankingCategorySelected =
                         onListeningAnalyticsRankingCategorySelected,
                     statisticsListState = statisticsListState,
+                    homeListState = homeListState,
                     queueSnackbarActions = queueSnackbarActions,
                     onSettingsClick = {
                         librarySelectionUi.onClear()
@@ -1148,12 +1161,38 @@ internal fun MusicScreen(
                             librarySelectionUi.onClear()
                         }
                         selectedLibraryTab = tab
-                        selectedArtistName = null
-                        selectedAlbumKey = null
+                        navigationState.clearArtist()
+                        navigationState.clearAlbum()
                         selectedGenreKey = null
                         clearPlaylistSelection()
                         searchQuery = ""
                         mainDestination = MainDestination.LIBRARY
+                    },
+                    onPinnedAlbumSelected = { albumKey ->
+                        librarySelectionUi.onClear()
+                        navigationState.clearArtist()
+                        selectedGenreKey = null
+                        clearPlaylistSelection()
+                        searchQuery = ""
+                        navigationState.openPinnedAlbum(albumKey)
+                    },
+                    onPinnedArtistSelected = { artistName ->
+                        librarySelectionUi.onClear()
+                        navigationState.clearAlbum()
+                        selectedGenreKey = null
+                        clearPlaylistSelection()
+                        searchQuery = ""
+                        navigationState.openPinnedArtist(artistName)
+                    },
+                    onPinnedPlaylistSelected = { playlist ->
+                        librarySelectionUi.onClear()
+                        navigationState.clearArtist()
+                        navigationState.clearAlbum()
+                        selectedGenreKey = null
+                        clearPlaylistSelection()
+                        searchQuery = ""
+                        navigationState.openPinnedPlaylist(playlist.playlistId)
+                        onPlaylistSelected(playlist)
                     },
                     onFolderBackClick = {
                         isFolderScreenVisible = false
@@ -1224,8 +1263,8 @@ internal fun MusicScreen(
                     onMiniPlayerUpNextClick = {
                         librarySelectionUi.onClear()
                         selectedLibraryTab = LibraryTab.QUEUE
-                        selectedArtistName = null
-                        selectedAlbumKey = null
+                        navigationState.clearArtist()
+                        navigationState.clearAlbum()
                         selectedGenreKey = null
                         clearPlaylistSelection()
                         mainDestination = MainDestination.LIBRARY
@@ -1301,7 +1340,7 @@ internal fun MusicScreen(
                     onChangePlaylistArtwork = onChangePlaylistArtwork,
                     onResetPlaylistArtwork = onResetPlaylistArtwork,
                     onBackFromPlaylist = {
-                        clearPlaylistSelection()
+                        clearPlaylistSelection(returnToOrigin = true)
                     },
                     onRemovePlaylistSongClick = { playlistSong ->
                         playlistSnackbarActions.removePlaylistSong(playlistSong)
@@ -1415,8 +1454,8 @@ internal fun MusicScreen(
                         },
                         onOpenUpNextClick = {
                             selectedLibraryTab = LibraryTab.QUEUE
-                            selectedArtistName = null
-                            selectedAlbumKey = null
+                            navigationState.clearArtist()
+                            navigationState.clearAlbum()
                             clearPlaylistSelection()
                             mainDestination = MainDestination.LIBRARY
                         },
@@ -1478,8 +1517,8 @@ internal fun MusicScreen(
                         if (librarySelectionUi.state.entity != targetEntity) {
                             librarySelectionUi.onClear()
                         }
-                        selectedArtistName = null
-                        selectedAlbumKey = null
+                        navigationState.clearArtist()
+                        navigationState.clearAlbum()
                         selectedGenreKey = null
                         clearPlaylistSelection()
                         if (destination == MainDestination.SEARCH) {
@@ -1651,12 +1690,11 @@ internal fun MusicScreen(
                         if (albumKey != null) {
                             lyricsTransitionState.snapToExpanded()
                             playerMorphState.collapse()
-                            selectedArtistName = null
-                            selectedAlbumKey = albumKey
+                            navigationState.clearArtist()
+                            navigationState.openAlbum(albumKey, DetailEntryOrigin.LIBRARY)
                             selectedGenreKey = null
                             clearPlaylistSelection()
                             searchQuery = ""
-                            selectedLibraryTab = LibraryTab.ALBUMS
                             mainDestination = MainDestination.LIBRARY
                         }
                     }

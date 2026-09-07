@@ -224,6 +224,9 @@ fun ArtistDetailScreen(
                             contentDescription = "Picture of $artistName",
                             modifier = Modifier
                                 .size(artistImageSize)
+                                .librarySharedArtwork(
+                                    artistDetailSharedArtworkKey(artistGroup.key)
+                                )
                                 .clip(RoundedCornerShape(26.dp)),
                             variant = VisualAssetVariant.DISPLAY
                         )

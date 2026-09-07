@@ -94,6 +94,7 @@ fun MusicLibraryContent(
     recentlyAddedSongs: List<Song>,
     mostPlayedSongs: List<Song>,
     ratingFeaturesEnabled: Boolean = true,
+    collectionContentTopPadding: Dp = 0.dp,
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
@@ -171,6 +172,7 @@ fun MusicLibraryContent(
                 onAddToPlaylistClick = onAddToPlaylistClick,
                 onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
                 onEditSongTagsClick = onEditSongTagsClick,
+                collectionContentTopPadding = collectionContentTopPadding,
                 bottomContentPadding = bottomContentPadding,
                 modifier = modifier
             )
@@ -200,6 +202,7 @@ fun MusicLibraryContent(
                 onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
                 onEditAlbumMetadataClick = onEditAlbumMetadataClick,
                 onEditSongTagsClick = onEditSongTagsClick,
+                collectionContentTopPadding = collectionContentTopPadding,
                 bottomContentPadding = bottomContentPadding,
                 modifier = modifier
             )
@@ -302,6 +305,7 @@ fun MusicLibraryContent(
                 onToggleFavoriteClick = onToggleFavoriteClick,
                 onRemovePlaylistSongClick = onRemovePlaylistSongClick,
                 onEditSongTagsClick = onEditSongTagsClick,
+                collectionContentTopPadding = collectionContentTopPadding,
                 bottomContentPadding = bottomContentPadding,
                 modifier = modifier
             )

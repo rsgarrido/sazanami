@@ -1,5 +1,7 @@
 package io.github.rsgarrido.sazanami.ui.library
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.PaddingValues
@@ -168,6 +170,12 @@ private fun GenreListScreen(
                 headlineContent = { Text(genre.name) },
                 supportingContent = { Text(songCountText) },
                 modifier = Modifier
+                    .animateItem(
+                        placementSpec = tween(
+                            durationMillis = LibraryLayoutMotionDurationMillis,
+                            easing = FastOutSlowInEasing
+                        )
+                    )
                     .semantics { contentDescription = "Open ${genre.name}" }
                     .clickable { onGenreClick(genre.key) }
             )

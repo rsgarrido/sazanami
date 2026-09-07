@@ -68,6 +68,7 @@ import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.membershipKey
 import io.github.rsgarrido.sazanami.data.stableUiKey
+import io.github.rsgarrido.sazanami.data.visual.VisualAssetVariant
 import io.github.rsgarrido.sazanami.ui.AppShellAccent
 import io.github.rsgarrido.sazanami.ui.AppShellIcons
 import io.github.rsgarrido.sazanami.ui.formatDuration
@@ -347,6 +348,14 @@ private fun AlbumDetailHero(
     onShuffleClick: () -> Unit,
     onAddToPlaylistClick: () -> Unit
 ) {
+    val artworkModel = album.songs.firstOrNull()?.albumArtUri
+    val artworkRequest = rememberLibraryArtworkRequest(
+        ownerType = LibraryArtworkOwnerType.ALBUM,
+        ownerKey = album.key,
+        model = artworkModel,
+        variant = VisualAssetVariant.DISPLAY
+    )
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -359,6 +368,7 @@ private fun AlbumDetailHero(
                 .fillMaxWidth(0.84f)
                 .widthIn(max = 360.dp)
                 .aspectRatio(1f)
+                .librarySharedArtwork(albumDetailSharedArtworkKey(album.key))
                 .clip(RoundedCornerShape(26.dp))
                 .background(MaterialTheme.colorScheme.surfaceContainerHighest),
             contentAlignment = Alignment.Center
@@ -370,7 +380,7 @@ private fun AlbumDetailHero(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f)
             )
             AsyncImage(
-                model = album.songs.firstOrNull()?.albumArtUri,
+                model = artworkRequest,
                 contentDescription = "Album art for ${album.title}",
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop

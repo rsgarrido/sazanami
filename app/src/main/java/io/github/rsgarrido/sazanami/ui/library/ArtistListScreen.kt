@@ -26,7 +26,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
@@ -53,7 +52,9 @@ fun ArtistListScreen(
     listState: LazyListState? = null,
     bottomContentPadding: Dp = 0.dp
 ) {
-    val artists = sortedLibraryArtistGroups(songs, sortState)
+    val artists = remember(songs, sortState) {
+        sortedLibraryArtistGroups(songs, sortState)
+    }
     var actionSheetTarget by remember {
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
     }
@@ -80,15 +81,27 @@ fun ArtistListScreen(
 
             ListItem(
                 leadingContent = {
-                    ArtistPicture(
-                        identity = artist.identity,
-                        fallbackModel = firstSong?.albumArtUri,
-                        contentDescription = "Artwork for ${artist.name}",
-                        modifier = Modifier
-                            .size(56.dp)
-                            .clip(RoundedCornerShape(8.dp)),
-                        variant = VisualAssetVariant.THUMBNAIL
-                    )
+                    LibrarySharedArtworkSource(
+                        key = LibrarySharedArtworkKey.Artist(
+                            artistKey = artist.key,
+                            sourceScope =
+                                LibrarySharedArtworkSourceScope.LIBRARY_COLLECTION
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.size(56.dp),
+                        slotTreatment =
+                            LibrarySharedArtworkSourceSlotTreatment.NEUTRAL_SURFACE,
+                        hasResolvedArtwork = artist.key in artistPictureUi.assignments ||
+                                firstSong?.albumArtUri != null
+                    ) { artworkModifier ->
+                        ArtistPicture(
+                            identity = artist.identity,
+                            fallbackModel = firstSong?.albumArtUri,
+                            contentDescription = "Artwork for ${artist.name}",
+                            modifier = artworkModifier,
+                            variant = VisualAssetVariant.THUMBNAIL
+                        )
+                    }
                 },
                 headlineContent = {
                     Text(text = artist.name)

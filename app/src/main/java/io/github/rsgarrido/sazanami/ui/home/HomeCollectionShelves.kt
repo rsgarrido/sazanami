@@ -68,7 +68,10 @@ import io.github.rsgarrido.sazanami.ui.AppShellAccent
 import io.github.rsgarrido.sazanami.ui.AppShellIcons
 import io.github.rsgarrido.sazanami.ui.AppShellTypography
 import io.github.rsgarrido.sazanami.ui.library.ArtistPicture
+import io.github.rsgarrido.sazanami.ui.library.LibrarySharedArtworkKey
+import io.github.rsgarrido.sazanami.ui.library.LibrarySharedArtworkSourceScope
 import io.github.rsgarrido.sazanami.ui.library.LocalArtistPictureUi
+import io.github.rsgarrido.sazanami.ui.library.librarySharedArtwork
 import io.github.rsgarrido.sazanami.ui.playlist.PlaylistArtwork
 import kotlin.math.roundToInt
 
@@ -195,10 +198,10 @@ fun HomePinnedShelf(
                         )
 
                         val dragScale by animateFloatAsState(
-                            targetValue = if (isDragged) 1.045f else 1f,
+                            targetValue = if (isDragged) 1.025f else 1f,
                             animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                stiffness = Spring.StiffnessMedium
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMediumLow
                             ),
                             label = "homePinDragScale-${pin.pin.id}"
                         )
@@ -415,6 +418,22 @@ private fun HomePinnedCard(
     modifier: Modifier = Modifier
 ) {
     val artistPictureAssignments = LocalArtistPictureUi.current.assignments
+    val sharedArtworkKey = when (val target = pin.target) {
+        is HomePinTarget.AlbumTarget -> LibrarySharedArtworkKey.Album(
+            albumKey = target.album.key,
+            sourceScope = LibrarySharedArtworkSourceScope.HOME_PINNED
+        )
+        is HomePinTarget.ArtistTarget -> LibrarySharedArtworkKey.Artist(
+            artistKey = target.artist.key,
+            sourceScope = LibrarySharedArtworkSourceScope.HOME_PINNED
+        )
+        is HomePinTarget.PlaylistTarget ->
+            LibrarySharedArtworkKey.Playlist(
+                playlistId = target.playlist.playlistId,
+                sourceScope = LibrarySharedArtworkSourceScope.HOME_PINNED
+            )
+        is HomePinTarget.SongTarget, null -> null
+    }
     PressableHomeCard(
         onClick = onClick,
         modifier = modifier,
@@ -429,6 +448,7 @@ private fun HomePinnedCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
+                    .librarySharedArtwork(sharedArtworkKey)
                     .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest)
             ) {
