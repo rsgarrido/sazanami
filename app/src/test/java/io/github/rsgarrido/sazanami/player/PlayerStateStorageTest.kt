@@ -80,6 +80,30 @@ class PlayerStateStorageTest {
         assertTrue(storage.isShuffleEnabled())
     }
 
+    @Test
+    fun serviceOnlyShuffleStateStaysLogicalAndPreservesPlayNextOccurrences() {
+        val harness = SharedPreferencesHarness()
+        val storage = PlayerStateStorage(harness.preferences)
+        storage.saveState(
+            currentSongId = 7L,
+            currentPosition = 42_000,
+            shuffleMode = PlaybackShuffleMode.OFF,
+            repeatMode = RepeatMode.ALL,
+            previousSongIds = listOf(1L),
+            nextSongIds = listOf(9L),
+            queueSongIds = listOf(8L, 8L),
+            playbackContextSongIds = listOf(1L, 7L, 8L, 8L, 9L)
+        )
+
+        storage.saveServiceShuffleMode(PlaybackShuffleMode.SONGS)
+
+        assertEquals(PlaybackShuffleMode.SONGS, storage.getShuffleMode())
+        assertEquals(listOf(8L, 8L), storage.getQueueSongIds())
+        assertEquals(listOf(1L, 7L, 8L, 8L, 9L), storage.getPlaybackContextSongIds())
+        assertEquals(42_000, storage.getCurrentPosition())
+        assertEquals(RepeatMode.ALL, storage.getRepeatMode())
+    }
+
     private class SharedPreferencesHarness {
         val values = mutableMapOf<String, Any>()
         val preferences: SharedPreferences = mock(SharedPreferences::class.java)

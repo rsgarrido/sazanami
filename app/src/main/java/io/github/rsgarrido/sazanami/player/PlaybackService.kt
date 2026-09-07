@@ -40,6 +40,7 @@ import io.github.rsgarrido.sazanami.data.ListeningEventRepository
 import io.github.rsgarrido.sazanami.data.ListeningNativeTrackResolver
 import io.github.rsgarrido.sazanami.data.PlaybackQueueRepository
 import io.github.rsgarrido.sazanami.data.local.DatabaseProvider
+import io.github.rsgarrido.sazanami.data.membershipKey
 import io.github.rsgarrido.sazanami.data.preferences.AppPreferencesRepository
 import io.github.rsgarrido.sazanami.performance.PerformanceTraceNames
 import io.github.rsgarrido.sazanami.performance.tracePerformance
@@ -348,6 +349,29 @@ class PlaybackService : MediaLibraryService() {
             )
         }
 
+        @Suppress("DEPRECATION")
+        override fun onPlayerCommandRequest(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            playerCommand: Int
+        ): Int {
+            val result = super.onPlayerCommandRequest(session, controller, playerCommand)
+            val isInternalSazanamiController =
+                controller.packageName == packageName &&
+                    controller.connectionHints.getBoolean(
+                        SAZANAMI_INTERNAL_CONTROLLER_HINT,
+                        false
+                    )
+            if (
+                playerCommand == Player.COMMAND_SET_SHUFFLE_MODE &&
+                result == SessionResult.RESULT_SUCCESS &&
+                !isInternalSazanamiController
+            ) {
+                sessionPlayer.markNextShuffleModeCommandExternal()
+            }
+            return result
+        }
+
         override fun onGetLibraryRoot(
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
@@ -569,6 +593,11 @@ class PlaybackService : MediaLibraryService() {
             onBaselineVolumeChanged = physicalPlayers::updateActiveBaseline,
             onLogicalCommand = { event ->
                 physicalPlayers.onLogicalCommand(event)
+            },
+            onExternalShuffleModeRequested = { enabled ->
+                serviceFuture {
+                    setExternalSongShuffleEnabled(enabled)
+                }
             }
         )
         physicalPlayers.attachLogicalPlayer(
@@ -578,6 +607,9 @@ class PlaybackService : MediaLibraryService() {
         appPreferencesRepository = AppPreferencesRepository.getInstance(this)
         audioManager = getSystemService(AudioManager::class.java)
         playerStateStorage = PlayerStateStorage(this)
+        sessionPlayer.setLogicalShuffleModeEnabled(
+            playerStateStorage.getShuffleMode().isEnabled
+        )
         val database = DatabaseProvider.getDatabase(this)
         val catalogStarted = SystemClock.elapsedRealtime()
         androidAutoCatalogRepository = AndroidAutoCatalogRepository(
@@ -618,6 +650,12 @@ class PlaybackService : MediaLibraryService() {
                         } else {
                             PlaybackShuffleMode.OFF
                         }
+                    )
+                    sessionPlayer.setLogicalShuffleModeEnabled(shuffleEnabled)
+                    updateAndroidAutoMediaButtonPreferences(
+                        shuffleEnabled = shuffleEnabled,
+                        repeatMode = PlaybackLibraryBridge.currentRepeatMode()
+                            ?: playerStateStorage.getRepeatMode()
                     )
                 }
             ),
@@ -673,6 +711,7 @@ class PlaybackService : MediaLibraryService() {
         observeAndroidAutoCatalog()
         PlaybackLibraryBridge.registerPlaybackPolicyListener { shuffleEnabled, repeatMode ->
             serviceScope.launch {
+                sessionPlayer.setLogicalShuffleModeEnabled(shuffleEnabled)
                 updateAndroidAutoMediaButtonPreferences(shuffleEnabled, repeatMode)
             }
         }
@@ -1312,77 +1351,125 @@ class PlaybackService : MediaLibraryService() {
     private suspend fun toggleAndroidAutoShuffle() {
         val currentlyEnabled = PlaybackLibraryBridge.currentShuffleEnabled()
             ?: playerStateStorage.getShuffleMode().isEnabled
-        val enable = !currentlyEnabled
-        if (!PlaybackLibraryBridge.setSongShuffleEnabled(enable)) {
-            applyServiceOnlySongShuffle(enable)
+        setExternalSongShuffleEnabled(!currentlyEnabled)
+    }
+
+    private suspend fun setExternalSongShuffleEnabled(enabled: Boolean) {
+        val currentlyEnabled = PlaybackLibraryBridge.currentShuffleEnabled()
+            ?: playerStateStorage.getShuffleMode().isEnabled
+        if (currentlyEnabled == enabled) {
+            publishExternalShuffleState(enabled)
+            return
         }
-        updateAndroidAutoMediaButtonPreferences(
-            shuffleEnabled = enable,
-            repeatMode = PlaybackLibraryBridge.currentRepeatMode()
-                ?: playerStateStorage.getRepeatMode()
+        val usedController = routeExternalSongShuffleRequest(
+            enabled = enabled,
+            controllerSetter = PlaybackLibraryBridge::setSongShuffleEnabled,
+            serviceOnlySetter = ::applyServiceOnlySongShuffle
         )
+        if (usedController) {
+            playbackQueueCoordinator.persistActiveQueueSnapshot()
+        }
+        publishExternalShuffleState(enabled)
     }
 
     private suspend fun applyServiceOnlySongShuffle(enabled: Boolean) {
+        val snapshot = playbackQueueCoordinator.captureActiveQueueSnapshot()
+        val mode = if (enabled) PlaybackShuffleMode.SONGS else PlaybackShuffleMode.OFF
+        if (snapshot == null) {
+            playerStateStorage.saveServiceShuffleMode(mode)
+            return
+        }
+
+        val currentEntryId = checkNotNull(snapshot.currentEntryId) {
+            "Cannot change shuffle without a current queue occurrence"
+        }
         val catalog = androidAutoCatalogSnapshot.takeIf { it.songs.isNotEmpty() }
             ?: loadAndroidAutoCatalog()
-        val currentSongId = sessionPlayer.currentMediaItem?.mediaId?.toLongOrNull()
-        val context = resolveServicePlaybackContext(catalog, currentSongId)
-        val mode = if (enabled) PlaybackShuffleMode.SONGS else PlaybackShuffleMode.OFF
-        playerStateStorage.saveServiceShuffleMode(mode)
-        if (context.isEmpty() || currentSongId == null) return
-
-        servicePlaybackContextSongs = context
-        playerStateStorage.saveServicePlaybackContext(
-            playbackContextSongIds = context.map(Song::id),
-            shuffleMode = mode
-        )
-        val currentContextIndex = context.indexOfFirst { song -> song.id == currentSongId }
-        if (currentContextIndex < 0) return
-        val upcomingSongs = if (enabled) {
-            context.filterNot { song -> song.id == currentSongId }.shuffled()
-        } else {
-            context.drop(currentContextIndex + 1)
+        val songsById = catalog.songs.associateBy(Song::id)
+        val queuedReferenceKeys = playerStateStorage.getQueueSongIds().mapNotNull { songId ->
+            songsById[songId]?.membershipKey()
         }
-        val currentIndex = sessionPlayer.currentMediaItemIndex
-        if (currentIndex < 0) return
-
-        // Never replace the current MediaItem just to change logical shuffle order. Replacing the
-        // active item flushes/re-prepares the decoder on some devices and creates an audible gap.
-        val replaceFromIndex = currentIndex + 1
-        val existingUpcomingIds = (replaceFromIndex until sessionPlayer.mediaItemCount)
-            .map { index -> sessionPlayer.getMediaItemAt(index).mediaId }
-        val requestedUpcomingIds = upcomingSongs.map { song -> song.id.toString() }
-        if (existingUpcomingIds == requestedUpcomingIds) return
-
-        sessionPlayer.replaceMediaItems(
-            replaceFromIndex,
-            sessionPlayer.mediaItemCount,
-            upcomingSongs.map { song -> song.toPlayableMediaItem() }
+        val queuedEntryIds = matchQueuedEntryIdsForShuffle(
+            timelineEntryReferences = snapshot.entries.map { item ->
+                item.entryId to item.evidence.referenceKey
+            },
+            currentEntryId = currentEntryId,
+            queuedReferenceKeys = queuedReferenceKeys
         )
+        val targetEntryIds = checkNotNull(
+            buildSongShufflePlaybackOrder(
+                baseEntryIds = snapshot.baseEntryIds,
+                currentEntryId = currentEntryId,
+                queuedEntryIds = queuedEntryIds,
+                shuffleEnabled = enabled
+            )
+        ) {
+            "Cannot build a stable external shuffle order"
+        }
+        val previousMode = playerStateStorage.getShuffleMode()
+        playerStateStorage.saveServiceShuffleMode(mode)
+        sessionPlayer.setLogicalShuffleModeEnabled(enabled)
+        if (!applyServiceOnlyPlaybackOrder(targetEntryIds, currentEntryId)) {
+            playerStateStorage.saveServiceShuffleMode(previousMode)
+            sessionPlayer.setLogicalShuffleModeEnabled(previousMode.isEnabled)
+            error("External shuffle did not produce the requested stable timeline order")
+        }
+
+        playbackQueueCoordinator.persistActiveQueueSnapshot()
     }
 
-    private fun resolveServicePlaybackContext(
-        catalog: AndroidAutoCatalogSnapshot,
-        currentSongId: Long?
-    ): List<Song> {
-        if (
-            servicePlaybackContextSongs.isNotEmpty() &&
-            (currentSongId == null || servicePlaybackContextSongs.any { song -> song.id == currentSongId })
-        ) {
-            return servicePlaybackContextSongs
+    private fun applyServiceOnlyPlaybackOrder(
+        targetEntryIds: List<String>,
+        currentEntryId: String
+    ): Boolean {
+        val currentItems = (0 until sessionPlayer.mediaItemCount).map { index ->
+            sessionPlayer.getMediaItemAt(index)
         }
-        val songsById = catalog.songs.associateBy(Song::id)
-        val persisted = playerStateStorage.getPlaybackContextSongIds()
-            .mapNotNull(songsById::get)
-        if (persisted.isNotEmpty()) return persisted
+        val currentEntryIds = currentItems.map { item ->
+            item.listeningEvidence()?.itemInstanceId ?: return false
+        }
+        if (
+            sessionPlayer.currentMediaItem?.listeningEvidence()?.itemInstanceId != currentEntryId
+        ) {
+            return false
+        }
+        val itemsByEntryId = currentItems.associateBy { item ->
+            item.listeningEvidence()?.itemInstanceId ?: return false
+        }
+        val replacements = planCurrentPreservingTimelineReplacements(
+            currentOrder = currentEntryIds,
+            targetOrder = targetEntryIds,
+            currentEntryId = currentEntryId
+        ) ?: return false
+        val resolved = replacements.map { replacement ->
+            replacement to replacement.replacementEntryIds.map { entryId ->
+                itemsByEntryId[entryId] ?: return false
+            }
+        }
 
-        val timelineSongs = (0 until player.mediaItemCount)
-            .mapNotNull { index -> player.getMediaItemAt(index).mediaId.toLongOrNull() }
-            .mapNotNull(songsById::get)
-        if (timelineSongs.isNotEmpty()) return timelineSongs
-        val currentSong = currentSongId?.let { songId -> songsById[songId] }
-        return currentSong?.let { song -> listOf(song) }.orEmpty()
+        resolved.forEach { (replacement, items) ->
+            sessionPlayer.replaceMediaItems(
+                replacement.fromIndex,
+                replacement.toIndex,
+                items
+            )
+        }
+
+        val appliedEntryIds = (0 until sessionPlayer.mediaItemCount).map { index ->
+            sessionPlayer.getMediaItemAt(index).listeningEvidence()?.itemInstanceId
+                ?: return false
+        }
+        return appliedEntryIds == targetEntryIds &&
+            sessionPlayer.currentMediaItem?.listeningEvidence()?.itemInstanceId == currentEntryId
+    }
+
+    private fun publishExternalShuffleState(enabled: Boolean) {
+        sessionPlayer.setLogicalShuffleModeEnabled(enabled)
+        updateAndroidAutoMediaButtonPreferences(
+            shuffleEnabled = enabled,
+            repeatMode = PlaybackLibraryBridge.currentRepeatMode()
+                ?: playerStateStorage.getRepeatMode()
+        )
     }
 
     private fun toggleAndroidAutoRepeatAll() {

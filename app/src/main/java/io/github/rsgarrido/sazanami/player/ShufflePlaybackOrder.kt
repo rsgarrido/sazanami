@@ -11,6 +11,41 @@ internal data class PlaybackTimelineReplacement(
     val replacementEntryIds: List<String>
 )
 
+/** Matches Play Next items to distinct upcoming occurrences without collapsing duplicates. */
+internal fun matchQueuedEntryIdsForShuffle(
+    timelineEntryReferences: List<Pair<String, String>>,
+    currentEntryId: String,
+    queuedReferenceKeys: List<String>
+): List<String> {
+    val currentIndex = timelineEntryReferences.indexOfFirst { (entryId, _) ->
+        entryId == currentEntryId
+    }
+    if (currentIndex < 0) return emptyList()
+
+    val unmatchedUpcoming = timelineEntryReferences.drop(currentIndex + 1).toMutableList()
+    return buildList {
+        queuedReferenceKeys.forEach { referenceKey ->
+            val matchIndex = unmatchedUpcoming.indexOfFirst { (_, candidateReferenceKey) ->
+                candidateReferenceKey == referenceKey
+            }
+            if (matchIndex >= 0) {
+                add(unmatchedUpcoming.removeAt(matchIndex).first)
+            }
+        }
+    }
+}
+
+/** Uses the phone controller when available and otherwise invokes the service-owned fallback. */
+internal suspend fun routeExternalSongShuffleRequest(
+    enabled: Boolean,
+    controllerSetter: (Boolean) -> Boolean,
+    serviceOnlySetter: suspend (Boolean) -> Unit
+): Boolean {
+    val usedController = controllerSetter(enabled)
+    if (!usedController) serviceOnlySetter(enabled)
+    return usedController
+}
+
 /**
  * Builds the explicit timeline order used for logical song shuffle.
  *

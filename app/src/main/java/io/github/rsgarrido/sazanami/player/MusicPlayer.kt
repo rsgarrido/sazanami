@@ -2,6 +2,7 @@ package io.github.rsgarrido.sazanami.player
 
 import android.content.ComponentName
 import android.content.Context
+import android.os.Bundle
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -13,6 +14,8 @@ import io.github.rsgarrido.sazanami.data.membershipKey
 import com.google.common.util.concurrent.ListenableFuture
 
 internal const val MEDIA_PREVIOUS_RESTART_THRESHOLD_MS = 3_000L
+internal const val SAZANAMI_INTERNAL_CONTROLLER_HINT =
+    "io.github.rsgarrido.sazanami.INTERNAL_PLAYBACK_CONTROLLER"
 
 internal data class LivePlaybackSnapshot(
     val currentSong: Song,
@@ -49,6 +52,9 @@ class MusicPlayer(private val context: Context) {
         )
 
         val future = MediaController.Builder(context, sessionToken)
+            .setConnectionHints(Bundle().apply {
+                putBoolean(SAZANAMI_INTERNAL_CONTROLLER_HINT, true)
+            })
             .buildAsync()
 
         controllerFuture = future
@@ -332,6 +338,8 @@ class MusicPlayer(private val context: Context) {
                     effectiveShuffleEnabled
                 )
             }
+            // This controller is identified to PlaybackService as internal. The write normalizes
+            // native Media3 shuffle without being routed back as a logical Shuffle OFF request.
             playerController.shuffleModeEnabled = effectiveShuffleEnabled
 
             transaction?.let { token ->

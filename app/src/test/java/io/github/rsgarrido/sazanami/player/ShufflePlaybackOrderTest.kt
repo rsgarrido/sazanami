@@ -1,6 +1,8 @@
 package io.github.rsgarrido.sazanami.player
 
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -8,6 +10,39 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ShufflePlaybackOrderTest {
+    @Test
+    fun customCommandUsesSession2ControllerSetterWhenControllerIsPresent() = runBlocking {
+        val controllerRequests = mutableListOf<Boolean>()
+        var serviceOnlyCalled = false
+
+        val usedController = routeExternalSongShuffleRequest(
+            enabled = true,
+            controllerSetter = { enabled ->
+                controllerRequests += enabled
+                true
+            },
+            serviceOnlySetter = { serviceOnlyCalled = true }
+        )
+
+        assertTrue(usedController)
+        assertEquals(listOf(true), controllerRequests)
+        assertFalse(serviceOnlyCalled)
+    }
+
+    @Test
+    fun customCommandUsesStableServicePathWhenControllerIsAbsent() = runBlocking {
+        val serviceOnlyRequests = mutableListOf<Boolean>()
+
+        val usedController = routeExternalSongShuffleRequest(
+            enabled = false,
+            controllerSetter = { false },
+            serviceOnlySetter = { enabled -> serviceOnlyRequests += enabled }
+        )
+
+        assertFalse(usedController)
+        assertEquals(listOf(false), serviceOnlyRequests)
+    }
+
     @Test
     fun offOnOffOnRestoresCanonicalOrderAndCreatesAFreshShuffle() {
         val base = listOf("a", "b", "c", "d")
@@ -108,6 +143,44 @@ class ShufflePlaybackOrderTest {
 
         assertEquals(listOf("a", "b", "queued-1", "queued-2", "c", "d"), unshuffled)
         assertEquals(listOf("b", "queued-1", "queued-2", "d", "c", "a"), shuffled)
+    }
+
+    @Test
+    fun serviceOnlyPlayNextMatchingPreservesDuplicateOccurrencesByEntryId() {
+        val timeline = listOf(
+            "played-a" to "song-a",
+            "current-b" to "song-b",
+            "queued-a-1" to "song-a",
+            "ordinary-c" to "song-c",
+            "queued-a-2" to "song-a",
+            "ordinary-d" to "song-d"
+        )
+
+        val queuedEntryIds = matchQueuedEntryIdsForShuffle(
+            timelineEntryReferences = timeline,
+            currentEntryId = "current-b",
+            queuedReferenceKeys = listOf("song-a", "song-a")
+        )
+        val target = buildSongShufflePlaybackOrder(
+            baseEntryIds = timeline.map { (entryId, _) -> entryId },
+            currentEntryId = "current-b",
+            queuedEntryIds = queuedEntryIds,
+            shuffleEnabled = true,
+            shuffleRemaining = { entries -> entries.reversed() }
+        )
+
+        assertEquals(listOf("queued-a-1", "queued-a-2"), queuedEntryIds)
+        assertEquals(
+            listOf(
+                "current-b",
+                "queued-a-1",
+                "queued-a-2",
+                "ordinary-d",
+                "ordinary-c",
+                "played-a"
+            ),
+            target
+        )
     }
 
     @Test
