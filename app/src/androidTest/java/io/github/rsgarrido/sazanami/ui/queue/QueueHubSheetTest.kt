@@ -6,6 +6,7 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -135,7 +136,7 @@ class QueueHubSheetTest {
     }
 
     @Test
-    fun shuffledQueueExplainsWhyDragReorderIsUnavailable() {
+    fun shuffledQueueExposesDragReorderWithoutTheOldRestriction() {
         val shuffledState = state("B").let { original ->
             original.copy(
                 queues = original.queues.map { queue ->
@@ -160,8 +161,8 @@ class QueueHubSheetTest {
             }
         }
 
-        composeRule.onNodeWithText("Turn off shuffle to reorder this queue.").assertIsDisplayed()
-        composeRule.onAllNodesWithContentDescription("Reorder queue entry").assertCountEquals(0)
+        composeRule.onNodeWithText("Turn off shuffle to reorder this queue.").assertDoesNotExist()
+        composeRule.onAllNodesWithContentDescription("Reorder queue entry").assertCountEquals(1)
     }
 
     @Test

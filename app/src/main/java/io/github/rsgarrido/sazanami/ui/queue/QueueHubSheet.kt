@@ -285,7 +285,7 @@ fun QueueHubSheet(
                         }
                     } else {
                         val selectedQueueId = selected?.queueId
-                        val reorderEnabled = selected != null && !selected.shuffleEnabled
+                        val reorderEnabled = selected != null
                         var displayedEntries by remember(
                             selectedQueueId,
                             state.selectedEntries
@@ -302,14 +302,6 @@ fun QueueHubSheet(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
-                            )
-                        }
-                        if (selected?.shuffleEnabled == true) {
-                            Text(
-                                text = "Turn off shuffle to reorder this queue.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
                             )
                         }
                         val listState = rememberLazyListState()

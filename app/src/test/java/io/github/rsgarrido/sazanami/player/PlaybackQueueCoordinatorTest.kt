@@ -905,7 +905,7 @@ class PlaybackQueueCoordinatorTest {
     }
 
     @Test
-    fun activeReorderRejectsCurrentAndUpcomingMovesAcrossCurrentBoundary() = runBlocking {
+    fun activeShuffledReorderRejectsCurrentAndUpcomingMovesAcrossCurrentBoundary() = runBlocking {
         val persistence = FakePersistence(activeQueueId = "A").apply {
             seed(queue(
                 "A",
@@ -914,7 +914,8 @@ class PlaybackQueueCoordinatorTest {
                     spec("upcoming-1", 2L, 1, 1),
                     spec("upcoming-2", 3L, 2, 2)
                 ),
-                current = "current"
+                current = "current",
+                shuffle = true
             ))
         }
         val runtime = FakeRuntime(
@@ -922,7 +923,8 @@ class PlaybackQueueCoordinatorTest {
                 listOf("current" to 1L, "upcoming-1" to 2L, "upcoming-2" to 3L),
                 "current",
                 44L,
-                true
+                true,
+                shuffle = true
             )
         )
         val coordinator = coordinator(persistence, runtime)
@@ -938,23 +940,164 @@ class PlaybackQueueCoordinatorTest {
     }
 
     @Test
-    fun activeReorderIsDisabledWhileShuffleIsEnabled() = runBlocking {
+    fun activeShuffledReorderChangesPlaybackOnlyAndTargetsExactDuplicateOccurrence() =
+        runBlocking {
+            val persistence = FakePersistence(activeQueueId = "A").apply {
+                seed(queue(
+                    "A",
+                    listOf(
+                        spec("a-duplicate", 1L, base = 0, playback = 2),
+                        spec("b-duplicate", 1L, base = 1, playback = 4),
+                        spec("current", 2L, base = 2, playback = 0),
+                        spec("d", 3L, base = 3, playback = 3),
+                        spec("e", 4L, base = 4, playback = 1)
+                    ),
+                    current = "current",
+                    position = 12_345L,
+                    shuffle = true
+                ))
+            }
+            val runtime = FakeRuntime(
+                liveSnapshot(
+                    ids = listOf(
+                        "current" to 2L,
+                        "e" to 4L,
+                        "a-duplicate" to 1L,
+                        "d" to 3L,
+                        "b-duplicate" to 1L
+                    ),
+                    currentEntryId = "current",
+                    positionMs = 12_345L,
+                    shouldPlay = true,
+                    shuffle = true,
+                    baseEntryIds = listOf("a-duplicate", "b-duplicate", "current", "d", "e")
+                )
+            )
+            val coordinator = coordinator(persistence, runtime)
+            coordinator.initialize()
+
+            assertTrue(coordinator.reorderEntry("A", "b-duplicate", 2))
+
+            val stored = persistence.queue("A")
+            assertEquals(
+                listOf("current", "e", "b-duplicate", "a-duplicate", "d"),
+                runtime.snapshot?.entries?.map { it.entryId }
+            )
+            assertEquals("current", runtime.snapshot?.currentEntryId)
+            assertEquals(12_345L, runtime.snapshot?.currentPositionMs)
+            assertEquals(
+                listOf("current", "e", "b-duplicate", "a-duplicate", "d"),
+                stored.entries.map { it.entryId }
+            )
+            assertEquals(
+                listOf("a-duplicate", "b-duplicate", "current", "d", "e"),
+                stored.entries.sortedBy { it.baseOrder }.map { it.entryId }
+            )
+            assertTrue(stored.queue.shuffleEnabled)
+            assertEquals(1, runtime.moveCount)
+            assertEquals(0, runtime.replaceCount)
+        }
+
+    @Test
+    fun shuffledManualOrderSurvivesQueueRoundTripAndOffCheckpointRestoresCanonicalBase() =
+        runBlocking {
+            val persistence = FakePersistence(activeQueueId = "A").apply {
+                seed(queue(
+                    "A",
+                    listOf(
+                        spec("a", 1L, base = 0, playback = 2),
+                        spec("b", 2L, base = 1, playback = 3),
+                        spec("c", 3L, base = 2, playback = 0),
+                        spec("d", 4L, base = 3, playback = 1)
+                    ),
+                    current = "c",
+                    position = 7_654L,
+                    shuffle = true
+                ))
+                seed(queue("B", listOf(spec("other", 5L, 0, 0)), current = "other"))
+            }
+            val runtime = FakeRuntime(liveSnapshot(
+                ids = listOf("c" to 3L, "d" to 4L, "a" to 1L, "b" to 2L),
+                currentEntryId = "c",
+                positionMs = 7_654L,
+                shouldPlay = true,
+                shuffle = true,
+                baseEntryIds = listOf("a", "b", "c", "d")
+            ))
+            val coordinator = coordinator(persistence, runtime)
+            coordinator.initialize()
+
+            assertTrue(coordinator.reorderEntry("A", "b", 2))
+            assertEquals(
+                listOf("c", "d", "b", "a"),
+                persistence.queue("A").entries.map { it.entryId }
+            )
+
+            assertTrue(coordinator.switchToQueue("B"))
+            assertTrue(coordinator.switchToQueue("A"))
+            assertEquals(
+                listOf("c", "d", "b", "a"),
+                runtime.snapshot?.entries?.map { it.entryId }
+            )
+            assertEquals("c", runtime.snapshot?.currentEntryId)
+            assertEquals(7_654L, runtime.snapshot?.currentPositionMs)
+
+            runtime.snapshot = liveSnapshot(
+                ids = listOf("a" to 1L, "b" to 2L, "c" to 3L, "d" to 4L),
+                currentEntryId = "c",
+                positionMs = 7_654L,
+                shouldPlay = true,
+                shuffle = false,
+                baseEntryIds = listOf("a", "b", "c", "d")
+            )
+            coordinator.persistActiveQueueSnapshot()
+
+            val unshuffled = persistence.queue("A")
+            assertEquals(listOf("a", "b", "c", "d"), unshuffled.entries.map { it.entryId })
+            assertEquals(
+                listOf("a", "b", "c", "d"),
+                unshuffled.entries.sortedBy { it.baseOrder }.map { it.entryId }
+            )
+            assertFalse(unshuffled.queue.shuffleEnabled)
+            assertEquals("c", unshuffled.queue.currentEntryId)
+            assertEquals(7_654L, unshuffled.queue.currentPositionMs)
+        }
+
+    @Test
+    fun activeShuffledDragLetsManualPlacementOverridePlayNextPosition() = runBlocking {
         val persistence = FakePersistence(activeQueueId = "A").apply {
             seed(queue(
                 "A",
-                listOf(spec("a", 1L, 0, 0), spec("b", 2L, 1, 1)),
-                current = "a",
+                listOf(
+                    spec("current", 1L, base = 0, playback = 0),
+                    spec("play-next", 2L, base = 1, playback = 1),
+                    spec("ordinary", 3L, base = 2, playback = 2)
+                ),
+                current = "current",
                 shuffle = true
             ))
         }
-        val runtime = FakeRuntime(
-            liveSnapshot(listOf("a" to 1L, "b" to 2L), "a", 12L, true, shuffle = true)
-        )
+        val runtime = FakeRuntime(liveSnapshot(
+            ids = listOf("current" to 1L, "play-next" to 2L, "ordinary" to 3L),
+            currentEntryId = "current",
+            positionMs = 500L,
+            shouldPlay = true,
+            shuffle = true,
+            baseEntryIds = listOf("current", "play-next", "ordinary")
+        ))
         val coordinator = coordinator(persistence, runtime)
         coordinator.initialize()
 
-        assertFalse(coordinator.reorderEntry("A", "b", 0))
-        assertEquals(listOf("a", "b"), runtime.snapshot?.entries?.map { it.entryId })
+        assertTrue(coordinator.reorderEntry("A", "play-next", 2))
+
+        assertEquals(
+            listOf("current", "ordinary", "play-next"),
+            runtime.snapshot?.entries?.map { it.entryId }
+        )
+        assertEquals(
+            listOf("current", "play-next", "ordinary"),
+            persistence.queue("A").entries.sortedBy { it.baseOrder }.map { it.entryId }
+        )
     }
 
     @Test
@@ -979,6 +1122,41 @@ class PlaybackQueueCoordinatorTest {
         assertEquals(listOf("b2", "b1"), persistence.queue("B").entries.map { it.entryId })
         assertEquals("b1", persistence.queue("B").queue.currentEntryId)
         assertEquals(333L, persistence.queue("B").queue.currentPositionMs)
+    }
+
+    @Test
+    fun inactiveShuffledReorderChangesPlaybackOnlyAndPreservesResumeState() = runBlocking {
+        val persistence = FakePersistence(activeQueueId = "A").apply {
+            seed(queue("A", listOf(spec("a", 1L, 0, 0)), current = "a"))
+            seed(queue(
+                "B",
+                listOf(
+                    spec("b1", 2L, base = 0, playback = 1),
+                    spec("b2", 3L, base = 1, playback = 2),
+                    spec("b3", 4L, base = 2, playback = 0)
+                ),
+                current = "b1",
+                position = 9_999L,
+                shuffle = true
+            ))
+        }
+        val original = liveSnapshot(listOf("a" to 1L), "a", 44L, true)
+        val runtime = FakeRuntime(original)
+        val coordinator = coordinator(persistence, runtime)
+        coordinator.initialize()
+
+        assertTrue(coordinator.reorderEntry("B", "b2", 1))
+
+        val stored = persistence.queue("B")
+        assertEquals(original, runtime.snapshot)
+        assertEquals(listOf("b3", "b2", "b1"), stored.entries.map { it.entryId })
+        assertEquals(
+            listOf("b1", "b2", "b3"),
+            stored.entries.sortedBy { it.baseOrder }.map { it.entryId }
+        )
+        assertEquals("b1", stored.queue.currentEntryId)
+        assertEquals(9_999L, stored.queue.currentPositionMs)
+        assertTrue(stored.queue.shuffleEnabled)
     }
 
     @Test

@@ -510,16 +510,14 @@ internal class PlaybackQueueCoordinator(
     ): Boolean = mutex.withLock {
         if (queueId != activeQueueId) {
             val queue = persistence.loadQueue(queueId) ?: return@withLock false
-            if (queue.queue.shuffleEnabled) return@withLock false
             return@withLock persistence.reorderEntry(
                 queueId,
                 entryId,
                 toPlaybackOrder,
-                updateBaseOrder = true
+                updateBaseOrder = !queue.queue.shuffleEnabled
             ) != null
         }
         val before = runtime.captureSnapshot() ?: return@withLock false
-        if (before.shuffleEnabled) return@withLock false
         val currentIndex = before.entries.indexOfFirst { item ->
             item.entryId == before.currentEntryId
         }
@@ -529,6 +527,11 @@ internal class PlaybackQueueCoordinator(
         }
         if (!runtime.moveEntry(entryId, toPlaybackOrder)) return@withLock false
         val after = runtime.captureSnapshot() ?: return@withLock false
+        if (before.shuffleEnabled) {
+            // Capture the edited playback order through the remembered canonical base.
+            persistActiveQueueSnapshotLocked(suppliedSnapshot = after)
+            return@withLock true
+        }
         persistActiveQueueSnapshotLocked(
             suppliedSnapshot = after.copy(
                 baseEntryIds = after.entries.map(LivePlaybackQueueItem::entryId)
