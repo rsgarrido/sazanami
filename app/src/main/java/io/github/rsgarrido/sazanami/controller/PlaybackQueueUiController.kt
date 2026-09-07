@@ -79,7 +79,8 @@ internal data class LiveActiveQueueForUi(
     val songs: List<Song>,
     val entryIds: List<String> = emptyList(),
     val currentEntryId: String? = null,
-    val shuffleEnabled: Boolean = false
+    val shuffleEnabled: Boolean = false,
+    val queueId: String? = null
 )
 
 internal interface PlaybackQueueUiOperations {
@@ -124,7 +125,8 @@ internal class RoomPlaybackQueueUiOperations(
             playbackStates = playbackController.uiState,
             timelineRevisions = playbackController.activeQueueTimelineRevision,
             activeQueueEntryIds = playbackController::activeQueueEntryIds,
-            activeQueueCurrentEntryId = playbackController::activeQueueCurrentEntryId
+            activeQueueCurrentEntryId = playbackController::activeQueueCurrentEntryId,
+            activeQueueId = playbackController::getActiveQueueId
         )
 
     override suspend fun listQueues(): List<PlaybackQueueEntity> = repository.listQueues()
@@ -189,7 +191,8 @@ internal fun observeLiveActiveQueueForUi(
     playbackStates: Flow<PlaybackUiState>,
     timelineRevisions: Flow<Long>,
     activeQueueEntryIds: () -> List<String>,
-    activeQueueCurrentEntryId: () -> String?
+    activeQueueCurrentEntryId: () -> String?,
+    activeQueueId: () -> String? = { null }
 ): Flow<LiveActiveQueueForUi?> = combine(
     playbackStates,
     timelineRevisions
@@ -206,7 +209,8 @@ internal fun observeLiveActiveQueueForUi(
             },
             entryIds = activeQueueEntryIds(),
             currentEntryId = activeQueueCurrentEntryId(),
-            shuffleEnabled = state.isShuffleEnabled
+            shuffleEnabled = state.isShuffleEnabled,
+            queueId = activeQueueId()
         )
     }
 }.distinctUntilChanged()
@@ -371,7 +375,7 @@ internal class PlaybackQueueUiController(
         }
         if (createdId != null) {
             selectedQueueId.value = createdId
-            latestLiveActiveQueue = LiveActiveQueueForUi(songs)
+            latestLiveActiveQueue = LiveActiveQueueForUi(songs = songs, queueId = createdId)
         }
         _state.value = _state.value.copy(
             message = if (createdId == null) "Unable to create and play the new queue." else null
@@ -543,6 +547,13 @@ internal class PlaybackQueueUiController(
             val currentTimelineIndex = liveBefore?.entryIds
                 ?.indexOf(liveBefore.currentEntryId)
                 ?.takeIf { index -> index >= 0 }
+                ?: latestLoadedQueues.firstOrNull { loaded ->
+                    loaded.queue.queueId == queueId
+                }?.let { loaded ->
+                    loaded.entries.indexOfFirst { item ->
+                        item.entry.entryId == loaded.queue.currentEntryId
+                    }.takeIf { index -> index >= 0 }
+                }
                 ?: 0
             val runtimePlaybackOrder = if (activeFromIndex != null) {
                 currentTimelineIndex + toPlaybackOrder
@@ -661,10 +672,15 @@ internal fun buildState(
         loaded.queue.queueId == selectedQueueId
     }
     val selectedCurrentEntryId = selected?.queue?.currentEntryId
+    val scopedLiveActiveQueue = liveActiveQueue?.takeIf { liveQueue ->
+        !previous.isSwitching &&
+            liveQueue.queueId != null &&
+            liveQueue.queueId == activeQueueId
+    }
     val cards = loadedQueues.map { loaded ->
         val isActive = loaded.queue.queueId == activeQueueId
-        val liveSongs = liveActiveQueue?.songs.takeIf { isActive }
-        val effectiveCurrentEntryId = liveActiveQueue?.currentEntryId
+        val liveSongs = scopedLiveActiveQueue?.songs.takeIf { isActive }
+        val effectiveCurrentEntryId = scopedLiveActiveQueue?.currentEntryId
             ?.takeIf { isActive }
             ?: loaded.queue.currentEntryId
         val currentIndex = loaded.entries.indexOfFirst { item ->
@@ -682,13 +698,13 @@ internal fun buildState(
             representativeTrack = currentSong
                 ?: loaded.entries.firstNotNullOfOrNull { it.song },
             lastActiveAt = loaded.queue.lastActiveAt,
-            shuffleEnabled = liveActiveQueue?.shuffleEnabled.takeIf { isActive }
+            shuffleEnabled = scopedLiveActiveQueue?.shuffleEnabled.takeIf { isActive }
                 ?: loaded.queue.shuffleEnabled,
             isActive = isActive,
             isSelected = loaded.queue.queueId == selectedQueueId
         )
     }
-    val liveSelectedEntries = liveActiveQueue?.takeIf {
+    val liveSelectedEntries = scopedLiveActiveQueue?.takeIf {
         selected?.queue?.queueId == activeQueueId
     }?.let { liveQueue ->
         buildLiveActiveQueueEntries(
@@ -698,29 +714,35 @@ internal fun buildState(
             liveCurrentEntryId = liveQueue.currentEntryId
         )
     }
-    val selectedEntries = liveSelectedEntries ?: selected?.entries.orEmpty().map { item ->
-        PlaybackQueueEntryUiState(
-            entryId = item.entry.entryId,
-            song = item.song,
-            isCurrent = item.entry.entryId == selectedCurrentEntryId
+    val selectedEntries = liveSelectedEntries ?: if (
+        selected != null && selected.queue.queueId == activeQueueId
+    ) {
+        buildPersistedActiveQueueEntries(
+            persistedEntries = selected.entries,
+            currentEntryId = selectedCurrentEntryId
         )
+    } else {
+        selected?.entries.orEmpty().map { item ->
+            PlaybackQueueEntryUiState(
+                entryId = item.entry.entryId,
+                song = item.song,
+                isCurrent = item.entry.entryId == selectedCurrentEntryId
+            )
+        }
     }
     val active = loadedQueues.firstOrNull { loaded -> loaded.queue.queueId == activeQueueId }
     val activeCurrentEntryId = active?.queue?.currentEntryId
-    val activeEntries = liveActiveQueue?.let { liveQueue ->
+    val activeEntries = scopedLiveActiveQueue?.let { liveQueue ->
         buildLiveActiveQueueEntries(
             persistedEntries = active?.entries.orEmpty(),
             liveSongs = liveQueue.songs,
             liveEntryIds = liveQueue.entryIds,
             liveCurrentEntryId = liveQueue.currentEntryId
         )
-    } ?: active?.entries.orEmpty().map { item ->
-        PlaybackQueueEntryUiState(
-            entryId = item.entry.entryId,
-            song = item.song,
-            isCurrent = item.entry.entryId == activeCurrentEntryId
-        )
-    }
+    } ?: buildPersistedActiveQueueEntries(
+        persistedEntries = active?.entries.orEmpty(),
+        currentEntryId = activeCurrentEntryId
+    )
     return previous.copy(
         isLoading = false,
         queues = cards,
@@ -739,13 +761,13 @@ internal fun buildLiveActiveQueueEntries(
     liveCurrentEntryId: String? = null
 ): List<PlaybackQueueEntryUiState> {
     val persistedByEntryId = persistedEntries.associateBy { item -> item.entry.entryId }
-    val liveSongByEntryId = liveEntryIds.zip(liveSongs).toMap()
     val currentTimelineIndex = liveEntryIds.indexOf(liveCurrentEntryId)
     val timelineEntryIds = if (currentTimelineIndex >= 0) {
         liveEntryIds.drop(currentTimelineIndex)
     } else {
         liveEntryIds
     }
+    val liveSongByEntryId = timelineEntryIds.zip(liveSongs).toMap()
     val visibleEntryIds = if (persistedEntries.isEmpty()) {
         timelineEntryIds
     } else {
@@ -776,6 +798,27 @@ internal fun buildLiveActiveQueueEntries(
             entryId = entryId,
             song = song,
             isCurrent = index == 0
+        )
+    }
+}
+
+internal fun buildPersistedActiveQueueEntries(
+    persistedEntries: List<LoadedQueueEntryForUi>,
+    currentEntryId: String?
+): List<PlaybackQueueEntryUiState> {
+    val currentIndex = persistedEntries.indexOfFirst { item ->
+        item.entry.entryId == currentEntryId
+    }
+    val visibleEntries = if (currentIndex >= 0) {
+        persistedEntries.drop(currentIndex)
+    } else {
+        persistedEntries
+    }
+    return visibleEntries.map { item ->
+        PlaybackQueueEntryUiState(
+            entryId = item.entry.entryId,
+            song = item.song,
+            isCurrent = item.entry.entryId == currentEntryId
         )
     }
 }

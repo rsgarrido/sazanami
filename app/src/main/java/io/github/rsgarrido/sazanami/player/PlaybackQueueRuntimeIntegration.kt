@@ -215,6 +215,10 @@ internal object PlaybackQueueRuntimeBridge {
 
     suspend fun saveActiveQueue(): String? = coordinator?.persistActiveQueueSnapshot()
 
+    fun prepareNewPlaybackContext(baseEntryIds: List<String>) {
+        coordinator?.prepareNewPlaybackContext(baseEntryIds)
+    }
+
     suspend fun createQueueFromCurrent(): String? =
         coordinator?.createQueueFromCurrent()?.queue?.queueId
 

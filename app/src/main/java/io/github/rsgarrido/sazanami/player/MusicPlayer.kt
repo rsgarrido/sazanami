@@ -2,6 +2,7 @@ package io.github.rsgarrido.sazanami.player
 
 import android.content.ComponentName
 import android.content.Context
+import android.os.Bundle
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -13,6 +14,8 @@ import io.github.rsgarrido.sazanami.data.membershipKey
 import com.google.common.util.concurrent.ListenableFuture
 
 internal const val MEDIA_PREVIOUS_RESTART_THRESHOLD_MS = 3_000L
+internal const val SAZANAMI_INTERNAL_CONTROLLER_HINT =
+    "io.github.rsgarrido.sazanami.INTERNAL_PLAYBACK_CONTROLLER"
 
 internal data class LivePlaybackSnapshot(
     val currentSong: Song,
@@ -35,6 +38,7 @@ class MusicPlayer(private val context: Context) {
     private var currentSong: Song? = null
     private var currentPlaylist: List<Song> = emptyList()
     private var pendingPublishedTimelineMediaIds: List<String>? = null
+    private var pendingPublishedTimelineEntryIds: List<String>? = null
 
     var onSongCompleted: (() -> Unit)? = null
     var onPlaybackStateChanged: ((Boolean) -> Unit)? = null
@@ -48,6 +52,9 @@ class MusicPlayer(private val context: Context) {
         )
 
         val future = MediaController.Builder(context, sessionToken)
+            .setConnectionHints(Bundle().apply {
+                putBoolean(SAZANAMI_INTERNAL_CONTROLLER_HINT, true)
+            })
             .buildAsync()
 
         controllerFuture = future
@@ -69,11 +76,16 @@ class MusicPlayer(private val context: Context) {
                         }
 
                         override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+                            val expectedEntryIds = pendingPublishedTimelineEntryIds
                             val expectedMediaIds = pendingPublishedTimelineMediaIds
                             if (
-                                expectedMediaIds == null ||
-                                timelineMediaIds() == expectedMediaIds
+                                (expectedEntryIds != null && timelineEntryIds() == expectedEntryIds) ||
+                                (expectedEntryIds == null && (
+                                    expectedMediaIds == null ||
+                                        timelineMediaIds() == expectedMediaIds
+                                    ))
                             ) {
+                                pendingPublishedTimelineEntryIds = null
                                 pendingPublishedTimelineMediaIds = null
                                 this@MusicPlayer.onTimelineChanged?.invoke()
                             }
@@ -104,7 +116,8 @@ class MusicPlayer(private val context: Context) {
         song: Song,
         shouldStart: Boolean = true,
         startPosition: Int = 0,
-        playlist: List<Song> = listOf(song)
+        playlist: List<Song> = listOf(song),
+        canonicalBaseSongs: List<Song>? = null
     ) {
         val playerController = controller ?: return
 
@@ -125,6 +138,17 @@ class MusicPlayer(private val context: Context) {
 
         val mediaItems = safePlaylist.map { playlistSong ->
             playlistSong.toPlayableMediaItem()
+        }
+        canonicalBaseSongs?.let { canonicalSongs ->
+            val playbackEntries = safePlaylist.zip(mediaItems).map { (playlistSong, mediaItem) ->
+                val entryId = checkNotNull(mediaItem.listeningEvidence()?.itemInstanceId)
+                entryId to playlistSong.membershipKey()
+            }
+            val canonicalBaseEntryIds = checkNotNull(captureCanonicalBaseEntryIds(
+                canonicalReferenceKeys = canonicalSongs.map(Song::membershipKey),
+                playbackEntries = playbackEntries
+            ))
+            PlaybackQueueRuntimeBridge.prepareNewPlaybackContext(canonicalBaseEntryIds)
         }
 
         playerController.setMediaItems(
@@ -192,6 +216,58 @@ class MusicPlayer(private val context: Context) {
 
     internal fun currentItemInstanceId(): String? =
         controller?.currentMediaItem?.listeningEvidence()?.itemInstanceId
+
+    internal fun currentTimelineEntryIds(): List<String>? = timelineEntryIds()
+
+    internal fun reorderTimelineKeepingCurrent(targetEntryIds: List<String>): Boolean {
+        val playerController = controller ?: return false
+        val currentEntryId = currentItemInstanceId() ?: return false
+        val currentMediaItems = (0 until playerController.mediaItemCount)
+            .map { index -> playerController.getMediaItemAt(index) }
+        val currentEntryIds = currentMediaItems.map { mediaItem ->
+            mediaItem.listeningEvidence()?.itemInstanceId ?: return false
+        }
+        val currentItemsByEntryId = currentMediaItems.associateBy { mediaItem ->
+            mediaItem.listeningEvidence()?.itemInstanceId ?: return false
+        }
+        val replacements = planCurrentPreservingTimelineReplacements(
+            currentOrder = currentEntryIds,
+            targetOrder = targetEntryIds,
+            currentEntryId = currentEntryId
+        ) ?: return false
+        val songsByEntryId = currentPlaylist
+            .takeIf { songs -> songs.size == currentEntryIds.size }
+            ?.let { songs -> currentEntryIds.zip(songs).toMap() }
+
+        val resolvedReplacements = replacements.map { replacement ->
+            replacement to replacement.replacementEntryIds.map { entryId ->
+                currentItemsByEntryId[entryId] ?: return false
+            }
+        }
+        if (replacements.isNotEmpty()) {
+            pendingPublishedTimelineEntryIds = targetEntryIds
+        }
+        try {
+            resolvedReplacements.forEach { (replacement, replacementItems) ->
+                playerController.replaceMediaItems(
+                    replacement.fromIndex,
+                    replacement.toIndex,
+                    replacementItems
+                )
+            }
+        } catch (error: Exception) {
+            pendingPublishedTimelineEntryIds = null
+            throw error
+        }
+
+        songsByEntryId?.let { songs ->
+            currentPlaylist = targetEntryIds.mapNotNull(songs::get)
+            currentSong = songs[currentEntryId] ?: currentSong
+        }
+        val appliedExactly = timelineEntryIds() == targetEntryIds
+        if (!appliedExactly) pendingPublishedTimelineEntryIds = null
+        return appliedExactly
+    }
 
     fun pause() {
         controller?.pause()
@@ -262,6 +338,8 @@ class MusicPlayer(private val context: Context) {
                     effectiveShuffleEnabled
                 )
             }
+            // This controller is identified to PlaybackService as internal. The write normalizes
+            // native Media3 shuffle without being routed back as a logical Shuffle OFF request.
             playerController.shuffleModeEnabled = effectiveShuffleEnabled
 
             transaction?.let { token ->
@@ -374,6 +452,14 @@ class MusicPlayer(private val context: Context) {
         val playerController = controller ?: return emptyList()
         return (0 until playerController.mediaItemCount).map { index ->
             playerController.getMediaItemAt(index).mediaId
+        }
+    }
+
+    private fun timelineEntryIds(): List<String>? {
+        val playerController = controller ?: return null
+        return (0 until playerController.mediaItemCount).map { index ->
+            playerController.getMediaItemAt(index).listeningEvidence()?.itemInstanceId
+                ?: return null
         }
     }
 

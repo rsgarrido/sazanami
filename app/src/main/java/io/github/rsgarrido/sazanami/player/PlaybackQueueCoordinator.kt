@@ -58,6 +58,35 @@ internal data class PlaybackQueueEntryRemoval(
     val originalCurrentPositionMs: Long
 )
 
+/** Maps a new source context's canonical occurrence order onto its freshly built live timeline. */
+internal fun captureCanonicalBaseEntryIds(
+    canonicalReferenceKeys: List<String>,
+    playbackEntries: List<Pair<String, String>>
+): List<String>? {
+    if (
+        canonicalReferenceKeys.any(String::isBlank) ||
+        playbackEntries.isEmpty() ||
+        playbackEntries.any { (entryId, referenceKey) ->
+            entryId.isBlank() || referenceKey.isBlank()
+        } ||
+        playbackEntries.map { entry -> entry.first }.distinct().size != playbackEntries.size
+    ) {
+        return null
+    }
+
+    val unmatchedPlaybackEntries = playbackEntries.toMutableList()
+    val canonicalEntryIds = mutableListOf<String>()
+    canonicalReferenceKeys.forEach { referenceKey ->
+        val matchingIndex = unmatchedPlaybackEntries.indexOfFirst { (_, candidateKey) ->
+            candidateKey == referenceKey
+        }
+        if (matchingIndex < 0) return null
+        canonicalEntryIds += unmatchedPlaybackEntries.removeAt(matchingIndex).first
+    }
+    canonicalEntryIds += unmatchedPlaybackEntries.map { entry -> entry.first }
+    return canonicalEntryIds
+}
+
 internal interface PlaybackQueueRuntime {
     fun captureSnapshot(): LivePlaybackQueueSnapshot?
     fun replaceTimeline(restoration: PlaybackQueueRestoration)
@@ -245,13 +274,35 @@ internal class PlaybackQueueCoordinator(
     private val mutex = Mutex()
     @Volatile
     private var activeQueueId: String? = null
+    @Volatile
     private var lastLiveSignature: LiveQueueSignature? = null
+    @Volatile
+    private var rememberedBaseEntryIds: List<String> = emptyList()
+    @Volatile
+    private var pendingCanonicalBaseEntryIds: List<String> = emptyList()
 
     suspend fun initialize(): String? = mutex.withLock {
         activeQueueId = persistence.getActiveQueueId()
         val activeId = activeQueueId
-        if (activeId != null && runtime.captureSnapshot() == null) {
-            restoreIntoEmptyRuntime(activeId)
+        if (activeId != null) {
+            val live = runtime.captureSnapshot()
+            if (live == null) {
+                restoreIntoEmptyRuntime(activeId)
+            } else {
+                val persisted = persistence.loadQueue(activeId)
+                val liveEntryIds = live.entries.mapTo(linkedSetOf()) { item -> item.entryId }
+                val persistedBaseIds = persisted?.entries.orEmpty()
+                    .sortedBy(PlaybackQueueEntryEntity::baseOrder)
+                    .map(PlaybackQueueEntryEntity::entryId)
+                val rememberedBaseIds = buildList {
+                    addAll(persistedBaseIds.filter(liveEntryIds::contains))
+                    addAll(live.baseEntryIds.filter { entryId ->
+                        entryId in liveEntryIds && entryId !in this
+                    })
+                    addAll(liveEntryIds.filterNot { entryId -> entryId in this })
+                }
+                rememberedBaseEntryIds = rememberedBaseIds
+            }
         }
         onActiveQueueChanged(activeQueueId)
         activeQueueId
@@ -259,7 +310,17 @@ internal class PlaybackQueueCoordinator(
 
     fun getActiveQueueId(): String? = activeQueueId
 
-    fun captureActiveQueueSnapshot(): LivePlaybackQueueSnapshot? = runtime.captureSnapshot()
+    fun captureActiveQueueSnapshot(): LivePlaybackQueueSnapshot? =
+        runtime.captureSnapshot()?.withAuthoritativeBaseOrder()
+
+    fun prepareNewPlaybackContext(baseEntryIds: List<String>) {
+        require(baseEntryIds.isNotEmpty()) { "A new playback context must not be empty" }
+        require(baseEntryIds.none(String::isBlank)) { "Queue entry IDs must not be blank" }
+        require(baseEntryIds.distinct().size == baseEntryIds.size) {
+            "Queue entry IDs must identify distinct occurrences"
+        }
+        pendingCanonicalBaseEntryIds = baseEntryIds.toList()
+    }
 
     suspend fun persistActiveQueueSnapshot(): String? = mutex.withLock {
         persistActiveQueueSnapshotLocked()
@@ -314,6 +375,7 @@ internal class PlaybackQueueCoordinator(
             entries = songs.indices.map { index -> drafts[index].entryId to songs[index].membershipKey() },
             baseEntryIds = drafts.map(PlaybackQueueEntryDraft::entryId)
         )
+        rememberedBaseEntryIds = drafts.map(PlaybackQueueEntryDraft::entryId)
         onActiveQueueChanged(queueId)
         created
     }
@@ -380,6 +442,7 @@ internal class PlaybackQueueCoordinator(
             if (before.entries.size == 1) {
                 persistence.replaceEntries(queueId, emptyList(), null, 0L)
                 lastLiveSignature = null
+                rememberedBaseEntryIds = emptyList()
             } else {
                 persistActiveQueueSnapshotLocked()
             }
@@ -421,7 +484,12 @@ internal class PlaybackQueueCoordinator(
         val resolved = removal.resolvedItem ?: return@withLock false
         if (!runtime.insertEntry(resolved, removal.entry.playbackOrder)) return@withLock false
         persistActiveQueueSnapshotLocked()
-        persistence.restoreEntry(removal.queueId, removal.entry)
+        val restored = persistence.restoreEntry(removal.queueId, removal.entry)
+            ?: return@withLock false
+        rememberedBaseEntryIds = restored.entries
+            .sortedBy(PlaybackQueueEntryEntity::baseOrder)
+            .map(PlaybackQueueEntryEntity::entryId)
+        lastLiveSignature = null
         true
     }
 
@@ -442,16 +510,14 @@ internal class PlaybackQueueCoordinator(
     ): Boolean = mutex.withLock {
         if (queueId != activeQueueId) {
             val queue = persistence.loadQueue(queueId) ?: return@withLock false
-            if (queue.queue.shuffleEnabled) return@withLock false
             return@withLock persistence.reorderEntry(
                 queueId,
                 entryId,
                 toPlaybackOrder,
-                updateBaseOrder = true
+                updateBaseOrder = !queue.queue.shuffleEnabled
             ) != null
         }
         val before = runtime.captureSnapshot() ?: return@withLock false
-        if (before.shuffleEnabled) return@withLock false
         val currentIndex = before.entries.indexOfFirst { item ->
             item.entryId == before.currentEntryId
         }
@@ -461,10 +527,16 @@ internal class PlaybackQueueCoordinator(
         }
         if (!runtime.moveEntry(entryId, toPlaybackOrder)) return@withLock false
         val after = runtime.captureSnapshot() ?: return@withLock false
+        if (before.shuffleEnabled) {
+            // Capture the edited playback order through the remembered canonical base.
+            persistActiveQueueSnapshotLocked(suppliedSnapshot = after)
+            return@withLock true
+        }
         persistActiveQueueSnapshotLocked(
             suppliedSnapshot = after.copy(
                 baseEntryIds = after.entries.map(LivePlaybackQueueItem::entryId)
-            )
+            ),
+            useSuppliedBaseOrder = true
         )
         persistence.reorderEntry(
             queueId = queueId,
@@ -524,14 +596,23 @@ internal class PlaybackQueueCoordinator(
             baseEntryIds = resolved.sortedBy { item -> item.persistedEntry.baseOrder }
                 .map { item -> item.persistedEntry.entryId }
         )
+        rememberedBaseEntryIds = lastLiveSignature?.baseEntryIds.orEmpty()
         onActiveQueueChanged(queueId)
         true
     }
 
     private suspend fun persistActiveQueueSnapshotLocked(
-        suppliedSnapshot: LivePlaybackQueueSnapshot? = null
+        suppliedSnapshot: LivePlaybackQueueSnapshot? = null,
+        useSuppliedBaseOrder: Boolean = false
     ): String? {
-        val snapshot = suppliedSnapshot ?: runtime.captureSnapshot() ?: return activeQueueId
+        val captured = suppliedSnapshot ?: runtime.captureSnapshot() ?: return activeQueueId
+        val pendingCanonicalBase = captured.matchingPendingCanonicalBaseOrder()
+        val capturesNewPlaybackContext = !useSuppliedBaseOrder && pendingCanonicalBase != null
+        val snapshot = when {
+            useSuppliedBaseOrder -> captured
+            capturesNewPlaybackContext -> captured.copy(baseEntryIds = pendingCanonicalBase)
+            else -> captured.withRememberedBaseOrder()
+        }
         if (snapshot.entries.isEmpty()) return activeQueueId
 
         val queueId = activeQueueId
@@ -587,6 +668,8 @@ internal class PlaybackQueueCoordinator(
             persistence.setActiveQueue(newQueueId)
             activeQueueId = newQueueId
             lastLiveSignature = rawSignature.copy(queueId = newQueueId)
+            rememberedBaseEntryIds = rawSignature.baseEntryIds
+            clearPendingCanonicalBaseOrder(pendingCanonicalBase)
             onActiveQueueChanged(newQueueId)
             return newQueueId
         }
@@ -594,7 +677,11 @@ internal class PlaybackQueueCoordinator(
         val existing = persistence.loadQueue(queueId)
         val drafts = buildReplacementDrafts(
             liveItems = identified,
-            existingEntries = existing?.entries.orEmpty(),
+            existingEntries = if (capturesNewPlaybackContext) {
+                emptyList()
+            } else {
+                existing?.entries.orEmpty()
+            },
             preferredBaseEntryIds = snapshot.baseEntryIds
         )
         persistence.replaceEntries(
@@ -610,8 +697,52 @@ internal class PlaybackQueueCoordinator(
             shuffleEnabled = snapshot.shuffleEnabled,
             repeatMode = snapshot.repeatMode
         )
-        lastLiveSignature = rawSignature
+        lastLiveSignature = rawSignature.copy(
+            baseEntryIds = drafts.sortedBy(PlaybackQueueEntryDraft::baseOrder)
+                .map(PlaybackQueueEntryDraft::entryId)
+        )
+        rememberedBaseEntryIds = lastLiveSignature?.baseEntryIds.orEmpty()
+        clearPendingCanonicalBaseOrder(pendingCanonicalBase)
         return queueId
+    }
+
+    private fun LivePlaybackQueueSnapshot.withAuthoritativeBaseOrder(): LivePlaybackQueueSnapshot {
+        val pendingCanonicalBase = matchingPendingCanonicalBaseOrder()
+        return if (pendingCanonicalBase != null) {
+            copy(baseEntryIds = pendingCanonicalBase)
+        } else {
+            withRememberedBaseOrder()
+        }
+    }
+
+    private fun LivePlaybackQueueSnapshot.matchingPendingCanonicalBaseOrder(): List<String>? {
+        val pending = pendingCanonicalBaseEntryIds
+        if (pending.isEmpty()) return null
+        val liveEntryIds = entries.map(LivePlaybackQueueItem::entryId)
+        return pending.takeIf { baseEntryIds ->
+            baseEntryIds.size == liveEntryIds.size && baseEntryIds.toSet() == liveEntryIds.toSet()
+        }
+    }
+
+    private fun clearPendingCanonicalBaseOrder(captured: List<String>?) {
+        if (captured != null && pendingCanonicalBaseEntryIds == captured) {
+            pendingCanonicalBaseEntryIds = emptyList()
+        }
+    }
+
+    private fun LivePlaybackQueueSnapshot.withRememberedBaseOrder(): LivePlaybackQueueSnapshot {
+        val remembered = rememberedBaseEntryIds
+        if (remembered.isEmpty()) return this
+
+        val liveEntryIds = entries.mapTo(linkedSetOf()) { item -> item.entryId }
+        val normalized = buildList {
+            addAll(remembered.filter(liveEntryIds::contains))
+            addAll(baseEntryIds.filter { entryId ->
+                entryId in liveEntryIds && entryId !in this
+            })
+            addAll(liveEntryIds.filterNot { entryId -> entryId in this })
+        }
+        return copy(baseEntryIds = normalized)
     }
 
     private suspend fun restoreIntoEmptyRuntime(queueId: String) {
@@ -649,6 +780,7 @@ internal class PlaybackQueueCoordinator(
             baseEntryIds = resolved.sortedBy { item -> item.persistedEntry.baseOrder }
                 .map { item -> item.persistedEntry.entryId }
         )
+        rememberedBaseEntryIds = lastLiveSignature?.baseEntryIds.orEmpty()
         persistence.updateSavedPlaybackState(
             queueId = queueId,
             currentEntryId = selected.persistedEntry.entryId,

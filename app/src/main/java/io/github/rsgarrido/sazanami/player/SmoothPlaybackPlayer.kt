@@ -11,6 +11,7 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.SimpleBasePlayer
+import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
@@ -50,6 +51,51 @@ internal data class ResolvedMediaTimelineSeek(
     val positionMs: Long,
     val seekCommand: Int
 )
+
+/** Reports logical shuffle while keeping next/previous navigation on the explicit timeline order. */
+@OptIn(UnstableApi::class)
+private class ExplicitPlaybackOrderTimeline(
+    private val timeline: Timeline
+) : Timeline() {
+    override fun getWindowCount(): Int = timeline.windowCount
+
+    override fun getWindow(
+        windowIndex: Int,
+        window: Timeline.Window,
+        defaultPositionProjectionUs: Long
+    ): Timeline.Window = timeline.getWindow(windowIndex, window, defaultPositionProjectionUs)
+
+    override fun getPeriodCount(): Int = timeline.periodCount
+
+    override fun getPeriod(
+        periodIndex: Int,
+        period: Timeline.Period,
+        setIds: Boolean
+    ): Timeline.Period =
+        timeline.getPeriod(periodIndex, period, setIds)
+
+    override fun getIndexOfPeriod(uid: Any): Int = timeline.getIndexOfPeriod(uid)
+
+    override fun getUidOfPeriod(periodIndex: Int): Any = timeline.getUidOfPeriod(periodIndex)
+
+    override fun getFirstWindowIndex(shuffleModeEnabled: Boolean): Int =
+        timeline.getFirstWindowIndex(false)
+
+    override fun getLastWindowIndex(shuffleModeEnabled: Boolean): Int =
+        timeline.getLastWindowIndex(false)
+
+    override fun getNextWindowIndex(
+        windowIndex: Int,
+        repeatMode: Int,
+        shuffleModeEnabled: Boolean
+    ): Int = timeline.getNextWindowIndex(windowIndex, repeatMode, false)
+
+    override fun getPreviousWindowIndex(
+        windowIndex: Int,
+        repeatMode: Int,
+        shuffleModeEnabled: Boolean
+    ): Int = timeline.getPreviousWindowIndex(windowIndex, repeatMode, false)
+}
 
 internal fun resolveMediaTimelineSeek(
     currentMediaItemIndex: Int,
@@ -297,6 +343,9 @@ internal class SmoothPlaybackPlayer(
     initialPhysicalPlayer: Player,
     private val onBaselineVolumeChanged: (Float) -> Unit = {},
     private val onLogicalCommand: (LogicalPlaybackCommandEvent) -> Unit = {},
+    private val onExternalShuffleModeRequested: (Boolean) -> ListenableFuture<*> = {
+        Futures.immediateVoidFuture()
+    },
     clock: PlaybackTransitionClock = PlaybackTransitionClock {
         SystemClock.elapsedRealtime()
     },
@@ -307,6 +356,32 @@ internal class SmoothPlaybackPlayer(
 
     private var physicalPlayer: Player = initialPhysicalPlayer
     private var artworkOverride: Pair<SmoothPlaybackMediaIdentity, Uri?>? = null
+    private var logicalShuffleModeEnabled = false
+    private var pendingExternalShuffleModeCommands = 0
+    private var explicitTimelineSource: Timeline? = null
+    private var explicitTimeline: Timeline? = null
+
+    /** Marks the next session-issued shuffle setter as a logical external request. */
+    fun markNextShuffleModeCommandExternal() {
+        pendingExternalShuffleModeCommands += 1
+    }
+
+    /** Publishes logical shuffle to session clients without enabling native player shuffle. */
+    fun setLogicalShuffleModeEnabled(enabled: Boolean) {
+        if (physicalPlayer.shuffleModeEnabled) physicalPlayer.shuffleModeEnabled = false
+        if (logicalShuffleModeEnabled == enabled) return
+        logicalShuffleModeEnabled = enabled
+        invalidateState()
+    }
+
+    private fun sessionTimeline(timeline: Timeline): Timeline {
+        if (!logicalShuffleModeEnabled) return timeline
+        if (explicitTimelineSource != timeline) {
+            explicitTimelineSource = timeline
+            explicitTimeline = ExplicitPlaybackOrderTimeline(timeline)
+        }
+        return checkNotNull(explicitTimeline)
+    }
 
     fun updateArtwork(mediaItem: MediaItem, uri: Uri?) {
         val identity = mediaItem.smoothPlaybackIdentity() ?: return
@@ -361,7 +436,7 @@ internal class SmoothPlaybackPlayer(
             .buildUpon()
             // Keep Media3's exact timeline/UIDs; only enrich the current session metadata.
             .setPlaylist(
-                state.timeline,
+                sessionTimeline(state.timeline),
                 state.currentTracks,
                 if (artwork != null) state.currentMetadata.buildUpon()
                     .setArtworkUri(artwork.second).build() else state.currentMetadata
@@ -370,6 +445,7 @@ internal class SmoothPlaybackPlayer(
                 transitionCoordinator.logicalPlayWhenReady,
                 logicalPlayWhenReadyChangeReason
             )
+            .setShuffleModeEnabled(logicalShuffleModeEnabled)
             .setVolume(transitionCoordinator.baselineVolume)
             .setUnmuteVolume(logicalUnmuteVolume)
             .build()
@@ -593,10 +669,16 @@ internal class SmoothPlaybackPlayer(
     override fun handleSetShuffleModeEnabled(
         shuffleModeEnabled: Boolean
     ): ListenableFuture<*> {
-        val claim = LogicalNavigationPolicyTransactions.claimShuffleMode(
-            currentMediaId = physicalPlayer.currentMediaItem?.mediaId,
-            enabled = shuffleModeEnabled
-        )
+        val sessionExternal = pendingExternalShuffleModeCommands > 0
+        if (sessionExternal) pendingExternalShuffleModeCommands -= 1
+        val claim = if (sessionExternal) {
+            null
+        } else {
+            LogicalNavigationPolicyTransactions.claimShuffleMode(
+                currentMediaId = physicalPlayer.currentMediaItem?.mediaId,
+                enabled = shuffleModeEnabled
+            )
+        }
         val internal = acceptSourceOwnedNavigationClaim(claim)
         if (!internal) {
             claim?.let { matched ->
@@ -613,7 +695,15 @@ internal class SmoothPlaybackPlayer(
             value = shuffleModeEnabled.toString()
         )
         if (internal) closeCompletedNavigationTransactionAfterClaim()
-        return super.handleSetShuffleModeEnabled(shuffleModeEnabled)
+        return if (sessionExternal && !internal) {
+            // Sazanami owns the only shuffle order. Keep the physical player unshuffled and route
+            // the requested logical value back to the service without re-entering MediaSession.
+            physicalPlayer.shuffleModeEnabled = false
+            onExternalShuffleModeRequested(shuffleModeEnabled)
+        } else {
+            // Direct service writes and crossfade-owned writes are native normalization only.
+            super.handleSetShuffleModeEnabled(false)
+        }
     }
 
     override fun handleSetPlaybackParameters(

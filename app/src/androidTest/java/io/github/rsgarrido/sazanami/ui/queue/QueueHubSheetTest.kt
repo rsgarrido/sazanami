@@ -6,11 +6,13 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -55,6 +57,27 @@ class QueueHubSheetTest {
         composeRule.onNodeWithText("VIEWING").assertIsDisplayed()
         composeRule.onNodeWithText("Switch to this queue").assertIsDisplayed().performClick()
         composeRule.runOnIdle { assertEquals(1, switchCount) }
+    }
+
+    @Test
+    fun selectionLoadingKeepsPreviousAuthoritativeContentVisibleBehindBlockingOverlay() {
+        composeRule.setContent {
+            MaterialTheme {
+                QueueHubSheet(
+                    state = state("A").copy(isLoading = true),
+                    onDismiss = {},
+                    onQueueSelected = {},
+                    onSwitchSelected = {},
+                    onCreateFromCurrent = {},
+                    onRename = { _, _ -> },
+                    onDelete = {},
+                    onMessageDismissed = {}
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("PLAYING QUEUE - Current / Up Next").assertIsDisplayed()
+        composeRule.onNodeWithTag("queue-hub-selection-loading-overlay").assertIsDisplayed()
     }
 
     @Test
@@ -135,7 +158,7 @@ class QueueHubSheetTest {
     }
 
     @Test
-    fun shuffledQueueExplainsWhyDragReorderIsUnavailable() {
+    fun shuffledQueueExposesDragReorderWithoutTheOldRestriction() {
         val shuffledState = state("B").let { original ->
             original.copy(
                 queues = original.queues.map { queue ->
@@ -160,8 +183,8 @@ class QueueHubSheetTest {
             }
         }
 
-        composeRule.onNodeWithText("Turn off shuffle to reorder this queue.").assertIsDisplayed()
-        composeRule.onAllNodesWithContentDescription("Reorder queue entry").assertCountEquals(0)
+        composeRule.onNodeWithText("Turn off shuffle to reorder this queue.").assertDoesNotExist()
+        composeRule.onAllNodesWithContentDescription("Reorder queue entry").assertCountEquals(1)
     }
 
     @Test

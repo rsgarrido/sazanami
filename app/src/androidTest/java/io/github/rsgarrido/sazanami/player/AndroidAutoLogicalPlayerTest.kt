@@ -93,6 +93,103 @@ class AndroidAutoLogicalPlayerTest {
         } finally { onMain { logical.release(); outgoing.release() } }
     }
 
+    @Test
+    fun genericShuffleRequestsChangeLogicalStateWhileNativeShuffleStaysOff() {
+        lateinit var physical: StatePlayer
+        lateinit var logical: SmoothPlaybackPlayer
+        val requestedStates = mutableListOf<Boolean>()
+        var initialTimeline: Timeline = Timeline.EMPTY
+        onMain {
+            physical = StatePlayer("active", 1)
+            physical.position(42_000L)
+            logical = SmoothPlaybackPlayer(
+                initialPhysicalPlayer = physical,
+                onExternalShuffleModeRequested = { enabled ->
+                    requestedStates += enabled
+                    logical.setLogicalShuffleModeEnabled(enabled)
+                    Futures.immediateVoidFuture()
+                }
+            )
+            initialTimeline = logical.currentTimeline
+
+            logical.markNextShuffleModeCommandExternal()
+            logical.shuffleModeEnabled = true
+        }
+        try {
+            onMain {
+                assertEquals(listOf(true), requestedStates)
+                assertTrue(logical.shuffleModeEnabled)
+                assertFalse(physical.shuffleModeEnabled)
+                assertEquals(1, logical.currentMediaItemIndex)
+                assertEquals(42_000L, logical.currentPosition)
+                assertEquals(initialTimeline.windowCount, logical.currentTimeline.windowCount)
+                assertEquals(
+                    2,
+                    logical.currentTimeline.getNextWindowIndex(
+                        1,
+                        Player.REPEAT_MODE_OFF,
+                        true
+                    )
+                )
+                assertEquals(
+                    listOf("duplicate", "middle", "duplicate"),
+                    (0 until logical.mediaItemCount).map { logical.getMediaItemAt(it).mediaId }
+                )
+
+                // A direct service write is native normalization, not a logical OFF request.
+                logical.shuffleModeEnabled = false
+                assertEquals(listOf(true), requestedStates)
+                assertTrue(logical.shuffleModeEnabled)
+                assertFalse(physical.shuffleModeEnabled)
+
+                logical.markNextShuffleModeCommandExternal()
+                logical.shuffleModeEnabled = false
+            }
+            onMain {
+                assertEquals(listOf(true, false), requestedStates)
+                assertFalse(logical.shuffleModeEnabled)
+                assertFalse(physical.shuffleModeEnabled)
+                assertEquals(1, logical.currentMediaItemIndex)
+                assertEquals(42_000L, logical.currentPosition)
+                assertEquals(initialTimeline.windowCount, logical.currentTimeline.windowCount)
+                assertEquals(
+                    listOf("duplicate", "middle", "duplicate"),
+                    (0 until logical.mediaItemCount).map { logical.getMediaItemAt(it).mediaId }
+                )
+            }
+        } finally { onMain { logical.release() } }
+    }
+
+    @Test
+    fun controllerConnectionSeesServiceOnlyLogicalShuffleWithoutChangingPlayback() {
+        lateinit var physical: StatePlayer
+        lateinit var logical: SmoothPlaybackPlayer
+        var initialTimeline: Timeline = Timeline.EMPTY
+        onMain {
+            physical = StatePlayer("service", 2)
+            physical.position(27_500L)
+            physical.policy(Player.REPEAT_MODE_OFF, true)
+            logical = SmoothPlaybackPlayer(physical)
+            initialTimeline = logical.currentTimeline
+
+            // PlaybackService restores this projection before exposing the session/controller.
+            logical.setLogicalShuffleModeEnabled(true)
+        }
+        try {
+            onMain {
+                assertTrue(logical.shuffleModeEnabled)
+                assertFalse(physical.shuffleModeEnabled)
+                assertEquals(2, logical.currentMediaItemIndex)
+                assertEquals(27_500L, logical.currentPosition)
+                assertEquals(initialTimeline.windowCount, logical.currentTimeline.windowCount)
+                assertEquals(
+                    listOf("duplicate", "middle", "duplicate"),
+                    (0 until logical.mediaItemCount).map { logical.getMediaItemAt(it).mediaId }
+                )
+            }
+        } finally { onMain { logical.release() } }
+    }
+
     private class StatePlayer(role: String, index: Int) : SimpleBasePlayer(Looper.getMainLooper()) {
         private var state = State.Builder()
             .setAvailableCommands(Player.Commands.Builder().addAllCommands().build())
@@ -114,6 +211,13 @@ class AndroidAutoLogicalPlayerTest {
         fun policy(repeatMode: Int, shuffle: Boolean) {
             state = state.buildUpon().setRepeatMode(repeatMode).setShuffleModeEnabled(shuffle).build()
             invalidateState()
+        }
+        override fun handleSetShuffleModeEnabled(
+            shuffleModeEnabled: Boolean
+        ): ListenableFuture<*> {
+            state = state.buildUpon().setShuffleModeEnabled(shuffleModeEnabled).build()
+            invalidateState()
+            return Futures.immediateVoidFuture()
         }
         override fun handleSetVolume(volume: Float): ListenableFuture<*> = Futures.immediateVoidFuture()
         override fun handleRelease(): ListenableFuture<*> = Futures.immediateVoidFuture()

@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -108,7 +109,31 @@ fun QueueHubSheet(
     var deleteQueue by remember { mutableStateOf<PlaybackQueueCardUiState?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val snackbarHostState = remember { SnackbarHostState() }
+    val queueCardListState = rememberLazyListState()
+    val loadingInteractionSource = remember { MutableInteractionSource() }
+    var lastObservedActiveQueueId by remember { mutableStateOf(state.activeQueueId) }
     val latestOnUndoDismissed by rememberUpdatedState<() -> Unit>(onUndoDismissed)
+
+    val queueCardIds = state.queues.map(PlaybackQueueCardUiState::queueId)
+    LaunchedEffect(state.activeQueueId, queueCardIds) {
+        val targetIndex = queueHubActiveQueueScrollTarget(
+            previousActiveQueueId = lastObservedActiveQueueId,
+            activeQueueId = state.activeQueueId,
+            queueIds = queueCardIds
+        )
+        if (targetIndex != null) {
+            lastObservedActiveQueueId = state.activeQueueId
+            val visibleItem = queueCardListState.layoutInfo.visibleItemsInfo
+                .firstOrNull { item -> item.index == targetIndex }
+            val isFullyVisible = visibleItem != null &&
+                visibleItem.offset >= queueCardListState.layoutInfo.viewportStartOffset &&
+                visibleItem.offset + visibleItem.size <=
+                queueCardListState.layoutInfo.viewportEndOffset
+            if (!isFullyVisible) queueCardListState.animateScrollToItem(targetIndex)
+        } else if (state.activeQueueId == null) {
+            lastObservedActiveQueueId = null
+        }
+    }
 
     DisposableEffect(Unit) {
         onDispose { latestOnUndoDismissed() }
@@ -192,7 +217,10 @@ fun QueueHubSheet(
             }
 
             when {
-                state.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                state.isLoading && state.queues.isEmpty() -> Box(
+                    Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
                     CircularProgressIndicator()
                 }
                 state.queues.isEmpty() -> Box(
@@ -203,6 +231,7 @@ fun QueueHubSheet(
                 }
                 else -> {
                     LazyRow(
+                        state = queueCardListState,
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
@@ -285,7 +314,7 @@ fun QueueHubSheet(
                         }
                     } else {
                         val selectedQueueId = selected?.queueId
-                        val reorderEnabled = selected != null && !selected.shuffleEnabled
+                        val reorderEnabled = selected != null
                         var displayedEntries by remember(
                             selectedQueueId,
                             state.selectedEntries
@@ -302,14 +331,6 @@ fun QueueHubSheet(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
-                            )
-                        }
-                        if (selected?.shuffleEnabled == true) {
-                            Text(
-                                text = "Turn off shuffle to reorder this queue.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
                             )
                         }
                         val listState = rememberLazyListState()
@@ -513,6 +534,22 @@ fun QueueHubSheet(
                 }
             }
         }
+        if (state.isLoading && state.queues.isNotEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.36f))
+                    .clickable(
+                        interactionSource = loadingInteractionSource,
+                        indication = null,
+                        onClick = {}
+                    )
+                    .testTag("queue-hub-selection-loading-overlay"),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+        }
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier
@@ -551,6 +588,15 @@ fun QueueHubSheet(
             }
         )
     }
+}
+
+internal fun queueHubActiveQueueScrollTarget(
+    previousActiveQueueId: String?,
+    activeQueueId: String?,
+    queueIds: List<String>
+): Int? {
+    if (activeQueueId == null || activeQueueId == previousActiveQueueId) return null
+    return queueIds.indexOf(activeQueueId).takeIf { index -> index >= 0 }
 }
 
 @Composable

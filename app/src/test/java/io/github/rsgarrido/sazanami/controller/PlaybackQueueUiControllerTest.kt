@@ -56,6 +56,56 @@ class PlaybackQueueUiControllerTest {
     }
 
     @Test
+    fun staleLiveSnapshotCannotSupplyAnotherQueueCardsRepresentativeTrack() {
+        val firstQueueSong = song(1L)
+        val secondQueueSong = song(2L)
+        val first = queue("A", "First", "a", firstQueueSong)
+        val second = queue("B", "Second", "b", secondQueueSong)
+
+        val state = buildState(
+            loadedQueues = listOf(first, second),
+            activeQueueId = "B",
+            selectedQueueId = "B",
+            liveActiveQueue = LiveActiveQueueForUi(
+                songs = listOf(firstQueueSong),
+                entryIds = listOf("a"),
+                currentEntryId = "a",
+                queueId = "A"
+            )
+        )
+
+        val activeCard = state.queues.first { queue -> queue.queueId == "B" }
+        assertEquals(secondQueueSong, activeCard.currentTrack)
+        assertEquals(secondQueueSong, activeCard.representativeTrack)
+        assertEquals(listOf("b"), state.selectedEntries.map { entry -> entry.entryId })
+    }
+
+    @Test
+    fun timelineHandoffCannotReplaceActiveCardArtworkWhileQueueSwitchIsInProgress() {
+        val persistedActiveSong = song(1L)
+        val incomingQueueSong = song(2L)
+        val active = queue("A", "First", "a", persistedActiveSong)
+
+        val state = buildState(
+            loadedQueues = listOf(active),
+            activeQueueId = "A",
+            selectedQueueId = "A",
+            liveActiveQueue = LiveActiveQueueForUi(
+                songs = listOf(incomingQueueSong),
+                entryIds = listOf("incoming"),
+                currentEntryId = "incoming",
+                queueId = "A"
+            ),
+            previous = PlaybackQueueHubUiState(isSwitching = true)
+        )
+
+        val activeCard = state.queues.single()
+        assertEquals(persistedActiveSong, activeCard.currentTrack)
+        assertEquals(persistedActiveSong, activeCard.representativeTrack)
+        assertEquals(listOf("a"), state.selectedEntries.map { entry -> entry.entryId })
+    }
+
+    @Test
     fun structuralLiveQueueMutationRefreshesTheActiveQueueWithoutARoomEmission() {
         val first = song(1L)
         val added = song(2L)
@@ -94,7 +144,8 @@ class PlaybackQueueUiControllerTest {
                 playbackStates = playbackStates,
                 timelineRevisions = timelineRevisions,
                 activeQueueEntryIds = { entryIds },
-                activeQueueCurrentEntryId = { "first" }
+                activeQueueCurrentEntryId = { "first" },
+                activeQueueId = { "A" }
             ).collect { emission -> emissions.send(emission) }
         }
         val initial = emissions.receive()
@@ -108,6 +159,7 @@ class PlaybackQueueUiControllerTest {
         assertEquals(listOf("first"), initial?.entryIds)
         assertEquals(listOf("first", "added"), revised?.entryIds)
         assertEquals(listOf(1L, 2L), revised?.songs?.map(Song::id))
+        assertEquals("A", revised?.queueId)
         assertEquals(first, playbackStates.value.currentSong)
     }
 
@@ -165,7 +217,8 @@ class PlaybackQueueUiControllerTest {
             liveActiveQueue = LiveActiveQueueForUi(
                 songs = listOf(song(1L), song(2L), song(3L)),
                 entryIds = listOf("first", "survivor", "removed-ghost"),
-                currentEntryId = "first"
+                currentEntryId = "first",
+                queueId = "A"
             )
         )
 
@@ -208,7 +261,8 @@ class PlaybackQueueUiControllerTest {
             liveActiveQueue = LiveActiveQueueForUi(
                 songs = songs.drop(2),
                 entryIds = listOf("A", "B", "C", "D"),
-                currentEntryId = "C"
+                currentEntryId = "C",
+                queueId = "A"
             )
         )
 
@@ -219,6 +273,111 @@ class PlaybackQueueUiControllerTest {
         assertEquals(4, state.selectedQueue?.entryCount)
         assertEquals(3, state.selectedQueue?.currentPosition)
     }
+
+    @Test
+    fun liveOnlyActiveProjectionAlignsSongsAfterTheHiddenTimelinePrefix() {
+        val current = song(3L)
+        val next = song(4L)
+
+        val entries = buildLiveActiveQueueEntries(
+            persistedEntries = emptyList(),
+            liveSongs = listOf(current, next),
+            liveEntryIds = listOf("A", "B", "C", "D"),
+            liveCurrentEntryId = "C"
+        )
+
+        assertEquals(listOf("C", "D"), entries.map { it.entryId })
+        assertEquals(listOf(current, next), entries.map { it.song })
+        assertTrue(entries.first().isCurrent)
+    }
+
+    @Test
+    fun activePersistedFallbackHidesPlayedPrefixAndKeepsFullCardPosition() {
+        val songs = (1L..5L).map(::song)
+        val loaded = queueWithEntries(
+            id = "A",
+            name = "A",
+            currentEntry = "C",
+            entries = listOf("A", "B", "C", "D", "E").zip(songs)
+        ).let { queue ->
+            queue.copy(queue = queue.queue.copy(shuffleEnabled = true))
+        }
+
+        val state = buildState(
+            loadedQueues = listOf(loaded),
+            activeQueueId = "A",
+            selectedQueueId = "A",
+            liveActiveQueue = null
+        )
+
+        assertEquals(listOf("C", "D", "E"), state.selectedEntries.map { it.entryId })
+        assertEquals(listOf("C", "D", "E"), state.activeEntries.map { it.entryId })
+        assertTrue(state.selectedEntries.first().isCurrent)
+        assertEquals(5, state.selectedQueue?.entryCount)
+        assertEquals(3, state.selectedQueue?.currentPosition)
+        assertTrue(state.selectedQueue?.shuffleEnabled == true)
+    }
+
+    @Test
+    fun switchingAwayMakesFormerActiveQueueShowItsCompleteSavedOrderAgain() = runBlocking {
+        val operations = FakeOperations(activeQueueId = "A").apply {
+            add(queueWithEntries(
+                id = "A",
+                name = "A",
+                currentEntry = "A3",
+                entries = listOf("A1", "A2", "A3", "A4").zip((1L..4L).map(::song))
+            ))
+            add(queueWithEntries(
+                id = "B",
+                name = "B",
+                currentEntry = "B2",
+                entries = listOf("B1", "B2", "B3").zip((5L..7L).map(::song))
+            ))
+        }
+        val controller = controller(operations)
+
+        assertEquals(listOf("A3", "A4"), controller.state.value.selectedEntries.map { it.entryId })
+        controller.selectQueue("B")
+        assertEquals(listOf("B1", "B2", "B3"), controller.state.value.selectedEntries.map { it.entryId })
+
+        controller.switchSelectedQueue().join()
+        assertEquals(listOf("B2", "B3"), controller.state.value.selectedEntries.map { it.entryId })
+
+        controller.selectQueue("A")
+        assertEquals(
+            listOf("A1", "A2", "A3", "A4"),
+            controller.state.value.selectedEntries.map { it.entryId }
+        )
+    }
+
+    @Test
+    fun activeProjectedReorderUsesFullPersistedCurrentOffsetAndStableDuplicateEntryId() =
+        runBlocking {
+            val duplicate = song(7L)
+            val operations = FakeOperations(activeQueueId = "A").apply {
+                add(queueWithEntries(
+                    id = "A",
+                    name = "A",
+                    currentEntry = "current",
+                    entries = listOf(
+                        "duplicate-1" to duplicate,
+                        "before" to song(8L),
+                        "current" to song(9L),
+                        "next" to song(10L),
+                        "duplicate-2" to duplicate
+                    )
+                ))
+            }
+            val controller = controller(operations)
+
+            assertEquals(
+                listOf("current", "next", "duplicate-2"),
+                controller.state.value.selectedEntries.map { it.entryId }
+            )
+            controller.reorderEntry("A", "duplicate-2", 1).join()
+
+            assertEquals(Triple("A", "duplicate-2", 3), operations.lastReorder)
+        }
 
     @Test
     fun activeDuplicateInstancesRemainAddressedByStableEntryIdAfterJumping() = runBlocking {
@@ -590,6 +749,7 @@ class PlaybackQueueUiControllerTest {
         var switchResult = true
         var removeEntryCount = 0
         var reorderEntryCount = 0
+        var lastReorder: Triple<String, String, Int>? = null
         var playedEntry: Pair<String, String>? = null
         var removeSucceeds = true
         var removeGate: CompletableDeferred<Unit>? = null
@@ -602,11 +762,18 @@ class PlaybackQueueUiControllerTest {
         }
 
         fun publishLive(vararg songs: Song) {
-            liveQueueFlow.value = LiveActiveQueueForUi(songs.toList())
+            liveQueueFlow.value = LiveActiveQueueForUi(
+                songs = songs.toList(),
+                queueId = activeQueueId
+            )
         }
 
         fun publishLiveWithIds(entryIds: List<String>, vararg songs: Song) {
-            liveQueueFlow.value = LiveActiveQueueForUi(songs.toList(), entryIds)
+            liveQueueFlow.value = LiveActiveQueueForUi(
+                songs = songs.toList(),
+                entryIds = entryIds,
+                queueId = activeQueueId
+            )
         }
 
         fun publishLiveTimeline(
@@ -617,7 +784,8 @@ class PlaybackQueueUiControllerTest {
             liveQueueFlow.value = LiveActiveQueueForUi(
                 songs = songs.toList(),
                 entryIds = entryIds,
-                currentEntryId = currentEntryId
+                currentEntryId = currentEntryId,
+                queueId = activeQueueId
             )
         }
 
@@ -716,6 +884,7 @@ class PlaybackQueueUiControllerTest {
             toPlaybackOrder: Int
         ): Boolean {
             reorderEntryCount += 1
+            lastReorder = Triple(queueId, entryId, toPlaybackOrder)
             return true
         }
 

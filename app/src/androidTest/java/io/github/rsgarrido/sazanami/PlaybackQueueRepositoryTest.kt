@@ -337,6 +337,42 @@ class PlaybackQueueRepositoryTest {
         assertEquals(9_999L, reordered.queue.currentPositionMs)
     }
 
+    @Test
+    fun shuffledManualReorderUpdatesPlaybackOnlyAndPreservesCanonicalBaseAndResumeState() =
+        runBlocking {
+            val track = seedIdentity("Shuffled reorder")
+            repository.createQueue(
+                queueId = "shuffled",
+                displayName = "Shuffled",
+                entries = listOf(
+                    entry("one", track, base = 0, playback = 1),
+                    entry("two", track, base = 1, playback = 2),
+                    entry("three", track, base = 2, playback = 0)
+                ),
+                currentEntryId = "two",
+                currentPositionMs = 9_999L,
+                shuffleEnabled = true
+            )
+
+            val reordered = checkNotNull(
+                repository.reorderEntry(
+                    "shuffled",
+                    "two",
+                    1,
+                    updateBaseOrder = false
+                )
+            )
+
+            assertEquals(listOf("three", "two", "one"), reordered.entries.map { it.entryId })
+            assertEquals(
+                listOf("one", "two", "three"),
+                reordered.entries.sortedBy { it.baseOrder }.map { it.entryId }
+            )
+            assertEquals("two", reordered.queue.currentEntryId)
+            assertEquals(9_999L, reordered.queue.currentPositionMs)
+            assertTrue(reordered.queue.shuffleEnabled)
+        }
+
     private suspend fun seedIdentity(label: String): Long {
         return database.listeningTrackIdentityDao().insert(
             ListeningTrackIdentityEntity(
