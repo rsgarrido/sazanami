@@ -12,6 +12,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -56,6 +57,27 @@ class QueueHubSheetTest {
         composeRule.onNodeWithText("VIEWING").assertIsDisplayed()
         composeRule.onNodeWithText("Switch to this queue").assertIsDisplayed().performClick()
         composeRule.runOnIdle { assertEquals(1, switchCount) }
+    }
+
+    @Test
+    fun selectionLoadingKeepsPreviousAuthoritativeContentVisibleBehindBlockingOverlay() {
+        composeRule.setContent {
+            MaterialTheme {
+                QueueHubSheet(
+                    state = state("A").copy(isLoading = true),
+                    onDismiss = {},
+                    onQueueSelected = {},
+                    onSwitchSelected = {},
+                    onCreateFromCurrent = {},
+                    onRename = { _, _ -> },
+                    onDelete = {},
+                    onMessageDismissed = {}
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("PLAYING QUEUE - Current / Up Next").assertIsDisplayed()
+        composeRule.onNodeWithTag("queue-hub-selection-loading-overlay").assertIsDisplayed()
     }
 
     @Test

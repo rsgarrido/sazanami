@@ -56,6 +56,56 @@ class PlaybackQueueUiControllerTest {
     }
 
     @Test
+    fun staleLiveSnapshotCannotSupplyAnotherQueueCardsRepresentativeTrack() {
+        val firstQueueSong = song(1L)
+        val secondQueueSong = song(2L)
+        val first = queue("A", "First", "a", firstQueueSong)
+        val second = queue("B", "Second", "b", secondQueueSong)
+
+        val state = buildState(
+            loadedQueues = listOf(first, second),
+            activeQueueId = "B",
+            selectedQueueId = "B",
+            liveActiveQueue = LiveActiveQueueForUi(
+                songs = listOf(firstQueueSong),
+                entryIds = listOf("a"),
+                currentEntryId = "a",
+                queueId = "A"
+            )
+        )
+
+        val activeCard = state.queues.first { queue -> queue.queueId == "B" }
+        assertEquals(secondQueueSong, activeCard.currentTrack)
+        assertEquals(secondQueueSong, activeCard.representativeTrack)
+        assertEquals(listOf("b"), state.selectedEntries.map { entry -> entry.entryId })
+    }
+
+    @Test
+    fun timelineHandoffCannotReplaceActiveCardArtworkWhileQueueSwitchIsInProgress() {
+        val persistedActiveSong = song(1L)
+        val incomingQueueSong = song(2L)
+        val active = queue("A", "First", "a", persistedActiveSong)
+
+        val state = buildState(
+            loadedQueues = listOf(active),
+            activeQueueId = "A",
+            selectedQueueId = "A",
+            liveActiveQueue = LiveActiveQueueForUi(
+                songs = listOf(incomingQueueSong),
+                entryIds = listOf("incoming"),
+                currentEntryId = "incoming",
+                queueId = "A"
+            ),
+            previous = PlaybackQueueHubUiState(isSwitching = true)
+        )
+
+        val activeCard = state.queues.single()
+        assertEquals(persistedActiveSong, activeCard.currentTrack)
+        assertEquals(persistedActiveSong, activeCard.representativeTrack)
+        assertEquals(listOf("a"), state.selectedEntries.map { entry -> entry.entryId })
+    }
+
+    @Test
     fun structuralLiveQueueMutationRefreshesTheActiveQueueWithoutARoomEmission() {
         val first = song(1L)
         val added = song(2L)
@@ -94,7 +144,8 @@ class PlaybackQueueUiControllerTest {
                 playbackStates = playbackStates,
                 timelineRevisions = timelineRevisions,
                 activeQueueEntryIds = { entryIds },
-                activeQueueCurrentEntryId = { "first" }
+                activeQueueCurrentEntryId = { "first" },
+                activeQueueId = { "A" }
             ).collect { emission -> emissions.send(emission) }
         }
         val initial = emissions.receive()
@@ -108,6 +159,7 @@ class PlaybackQueueUiControllerTest {
         assertEquals(listOf("first"), initial?.entryIds)
         assertEquals(listOf("first", "added"), revised?.entryIds)
         assertEquals(listOf(1L, 2L), revised?.songs?.map(Song::id))
+        assertEquals("A", revised?.queueId)
         assertEquals(first, playbackStates.value.currentSong)
     }
 
@@ -165,7 +217,8 @@ class PlaybackQueueUiControllerTest {
             liveActiveQueue = LiveActiveQueueForUi(
                 songs = listOf(song(1L), song(2L), song(3L)),
                 entryIds = listOf("first", "survivor", "removed-ghost"),
-                currentEntryId = "first"
+                currentEntryId = "first",
+                queueId = "A"
             )
         )
 
@@ -208,7 +261,8 @@ class PlaybackQueueUiControllerTest {
             liveActiveQueue = LiveActiveQueueForUi(
                 songs = songs.drop(2),
                 entryIds = listOf("A", "B", "C", "D"),
-                currentEntryId = "C"
+                currentEntryId = "C",
+                queueId = "A"
             )
         )
 
@@ -708,11 +762,18 @@ class PlaybackQueueUiControllerTest {
         }
 
         fun publishLive(vararg songs: Song) {
-            liveQueueFlow.value = LiveActiveQueueForUi(songs.toList())
+            liveQueueFlow.value = LiveActiveQueueForUi(
+                songs = songs.toList(),
+                queueId = activeQueueId
+            )
         }
 
         fun publishLiveWithIds(entryIds: List<String>, vararg songs: Song) {
-            liveQueueFlow.value = LiveActiveQueueForUi(songs.toList(), entryIds)
+            liveQueueFlow.value = LiveActiveQueueForUi(
+                songs = songs.toList(),
+                entryIds = entryIds,
+                queueId = activeQueueId
+            )
         }
 
         fun publishLiveTimeline(
@@ -723,7 +784,8 @@ class PlaybackQueueUiControllerTest {
             liveQueueFlow.value = LiveActiveQueueForUi(
                 songs = songs.toList(),
                 entryIds = entryIds,
-                currentEntryId = currentEntryId
+                currentEntryId = currentEntryId,
+                queueId = activeQueueId
             )
         }
 

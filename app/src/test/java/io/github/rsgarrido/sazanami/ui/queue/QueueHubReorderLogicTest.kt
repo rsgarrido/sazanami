@@ -2,10 +2,38 @@ package io.github.rsgarrido.sazanami.ui.queue
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class QueueHubReorderLogicTest {
+    @Test
+    fun activeQueueChangeTargetsItsExactCardIndexOnce() {
+        val queueIds = listOf("A", "B", "C", "D")
+
+        assertEquals(
+            3,
+            queueHubActiveQueueScrollTarget(
+                previousActiveQueueId = "A",
+                activeQueueId = "D",
+                queueIds = queueIds
+            )
+        )
+        assertNull(
+            queueHubActiveQueueScrollTarget(
+                previousActiveQueueId = "D",
+                activeQueueId = "D",
+                queueIds = queueIds
+            )
+        )
+    }
+
+    @Test
+    fun activeQueueScrollIgnoresMissingTargetsAndUnrelatedQueueUpdates() {
+        assertNull(queueHubActiveQueueScrollTarget("A", "missing", listOf("A", "B")))
+        assertNull(queueHubActiveQueueScrollTarget("B", "B", listOf("C", "B", "A")))
+    }
+
     @Test
     fun activeTargetClampsImmediatelyAfterCurrent() {
         assertEquals(
