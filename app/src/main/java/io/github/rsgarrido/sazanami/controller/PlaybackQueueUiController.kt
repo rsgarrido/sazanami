@@ -543,6 +543,13 @@ internal class PlaybackQueueUiController(
             val currentTimelineIndex = liveBefore?.entryIds
                 ?.indexOf(liveBefore.currentEntryId)
                 ?.takeIf { index -> index >= 0 }
+                ?: latestLoadedQueues.firstOrNull { loaded ->
+                    loaded.queue.queueId == queueId
+                }?.let { loaded ->
+                    loaded.entries.indexOfFirst { item ->
+                        item.entry.entryId == loaded.queue.currentEntryId
+                    }.takeIf { index -> index >= 0 }
+                }
                 ?: 0
             val runtimePlaybackOrder = if (activeFromIndex != null) {
                 currentTimelineIndex + toPlaybackOrder
@@ -698,12 +705,21 @@ internal fun buildState(
             liveCurrentEntryId = liveQueue.currentEntryId
         )
     }
-    val selectedEntries = liveSelectedEntries ?: selected?.entries.orEmpty().map { item ->
-        PlaybackQueueEntryUiState(
-            entryId = item.entry.entryId,
-            song = item.song,
-            isCurrent = item.entry.entryId == selectedCurrentEntryId
+    val selectedEntries = liveSelectedEntries ?: if (
+        selected != null && selected.queue.queueId == activeQueueId
+    ) {
+        buildPersistedActiveQueueEntries(
+            persistedEntries = selected.entries,
+            currentEntryId = selectedCurrentEntryId
         )
+    } else {
+        selected?.entries.orEmpty().map { item ->
+            PlaybackQueueEntryUiState(
+                entryId = item.entry.entryId,
+                song = item.song,
+                isCurrent = item.entry.entryId == selectedCurrentEntryId
+            )
+        }
     }
     val active = loadedQueues.firstOrNull { loaded -> loaded.queue.queueId == activeQueueId }
     val activeCurrentEntryId = active?.queue?.currentEntryId
@@ -714,13 +730,10 @@ internal fun buildState(
             liveEntryIds = liveQueue.entryIds,
             liveCurrentEntryId = liveQueue.currentEntryId
         )
-    } ?: active?.entries.orEmpty().map { item ->
-        PlaybackQueueEntryUiState(
-            entryId = item.entry.entryId,
-            song = item.song,
-            isCurrent = item.entry.entryId == activeCurrentEntryId
-        )
-    }
+    } ?: buildPersistedActiveQueueEntries(
+        persistedEntries = active?.entries.orEmpty(),
+        currentEntryId = activeCurrentEntryId
+    )
     return previous.copy(
         isLoading = false,
         queues = cards,
@@ -739,13 +752,13 @@ internal fun buildLiveActiveQueueEntries(
     liveCurrentEntryId: String? = null
 ): List<PlaybackQueueEntryUiState> {
     val persistedByEntryId = persistedEntries.associateBy { item -> item.entry.entryId }
-    val liveSongByEntryId = liveEntryIds.zip(liveSongs).toMap()
     val currentTimelineIndex = liveEntryIds.indexOf(liveCurrentEntryId)
     val timelineEntryIds = if (currentTimelineIndex >= 0) {
         liveEntryIds.drop(currentTimelineIndex)
     } else {
         liveEntryIds
     }
+    val liveSongByEntryId = timelineEntryIds.zip(liveSongs).toMap()
     val visibleEntryIds = if (persistedEntries.isEmpty()) {
         timelineEntryIds
     } else {
@@ -776,6 +789,27 @@ internal fun buildLiveActiveQueueEntries(
             entryId = entryId,
             song = song,
             isCurrent = index == 0
+        )
+    }
+}
+
+internal fun buildPersistedActiveQueueEntries(
+    persistedEntries: List<LoadedQueueEntryForUi>,
+    currentEntryId: String?
+): List<PlaybackQueueEntryUiState> {
+    val currentIndex = persistedEntries.indexOfFirst { item ->
+        item.entry.entryId == currentEntryId
+    }
+    val visibleEntries = if (currentIndex >= 0) {
+        persistedEntries.drop(currentIndex)
+    } else {
+        persistedEntries
+    }
+    return visibleEntries.map { item ->
+        PlaybackQueueEntryUiState(
+            entryId = item.entry.entryId,
+            song = item.song,
+            isCurrent = item.entry.entryId == currentEntryId
         )
     }
 }

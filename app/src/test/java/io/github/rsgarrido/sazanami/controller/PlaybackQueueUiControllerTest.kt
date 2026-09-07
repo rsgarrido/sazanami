@@ -221,6 +221,111 @@ class PlaybackQueueUiControllerTest {
     }
 
     @Test
+    fun liveOnlyActiveProjectionAlignsSongsAfterTheHiddenTimelinePrefix() {
+        val current = song(3L)
+        val next = song(4L)
+
+        val entries = buildLiveActiveQueueEntries(
+            persistedEntries = emptyList(),
+            liveSongs = listOf(current, next),
+            liveEntryIds = listOf("A", "B", "C", "D"),
+            liveCurrentEntryId = "C"
+        )
+
+        assertEquals(listOf("C", "D"), entries.map { it.entryId })
+        assertEquals(listOf(current, next), entries.map { it.song })
+        assertTrue(entries.first().isCurrent)
+    }
+
+    @Test
+    fun activePersistedFallbackHidesPlayedPrefixAndKeepsFullCardPosition() {
+        val songs = (1L..5L).map(::song)
+        val loaded = queueWithEntries(
+            id = "A",
+            name = "A",
+            currentEntry = "C",
+            entries = listOf("A", "B", "C", "D", "E").zip(songs)
+        ).let { queue ->
+            queue.copy(queue = queue.queue.copy(shuffleEnabled = true))
+        }
+
+        val state = buildState(
+            loadedQueues = listOf(loaded),
+            activeQueueId = "A",
+            selectedQueueId = "A",
+            liveActiveQueue = null
+        )
+
+        assertEquals(listOf("C", "D", "E"), state.selectedEntries.map { it.entryId })
+        assertEquals(listOf("C", "D", "E"), state.activeEntries.map { it.entryId })
+        assertTrue(state.selectedEntries.first().isCurrent)
+        assertEquals(5, state.selectedQueue?.entryCount)
+        assertEquals(3, state.selectedQueue?.currentPosition)
+        assertTrue(state.selectedQueue?.shuffleEnabled == true)
+    }
+
+    @Test
+    fun switchingAwayMakesFormerActiveQueueShowItsCompleteSavedOrderAgain() = runBlocking {
+        val operations = FakeOperations(activeQueueId = "A").apply {
+            add(queueWithEntries(
+                id = "A",
+                name = "A",
+                currentEntry = "A3",
+                entries = listOf("A1", "A2", "A3", "A4").zip((1L..4L).map(::song))
+            ))
+            add(queueWithEntries(
+                id = "B",
+                name = "B",
+                currentEntry = "B2",
+                entries = listOf("B1", "B2", "B3").zip((5L..7L).map(::song))
+            ))
+        }
+        val controller = controller(operations)
+
+        assertEquals(listOf("A3", "A4"), controller.state.value.selectedEntries.map { it.entryId })
+        controller.selectQueue("B")
+        assertEquals(listOf("B1", "B2", "B3"), controller.state.value.selectedEntries.map { it.entryId })
+
+        controller.switchSelectedQueue().join()
+        assertEquals(listOf("B2", "B3"), controller.state.value.selectedEntries.map { it.entryId })
+
+        controller.selectQueue("A")
+        assertEquals(
+            listOf("A1", "A2", "A3", "A4"),
+            controller.state.value.selectedEntries.map { it.entryId }
+        )
+    }
+
+    @Test
+    fun activeProjectedReorderUsesFullPersistedCurrentOffsetAndStableDuplicateEntryId() =
+        runBlocking {
+            val duplicate = song(7L)
+            val operations = FakeOperations(activeQueueId = "A").apply {
+                add(queueWithEntries(
+                    id = "A",
+                    name = "A",
+                    currentEntry = "current",
+                    entries = listOf(
+                        "duplicate-1" to duplicate,
+                        "before" to song(8L),
+                        "current" to song(9L),
+                        "next" to song(10L),
+                        "duplicate-2" to duplicate
+                    )
+                ))
+            }
+            val controller = controller(operations)
+
+            assertEquals(
+                listOf("current", "next", "duplicate-2"),
+                controller.state.value.selectedEntries.map { it.entryId }
+            )
+            controller.reorderEntry("A", "duplicate-2", 1).join()
+
+            assertEquals(Triple("A", "duplicate-2", 3), operations.lastReorder)
+        }
+
+    @Test
     fun activeDuplicateInstancesRemainAddressedByStableEntryIdAfterJumping() = runBlocking {
         val duplicate = song(7L)
         val middle = song(8L)
@@ -590,6 +695,7 @@ class PlaybackQueueUiControllerTest {
         var switchResult = true
         var removeEntryCount = 0
         var reorderEntryCount = 0
+        var lastReorder: Triple<String, String, Int>? = null
         var playedEntry: Pair<String, String>? = null
         var removeSucceeds = true
         var removeGate: CompletableDeferred<Unit>? = null
@@ -716,6 +822,7 @@ class PlaybackQueueUiControllerTest {
             toPlaybackOrder: Int
         ): Boolean {
             reorderEntryCount += 1
+            lastReorder = Triple(queueId, entryId, toPlaybackOrder)
             return true
         }
 
