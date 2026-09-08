@@ -90,6 +90,7 @@ class PlaybackService : MediaLibraryService() {
     private lateinit var listeningAdapter: PlaybackServiceListeningAdapter
     private lateinit var playbackQueueCoordinator: PlaybackQueueCoordinator
     private var nowPlayingWidgetPublisher: NowPlayingWidgetPublisher? = null
+    private var playbackQueueRestorationComplete = false
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var appPreferencesRepository: AppPreferencesRepository
     private lateinit var androidAutoCatalogRepository: AndroidAutoCatalogRepository
@@ -667,13 +668,13 @@ class PlaybackService : MediaLibraryService() {
         serviceScope.launch {
             try {
                 playbackQueueCoordinator.initialize()
+                playbackQueueRestorationComplete = true
+                nowPlayingWidgetPublisher?.onQueueRestorationCompleted()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
                 // A temporarily unavailable cached queue must not take down the browse service.
                 AndroidAutoDiagnostics.log("queue restore unavailable type=${error.javaClass.simpleName}")
-            } finally {
-                nowPlayingWidgetPublisher?.requestUpdate()
             }
         }
         bindActivePipeline(activePipeline, transition = null)
@@ -709,7 +710,8 @@ class PlaybackService : MediaLibraryService() {
         nowPlayingWidgetPublisher = NowPlayingWidgetPublisher(
             context = this,
             player = sessionPlayer,
-            scope = serviceScope
+            scope = serviceScope,
+            restorationComplete = playbackQueueRestorationComplete
         ).also(NowPlayingWidgetPublisher::attach)
         AndroidAutoDiagnostics.log("session elapsedMs=${SystemClock.elapsedRealtime() - sessionStarted}")
         sessionPlayer.addListener(AndroidAutoPlayerDiagnostics(sessionPlayer))

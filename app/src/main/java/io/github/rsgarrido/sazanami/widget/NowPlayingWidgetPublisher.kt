@@ -3,7 +3,6 @@ package io.github.rsgarrido.sazanami.widget
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import androidx.glance.appwidget.updateAll
 import androidx.media3.common.Player
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -45,11 +44,37 @@ private val MEANINGFUL_WIDGET_PLAYER_EVENTS = intArrayOf(
 internal fun isMeaningfulWidgetPlayerEvent(event: Int): Boolean =
     event in MEANINGFUL_WIDGET_PLAYER_EVENTS
 
+internal enum class WidgetEmptyStateDisposition { PUBLISH, RETAIN_LAST_PRESENTATION }
+
+internal fun widgetEmptyStateDisposition(
+    snapshot: NowPlayingWidgetSnapshot,
+    restorationComplete: Boolean
+): WidgetEmptyStateDisposition = if (!snapshot.hasMedia && !restorationComplete) {
+    WidgetEmptyStateDisposition.RETAIN_LAST_PRESENTATION
+} else {
+    WidgetEmptyStateDisposition.PUBLISH
+}
+
+internal class WidgetSnapshotDeduplicator {
+    private var lastPublished: NowPlayingWidgetSnapshot? = null
+
+    fun shouldPublish(snapshot: NowPlayingWidgetSnapshot): Boolean {
+        if (snapshot == lastPublished) return false
+        lastPublished = snapshot
+        return true
+    }
+
+    fun reset() {
+        lastPublished = null
+    }
+}
+
 /** Publishes presentation state from the exact Player owned by MediaLibrarySession. */
 class NowPlayingWidgetPublisher(
     context: Context,
     private val player: Player,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    restorationComplete: Boolean
 ) : Player.Listener {
     private val appContext = context.applicationContext
     private val store = NowPlayingWidgetSnapshotStore(appContext)
@@ -62,7 +87,8 @@ class NowPlayingWidgetPublisher(
         update = { if (attached) scope.launch { publishCurrent() } }
     )
     private var attached = false
-    private var lastPublished: NowPlayingWidgetSnapshot? = null
+    private var restorationComplete = restorationComplete
+    private val deduplicator = WidgetSnapshotDeduplicator()
     private var activeArtworkDecodeKey: String? = null
 
     fun attach() {
@@ -73,6 +99,12 @@ class NowPlayingWidgetPublisher(
     }
 
     fun requestUpdate() = coalescer.request()
+
+    fun onQueueRestorationCompleted() {
+        if (restorationComplete) return
+        restorationComplete = true
+        requestUpdate()
+    }
 
     fun close() {
         attached = false
@@ -87,6 +119,12 @@ class NowPlayingWidgetPublisher(
     private suspend fun publishCurrent() {
         if (!attached) return
         val raw = player.toNowPlayingWidgetSnapshot()
+        if (
+            widgetEmptyStateDisposition(raw, restorationComplete) ==
+            WidgetEmptyStateDisposition.RETAIN_LAST_PRESENTATION
+        ) {
+            return
+        }
         val cachedPath = artwork.cachedPath(raw.artworkUri)
         val snapshot = raw.copy(artworkPath = cachedPath)
         publishIfChanged(snapshot)
@@ -113,12 +151,11 @@ class NowPlayingWidgetPublisher(
     }
 
     private suspend fun publishIfChanged(snapshot: NowPlayingWidgetSnapshot) {
-        if (snapshot == lastPublished) return
-        lastPublished = snapshot
+        if (!deduplicator.shouldPublish(snapshot)) return
         NowPlayingWidgetLiveState.snapshot = snapshot
         store.write(snapshot)
-        runCatching { NowPlayingWidget().updateAll(appContext) }
-            .onFailure { lastPublished = null }
+        runCatching { invalidateNowPlayingWidgetPresentations(appContext) }
+            .onFailure { deduplicator.reset() }
     }
 
     private companion object {

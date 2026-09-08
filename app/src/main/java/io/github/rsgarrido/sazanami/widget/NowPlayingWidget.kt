@@ -7,6 +7,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.datastore.preferences.core.Preferences
 import androidx.glance.ColorFilter
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
@@ -14,13 +15,16 @@ import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.LocalSize
 import androidx.glance.LocalContext
+import androidx.glance.currentState
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
+import androidx.glance.state.PreferencesGlanceStateDefinition
 import androidx.glance.background
+import androidx.glance.color.ColorProvider
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
@@ -38,7 +42,6 @@ import androidx.glance.action.clickable
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
-import androidx.glance.unit.ColorProvider
 import io.github.rsgarrido.sazanami.MainActivity
 import io.github.rsgarrido.sazanami.R
 
@@ -52,14 +55,17 @@ internal fun widgetPlayPauseDescriptionResource(isPlaying: Boolean): Int =
     if (isPlaying) R.string.widget_pause else R.string.widget_play
 
 class NowPlayingWidget : GlanceAppWidget() {
+    override val stateDefinition = PreferencesGlanceStateDefinition
     override val sizeMode: SizeMode = SizeMode.Responsive(
         setOf(COMPACT_SIZE, STANDARD_SIZE)
     )
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val snapshot = NowPlayingWidgetLiveState.snapshot
-            ?: NowPlayingWidgetSnapshotStore(context).readCold()
+        val store = NowPlayingWidgetSnapshotStore(context)
         provideContent {
+            // Reading the revision makes service publications observable to an existing session.
+            currentState<Preferences>()[NOW_PLAYING_PRESENTATION_REVISION]
+            val snapshot = NowPlayingWidgetLiveState.snapshot ?: store.readCold()
             NowPlayingWidgetContent(snapshot)
         }
     }
@@ -234,11 +240,12 @@ private fun TransportButton(
     )
 }
 
-private val WIDGET_BACKGROUND = ColorProvider(Color(0xFF1B1B1F))
-private val WIDGET_ARTWORK_BACKGROUND = ColorProvider(Color(0xFF303036))
-private val WIDGET_FOREGROUND = ColorProvider(Color(0xFFF3F0F7))
-private val WIDGET_MUTED = ColorProvider(Color(0xFFC9C5CF))
-private val WIDGET_DISABLED = ColorProvider(Color(0xFF716D77))
+private val WIDGET_BACKGROUND = fixedWidgetColor(Color(0xFF1B1B1F))
+private val WIDGET_ARTWORK_BACKGROUND = fixedWidgetColor(Color(0xFF303036))
+private val WIDGET_FOREGROUND = fixedWidgetColor(Color(0xFFF3F0F7))
+private val WIDGET_MUTED = fixedWidgetColor(Color(0xFFC9C5CF))
+private val WIDGET_DISABLED = fixedWidgetColor(Color(0xFF716D77))
+private fun fixedWidgetColor(color: Color) = ColorProvider(day = color, night = color)
 private const val STANDARD_MIN_HEIGHT_DP = 96f
 private val COMPACT_SIZE = DpSize(250.dp, 56.dp)
 private val STANDARD_SIZE = DpSize(250.dp, 120.dp)

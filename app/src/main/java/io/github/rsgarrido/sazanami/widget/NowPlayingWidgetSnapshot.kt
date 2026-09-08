@@ -69,6 +69,12 @@ internal fun WidgetPlayerState.toSnapshot(): NowPlayingWidgetSnapshot {
     )
 }
 
+internal fun shouldWidgetShowPause(
+    isPlaying: Boolean,
+    playWhenReady: Boolean,
+    playbackState: Int
+): Boolean = isPlaying || (playWhenReady && playbackState != Player.STATE_ENDED)
+
 internal fun Player.toNowPlayingWidgetSnapshot(): NowPlayingWidgetSnapshot {
     val item = currentMediaItem ?: return NowPlayingWidgetSnapshot.EMPTY
     val metadata = item.mediaMetadata
@@ -78,7 +84,11 @@ internal fun Player.toNowPlayingWidgetSnapshot(): NowPlayingWidgetSnapshot {
         title = metadata.title?.toString(),
         artist = metadata.artist?.toString(),
         artworkUri = metadata.artworkUri?.toString(),
-        isPlaying = isPlaying,
+        isPlaying = shouldWidgetShowPause(
+            isPlaying = isPlaying,
+            playWhenReady = playWhenReady,
+            playbackState = playbackState
+        ),
         previousCommandAvailable = isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS),
         nextCommandAvailable = isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM),
         playPauseCommandAvailable = isCommandAvailable(Player.COMMAND_PLAY_PAUSE),

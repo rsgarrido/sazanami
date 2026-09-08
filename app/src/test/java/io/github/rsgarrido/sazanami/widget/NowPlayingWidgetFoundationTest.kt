@@ -103,6 +103,91 @@ class NowPlayingWidgetFoundationTest {
     }
 
     @Test
+    fun livePresentation_updatesAcrossPlayPauseAndBufferingStates() {
+        assertTrue(shouldWidgetShowPause(true, playWhenReady = true, Player.STATE_READY))
+        assertTrue(shouldWidgetShowPause(false, playWhenReady = true, Player.STATE_BUFFERING))
+        assertFalse(shouldWidgetShowPause(false, playWhenReady = false, Player.STATE_READY))
+        assertFalse(shouldWidgetShowPause(false, playWhenReady = true, Player.STATE_ENDED))
+    }
+
+    @Test
+    fun publisherPublishesMediaTransitionsMetadataArtworkAndPlaybackChanges() {
+        val deduplicator = WidgetSnapshotDeduplicator()
+        val commonPeople = playerState(
+            mediaId = "common-people",
+            title = "Common People",
+            artworkUri = "content://art/common"
+        ).toSnapshot()
+        val nextSong = playerState(
+            mediaId = "next-song",
+            itemInstanceId = "queue-entry-8",
+            title = "Next Song",
+            artworkUri = "content://art/next"
+        ).toSnapshot()
+        val correctedMetadata = playerState(
+            mediaId = "next-song",
+            itemInstanceId = "queue-entry-8",
+            title = "Next Song (Remastered)",
+            artworkUri = "content://art/next-remastered"
+        ).toSnapshot()
+        val playing = correctedMetadata.copy(isPlaying = true)
+
+        assertTrue(deduplicator.shouldPublish(commonPeople))
+        assertTrue(deduplicator.shouldPublish(nextSong))
+        assertTrue(deduplicator.shouldPublish(correctedMetadata))
+        assertTrue(deduplicator.shouldPublish(playing))
+        assertFalse(deduplicator.shouldPublish(playing))
+    }
+
+    @Test
+    fun restorationRetainsColdPresentationUntilEmptyTimelineIsAuthoritative() {
+        val lastPresentation = playerState(title = "Last Song").toSnapshot().asColdSnapshot()
+        val deduplicator = WidgetSnapshotDeduplicator()
+        assertTrue(deduplicator.shouldPublish(lastPresentation))
+        assertEquals(
+            WidgetEmptyStateDisposition.RETAIN_LAST_PRESENTATION,
+            widgetEmptyStateDisposition(
+                NowPlayingWidgetSnapshot.EMPTY,
+                restorationComplete = false
+            )
+        )
+        assertEquals(
+            WidgetEmptyStateDisposition.PUBLISH,
+            widgetEmptyStateDisposition(
+                NowPlayingWidgetSnapshot.EMPTY,
+                restorationComplete = true
+            )
+        )
+        assertTrue(deduplicator.shouldPublish(NowPlayingWidgetSnapshot.EMPTY))
+    }
+
+    @Test
+    fun restoredSessionReplacesColdPresentationWithLiveSnapshot() {
+        val cold = playerState(
+            mediaId = "old-song",
+            title = "Old Song",
+            isPlaying = true
+        ).toSnapshot().asColdSnapshot()
+        val restored = playerState(
+            mediaId = "restored-song",
+            itemInstanceId = "restored-entry",
+            title = "Restored Song",
+            isPlaying = true
+        ).toSnapshot()
+        val deduplicator = WidgetSnapshotDeduplicator()
+
+        assertFalse(cold.isPlaying)
+        assertEquals(
+            WidgetEmptyStateDisposition.PUBLISH,
+            widgetEmptyStateDisposition(restored, restorationComplete = false)
+        )
+        assertTrue(deduplicator.shouldPublish(cold))
+        assertTrue(deduplicator.shouldPublish(restored))
+        assertEquals("Restored Song", restored.title)
+        assertTrue(restored.isPlaying)
+    }
+
+    @Test
     fun coldSnapshot_neverClaimsPlaybackIsActive() {
         val cold = playerState(isPlaying = true).toSnapshot().asColdSnapshot()
 
@@ -131,7 +216,10 @@ class NowPlayingWidgetFoundationTest {
     @Test
     fun publisherFilter_ignoresPositionOnlyEvents() {
         assertTrue(isMeaningfulWidgetPlayerEvent(Player.EVENT_MEDIA_ITEM_TRANSITION))
+        assertTrue(isMeaningfulWidgetPlayerEvent(Player.EVENT_MEDIA_METADATA_CHANGED))
         assertTrue(isMeaningfulWidgetPlayerEvent(Player.EVENT_TIMELINE_CHANGED))
+        assertTrue(isMeaningfulWidgetPlayerEvent(Player.EVENT_PLAY_WHEN_READY_CHANGED))
+        assertTrue(isMeaningfulWidgetPlayerEvent(Player.EVENT_PLAYBACK_STATE_CHANGED))
         assertFalse(isMeaningfulWidgetPlayerEvent(Player.EVENT_POSITION_DISCONTINUITY))
     }
 
