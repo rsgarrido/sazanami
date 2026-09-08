@@ -178,4 +178,33 @@
         <item quantity="one">%1$s play</item>
         <item quantity="other">%1$s plays</item>
     </plurals>
+    <string name="widget_name">Now Playing</string>
+    <string name="widget_nothing_playing">Nothing playing</string>
+    <string name="widget_open_sazanami">Open Sazanami</string>
+    <string name="widget_previous">Previous</string>
+    <string name="widget_play">Play</string>
+    <string name="widget_pause">Pause</string>
+    <string name="widget_next">Next</string>
+    <string name="widget_artwork">Album artwork</string>
+    <string name="widget_configure_title">Now Playing appearance</string>
+    <string name="widget_configure_description">Choose how this widget looks. Each Sazanami widget can use a different appearance.</string>
+    <string name="widget_appearance_follow">Follow Player Theme</string>
+    <string name="widget_appearance_follow_description">Use the matching widget appearance for the selected player theme.</string>
+    <string name="widget_appearance_default">Sazanami Default</string>
+    <string name="widget_appearance_default_description">Use Sazanami colors and compatible Default player customizations.</string>
+    <string name="widget_appearance_system_dynamic">System / Dynamic</string>
+    <string name="widget_appearance_system_dynamic_description">Use launcher-aware system colors, with a Material fallback on older devices.</string>
+    <string name="widget_appearance_retro_rack">Retro Rack</string>
+    <string name="widget_appearance_retro_rack_description">Use a dark equipment panel with a rack-style display and controls.</string>
+    <string name="widget_appearance_pocket_cassette">Pocket Cassette</string>
+    <string name="widget_appearance_pocket_cassette_description">Use a cassette-inspired shell, label panel, and transport controls.</string>
+    <string name="widget_appearance_classic_wheel">Classic Wheel</string>
+    <string name="widget_appearance_classic_wheel_description">Use a portable-player shell, framed display, and wheel-inspired controls.</string>
+    <string name="widget_appearance_pocket_flip">Pocket Flip</string>
+    <string name="widget_appearance_pocket_flip_description">Use a clamshell-style display, hinge detail, and hardware controls.</string>
+    <string name="widget_appearance_pocket_disc">Pocket Disc</string>
+    <string name="widget_appearance_pocket_disc_description">Use a disc-inspired artwork frame, LCD panel, and transport controls.</string>
+    <string name="widget_configure_save">Save</string>
+    <string name="widget_configure_cancel">Cancel</string>
+    <string name="widget_configure_save_failed">Couldn’t save this widget’s appearance. Try again.</string>
 </resources>
