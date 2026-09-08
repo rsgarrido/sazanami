@@ -2,6 +2,7 @@ package io.github.rsgarrido.sazanami.widget
 
 import android.appwidget.AppWidgetManager
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 
 internal class NowPlayingWidgetPreferences(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences(
@@ -38,3 +39,28 @@ internal class NowPlayingWidgetPreferences(context: Context) {
 
 private fun Int.isValidWidgetId(): Boolean =
     this > 0 && this != AppWidgetManager.INVALID_APPWIDGET_ID
+
+/** Keeps the host result behind durable persistence and the targeted Glance refresh. */
+internal suspend fun saveAndRefreshWidgetAppearance(
+    appWidgetId: Int,
+    mode: WidgetAppearanceMode,
+    persist: suspend (Int, WidgetAppearanceMode) -> Boolean,
+    refresh: suspend (Int) -> Unit
+): Boolean {
+    val saved = try {
+        persist(appWidgetId, mode)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Throwable) {
+        false
+    }
+    if (!saved) return false
+    return try {
+        refresh(appWidgetId)
+        true
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Throwable) {
+        false
+    }
+}

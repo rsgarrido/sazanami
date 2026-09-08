@@ -80,15 +80,22 @@ class NowPlayingWidgetConfigurationActivity : ComponentActivity() {
                             isSaving = true
                             saveFailed = false
                             lifecycleScope.launch {
-                                val saved = withContext(Dispatchers.IO) {
-                                    preferences.save(appWidgetId, mode)
-                                }
-                                val updated = saved && runCatching {
-                                    NowPlayingWidget().update(
-                                        this@NowPlayingWidgetConfigurationActivity,
-                                        glanceId
-                                    )
-                                }.isSuccess
+                                val updated = saveAndRefreshWidgetAppearance(
+                                    appWidgetId = appWidgetId,
+                                    mode = mode,
+                                    persist = { targetId, targetMode ->
+                                        withContext(Dispatchers.IO) {
+                                            preferences.save(targetId, targetMode)
+                                        }
+                                    },
+                                    refresh = { targetId ->
+                                        check(targetId == appWidgetId)
+                                        invalidateNowPlayingWidgetPresentation(
+                                            this@NowPlayingWidgetConfigurationActivity,
+                                            glanceId
+                                        )
+                                    }
+                                )
                                 if (updated) {
                                     setResult(
                                         RESULT_OK,

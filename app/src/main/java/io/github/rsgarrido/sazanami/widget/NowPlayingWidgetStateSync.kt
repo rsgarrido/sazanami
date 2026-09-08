@@ -2,6 +2,7 @@ package io.github.rsgarrido.sazanami.widget
 
 import android.content.Context
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.glance.GlanceId
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.state.updateAppWidgetState
 
@@ -11,16 +12,39 @@ import androidx.glance.appwidget.state.updateAppWidgetState
  */
 internal val NOW_PLAYING_PRESENTATION_REVISION = longPreferencesKey("presentation_revision")
 
+/** Invalidates and renders one widget without waking unrelated widget instances. */
+internal suspend fun invalidateNowPlayingWidgetPresentation(
+    context: Context,
+    glanceId: GlanceId
+) {
+    invalidateNowPlayingWidgetPresentation(
+        context = context.applicationContext,
+        glanceId = glanceId,
+        widget = NowPlayingWidget()
+    )
+}
+
 internal suspend fun invalidateNowPlayingWidgetPresentations(context: Context) {
     val appContext = context.applicationContext
     val widget = NowPlayingWidget()
     val glanceIds = GlanceAppWidgetManager(appContext).getGlanceIds(NowPlayingWidget::class.java)
     glanceIds.forEach { glanceId ->
-        updateAppWidgetState(appContext, glanceId) { preferences ->
-            val revision = preferences[NOW_PLAYING_PRESENTATION_REVISION] ?: 0L
-            preferences[NOW_PLAYING_PRESENTATION_REVISION] =
-                if (revision == Long.MAX_VALUE) 0L else revision + 1L
-        }
-        widget.update(appContext, glanceId)
+        invalidateNowPlayingWidgetPresentation(appContext, glanceId, widget)
     }
 }
+
+private suspend fun invalidateNowPlayingWidgetPresentation(
+    context: Context,
+    glanceId: GlanceId,
+    widget: NowPlayingWidget
+) {
+    updateAppWidgetState(context, glanceId) { preferences ->
+        preferences[NOW_PLAYING_PRESENTATION_REVISION] = nextWidgetPresentationRevision(
+            preferences[NOW_PLAYING_PRESENTATION_REVISION]
+        )
+    }
+    widget.update(context, glanceId)
+}
+
+internal fun nextWidgetPresentationRevision(current: Long?): Long =
+    if (current == Long.MAX_VALUE) 0L else (current ?: 0L) + 1L
