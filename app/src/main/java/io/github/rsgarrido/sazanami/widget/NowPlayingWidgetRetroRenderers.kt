@@ -204,6 +204,9 @@ private fun RetroMetadata(
     modifier: GlanceModifier,
     compact: Boolean
 ) {
+    val linePolicy = widgetMetadataLinePolicyFor(
+        if (compact) NowPlayingWidgetLayout.COMPACT else NowPlayingWidgetLayout.STANDARD
+    )
     Column(
         modifier = modifier.clickable(actionStartActivity<MainActivity>()),
         verticalAlignment = Alignment.CenterVertically
@@ -215,15 +218,18 @@ private fun RetroMetadata(
                 fontSize = if (compact) 12.sp else 14.sp,
                 fontWeight = FontWeight.Bold
             ),
-            maxLines = 1
+            maxLines = linePolicy.titleMaxLines
         )
+        if (!compact) {
+            Spacer(GlanceModifier.height(2.dp))
+        }
         Text(
             text = snapshot.artist.uppercase(Locale.ROOT),
             style = TextStyle(
                 color = appearance.metadataSecondaryText.asGlanceColorProvider(),
                 fontSize = if (compact) 10.sp else 11.sp
             ),
-            maxLines = 1
+            maxLines = linePolicy.artistMaxLines
         )
     }
 }

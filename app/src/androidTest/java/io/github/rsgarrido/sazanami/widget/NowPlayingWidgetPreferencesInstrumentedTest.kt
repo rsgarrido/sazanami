@@ -104,6 +104,33 @@ class NowPlayingWidgetPreferencesInstrumentedTest {
     }
 
     @Test
+    fun remainingRetroPreferencesRemainIndependentAcrossWidgetInstances() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val preferences = NowPlayingWidgetPreferences(context)
+        val classicId = 500_000 + (System.nanoTime() % 100_000).toInt().absoluteValue
+        val flipId = classicId + 1
+        val discId = classicId + 2
+        listOf(classicId, flipId, discId).forEach(preferences::delete)
+
+        try {
+            assertTrue(preferences.save(classicId, WidgetAppearanceMode.CLASSIC_WHEEL))
+            assertTrue(preferences.save(flipId, WidgetAppearanceMode.POCKET_FLIP))
+            assertTrue(preferences.save(discId, WidgetAppearanceMode.POCKET_DISC))
+
+            assertSame(WidgetAppearanceMode.CLASSIC_WHEEL, preferences.load(classicId))
+            assertSame(WidgetAppearanceMode.POCKET_FLIP, preferences.load(flipId))
+            assertSame(WidgetAppearanceMode.POCKET_DISC, preferences.load(discId))
+
+            assertTrue(preferences.save(flipId, WidgetAppearanceMode.SYSTEM_DYNAMIC))
+            assertSame(WidgetAppearanceMode.CLASSIC_WHEEL, preferences.load(classicId))
+            assertSame(WidgetAppearanceMode.SYSTEM_DYNAMIC, preferences.load(flipId))
+            assertSame(WidgetAppearanceMode.POCKET_DISC, preferences.load(discId))
+        } finally {
+            listOf(classicId, flipId, discId).forEach(preferences::delete)
+        }
+    }
+
+    @Test
     fun configurationResultIdentifiesOnlyTheConfiguredWidget() {
         val configuredId = 4242
 

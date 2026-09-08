@@ -95,7 +95,10 @@ class NowPlayingWidgetConfigurationTest {
             WidgetAppearanceMode.SAZANAMI_DEFAULT,
             WidgetAppearanceMode.SYSTEM_DYNAMIC,
             WidgetAppearanceMode.RETRO_RACK,
-            WidgetAppearanceMode.POCKET_CASSETTE
+            WidgetAppearanceMode.POCKET_CASSETTE,
+            WidgetAppearanceMode.CLASSIC_WHEEL,
+            WidgetAppearanceMode.POCKET_FLIP,
+            WidgetAppearanceMode.POCKET_DISC
         ).forEach { targetMode ->
             var storedMode = WidgetAppearanceMode.FOLLOW_PLAYER_THEME
             var refreshedMode: WidgetAppearanceMode? = null

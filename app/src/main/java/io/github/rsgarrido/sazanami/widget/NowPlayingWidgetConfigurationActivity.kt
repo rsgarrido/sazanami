@@ -201,6 +201,9 @@ private fun WidgetAppearanceOption(
         WidgetAppearanceMode.SYSTEM_DYNAMIC -> R.string.widget_appearance_system_dynamic
         WidgetAppearanceMode.RETRO_RACK -> R.string.widget_appearance_retro_rack
         WidgetAppearanceMode.POCKET_CASSETTE -> R.string.widget_appearance_pocket_cassette
+        WidgetAppearanceMode.CLASSIC_WHEEL -> R.string.widget_appearance_classic_wheel
+        WidgetAppearanceMode.POCKET_FLIP -> R.string.widget_appearance_pocket_flip
+        WidgetAppearanceMode.POCKET_DISC -> R.string.widget_appearance_pocket_disc
     }
     val description = when (mode) {
         WidgetAppearanceMode.FOLLOW_PLAYER_THEME -> R.string.widget_appearance_follow_description
@@ -209,6 +212,12 @@ private fun WidgetAppearanceOption(
         WidgetAppearanceMode.RETRO_RACK -> R.string.widget_appearance_retro_rack_description
         WidgetAppearanceMode.POCKET_CASSETTE ->
             R.string.widget_appearance_pocket_cassette_description
+        WidgetAppearanceMode.CLASSIC_WHEEL ->
+            R.string.widget_appearance_classic_wheel_description
+        WidgetAppearanceMode.POCKET_FLIP ->
+            R.string.widget_appearance_pocket_flip_description
+        WidgetAppearanceMode.POCKET_DISC ->
+            R.string.widget_appearance_pocket_disc_description
     }
     Row(
         modifier = Modifier

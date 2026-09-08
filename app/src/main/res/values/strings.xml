@@ -198,6 +198,12 @@
     <string name="widget_appearance_retro_rack_description">Use a dark equipment panel with a rack-style display and controls.</string>
     <string name="widget_appearance_pocket_cassette">Pocket Cassette</string>
     <string name="widget_appearance_pocket_cassette_description">Use a cassette-inspired shell, label panel, and transport controls.</string>
+    <string name="widget_appearance_classic_wheel">Classic Wheel</string>
+    <string name="widget_appearance_classic_wheel_description">Use a portable-player shell, framed display, and wheel-inspired controls.</string>
+    <string name="widget_appearance_pocket_flip">Pocket Flip</string>
+    <string name="widget_appearance_pocket_flip_description">Use a clamshell-style display, hinge detail, and hardware controls.</string>
+    <string name="widget_appearance_pocket_disc">Pocket Disc</string>
+    <string name="widget_appearance_pocket_disc_description">Use a disc-inspired artwork frame, LCD panel, and transport controls.</string>
     <string name="widget_configure_save">Save</string>
     <string name="widget_configure_cancel">Cancel</string>
     <string name="widget_configure_save_failed">Couldn’t save this widget’s appearance. Try again.</string>

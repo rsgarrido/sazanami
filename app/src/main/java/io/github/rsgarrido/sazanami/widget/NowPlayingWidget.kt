@@ -2,6 +2,8 @@ package io.github.rsgarrido.sazanami.widget
 
 import android.content.Context
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,6 +34,7 @@ import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxHeight
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
+import androidx.glance.layout.height
 import androidx.glance.layout.padding
 import androidx.glance.layout.size
 import androidx.glance.layout.width
@@ -48,12 +51,36 @@ import kotlinx.coroutines.withContext
 
 internal enum class NowPlayingWidgetLayout { COMPACT, STANDARD }
 
+internal data class WidgetMetadataLinePolicy(
+    val titleMaxLines: Int,
+    val artistMaxLines: Int
+)
+
 internal fun nowPlayingWidgetLayoutFor(heightDp: Float): NowPlayingWidgetLayout =
     if (heightDp >= STANDARD_MIN_HEIGHT_DP) NowPlayingWidgetLayout.STANDARD
     else NowPlayingWidgetLayout.COMPACT
 
+internal fun widgetMetadataLinePolicyFor(
+    layout: NowPlayingWidgetLayout
+): WidgetMetadataLinePolicy = when (layout) {
+    NowPlayingWidgetLayout.COMPACT -> WidgetMetadataLinePolicy(
+        titleMaxLines = 1,
+        artistMaxLines = 1
+    )
+    NowPlayingWidgetLayout.STANDARD -> WidgetMetadataLinePolicy(
+        titleMaxLines = 2,
+        artistMaxLines = 1
+    )
+}
+
 internal fun widgetPlayPauseDescriptionResource(isPlaying: Boolean): Int =
     if (isPlaying) R.string.widget_pause else R.string.widget_play
+
+internal fun widgetPlayPauseIconResource(isPlaying: Boolean): Int =
+    if (isPlaying) R.drawable.ic_widget_pause else R.drawable.ic_widget_play
+
+internal fun widgetEmptyArtworkEdgeDp(layout: NowPlayingWidgetLayout): Int =
+    if (layout == NowPlayingWidgetLayout.STANDARD) 64 else 40
 
 class NowPlayingWidget : GlanceAppWidget() {
     override val stateDefinition = PreferencesGlanceStateDefinition
@@ -71,10 +98,11 @@ class NowPlayingWidget : GlanceAppWidget() {
         provideContent {
             // Reading the revision makes service publications observable to an existing session.
             currentState<Preferences>()[NOW_PLAYING_PRESENTATION_REVISION]
+            val currentAppPreferences by appPreferences.state.collectAsState()
             val snapshot = NowPlayingWidgetLiveState.snapshot ?: store.readCold()
             val appearance = resolveWidgetAppearance(
                 mode = widgetPreferences.load(appWidgetId),
-                preferences = appPreferences.state.value
+                preferences = currentAppPreferences
             )
             NowPlayingWidgetContent(snapshot, appearance)
         }
@@ -122,6 +150,18 @@ private fun NowPlayingWidgetContent(
                     PocketCassetteCompactWidgetContent(snapshot, appearance)
                 WidgetRendererLayout.POCKET_CASSETTE_STANDARD ->
                     PocketCassetteStandardWidgetContent(snapshot, appearance)
+                WidgetRendererLayout.CLASSIC_WHEEL_COMPACT ->
+                    ClassicWheelCompactWidgetContent(snapshot, appearance)
+                WidgetRendererLayout.CLASSIC_WHEEL_STANDARD ->
+                    ClassicWheelStandardWidgetContent(snapshot, appearance)
+                WidgetRendererLayout.POCKET_FLIP_COMPACT ->
+                    PocketFlipCompactWidgetContent(snapshot, appearance)
+                WidgetRendererLayout.POCKET_FLIP_STANDARD ->
+                    PocketFlipStandardWidgetContent(snapshot, appearance)
+                WidgetRendererLayout.POCKET_DISC_COMPACT ->
+                    PocketDiscCompactWidgetContent(snapshot, appearance)
+                WidgetRendererLayout.POCKET_DISC_STANDARD ->
+                    PocketDiscStandardWidgetContent(snapshot, appearance)
             }
         }
     }
@@ -138,7 +178,12 @@ private fun CompactWidgetContent(
     ) {
         Artwork(snapshot, 44, appearance)
         Spacer(GlanceModifier.width(8.dp))
-        Metadata(snapshot, GlanceModifier.defaultWeight(), appearance)
+        Metadata(
+            snapshot,
+            GlanceModifier.defaultWeight(),
+            appearance,
+            NowPlayingWidgetLayout.COMPACT
+        )
         Spacer(GlanceModifier.width(4.dp))
         TransportControls(snapshot, 32, appearance)
     }
@@ -156,7 +201,12 @@ private fun StandardWidgetContent(
         Artwork(snapshot, 88, appearance)
         Spacer(GlanceModifier.width(12.dp))
         Column(GlanceModifier.defaultWeight().fillMaxHeight()) {
-            Metadata(snapshot, GlanceModifier.fillMaxWidth().defaultWeight(), appearance)
+            Metadata(
+                snapshot,
+                GlanceModifier.fillMaxWidth().defaultWeight(),
+                appearance,
+                NowPlayingWidgetLayout.STANDARD
+            )
             TransportControls(snapshot, 38, appearance)
         }
     }
@@ -177,7 +227,7 @@ private fun EmptyWidgetContent(
         Image(
             provider = ImageProvider(R.drawable.ic_widget_artwork_placeholder),
             contentDescription = null,
-            modifier = GlanceModifier.size(if (layout == NowPlayingWidgetLayout.STANDARD) 64.dp else 40.dp),
+            modifier = GlanceModifier.size(widgetEmptyArtworkEdgeDp(layout).dp),
             colorFilter = ColorFilter.tint(appearance.secondaryText.asGlanceColorProvider())
         )
         Spacer(GlanceModifier.width(10.dp))
@@ -237,8 +287,10 @@ internal fun Artwork(
 private fun Metadata(
     snapshot: NowPlayingWidgetSnapshot,
     modifier: GlanceModifier,
-    appearance: NowPlayingWidgetAppearance
+    appearance: NowPlayingWidgetAppearance,
+    layout: NowPlayingWidgetLayout
 ) {
+    val linePolicy = widgetMetadataLinePolicyFor(layout)
     Column(
         modifier = modifier.clickable(actionStartActivity<MainActivity>()),
         verticalAlignment = Alignment.CenterVertically
@@ -250,15 +302,18 @@ private fun Metadata(
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium
             ),
-            maxLines = 1
+            maxLines = linePolicy.titleMaxLines
         )
+        if (layout == NowPlayingWidgetLayout.STANDARD) {
+            Spacer(GlanceModifier.height(2.dp))
+        }
         Text(
             text = snapshot.artist,
             style = TextStyle(
                 color = appearance.metadataSecondaryText.asGlanceColorProvider(),
                 fontSize = 12.sp
             ),
-            maxLines = 1
+            maxLines = linePolicy.artistMaxLines
         )
     }
 }
@@ -283,7 +338,7 @@ internal fun TransportControls(
             action = actionRunCallback<PreviousWidgetAction>()
         )
         TransportButton(
-            icon = if (snapshot.isPlaying) R.drawable.ic_widget_pause else R.drawable.ic_widget_play,
+            icon = widgetPlayPauseIconResource(snapshot.isPlaying),
             description = context.getString(widgetPlayPauseDescriptionResource(snapshot.isPlaying)),
             enabled = snapshot.canPlayPause,
             edgeDp = edgeDp,

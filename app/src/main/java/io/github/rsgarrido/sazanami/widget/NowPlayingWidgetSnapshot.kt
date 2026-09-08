@@ -3,6 +3,7 @@ package io.github.rsgarrido.sazanami.widget
 import android.net.Uri
 import androidx.media3.common.Player
 import io.github.rsgarrido.sazanami.player.ListeningMediaItemMetadata
+import java.net.URI
 
 /** A small, immutable rendering model. It is a projection of the session player, never playback truth. */
 data class NowPlayingWidgetSnapshot(
@@ -84,14 +85,17 @@ internal fun widgetArtworkPresentation(artworkUriAvailable: Boolean): WidgetArtw
 
 /** Only app-owned, externally readable artwork providers are handed to the AppWidget host. */
 internal fun widgetHostArtworkUri(packageName: String, rawUri: String?): Uri? {
-    if (rawUri.isNullOrBlank()) return null
-    val uri = runCatching { Uri.parse(rawUri) }.getOrNull() ?: return null
-    if (uri.scheme != "content") return null
-    val authority = uri.authority ?: return null
-    return uri.takeIf {
-        authority == "$packageName.embeddedartwork" ||
-            authority == "$packageName.visualassets"
-    }
+    val eligibleUri = rawUri?.takeIf { isWidgetHostArtworkUri(packageName, it) } ?: return null
+    return Uri.parse(eligibleUri)
+}
+
+/** Pure eligibility check so local JVM tests do not depend on Android's stubbed Uri implementation. */
+internal fun isWidgetHostArtworkUri(packageName: String, rawUri: String?): Boolean {
+    if (rawUri.isNullOrBlank()) return false
+    val uri = runCatching { URI(rawUri) }.getOrNull() ?: return false
+    if (uri.scheme != "content") return false
+    return uri.authority == "$packageName.embeddedartwork" ||
+        uri.authority == "$packageName.visualassets"
 }
 
 internal fun Player.toNowPlayingWidgetSnapshot(): NowPlayingWidgetSnapshot {

@@ -24,8 +24,11 @@ private data class WidgetAppearanceRevision(
     val solidColorArgb: Long,
     val artworkShape: ModernArtworkShape,
     val controlAccent: ModernControlAccent,
+    val classicWheelOverrides: PlayerThemeTokenOverrides?,
     val retroRackOverrides: PlayerThemeTokenOverrides?,
-    val pocketCassetteOverrides: PlayerThemeTokenOverrides?
+    val pocketFlipOverrides: PlayerThemeTokenOverrides?,
+    val pocketCassetteOverrides: PlayerThemeTokenOverrides?,
+    val pocketDiscOverrides: PlayerThemeTokenOverrides?
 )
 
 internal fun interface WidgetUpdateScheduler {
@@ -123,10 +126,16 @@ class NowPlayingWidgetPublisher(
                         solidColorArgb = preferences.modernPlayerAppearance.background.solidColorArgb,
                         artworkShape = preferences.modernPlayerAppearance.artwork.shape,
                         controlAccent = preferences.modernPlayerAppearance.controls.accent,
+                        classicWheelOverrides =
+                            preferences.playerThemeTokenOverrides[PlayerTheme.CLASSIC_WHEEL],
                         retroRackOverrides =
                             preferences.playerThemeTokenOverrides[PlayerTheme.RETRO_RACK],
+                        pocketFlipOverrides =
+                            preferences.playerThemeTokenOverrides[PlayerTheme.POCKET_FLIP],
                         pocketCassetteOverrides =
-                            preferences.playerThemeTokenOverrides[PlayerTheme.POCKET_CASSETTE]
+                            preferences.playerThemeTokenOverrides[PlayerTheme.POCKET_CASSETTE],
+                        pocketDiscOverrides =
+                            preferences.playerThemeTokenOverrides[PlayerTheme.POCKET_DISC]
                     )
                 }
                 .distinctUntilChanged()

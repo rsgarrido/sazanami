@@ -29,7 +29,10 @@ enum class WidgetAppearanceMode(val storageValue: String) {
     SAZANAMI_DEFAULT("sazanami_default"),
     SYSTEM_DYNAMIC("system_dynamic"),
     RETRO_RACK("retro_rack"),
-    POCKET_CASSETTE("pocket_cassette");
+    POCKET_CASSETTE("pocket_cassette"),
+    CLASSIC_WHEEL("classic_wheel"),
+    POCKET_FLIP("pocket_flip"),
+    POCKET_DISC("pocket_disc");
 
     companion object {
         fun fromStorageValue(value: String?): WidgetAppearanceMode =
@@ -37,12 +40,15 @@ enum class WidgetAppearanceMode(val storageValue: String) {
     }
 }
 
-/** Renderer families are intentionally separate from persisted choices for future retro widgets. */
+/** Renderer families stay separate from persisted choices so Follow mode can resolve explicitly. */
 internal enum class WidgetAppearanceRenderer {
     SAZANAMI_DEFAULT,
     SYSTEM_DYNAMIC,
     RETRO_RACK,
-    POCKET_CASSETTE
+    POCKET_CASSETTE,
+    CLASSIC_WHEEL,
+    POCKET_FLIP,
+    POCKET_DISC
 }
 
 internal sealed interface WidgetColorToken {
@@ -83,7 +89,13 @@ internal enum class WidgetRendererLayout {
     RETRO_RACK_COMPACT,
     RETRO_RACK_STANDARD,
     POCKET_CASSETTE_COMPACT,
-    POCKET_CASSETTE_STANDARD
+    POCKET_CASSETTE_STANDARD,
+    CLASSIC_WHEEL_COMPACT,
+    CLASSIC_WHEEL_STANDARD,
+    POCKET_FLIP_COMPACT,
+    POCKET_FLIP_STANDARD,
+    POCKET_DISC_COMPACT,
+    POCKET_DISC_STANDARD
 }
 
 internal fun widgetRendererLayoutFor(
@@ -103,6 +115,18 @@ internal fun widgetRendererLayoutFor(
         NowPlayingWidgetLayout.COMPACT -> WidgetRendererLayout.POCKET_CASSETTE_COMPACT
         NowPlayingWidgetLayout.STANDARD -> WidgetRendererLayout.POCKET_CASSETTE_STANDARD
     }
+    WidgetAppearanceRenderer.CLASSIC_WHEEL -> when (layout) {
+        NowPlayingWidgetLayout.COMPACT -> WidgetRendererLayout.CLASSIC_WHEEL_COMPACT
+        NowPlayingWidgetLayout.STANDARD -> WidgetRendererLayout.CLASSIC_WHEEL_STANDARD
+    }
+    WidgetAppearanceRenderer.POCKET_FLIP -> when (layout) {
+        NowPlayingWidgetLayout.COMPACT -> WidgetRendererLayout.POCKET_FLIP_COMPACT
+        NowPlayingWidgetLayout.STANDARD -> WidgetRendererLayout.POCKET_FLIP_STANDARD
+    }
+    WidgetAppearanceRenderer.POCKET_DISC -> when (layout) {
+        NowPlayingWidgetLayout.COMPACT -> WidgetRendererLayout.POCKET_DISC_COMPACT
+        NowPlayingWidgetLayout.STANDARD -> WidgetRendererLayout.POCKET_DISC_STANDARD
+    }
 }
 
 internal fun widgetAppearanceRendererFor(
@@ -113,13 +137,16 @@ internal fun widgetAppearanceRendererFor(
     WidgetAppearanceMode.SYSTEM_DYNAMIC -> WidgetAppearanceRenderer.SYSTEM_DYNAMIC
     WidgetAppearanceMode.RETRO_RACK -> WidgetAppearanceRenderer.RETRO_RACK
     WidgetAppearanceMode.POCKET_CASSETTE -> WidgetAppearanceRenderer.POCKET_CASSETTE
+    WidgetAppearanceMode.CLASSIC_WHEEL -> WidgetAppearanceRenderer.CLASSIC_WHEEL
+    WidgetAppearanceMode.POCKET_FLIP -> WidgetAppearanceRenderer.POCKET_FLIP
+    WidgetAppearanceMode.POCKET_DISC -> WidgetAppearanceRenderer.POCKET_DISC
     WidgetAppearanceMode.FOLLOW_PLAYER_THEME -> when (selectedPlayerTheme) {
         PlayerTheme.DEFAULT -> WidgetAppearanceRenderer.SAZANAMI_DEFAULT
+        PlayerTheme.CLASSIC_WHEEL -> WidgetAppearanceRenderer.CLASSIC_WHEEL
         PlayerTheme.RETRO_RACK -> WidgetAppearanceRenderer.RETRO_RACK
+        PlayerTheme.POCKET_FLIP -> WidgetAppearanceRenderer.POCKET_FLIP
         PlayerTheme.POCKET_CASSETTE -> WidgetAppearanceRenderer.POCKET_CASSETTE
-        PlayerTheme.CLASSIC_WHEEL,
-        PlayerTheme.POCKET_FLIP,
-        PlayerTheme.POCKET_DISC -> WidgetAppearanceRenderer.SAZANAMI_DEFAULT
+        PlayerTheme.POCKET_DISC -> WidgetAppearanceRenderer.POCKET_DISC
     }
 }
 
@@ -133,6 +160,9 @@ internal fun resolveWidgetAppearance(
     WidgetAppearanceRenderer.SYSTEM_DYNAMIC -> systemDynamicWidgetAppearance()
     WidgetAppearanceRenderer.RETRO_RACK -> retroRackWidgetAppearance(preferences)
     WidgetAppearanceRenderer.POCKET_CASSETTE -> pocketCassetteWidgetAppearance(preferences)
+    WidgetAppearanceRenderer.CLASSIC_WHEEL -> classicWheelWidgetAppearance(preferences)
+    WidgetAppearanceRenderer.POCKET_FLIP -> pocketFlipWidgetAppearance(preferences)
+    WidgetAppearanceRenderer.POCKET_DISC -> pocketDiscWidgetAppearance(preferences)
 }
 
 private fun sazanamiDefaultWidgetAppearance(
@@ -271,6 +301,102 @@ private fun pocketCassetteWidgetAppearance(
         widgetCornerRadiusDp = 12,
         artworkCornerRadiusDp = 3,
         panelCornerRadiusDp = 6,
+        controlCornerRadiusDp = 5
+    )
+}
+
+private fun classicWheelWidgetAppearance(
+    preferences: AppPreferencesState
+): NowPlayingWidgetAppearance {
+    val tokens = resolvedWidgetThemeTokens(PlayerTheme.CLASSIC_WHEEL, preferences)
+    val shell = tokens.shellColor
+    val wheel = tokens.accentColor
+    val display = tokens.displayBackgroundColor
+    val displayText = tokens.displayTextColor
+    val centerButton = tokens.secondaryAccentColor ?: shell
+    return NowPlayingWidgetAppearance(
+        renderer = WidgetAppearanceRenderer.CLASSIC_WHEEL,
+        background = WidgetColorToken.Fixed(shell),
+        artworkSurface = WidgetColorToken.Fixed(display),
+        primaryText = WidgetColorToken.Fixed(displayText),
+        secondaryText = WidgetColorToken.Fixed(displayText.lighten(0.267f)),
+        metadataSurface = WidgetColorToken.Fixed(display),
+        metadataPrimaryText = WidgetColorToken.Fixed(displayText),
+        metadataSecondaryText = WidgetColorToken.Fixed(displayText.lighten(0.267f)),
+        panelSurface = WidgetColorToken.Fixed(centerButton),
+        panelOutline = WidgetColorToken.Fixed(displayText),
+        artworkPlaceholderTint = WidgetColorToken.Fixed(displayText.lighten(0.267f)),
+        accent = WidgetColorToken.Fixed(displayText),
+        disabled = WidgetColorToken.Fixed(displayText.lighten(0.55f)),
+        controlSurface = WidgetColorToken.Fixed(wheel),
+        controlForeground = WidgetColorToken.Fixed(displayText),
+        widgetCornerRadiusDp = 14,
+        artworkCornerRadiusDp = 3,
+        panelCornerRadiusDp = 5,
+        controlCornerRadiusDp = 20
+    )
+}
+
+private fun pocketFlipWidgetAppearance(
+    preferences: AppPreferencesState
+): NowPlayingWidgetAppearance {
+    val tokens = resolvedWidgetThemeTokens(PlayerTheme.POCKET_FLIP, preferences)
+    val shell = tokens.shellColor
+    val buttons = tokens.accentColor
+    val display = tokens.displayBackgroundColor
+    val displayText = tokens.displayTextColor
+    val secondaryAccent = tokens.secondaryAccentColor ?: shell.darken(0.28f)
+    return NowPlayingWidgetAppearance(
+        renderer = WidgetAppearanceRenderer.POCKET_FLIP,
+        background = WidgetColorToken.Fixed(shell),
+        artworkSurface = WidgetColorToken.Fixed(display.darken(0.534f)),
+        primaryText = WidgetColorToken.Fixed(displayText),
+        secondaryText = WidgetColorToken.Fixed(displayText.darken(0.286f)),
+        metadataSurface = WidgetColorToken.Fixed(display),
+        metadataPrimaryText = WidgetColorToken.Fixed(displayText),
+        metadataSecondaryText = WidgetColorToken.Fixed(displayText.darken(0.286f)),
+        panelSurface = WidgetColorToken.Fixed(display.darken(0.534f)),
+        panelOutline = WidgetColorToken.Fixed(secondaryAccent.darken(0.287f)),
+        artworkPlaceholderTint = WidgetColorToken.Fixed(displayText.darken(0.286f)),
+        accent = WidgetColorToken.Fixed(buttons),
+        disabled = WidgetColorToken.Fixed(displayText.darken(0.55f)),
+        controlSurface = WidgetColorToken.Fixed(display.darken(0.20f)),
+        controlForeground = WidgetColorToken.Fixed(displayText),
+        widgetCornerRadiusDp = 10,
+        artworkCornerRadiusDp = 3,
+        panelCornerRadiusDp = 6,
+        controlCornerRadiusDp = 20
+    )
+}
+
+private fun pocketDiscWidgetAppearance(
+    preferences: AppPreferencesState
+): NowPlayingWidgetAppearance {
+    val tokens = resolvedWidgetThemeTokens(PlayerTheme.POCKET_DISC, preferences)
+    val shell = tokens.shellColor
+    val lcdGlow = tokens.accentColor
+    val display = tokens.displayBackgroundColor
+    val displayText = tokens.displayTextColor
+    val active = tokens.secondaryAccentColor ?: lcdGlow
+    return NowPlayingWidgetAppearance(
+        renderer = WidgetAppearanceRenderer.POCKET_DISC,
+        background = WidgetColorToken.Fixed(shell),
+        artworkSurface = WidgetColorToken.Fixed(shell.darken(0.43f)),
+        primaryText = WidgetColorToken.Fixed(displayText),
+        secondaryText = WidgetColorToken.Fixed(displayText.darken(0.26f)),
+        metadataSurface = WidgetColorToken.Fixed(display),
+        metadataPrimaryText = WidgetColorToken.Fixed(displayText),
+        metadataSecondaryText = WidgetColorToken.Fixed(displayText.darken(0.26f)),
+        panelSurface = WidgetColorToken.Fixed(shell.darken(0.12f)),
+        panelOutline = WidgetColorToken.Fixed(shell.lighten(0.34f)),
+        artworkPlaceholderTint = WidgetColorToken.Fixed(lcdGlow.darken(0.32f)),
+        accent = WidgetColorToken.Fixed(active),
+        disabled = WidgetColorToken.Fixed(displayText.darken(0.55f)),
+        controlSurface = WidgetColorToken.Fixed(shell.darken(0.28f)),
+        controlForeground = WidgetColorToken.Fixed(displayText.lighten(0.18f)),
+        widgetCornerRadiusDp = 8,
+        artworkCornerRadiusDp = 40,
+        panelCornerRadiusDp = 7,
         controlCornerRadiusDp = 5
     )
 }

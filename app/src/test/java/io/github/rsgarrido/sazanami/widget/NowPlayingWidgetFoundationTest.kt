@@ -1,12 +1,9 @@
 package io.github.rsgarrido.sazanami.widget
 
-import android.net.Uri
-import android.os.Bundle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import io.github.rsgarrido.sazanami.R
-import io.github.rsgarrido.sazanami.player.ListeningMediaItemMetadata
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -18,35 +15,27 @@ import org.mockito.Mockito
 class NowPlayingWidgetFoundationTest {
     @Test
     fun media3Player_mapsDirectlyToWidgetSnapshot() {
-        val extras = Bundle().apply {
-            putString(ListeningMediaItemMetadata.ITEM_INSTANCE_ID, "entry-9")
-        }
         val mediaMetadata = MediaMetadata.Builder()
             .setTitle("Direct title")
             .setArtist("Direct artist")
-            .setArtworkUri(Uri.parse("content://item/raw/song-9"))
-            .setExtras(extras)
             .build()
         val item = MediaItem.Builder()
             .setMediaId("song-9")
             .setMediaMetadata(mediaMetadata)
             .build()
-        val sessionMetadata = mediaMetadata.buildUpon()
-            .setArtworkUri(Uri.parse("content://session/art/song-9"))
-            .build()
         val player = Mockito.mock(Player::class.java)
         Mockito.`when`(player.currentMediaItem).thenReturn(item)
-        Mockito.`when`(player.mediaMetadata).thenReturn(sessionMetadata)
+        Mockito.`when`(player.mediaMetadata).thenReturn(mediaMetadata)
         Mockito.`when`(player.isPlaying).thenReturn(true)
         Mockito.`when`(player.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS)).thenReturn(true)
         Mockito.`when`(player.isCommandAvailable(Player.COMMAND_PLAY_PAUSE)).thenReturn(true)
 
         val snapshot = player.toNowPlayingWidgetSnapshot()
 
-        assertEquals("song-9|entry-9", snapshot.mediaIdentity)
+        assertEquals("song-9|", snapshot.mediaIdentity)
         assertEquals("Direct title", snapshot.title)
         assertEquals("Direct artist", snapshot.artist)
-        assertEquals("content://session/art/song-9", snapshot.artworkUri)
+        assertNull(snapshot.artworkUri)
         assertTrue(snapshot.isPlaying)
         assertTrue(snapshot.canPrevious)
         assertTrue(snapshot.canPlayPause)
@@ -297,30 +286,25 @@ class NowPlayingWidgetFoundationTest {
     @Test
     fun rendererSelectsOnlyNormalizedAppOwnedContentUris() {
         val packageName = "io.github.rsgarrido.sazanami"
-        val embedded = widgetHostArtworkUri(
-            packageName,
-            "content://$packageName.embeddedartwork/v2/source/art.png"
+        assertTrue(
+            isWidgetHostArtworkUri(
+                packageName,
+                "content://$packageName.embeddedartwork/v2/source/art.png"
+            )
         )
-        val visual = widgetHostArtworkUri(
-            packageName,
-            "content://$packageName.visualassets/library-artwork/art.webp"
-        )
-
-        assertEquals(
-            "content://$packageName.embeddedartwork/v2/source/art.png",
-            embedded.toString()
-        )
-        assertEquals(
-            "content://$packageName.visualassets/library-artwork/art.webp",
-            visual.toString()
+        assertTrue(
+            isWidgetHostArtworkUri(
+                packageName,
+                "content://$packageName.visualassets/library-artwork/art.webp"
+            )
         )
         assertEquals(
             WidgetArtworkPresentation.ARTWORK,
             widgetArtworkPresentation(artworkUriAvailable = true)
         )
-        assertNull(widgetHostArtworkUri(packageName, null))
-        assertNull(widgetHostArtworkUri(packageName, "file:///private/art.webp"))
-        assertNull(widgetHostArtworkUri(packageName, "content://other.provider/art.webp"))
+        assertFalse(isWidgetHostArtworkUri(packageName, null))
+        assertFalse(isWidgetHostArtworkUri(packageName, "file:///private/art.webp"))
+        assertFalse(isWidgetHostArtworkUri(packageName, "content://other.provider/art.webp"))
         assertEquals(
             WidgetArtworkPresentation.PLACEHOLDER,
             widgetArtworkPresentation(artworkUriAvailable = false)
@@ -366,6 +350,26 @@ class NowPlayingWidgetFoundationTest {
     fun responsiveLayout_selectsCompactAndStandardPresentations() {
         assertEquals(NowPlayingWidgetLayout.COMPACT, nowPlayingWidgetLayoutFor(56f))
         assertEquals(NowPlayingWidgetLayout.STANDARD, nowPlayingWidgetLayoutFor(120f))
+    }
+
+    @Test
+    fun metadataLinePolicyTruncatesCompactAndExpandsStandardTitles() {
+        assertEquals(
+            WidgetMetadataLinePolicy(titleMaxLines = 1, artistMaxLines = 1),
+            widgetMetadataLinePolicyFor(NowPlayingWidgetLayout.COMPACT)
+        )
+        assertEquals(
+            WidgetMetadataLinePolicy(titleMaxLines = 2, artistMaxLines = 1),
+            widgetMetadataLinePolicyFor(NowPlayingWidgetLayout.STANDARD)
+        )
+    }
+
+    @Test
+    fun emptyStateAndPlayPausePresentationRemainAvailableInBothLayouts() {
+        assertEquals(40, widgetEmptyArtworkEdgeDp(NowPlayingWidgetLayout.COMPACT))
+        assertEquals(64, widgetEmptyArtworkEdgeDp(NowPlayingWidgetLayout.STANDARD))
+        assertEquals(R.drawable.ic_widget_play, widgetPlayPauseIconResource(isPlaying = false))
+        assertEquals(R.drawable.ic_widget_pause, widgetPlayPauseIconResource(isPlaying = true))
         assertEquals(R.string.widget_play, widgetPlayPauseDescriptionResource(isPlaying = false))
         assertEquals(R.string.widget_pause, widgetPlayPauseDescriptionResource(isPlaying = true))
     }

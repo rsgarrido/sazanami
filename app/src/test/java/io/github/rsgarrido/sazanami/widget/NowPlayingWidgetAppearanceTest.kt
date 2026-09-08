@@ -37,43 +37,17 @@ class NowPlayingWidgetAppearanceTest {
     }
 
     @Test
-    fun followPlayerThemeMapsDefaultPlayerToDefaultWidgetRenderer() {
-        assertSame(
-            WidgetAppearanceRenderer.SAZANAMI_DEFAULT,
-            widgetAppearanceRendererFor(
-                WidgetAppearanceMode.FOLLOW_PLAYER_THEME,
-                PlayerTheme.DEFAULT
-            )
-        )
-    }
-
-    @Test
-    fun followPlayerThemeSelectsImplementedRetroRenderers() {
-        assertSame(
-            WidgetAppearanceRenderer.RETRO_RACK,
-            widgetAppearanceRendererFor(
-                WidgetAppearanceMode.FOLLOW_PLAYER_THEME,
-                PlayerTheme.RETRO_RACK
-            )
-        )
-        assertSame(
-            WidgetAppearanceRenderer.POCKET_CASSETTE,
-            widgetAppearanceRendererFor(
-                WidgetAppearanceMode.FOLLOW_PLAYER_THEME,
-                PlayerTheme.POCKET_CASSETTE
-            )
-        )
-    }
-
-    @Test
-    fun unsupportedFollowThemesDeliberatelyFallBackToDefaultRenderer() {
-        listOf(
-            PlayerTheme.CLASSIC_WHEEL,
-            PlayerTheme.POCKET_FLIP,
-            PlayerTheme.POCKET_DISC
-        ).forEach { theme ->
+    fun followPlayerThemeMapsEveryCurrentPlayerThemeToItsWidgetRenderer() {
+        mapOf(
+            PlayerTheme.DEFAULT to WidgetAppearanceRenderer.SAZANAMI_DEFAULT,
+            PlayerTheme.CLASSIC_WHEEL to WidgetAppearanceRenderer.CLASSIC_WHEEL,
+            PlayerTheme.RETRO_RACK to WidgetAppearanceRenderer.RETRO_RACK,
+            PlayerTheme.POCKET_FLIP to WidgetAppearanceRenderer.POCKET_FLIP,
+            PlayerTheme.POCKET_CASSETTE to WidgetAppearanceRenderer.POCKET_CASSETTE,
+            PlayerTheme.POCKET_DISC to WidgetAppearanceRenderer.POCKET_DISC
+        ).forEach { (theme, expectedRenderer) ->
             assertSame(
-                WidgetAppearanceRenderer.SAZANAMI_DEFAULT,
+                expectedRenderer,
                 widgetAppearanceRendererFor(WidgetAppearanceMode.FOLLOW_PLAYER_THEME, theme)
             )
         }
@@ -81,20 +55,18 @@ class NowPlayingWidgetAppearanceTest {
 
     @Test
     fun fixedRetroModesIgnoreThePlayerThemeUsedInsideTheApp() {
-        assertSame(
-            WidgetAppearanceRenderer.RETRO_RACK,
-            widgetAppearanceRendererFor(
-                WidgetAppearanceMode.RETRO_RACK,
-                PlayerTheme.CLASSIC_WHEEL
+        mapOf(
+            WidgetAppearanceMode.CLASSIC_WHEEL to WidgetAppearanceRenderer.CLASSIC_WHEEL,
+            WidgetAppearanceMode.RETRO_RACK to WidgetAppearanceRenderer.RETRO_RACK,
+            WidgetAppearanceMode.POCKET_FLIP to WidgetAppearanceRenderer.POCKET_FLIP,
+            WidgetAppearanceMode.POCKET_CASSETTE to WidgetAppearanceRenderer.POCKET_CASSETTE,
+            WidgetAppearanceMode.POCKET_DISC to WidgetAppearanceRenderer.POCKET_DISC
+        ).forEach { (mode, expectedRenderer) ->
+            assertSame(
+                expectedRenderer,
+                widgetAppearanceRendererFor(mode, PlayerTheme.DEFAULT)
             )
-        )
-        assertSame(
-            WidgetAppearanceRenderer.POCKET_CASSETTE,
-            widgetAppearanceRendererFor(
-                WidgetAppearanceMode.POCKET_CASSETTE,
-                PlayerTheme.RETRO_RACK
-            )
-        )
+        }
     }
 
     @Test
@@ -263,6 +235,54 @@ class NowPlayingWidgetAppearanceTest {
     }
 
     @Test
+    fun remainingRetroAppearancesReuseTheirOwnPersistedThemeTokenOverrides() {
+        val classicShell = Color(0xFF34373C)
+        val classicWheel = Color(0xFF101114)
+        val classicCenter = Color(0xFFE84855)
+        val flipShell = Color(0xFF274A78)
+        val flipButtons = Color(0xFFE2B84D)
+        val flipAccent = Color(0xFF34658E)
+        val discShell = Color(0xFF4A273B)
+        val discGlow = Color(0xFF82F0C2)
+        val discActive = Color(0xFFF07C8F)
+        val preferences = AppPreferencesState(
+            playerThemeTokenOverrides = mapOf(
+                PlayerTheme.CLASSIC_WHEEL to PlayerThemeTokenOverrides(
+                    shellColor = classicShell,
+                    accentColor = classicWheel,
+                    secondaryAccentColor = classicCenter
+                ),
+                PlayerTheme.POCKET_FLIP to PlayerThemeTokenOverrides(
+                    shellColor = flipShell,
+                    accentColor = flipButtons,
+                    secondaryAccentColor = flipAccent
+                ),
+                PlayerTheme.POCKET_DISC to PlayerThemeTokenOverrides(
+                    shellColor = discShell,
+                    accentColor = discGlow,
+                    secondaryAccentColor = discActive
+                )
+            ),
+            isLoaded = true
+        )
+
+        val classic = resolveWidgetAppearance(WidgetAppearanceMode.CLASSIC_WHEEL, preferences)
+        val flip = resolveWidgetAppearance(WidgetAppearanceMode.POCKET_FLIP, preferences)
+        val disc = resolveWidgetAppearance(WidgetAppearanceMode.POCKET_DISC, preferences)
+
+        assertSame(WidgetAppearanceRenderer.CLASSIC_WHEEL, classic.renderer)
+        assertEquals(WidgetColorToken.Fixed(classicShell), classic.background)
+        assertEquals(WidgetColorToken.Fixed(classicWheel), classic.controlSurface)
+        assertEquals(WidgetColorToken.Fixed(classicCenter), classic.panelSurface)
+        assertSame(WidgetAppearanceRenderer.POCKET_FLIP, flip.renderer)
+        assertEquals(WidgetColorToken.Fixed(flipShell), flip.background)
+        assertEquals(WidgetColorToken.Fixed(flipButtons), flip.accent)
+        assertSame(WidgetAppearanceRenderer.POCKET_DISC, disc.renderer)
+        assertEquals(WidgetColorToken.Fixed(discShell), disc.background)
+        assertEquals(WidgetColorToken.Fixed(discActive), disc.accent)
+    }
+
+    @Test
     fun bothRetroRenderersProvideCompactAndStandardLayouts() {
         assertEquals(
             WidgetRendererLayout.RETRO_RACK_COMPACT,
@@ -292,5 +312,32 @@ class NowPlayingWidgetAppearanceTest {
                 NowPlayingWidgetLayout.STANDARD
             )
         )
+    }
+
+    @Test
+    fun remainingRetroRenderersProvideCompactAndStandardLayouts() {
+        mapOf(
+            WidgetAppearanceRenderer.CLASSIC_WHEEL to Pair(
+                WidgetRendererLayout.CLASSIC_WHEEL_COMPACT,
+                WidgetRendererLayout.CLASSIC_WHEEL_STANDARD
+            ),
+            WidgetAppearanceRenderer.POCKET_FLIP to Pair(
+                WidgetRendererLayout.POCKET_FLIP_COMPACT,
+                WidgetRendererLayout.POCKET_FLIP_STANDARD
+            ),
+            WidgetAppearanceRenderer.POCKET_DISC to Pair(
+                WidgetRendererLayout.POCKET_DISC_COMPACT,
+                WidgetRendererLayout.POCKET_DISC_STANDARD
+            )
+        ).forEach { (renderer, layouts) ->
+            assertEquals(
+                layouts.first,
+                widgetRendererLayoutFor(renderer, NowPlayingWidgetLayout.COMPACT)
+            )
+            assertEquals(
+                layouts.second,
+                widgetRendererLayoutFor(renderer, NowPlayingWidgetLayout.STANDARD)
+            )
+        }
     }
 }
