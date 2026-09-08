@@ -1,7 +1,6 @@
 package io.github.rsgarrido.sazanami.widget
 
 import android.content.Context
-import android.graphics.BitmapFactory
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
@@ -159,17 +158,26 @@ private fun EmptyWidgetContent(layout: NowPlayingWidgetLayout) {
 @Composable
 private fun Artwork(snapshot: NowPlayingWidgetSnapshot, edgeDp: Int) {
     val context = LocalContext.current
-    val bitmap = snapshot.artworkPath?.let { path -> BitmapFactory.decodeFile(path) }
+    val artworkUri = widgetHostArtworkUri(context.packageName, snapshot.artworkUri)
+    val presentation = widgetArtworkPresentation(artworkUri != null)
     Image(
-        provider = if (bitmap != null) ImageProvider(bitmap)
-            else ImageProvider(R.drawable.ic_widget_artwork_placeholder),
+        provider = when (presentation) {
+            WidgetArtworkPresentation.ARTWORK ->
+                androidx.glance.appwidget.ImageProvider(checkNotNull(artworkUri))
+            WidgetArtworkPresentation.PLACEHOLDER ->
+                ImageProvider(R.drawable.ic_widget_artwork_placeholder)
+        },
         contentDescription = context.getString(R.string.widget_artwork),
         modifier = GlanceModifier
             .size(edgeDp.dp)
             .background(WIDGET_ARTWORK_BACKGROUND)
             .cornerRadius(10.dp),
         contentScale = ContentScale.Crop,
-        colorFilter = if (bitmap == null) ColorFilter.tint(WIDGET_MUTED) else null
+        colorFilter = if (presentation == WidgetArtworkPresentation.PLACEHOLDER) {
+            ColorFilter.tint(WIDGET_MUTED)
+        } else {
+            null
+        }
     )
 }
 

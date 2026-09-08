@@ -1,5 +1,6 @@
 package io.github.rsgarrido.sazanami.widget
 
+import android.net.Uri
 import android.os.Bundle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -9,6 +10,7 @@ import io.github.rsgarrido.sazanami.player.ListeningMediaItemMetadata
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito
@@ -19,18 +21,22 @@ class NowPlayingWidgetFoundationTest {
         val extras = Bundle().apply {
             putString(ListeningMediaItemMetadata.ITEM_INSTANCE_ID, "entry-9")
         }
+        val mediaMetadata = MediaMetadata.Builder()
+            .setTitle("Direct title")
+            .setArtist("Direct artist")
+            .setArtworkUri(Uri.parse("content://item/raw/song-9"))
+            .setExtras(extras)
+            .build()
         val item = MediaItem.Builder()
             .setMediaId("song-9")
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle("Direct title")
-                    .setArtist("Direct artist")
-                    .setExtras(extras)
-                    .build()
-            )
+            .setMediaMetadata(mediaMetadata)
+            .build()
+        val sessionMetadata = mediaMetadata.buildUpon()
+            .setArtworkUri(Uri.parse("content://session/art/song-9"))
             .build()
         val player = Mockito.mock(Player::class.java)
         Mockito.`when`(player.currentMediaItem).thenReturn(item)
+        Mockito.`when`(player.mediaMetadata).thenReturn(sessionMetadata)
         Mockito.`when`(player.isPlaying).thenReturn(true)
         Mockito.`when`(player.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS)).thenReturn(true)
         Mockito.`when`(player.isCommandAvailable(Player.COMMAND_PLAY_PAUSE)).thenReturn(true)
@@ -40,6 +46,7 @@ class NowPlayingWidgetFoundationTest {
         assertEquals("song-9|entry-9", snapshot.mediaIdentity)
         assertEquals("Direct title", snapshot.title)
         assertEquals("Direct artist", snapshot.artist)
+        assertEquals("content://session/art/song-9", snapshot.artworkUri)
         assertTrue(snapshot.isPlaying)
         assertTrue(snapshot.canPrevious)
         assertTrue(snapshot.canPlayPause)
@@ -61,11 +68,23 @@ class NowPlayingWidgetFoundationTest {
         assertEquals("Sazanami", snapshot.title)
         assertEquals("Rin", snapshot.artist)
         assertEquals("content://art/42", snapshot.artworkUri)
-        assertTrue(snapshot.artworkCacheIdentity?.isNotBlank() == true)
         assertTrue(snapshot.isPlaying)
         assertTrue(snapshot.canPrevious)
         assertTrue(snapshot.canPlayPause)
         assertTrue(snapshot.canNext)
+    }
+
+    @Test
+    fun artworkUri_prefersNormalizedSessionMetadataAndFallsBackToMediaItem() {
+        assertEquals(
+            "content://session/art",
+            resolveWidgetArtworkUri("content://item/art", "content://session/art")
+        )
+        assertEquals(
+            "content://item/art",
+            resolveWidgetArtworkUri("content://item/art", null)
+        )
+        assertNull(resolveWidgetArtworkUri("", null))
     }
 
     @Test
@@ -134,6 +153,7 @@ class NowPlayingWidgetFoundationTest {
 
         assertTrue(deduplicator.shouldPublish(commonPeople))
         assertTrue(deduplicator.shouldPublish(nextSong))
+        assertEquals("content://art/next", nextSong.artworkUri)
         assertTrue(deduplicator.shouldPublish(correctedMetadata))
         assertTrue(deduplicator.shouldPublish(playing))
         assertFalse(deduplicator.shouldPublish(playing))
@@ -275,24 +295,71 @@ class NowPlayingWidgetFoundationTest {
     }
 
     @Test
-    fun artworkDecode_isBoundedAndMissingOrRevokedUsesPlaceholder() {
-        assertEquals(16, calculateWidgetArtworkSampleSize(8_000, 4_000))
-        assertEquals(1, calculateWidgetArtworkSampleSize(384, 384))
-        assertEquals(256 to 128, calculateWidgetArtworkTargetSize(4_000, 2_000))
+    fun rendererSelectsOnlyNormalizedAppOwnedContentUris() {
+        val packageName = "io.github.rsgarrido.sazanami"
+        val embedded = widgetHostArtworkUri(
+            packageName,
+            "content://$packageName.embeddedartwork/v2/source/art.png"
+        )
+        val visual = widgetHostArtworkUri(
+            packageName,
+            "content://$packageName.visualassets/library-artwork/art.webp"
+        )
+
         assertEquals(
-            WidgetArtworkPresentation.PLACEHOLDER,
-            widgetArtworkPresentation(decodedArtworkAvailable = false)
+            "content://$packageName.embeddedartwork/v2/source/art.png",
+            embedded.toString()
+        )
+        assertEquals(
+            "content://$packageName.visualassets/library-artwork/art.webp",
+            visual.toString()
         )
         assertEquals(
             WidgetArtworkPresentation.ARTWORK,
-            widgetArtworkPresentation(decodedArtworkAvailable = true)
+            widgetArtworkPresentation(artworkUriAvailable = true)
+        )
+        assertNull(widgetHostArtworkUri(packageName, null))
+        assertNull(widgetHostArtworkUri(packageName, "file:///private/art.webp"))
+        assertNull(widgetHostArtworkUri(packageName, "content://other.provider/art.webp"))
+        assertEquals(
+            WidgetArtworkPresentation.PLACEHOLDER,
+            widgetArtworkPresentation(artworkUriAvailable = false)
         )
     }
 
     @Test
-    fun lateArtworkResult_isRejectedAfterMediaTransition() {
-        assertTrue(isWidgetArtworkResultCurrent("item-a", "item-a"))
-        assertFalse(isWidgetArtworkResultCurrent("item-a", "item-b"))
+    fun mediaTransitionDoesNotCarryPreviousArtwork() {
+        val previous = playerState(
+            mediaId = "item-a",
+            artworkUri = "content://sazanami.visualassets/art-a"
+        ).toSnapshot()
+        val current = playerState(mediaId = "item-b", artworkUri = null).toSnapshot()
+
+        assertEquals("content://sazanami.visualassets/art-a", previous.artworkUri)
+        assertNull(current.artworkUri)
+    }
+
+    @Test
+    fun normalizedArtworkPublicationTriggersExactlyOneAdditionalRefresh() {
+        val deduplicator = WidgetSnapshotDeduplicator()
+        var refreshes = 0
+        fun publish(snapshot: NowPlayingWidgetSnapshot) {
+            if (deduplicator.shouldPublish(snapshot)) refreshes++
+        }
+        val notReady = playerState(
+            mediaId = "item-a",
+            artworkUri = null
+        ).toSnapshot()
+        val completed = notReady.copy(
+            artworkUri = "content://io.github.rsgarrido.sazanami.visualassets/art-a"
+        )
+
+        publish(notReady)
+        assertEquals(1, refreshes)
+        publish(completed)
+        assertEquals(2, refreshes)
+        publish(completed)
+        assertEquals(2, refreshes)
     }
 
     @Test

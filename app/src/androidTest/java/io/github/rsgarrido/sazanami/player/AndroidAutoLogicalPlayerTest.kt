@@ -63,6 +63,11 @@ class AndroidAutoLogicalPlayerTest {
                     assertEquals(initial, logical.currentTimeline)
                 }
             }
+            onMain { physical.currentIndex(1) }
+            onMain {
+                assertEquals("middle", logical.currentMediaItem!!.mediaId)
+                assertNull(logical.mediaMetadata.artworkUri)
+            }
         } finally { onMain { logical.release() } }
     }
 
@@ -206,6 +211,10 @@ class AndroidAutoLogicalPlayerTest {
         override fun getState(): State = state
         fun position(ms: Long) {
             state = state.buildUpon().setContentPositionMs(ms).build()
+            invalidateState()
+        }
+        fun currentIndex(index: Int) {
+            state = state.buildUpon().setCurrentMediaItemIndex(index).build()
             invalidateState()
         }
         fun policy(repeatMode: Int, shuffle: Boolean) {

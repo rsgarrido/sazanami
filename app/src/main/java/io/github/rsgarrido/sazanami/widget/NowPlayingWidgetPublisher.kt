@@ -5,9 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.Player
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 internal fun interface WidgetUpdateScheduler {
     fun schedule(task: () -> Unit)
@@ -78,7 +76,6 @@ class NowPlayingWidgetPublisher(
 ) : Player.Listener {
     private val appContext = context.applicationContext
     private val store = NowPlayingWidgetSnapshotStore(appContext)
-    private val artwork = NowPlayingWidgetArtwork(appContext)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val coalescer = WidgetUpdateCoalescer(
         scheduler = WidgetUpdateScheduler { task ->
@@ -89,7 +86,6 @@ class NowPlayingWidgetPublisher(
     private var attached = false
     private var restorationComplete = restorationComplete
     private val deduplicator = WidgetSnapshotDeduplicator()
-    private var activeArtworkDecodeKey: String? = null
 
     fun attach() {
         if (attached) return
@@ -125,29 +121,7 @@ class NowPlayingWidgetPublisher(
         ) {
             return
         }
-        val cachedPath = artwork.cachedPath(raw.artworkUri)
-        val snapshot = raw.copy(artworkPath = cachedPath)
-        publishIfChanged(snapshot)
-
-        val artworkUri = raw.artworkUri ?: return
-        if (cachedPath != null) return
-        val expectedIdentity = raw.mediaIdentity
-        val decodeKey = "$expectedIdentity|${raw.artworkCacheIdentity}"
-        if (decodeKey == activeArtworkDecodeKey) return
-        activeArtworkDecodeKey = decodeKey
-        scope.launch(Dispatchers.IO) {
-            val decodedPath = artwork.decodeAndCache(artworkUri)
-            withContext(Dispatchers.Main.immediate) {
-                if (activeArtworkDecodeKey == decodeKey) activeArtworkDecodeKey = null
-                if (decodedPath == null) return@withContext
-                if (!attached) return@withContext
-                val current = player.toNowPlayingWidgetSnapshot()
-                if (!isWidgetArtworkResultCurrent(expectedIdentity, current.mediaIdentity)) {
-                    return@withContext
-                }
-                publishIfChanged(current.copy(artworkPath = decodedPath))
-            }
-        }
+        publishIfChanged(raw)
     }
 
     private suspend fun publishIfChanged(snapshot: NowPlayingWidgetSnapshot) {

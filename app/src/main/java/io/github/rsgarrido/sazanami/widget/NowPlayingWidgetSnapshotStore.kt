@@ -20,8 +20,6 @@ internal class NowPlayingWidgetSnapshotStore(context: Context) {
             title = preferences.getString(KEY_TITLE, "").orEmpty(),
             artist = preferences.getString(KEY_ARTIST, "").orEmpty(),
             artworkUri = preferences.getString(KEY_ARTWORK_URI, null),
-            artworkCacheIdentity = preferences.getString(KEY_ARTWORK_CACHE_IDENTITY, null),
-            artworkPath = preferences.getString(KEY_ARTWORK_PATH, null),
             // A process-death snapshot is presentation fallback only. Never claim active playback.
             isPlaying = false,
             canPrevious = preferences.getBoolean(KEY_CAN_PREVIOUS, false),
@@ -36,8 +34,8 @@ internal class NowPlayingWidgetSnapshotStore(context: Context) {
             .putString(KEY_TITLE, snapshot.title)
             .putString(KEY_ARTIST, snapshot.artist)
             .putString(KEY_ARTWORK_URI, snapshot.artworkUri)
-            .putString(KEY_ARTWORK_CACHE_IDENTITY, snapshot.artworkCacheIdentity)
-            .putString(KEY_ARTWORK_PATH, snapshot.artworkPath)
+            .remove(LEGACY_KEY_ARTWORK_CACHE_IDENTITY)
+            .remove(LEGACY_KEY_ARTWORK_PATH)
             .putBoolean(KEY_CAN_PREVIOUS, snapshot.canPrevious)
             .putBoolean(KEY_CAN_PLAY_PAUSE, snapshot.canPlayPause)
             .putBoolean(KEY_CAN_NEXT, snapshot.canNext)
@@ -49,8 +47,8 @@ internal class NowPlayingWidgetSnapshotStore(context: Context) {
         const val KEY_TITLE = "title"
         const val KEY_ARTIST = "artist"
         const val KEY_ARTWORK_URI = "artwork_uri"
-        const val KEY_ARTWORK_CACHE_IDENTITY = "artwork_cache_identity"
-        const val KEY_ARTWORK_PATH = "artwork_path"
+        const val LEGACY_KEY_ARTWORK_CACHE_IDENTITY = "artwork_cache_identity"
+        const val LEGACY_KEY_ARTWORK_PATH = "artwork_path"
         const val KEY_CAN_PREVIOUS = "can_previous"
         const val KEY_CAN_PLAY_PAUSE = "can_play_pause"
         const val KEY_CAN_NEXT = "can_next"
