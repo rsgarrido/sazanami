@@ -59,6 +59,7 @@ import io.github.rsgarrido.sazanami.player.equalizer.EqualizerRuntimeBridge
 import io.github.rsgarrido.sazanami.player.equalizer.activeAutomaticHeadroomEnabled
 import io.github.rsgarrido.sazanami.player.equalizer.toDspConfiguration
 import io.github.rsgarrido.sazanami.player.equalizer.limiter.LimiterConfiguration
+import io.github.rsgarrido.sazanami.widget.NowPlayingWidgetPublisher
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
@@ -88,6 +89,7 @@ class PlaybackService : MediaLibraryService() {
     private lateinit var playerStateStorage: PlayerStateStorage
     private lateinit var listeningAdapter: PlaybackServiceListeningAdapter
     private lateinit var playbackQueueCoordinator: PlaybackQueueCoordinator
+    private var nowPlayingWidgetPublisher: NowPlayingWidgetPublisher? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var appPreferencesRepository: AppPreferencesRepository
     private lateinit var androidAutoCatalogRepository: AndroidAutoCatalogRepository
@@ -670,6 +672,8 @@ class PlaybackService : MediaLibraryService() {
             } catch (error: Exception) {
                 // A temporarily unavailable cached queue must not take down the browse service.
                 AndroidAutoDiagnostics.log("queue restore unavailable type=${error.javaClass.simpleName}")
+            } finally {
+                nowPlayingWidgetPublisher?.requestUpdate()
             }
         }
         bindActivePipeline(activePipeline, transition = null)
@@ -702,6 +706,11 @@ class PlaybackService : MediaLibraryService() {
                 )
             )
             .build()
+        nowPlayingWidgetPublisher = NowPlayingWidgetPublisher(
+            context = this,
+            player = sessionPlayer,
+            scope = serviceScope
+        ).also(NowPlayingWidgetPublisher::attach)
         AndroidAutoDiagnostics.log("session elapsedMs=${SystemClock.elapsedRealtime() - sessionStarted}")
         sessionPlayer.addListener(AndroidAutoPlayerDiagnostics(sessionPlayer))
         sessionPlayer.addListener(object : Player.Listener {
@@ -732,6 +741,8 @@ class PlaybackService : MediaLibraryService() {
         PlaybackLibraryBridge.unregisterPlaybackPolicyListener()
         PlaybackQueueRuntimeBridge.unregister(playbackQueueCoordinator)
         androidAutoCatalogRepository.close()
+        nowPlayingWidgetPublisher?.close()
+        nowPlayingWidgetPublisher = null
         mediaSession?.release()
         mediaSession = null
         sessionPlayer.releaseTransitionResources()
