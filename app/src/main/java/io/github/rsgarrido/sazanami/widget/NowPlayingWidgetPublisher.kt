@@ -4,8 +4,26 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.Player
+import io.github.rsgarrido.sazanami.data.PlayerTheme
+import io.github.rsgarrido.sazanami.data.preferences.AppPreferencesRepository
+import io.github.rsgarrido.sazanami.ui.player.modern.ModernArtworkShape
+import io.github.rsgarrido.sazanami.ui.player.modern.ModernBackgroundStyle
+import io.github.rsgarrido.sazanami.ui.player.modern.ModernControlAccent
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+
+private data class WidgetAppearanceRevision(
+    val playerTheme: PlayerTheme,
+    val backgroundStyle: ModernBackgroundStyle,
+    val solidColorArgb: Long,
+    val artworkShape: ModernArtworkShape,
+    val controlAccent: ModernControlAccent
+)
 
 internal fun interface WidgetUpdateScheduler {
     fun schedule(task: () -> Unit)
@@ -86,11 +104,32 @@ class NowPlayingWidgetPublisher(
     private var attached = false
     private var restorationComplete = restorationComplete
     private val deduplicator = WidgetSnapshotDeduplicator()
+    private var appearanceObservationJob: Job? = null
 
     fun attach() {
         if (attached) return
         attached = true
         player.addListener(this)
+        appearanceObservationJob = scope.launch {
+            AppPreferencesRepository.getInstance(appContext).state
+                .filter { preferences -> preferences.isLoaded }
+                .map { preferences ->
+                    WidgetAppearanceRevision(
+                        playerTheme = preferences.selectedPlayerTheme,
+                        backgroundStyle = preferences.modernPlayerAppearance.background.style,
+                        solidColorArgb = preferences.modernPlayerAppearance.background.solidColorArgb,
+                        artworkShape = preferences.modernPlayerAppearance.artwork.shape,
+                        controlAccent = preferences.modernPlayerAppearance.controls.accent
+                    )
+                }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect {
+                    if (attached) {
+                        runCatching { invalidateNowPlayingWidgetPresentations(appContext) }
+                    }
+                }
+        }
         requestUpdate()
     }
 
@@ -104,6 +143,8 @@ class NowPlayingWidgetPublisher(
 
     fun close() {
         attached = false
+        appearanceObservationJob?.cancel()
+        appearanceObservationJob = null
         player.removeListener(this)
         NowPlayingWidgetLiveState.snapshot = null
     }

@@ -186,4 +186,15 @@
     <string name="widget_pause">Pause</string>
     <string name="widget_next">Next</string>
     <string name="widget_artwork">Album artwork</string>
+    <string name="widget_configure_title">Now Playing appearance</string>
+    <string name="widget_configure_description">Choose how this widget looks. Each Sazanami widget can use a different appearance.</string>
+    <string name="widget_appearance_follow">Follow Player Theme</string>
+    <string name="widget_appearance_follow_description">Use the matching widget appearance for the selected player theme.</string>
+    <string name="widget_appearance_default">Sazanami Default</string>
+    <string name="widget_appearance_default_description">Use Sazanami colors and compatible Default player customizations.</string>
+    <string name="widget_appearance_system_dynamic">System / Dynamic</string>
+    <string name="widget_appearance_system_dynamic_description">Use launcher-aware system colors, with a Material fallback on older devices.</string>
+    <string name="widget_configure_save">Save</string>
+    <string name="widget_configure_cancel">Cancel</string>
+    <string name="widget_configure_save_failed">Couldn’t save this widget’s appearance. Try again.</string>
 </resources>
