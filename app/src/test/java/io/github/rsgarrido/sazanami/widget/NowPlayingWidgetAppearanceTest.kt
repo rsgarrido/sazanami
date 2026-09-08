@@ -10,6 +10,7 @@ import io.github.rsgarrido.sazanami.ui.player.modern.ModernBackgroundStyle
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernControlAccent
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernControlAppearance
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerAppearance
+import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokenOverrides
 import io.github.rsgarrido.sazanami.ui.theme.SazanamiAccent
 import io.github.rsgarrido.sazanami.ui.theme.SazanamiOnSurface
 import io.github.rsgarrido.sazanami.ui.theme.SazanamiSurface
@@ -47,18 +48,53 @@ class NowPlayingWidgetAppearanceTest {
     }
 
     @Test
-    fun followPlayerThemeDeliberatelyFallsBackForEveryRetroTheme() {
-        PlayerTheme.entries
-            .filterNot { theme -> theme == PlayerTheme.DEFAULT }
-            .forEach { theme ->
-                assertSame(
-                    WidgetAppearanceRenderer.SAZANAMI_DEFAULT,
-                    widgetAppearanceRendererFor(
-                        WidgetAppearanceMode.FOLLOW_PLAYER_THEME,
-                        theme
-                    )
-                )
-            }
+    fun followPlayerThemeSelectsImplementedRetroRenderers() {
+        assertSame(
+            WidgetAppearanceRenderer.RETRO_RACK,
+            widgetAppearanceRendererFor(
+                WidgetAppearanceMode.FOLLOW_PLAYER_THEME,
+                PlayerTheme.RETRO_RACK
+            )
+        )
+        assertSame(
+            WidgetAppearanceRenderer.POCKET_CASSETTE,
+            widgetAppearanceRendererFor(
+                WidgetAppearanceMode.FOLLOW_PLAYER_THEME,
+                PlayerTheme.POCKET_CASSETTE
+            )
+        )
+    }
+
+    @Test
+    fun unsupportedFollowThemesDeliberatelyFallBackToDefaultRenderer() {
+        listOf(
+            PlayerTheme.CLASSIC_WHEEL,
+            PlayerTheme.POCKET_FLIP,
+            PlayerTheme.POCKET_DISC
+        ).forEach { theme ->
+            assertSame(
+                WidgetAppearanceRenderer.SAZANAMI_DEFAULT,
+                widgetAppearanceRendererFor(WidgetAppearanceMode.FOLLOW_PLAYER_THEME, theme)
+            )
+        }
+    }
+
+    @Test
+    fun fixedRetroModesIgnoreThePlayerThemeUsedInsideTheApp() {
+        assertSame(
+            WidgetAppearanceRenderer.RETRO_RACK,
+            widgetAppearanceRendererFor(
+                WidgetAppearanceMode.RETRO_RACK,
+                PlayerTheme.CLASSIC_WHEEL
+            )
+        )
+        assertSame(
+            WidgetAppearanceRenderer.POCKET_CASSETTE,
+            widgetAppearanceRendererFor(
+                WidgetAppearanceMode.POCKET_CASSETTE,
+                PlayerTheme.RETRO_RACK
+            )
+        )
     }
 
     @Test
@@ -174,5 +210,87 @@ class NowPlayingWidgetAppearanceTest {
 
         assertNotEquals(first.renderer, second.renderer)
         assertNotEquals(first.background, second.background)
+    }
+
+    @Test
+    fun retroAppearancesReuseTheirOwnPersistedThemeTokenOverrides() {
+        val rackShell = Color(0xFF181A20)
+        val rackAccent = Color(0xFF44DD77)
+        val rackDisplay = Color(0xFF020403)
+        val rackText = Color(0xFFE8ECEF)
+        val cassetteShell = Color(0xFFD5C8B8)
+        val cassetteDisplay = Color(0xFF111315)
+        val cassetteText = Color(0xFFF2EFE8)
+        val cassetteWarmAccent = Color(0xFFEE6633)
+        val preferences = AppPreferencesState(
+            selectedPlayerTheme = PlayerTheme.CLASSIC_WHEEL,
+            playerThemeTokenOverrides = mapOf(
+                PlayerTheme.RETRO_RACK to PlayerThemeTokenOverrides(
+                    shellColor = rackShell,
+                    accentColor = rackAccent,
+                    displayBackgroundColor = rackDisplay,
+                    displayTextColor = rackText
+                ),
+                PlayerTheme.POCKET_CASSETTE to PlayerThemeTokenOverrides(
+                    shellColor = cassetteShell,
+                    displayBackgroundColor = cassetteDisplay,
+                    displayTextColor = cassetteText,
+                    secondaryAccentColor = cassetteWarmAccent
+                )
+            ),
+            isLoaded = true
+        )
+
+        val rackTokens = resolvedWidgetThemeTokens(PlayerTheme.RETRO_RACK, preferences)
+        val cassetteTokens = resolvedWidgetThemeTokens(PlayerTheme.POCKET_CASSETTE, preferences)
+        val rackAppearance = resolveWidgetAppearance(WidgetAppearanceMode.RETRO_RACK, preferences)
+        val cassetteAppearance = resolveWidgetAppearance(
+            WidgetAppearanceMode.POCKET_CASSETTE,
+            preferences
+        )
+
+        assertEquals(rackShell, rackTokens.shellColor)
+        assertEquals(rackAccent, rackTokens.accentColor)
+        assertEquals(rackDisplay, rackTokens.displayBackgroundColor)
+        assertEquals(rackText, rackTokens.displayTextColor)
+        assertEquals(cassetteShell, cassetteTokens.shellColor)
+        assertEquals(cassetteDisplay, cassetteTokens.displayBackgroundColor)
+        assertEquals(cassetteText, cassetteTokens.displayTextColor)
+        assertEquals(cassetteWarmAccent, cassetteTokens.secondaryAccentColor)
+        assertSame(WidgetAppearanceRenderer.RETRO_RACK, rackAppearance.renderer)
+        assertSame(WidgetAppearanceRenderer.POCKET_CASSETTE, cassetteAppearance.renderer)
+        assertEquals(WidgetColorToken.Fixed(cassetteWarmAccent), cassetteAppearance.accent)
+    }
+
+    @Test
+    fun bothRetroRenderersProvideCompactAndStandardLayouts() {
+        assertEquals(
+            WidgetRendererLayout.RETRO_RACK_COMPACT,
+            widgetRendererLayoutFor(
+                WidgetAppearanceRenderer.RETRO_RACK,
+                NowPlayingWidgetLayout.COMPACT
+            )
+        )
+        assertEquals(
+            WidgetRendererLayout.RETRO_RACK_STANDARD,
+            widgetRendererLayoutFor(
+                WidgetAppearanceRenderer.RETRO_RACK,
+                NowPlayingWidgetLayout.STANDARD
+            )
+        )
+        assertEquals(
+            WidgetRendererLayout.POCKET_CASSETTE_COMPACT,
+            widgetRendererLayoutFor(
+                WidgetAppearanceRenderer.POCKET_CASSETTE,
+                NowPlayingWidgetLayout.COMPACT
+            )
+        )
+        assertEquals(
+            WidgetRendererLayout.POCKET_CASSETTE_STANDARD,
+            widgetRendererLayoutFor(
+                WidgetAppearanceRenderer.POCKET_CASSETTE,
+                NowPlayingWidgetLayout.STANDARD
+            )
+        )
     }
 }

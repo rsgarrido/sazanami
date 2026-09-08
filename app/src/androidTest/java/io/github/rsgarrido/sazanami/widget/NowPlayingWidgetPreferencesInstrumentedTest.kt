@@ -78,6 +78,32 @@ class NowPlayingWidgetPreferencesInstrumentedTest {
     }
 
     @Test
+    fun fixedRetroPreferencesRemainIndependentAcrossWidgetInstances() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val preferences = NowPlayingWidgetPreferences(context)
+        val rackId = 300_000 + (System.nanoTime() % 100_000).toInt().absoluteValue
+        val cassetteId = rackId + 1
+        preferences.delete(rackId)
+        preferences.delete(cassetteId)
+
+        try {
+            assertTrue(preferences.save(rackId, WidgetAppearanceMode.RETRO_RACK))
+            assertTrue(
+                preferences.save(cassetteId, WidgetAppearanceMode.POCKET_CASSETTE)
+            )
+
+            assertSame(WidgetAppearanceMode.RETRO_RACK, preferences.load(rackId))
+            assertSame(
+                WidgetAppearanceMode.POCKET_CASSETTE,
+                preferences.load(cassetteId)
+            )
+        } finally {
+            preferences.delete(rackId)
+            preferences.delete(cassetteId)
+        }
+    }
+
+    @Test
     fun configurationResultIdentifiesOnlyTheConfiguredWidget() {
         val configuredId = 4242
 

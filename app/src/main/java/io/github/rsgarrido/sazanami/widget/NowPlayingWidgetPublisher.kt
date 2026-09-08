@@ -9,6 +9,7 @@ import io.github.rsgarrido.sazanami.data.preferences.AppPreferencesRepository
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernArtworkShape
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernBackgroundStyle
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernControlAccent
+import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokenOverrides
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -22,7 +23,9 @@ private data class WidgetAppearanceRevision(
     val backgroundStyle: ModernBackgroundStyle,
     val solidColorArgb: Long,
     val artworkShape: ModernArtworkShape,
-    val controlAccent: ModernControlAccent
+    val controlAccent: ModernControlAccent,
+    val retroRackOverrides: PlayerThemeTokenOverrides?,
+    val pocketCassetteOverrides: PlayerThemeTokenOverrides?
 )
 
 internal fun interface WidgetUpdateScheduler {
@@ -119,7 +122,11 @@ class NowPlayingWidgetPublisher(
                         backgroundStyle = preferences.modernPlayerAppearance.background.style,
                         solidColorArgb = preferences.modernPlayerAppearance.background.solidColorArgb,
                         artworkShape = preferences.modernPlayerAppearance.artwork.shape,
-                        controlAccent = preferences.modernPlayerAppearance.controls.accent
+                        controlAccent = preferences.modernPlayerAppearance.controls.accent,
+                        retroRackOverrides =
+                            preferences.playerThemeTokenOverrides[PlayerTheme.RETRO_RACK],
+                        pocketCassetteOverrides =
+                            preferences.playerThemeTokenOverrides[PlayerTheme.POCKET_CASSETTE]
                     )
                 }
                 .distinctUntilChanged()

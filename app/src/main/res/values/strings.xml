@@ -194,6 +194,10 @@
     <string name="widget_appearance_default_description">Use Sazanami colors and compatible Default player customizations.</string>
     <string name="widget_appearance_system_dynamic">System / Dynamic</string>
     <string name="widget_appearance_system_dynamic_description">Use launcher-aware system colors, with a Material fallback on older devices.</string>
+    <string name="widget_appearance_retro_rack">Retro Rack</string>
+    <string name="widget_appearance_retro_rack_description">Use a dark equipment panel with a rack-style display and controls.</string>
+    <string name="widget_appearance_pocket_cassette">Pocket Cassette</string>
+    <string name="widget_appearance_pocket_cassette_description">Use a cassette-inspired shell, label panel, and transport controls.</string>
     <string name="widget_configure_save">Save</string>
     <string name="widget_configure_cancel">Cancel</string>
     <string name="widget_configure_save_failed">Couldn’t save this widget’s appearance. Try again.</string>

@@ -90,10 +90,12 @@ class NowPlayingWidgetConfigurationTest {
     }
 
     @Test
-    fun followToEitherFixedModeRefreshesImmediately() = runBlocking {
+    fun followToEveryFixedModeRefreshesImmediately() = runBlocking {
         listOf(
             WidgetAppearanceMode.SAZANAMI_DEFAULT,
-            WidgetAppearanceMode.SYSTEM_DYNAMIC
+            WidgetAppearanceMode.SYSTEM_DYNAMIC,
+            WidgetAppearanceMode.RETRO_RACK,
+            WidgetAppearanceMode.POCKET_CASSETTE
         ).forEach { targetMode ->
             var storedMode = WidgetAppearanceMode.FOLLOW_PLAYER_THEME
             var refreshedMode: WidgetAppearanceMode? = null

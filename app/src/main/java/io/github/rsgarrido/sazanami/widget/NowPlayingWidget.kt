@@ -108,10 +108,21 @@ private fun NowPlayingWidgetContent(
     ) {
         if (!snapshot.hasMedia) {
             EmptyWidgetContent(layout, appearance)
-        } else if (layout == NowPlayingWidgetLayout.STANDARD) {
-            StandardWidgetContent(snapshot, appearance)
         } else {
-            CompactWidgetContent(snapshot, appearance)
+            when (widgetRendererLayoutFor(appearance.renderer, layout)) {
+                WidgetRendererLayout.NEUTRAL_COMPACT ->
+                    CompactWidgetContent(snapshot, appearance)
+                WidgetRendererLayout.NEUTRAL_STANDARD ->
+                    StandardWidgetContent(snapshot, appearance)
+                WidgetRendererLayout.RETRO_RACK_COMPACT ->
+                    RetroRackCompactWidgetContent(snapshot, appearance)
+                WidgetRendererLayout.RETRO_RACK_STANDARD ->
+                    RetroRackStandardWidgetContent(snapshot, appearance)
+                WidgetRendererLayout.POCKET_CASSETTE_COMPACT ->
+                    PocketCassetteCompactWidgetContent(snapshot, appearance)
+                WidgetRendererLayout.POCKET_CASSETTE_STANDARD ->
+                    PocketCassetteStandardWidgetContent(snapshot, appearance)
+            }
         }
     }
 }
@@ -193,7 +204,7 @@ private fun EmptyWidgetContent(
 }
 
 @Composable
-private fun Artwork(
+internal fun Artwork(
     snapshot: NowPlayingWidgetSnapshot,
     edgeDp: Int,
     appearance: NowPlayingWidgetAppearance
@@ -215,7 +226,7 @@ private fun Artwork(
             .cornerRadius(appearance.artworkCornerRadiusDp.dp),
         contentScale = ContentScale.Crop,
         colorFilter = if (presentation == WidgetArtworkPresentation.PLACEHOLDER) {
-            ColorFilter.tint(appearance.secondaryText.asGlanceColorProvider())
+            ColorFilter.tint(appearance.artworkPlaceholderTint.asGlanceColorProvider())
         } else {
             null
         }
@@ -235,7 +246,7 @@ private fun Metadata(
         Text(
             text = snapshot.title,
             style = TextStyle(
-                color = appearance.primaryText.asGlanceColorProvider(),
+                color = appearance.metadataPrimaryText.asGlanceColorProvider(),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium
             ),
@@ -244,7 +255,7 @@ private fun Metadata(
         Text(
             text = snapshot.artist,
             style = TextStyle(
-                color = appearance.secondaryText.asGlanceColorProvider(),
+                color = appearance.metadataSecondaryText.asGlanceColorProvider(),
                 fontSize = 12.sp
             ),
             maxLines = 1
@@ -253,7 +264,7 @@ private fun Metadata(
 }
 
 @Composable
-private fun TransportControls(
+internal fun TransportControls(
     snapshot: NowPlayingWidgetSnapshot,
     edgeDp: Int,
     appearance: NowPlayingWidgetAppearance
@@ -265,8 +276,10 @@ private fun TransportControls(
             description = context.getString(R.string.widget_previous),
             enabled = snapshot.canPrevious,
             edgeDp = edgeDp,
-            enabledColor = appearance.primaryText,
+            enabledColor = appearance.controlForeground,
             disabledColor = appearance.disabled,
+            surfaceColor = appearance.controlSurface,
+            cornerRadiusDp = appearance.controlCornerRadiusDp,
             action = actionRunCallback<PreviousWidgetAction>()
         )
         TransportButton(
@@ -276,6 +289,8 @@ private fun TransportControls(
             edgeDp = edgeDp,
             enabledColor = appearance.accent,
             disabledColor = appearance.disabled,
+            surfaceColor = appearance.controlSurface,
+            cornerRadiusDp = appearance.controlCornerRadiusDp,
             action = actionRunCallback<PlayPauseWidgetAction>()
         )
         TransportButton(
@@ -283,8 +298,10 @@ private fun TransportControls(
             description = context.getString(R.string.widget_next),
             enabled = snapshot.canNext,
             edgeDp = edgeDp,
-            enabledColor = appearance.primaryText,
+            enabledColor = appearance.controlForeground,
             disabledColor = appearance.disabled,
+            surfaceColor = appearance.controlSurface,
+            cornerRadiusDp = appearance.controlCornerRadiusDp,
             action = actionRunCallback<NextWidgetAction>()
         )
     }
@@ -298,10 +315,19 @@ private fun TransportButton(
     edgeDp: Int,
     enabledColor: WidgetColorToken,
     disabledColor: WidgetColorToken,
+    surfaceColor: WidgetColorToken?,
+    cornerRadiusDp: Int,
     action: androidx.glance.action.Action
 ) {
-    val modifier = GlanceModifier
-        .size(edgeDp.dp)
+    val surfaceModifier = if (surfaceColor == null) {
+        GlanceModifier.size(edgeDp.dp)
+    } else {
+        GlanceModifier
+            .size(edgeDp.dp)
+            .background(surfaceColor.asGlanceColorProvider())
+            .cornerRadius(cornerRadiusDp.dp)
+    }
+    val modifier = surfaceModifier
         .padding(5.dp)
         .let { base -> if (enabled) base.clickable(action) else base }
     Image(
