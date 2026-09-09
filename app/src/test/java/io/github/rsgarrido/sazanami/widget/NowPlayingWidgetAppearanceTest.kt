@@ -371,58 +371,100 @@ class NowPlayingWidgetAppearanceTest {
     @Test
     fun pocketCassetteLayoutsKeepCassetteIdentityAtBothResponsiveSizes() {
         val compact = pocketCassetteWidgetCompositionFor(NowPlayingWidgetLayout.COMPACT)
-        val standard = pocketCassetteWidgetCompositionFor(NowPlayingWidgetLayout.STANDARD)
+        val standard = pocketCassetteWidgetCompositionFor(
+            layout = NowPlayingWidgetLayout.STANDARD,
+            widgetHeightDp = 200f,
+            widgetWidthDp = 250f
+        )
 
-        assertEquals(2, compact.staticReelCount)
-        assertEquals(2, standard.staticReelCount)
+        assertEquals(false, compact.showReelDecoration)
+        assertEquals(false, standard.showReelDecoration)
+        assertEquals(false, compact.usesFullWidthTransportDeck)
+        assertEquals(true, standard.usesFullWidthTransportDeck)
+        assertEquals(false, compact.outerFrameRetained)
+        assertEquals(true, standard.outerFrameRetained)
         assertEquals(false, compact.showHardwareDetails)
         assertEquals(true, standard.showHardwareDetails)
         assertEquals(32, compact.controlEdgeDp)
         assertEquals(32, standard.controlEdgeDp)
-        assertTrue(standard.artworkEdgeDp > compact.artworkEdgeDp)
-        assertTrue(standard.reelEdgeDp > compact.reelEdgeDp)
+        assertEquals(36, compact.transportDeckHeightDp)
+        assertEquals(40, standard.transportDeckHeightDp)
+        assertEquals(30, compact.artworkEdgeDp)
+        assertEquals(130, standard.artworkEdgeDp)
     }
 
     @Test
     fun retroRackLayoutsUseDistinctRackModuleCompositions() {
         val compact = retroRackWidgetCompositionFor(NowPlayingWidgetLayout.COMPACT)
-        val standard = retroRackWidgetCompositionFor(NowPlayingWidgetLayout.STANDARD)
+        val standard = retroRackWidgetCompositionFor(
+            layout = NowPlayingWidgetLayout.STANDARD,
+            widgetHeightDp = 200f,
+            widgetWidthDp = 250f
+        )
 
-        assertEquals(false, compact.showModuleHeader)
-        assertEquals(true, standard.showModuleHeader)
+        assertEquals(false, compact.headerAboveArtwork)
+        assertEquals(true, standard.headerAboveArtwork)
+        assertEquals(6, standard.headerHorizontalInsetDp)
+        assertEquals(2, standard.artworkFrameInsetDp)
+        assertEquals(true, standard.outerBezelRetained)
         assertEquals(false, compact.showHardwareDetails)
         assertEquals(true, standard.showHardwareDetails)
         assertEquals(32, compact.controlEdgeDp)
         assertEquals(32, standard.controlEdgeDp)
-        assertTrue(standard.artworkEdgeDp > compact.artworkEdgeDp)
+        assertEquals(28, compact.artworkEdgeDp)
+        assertEquals(130, standard.artworkEdgeDp)
     }
 
     @Test
     fun pocketFlipLayoutsKeepScreenAndControlHalvesJoinedByResponsiveHinges() {
         val compact = pocketFlipWidgetCompositionFor(NowPlayingWidgetLayout.COMPACT)
-        val standard = pocketFlipWidgetCompositionFor(NowPlayingWidgetLayout.STANDARD)
+        val standard = pocketFlipWidgetCompositionFor(
+            layout = NowPlayingWidgetLayout.STANDARD,
+            widgetHeightDp = 200f,
+            widgetWidthDp = 250f
+        )
 
         assertEquals(true, compact.usesCompressedVerticalHinge)
         assertEquals(false, standard.usesCompressedVerticalHinge)
         assertEquals(false, compact.showDeckDetails)
         assertEquals(true, standard.showDeckDetails)
+        assertEquals(true, standard.outerBezelRetained)
         assertEquals(32, compact.controlEdgeDp)
         assertEquals(32, standard.controlEdgeDp)
-        assertTrue(standard.artworkEdgeDp > compact.artworkEdgeDp)
+        assertEquals(40, compact.controlDeckHeightDp)
+        assertEquals(42, standard.controlDeckHeightDp)
+        assertTrue(standard.controlDeckHeightDp > standard.controlEdgeDp)
+        assertEquals(30, compact.artworkEdgeDp)
+        assertEquals(130, standard.artworkEdgeDp)
     }
 
     @Test
     fun classicWheelLayoutsKeepAFramedScreenAndWheelControlRegion() {
         val compact = classicWheelWidgetCompositionFor(NowPlayingWidgetLayout.COMPACT)
-        val standard = classicWheelWidgetCompositionFor(NowPlayingWidgetLayout.STANDARD)
+        val standard = classicWheelWidgetCompositionFor(
+            layout = NowPlayingWidgetLayout.STANDARD,
+            widgetHeightDp = 200f,
+            widgetWidthDp = 250f
+        )
 
-        assertEquals(false, compact.showStatusBar)
-        assertEquals(true, standard.showStatusBar)
+        assertEquals(false, compact.headerAboveArtwork)
+        assertEquals(true, standard.headerAboveArtwork)
+        assertEquals(6, standard.statusHorizontalInsetDp)
+        assertEquals(true, standard.outerBezelRetained)
         assertEquals(102, compact.wheelWidthDp)
-        assertEquals(150, standard.wheelWidthDp)
+        assertEquals(190, standard.wheelWidthDp)
+        assertEquals(40, compact.wheelHeightDp)
+        assertEquals(36, standard.wheelHeightDp)
+        assertEquals(40, standard.controlRegionHeightDp)
+        assertTrue(standard.controlRegionHeightDp > standard.wheelHeightDp)
+        assertEquals(0, compact.controlSpacingDp)
+        assertEquals(18, standard.controlSpacingDp)
+        assertEquals(false, compact.showCenterRing)
+        assertEquals(false, standard.showCenterRing)
         assertEquals(32, compact.controlEdgeDp)
         assertEquals(32, standard.controlEdgeDp)
-        assertTrue(standard.artworkEdgeDp > compact.artworkEdgeDp)
+        assertEquals(30, compact.artworkEdgeDp)
+        assertEquals(130, standard.artworkEdgeDp)
     }
 
     @Test
@@ -434,9 +476,117 @@ class NowPlayingWidgetAppearanceTest {
         assertEquals(true, standard.showMoldedDetails)
         assertEquals(32, compact.controlEdgeDp)
         assertEquals(32, standard.controlEdgeDp)
+        assertEquals(40, compact.cartridgeEdgeDp)
+        assertEquals(34, compact.discWindowEdgeDp)
+        assertEquals(28, compact.artworkEdgeDp)
+        assertEquals(88, standard.cartridgeEdgeDp)
+        assertEquals(76, standard.discWindowEdgeDp)
+        assertEquals(68, standard.artworkEdgeDp)
         assertTrue(compact.discWindowEdgeDp > compact.artworkEdgeDp)
         assertTrue(standard.discWindowEdgeDp > standard.artworkEdgeDp)
         assertTrue(standard.cartridgeEdgeDp > compact.cartridgeEdgeDp)
+    }
+
+    @Test
+    fun retroMetadataWrapsExpandedTitlesWithoutChangingCompactPolicy() {
+        assertEquals(
+            WidgetMetadataLinePolicy(titleMaxLines = 1, artistMaxLines = 1),
+            retroWidgetMetadataLinePolicyFor(NowPlayingWidgetLayout.COMPACT)
+        )
+        assertEquals(
+            WidgetMetadataLinePolicy(titleMaxLines = 2, artistMaxLines = 1),
+            retroWidgetMetadataLinePolicyFor(NowPlayingWidgetLayout.STANDARD)
+        )
+        assertEquals(
+            WidgetMetadataLinePolicy(titleMaxLines = 3, artistMaxLines = 1),
+            retroWidgetMetadataLinePolicyFor(
+                layout = NowPlayingWidgetLayout.STANDARD,
+                standardTitleMaxLines = 3
+            )
+        )
+    }
+
+    @Test
+    fun expandedRetroContentInsetsReserveHeightForMediaAndHardwareRegions() {
+        WidgetAppearanceRenderer.entries.forEach { renderer ->
+            assertEquals(
+                8,
+                widgetContentPaddingDpFor(renderer, NowPlayingWidgetLayout.COMPACT)
+            )
+        }
+        assertEquals(
+            3,
+            widgetContentPaddingDpFor(
+                WidgetAppearanceRenderer.CLASSIC_WHEEL,
+                NowPlayingWidgetLayout.STANDARD
+            )
+        )
+        assertEquals(
+            3,
+            widgetContentPaddingDpFor(
+                WidgetAppearanceRenderer.RETRO_RACK,
+                NowPlayingWidgetLayout.STANDARD
+            )
+        )
+        assertEquals(
+            3,
+            widgetContentPaddingDpFor(
+                WidgetAppearanceRenderer.POCKET_FLIP,
+                NowPlayingWidgetLayout.STANDARD
+            )
+        )
+        assertEquals(
+            3,
+            widgetContentPaddingDpFor(
+                WidgetAppearanceRenderer.POCKET_CASSETTE,
+                NowPlayingWidgetLayout.STANDARD
+            )
+        )
+        assertEquals(
+            8,
+            widgetContentPaddingDpFor(
+                WidgetAppearanceRenderer.POCKET_DISC,
+                NowPlayingWidgetLayout.STANDARD
+            )
+        )
+        assertEquals(
+            8,
+            widgetContentPaddingDpFor(
+                WidgetAppearanceRenderer.SAZANAMI_DEFAULT,
+                NowPlayingWidgetLayout.STANDARD
+            )
+        )
+    }
+
+    @Test
+    fun expandedArtworkSizingFollowsAvailableHeightAndPreservesMetadataWidth() {
+        assertEquals(
+            54,
+            expandedArtworkEdgeDpFor(
+                widgetHeightDp = 120f,
+                widgetWidthDp = 250f,
+                reservedVerticalSpaceDp = 66,
+                minimumEdgeDp = 36
+            )
+        )
+        assertEquals(
+            94,
+            expandedArtworkEdgeDpFor(
+                widgetHeightDp = 160f,
+                widgetWidthDp = 250f,
+                reservedVerticalSpaceDp = 66,
+                minimumEdgeDp = 36
+            )
+        )
+        assertEquals(
+            130,
+            expandedArtworkEdgeDpFor(
+                widgetHeightDp = 240f,
+                widgetWidthDp = 250f,
+                reservedVerticalSpaceDp = 66,
+                minimumEdgeDp = 36
+            )
+        )
     }
 
     @Test

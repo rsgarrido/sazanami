@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceModifier
+import androidx.glance.LocalSize
 import androidx.glance.background
 import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
@@ -42,7 +43,8 @@ internal fun RetroRackCompactWidgetContent(
             appearance = appearance,
             modifier = GlanceModifier.defaultWeight().fillMaxHeight(),
             artworkEdgeDp = composition.artworkEdgeDp,
-            compact = true
+            compact = true,
+            artworkFrameInsetDp = composition.artworkFrameInsetDp
         )
         Spacer(GlanceModifier.width(4.dp))
         RetroRackTransportBay(
@@ -59,50 +61,84 @@ internal fun RetroRackStandardWidgetContent(
     snapshot: NowPlayingWidgetSnapshot,
     appearance: NowPlayingWidgetAppearance
 ) {
-    val composition = retroRackWidgetCompositionFor(NowPlayingWidgetLayout.STANDARD)
-    Column(GlanceModifier.fillMaxSize()) {
-        if (composition.showModuleHeader) {
-            RetroRackModuleHeader(appearance)
-            Spacer(GlanceModifier.height(2.dp))
+    val composition = retroRackWidgetCompositionFor(
+        layout = NowPlayingWidgetLayout.STANDARD,
+        widgetHeightDp = LocalSize.current.height.value,
+        widgetWidthDp = LocalSize.current.width.value
+    )
+    Box(
+        modifier = GlanceModifier
+            .fillMaxSize()
+            .background(appearance.panelOutline.asGlanceColorProvider())
+            .cornerRadius(appearance.widgetCornerRadiusDp.dp)
+            .padding(1.dp)
+    ) {
+        Column(
+            modifier = GlanceModifier
+                .fillMaxSize()
+                .background(appearance.panelSurface.asGlanceColorProvider())
+                .cornerRadius((appearance.widgetCornerRadiusDp - 1).coerceAtLeast(0).dp)
+                .padding(1.dp)
+        ) {
+            if (composition.headerAboveArtwork) {
+                RetroRackModuleHeader(appearance, composition.headerHorizontalInsetDp)
+            }
+            RetroRackDisplayBay(
+                snapshot = snapshot,
+                appearance = appearance,
+                modifier = GlanceModifier.fillMaxWidth().defaultWeight(),
+                artworkEdgeDp = composition.artworkEdgeDp,
+                compact = false,
+                artworkFrameInsetDp = composition.artworkFrameInsetDp
+            )
+            Spacer(GlanceModifier.height(3.dp))
+            RetroRackTransportBay(
+                snapshot = snapshot,
+                appearance = appearance,
+                controlEdgeDp = composition.controlEdgeDp,
+                modifier = GlanceModifier.fillMaxWidth().height(36.dp),
+                showHardwareDetails = composition.showHardwareDetails
+            )
         }
-        RetroRackDisplayBay(
-            snapshot = snapshot,
-            appearance = appearance,
-            modifier = GlanceModifier.fillMaxWidth().defaultWeight(),
-            artworkEdgeDp = composition.artworkEdgeDp,
-            compact = false
-        )
-        Spacer(GlanceModifier.height(3.dp))
-        RetroRackTransportBay(
-            snapshot = snapshot,
-            appearance = appearance,
-            controlEdgeDp = composition.controlEdgeDp,
-            modifier = GlanceModifier.fillMaxWidth().height(36.dp),
-            showHardwareDetails = composition.showHardwareDetails
-        )
     }
 }
 
 internal data class RetroRackWidgetComposition(
     val artworkEdgeDp: Int,
     val controlEdgeDp: Int,
-    val showModuleHeader: Boolean,
+    val headerAboveArtwork: Boolean,
+    val headerHorizontalInsetDp: Int,
+    val artworkFrameInsetDp: Int,
+    val outerBezelRetained: Boolean,
     val showHardwareDetails: Boolean
 )
 
 internal fun retroRackWidgetCompositionFor(
-    layout: NowPlayingWidgetLayout
+    layout: NowPlayingWidgetLayout,
+    widgetHeightDp: Float = 120f,
+    widgetWidthDp: Float = 250f
 ): RetroRackWidgetComposition = when (layout) {
     NowPlayingWidgetLayout.COMPACT -> RetroRackWidgetComposition(
         artworkEdgeDp = 28,
         controlEdgeDp = 32,
-        showModuleHeader = false,
+        headerAboveArtwork = false,
+        headerHorizontalInsetDp = 0,
+        artworkFrameInsetDp = 0,
+        outerBezelRetained = true,
         showHardwareDetails = false
     )
     NowPlayingWidgetLayout.STANDARD -> RetroRackWidgetComposition(
-        artworkEdgeDp = 42,
+        artworkEdgeDp = expandedArtworkEdgeDpFor(
+            widgetHeightDp = widgetHeightDp,
+            widgetWidthDp = widgetWidthDp,
+            reservedVerticalSpaceDp = 63,
+            minimumEdgeDp = 42
+        ),
         controlEdgeDp = 32,
-        showModuleHeader = true,
+        headerAboveArtwork = true,
+        headerHorizontalInsetDp = 6,
+        artworkFrameInsetDp = 2,
+        outerBezelRetained = true,
         showHardwareDetails = true
     )
 }
@@ -139,7 +175,8 @@ private fun RetroRackDisplayBay(
     appearance: NowPlayingWidgetAppearance,
     modifier: GlanceModifier,
     artworkEdgeDp: Int,
-    compact: Boolean
+    compact: Boolean,
+    artworkFrameInsetDp: Int
 ) {
     Box(
         modifier = modifier
@@ -152,10 +189,23 @@ private fun RetroRackDisplayBay(
                 .fillMaxSize()
                 .background(appearance.metadataSurface.asGlanceColorProvider())
                 .cornerRadius((appearance.panelCornerRadiusDp - 1).coerceAtLeast(0).dp)
-                .padding(if (compact) 2.dp else 3.dp),
+                .padding(if (compact) 2.dp else 1.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Artwork(snapshot, artworkEdgeDp, appearance)
+            if (compact) {
+                Artwork(snapshot, artworkEdgeDp, appearance)
+            } else {
+                Box(
+                    modifier = GlanceModifier
+                        .size(artworkEdgeDp.dp)
+                        .background(appearance.panelOutline.asGlanceColorProvider())
+                        .cornerRadius(appearance.artworkCornerRadiusDp.dp)
+                        .padding(artworkFrameInsetDp.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Artwork(snapshot, artworkEdgeDp - (artworkFrameInsetDp * 2), appearance)
+                }
+            }
             Spacer(GlanceModifier.width(if (compact) 5.dp else 7.dp))
             RetroMetadata(
                 snapshot = snapshot,
@@ -204,26 +254,20 @@ private fun RetroRackTransportBay(
 }
 
 @Composable
-private fun RetroRackModuleHeader(appearance: NowPlayingWidgetAppearance) {
+private fun RetroRackModuleHeader(
+    appearance: NowPlayingWidgetAppearance,
+    horizontalInsetDp: Int
+) {
     Row(
         modifier = GlanceModifier
             .fillMaxWidth()
-            .height(11.dp)
+            .height(10.dp)
             .background(appearance.panelSurface.asGlanceColorProvider())
-            .padding(horizontal = 3.dp),
+            .padding(horizontal = horizontalInsetDp.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         RetroRackScrew(appearance, edgeDp = 5)
         Spacer(GlanceModifier.width(5.dp))
-        Text(
-            text = "SAZANAMI // MAIN DECK",
-            style = TextStyle(
-                color = appearance.controlForeground.asGlanceColorProvider(),
-                fontSize = 7.sp,
-                fontWeight = FontWeight.Bold
-            ),
-            maxLines = 1
-        )
         Spacer(GlanceModifier.defaultWeight())
         Box(
             modifier = GlanceModifier
@@ -286,8 +330,6 @@ internal fun PocketCassetteCompactWidgetContent(
                 snapshot = snapshot,
                 appearance = appearance,
                 artworkEdgeDp = composition.artworkEdgeDp,
-                reelEdgeDp = composition.reelEdgeDp,
-                reelCount = composition.staticReelCount,
                 modifier = GlanceModifier.defaultWeight().fillMaxHeight()
             )
             Spacer(GlanceModifier.width(4.dp))
@@ -295,7 +337,9 @@ internal fun PocketCassetteCompactWidgetContent(
                 snapshot = snapshot,
                 appearance = appearance,
                 controlEdgeDp = composition.controlEdgeDp,
-                modifier = GlanceModifier.width(102.dp).height(36.dp)
+                modifier = GlanceModifier
+                    .width(102.dp)
+                    .height(composition.transportDeckHeightDp.dp)
             )
         }
     }
@@ -306,50 +350,81 @@ internal fun PocketCassetteStandardWidgetContent(
     snapshot: NowPlayingWidgetSnapshot,
     appearance: NowPlayingWidgetAppearance
 ) {
-    val composition = pocketCassetteWidgetCompositionFor(NowPlayingWidgetLayout.STANDARD)
-    Column(GlanceModifier.fillMaxSize()) {
-        PocketCassetteStandardFace(
-            snapshot = snapshot,
-            appearance = appearance,
-            artworkEdgeDp = composition.artworkEdgeDp,
-            reelEdgeDp = composition.reelEdgeDp,
-            reelCount = composition.staticReelCount,
-            modifier = GlanceModifier.fillMaxWidth().defaultWeight()
-        )
-        Spacer(GlanceModifier.height(4.dp))
-        PocketCassetteTransportStrip(
-            snapshot = snapshot,
-            appearance = appearance,
-            controlEdgeDp = composition.controlEdgeDp,
-            modifier = GlanceModifier.fillMaxWidth().height(36.dp),
-            showHardwareDetails = composition.showHardwareDetails
-        )
+    val composition = pocketCassetteWidgetCompositionFor(
+        layout = NowPlayingWidgetLayout.STANDARD,
+        widgetHeightDp = LocalSize.current.height.value,
+        widgetWidthDp = LocalSize.current.width.value
+    )
+    Box(
+        modifier = GlanceModifier
+            .fillMaxSize()
+            .background(appearance.panelOutline.asGlanceColorProvider())
+            .cornerRadius(appearance.widgetCornerRadiusDp.dp)
+            .padding(1.dp)
+    ) {
+        Column(
+            modifier = GlanceModifier
+                .fillMaxSize()
+                .background(appearance.background.asGlanceColorProvider())
+                .cornerRadius((appearance.widgetCornerRadiusDp - 1).coerceAtLeast(0).dp)
+                .padding(1.dp)
+        ) {
+            PocketCassetteStandardFace(
+                snapshot = snapshot,
+                appearance = appearance,
+                artworkEdgeDp = composition.artworkEdgeDp,
+                modifier = GlanceModifier.fillMaxWidth().defaultWeight()
+            )
+            Spacer(GlanceModifier.height(3.dp))
+            PocketCassetteTransportStrip(
+                snapshot = snapshot,
+                appearance = appearance,
+                controlEdgeDp = composition.controlEdgeDp,
+                modifier = GlanceModifier
+                    .fillMaxWidth()
+                    .height(composition.transportDeckHeightDp.dp),
+                showHardwareDetails = composition.showHardwareDetails
+            )
+        }
     }
 }
 
 internal data class PocketCassetteWidgetComposition(
     val artworkEdgeDp: Int,
-    val reelEdgeDp: Int,
-    val staticReelCount: Int,
     val controlEdgeDp: Int,
+    val transportDeckHeightDp: Int,
+    val showReelDecoration: Boolean,
+    val usesFullWidthTransportDeck: Boolean,
+    val outerFrameRetained: Boolean,
     val showHardwareDetails: Boolean
 )
 
 internal fun pocketCassetteWidgetCompositionFor(
-    layout: NowPlayingWidgetLayout
+    layout: NowPlayingWidgetLayout,
+    widgetHeightDp: Float = 120f,
+    widgetWidthDp: Float = 250f
 ): PocketCassetteWidgetComposition = when (layout) {
     NowPlayingWidgetLayout.COMPACT -> PocketCassetteWidgetComposition(
         artworkEdgeDp = 30,
-        reelEdgeDp = 8,
-        staticReelCount = 2,
         controlEdgeDp = 32,
+        transportDeckHeightDp = 36,
+        showReelDecoration = false,
+        usesFullWidthTransportDeck = false,
+        outerFrameRetained = false,
         showHardwareDetails = false
     )
     NowPlayingWidgetLayout.STANDARD -> PocketCassetteWidgetComposition(
-        artworkEdgeDp = 52,
-        reelEdgeDp = 12,
-        staticReelCount = 2,
+        artworkEdgeDp = expandedArtworkEdgeDpFor(
+            widgetHeightDp = widgetHeightDp,
+            widgetWidthDp = widgetWidthDp,
+            reservedVerticalSpaceDp = 55,
+            minimumEdgeDp = 52
+        ),
         controlEdgeDp = 32,
+        transportDeckHeightDp = 40,
+        showReelDecoration = false,
+        usesFullWidthTransportDeck = true,
+        outerFrameRetained = true,
         showHardwareDetails = true
     )
 }
@@ -359,8 +434,6 @@ private fun PocketCassetteCompactLabel(
     snapshot: NowPlayingWidgetSnapshot,
     appearance: NowPlayingWidgetAppearance,
     artworkEdgeDp: Int,
-    reelEdgeDp: Int,
-    reelCount: Int,
     modifier: GlanceModifier
 ) {
     Box(
@@ -385,13 +458,6 @@ private fun PocketCassetteCompactLabel(
                 compact = true,
                 modifier = GlanceModifier.defaultWeight()
             )
-            Spacer(GlanceModifier.width(3.dp))
-            PocketCassetteReelWindow(
-                appearance = appearance,
-                reelEdgeDp = reelEdgeDp,
-                reelCount = reelCount,
-                modifier = GlanceModifier.width(30.dp).height(22.dp)
-            )
         }
     }
 }
@@ -401,8 +467,6 @@ private fun PocketCassetteStandardFace(
     snapshot: NowPlayingWidgetSnapshot,
     appearance: NowPlayingWidgetAppearance,
     artworkEdgeDp: Int,
-    reelEdgeDp: Int,
-    reelCount: Int,
     modifier: GlanceModifier
 ) {
     Box(
@@ -416,29 +480,19 @@ private fun PocketCassetteStandardFace(
                 .fillMaxSize()
                 .background(appearance.panelSurface.asGlanceColorProvider())
                 .cornerRadius((appearance.panelCornerRadiusDp - 1).coerceAtLeast(0).dp)
-                .padding(4.dp)
         ) {
             Row(
                 modifier = GlanceModifier.fillMaxSize().padding(horizontal = 3.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Artwork(snapshot, artworkEdgeDp, appearance)
-                Spacer(GlanceModifier.width(7.dp))
-                Column(GlanceModifier.defaultWeight().fillMaxHeight()) {
-                    PocketCassetteLabelMetadata(
-                        snapshot = snapshot,
-                        appearance = appearance,
-                        compact = false,
-                        modifier = GlanceModifier.fillMaxWidth().defaultWeight()
-                    )
-                    Spacer(GlanceModifier.height(3.dp))
-                    PocketCassetteReelWindow(
-                        appearance = appearance,
-                        reelEdgeDp = reelEdgeDp,
-                        reelCount = reelCount,
-                        modifier = GlanceModifier.fillMaxWidth().height(22.dp)
-                    )
-                }
+                Spacer(GlanceModifier.width(8.dp))
+                PocketCassetteLabelMetadata(
+                    snapshot = snapshot,
+                    appearance = appearance,
+                    compact = false,
+                    modifier = GlanceModifier.defaultWeight().fillMaxHeight()
+                )
             }
             PocketCassetteScrewPair(appearance, screwEdgeDp = 5)
         }
@@ -452,8 +506,9 @@ private fun PocketCassetteLabelMetadata(
     modifier: GlanceModifier,
     compact: Boolean
 ) {
-    val linePolicy = widgetMetadataLinePolicyFor(
-        if (compact) NowPlayingWidgetLayout.COMPACT else NowPlayingWidgetLayout.STANDARD
+    val linePolicy = retroWidgetMetadataLinePolicyFor(
+        if (compact) NowPlayingWidgetLayout.COMPACT else NowPlayingWidgetLayout.STANDARD,
+        standardTitleMaxLines = 3
     )
     Column(
         modifier = modifier.clickable(actionStartActivity<MainActivity>()),
@@ -466,7 +521,7 @@ private fun PocketCassetteLabelMetadata(
                 fontSize = if (compact) 10.sp else 12.sp,
                 fontWeight = FontWeight.Bold
             ),
-            maxLines = if (compact) linePolicy.titleMaxLines else 1
+            maxLines = linePolicy.titleMaxLines
         )
         Text(
             text = snapshot.artist.uppercase(Locale.ROOT),
@@ -476,79 +531,6 @@ private fun PocketCassetteLabelMetadata(
             ),
             maxLines = linePolicy.artistMaxLines
         )
-    }
-}
-
-@Composable
-private fun PocketCassetteReelWindow(
-    appearance: NowPlayingWidgetAppearance,
-    reelEdgeDp: Int,
-    reelCount: Int,
-    modifier: GlanceModifier
-) {
-    Box(
-        modifier = modifier
-            .background(appearance.panelOutline.asGlanceColorProvider())
-            .cornerRadius(5.dp)
-            .padding(1.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Box(
-            modifier = GlanceModifier
-                .fillMaxSize()
-                .background(appearance.metadataSurface.asGlanceColorProvider())
-                .cornerRadius(4.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Box(
-                modifier = GlanceModifier
-                    .fillMaxWidth()
-                    .height(2.dp)
-                    .background(appearance.metadataSecondaryText.asGlanceColorProvider())
-            ) {}
-            Row(
-                modifier = GlanceModifier.fillMaxSize().padding(horizontal = 3.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                repeat(reelCount) { index ->
-                    if (index > 0) {
-                        Spacer(GlanceModifier.defaultWeight())
-                    }
-                    PocketCassetteReel(appearance, reelEdgeDp)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PocketCassetteReel(
-    appearance: NowPlayingWidgetAppearance,
-    edgeDp: Int
-) {
-    Box(
-        modifier = GlanceModifier
-            .size(edgeDp.dp)
-            .background(appearance.metadataSecondaryText.asGlanceColorProvider())
-            .cornerRadius((edgeDp / 2).dp)
-            .padding(2.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Box(
-            modifier = GlanceModifier
-                .fillMaxSize()
-                .background(appearance.metadataSurface.asGlanceColorProvider())
-                .cornerRadius(((edgeDp - 4) / 2).coerceAtLeast(1).dp)
-                .padding(1.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Box(
-                modifier = GlanceModifier
-                    .fillMaxSize()
-                    .background(appearance.accent.asGlanceColorProvider())
-                    .cornerRadius(((edgeDp - 6) / 2).coerceAtLeast(1).dp)
-            ) {}
-        }
     }
 }
 
@@ -650,7 +632,7 @@ private fun RetroMetadata(
     modifier: GlanceModifier,
     compact: Boolean
 ) {
-    val linePolicy = widgetMetadataLinePolicyFor(
+    val linePolicy = retroWidgetMetadataLinePolicyFor(
         if (compact) NowPlayingWidgetLayout.COMPACT else NowPlayingWidgetLayout.STANDARD
     )
     Column(
@@ -678,4 +660,18 @@ private fun RetroMetadata(
             maxLines = linePolicy.artistMaxLines
         )
     }
+}
+
+internal fun retroWidgetMetadataLinePolicyFor(
+    layout: NowPlayingWidgetLayout,
+    standardTitleMaxLines: Int = 2
+): WidgetMetadataLinePolicy = when (layout) {
+    NowPlayingWidgetLayout.COMPACT -> WidgetMetadataLinePolicy(
+        titleMaxLines = 1,
+        artistMaxLines = 1
+    )
+    NowPlayingWidgetLayout.STANDARD -> WidgetMetadataLinePolicy(
+        titleMaxLines = standardTitleMaxLines.coerceIn(2, 3),
+        artistMaxLines = 1
+    )
 }
