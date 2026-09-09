@@ -183,6 +183,7 @@ internal fun PocketFlipCompactWidgetContent(
     snapshot: NowPlayingWidgetSnapshot,
     appearance: NowPlayingWidgetAppearance
 ) {
+    val composition = pocketFlipWidgetCompositionFor(NowPlayingWidgetLayout.COMPACT)
     Row(
         modifier = GlanceModifier.fillMaxSize(),
         verticalAlignment = Alignment.CenterVertically
@@ -191,11 +192,18 @@ internal fun PocketFlipCompactWidgetContent(
             snapshot = snapshot,
             appearance = appearance,
             modifier = GlanceModifier.defaultWeight().fillMaxHeight(),
-            artworkEdgeDp = 30,
+            artworkEdgeDp = composition.artworkEdgeDp,
             compact = true
         )
-        Spacer(GlanceModifier.width(5.dp))
-        TransportControls(snapshot, 32, appearance)
+        if (composition.usesCompressedVerticalHinge) {
+            PocketFlipVerticalHinge(appearance)
+        }
+        PocketFlipControlDeck(
+            snapshot = snapshot,
+            appearance = appearance,
+            controlEdgeDp = composition.controlEdgeDp,
+            modifier = GlanceModifier.width(102.dp).fillMaxHeight()
+        )
     }
 }
 
@@ -204,22 +212,50 @@ internal fun PocketFlipStandardWidgetContent(
     snapshot: NowPlayingWidgetSnapshot,
     appearance: NowPlayingWidgetAppearance
 ) {
+    val composition = pocketFlipWidgetCompositionFor(NowPlayingWidgetLayout.STANDARD)
     Column(GlanceModifier.fillMaxSize()) {
         PocketFlipDisplay(
             snapshot = snapshot,
             appearance = appearance,
             modifier = GlanceModifier.fillMaxWidth().defaultWeight(),
-            artworkEdgeDp = 44,
+            artworkEdgeDp = composition.artworkEdgeDp,
             compact = false
         )
-        PocketFlipHinge(appearance)
-        Box(
-            modifier = GlanceModifier.fillMaxWidth(),
-            contentAlignment = Alignment.Center
-        ) {
-            TransportControls(snapshot, 38, appearance)
+        if (!composition.usesCompressedVerticalHinge) {
+            PocketFlipHorizontalHinge(appearance)
         }
+        PocketFlipControlDeck(
+            snapshot = snapshot,
+            appearance = appearance,
+            controlEdgeDp = composition.controlEdgeDp,
+            modifier = GlanceModifier.fillMaxWidth().height(38.dp),
+            showDeckDetails = composition.showDeckDetails
+        )
     }
+}
+
+internal data class PocketFlipWidgetComposition(
+    val artworkEdgeDp: Int,
+    val controlEdgeDp: Int,
+    val usesCompressedVerticalHinge: Boolean,
+    val showDeckDetails: Boolean
+)
+
+internal fun pocketFlipWidgetCompositionFor(
+    layout: NowPlayingWidgetLayout
+): PocketFlipWidgetComposition = when (layout) {
+    NowPlayingWidgetLayout.COMPACT -> PocketFlipWidgetComposition(
+        artworkEdgeDp = 30,
+        controlEdgeDp = 32,
+        usesCompressedVerticalHinge = true,
+        showDeckDetails = false
+    )
+    NowPlayingWidgetLayout.STANDARD -> PocketFlipWidgetComposition(
+        artworkEdgeDp = 44,
+        controlEdgeDp = 32,
+        usesCompressedVerticalHinge = false,
+        showDeckDetails = true
+    )
 }
 
 @Composable
@@ -264,20 +300,134 @@ private fun PocketFlipDisplay(
 }
 
 @Composable
-private fun PocketFlipHinge(appearance: NowPlayingWidgetAppearance) {
+private fun PocketFlipVerticalHinge(appearance: NowPlayingWidgetAppearance) {
     Box(
         modifier = GlanceModifier
-            .fillMaxWidth()
-            .height(5.dp)
-            .padding(vertical = 1.dp),
+            .width(5.dp)
+            .fillMaxHeight()
+            .padding(horizontal = 1.dp),
         contentAlignment = Alignment.Center
     ) {
         Box(
             modifier = GlanceModifier
-                .fillMaxWidth()
-                .height(3.dp)
+                .fillMaxSize()
                 .background(appearance.panelOutline.asGlanceColorProvider())
                 .cornerRadius(2.dp)
+        ) {}
+    }
+}
+
+@Composable
+private fun PocketFlipHorizontalHinge(appearance: NowPlayingWidgetAppearance) {
+    Row(
+        modifier = GlanceModifier.fillMaxWidth().height(7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        PocketFlipHingeSegment(appearance, GlanceModifier.width(34.dp))
+        Spacer(GlanceModifier.width(3.dp))
+        PocketFlipHingeSegment(appearance, GlanceModifier.defaultWeight())
+        Spacer(GlanceModifier.width(3.dp))
+        PocketFlipHingeSegment(appearance, GlanceModifier.width(34.dp))
+    }
+}
+
+@Composable
+private fun PocketFlipHingeSegment(
+    appearance: NowPlayingWidgetAppearance,
+    modifier: GlanceModifier
+) {
+    Box(
+        modifier = modifier
+            .height(5.dp)
+            .background(appearance.panelOutline.asGlanceColorProvider())
+            .cornerRadius(3.dp)
+            .padding(1.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = GlanceModifier
+                .fillMaxSize()
+                .background(appearance.background.asGlanceColorProvider())
+                .cornerRadius(2.dp)
+        ) {}
+    }
+}
+
+@Composable
+private fun PocketFlipControlDeck(
+    snapshot: NowPlayingWidgetSnapshot,
+    appearance: NowPlayingWidgetAppearance,
+    controlEdgeDp: Int,
+    modifier: GlanceModifier,
+    showDeckDetails: Boolean = false
+) {
+    Box(
+        modifier = modifier
+            .background(appearance.panelOutline.asGlanceColorProvider())
+            .cornerRadius(appearance.panelCornerRadiusDp.dp)
+            .padding(1.dp)
+    ) {
+        Row(
+            modifier = GlanceModifier
+                .fillMaxSize()
+                .background(appearance.background.asGlanceColorProvider())
+                .cornerRadius((appearance.panelCornerRadiusDp - 1).coerceAtLeast(0).dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (showDeckDetails) {
+                Spacer(GlanceModifier.width(4.dp))
+                PocketFlipHardwareScrew(appearance, edgeDp = 6)
+                Spacer(GlanceModifier.width(5.dp))
+                PocketFlipSpeakerGrille(appearance)
+                Spacer(GlanceModifier.defaultWeight())
+            }
+            TransportControls(snapshot, controlEdgeDp, appearance)
+            if (showDeckDetails) {
+                Spacer(GlanceModifier.defaultWeight())
+                PocketFlipSpeakerGrille(appearance)
+                Spacer(GlanceModifier.width(5.dp))
+                PocketFlipHardwareScrew(appearance, edgeDp = 6)
+                Spacer(GlanceModifier.width(4.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PocketFlipSpeakerGrille(appearance: NowPlayingWidgetAppearance) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        repeat(3) { index ->
+            if (index > 0) {
+                Spacer(GlanceModifier.width(2.dp))
+            }
+            Box(
+                modifier = GlanceModifier
+                    .size(3.dp)
+                    .background(appearance.panelOutline.asGlanceColorProvider())
+                    .cornerRadius(2.dp)
+            ) {}
+        }
+    }
+}
+
+@Composable
+private fun PocketFlipHardwareScrew(
+    appearance: NowPlayingWidgetAppearance,
+    edgeDp: Int
+) {
+    Box(
+        modifier = GlanceModifier
+            .size(edgeDp.dp)
+            .background(appearance.panelOutline.asGlanceColorProvider())
+            .cornerRadius((edgeDp / 2).dp)
+            .padding(1.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = GlanceModifier
+                .fillMaxSize()
+                .background(appearance.background.asGlanceColorProvider())
+                .cornerRadius(((edgeDp - 2) / 2).coerceAtLeast(1).dp)
         ) {}
     }
 }

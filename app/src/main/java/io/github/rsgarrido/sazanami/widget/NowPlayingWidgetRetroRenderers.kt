@@ -12,6 +12,7 @@ import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
+import androidx.glance.layout.RowScope
 import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxHeight
 import androidx.glance.layout.fillMaxSize
@@ -31,20 +32,25 @@ internal fun RetroRackCompactWidgetContent(
     snapshot: NowPlayingWidgetSnapshot,
     appearance: NowPlayingWidgetAppearance
 ) {
-    Row(
-        modifier = GlanceModifier.fillMaxSize(),
-        verticalAlignment = Alignment.CenterVertically
+    val composition = retroRackWidgetCompositionFor(NowPlayingWidgetLayout.COMPACT)
+    RetroRackFaceplate(
+        appearance = appearance,
+        modifier = GlanceModifier.fillMaxSize()
     ) {
-        Artwork(snapshot, 40, appearance)
-        Spacer(GlanceModifier.width(6.dp))
-        RetroRackMetadataPanel(
+        RetroRackDisplayBay(
             snapshot = snapshot,
             appearance = appearance,
             modifier = GlanceModifier.defaultWeight().fillMaxHeight(),
+            artworkEdgeDp = composition.artworkEdgeDp,
             compact = true
         )
         Spacer(GlanceModifier.width(4.dp))
-        TransportControls(snapshot, 32, appearance)
+        RetroRackTransportBay(
+            snapshot = snapshot,
+            appearance = appearance,
+            controlEdgeDp = composition.controlEdgeDp,
+            modifier = GlanceModifier.width(98.dp).fillMaxHeight()
+        )
     }
 }
 
@@ -53,30 +59,86 @@ internal fun RetroRackStandardWidgetContent(
     snapshot: NowPlayingWidgetSnapshot,
     appearance: NowPlayingWidgetAppearance
 ) {
-    Row(
-        modifier = GlanceModifier.fillMaxSize(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Artwork(snapshot, 88, appearance)
-        Spacer(GlanceModifier.width(10.dp))
-        Column(GlanceModifier.defaultWeight().fillMaxHeight()) {
-            RetroRackMetadataPanel(
-                snapshot = snapshot,
-                appearance = appearance,
-                modifier = GlanceModifier.fillMaxWidth().defaultWeight(),
-                compact = false
-            )
-            Spacer(GlanceModifier.height(4.dp))
-            TransportControls(snapshot, 38, appearance)
+    val composition = retroRackWidgetCompositionFor(NowPlayingWidgetLayout.STANDARD)
+    Column(GlanceModifier.fillMaxSize()) {
+        if (composition.showModuleHeader) {
+            RetroRackModuleHeader(appearance)
+            Spacer(GlanceModifier.height(2.dp))
         }
+        RetroRackDisplayBay(
+            snapshot = snapshot,
+            appearance = appearance,
+            modifier = GlanceModifier.fillMaxWidth().defaultWeight(),
+            artworkEdgeDp = composition.artworkEdgeDp,
+            compact = false
+        )
+        Spacer(GlanceModifier.height(3.dp))
+        RetroRackTransportBay(
+            snapshot = snapshot,
+            appearance = appearance,
+            controlEdgeDp = composition.controlEdgeDp,
+            modifier = GlanceModifier.fillMaxWidth().height(36.dp),
+            showHardwareDetails = composition.showHardwareDetails
+        )
+    }
+}
+
+internal data class RetroRackWidgetComposition(
+    val artworkEdgeDp: Int,
+    val controlEdgeDp: Int,
+    val showModuleHeader: Boolean,
+    val showHardwareDetails: Boolean
+)
+
+internal fun retroRackWidgetCompositionFor(
+    layout: NowPlayingWidgetLayout
+): RetroRackWidgetComposition = when (layout) {
+    NowPlayingWidgetLayout.COMPACT -> RetroRackWidgetComposition(
+        artworkEdgeDp = 28,
+        controlEdgeDp = 32,
+        showModuleHeader = false,
+        showHardwareDetails = false
+    )
+    NowPlayingWidgetLayout.STANDARD -> RetroRackWidgetComposition(
+        artworkEdgeDp = 42,
+        controlEdgeDp = 32,
+        showModuleHeader = true,
+        showHardwareDetails = true
+    )
+}
+
+@Composable
+private fun RetroRackFaceplate(
+    appearance: NowPlayingWidgetAppearance,
+    modifier: GlanceModifier,
+    content: @Composable RowScope.() -> Unit
+) {
+    Box(
+        modifier = modifier
+            .background(appearance.panelOutline.asGlanceColorProvider())
+            .cornerRadius(appearance.panelCornerRadiusDp.dp)
+            .padding(1.dp)
+    ) {
+        Row(
+            modifier = GlanceModifier
+                .fillMaxSize()
+                .background(appearance.panelSurface.asGlanceColorProvider())
+                .cornerRadius((appearance.panelCornerRadiusDp - 1).coerceAtLeast(0).dp)
+                .padding(2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            content()
+        }
+        RetroRackScrewPair(appearance, edgeDp = 4)
     }
 }
 
 @Composable
-private fun RetroRackMetadataPanel(
+private fun RetroRackDisplayBay(
     snapshot: NowPlayingWidgetSnapshot,
     appearance: NowPlayingWidgetAppearance,
     modifier: GlanceModifier,
+    artworkEdgeDp: Int,
     compact: Boolean
 ) {
     Box(
@@ -85,16 +147,125 @@ private fun RetroRackMetadataPanel(
             .cornerRadius(appearance.panelCornerRadiusDp.dp)
             .padding(1.dp)
     ) {
-        RetroMetadata(
-            snapshot = snapshot,
-            appearance = appearance,
+        Row(
             modifier = GlanceModifier
                 .fillMaxSize()
                 .background(appearance.metadataSurface.asGlanceColorProvider())
                 .cornerRadius((appearance.panelCornerRadiusDp - 1).coerceAtLeast(0).dp)
-                .padding(horizontal = 7.dp, vertical = 3.dp),
-            compact = compact
+                .padding(if (compact) 2.dp else 3.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Artwork(snapshot, artworkEdgeDp, appearance)
+            Spacer(GlanceModifier.width(if (compact) 5.dp else 7.dp))
+            RetroMetadata(
+                snapshot = snapshot,
+                appearance = appearance,
+                modifier = GlanceModifier.defaultWeight(),
+                compact = compact
+            )
+        }
+    }
+}
+
+@Composable
+private fun RetroRackTransportBay(
+    snapshot: NowPlayingWidgetSnapshot,
+    appearance: NowPlayingWidgetAppearance,
+    controlEdgeDp: Int,
+    modifier: GlanceModifier,
+    showHardwareDetails: Boolean = false
+) {
+    Box(
+        modifier = modifier
+            .background(appearance.panelOutline.asGlanceColorProvider())
+            .cornerRadius(appearance.controlCornerRadiusDp.dp)
+            .padding(1.dp)
+    ) {
+        Row(
+            modifier = GlanceModifier
+                .fillMaxSize()
+                .background(appearance.panelSurface.asGlanceColorProvider())
+                .cornerRadius((appearance.controlCornerRadiusDp - 1).coerceAtLeast(0).dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (showHardwareDetails) {
+                Spacer(GlanceModifier.width(3.dp))
+                RetroRackScrew(appearance, edgeDp = 5)
+                Spacer(GlanceModifier.defaultWeight())
+            }
+            TransportControls(snapshot, controlEdgeDp, appearance)
+            if (showHardwareDetails) {
+                Spacer(GlanceModifier.defaultWeight())
+                RetroRackScrew(appearance, edgeDp = 5)
+                Spacer(GlanceModifier.width(3.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun RetroRackModuleHeader(appearance: NowPlayingWidgetAppearance) {
+    Row(
+        modifier = GlanceModifier
+            .fillMaxWidth()
+            .height(11.dp)
+            .background(appearance.panelSurface.asGlanceColorProvider())
+            .padding(horizontal = 3.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RetroRackScrew(appearance, edgeDp = 5)
+        Spacer(GlanceModifier.width(5.dp))
+        Text(
+            text = "SAZANAMI // MAIN DECK",
+            style = TextStyle(
+                color = appearance.controlForeground.asGlanceColorProvider(),
+                fontSize = 7.sp,
+                fontWeight = FontWeight.Bold
+            ),
+            maxLines = 1
         )
+        Spacer(GlanceModifier.defaultWeight())
+        Box(
+            modifier = GlanceModifier
+                .width(12.dp)
+                .height(5.dp)
+                .background(appearance.accent.asGlanceColorProvider())
+                .cornerRadius(1.dp)
+        ) {}
+    }
+}
+
+@Composable
+private fun RetroRackScrewPair(
+    appearance: NowPlayingWidgetAppearance,
+    edgeDp: Int
+) {
+    Row(GlanceModifier.fillMaxWidth()) {
+        RetroRackScrew(appearance, edgeDp)
+        Spacer(GlanceModifier.defaultWeight())
+        RetroRackScrew(appearance, edgeDp)
+    }
+}
+
+@Composable
+private fun RetroRackScrew(
+    appearance: NowPlayingWidgetAppearance,
+    edgeDp: Int
+) {
+    Box(
+        modifier = GlanceModifier
+            .size(edgeDp.dp)
+            .background(appearance.panelOutline.asGlanceColorProvider())
+            .cornerRadius((edgeDp / 2).dp)
+            .padding(1.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = GlanceModifier
+                .fillMaxSize()
+                .background(appearance.background.asGlanceColorProvider())
+                .cornerRadius(((edgeDp - 2) / 2).coerceAtLeast(1).dp)
+        ) {}
     }
 }
 

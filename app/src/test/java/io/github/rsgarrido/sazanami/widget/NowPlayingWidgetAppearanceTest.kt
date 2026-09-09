@@ -191,6 +191,7 @@ class NowPlayingWidgetAppearanceTest {
         val rackAccent = Color(0xFF44DD77)
         val rackDisplay = Color(0xFF020403)
         val rackText = Color(0xFFE8ECEF)
+        val rackActive = Color(0xFFF2B84B)
         val cassetteShell = Color(0xFFD5C8B8)
         val cassetteDisplay = Color(0xFF111315)
         val cassetteText = Color(0xFFF2EFE8)
@@ -202,7 +203,8 @@ class NowPlayingWidgetAppearanceTest {
                     shellColor = rackShell,
                     accentColor = rackAccent,
                     displayBackgroundColor = rackDisplay,
-                    displayTextColor = rackText
+                    displayTextColor = rackText,
+                    secondaryAccentColor = rackActive
                 ),
                 PlayerTheme.POCKET_CASSETTE to PlayerThemeTokenOverrides(
                     shellColor = cassetteShell,
@@ -226,11 +228,17 @@ class NowPlayingWidgetAppearanceTest {
         assertEquals(rackAccent, rackTokens.accentColor)
         assertEquals(rackDisplay, rackTokens.displayBackgroundColor)
         assertEquals(rackText, rackTokens.displayTextColor)
+        assertEquals(rackActive, rackTokens.secondaryAccentColor)
         assertEquals(cassetteShell, cassetteTokens.shellColor)
         assertEquals(cassetteDisplay, cassetteTokens.displayBackgroundColor)
         assertEquals(cassetteText, cassetteTokens.displayTextColor)
         assertEquals(cassetteWarmAccent, cassetteTokens.secondaryAccentColor)
         assertSame(WidgetAppearanceRenderer.RETRO_RACK, rackAppearance.renderer)
+        assertEquals(WidgetColorToken.Fixed(rackShell), rackAppearance.panelSurface)
+        assertEquals(WidgetColorToken.Fixed(rackDisplay), rackAppearance.metadataSurface)
+        assertEquals(WidgetColorToken.Fixed(rackAccent), rackAppearance.metadataPrimaryText)
+        assertEquals(WidgetColorToken.Fixed(rackText), rackAppearance.controlForeground)
+        assertEquals(WidgetColorToken.Fixed(rackActive), rackAppearance.accent)
         assertSame(WidgetAppearanceRenderer.POCKET_CASSETTE, cassetteAppearance.renderer)
         assertEquals(WidgetColorToken.Fixed(cassetteShell), cassetteAppearance.background)
         assertEquals(
@@ -251,6 +259,8 @@ class NowPlayingWidgetAppearanceTest {
         val classicCenter = Color(0xFFE84855)
         val flipShell = Color(0xFF274A78)
         val flipButtons = Color(0xFFE2B84D)
+        val flipDisplay = Color(0xFF15251F)
+        val flipText = Color(0xFFEAF3DF)
         val flipAccent = Color(0xFF34658E)
         val discShell = Color(0xFF4A273B)
         val discGlow = Color(0xFF82F0C2)
@@ -265,6 +275,8 @@ class NowPlayingWidgetAppearanceTest {
                 PlayerTheme.POCKET_FLIP to PlayerThemeTokenOverrides(
                     shellColor = flipShell,
                     accentColor = flipButtons,
+                    displayBackgroundColor = flipDisplay,
+                    displayTextColor = flipText,
                     secondaryAccentColor = flipAccent
                 ),
                 PlayerTheme.POCKET_DISC to PlayerThemeTokenOverrides(
@@ -277,6 +289,7 @@ class NowPlayingWidgetAppearanceTest {
         )
 
         val classic = resolveWidgetAppearance(WidgetAppearanceMode.CLASSIC_WHEEL, preferences)
+        val flipTokens = resolvedWidgetThemeTokens(PlayerTheme.POCKET_FLIP, preferences)
         val flip = resolveWidgetAppearance(WidgetAppearanceMode.POCKET_FLIP, preferences)
         val disc = resolveWidgetAppearance(WidgetAppearanceMode.POCKET_DISC, preferences)
 
@@ -285,8 +298,15 @@ class NowPlayingWidgetAppearanceTest {
         assertEquals(WidgetColorToken.Fixed(classicWheel), classic.controlSurface)
         assertEquals(WidgetColorToken.Fixed(classicCenter), classic.panelSurface)
         assertSame(WidgetAppearanceRenderer.POCKET_FLIP, flip.renderer)
+        assertEquals(flipShell, flipTokens.shellColor)
+        assertEquals(flipButtons, flipTokens.accentColor)
+        assertEquals(flipDisplay, flipTokens.displayBackgroundColor)
+        assertEquals(flipText, flipTokens.displayTextColor)
+        assertEquals(flipAccent, flipTokens.secondaryAccentColor)
         assertEquals(WidgetColorToken.Fixed(flipShell), flip.background)
         assertEquals(WidgetColorToken.Fixed(flipButtons), flip.accent)
+        assertEquals(WidgetColorToken.Fixed(flipDisplay), flip.metadataSurface)
+        assertEquals(WidgetColorToken.Fixed(flipText), flip.metadataPrimaryText)
         assertSame(WidgetAppearanceRenderer.POCKET_DISC, disc.renderer)
         assertEquals(WidgetColorToken.Fixed(discShell), disc.background)
         assertEquals(WidgetColorToken.Fixed(discActive), disc.accent)
@@ -337,6 +357,34 @@ class NowPlayingWidgetAppearanceTest {
         assertEquals(32, standard.controlEdgeDp)
         assertTrue(standard.artworkEdgeDp > compact.artworkEdgeDp)
         assertTrue(standard.reelEdgeDp > compact.reelEdgeDp)
+    }
+
+    @Test
+    fun retroRackLayoutsUseDistinctRackModuleCompositions() {
+        val compact = retroRackWidgetCompositionFor(NowPlayingWidgetLayout.COMPACT)
+        val standard = retroRackWidgetCompositionFor(NowPlayingWidgetLayout.STANDARD)
+
+        assertEquals(false, compact.showModuleHeader)
+        assertEquals(true, standard.showModuleHeader)
+        assertEquals(false, compact.showHardwareDetails)
+        assertEquals(true, standard.showHardwareDetails)
+        assertEquals(32, compact.controlEdgeDp)
+        assertEquals(32, standard.controlEdgeDp)
+        assertTrue(standard.artworkEdgeDp > compact.artworkEdgeDp)
+    }
+
+    @Test
+    fun pocketFlipLayoutsKeepScreenAndControlHalvesJoinedByResponsiveHinges() {
+        val compact = pocketFlipWidgetCompositionFor(NowPlayingWidgetLayout.COMPACT)
+        val standard = pocketFlipWidgetCompositionFor(NowPlayingWidgetLayout.STANDARD)
+
+        assertEquals(true, compact.usesCompressedVerticalHinge)
+        assertEquals(false, standard.usesCompressedVerticalHinge)
+        assertEquals(false, compact.showDeckDetails)
+        assertEquals(true, standard.showDeckDetails)
+        assertEquals(32, compact.controlEdgeDp)
+        assertEquals(32, standard.controlEdgeDp)
+        assertTrue(standard.artworkEdgeDp > compact.artworkEdgeDp)
     }
 
     @Test
