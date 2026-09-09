@@ -17,6 +17,7 @@ import io.github.rsgarrido.sazanami.ui.theme.SazanamiSurface
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NowPlayingWidgetAppearanceTest {
@@ -231,6 +232,15 @@ class NowPlayingWidgetAppearanceTest {
         assertEquals(cassetteWarmAccent, cassetteTokens.secondaryAccentColor)
         assertSame(WidgetAppearanceRenderer.RETRO_RACK, rackAppearance.renderer)
         assertSame(WidgetAppearanceRenderer.POCKET_CASSETTE, cassetteAppearance.renderer)
+        assertEquals(WidgetColorToken.Fixed(cassetteShell), cassetteAppearance.background)
+        assertEquals(
+            WidgetColorToken.Fixed(cassetteDisplay),
+            cassetteAppearance.metadataSurface
+        )
+        assertEquals(
+            WidgetColorToken.Fixed(cassetteText),
+            cassetteAppearance.metadataPrimaryText
+        )
         assertEquals(WidgetColorToken.Fixed(cassetteWarmAccent), cassetteAppearance.accent)
     }
 
@@ -312,6 +322,21 @@ class NowPlayingWidgetAppearanceTest {
                 NowPlayingWidgetLayout.STANDARD
             )
         )
+    }
+
+    @Test
+    fun pocketCassetteLayoutsKeepCassetteIdentityAtBothResponsiveSizes() {
+        val compact = pocketCassetteWidgetCompositionFor(NowPlayingWidgetLayout.COMPACT)
+        val standard = pocketCassetteWidgetCompositionFor(NowPlayingWidgetLayout.STANDARD)
+
+        assertEquals(2, compact.staticReelCount)
+        assertEquals(2, standard.staticReelCount)
+        assertEquals(false, compact.showHardwareDetails)
+        assertEquals(true, standard.showHardwareDetails)
+        assertEquals(32, compact.controlEdgeDp)
+        assertEquals(32, standard.controlEdgeDp)
+        assertTrue(standard.artworkEdgeDp > compact.artworkEdgeDp)
+        assertTrue(standard.reelEdgeDp > compact.reelEdgeDp)
     }
 
     @Test
