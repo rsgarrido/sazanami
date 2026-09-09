@@ -256,6 +256,8 @@ class NowPlayingWidgetAppearanceTest {
     fun remainingRetroAppearancesReuseTheirOwnPersistedThemeTokenOverrides() {
         val classicShell = Color(0xFF34373C)
         val classicWheel = Color(0xFF101114)
+        val classicDisplay = Color(0xFFF4F1E7)
+        val classicText = Color(0xFF17191C)
         val classicCenter = Color(0xFFE84855)
         val flipShell = Color(0xFF274A78)
         val flipButtons = Color(0xFFE2B84D)
@@ -264,12 +266,16 @@ class NowPlayingWidgetAppearanceTest {
         val flipAccent = Color(0xFF34658E)
         val discShell = Color(0xFF4A273B)
         val discGlow = Color(0xFF82F0C2)
+        val discDisplay = Color(0xFF101D23)
+        val discText = Color(0xFFD8F4EF)
         val discActive = Color(0xFFF07C8F)
         val preferences = AppPreferencesState(
             playerThemeTokenOverrides = mapOf(
                 PlayerTheme.CLASSIC_WHEEL to PlayerThemeTokenOverrides(
                     shellColor = classicShell,
                     accentColor = classicWheel,
+                    displayBackgroundColor = classicDisplay,
+                    displayTextColor = classicText,
                     secondaryAccentColor = classicCenter
                 ),
                 PlayerTheme.POCKET_FLIP to PlayerThemeTokenOverrides(
@@ -282,21 +288,32 @@ class NowPlayingWidgetAppearanceTest {
                 PlayerTheme.POCKET_DISC to PlayerThemeTokenOverrides(
                     shellColor = discShell,
                     accentColor = discGlow,
+                    displayBackgroundColor = discDisplay,
+                    displayTextColor = discText,
                     secondaryAccentColor = discActive
                 )
             ),
             isLoaded = true
         )
 
+        val classicTokens = resolvedWidgetThemeTokens(PlayerTheme.CLASSIC_WHEEL, preferences)
         val classic = resolveWidgetAppearance(WidgetAppearanceMode.CLASSIC_WHEEL, preferences)
         val flipTokens = resolvedWidgetThemeTokens(PlayerTheme.POCKET_FLIP, preferences)
         val flip = resolveWidgetAppearance(WidgetAppearanceMode.POCKET_FLIP, preferences)
+        val discTokens = resolvedWidgetThemeTokens(PlayerTheme.POCKET_DISC, preferences)
         val disc = resolveWidgetAppearance(WidgetAppearanceMode.POCKET_DISC, preferences)
 
         assertSame(WidgetAppearanceRenderer.CLASSIC_WHEEL, classic.renderer)
+        assertEquals(classicShell, classicTokens.shellColor)
+        assertEquals(classicWheel, classicTokens.accentColor)
+        assertEquals(classicDisplay, classicTokens.displayBackgroundColor)
+        assertEquals(classicText, classicTokens.displayTextColor)
+        assertEquals(classicCenter, classicTokens.secondaryAccentColor)
         assertEquals(WidgetColorToken.Fixed(classicShell), classic.background)
         assertEquals(WidgetColorToken.Fixed(classicWheel), classic.controlSurface)
         assertEquals(WidgetColorToken.Fixed(classicCenter), classic.panelSurface)
+        assertEquals(WidgetColorToken.Fixed(classicDisplay), classic.metadataSurface)
+        assertEquals(WidgetColorToken.Fixed(classicText), classic.metadataPrimaryText)
         assertSame(WidgetAppearanceRenderer.POCKET_FLIP, flip.renderer)
         assertEquals(flipShell, flipTokens.shellColor)
         assertEquals(flipButtons, flipTokens.accentColor)
@@ -308,7 +325,14 @@ class NowPlayingWidgetAppearanceTest {
         assertEquals(WidgetColorToken.Fixed(flipDisplay), flip.metadataSurface)
         assertEquals(WidgetColorToken.Fixed(flipText), flip.metadataPrimaryText)
         assertSame(WidgetAppearanceRenderer.POCKET_DISC, disc.renderer)
+        assertEquals(discShell, discTokens.shellColor)
+        assertEquals(discGlow, discTokens.accentColor)
+        assertEquals(discDisplay, discTokens.displayBackgroundColor)
+        assertEquals(discText, discTokens.displayTextColor)
+        assertEquals(discActive, discTokens.secondaryAccentColor)
         assertEquals(WidgetColorToken.Fixed(discShell), disc.background)
+        assertEquals(WidgetColorToken.Fixed(discDisplay), disc.metadataSurface)
+        assertEquals(WidgetColorToken.Fixed(discText), disc.metadataPrimaryText)
         assertEquals(WidgetColorToken.Fixed(discActive), disc.accent)
     }
 
@@ -385,6 +409,34 @@ class NowPlayingWidgetAppearanceTest {
         assertEquals(32, compact.controlEdgeDp)
         assertEquals(32, standard.controlEdgeDp)
         assertTrue(standard.artworkEdgeDp > compact.artworkEdgeDp)
+    }
+
+    @Test
+    fun classicWheelLayoutsKeepAFramedScreenAndWheelControlRegion() {
+        val compact = classicWheelWidgetCompositionFor(NowPlayingWidgetLayout.COMPACT)
+        val standard = classicWheelWidgetCompositionFor(NowPlayingWidgetLayout.STANDARD)
+
+        assertEquals(false, compact.showStatusBar)
+        assertEquals(true, standard.showStatusBar)
+        assertEquals(102, compact.wheelWidthDp)
+        assertEquals(150, standard.wheelWidthDp)
+        assertEquals(32, compact.controlEdgeDp)
+        assertEquals(32, standard.controlEdgeDp)
+        assertTrue(standard.artworkEdgeDp > compact.artworkEdgeDp)
+    }
+
+    @Test
+    fun pocketDiscLayoutsKeepArtworkInsideAResponsiveDiscCartridge() {
+        val compact = pocketDiscWidgetCompositionFor(NowPlayingWidgetLayout.COMPACT)
+        val standard = pocketDiscWidgetCompositionFor(NowPlayingWidgetLayout.STANDARD)
+
+        assertEquals(false, compact.showMoldedDetails)
+        assertEquals(true, standard.showMoldedDetails)
+        assertEquals(32, compact.controlEdgeDp)
+        assertEquals(32, standard.controlEdgeDp)
+        assertTrue(compact.discWindowEdgeDp > compact.artworkEdgeDp)
+        assertTrue(standard.discWindowEdgeDp > standard.artworkEdgeDp)
+        assertTrue(standard.cartridgeEdgeDp > compact.cartridgeEdgeDp)
     }
 
     @Test
