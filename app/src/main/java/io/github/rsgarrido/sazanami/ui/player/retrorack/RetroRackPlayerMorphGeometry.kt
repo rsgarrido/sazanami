@@ -75,6 +75,8 @@ internal fun retroRackSharedOwner(progress: Float, geometryReady: Boolean) = whe
     progress >= 1f -> RetroRackSharedOwner.EXPANDED
     else -> RetroRackSharedOwner.TRANSITION
 }
+internal fun retroRackMorphOwnsVisuals(progress: Float, geometryReady: Boolean) =
+    progress > 0f && geometryReady
 
 internal enum class RetroRackGestureRegion {
     SAFE_HEADER, ARTWORK, METADATA, SPECTRUM_BODY,
@@ -115,6 +117,8 @@ internal fun retroRackDeckReveal(progress: Float) = morphProgressWindow(progress
 internal fun retroRackSpectrumReveal(progress: Float) = morphProgressWindow(progress, RetroRackMorphSpec.spectrumRevealStart, RetroRackMorphSpec.spectrumRevealEnd)
 internal fun retroRackQueueReveal(progress: Float) = morphProgressWindow(progress, RetroRackMorphSpec.queueRevealStart, RetroRackMorphSpec.queueRevealEnd)
 internal fun retroRackControlsReveal(progress: Float) = morphProgressWindow(progress, RetroRackMorphSpec.controlsRevealStart, RetroRackMorphSpec.controlsRevealEnd)
+internal fun retroRackMorphProgressTrackHeightDp(progress: Float) =
+    2f + 2f * progress.coerceIn(0f, 1f)
 internal fun retroRackExpandedInputEnabled(progress: Float) = progress >= RetroRackMorphSpec.expandedInputAt
 internal fun shouldRunRetroRackExpandedWork(progress: Float) = progress >= RetroRackMorphSpec.expensiveWorkAt
 

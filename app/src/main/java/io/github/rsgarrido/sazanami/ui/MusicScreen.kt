@@ -89,6 +89,7 @@ import io.github.rsgarrido.sazanami.ui.player.classicwheel.resolveClassicWheelMo
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ownsNowPlayingMorphContent
 import io.github.rsgarrido.sazanami.ui.player.retrorack.resolveRetroRackMorphGeometry
+import io.github.rsgarrido.sazanami.ui.player.retrorack.retroRackMorphOwnsVisuals
 import io.github.rsgarrido.sazanami.ui.player.retrorack.retroRackMorphTravelDistance
 import io.github.rsgarrido.sazanami.ui.player.retrorack.RetroRackMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketflip.PocketFlipMorphBounds
@@ -799,8 +800,13 @@ internal fun MusicScreen(
                     classicMorphBounds
                 ) != null
             val retroRackMorphOwnsVisuals = selectedPlayerTheme == PlayerTheme.RETRO_RACK &&
-                    !playerMorphState.isCollapsedAndIdle &&
-                    resolveRetroRackMorphGeometry(playerMorphState.progress, playerEndpointBounds) != null
+                    retroRackMorphOwnsVisuals(
+                        progress = playerMorphState.progress,
+                        geometryReady = resolveRetroRackMorphGeometry(
+                            playerMorphState.progress,
+                            playerEndpointBounds
+                        ) != null
+                    )
             val pocketFlipMorphOwnsVisuals =
                 selectedPlayerTheme == PlayerTheme.POCKET_FLIP &&
                         !playerMorphState.isCollapsedAndIdle &&

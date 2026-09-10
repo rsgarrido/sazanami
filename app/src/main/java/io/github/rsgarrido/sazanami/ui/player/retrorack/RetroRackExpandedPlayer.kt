@@ -2,7 +2,11 @@ package io.github.rsgarrido.sazanami.ui.player.retrorack
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -32,8 +36,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -50,6 +52,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalConfiguration
@@ -59,7 +62,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import io.github.rsgarrido.sazanami.ui.player.RetainedArtworkImage
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.RepeatMode
@@ -115,14 +122,19 @@ fun RetroRackExpandedPlayer(
     val palette = remember(tokens) { RetroRackPalette.from(tokens) }
     val playbackContext = activeQueueSongs
     val configuration = LocalConfiguration.current
-    val compact = configuration.screenHeightDp < 700 || configuration.screenWidthDp < 360
     val fontScale = LocalDensity.current.fontScale
-    val mainDeckHeight = when {
-        compact && fontScale > 1.15f -> 212.dp
-        compact -> 202.dp
-        fontScale > 1.15f -> 230.dp
-        else -> 216.dp
+    val layoutProfile = remember(
+        configuration.screenHeightDp,
+        configuration.screenWidthDp,
+        fontScale
+    ) {
+        buildRetroRackLayoutProfile(
+            screenHeightDp = configuration.screenHeightDp,
+            screenWidthDp = configuration.screenWidthDp,
+            fontScale = fontScale
+        )
     }
+    val compact = layoutProfile.compact
     val visualProfile = remember(
         currentSong?.id,
         currentSong?.title,
@@ -144,7 +156,10 @@ fun RetroRackExpandedPlayer(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(RackBackground)
+            .background(
+                if (sharedOwner == RetroRackSharedOwner.EXPANDED) RackBackground
+                else Color.Transparent
+            )
             .padding(
                 horizontal = if (compact) 5.dp else 8.dp,
                 vertical = if (compact) 6.dp else 10.dp
@@ -152,14 +167,17 @@ fun RetroRackExpandedPlayer(
         verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 7.dp)
     ) {
         RackModule(
-            title = "SAZANAMI // MAIN DECK",
-            modifier = Modifier.height(mainDeckHeight).graphicsLayer { alpha = deckReveal },
+            title = "MAIN DECK",
+            modifier = Modifier
+                .height(layoutProfile.mainDeckHeightDp.dp)
+                .graphicsLayer { alpha = deckReveal },
             titleModifier = safeHeaderGesture,
             trailingAction = {
                 RackIconButton(
                     icon = Icons.Filled.Close,
                     label = "CLOSE",
                     compact = true,
+                    dense = true,
                     onClick = onCollapseClick,
                     modifier = Modifier.playerEndpointInput(inputEnabled)
                 )
@@ -185,13 +203,19 @@ fun RetroRackExpandedPlayer(
                 inputEnabled = inputEnabled,
                 morphBounds = morphBounds,
                 sharedOwner = sharedOwner,
+                displayHeight = layoutProfile.displayHeightDp.dp,
                 modifier = safeHeaderGesture
             )
         }
 
         RackModule(
-            title = "SPECTRUM MONITOR // VISUAL",
-            modifier = Modifier.height(if (compact) 72.dp else 88.dp).graphicsLayer { alpha = spectrumReveal; scaleY = .92f + .08f * spectrumReveal },
+            title = "SPECTRUM MONITOR",
+            modifier = Modifier
+                .height(layoutProfile.spectrumHeightDp.dp)
+                .graphicsLayer {
+                    alpha = spectrumReveal
+                    scaleY = .92f + .08f * spectrumReveal
+                },
             titleModifier = safeHeaderGesture,
             trailingAction = {
                 RackIndicator(color = visualProfile.accent)
@@ -204,6 +228,7 @@ fun RetroRackExpandedPlayer(
                 isPlaying = isPlaying,
                 currentPosition = currentPosition,
                 duration = duration,
+                compact = compact,
                 modifier = Modifier.fillMaxSize().then(safeHeaderGesture)
             )
         }
@@ -219,6 +244,7 @@ fun RetroRackExpandedPlayer(
                     contentDescription = "Open queues",
                     active = true,
                     compact = true,
+                    dense = true,
                     onClick = onOpenUpNextClick,
                     modifier = Modifier.playerEndpointInput(inputEnabled && queueReveal > .99f)
                 )
@@ -255,21 +281,13 @@ private fun MainDeck(
     inputEnabled: Boolean,
     morphBounds: RetroRackMorphBounds?,
     sharedOwner: RetroRackSharedOwner,
+    displayHeight: Dp,
     modifier: Modifier
 ) {
-    val fontScale = LocalDensity.current.fontScale
-    val displayHeight = when {
-        compact && fontScale > 1.15f -> 76.dp
-        compact -> 68.dp
-        fontScale > 1.15f -> 84.dp
-        else -> 76.dp
-    }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 5.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp)
+            .padding(horizontal = 5.dp, vertical = 4.dp)
     ) {
         Row(
             modifier = Modifier
@@ -300,7 +318,10 @@ private fun MainDeck(
                     .weight(1f)
                     .background(DisplayBlack)
                     .rackBevel()
-                    .padding(horizontal = 6.dp, vertical = 3.dp)
+                    .padding(
+                        horizontal = if (compact) 7.dp else 9.dp,
+                        vertical = if (compact) 4.dp else 6.dp
+                    )
                     .then(modifier),
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
@@ -309,20 +330,28 @@ private fun MainDeck(
                     color = LcdGreen,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
-                    fontSize = if (compact) 12.sp else 13.sp,
-                    lineHeight = if (compact) 14.sp else 15.sp,
+                    fontSize = if (compact) 13.sp else 15.sp,
+                    lineHeight = if (compact) 15.sp else 17.sp,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip,
                     modifier = Modifier
                         .onGloballyPositioned { morphBounds?.updateExpandedTitle(it.boundsInRoot()) }
                         .sharedEndpointVisual(sharedOwner == RetroRackSharedOwner.EXPANDED)
+                        .then(
+                            if (sharedOwner == RetroRackSharedOwner.EXPANDED) {
+                                Modifier.basicMarquee()
+                            } else {
+                                Modifier
+                            }
+                        )
                 )
                 Text(
                     text = currentSong?.artist?.uppercase().orEmpty(),
                     color = LcdGreenDim,
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 9.sp,
-                    lineHeight = 11.sp,
+                    fontSize = if (compact) 10.sp else 11.sp,
+                    lineHeight = if (compact) 12.sp else 13.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
@@ -353,21 +382,20 @@ private fun MainDeck(
             }
         }
 
-        Slider(
-            value = currentPosition.coerceIn(0, duration.coerceAtLeast(1)).toFloat(),
-            onValueChange = { value -> onSeekChange(value.toInt()) },
-            valueRange = 0f..duration.coerceAtLeast(1).toFloat(),
-            colors = SliderDefaults.colors(
-                thumbColor = ControlSilver,
-                activeTrackColor = LcdGreen,
-                inactiveTrackColor = InactiveTrack
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(20.dp)
-                .onGloballyPositioned { morphBounds?.updateExpandedProgress(it.boundsInRoot()) }
-                .sharedEndpointVisual(sharedOwner == RetroRackSharedOwner.EXPANDED)
+        Spacer(modifier = Modifier.height(if (compact) 10.dp else 12.dp))
+
+        RetroRackSeekControl(
+            currentPosition = currentPosition,
+            duration = duration,
+            onSeekChange = onSeekChange,
+            inputEnabled = inputEnabled && sharedOwner == RetroRackSharedOwner.EXPANDED,
+            visualVisible = sharedOwner == RetroRackSharedOwner.EXPANDED,
+            onVisualBoundsChanged = { bounds ->
+                morphBounds?.updateExpandedProgress(bounds)
+            }
         )
+
+        Spacer(modifier = Modifier.height(if (compact) 7.dp else 8.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth().graphicsLayer { alpha = controlsReveal }.playerEndpointInput(inputEnabled && controlsReveal > .99f),
@@ -393,6 +421,7 @@ private fun MainDeck(
                 label = if (isPlaying) "PAUSE" else "PLAY",
                 active = true,
                 compact = compact,
+                primary = true,
                 onClick = onPlayPauseClick,
                 modifier = Modifier
                     .onGloballyPositioned { morphBounds?.updateExpandedPlay(it.boundsInRoot()) }
@@ -432,6 +461,127 @@ private fun MainDeck(
 }
 
 @Composable
+private fun RetroRackSeekControl(
+    currentPosition: Int,
+    duration: Int,
+    onSeekChange: (Int) -> Unit,
+    inputEnabled: Boolean,
+    visualVisible: Boolean,
+    onVisualBoundsChanged: (androidx.compose.ui.geometry.Rect) -> Unit
+) {
+    val safeDuration = duration.coerceAtLeast(1)
+    val safePosition = currentPosition.coerceIn(0, safeDuration)
+    val progress = safePosition.toFloat() / safeDuration.toFloat()
+    val frameColor = RackShadow
+    val channelColor = InactiveTrack
+    val progressColor = LcdGreen
+    val markerColor = ControlSilver
+
+    val inputModifier = if (inputEnabled) {
+        Modifier.pointerInput(safeDuration) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+
+                fun seekTo(x: Float) {
+                    val fraction = (x / size.width.toFloat()).coerceIn(0f, 1f)
+                    onSeekChange((fraction * safeDuration).toInt())
+                }
+
+                seekTo(down.position.x)
+                var pressed = true
+                while (pressed) {
+                    val event = awaitPointerEvent()
+                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                    pressed = change.pressed
+                    if (pressed) {
+                        seekTo(change.position.x)
+                        change.consume()
+                    }
+                }
+            }
+        }
+    } else {
+        Modifier
+    }
+    val semanticsModifier = if (inputEnabled) {
+        Modifier.semantics {
+            progressBarRangeInfo = ProgressBarRangeInfo(
+                current = safePosition.toFloat(),
+                range = 0f..safeDuration.toFloat()
+            )
+            setProgress { target ->
+                onSeekChange(target.coerceIn(0f, safeDuration.toFloat()).toInt())
+                true
+            }
+        }
+    } else {
+        Modifier.clearAndSetSemantics { }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(20.dp)
+            .then(inputModifier)
+            .then(semanticsModifier),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(12.dp)
+                .onGloballyPositioned { onVisualBoundsChanged(it.boundsInRoot()) }
+                .graphicsLayer { alpha = if (visualVisible) 1f else 0f }
+        ) {
+            val frameInset = 1.dp.toPx()
+            val channelInset = 4.dp.toPx()
+            val channelHeight = 4.dp.toPx()
+            val channelTop = (size.height - channelHeight) / 2f
+            val channelWidth = (size.width - channelInset * 2f).coerceAtLeast(1f)
+
+            drawRect(color = frameColor)
+            drawRect(
+                color = Color.Black,
+                topLeft = Offset(frameInset, frameInset),
+                size = Size(
+                    width = (size.width - frameInset * 2f).coerceAtLeast(1f),
+                    height = (size.height - frameInset * 2f).coerceAtLeast(1f)
+                )
+            )
+            drawRect(
+                color = channelColor,
+                topLeft = Offset(channelInset, channelTop),
+                size = Size(channelWidth, channelHeight)
+            )
+            drawRect(
+                color = progressColor,
+                topLeft = Offset(channelInset, channelTop),
+                size = Size(channelWidth * progress, channelHeight)
+            )
+
+            repeat(9) { index ->
+                val tickX = channelInset + channelWidth * (index + 1f) / 10f
+                drawLine(
+                    color = markerColor.copy(alpha = 0.18f),
+                    start = Offset(tickX, channelTop),
+                    end = Offset(tickX, channelTop + channelHeight),
+                    strokeWidth = 1f
+                )
+            }
+
+            val markerWidth = 5.dp.toPx()
+            val markerLeft = (channelInset + channelWidth * progress - markerWidth / 2f)
+                .coerceIn(frameInset, size.width - frameInset - markerWidth)
+            drawRect(
+                color = markerColor,
+                topLeft = Offset(markerLeft, frameInset),
+                size = Size(markerWidth, size.height - frameInset * 2f)
+            )
+        }
+    }
+}
+
+@Composable
 private fun DecorativeSpectrum(
     profile: RetroRackVisualProfile,
     waveformData: WaveformData?,
@@ -439,8 +589,10 @@ private fun DecorativeSpectrum(
     isPlaying: Boolean,
     currentPosition: Int,
     duration: Int,
+    compact: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val gridColor = LcdGreenDim.copy(alpha = 0.24f)
     val isSilent = isRetroMeterEffectivelySilent(
         amplitudes = waveformData?.amplitudes,
         currentPositionMs = currentPosition.toLong(),
@@ -456,11 +608,21 @@ private fun DecorativeSpectrum(
     Canvas(
         modifier = modifier
             .background(DisplayBlack)
+            .border(1.dp, RackShadow)
             .rackBevel()
-            .padding(8.dp)
+            .padding(if (compact) 8.dp else 10.dp)
     ) {
         tracePerformance(PerformanceTraceNames.RETRO_RACK_DRAW) {
         VisualizerPerformanceCounters.onDraw()
+        repeat(3) { index ->
+            val y = size.height * (index + 1f) / 4f
+            drawLine(
+                color = gridColor,
+                start = Offset(0f, y),
+                end = Offset(size.width, y),
+                strokeWidth = 1f
+            )
+        }
         val currentPhase = phase.value
         val isEnergyDriven = fillRetroMeterLevels(
             output = meterLevels,
@@ -474,8 +636,8 @@ private fun DecorativeSpectrum(
         val displayLevelCount = if (isEnergyDriven) meterLevels.size else profile.levels.size
         val gap = size.width * 0.012f
         val barWidth = (size.width - gap * (displayLevelCount - 1)) / displayLevelCount
-        val segmentGap = 2.dp.toPx()
-        val segmentHeight = 3.dp.toPx()
+        val segmentGap = (if (compact) 2.dp else 2.5.dp).toPx()
+        val segmentHeight = (if (compact) 3.dp else 4.dp).toPx()
         val playbackPhase = (currentPosition / 1_000f) * 0.22f
         repeat(displayLevelCount) { index ->
             val level = if (isEnergyDriven) meterLevels[index] else profile.levels[index]
@@ -532,35 +694,50 @@ private fun RackPlaylist(
                     .fillMaxWidth()
                     .clickable { onSongClick(song, playbackContext) }
                     .background(if (index == 0) SelectedRow else Color.Transparent)
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                    .then(
+                        if (index == 0) Modifier.border(1.dp, LcdGreenDim)
+                        else Modifier
+                    )
+                    .padding(horizontal = 6.dp, vertical = 3.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Box(
+                    modifier = Modifier
+                        .width(3.dp)
+                        .height(18.dp)
+                        .background(if (index == 0) LcdGreen else Color.Transparent)
+                )
                 Text(
                     text = (index + 1).toString().padStart(2, '0'),
                     color = LcdGreenDim,
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 9.sp
+                    fontSize = 10.sp,
+                    modifier = Modifier.padding(start = 5.dp)
                 )
                 Text(
-                    text = "  ${song.artist} — ${song.title}",
+                    text = "${song.artist} — ${song.title}",
                     color = if (index == 0) ControlSilver else LcdGreen,
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 10.sp,
+                    fontWeight = if (index == 0) FontWeight.Bold else FontWeight.Normal,
+                    fontSize = 11.sp,
                     maxLines = 1,
                     softWrap = false,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 8.dp)
                 )
                 Box(
                     modifier = Modifier
-                        .width(48.dp)
+                        .width(52.dp)
                         .padding(start = 6.dp)
                 ) {
                     Text(
                         text = formatRackTime(song.duration.toInt()),
                         color = if (index == 0) ControlSilver else LcdGreenDim,
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 9.sp,
+                        fontWeight = if (index == 0) FontWeight.Bold else FontWeight.Normal,
+                        fontSize = 10.sp,
                         maxLines = 1,
                         softWrap = false,
                         textAlign = TextAlign.End,
@@ -608,8 +785,10 @@ private fun RackModule(
                 color = ControlSilver,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
-                fontSize = 9.sp,
+                fontSize = 10.sp,
+                letterSpacing = 0.35.sp,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .weight(1f)
                     .padding(start = 5.dp)
@@ -630,16 +809,44 @@ private fun RackIconButton(
     contentDescription: String = label,
     active: Boolean = false,
     compact: Boolean = false,
+    primary: Boolean = false,
+    dense: Boolean = false,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
+    val borderColor = when {
+        isPressed -> ControlSilver.copy(alpha = 0.72f)
+        active -> LcdGreen
+        else -> RackShadow
+    }
+    val minWidth = when {
+        dense -> 36.dp
+        primary && compact -> 48.dp
+        primary -> 54.dp
+        compact -> 40.dp
+        else -> 44.dp
+    }
+    val minHeight = when {
+        dense -> 30.dp
+        primary && compact -> 42.dp
+        primary -> 46.dp
+        compact -> 36.dp
+        else -> 40.dp
+    }
+    val iconSize = when {
+        dense -> 14.dp
+        primary && compact -> 20.dp
+        primary -> 22.dp
+        compact -> 16.dp
+        else -> 18.dp
+    }
     Column(
         modifier = modifier
             .sizeIn(
-                minWidth = if (compact) 36.dp else 40.dp,
-                minHeight = if (compact) 30.dp else 34.dp
+                minWidth = minWidth,
+                minHeight = minHeight
             )
             .clickable(
                 interactionSource = interactionSource,
@@ -653,23 +860,28 @@ private fun RackIconButton(
                     else -> ButtonFace
                 }
             )
+            .border(1.dp, borderColor)
             .rackBevel(pressed = isPressed)
-            .padding(horizontal = 4.dp, vertical = 2.dp),
+            .padding(
+                horizontal = if (dense) 4.dp else 5.dp,
+                vertical = if (dense) 2.dp else 3.dp
+            ),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = if (active && !isPressed) DisplayBlack else ControlSilver,
-            modifier = Modifier.size(if (compact) 14.dp else 16.dp)
+            modifier = Modifier.size(iconSize)
         )
         Text(
             text = label,
             color = if (active && !isPressed) DisplayBlack else ControlSilver,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
-            fontSize = 6.sp,
-            maxLines = 1
+            fontSize = if (dense) 6.sp else 7.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -708,7 +920,7 @@ private fun RackIndicator(color: Color) {
     Box(
         modifier = Modifier
             .padding(end = 3.dp)
-            .size(width = 14.dp, height = 6.dp)
+            .size(width = 18.dp, height = 6.dp)
             .background(color)
             .rackBevel(pressed = true)
     )
