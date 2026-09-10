@@ -48,6 +48,7 @@ import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.data.preferences.AppPreferencesRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 internal enum class NowPlayingWidgetLayout { COMPACT, STANDARD }
 
@@ -71,6 +72,30 @@ internal fun widgetMetadataLinePolicyFor(
         titleMaxLines = 2,
         artistMaxLines = 1
     )
+}
+
+internal fun widgetContentPaddingDpFor(
+    renderer: WidgetAppearanceRenderer,
+    layout: NowPlayingWidgetLayout
+): Int = when {
+    layout == NowPlayingWidgetLayout.COMPACT -> 8
+    renderer == WidgetAppearanceRenderer.POCKET_CASSETTE ||
+        renderer == WidgetAppearanceRenderer.CLASSIC_WHEEL ||
+        renderer == WidgetAppearanceRenderer.RETRO_RACK ||
+        renderer == WidgetAppearanceRenderer.POCKET_FLIP -> 3
+    else -> 8
+}
+
+internal fun expandedArtworkEdgeDpFor(
+    widgetHeightDp: Float,
+    widgetWidthDp: Float,
+    reservedVerticalSpaceDp: Int,
+    minimumEdgeDp: Int,
+    maximumWidthFraction: Float = 0.52f
+): Int {
+    val heightDrivenEdgeDp = (widgetHeightDp - reservedVerticalSpaceDp).roundToInt()
+    val widthBoundEdgeDp = (widgetWidthDp * maximumWidthFraction).roundToInt()
+    return minOf(heightDrivenEdgeDp, widthBoundEdgeDp).coerceAtLeast(minimumEdgeDp)
 }
 
 internal fun widgetPlayPauseDescriptionResource(isPlaying: Boolean): Int =
@@ -126,12 +151,17 @@ private fun NowPlayingWidgetContent(
     appearance: NowPlayingWidgetAppearance
 ) {
     val layout = nowPlayingWidgetLayoutFor(LocalSize.current.height.value)
+    val contentPaddingDp = if (snapshot.hasMedia) {
+        widgetContentPaddingDpFor(appearance.renderer, layout)
+    } else {
+        8
+    }
     Box(
         modifier = GlanceModifier
             .fillMaxSize()
             .background(appearance.background.asGlanceColorProvider())
             .cornerRadius(appearance.widgetCornerRadiusDp.dp)
-            .padding(8.dp),
+            .padding(contentPaddingDp.dp),
         contentAlignment = Alignment.Center
     ) {
         if (!snapshot.hasMedia) {
@@ -322,7 +352,8 @@ private fun Metadata(
 internal fun TransportControls(
     snapshot: NowPlayingWidgetSnapshot,
     edgeDp: Int,
-    appearance: NowPlayingWidgetAppearance
+    appearance: NowPlayingWidgetAppearance,
+    itemSpacingDp: Int = 0
 ) {
     val context = LocalContext.current
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -337,6 +368,9 @@ internal fun TransportControls(
             cornerRadiusDp = appearance.controlCornerRadiusDp,
             action = actionRunCallback<PreviousWidgetAction>()
         )
+        if (itemSpacingDp > 0) {
+            Spacer(GlanceModifier.width(itemSpacingDp.dp))
+        }
         TransportButton(
             icon = widgetPlayPauseIconResource(snapshot.isPlaying),
             description = context.getString(widgetPlayPauseDescriptionResource(snapshot.isPlaying)),
@@ -348,6 +382,9 @@ internal fun TransportControls(
             cornerRadiusDp = appearance.controlCornerRadiusDp,
             action = actionRunCallback<PlayPauseWidgetAction>()
         )
+        if (itemSpacingDp > 0) {
+            Spacer(GlanceModifier.width(itemSpacingDp.dp))
+        }
         TransportButton(
             icon = R.drawable.ic_widget_next,
             description = context.getString(R.string.widget_next),
