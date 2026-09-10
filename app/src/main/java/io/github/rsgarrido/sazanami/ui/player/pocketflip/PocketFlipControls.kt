@@ -384,7 +384,7 @@ private fun PocketFlipActionCluster(
                 onClick = onPlayPauseClick,
                 enabled = inputEnabled && sharedOwner == PocketFlipSharedOwner.EXPANDED,
                 visualAlpha = if (sharedOwner == PocketFlipSharedOwner.EXPANDED) 1f else 0f,
-                modifier = Modifier.onGloballyPositioned { coordinates ->
+                faceModifier = Modifier.onGloballyPositioned { coordinates ->
                     morphBounds?.updateExpandedPlay(coordinates.boundsInRoot())
                 }
             )
@@ -417,6 +417,7 @@ private fun PocketFlipRoundAction(
     faceSize: Dp,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    faceModifier: Modifier = Modifier,
     active: Boolean = false,
     enabled: Boolean = true,
     visualAlpha: Float = 1f
@@ -456,6 +457,7 @@ private fun PocketFlipRoundAction(
                 modifier = Modifier
                     .offset(y = if (isPressed) 2.dp else 0.dp)
                     .size(faceSize)
+                    .then(faceModifier)
                     .background(
                         Brush.radialGradient(
                             colors = listOf(

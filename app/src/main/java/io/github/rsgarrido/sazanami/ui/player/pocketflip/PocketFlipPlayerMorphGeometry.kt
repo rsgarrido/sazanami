@@ -149,6 +149,19 @@ internal fun resolvePocketFlipSharedGeometry(
     )
 }
 
+internal fun pocketFlipSeekVisualBounds(
+    interactiveBounds: Rect,
+    visualHeightPx: Float
+): Rect {
+    val visualTop = interactiveBounds.top + (interactiveBounds.height - visualHeightPx) / 2f
+    return Rect(
+        left = interactiveBounds.left,
+        top = visualTop,
+        right = interactiveBounds.right,
+        bottom = visualTop + visualHeightPx
+    )
+}
+
 internal fun pocketFlipSharedOwner(
     progress: Float,
     geometryReady: Boolean
