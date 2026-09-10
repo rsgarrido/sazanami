@@ -168,7 +168,9 @@ private fun PocketCassetteSharedArtwork(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.56f * progress))
+                    .background(
+                        Color.Black.copy(alpha = pocketCassetteArtworkOverlayAlpha(progress))
+                    )
             )
         } else {
             Icon(

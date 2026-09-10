@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -63,6 +62,8 @@ import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -410,16 +411,20 @@ private fun PocketCassetteSeekSlot(
                 fontWeight = FontWeight.Bold,
                 fontSize = if (compact) 9.sp else 10.sp
             )
-            Spacer(modifier = Modifier.weight(1f))
             Text(
                 text = "TAPE COUNTER // POSITION",
                 color = PocketCassetteColors.shellInk.copy(alpha = 0.72f),
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
                 fontSize = 7.sp,
-                letterSpacing = 0.5.sp
+                letterSpacing = 0.5.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = if (compact) 6.dp else 8.dp)
             )
-            Spacer(modifier = Modifier.weight(1f))
             Text(
                 text = formatPocketCassetteTime(duration),
                 color = PocketCassetteColors.shellInk,
