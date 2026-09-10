@@ -10,6 +10,7 @@ import androidx.media3.common.util.UnstableApi
 import io.github.rsgarrido.sazanami.player.equalizer.limiter.LimiterPreparedConfiguration
 import io.github.rsgarrido.sazanami.player.equalizer.limiter.LimiterTelemetryAccumulator
 import io.github.rsgarrido.sazanami.player.equalizer.limiter.LookaheadLimiterEngine
+import io.github.rsgarrido.sazanami.player.spectrum.Pcm16Observer
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.abs
@@ -20,7 +21,8 @@ internal class EqualizerAudioProcessor(
     private val runtimeBridge: EqualizerProcessorRuntime =
         EqualizerRuntimeBridge.createSelectedRuntimeForCompatibility(),
     transitionDurationMillis: Int =
-        EqualizerTransitionState.DEFAULT_DURATION_MILLIS
+        EqualizerTransitionState.DEFAULT_DURATION_MILLIS,
+    private val pcmObserver: Pcm16Observer? = null
 ) : BaseAudioProcessor() {
     private val transitionState =
         EqualizerTransitionState(transitionDurationMillis)
@@ -170,6 +172,17 @@ internal class EqualizerAudioProcessor(
             0L
         }
         recordFirstAcceptedInput(format, frameCount)
+        try {
+            pcmObserver?.onPcm16(
+                source = inputBuffer,
+                offsetBytes = inputBuffer.position(),
+                byteCount = inputByteCount,
+                sampleRateHz = format.sampleRateHz,
+                channelCount = format.channelCount
+            )
+        } catch (_: RuntimeException) {
+            // Visualization is observational; it must never interrupt accepted playback input.
+        }
         val outputBuffer = outputBuffer(inputByteCount)
         if (isExactBypass()) {
             outputBuffer.put(inputBuffer)
@@ -526,6 +539,7 @@ internal class EqualizerAudioProcessor(
         publishLimiterProcessorState()
     }
     override fun onFlush(streamMetadata: StreamMetadata) {
+        notifyPcmDiscontinuity()
         currentPath?.reset()
         pendingPath?.reset()
         transitionState.cancel()
@@ -609,6 +623,7 @@ internal class EqualizerAudioProcessor(
     }
 
     override fun onReset() {
+        notifyPcmDiscontinuity()
         currentPath?.reset()
         pendingPath?.reset()
         currentPath = null
@@ -636,6 +651,14 @@ internal class EqualizerAudioProcessor(
         observedPerformanceResetVersion = 0L
         runtimeBridge.publishProcessorFormat(null)
         runtimeBridge.clearProcessorTelemetry()
+    }
+
+    private fun notifyPcmDiscontinuity() {
+        try {
+            pcmObserver?.onDiscontinuity()
+        } catch (_: RuntimeException) {
+            // Observation lifecycle cannot participate in Media3 processor failure handling.
+        }
     }
 
     internal fun transitionDiagnosticsSnapshot():

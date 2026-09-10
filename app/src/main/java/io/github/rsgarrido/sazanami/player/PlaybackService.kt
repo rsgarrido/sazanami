@@ -59,6 +59,8 @@ import io.github.rsgarrido.sazanami.player.equalizer.EqualizerRuntimeBridge
 import io.github.rsgarrido.sazanami.player.equalizer.activeAutomaticHeadroomEnabled
 import io.github.rsgarrido.sazanami.player.equalizer.toDspConfiguration
 import io.github.rsgarrido.sazanami.player.equalizer.limiter.LimiterConfiguration
+import io.github.rsgarrido.sazanami.player.spectrum.SpectrumAnalyzerRuntime
+import io.github.rsgarrido.sazanami.player.spectrum.SpectrumAnalyzerRuntimeBridge
 import io.github.rsgarrido.sazanami.widget.NowPlayingWidgetPublisher
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
@@ -92,6 +94,7 @@ class PlaybackService : MediaLibraryService() {
     private var nowPlayingWidgetPublisher: NowPlayingWidgetPublisher? = null
     private var playbackQueueRestorationComplete = false
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val spectrumAnalyzerRuntime = SpectrumAnalyzerRuntime()
     private lateinit var appPreferencesRepository: AppPreferencesRepository
     private lateinit var androidAutoCatalogRepository: AndroidAutoCatalogRepository
     @Volatile
@@ -166,6 +169,7 @@ class PlaybackService : MediaLibraryService() {
         private val playerListener = object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 if (!isAuthoritative()) return
+                pipeline.spectrumPcmObserver?.onDiscontinuity()
                 saveServicePlaybackState()
                 AdvancedAudioRuntimeBridge.updateSourceFormat(null)
                 val mappedReason = when (reason) {
@@ -192,6 +196,7 @@ class PlaybackService : MediaLibraryService() {
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (!isAuthoritative()) return
+                pipeline.spectrumPcmObserver?.setPlaybackActive(isPlaying)
                 checkpointHandler.removeCallbacks(checkpointRunnable)
                 if (isPlaying) {
                     checkpointHandler.postDelayed(
@@ -213,6 +218,7 @@ class PlaybackService : MediaLibraryService() {
                 reason: Int
             ) {
                 if (!isAuthoritative()) return
+                pipeline.spectrumPcmObserver?.onDiscontinuity()
                 if (reason == Player.DISCONTINUITY_REASON_SEEK) {
                     saveServicePlaybackState()
                 }
@@ -234,10 +240,14 @@ class PlaybackService : MediaLibraryService() {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (!isAuthoritative()) return
                 when (playbackState) {
-                    Player.STATE_ENDED -> listeningAdapter.onNaturalEnd(
-                        pipeline.player.currentMediaItem
-                    )
-                    Player.STATE_IDLE -> listeningAdapter.onStopped()
+                    Player.STATE_ENDED -> {
+                        pipeline.spectrumPcmObserver?.setPlaybackActive(false)
+                        listeningAdapter.onNaturalEnd(pipeline.player.currentMediaItem)
+                    }
+                    Player.STATE_IDLE -> {
+                        pipeline.spectrumPcmObserver?.setPlaybackActive(false)
+                        listeningAdapter.onStopped()
+                    }
                 }
             }
 
@@ -282,6 +292,7 @@ class PlaybackService : MediaLibraryService() {
         private val offloadListener = object : ExoPlayer.AudioOffloadListener {
             override fun onOffloadedPlayback(isOffloadedPlayback: Boolean) {
                 if (!isAuthoritative()) return
+                pipeline.spectrumPcmObserver?.setPcmAvailable(!isOffloadedPlayback)
                 tracePerformance(PerformanceTraceNames.AUDIO_OFFLOAD_STATE_CHANGED) {
                     AdvancedAudioRuntimeBridge.updateOffloadPlayback(
                         isOffloadedPlayback
@@ -558,6 +569,7 @@ class PlaybackService : MediaLibraryService() {
     override fun onCreate() {
         val serviceStarted = SystemClock.elapsedRealtime()
         super.onCreate()
+        SpectrumAnalyzerRuntimeBridge.attach(spectrumAnalyzerRuntime)
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
@@ -750,6 +762,8 @@ class PlaybackService : MediaLibraryService() {
         sessionPlayer.releaseTransitionResources()
         physicalPlayers.release()
         EqualizerRuntimeBridge.release()
+        SpectrumAnalyzerRuntimeBridge.detach(spectrumAnalyzerRuntime)
+        spectrumAnalyzerRuntime.close()
         serviceScope.cancel()
         AdvancedAudioRuntimeBridge.disconnect()
         super.onDestroy()
@@ -954,6 +968,9 @@ class PlaybackService : MediaLibraryService() {
         AdvancedAudioRuntimeBridge.updateOffloadPlayback(false)
         AdvancedAudioRuntimeBridge.updateSleepingForOffload(false)
         activeServiceBinding = ActiveServiceBinding(pipeline).also { it.attach() }
+        pipeline.spectrumPcmObserver?.setSourceActive(true)
+        pipeline.spectrumPcmObserver?.setPcmAvailable(true)
+        pipeline.spectrumPcmObserver?.setPlaybackActive(pipeline.player.isPlaying)
         isRemotePlayback =
             pipeline.player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_REMOTE
         publishAudioRoute()
@@ -965,6 +982,8 @@ class PlaybackService : MediaLibraryService() {
         if (binding.pipeline !== pipeline) return
         binding.release()
         activeServiceBinding = null
+        pipeline.spectrumPcmObserver?.setPlaybackActive(false)
+        pipeline.spectrumPcmObserver?.setSourceActive(false)
         checkpointHandler.removeCallbacks(checkpointRunnable)
     }
 
@@ -1046,7 +1065,12 @@ class PlaybackService : MediaLibraryService() {
     ): PhysicalPlayerPipeline {
         val runtime: EqualizerDspRuntime =
             EqualizerRuntimeBridge.createRuntime()
-        val processor = EqualizerAudioProcessor(runtime)
+        val pcmObserver = spectrumAnalyzerRuntime.createPcmObserver()
+        pcmObserver.setSourceActive(role == PhysicalPlayerRole.ACTIVE)
+        val processor = EqualizerAudioProcessor(
+            runtimeBridge = runtime,
+            pcmObserver = pcmObserver
+        )
         val renderersFactory = EqualizerRenderersFactory(
             context = this,
             equalizerAudioProcessor = processor
@@ -1073,9 +1097,11 @@ class PlaybackService : MediaLibraryService() {
                 player = physicalPlayer,
                 equalizerRuntime = runtime,
                 equalizerAudioProcessor = processor,
-                audioAttributes = audioAttributes
+                audioAttributes = audioAttributes,
+                spectrumPcmObserver = pcmObserver
             )
         } catch (error: RuntimeException) {
+            pcmObserver.close()
             EqualizerRuntimeBridge.releaseRuntime(runtime)
             throw error
         }
