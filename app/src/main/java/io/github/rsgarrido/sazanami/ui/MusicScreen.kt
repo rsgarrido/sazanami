@@ -556,7 +556,8 @@ internal fun MusicScreen(
             selectedArtistName = selectedArtistName,
             selectedGenreKey = selectedGenreKey,
             selectedPlaylistId = selectedPlaylistId,
-            searchQuery = searchQuery
+            searchQuery = searchQuery,
+            selectedFolderId = selectedFolderId
         )
     }
 
@@ -581,7 +582,8 @@ internal fun MusicScreen(
             genreKeys = buildGenreCollections(songs).mapTo(mutableSetOf()) { genre ->
                 genre.key
             },
-            playlistIds = playlists.mapTo(mutableSetOf()) { playlist -> playlist.playlistId }
+            playlistIds = playlists.mapTo(mutableSetOf()) { playlist -> playlist.playlistId },
+            folderBrowseIndex = folderBrowseIndex
         )
 
         lyricsTransitionState.snapToExpanded()
@@ -590,6 +592,7 @@ internal fun MusicScreen(
         val restoredPlaylistOrigin = navigationState.playlistDetailOrigin.value
         navigationState.clearArtist()
         navigationState.clearAlbum()
+        navigationState.clearFolder()
         selectedGenreKey = null
         clearPlaylistSelection()
 
@@ -631,6 +634,12 @@ internal fun MusicScreen(
                     navigationState.openPlaylist(playlist.playlistId, restoredPlaylistOrigin)
                     onPlaylistSelected(playlist)
                 }
+                searchQuery = ""
+                mainDestination = MainDestination.LIBRARY
+            }
+
+            is PlaybackLaunchContext.FolderDetail -> {
+                navigationState.openFolder(validContext.folderId)
                 searchQuery = ""
                 mainDestination = MainDestination.LIBRARY
             }
