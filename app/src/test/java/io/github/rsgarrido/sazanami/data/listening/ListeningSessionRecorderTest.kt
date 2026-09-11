@@ -67,6 +67,9 @@ class ListeningSessionRecorderTest {
         recorder.onPlaybackSuspended("session-1")
 
         assertEquals(6_000L, recorder.snapshot()?.accumulatedListenedMs)
+        val draft = finalized(recorder.finalizeSession("session-1", ListeningEndReason.STOPPED))
+        assertEquals(6_000L, draft.listenedMs)
+        assertFalse(draft.qualifiedAsPlay)
     }
 
     @Test
@@ -82,20 +85,23 @@ class ListeningSessionRecorderTest {
     }
 
     @Test
-    fun seekWhilePlayingCommitsAndReopensExactlyOnce() {
+    fun listenedSegmentsAcrossSeeksAccumulateTowardEligibilityFloor() {
         recorder.startSession(start())
         recorder.onPlaybackStarted("session-1")
-        monotonicClock.advance(1_000L)
+        monotonicClock.advance(2_000L)
         assertEquals(
             ListeningSessionCommandResult.APPLIED,
             recorder.onPositionDiscontinuity("session-1")
         )
         // An equivalent duplicate callback at the same monotonic instant has a zero delta.
         recorder.onPositionDiscontinuity("session-1")
-        monotonicClock.advance(500L)
-        recorder.onPlaybackSuspended("session-1")
+        monotonicClock.advance(3_000L)
 
-        assertEquals(1_500L, recorder.snapshot()?.accumulatedListenedMs)
+        val draft = finalized(
+            recorder.finalizeSession("session-1", ListeningEndReason.TRANSITION)
+        )
+        assertEquals(5_000L, draft.listenedMs)
+        assertFalse(draft.qualifiedAsPlay)
     }
 
     @Test
@@ -144,13 +150,68 @@ class ListeningSessionRecorderTest {
     }
 
     @Test
-    fun invalidDurationsDoNotTimeQualifyButNaturalEndAlwaysDoes() {
+    fun nonNaturalEligibilityFloorIgnoresBelowFiveSecondsAndKeepsBoundaryAndAbove() {
+        recorder.startSession(start(sessionId = "ignored", durationMs = 60_000L))
+        recorder.onPlaybackStarted("ignored")
+        monotonicClock.advance(4_999L)
+
+        val ignored = recorder.finalizeSession("ignored", ListeningEndReason.TRANSITION)
+        assertEquals(
+            FinalizeListeningSessionResult.Ignored(
+                playbackSessionId = "ignored",
+                listenedMs = 4_999L,
+                endReason = ListeningEndReason.TRANSITION
+            ),
+            ignored
+        )
+        assertEquals(0, uuidNumber)
+        assertNull(recorder.snapshot())
+        assertEquals(
+            FinalizeListeningSessionResult.AlreadyFinalized,
+            recorder.finalizeSession("ignored", ListeningEndReason.TRANSITION)
+        )
+
+        recorder.startSession(start(sessionId = "boundary", durationMs = 60_000L))
+        recorder.onPlaybackStarted("boundary")
+        monotonicClock.advance(5_000L)
+        val boundary = finalized(
+            recorder.finalizeSession("boundary", ListeningEndReason.STOPPED)
+        )
+        assertEquals(5_000L, boundary.listenedMs)
+        assertFalse(boundary.qualifiedAsPlay)
+
+        recorder.startSession(start(sessionId = "above", durationMs = 60_000L))
+        recorder.onPlaybackStarted("above")
+        monotonicClock.advance(5_001L)
+        val above = finalized(
+            recorder.finalizeSession("above", ListeningEndReason.ERROR)
+        )
+        assertEquals(5_001L, above.listenedMs)
+        assertFalse(above.qualifiedAsPlay)
+        assertEquals(2, uuidNumber)
+    }
+
+    @Test
+    fun shortTrackSkippedBeforeNaturalCompletionIsIgnoredEvenIfTimeQualified() {
+        recorder.startSession(start(durationMs = 4_000L))
+        recorder.onPlaybackStarted("session-1")
+        monotonicClock.advance(3_999L)
+
+        val result = recorder.finalizeSession("session-1", ListeningEndReason.TRANSITION)
+
+        assertTrue(result is FinalizeListeningSessionResult.Ignored)
+        assertEquals(0, uuidNumber)
+    }
+
+    @Test
+    fun unknownAndInvalidDurationsAtFloorDoNotTimeQualifyButNaturalEndAlwaysDoes() {
         listOf<Long?>(null, 0L, -10L).forEachIndexed { index, duration ->
             val sessionId = "invalid-$index"
             recorder.startSession(start(sessionId = sessionId, durationMs = duration))
             recorder.onPlaybackStarted(sessionId)
-            monotonicClock.advance(500_000L)
+            monotonicClock.advance(5_000L)
             val stopped = finalized(recorder.finalizeSession(sessionId, ListeningEndReason.STOPPED))
+            assertEquals(5_000L, stopped.listenedMs)
             assertFalse(stopped.qualifiedAsPlay)
             assertEquals(ListeningQualificationReason.NONE, stopped.qualificationReason)
 
@@ -165,11 +226,12 @@ class ListeningSessionRecorderTest {
     }
 
     @Test
-    fun naturalCompletionBeforeThresholdQualifiesAndUpgradesTimeReason() {
-        recorder.startSession(start(sessionId = "early", durationMs = 60_000L))
+    fun shortNaturalCompletionQualifiesAndNaturalEndUpgradesTimeReason() {
+        recorder.startSession(start(sessionId = "early", durationMs = 4_000L))
         recorder.onPlaybackStarted("early")
-        monotonicClock.advance(1_000L)
+        monotonicClock.advance(4_000L)
         val early = finalized(recorder.finalizeSession("early", ListeningEndReason.NATURAL_END))
+        assertEquals(4_000L, early.listenedMs)
         assertTrue(early.qualifiedAsPlay)
         assertEquals(ListeningQualificationReason.NATURAL_END, early.qualificationReason)
 
@@ -193,9 +255,9 @@ class ListeningSessionRecorderTest {
         assertEquals(ListeningCompletionClassification.NATIVE_NATURAL, natural.completionClassification)
         assertTrue(natural.qualifiedAsPlay)
 
-        recorder.startSession(start(sessionId = "stopped", durationMs = 2_000L))
+        recorder.startSession(start(sessionId = "stopped", durationMs = 10_000L))
         recorder.onPlaybackStarted("stopped")
-        monotonicClock.advance(1_000L)
+        monotonicClock.advance(5_000L)
         val stopped = finalized(recorder.finalizeSession("stopped", ListeningEndReason.STOPPED))
         assertEquals(ListeningCompletionClassification.NONE, stopped.completionClassification)
         assertTrue(stopped.qualifiedAsPlay)
@@ -203,18 +265,18 @@ class ListeningSessionRecorderTest {
 
     @Test
     fun thresholdQualificationIsStickyThroughPauseSeekStopAndError() {
-        recorder.startSession(start(sessionId = "stop", durationMs = 2_000L))
+        recorder.startSession(start(sessionId = "stop", durationMs = 10_000L))
         recorder.onPlaybackStarted("stop")
-        monotonicClock.advance(1_000L)
+        monotonicClock.advance(5_000L)
         recorder.onPlaybackSuspended("stop")
         recorder.onPositionDiscontinuity("stop")
         val stopped = finalized(recorder.finalizeSession("stop", ListeningEndReason.STOPPED))
         assertTrue(stopped.qualifiedAsPlay)
         assertEquals(ListeningQualificationReason.TIME_THRESHOLD, stopped.qualificationReason)
 
-        recorder.startSession(start(sessionId = "error", durationMs = 2_000L))
+        recorder.startSession(start(sessionId = "error", durationMs = 10_000L))
         recorder.onPlaybackStarted("error")
-        monotonicClock.advance(1_000L)
+        monotonicClock.advance(5_000L)
         val errored = finalized(recorder.finalizeSession("error", ListeningEndReason.ERROR))
         assertTrue(errored.qualifiedAsPlay)
         assertEquals(ListeningQualificationReason.TIME_THRESHOLD, errored.qualificationReason)
@@ -234,17 +296,24 @@ class ListeningSessionRecorderTest {
     }
 
     @Test
-    fun finalizationClosesActiveSegmentOnceAndDuplicateEmitsNoEvent() {
+    fun ignoredFinalizationClosesActiveSegmentOnceAndDuplicateEmitsNoEvent() {
         recorder.startSession(start())
         recorder.onPlaybackStarted("session-1")
         monotonicClock.advance(4_000L)
-        val first = finalized(recorder.finalizeSession("session-1", ListeningEndReason.TRANSITION))
-        assertEquals(4_000L, first.listenedMs)
+        val first = recorder.finalizeSession("session-1", ListeningEndReason.TRANSITION)
+        assertEquals(
+            FinalizeListeningSessionResult.Ignored(
+                playbackSessionId = "session-1",
+                listenedMs = 4_000L,
+                endReason = ListeningEndReason.TRANSITION
+            ),
+            first
+        )
         assertEquals(
             FinalizeListeningSessionResult.AlreadyFinalized,
             recorder.finalizeSession("session-1", ListeningEndReason.TRANSITION)
         )
-        assertEquals(1, uuidNumber)
+        assertEquals(0, uuidNumber)
         assertNull(recorder.snapshot())
         assertEquals(
             StartListeningSessionResult.AlreadyFinalized,
@@ -318,11 +387,11 @@ class ListeningSessionRecorderTest {
     fun wallClockJumpsDoNotAffectListeningAndBackwardEndIsClamped() {
         recorder.startSession(start())
         recorder.onPlaybackStarted("session-1")
-        monotonicClock.advance(2_500L)
+        monotonicClock.advance(5_500L)
         wallClock.now = -50_000L
 
         val draft = finalized(recorder.finalizeSession("session-1", ListeningEndReason.STOPPED))
-        assertEquals(2_500L, draft.listenedMs)
+        assertEquals(5_500L, draft.listenedMs)
         assertEquals(10_000L, draft.startedAt)
         assertEquals(10_000L, draft.endedAt)
         assertEquals(10_000L, draft.createdAt)
@@ -352,11 +421,11 @@ class ListeningSessionRecorderTest {
                 playbackSessionId = "final-fields",
                 trackIdentityId = 42L,
                 localTrackBindingId = null,
-                trackDurationMs = 7_000L
+                trackDurationMs = 12_000L
             )
         )
         recorder.onPlaybackStarted("final-fields")
-        monotonicClock.advance(3_500L)
+        monotonicClock.advance(6_000L)
         wallClock.now = 60_000L
 
         val draft = finalized(
@@ -371,8 +440,8 @@ class ListeningSessionRecorderTest {
         assertEquals(60_000L, draft.endedAt)
         assertEquals(50_000L, draft.attributionAt)
         assertEquals(ListeningTimestampEvidence.NATIVE_EXACT, draft.timestampEvidence)
-        assertEquals(3_500L, draft.listenedMs)
-        assertEquals(7_000L, draft.trackDurationMs)
+        assertEquals(6_000L, draft.listenedMs)
+        assertEquals(12_000L, draft.trackDurationMs)
         assertTrue(draft.qualifiedAsPlay)
         assertEquals(ListeningQualificationReason.TIME_THRESHOLD, draft.qualificationReason)
         assertEquals(1, draft.qualificationRuleVersion)
@@ -394,11 +463,11 @@ class ListeningSessionRecorderTest {
     @Test
     fun nullableBindingAndNonNullBindingAreBothPreserved() {
         recorder.startSession(start(sessionId = "bound", bindingId = 99L))
-        val bound = finalized(recorder.finalizeSession("bound", ListeningEndReason.STOPPED))
+        val bound = finalized(recorder.finalizeSession("bound", ListeningEndReason.NATURAL_END))
         assertEquals(99L, bound.localTrackBindingId)
 
         recorder.startSession(start(sessionId = "unbound", bindingId = null))
-        val unbound = finalized(recorder.finalizeSession("unbound", ListeningEndReason.STOPPED))
+        val unbound = finalized(recorder.finalizeSession("unbound", ListeningEndReason.NATURAL_END))
         assertNull(unbound.localTrackBindingId)
     }
 

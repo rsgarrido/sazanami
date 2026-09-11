@@ -60,6 +60,12 @@ sealed interface FinalizeListeningSessionResult {
         val draft: FinalizedListeningEventDraft
     ) : FinalizeListeningSessionResult
 
+    data class Ignored(
+        val playbackSessionId: String,
+        val listenedMs: Long,
+        val endReason: ListeningEndReason
+    ) : FinalizeListeningSessionResult
+
     data class SessionMismatch(
         val activePlaybackSessionId: String
     ) : FinalizeListeningSessionResult

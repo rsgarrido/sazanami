@@ -22,10 +22,10 @@ class PlaybackListeningCoordinatorTest {
 
         fixture.coordinator.onIsPlayingChanged(fixture.a, true, at(0))
         fixture.coordinator.onIsPlayingChanged(fixture.a, true, at(100))
-        fixture.coordinator.onStopped(at(1_000))
+        fixture.coordinator.onStopped(at(5_000))
 
         assertEquals(1, fixture.drafts.size)
-        assertEquals(1_000L, fixture.drafts.single().listenedMs)
+        assertEquals(5_000L, fixture.drafts.single().listenedMs)
         assertEquals("session-1", fixture.drafts.single().playbackSessionId)
     }
 
@@ -39,9 +39,9 @@ class PlaybackListeningCoordinatorTest {
         fixture.coordinator.onIsPlayingChanged(fixture.a, false, at(60_000)) // buffering duplicate
         fixture.coordinator.onIsPlayingChanged(fixture.a, true, at(70_000))
         fixture.coordinator.onPositionDiscontinuity(fixture.a, at(71_000))
-        fixture.coordinator.onStopped(at(72_000))
+        fixture.coordinator.onStopped(at(73_000))
 
-        assertEquals(4_000L, fixture.drafts.single().listenedMs)
+        assertEquals(5_000L, fixture.drafts.single().listenedMs)
     }
 
     @Test
@@ -68,16 +68,49 @@ class PlaybackListeningCoordinatorTest {
         assertEquals(0, fixture.drafts.size)
 
         fixture.coordinator.onMediaItemTransition(
-            fixture.a2, ListeningMediaTransitionReason.PLAYLIST_CHANGED, true, at(1_000)
+            fixture.a2, ListeningMediaTransitionReason.PLAYLIST_CHANGED, true, at(6_000)
         )
         fixture.coordinator.onMediaItemTransition(
-            fixture.b, ListeningMediaTransitionReason.SEEK, true, at(2_000)
+            fixture.b, ListeningMediaTransitionReason.SEEK, true, at(12_000)
         )
-        fixture.coordinator.onStopped(at(3_000))
+        fixture.coordinator.onStopped(at(18_000))
 
         assertEquals(3, fixture.drafts.size)
         assertTrue(fixture.drafts.all { it.endReason == ListeningEndReason.TRANSITION || it.endReason == ListeningEndReason.STOPPED })
         assertNotEquals(fixture.drafts[0].playbackSessionId, fixture.drafts[1].playbackSessionId)
+    }
+
+    @Test
+    fun belowFloorSkipDirectTrackChangeStopAndErrorDoNotReachPersistenceCallback() = runBlocking {
+        val skipped = fixture()
+        skipped.coordinator.onIsPlayingChanged(skipped.a, true, at(0))
+        skipped.coordinator.onMediaItemTransition(
+            skipped.b,
+            ListeningMediaTransitionReason.SEEK,
+            true,
+            at(4_999)
+        )
+        assertTrue(skipped.drafts.isEmpty())
+
+        val selected = fixture()
+        selected.coordinator.onIsPlayingChanged(selected.a, true, at(0))
+        selected.coordinator.onMediaItemTransition(
+            selected.b,
+            ListeningMediaTransitionReason.PLAYLIST_CHANGED,
+            true,
+            at(4_999)
+        )
+        assertTrue(selected.drafts.isEmpty())
+
+        val stopped = fixture()
+        stopped.coordinator.onIsPlayingChanged(stopped.a, true, at(0))
+        stopped.coordinator.onStopped(at(4_999))
+        assertTrue(stopped.drafts.isEmpty())
+
+        val errored = fixture()
+        errored.coordinator.onIsPlayingChanged(errored.a, true, at(0))
+        errored.coordinator.onError(at(4_999))
+        assertTrue(errored.drafts.isEmpty())
     }
 
     @Test
@@ -101,20 +134,20 @@ class PlaybackListeningCoordinatorTest {
     fun errorsStopsAndServiceDestructionFinalizeAtMostOnce() = runBlocking {
         val error = fixture()
         error.coordinator.onIsPlayingChanged(error.a, true, at(0))
-        error.coordinator.onError(at(100))
-        error.coordinator.onStopped(at(100))
+        error.coordinator.onError(at(5_000))
+        error.coordinator.onStopped(at(5_000))
         assertEquals(ListeningEndReason.ERROR, error.drafts.single().endReason)
 
         val stopped = fixture()
         stopped.coordinator.onIsPlayingChanged(stopped.a, true, at(0))
-        stopped.coordinator.onStopped(at(200))
-        stopped.coordinator.onServiceDestroyed(at(300))
+        stopped.coordinator.onStopped(at(5_000))
+        stopped.coordinator.onServiceDestroyed(at(6_000))
         assertEquals(ListeningEndReason.STOPPED, stopped.drafts.single().endReason)
 
         val destroyed = fixture()
         destroyed.coordinator.onIsPlayingChanged(destroyed.a, true, at(0))
-        destroyed.coordinator.onServiceDestroyed(at(400))
-        assertEquals(400L, destroyed.drafts.single().listenedMs)
+        destroyed.coordinator.onServiceDestroyed(at(5_000))
+        assertEquals(5_000L, destroyed.drafts.single().listenedMs)
     }
 
     @Test
@@ -129,10 +162,10 @@ class PlaybackListeningCoordinatorTest {
         )
         fixture.coordinator.onNaturalEnd(fixture.a, at(1_100)) // stale ended from old session
         fixture.coordinator.onPositionDiscontinuity(fixture.a, at(1_200))
-        fixture.coordinator.onStopped(at(2_000))
+        fixture.coordinator.onStopped(at(6_000))
 
         assertEquals(2, fixture.drafts.size)
-        assertEquals(listOf(1_000L, 1_000L), fixture.drafts.map { it.listenedMs })
+        assertEquals(listOf(1_000L, 5_000L), fixture.drafts.map { it.listenedMs })
     }
 
     @Test
@@ -150,7 +183,7 @@ class PlaybackListeningCoordinatorTest {
         fixture.coordinator.onMediaItemTransition(
             fixture.b, ListeningMediaTransitionReason.AUTOMATIC, true, at(500)
         )
-        fixture.coordinator.onStopped(at(1_500))
+        fixture.coordinator.onStopped(at(5_500))
 
         assertEquals(1, fixture.drafts.size)
         assertEquals("session-2", fixture.drafts.single().playbackSessionId)
@@ -169,7 +202,7 @@ class PlaybackListeningCoordinatorTest {
         fixture.coordinator.onIsPlayingChanged(null, true, at(0))
         fixture.coordinator.onIsPlayingChanged(fixture.a, true, at(100))
         fixture.coordinator.onIsPlayingChanged(fixture.b, true, at(200))
-        fixture.coordinator.onStopped(at(1_200))
+        fixture.coordinator.onStopped(at(5_200))
 
         assertEquals(1, fixture.drafts.size)
         assertEquals(20L, fixture.drafts.single().trackIdentityId)
@@ -180,10 +213,10 @@ class PlaybackListeningCoordinatorTest {
     fun callbackTimestampPreservesInitialPlaybackAcrossAsyncResolutionBoundary() = runBlocking {
         val fixture = fixture()
         fixture.coordinator.onIsPlayingChanged(fixture.a, true, at(10_000, 100_000))
-        fixture.coordinator.onIsPlayingChanged(fixture.a, false, at(12_500, 500_000))
+        fixture.coordinator.onIsPlayingChanged(fixture.a, false, at(15_000, 500_000))
         fixture.coordinator.onStopped(at(20_000, 600_000))
 
-        assertEquals(2_500L, fixture.drafts.single().listenedMs)
+        assertEquals(5_000L, fixture.drafts.single().listenedMs)
         assertEquals(100_000L, fixture.drafts.single().startedAt)
     }
 
@@ -213,7 +246,7 @@ class PlaybackListeningCoordinatorTest {
     }
 
     @Test
-    fun crossfadeCancellationBeforeAndAfterMidpointRetainsHeardIntervals() = runBlocking {
+    fun crossfadeCancellationAppliesEligibilityFloorAndRetainsEligibleIntervals() = runBlocking {
         val before = fixture()
         before.coordinator.onIsPlayingChanged(before.a, true, at(0))
         before.coordinator.onAudibleStarted(before.b, at(5_000))
@@ -224,7 +257,7 @@ class PlaybackListeningCoordinatorTest {
         )
         before.coordinator.onLogicalHandoff(before.a)
         before.coordinator.onStopped(at(8_000))
-        assertEquals(listOf(1_500L, 8_000L), before.drafts.map { it.listenedMs })
+        assertEquals(listOf(8_000L), before.drafts.map { it.listenedMs })
 
         val after = fixture()
         after.coordinator.onIsPlayingChanged(after.a, true, at(0))

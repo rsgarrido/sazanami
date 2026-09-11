@@ -115,6 +115,17 @@ class ListeningSessionRecorder(
         } else {
             updateTimeQualification(session, session.committedListenedMs)
         }
+        if (endReason != ListeningEndReason.NATURAL_END &&
+            session.committedListenedMs < MINIMUM_NON_NATURAL_LISTENED_MS
+        ) {
+            activeSession = null
+            lastFinalizedPlaybackSessionId = playbackSessionId
+            return FinalizeListeningSessionResult.Ignored(
+                playbackSessionId = playbackSessionId,
+                listenedMs = session.committedListenedMs,
+                endReason = endReason
+            )
+        }
         if (endReason == ListeningEndReason.NATURAL_END) {
             session.qualificationReason = ListeningQualificationReason.NATURAL_END
         }
@@ -225,5 +236,9 @@ class ListeningSessionRecorder(
     private fun saturatingAdd(left: Long, right: Long): Long {
         if (right <= 0L) return left
         return if (left > Long.MAX_VALUE - right) Long.MAX_VALUE else left + right
+    }
+
+    companion object {
+        const val MINIMUM_NON_NATURAL_LISTENED_MS = 5_000L
     }
 }
