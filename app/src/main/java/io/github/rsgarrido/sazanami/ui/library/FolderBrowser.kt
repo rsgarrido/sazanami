@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -25,6 +26,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
@@ -40,6 +43,7 @@ import io.github.rsgarrido.sazanami.ui.AppShellTypography
 internal fun FoldersTabContent(
     index: FolderBrowseIndex,
     selectedFolderId: FolderId?,
+    scrollStateHolder: FolderBrowseScrollStateHolder,
     currentSong: Song?,
     recentlyAddedSongIds: Set<Long>,
     favoriteMembershipKeys: Set<String>,
@@ -57,8 +61,16 @@ internal fun FoldersTabContent(
 ) {
     val selectedNode = selectedFolderId?.let(index::get)
     if (selectedFolderId == null) {
+        val listState = remember(scrollStateHolder) {
+            scrollStateHolder.listStateFor(folderId = null)
+        }
+        ClampFolderBrowseListState(
+            listState = listState,
+            itemCount = if (index.roots.isEmpty()) 0 else index.roots.size + 1
+        )
         FolderRootContent(
             roots = index.roots,
+            listState = listState,
             onFolderSelected = onFolderSelected,
             bottomContentPadding = bottomContentPadding,
             modifier = modifier
@@ -74,6 +86,14 @@ internal fun FoldersTabContent(
         return
     }
 
+    val listState = remember(scrollStateHolder, selectedNode.id) {
+        scrollStateHolder.listStateFor(selectedNode.id)
+    }
+    ClampFolderBrowseListState(
+        listState = listState,
+        itemCount = selectedNode.folderDetailListItemCount()
+    )
+
     SongList(
         songs = selectedNode.directSongs,
         currentSongId = currentSong?.id,
@@ -87,6 +107,7 @@ internal fun FoldersTabContent(
         onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
         onEditSongTagsClick = onEditSongTagsClick,
         selectionEnabled = true,
+        listState = listState,
         bottomContentPadding = bottomContentPadding,
         modifier = modifier,
         emptyContent = {
@@ -128,6 +149,7 @@ internal fun FoldersTabContent(
 @Composable
 private fun FolderRootContent(
     roots: List<FolderBrowseNode>,
+    listState: LazyListState,
     onFolderSelected: (FolderId) -> Unit,
     bottomContentPadding: Dp,
     modifier: Modifier
@@ -145,6 +167,7 @@ private fun FolderRootContent(
     }
 
     LazyColumn(
+        state = listState,
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = bottomContentPadding)
     ) {
@@ -166,6 +189,27 @@ private fun FolderRootContent(
                 node = root,
                 storageLabel = root.id.volumeName.storageDisplayName(),
                 onClick = { onFolderSelected(root.id) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ClampFolderBrowseListState(
+    listState: LazyListState,
+    itemCount: Int
+) {
+    LaunchedEffect(listState, itemCount) {
+        if (itemCount <= 0) return@LaunchedEffect
+        val current = FolderBrowseScrollPosition(
+            firstVisibleItemIndex = listState.firstVisibleItemIndex,
+            firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset
+        )
+        val clamped = clampFolderBrowseScrollPosition(current, itemCount)
+        if (clamped != current) {
+            listState.scrollToItem(
+                index = clamped.firstVisibleItemIndex,
+                scrollOffset = clamped.firstVisibleItemScrollOffset
             )
         }
     }
@@ -289,6 +333,12 @@ private fun FolderBrowseNode.folderSummary(): String = listOf(
     songCount.countLabel("song"),
     childFolderIds.size.countLabel("folder")
 ).joinToString(" | ")
+
+private fun FolderBrowseNode.folderDetailListItemCount(): Int {
+    val childFolderItems = if (childFolderIds.isEmpty()) 0 else childFolderIds.size + 1
+    val directSongItems = directSongs.size.coerceAtLeast(1)
+    return 2 + childFolderItems + directSongItems // Detail header and songs label.
+}
 
 private fun Int.countLabel(noun: String): String = "$this $noun${if (this == 1) "" else "s"}"
 

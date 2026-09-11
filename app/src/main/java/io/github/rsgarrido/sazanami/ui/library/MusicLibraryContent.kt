@@ -24,9 +24,10 @@ import io.github.rsgarrido.sazanami.ui.queue.QueueScreen
 import io.github.rsgarrido.sazanami.ui.state.LibrarySelectionEntity
 
 @Composable
-fun MusicLibraryContent(
+internal fun MusicLibraryContent(
     selectedLibraryTab: LibraryTab,
     folderBrowseIndex: FolderBrowseIndex,
+    folderBrowseScrollStateHolder: FolderBrowseScrollStateHolder,
     selectedFolderId: FolderId?,
     songs: List<Song>,
     searchQuery: String,
@@ -188,6 +189,7 @@ fun MusicLibraryContent(
             FoldersTabContent(
                 index = folderBrowseIndex,
                 selectedFolderId = selectedFolderId,
+                scrollStateHolder = folderBrowseScrollStateHolder,
                 currentSong = currentSong,
                 recentlyAddedSongIds = recentlyAddedSongIds,
                 favoriteMembershipKeys = favoriteMembershipKeys,

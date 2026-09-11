@@ -62,6 +62,7 @@ import io.github.rsgarrido.sazanami.ui.library.LibraryTab
 import io.github.rsgarrido.sazanami.ui.library.LibraryAlbumGroup
 import io.github.rsgarrido.sazanami.ui.library.buildLibraryAlbumGroups
 import io.github.rsgarrido.sazanami.ui.library.findLibraryAlbumGroupForSong
+import io.github.rsgarrido.sazanami.ui.library.FolderBrowseScrollStateHolder
 import io.github.rsgarrido.sazanami.ui.library.folderBrowseBackDestination
 import io.github.rsgarrido.sazanami.ui.library.resolveFolderBrowseSelection
 import io.github.rsgarrido.sazanami.ui.library.isAlbumGroupAvailable
@@ -333,6 +334,7 @@ internal fun MusicScreen(
     var selectedAlbumSortState by navigationState.selectedAlbumSortState
     var selectedFavoriteSortState by navigationState.selectedFavoriteSortState
     val folderBrowseIndex = remember(songs) { buildFolderBrowseIndex(songs) }
+    val folderBrowseScrollStateHolder = remember { FolderBrowseScrollStateHolder() }
     val canValidateFolderSelection = !isLibraryLoading && !isLibraryRefreshing
     val resolvedFolderId = if (canValidateFolderSelection) {
         resolveFolderBrowseSelection(folderBrowseIndex, selectedFolderId)
@@ -343,6 +345,11 @@ internal fun MusicScreen(
     LaunchedEffect(folderBrowseIndex, selectedFolderId, canValidateFolderSelection) {
         if (canValidateFolderSelection && selectedFolderId != resolvedFolderId) {
             selectedFolderId = resolvedFolderId
+        }
+    }
+    LaunchedEffect(folderBrowseIndex, canValidateFolderSelection) {
+        if (canValidateFolderSelection) {
+            folderBrowseScrollStateHolder.retainFolderIds(folderBrowseIndex.nodesById.keys)
         }
     }
 
@@ -1156,6 +1163,7 @@ internal fun MusicScreen(
                     mainDestination = mainDestination,
                     selectedLibraryTab = selectedLibraryTab,
                     folderBrowseIndex = folderBrowseIndex,
+                    folderBrowseScrollStateHolder = folderBrowseScrollStateHolder,
                     selectedFolderId = resolvedFolderId,
                     selectedArtistName = selectedArtistName,
                     selectedAlbumKey = selectedAlbumKey,

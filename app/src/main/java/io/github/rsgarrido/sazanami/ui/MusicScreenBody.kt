@@ -68,6 +68,7 @@ import io.github.rsgarrido.sazanami.ui.equalizer.EqualizerScreenState
 import io.github.rsgarrido.sazanami.ui.equalizer.EqualizerUiActions
 import io.github.rsgarrido.sazanami.ui.home.HomeScreen
 import io.github.rsgarrido.sazanami.ui.library.FolderSelectionScreen
+import io.github.rsgarrido.sazanami.ui.library.FolderBrowseScrollStateHolder
 import io.github.rsgarrido.sazanami.ui.library.LibraryBrowseSwitcher
 import io.github.rsgarrido.sazanami.ui.library.LibrarySortDirection
 import io.github.rsgarrido.sazanami.ui.library.LibrarySortOption
@@ -162,6 +163,7 @@ internal fun MusicScreenBody(
     mainDestination: MainDestination,
     selectedLibraryTab: LibraryTab,
     folderBrowseIndex: FolderBrowseIndex,
+    folderBrowseScrollStateHolder: FolderBrowseScrollStateHolder,
     selectedFolderId: FolderId?,
     selectedArtistName: String?,
     selectedAlbumKey: String?,
@@ -902,6 +904,7 @@ internal fun MusicScreenBody(
                                     MusicLibraryContent(
                                         selectedLibraryTab = visibleLibraryTab,
                                     folderBrowseIndex = folderBrowseIndex,
+                                    folderBrowseScrollStateHolder = folderBrowseScrollStateHolder,
                                     selectedFolderId = selectedFolderId,
                                     songs = songs,
                                     searchQuery = if (destination == MainDestination.SEARCH) "" else searchQuery,
