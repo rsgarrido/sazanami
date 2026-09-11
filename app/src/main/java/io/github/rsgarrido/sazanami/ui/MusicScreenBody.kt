@@ -46,6 +46,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.data.LibraryFolder
 import io.github.rsgarrido.sazanami.data.FolderSelectionMode
+import io.github.rsgarrido.sazanami.data.FolderBrowseIndex
+import io.github.rsgarrido.sazanami.data.FolderId
 import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.data.preferences.AppFont
 import io.github.rsgarrido.sazanami.data.Playlist
@@ -159,6 +161,8 @@ internal fun MusicScreenBody(
     isSelectedPlaylistLoading: Boolean,
     mainDestination: MainDestination,
     selectedLibraryTab: LibraryTab,
+    folderBrowseIndex: FolderBrowseIndex,
+    selectedFolderId: FolderId?,
     selectedArtistName: String?,
     selectedAlbumKey: String?,
     selectedGenreKey: String?,
@@ -235,6 +239,8 @@ internal fun MusicScreenBody(
     onRepeatClick: () -> Unit,
     onToggleFavoriteClick: (Song) -> Unit,
     onAddToPlaylistClick: (Song) -> Unit,
+    onFolderSelected: (FolderId) -> Unit,
+    onBackFromFolder: () -> Unit,
     onArtistSelected: (String) -> Unit,
     onBackFromArtist: () -> Unit,
     onAlbumSelected: (String) -> Unit,
@@ -895,6 +901,8 @@ internal fun MusicScreenBody(
                                             visibleLibraryTab == LibraryTab.PLAYLISTS
                                     MusicLibraryContent(
                                         selectedLibraryTab = visibleLibraryTab,
+                                    folderBrowseIndex = folderBrowseIndex,
+                                    selectedFolderId = selectedFolderId,
                                     songs = songs,
                                     searchQuery = if (destination == MainDestination.SEARCH) "" else searchQuery,
                                     selectedSongFilterState = if (isSearchDestination) {
@@ -941,6 +949,8 @@ internal fun MusicScreenBody(
                                     },
                                     onToggleFavoriteClick = onToggleFavoriteClick,
                                     onAddToPlaylistClick = onAddToPlaylistClick,
+                                    onFolderSelected = onFolderSelected,
+                                    onBackFromFolder = onBackFromFolder,
                                     onArtistSelected = onArtistSelected,
                                     onBackFromArtist = onBackFromArtist,
                                     onAlbumSelected = onAlbumSelected,

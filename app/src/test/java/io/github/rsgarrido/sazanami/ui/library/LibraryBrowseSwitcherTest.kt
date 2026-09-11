@@ -20,8 +20,24 @@ class LibraryBrowseSwitcherTest {
     fun primaryCategoriesRemainSelected() {
         assertEquals(LibraryTab.ALBUMS, LibraryTab.ALBUMS.primaryBrowseTab())
         assertEquals(LibraryTab.ARTISTS, LibraryTab.ARTISTS.primaryBrowseTab())
+        assertEquals(LibraryTab.FOLDERS, LibraryTab.FOLDERS.primaryBrowseTab())
         assertEquals(LibraryTab.GENRES, LibraryTab.GENRES.primaryBrowseTab())
         assertEquals(LibraryTab.PLAYLISTS, LibraryTab.PLAYLISTS.primaryBrowseTab())
+    }
+
+    @Test
+    fun foldersFollowArtistsInStaticTabOrder() {
+        assertEquals(
+            listOf(
+                LibraryTab.SONGS,
+                LibraryTab.ALBUMS,
+                LibraryTab.ARTISTS,
+                LibraryTab.FOLDERS,
+                LibraryTab.PLAYLISTS,
+                LibraryTab.GENRES
+            ),
+            primaryLibraryTabs
+        )
     }
 
     @Test
@@ -45,6 +61,7 @@ class LibraryBrowseSwitcherTest {
         listOf(
             LibraryTab.ALBUMS,
             LibraryTab.ARTISTS,
+            LibraryTab.FOLDERS,
             LibraryTab.PLAYLISTS,
             LibraryTab.GENRES,
             LibraryTab.QUEUE
@@ -68,6 +85,7 @@ class LibraryBrowseSwitcherTest {
         listOf(
             LibraryTab.ALBUMS,
             LibraryTab.ARTISTS,
+            LibraryTab.FOLDERS,
             LibraryTab.PLAYLISTS,
             LibraryTab.GENRES
         ).forEach { tab ->

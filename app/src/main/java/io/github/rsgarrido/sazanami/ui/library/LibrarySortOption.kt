@@ -124,6 +124,7 @@ internal fun librarySortOptionsFor(
     )
 
     LibraryTab.PLAYLISTS,
+    LibraryTab.FOLDERS,
     LibraryTab.GENRES,
     LibraryTab.RECENTLY_PLAYED,
     LibraryTab.MOST_PLAYED,

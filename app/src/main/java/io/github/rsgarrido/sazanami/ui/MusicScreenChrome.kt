@@ -290,6 +290,7 @@ fun LibraryOrganizeAction(
             LibraryTab.FAVORITES -> selectedFavoriteSortState
             LibraryTab.ARTISTS -> selectedArtistSortState
             LibraryTab.ALBUMS -> selectedAlbumSortState
+            LibraryTab.FOLDERS -> selectedSongSortState
             LibraryTab.GENRES -> selectedSongSortState
             LibraryTab.PLAYLISTS -> selectedSongSortState
             LibraryTab.RECENTLY_PLAYED -> selectedSongSortState
@@ -313,6 +314,7 @@ fun LibraryOrganizeAction(
                 LibraryTab.RECENTLY_ADDED -> onSongSortStateChanged(state)
                 LibraryTab.ARTISTS -> onArtistSortStateChanged(state)
                 LibraryTab.ALBUMS -> onAlbumSortStateChanged(state)
+                LibraryTab.FOLDERS -> Unit
                 LibraryTab.GENRES -> Unit
                 LibraryTab.PLAYLISTS -> Unit
                 LibraryTab.RECENTLY_PLAYED -> Unit

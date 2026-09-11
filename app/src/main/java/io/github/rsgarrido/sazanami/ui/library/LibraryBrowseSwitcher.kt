@@ -64,6 +64,7 @@ val primaryLibraryTabs = listOf(
     LibraryTab.SONGS,
     LibraryTab.ALBUMS,
     LibraryTab.ARTISTS,
+    LibraryTab.FOLDERS,
     LibraryTab.PLAYLISTS,
     LibraryTab.GENRES
 )
