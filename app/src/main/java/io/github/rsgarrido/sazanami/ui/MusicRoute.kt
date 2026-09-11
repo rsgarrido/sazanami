@@ -98,6 +98,8 @@ internal fun MusicRoute(
     musicViewModel.lyricsPlaybackUiState.collectAsStateWithLifecycle()
     val listeningAnalyticsUiState by
     musicViewModel.listeningAnalyticsUiState.collectAsStateWithLifecycle()
+    val showNotCountedPlays by
+        musicViewModel.showNotCountedPlays.collectAsStateWithLifecycle()
     val songRatingUiState by
     musicViewModel.songRatingUiState.collectAsStateWithLifecycle()
     val spotifyImportUiState by
@@ -766,6 +768,8 @@ internal fun MusicRoute(
             libraryAppearanceUiState = libraryAppearanceUiState,
             onLibraryViewOptionSelected = musicViewModel::selectLibraryViewOption,
             listeningAnalyticsUiState = listeningAnalyticsUiState,
+            showNotCountedPlays = showNotCountedPlays,
+            onShowNotCountedPlaysChanged = musicViewModel::setShowNotCountedPlays,
             onListeningAnalyticsActiveChanged = musicViewModel::setListeningAnalyticsActive,
             onListeningAnalyticsPresetSelected = musicViewModel::selectListeningAnalyticsPreset,
             onListeningAnalyticsCustomRangeSelected =

@@ -175,6 +175,7 @@ class BackupRepository(
                     )
                 },
                 showRecentlyAddedOnHome = appPreferences.showRecentlyAddedOnHome,
+                showNotCountedPlays = appPreferences.showNotCountedPlays,
                 equalizer = appPreferences
                     .equalizerPreferences
                     .toBackupEqualizerPreferences()
@@ -584,6 +585,7 @@ class BackupRepository(
                     }
                 ),
                 showRecentlyAddedOnHome = preferences.showRecentlyAddedOnHome,
+                showNotCountedPlays = preferences.showNotCountedPlays,
                 equalizerPreferences =
                     preferences.equalizer
                         .toEqualizerPreferencesState(),

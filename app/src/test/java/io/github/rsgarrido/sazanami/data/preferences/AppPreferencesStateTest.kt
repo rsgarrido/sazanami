@@ -377,6 +377,19 @@ class AppPreferencesStateTest {
     }
 
     @Test
+    fun notCountedPresentationDefaultsToHiddenAndDecodesStoredVisibility() {
+        assertFalse(decodeAppPreferences(mutablePreferencesOf()).showNotCountedPlays)
+
+        val visible = decodeAppPreferences(
+            mutablePreferencesOf(
+                booleanPreferencesKey("show_not_counted_plays") to true
+            )
+        )
+
+        assertTrue(visible.showNotCountedPlays)
+    }
+
+    @Test
     fun homePinsDecodeInOrderAreCappedAtFourAndRecentlyAddedCanBeHidden() {
         val pins = (1..5).map { index ->
             HomePin(

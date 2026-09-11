@@ -338,6 +338,10 @@ class MusicViewModel(
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, HomeCustomizationUiState())
 
+    val showNotCountedPlays = appPreferencesRepository.state
+        .map { preferences -> preferences.showNotCountedPlays }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     val audioOffloadPreference = appPreferencesRepository.state
         .map { preferences -> preferences.audioOffloadPreference }
         .stateIn(
@@ -535,6 +539,10 @@ class MusicViewModel(
 
     fun setShowRecentlyAddedOnHome(show: Boolean) {
         viewModelScope.launch { appPreferencesRepository.setShowRecentlyAddedOnHome(show) }
+    }
+
+    fun setShowNotCountedPlays(show: Boolean) {
+        viewModelScope.launch { appPreferencesRepository.setShowNotCountedPlays(show) }
     }
 
     fun readEditableSongTags(song: Song): EditableSongTags = tagEditorRepository.readTags(song)

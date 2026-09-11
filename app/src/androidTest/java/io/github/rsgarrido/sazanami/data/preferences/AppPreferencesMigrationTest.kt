@@ -33,6 +33,32 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class AppPreferencesMigrationTest {
     @Test
+    fun notCountedVisibilityDefaultsOffAndRoundTrips() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val repository = AppPreferencesRepository.create(
+            context = context,
+            scope = scope,
+            dataStoreFileName =
+                "not_counted_visibility_${System.nanoTime()}.preferences_pb",
+            legacyStores = emptyList()
+        )
+
+        assertFalse(withTimeout(5_000) { repository.awaitLoadedState() }.showNotCountedPlays)
+
+        repository.setShowNotCountedPlays(true)
+        assertTrue(withTimeout(5_000) {
+            repository.state.firstMatching { it.showNotCountedPlays }
+        }.showNotCountedPlays)
+
+        repository.setShowNotCountedPlays(false)
+        assertFalse(withTimeout(5_000) {
+            repository.state.firstMatching { !it.showNotCountedPlays }
+        }.showNotCountedPlays)
+        scope.cancel()
+    }
+
+    @Test
     fun confirmingMultipleInitialRootsPersistsTheExplicitSelection() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val suffix = System.nanoTime().toString()

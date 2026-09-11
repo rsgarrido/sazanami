@@ -1,6 +1,8 @@
 package io.github.rsgarrido.sazanami.ui.statistics
 
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -29,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -48,6 +51,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.data.AnalyticsRangePreset
@@ -72,6 +76,8 @@ internal fun StatisticsScreen(
     onTrendMetricSelected: (ListeningTrendMetric) -> Unit = {},
     onRankingCategorySelected: (ListeningRankingCategory) -> Unit = {},
     librarySongs: List<Song> = emptyList(),
+    showNotCountedPlays: Boolean = false,
+    onShowNotCountedPlaysChanged: (Boolean) -> Unit = {},
     listState: LazyListState,
     modifier: Modifier = Modifier
 ) {
@@ -174,7 +180,12 @@ internal fun StatisticsScreen(
                 if (noHistory) {
                     item { StatisticsEmptyCard(R.string.statistics_no_history) }
                 } else {
-                    item { StatisticsOverviewGrid(overview) }
+                    item {
+                        StatisticsOverviewGrid(
+                            overview = overview,
+                            showNotCountedPlays = showNotCountedPlays
+                        )
+                    }
                     if (noRangeActivity) {
                         item { StatisticsEmptyCard(R.string.statistics_no_activity_range) }
                     }
@@ -278,7 +289,12 @@ internal fun StatisticsScreen(
             onDismissRequest = { showCoverageDialog = false },
             icon = { Icon(Icons.Rounded.Info, contentDescription = null) },
             title = { Text(stringResource(R.string.statistics_history_dialog_title)) },
-            text = { StatisticsInfoContent() },
+            text = {
+                StatisticsInfoContent(
+                    showNotCountedPlays = showNotCountedPlays,
+                    onShowNotCountedPlaysChanged = onShowNotCountedPlaysChanged
+                )
+            },
             confirmButton = {
                 TextButton(onClick = { showCoverageDialog = false }) {
                     Text(stringResource(R.string.statistics_close))
@@ -386,7 +402,10 @@ private fun AnalyticsRangePreset.compactLabelResource(): Int = when (this) {
 }
 
 @Composable
-private fun StatisticsOverviewGrid(overview: ListeningOverview) {
+private fun StatisticsOverviewGrid(
+    overview: ListeningOverview,
+    showNotCountedPlays: Boolean
+) {
     val duration = durationPresentation(overview.listeningTime.confirmedDetailedListeningMs)
     val recordedLabel = stringResource(R.string.statistics_recorded_listening)
     val recordedSupport = stringResource(R.string.statistics_recorded_listening_support)
@@ -394,7 +413,8 @@ private fun StatisticsOverviewGrid(overview: ListeningOverview) {
     Card(
         modifier = Modifier
             .padding(horizontal = 16.dp)
-            .fillMaxWidth(),
+            .fillMaxWidth()
+            .testTag("statistics_overview"),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
         Column(
@@ -436,7 +456,7 @@ private fun StatisticsOverviewGrid(overview: ListeningOverview) {
                 val notCountedSupport = stringResource(R.string.statistics_not_counted_support_compact)
                 val notCountedAccessibility = stringResource(R.string.statistics_not_counted_support)
 
-                if (useThreeColumns) {
+                if (showNotCountedPlays && useThreeColumns) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -444,12 +464,16 @@ private fun StatisticsOverviewGrid(overview: ListeningOverview) {
                         CompactOverviewMetric(
                             title = stringResource(R.string.statistics_plays),
                             value = plays,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("statistics_metric_plays")
                         )
                         CompactOverviewMetric(
                             title = stringResource(R.string.statistics_completed),
                             value = completed,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("statistics_metric_completed")
                         )
                         CompactOverviewMetric(
                             title = stringResource(R.string.statistics_not_counted),
@@ -457,7 +481,9 @@ private fun StatisticsOverviewGrid(overview: ListeningOverview) {
                             supportingText = notCountedSupport,
                             accessibleSupportingText = notCountedAccessibility,
                             emphasized = false,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("statistics_metric_not_counted")
                         )
                     }
                 } else {
@@ -469,20 +495,27 @@ private fun StatisticsOverviewGrid(overview: ListeningOverview) {
                             CompactOverviewMetric(
                                 title = stringResource(R.string.statistics_plays),
                                 value = plays,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("statistics_metric_plays")
                             )
                             CompactOverviewMetric(
                                 title = stringResource(R.string.statistics_completed),
                                 value = completed,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("statistics_metric_completed")
                             )
                         }
-                        MutedOverviewMetric(
-                            title = stringResource(R.string.statistics_not_counted),
-                            value = notCounted,
-                            supportingText = notCountedSupport,
-                            accessibleSupportingText = notCountedAccessibility
-                        )
+                        if (showNotCountedPlays) {
+                            MutedOverviewMetric(
+                                title = stringResource(R.string.statistics_not_counted),
+                                value = notCounted,
+                                supportingText = notCountedSupport,
+                                accessibleSupportingText = notCountedAccessibility,
+                                modifier = Modifier.testTag("statistics_metric_not_counted")
+                            )
+                        }
                     }
                 }
             }
@@ -542,10 +575,11 @@ private fun MutedOverviewMetric(
     title: String,
     value: String,
     supportingText: String,
-    accessibleSupportingText: String
+    accessibleSupportingText: String,
+    modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .semantics(mergeDescendants = true) {
                 contentDescription = "$title, $value. $accessibleSupportingText"
@@ -574,8 +608,16 @@ private fun MutedOverviewMetric(
 }
 
 @Composable
-private fun StatisticsInfoContent() {
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+private fun StatisticsInfoContent(
+    showNotCountedPlays: Boolean,
+    onShowNotCountedPlaysChanged: (Boolean) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .verticalScroll(rememberScrollState())
+            .testTag("statistics_info_content"),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
         StatisticsInfoSection(
             title = stringResource(R.string.statistics_info_qualified_title),
             body = stringResource(R.string.statistics_info_qualified_body)
@@ -584,6 +626,31 @@ private fun StatisticsInfoContent() {
             title = stringResource(R.string.statistics_info_not_counted_title),
             body = stringResource(R.string.statistics_info_not_counted_body)
         )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .testTag("statistics_show_not_counted_toggle")
+                .toggleable(
+                    value = showNotCountedPlays,
+                    role = Role.Switch,
+                    onValueChange = onShowNotCountedPlaysChanged
+                )
+                .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = stringResource(R.string.statistics_show_not_counted_plays),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Switch(
+                checked = showNotCountedPlays,
+                onCheckedChange = null
+            )
+        }
         StatisticsInfoSection(
             title = stringResource(R.string.statistics_info_recorded_title),
             body = stringResource(R.string.statistics_info_recorded_body)

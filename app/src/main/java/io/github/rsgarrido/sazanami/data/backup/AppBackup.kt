@@ -76,6 +76,7 @@ data class BackupPreferences(
     val playlistsGridColumnCount: Int = 2,
     val homePins: List<BackupHomePin> = emptyList(),
     val showRecentlyAddedOnHome: Boolean = true,
+    val showNotCountedPlays: Boolean = false,
     val equalizer: BackupEqualizerPreferences =
         BackupEqualizerPreferences()
 )
