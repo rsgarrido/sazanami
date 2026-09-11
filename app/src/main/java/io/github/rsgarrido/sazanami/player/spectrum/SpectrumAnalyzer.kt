@@ -35,7 +35,7 @@ internal data class SpectrumAnalyzerConfig(
         const val DEFAULT_MINIMUM_FREQUENCY_HZ = 60f
         const val DEFAULT_MAXIMUM_FREQUENCY_HZ = 16_000f
         const val DEFAULT_NOISE_FLOOR_DB = -72f
-        const val DEFAULT_CEILING_DB = -12f
+        const val DEFAULT_CEILING_DB = -3f
         const val DEFAULT_ATTACK_MILLIS = 30f
         const val DEFAULT_RELEASE_MILLIS = 240f
         const val DEFAULT_UPDATE_CADENCE_HZ = 30

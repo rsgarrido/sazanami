@@ -3,11 +3,8 @@ package io.github.rsgarrido.sazanami.ui.player.retrorack
 import androidx.compose.ui.graphics.Color
 
 internal data class RetroRackVisualProfile(
-    val levels: List<Float>,
     val accent: Color,
-    val peak: Color,
-    val phaseOffset: Float,
-    val songSeed: Long
+    val peak: Color
 )
 
 internal data class RetroRackLayoutProfile(
@@ -64,22 +61,9 @@ internal fun buildRetroRackLayoutProfile(
 }
 
 internal fun buildRetroRackVisualProfile(
-    songId: Long?,
-    title: String?,
     artist: String?,
     album: String?
 ): RetroRackVisualProfile {
-    var songSeed = songId ?: 0x43_44_50L
-    (title.orEmpty() + '\u0000' + artist.orEmpty()).forEach { character ->
-        songSeed = songSeed * 1_099_511_628_211L xor character.code.toLong()
-    }
-
-    var state = songSeed
-    val levels = List(RETRO_RACK_VISUALIZER_COLUMN_COUNT) {
-        state = state * 6_364_136_223_846_793_005L + 1_442_695_040_888_963_407L
-        val normalized = ((state ushr 40) and 0xFFFF).toFloat() / 0xFFFF
-        0.24f + normalized * 0.7f
-    }
     var albumSeed = 0x52_41_43_4BL
     album.orEmpty().ifBlank { artist.orEmpty() }.forEach { character ->
         albumSeed = albumSeed * 1_099_511_628_211L xor character.code.toLong()
@@ -91,11 +75,8 @@ internal fun buildRetroRackVisualProfile(
     ]
 
     return RetroRackVisualProfile(
-        levels = levels,
         accent = albumColors.accent,
-        peak = albumColors.peak,
-        phaseOffset = ((songSeed ushr 24) and 0xFF).toFloat() / 255f * 6.283f,
-        songSeed = songSeed
+        peak = albumColors.peak
     )
 }
 

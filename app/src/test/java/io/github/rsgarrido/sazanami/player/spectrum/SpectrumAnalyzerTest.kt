@@ -65,6 +65,16 @@ class SpectrumAnalyzerTest {
     }
 
     @Test
+    fun `moderate tones retain headroom below stronger tones`() {
+        val moderate = analyzeSteadyTone(amplitude = 0.35f)
+        val strong = analyzeSteadyTone(amplitude = 0.80f)
+
+        assertTrue(moderate in 0.2f..0.96f)
+        assertTrue(strong > moderate + 0.03f)
+        assertTrue(strong <= 1f)
+    }
+
+    @Test
     fun `equivalent tone maps sensibly at common sample rates`() {
         val at44100 = analyzeTone(1_000f, 44_100)
         val at48000 = analyzeTone(1_000f, 48_000)
@@ -139,9 +149,27 @@ class SpectrumAnalyzerTest {
             timestampNanos = frameNanos
         )
 
-    private fun sine(frequencyHz: Float, sampleRateHz: Int): FloatArray =
+    private fun analyzeSteadyTone(amplitude: Float): Float {
+        val analyzer = SpectrumAnalyzer()
+        val samples = sine(1_000f, 48_000, amplitude)
+        var frame = analyzer.analyzeMono(samples, 48_000, frameNanos)
+        repeat(29) { index ->
+            frame = analyzer.analyzeMono(
+                samples,
+                48_000,
+                frameNanos * (index + 2L)
+            )
+        }
+        return frame.peakValue()
+    }
+
+    private fun sine(
+        frequencyHz: Float,
+        sampleRateHz: Int,
+        amplitude: Float = 0.8f
+    ): FloatArray =
         FloatArray(1_024) { index ->
-            (0.8 * sin(2.0 * PI * frequencyHz * index / sampleRateHz)).toFloat()
+            (amplitude * sin(2.0 * PI * frequencyHz * index / sampleRateHz)).toFloat()
         }
 
     private fun SpectrumFrame.values() = FloatArray(bandCount).also(::copyMonoBandsInto)

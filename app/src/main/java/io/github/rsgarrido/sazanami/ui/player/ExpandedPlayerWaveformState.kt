@@ -91,6 +91,9 @@ internal fun shouldLoadExpandedPlayerWaveform(
     modernSeekbarStyle: ModernSeekbarStyle
 ): Boolean = when (selectedPlayerTheme) {
     PlayerTheme.DEFAULT -> modernSeekbarStyle.usesWaveformData
-    PlayerTheme.POCKET_FLIP, PlayerTheme.RETRO_RACK, PlayerTheme.POCKET_DISC -> true
-    PlayerTheme.CLASSIC_WHEEL, PlayerTheme.POCKET_CASSETTE -> false
+    PlayerTheme.CLASSIC_WHEEL,
+    PlayerTheme.POCKET_FLIP,
+    PlayerTheme.POCKET_CASSETTE,
+    PlayerTheme.RETRO_RACK,
+    PlayerTheme.POCKET_DISC -> false
 }

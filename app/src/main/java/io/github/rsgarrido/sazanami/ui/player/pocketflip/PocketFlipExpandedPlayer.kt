@@ -21,13 +21,11 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.RepeatMode
-import io.github.rsgarrido.sazanami.player.waveform.WaveformData
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 
 @Composable
 fun PocketFlipExpandedPlayer(
     currentSong: Song?,
-    waveformData: WaveformData? = null,
     isVisualizerWorkAllowed: Boolean = true,
     isPlaying: Boolean,
     isShuffleEnabled: Boolean,
@@ -82,7 +80,6 @@ fun PocketFlipExpandedPlayer(
         ) {
             PocketFlipDisplayHalf(
                 currentSong = currentSong,
-                waveformData = waveformData,
                 isVisualizerWorkAllowed = isVisualizerWorkAllowed,
                 isPlaying = isPlaying,
                 currentPosition = currentPosition,

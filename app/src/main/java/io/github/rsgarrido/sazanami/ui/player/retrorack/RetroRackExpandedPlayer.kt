@@ -70,23 +70,18 @@ import androidx.compose.ui.semantics.setProgress
 import io.github.rsgarrido.sazanami.ui.player.RetainedArtworkImage
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.RepeatMode
-import io.github.rsgarrido.sazanami.player.waveform.WaveformData
-import io.github.rsgarrido.sazanami.ui.player.fillRetroMeterLevels
-import io.github.rsgarrido.sazanami.ui.player.isRetroMeterEffectivelySilent
-import io.github.rsgarrido.sazanami.ui.player.rememberBoundedVisualizerPhase
-import io.github.rsgarrido.sazanami.ui.player.RETRO_VISUALIZER_CADENCE_HZ
+import io.github.rsgarrido.sazanami.ui.player.fillRetroRackSpectrum
+import io.github.rsgarrido.sazanami.ui.player.rememberSpectrumVisualizerState
 import io.github.rsgarrido.sazanami.performance.PerformanceTraceNames
 import io.github.rsgarrido.sazanami.performance.VisualizerPerformanceCounters
 import io.github.rsgarrido.sazanami.performance.tracePerformance
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 import io.github.rsgarrido.sazanami.ui.player.playerEndpointInput
-import kotlin.math.sin
 import kotlin.math.abs
 
 @Composable
 fun RetroRackExpandedPlayer(
     currentSong: Song?,
-    waveformData: WaveformData? = null,
     isVisualizerWorkAllowed: Boolean = true,
     isPlaying: Boolean,
     isShuffleEnabled: Boolean,
@@ -136,14 +131,10 @@ fun RetroRackExpandedPlayer(
     }
     val compact = layoutProfile.compact
     val visualProfile = remember(
-        currentSong?.id,
-        currentSong?.title,
         currentSong?.artist,
         currentSong?.album
     ) {
         buildRetroRackVisualProfile(
-            songId = currentSong?.id,
-            title = currentSong?.title,
             artist = currentSong?.artist,
             album = currentSong?.album
         )
@@ -223,11 +214,7 @@ fun RetroRackExpandedPlayer(
         ) {
             DecorativeSpectrum(
                 profile = visualProfile,
-                waveformData = waveformData,
-                isVisualizerWorkAllowed = isVisualizerWorkAllowed && spectrumReveal > .99f,
-                isPlaying = isPlaying,
-                currentPosition = currentPosition,
-                duration = duration,
+                isVisualizerWorkAllowed = isVisualizerWorkAllowed,
                 compact = compact,
                 modifier = Modifier.fillMaxSize().then(safeHeaderGesture)
             )
@@ -584,27 +571,13 @@ private fun RetroRackSeekControl(
 @Composable
 private fun DecorativeSpectrum(
     profile: RetroRackVisualProfile,
-    waveformData: WaveformData?,
     isVisualizerWorkAllowed: Boolean,
-    isPlaying: Boolean,
-    currentPosition: Int,
-    duration: Int,
     compact: Boolean,
     modifier: Modifier = Modifier
 ) {
     val gridColor = LcdGreenDim.copy(alpha = 0.24f)
-    val isSilent = isRetroMeterEffectivelySilent(
-        amplitudes = waveformData?.amplitudes,
-        currentPositionMs = currentPosition.toLong(),
-        durationMs = duration.toLong()
-    )
-    val phase = rememberBoundedVisualizerPhase(
-        animationEnabled = isPlaying && isVisualizerWorkAllowed && !isSilent,
-        targetCadenceHz = RETRO_VISUALIZER_CADENCE_HZ,
-        cycleDurationMillis = 1_600,
-        updateTraceName = PerformanceTraceNames.RETRO_RACK_UPDATE
-    )
-    val meterLevels = remember(profile.levels.size) { FloatArray(profile.levels.size) }
+    val spectrumState = rememberSpectrumVisualizerState(isVisualizerWorkAllowed)
+    val meterLevels = remember { FloatArray(RETRO_RACK_VISUALIZER_COLUMN_COUNT) }
     Canvas(
         modifier = modifier
             .background(DisplayBlack)
@@ -612,6 +585,7 @@ private fun DecorativeSpectrum(
             .rackBevel()
             .padding(if (compact) 8.dp else 10.dp)
     ) {
+        fillRetroRackSpectrum(spectrumState.value, meterLevels)
         tracePerformance(PerformanceTraceNames.RETRO_RACK_DRAW) {
         VisualizerPerformanceCounters.onDraw()
         repeat(3) { index ->
@@ -623,39 +597,15 @@ private fun DecorativeSpectrum(
                 strokeWidth = 1f
             )
         }
-        val currentPhase = phase.value
-        val isEnergyDriven = fillRetroMeterLevels(
-            output = meterLevels,
-            amplitudes = waveformData?.amplitudes,
-            currentPositionMs = currentPosition.toLong(),
-            durationMs = duration.toLong(),
-            animationPhase = currentPhase,
-            isPlaying = isPlaying,
-            songSeed = profile.songSeed
-        )
-        val displayLevelCount = if (isEnergyDriven) meterLevels.size else profile.levels.size
+        val displayLevelCount = meterLevels.size
         val gap = size.width * 0.012f
         val barWidth = (size.width - gap * (displayLevelCount - 1)) / displayLevelCount
-        val segmentGap = (if (compact) 2.dp else 2.5.dp).toPx()
-        val segmentHeight = (if (compact) 3.dp else 4.dp).toPx()
-        val playbackPhase = (currentPosition / 1_000f) * 0.22f
+        val segmentGap = (if (compact) 1.5.dp else 2.dp).toPx()
+        val segmentHeight = (if (compact) 2.5.dp else 3.dp).toPx()
         repeat(displayLevelCount) { index ->
-            val level = if (isEnergyDriven) meterLevels[index] else profile.levels[index]
-            val movement = if (!isEnergyDriven && isPlaying) {
-                sin(
-                    currentPhase * 6.283f * (0.58f + index % 4 * 0.07f) +
-                            playbackPhase +
-                            profile.phaseOffset +
-                            index * 0.73f
-                ) * 0.11f
-            } else {
-                0f
-            }
-            val minimumLevel = if (!isEnergyDriven) 0.12f else 0f
-            val animatedLevel = (level + movement).coerceIn(minimumLevel, 0.98f)
-            val height = size.height * animatedLevel
+            val height = size.height * meterLevels[index].coerceIn(0f, 0.98f)
             val segmentStep = segmentHeight + segmentGap
-            val segmentCount = (height / segmentStep).toInt().coerceAtLeast(1)
+            val segmentCount = (height / segmentStep).toInt().coerceAtLeast(0)
             repeat(segmentCount) { segmentIndex ->
                 val segmentTop = size.height - (segmentIndex + 1) * segmentStep
                 val isPeak = segmentTop < size.height * 0.18f

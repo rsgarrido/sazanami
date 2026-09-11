@@ -72,13 +72,12 @@ import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.knownDiscNumber
 import io.github.rsgarrido.sazanami.data.trackNumberWithinDisc
 import io.github.rsgarrido.sazanami.player.RepeatMode
-import io.github.rsgarrido.sazanami.player.waveform.WaveformData
-import io.github.rsgarrido.sazanami.ui.player.RETRO_VISUALIZER_CADENCE_HZ
-import io.github.rsgarrido.sazanami.ui.player.fillRetroMeterLevels
-import io.github.rsgarrido.sazanami.ui.player.isRetroMeterEffectivelySilent
-import io.github.rsgarrido.sazanami.ui.player.rememberBoundedVisualizerPhase
+import io.github.rsgarrido.sazanami.player.spectrum.SpectrumFrame
+import io.github.rsgarrido.sazanami.ui.player.aggregateSpectrumRegionRms
+import io.github.rsgarrido.sazanami.ui.player.calibrateSpectrumMeterLevel
+import io.github.rsgarrido.sazanami.ui.player.contiguousMeterFillCount
+import io.github.rsgarrido.sazanami.ui.player.rememberSpectrumVisualizerState
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
-import kotlin.math.sin
 import java.util.Locale
 
 @Composable
@@ -88,7 +87,6 @@ fun PocketDiscExpandedPlayer(
     activeQueuePosition: Int,
     activeQueueCount: Int,
     albumDurationMs: Long,
-    waveformData: WaveformData?,
     isVisualizerWorkAllowed: Boolean,
     isPlaying: Boolean,
     isShuffleEnabled: Boolean,
@@ -252,12 +250,7 @@ fun PocketDiscExpandedPlayer(
                 )
 
                 PocketDiscLevelMeter(
-                    currentSong = currentSong,
-                    waveformData = waveformData,
                     isVisualizerWorkAllowed = isVisualizerWorkAllowed,
-                    isPlaying = isPlaying,
-                    currentPosition = currentPosition,
-                    duration = duration,
                     compact = compact,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -761,28 +754,13 @@ private fun PocketDiscUtilityButton(
 
 @Composable
 private fun PocketDiscLevelMeter(
-    currentSong: Song?,
-    waveformData: WaveformData?,
     isVisualizerWorkAllowed: Boolean,
-    isPlaying: Boolean,
-    currentPosition: Int,
-    duration: Int,
     compact: Boolean,
     modifier: Modifier = Modifier
 ) {
     val colors = PocketDiscColors
-    val isSilent = isRetroMeterEffectivelySilent(
-        amplitudes = waveformData?.amplitudes,
-        currentPositionMs = currentPosition.toLong(),
-        durationMs = duration.toLong()
-    )
-    val phase = rememberBoundedVisualizerPhase(
-        animationEnabled = isPlaying && isVisualizerWorkAllowed && !isSilent,
-        targetCadenceHz = RETRO_VISUALIZER_CADENCE_HZ,
-        cycleDurationMillis = 1_500,
-        updateTraceName = "PocketDiscMeterUpdate"
-    )
-    val levels = remember { FloatArray(2) }
+    val spectrumState = rememberSpectrumVisualizerState(isVisualizerWorkAllowed)
+    val segmentCount = if (compact) 26 else 36
     val rowHeight = if (compact) 11.dp else 15.dp
 
     Column(
@@ -818,27 +796,15 @@ private fun PocketDiscLevelMeter(
         }
         PocketDiscMeterRow(
             label = "L",
-            channelIndex = 0,
-            levels = levels,
-            waveformData = waveformData,
-            isPlaying = isPlaying,
-            currentPosition = currentPosition,
-            duration = duration,
-            songSeed = currentSong?.id ?: 0L,
-            phase = phase,
+            spectrumState = spectrumState,
+            segmentCount = segmentCount,
             compact = compact,
             modifier = Modifier.fillMaxWidth().height(rowHeight)
         )
         PocketDiscMeterRow(
             label = "R",
-            channelIndex = 1,
-            levels = levels,
-            waveformData = waveformData,
-            isPlaying = isPlaying,
-            currentPosition = currentPosition,
-            duration = duration,
-            songSeed = currentSong?.id ?: 0L,
-            phase = phase,
+            spectrumState = spectrumState,
+            segmentCount = segmentCount,
             compact = compact,
             modifier = Modifier.fillMaxWidth().height(rowHeight)
         )
@@ -848,14 +814,8 @@ private fun PocketDiscLevelMeter(
 @Composable
 private fun PocketDiscMeterRow(
     label: String,
-    channelIndex: Int,
-    levels: FloatArray,
-    waveformData: WaveformData?,
-    isPlaying: Boolean,
-    currentPosition: Int,
-    duration: Int,
-    songSeed: Long,
-    phase: State<Float>,
+    spectrumState: State<SpectrumFrame>,
+    segmentCount: Int,
     compact: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -873,36 +833,29 @@ private fun PocketDiscMeterRow(
             modifier = Modifier.width(14.dp)
         )
         Canvas(modifier = Modifier.weight(1f).fillMaxSize()) {
-            val visualizerPhase = phase.value
-            val energyDriven = fillRetroMeterLevels(
-                output = levels,
-                amplitudes = waveformData?.amplitudes,
-                currentPositionMs = currentPosition.toLong(),
-                durationMs = duration.toLong(),
-                animationPhase = visualizerPhase,
-                isPlaying = isPlaying,
-                songSeed = songSeed
+            val frame = spectrumState.value
+            val level = calibrateSpectrumMeterLevel(
+                aggregateLevel = aggregateSpectrumRegionRms(frame),
+                displayGain = POCKET_DISC_METER_DISPLAY_GAIN,
+                responseExponent = POCKET_DISC_METER_RESPONSE_EXPONENT
             )
-            val fallbackOffset = if (channelIndex == 0) 0f else 1.7f
-            val fallbackAmplitude = if (channelIndex == 0) 0.17f else 0.15f
-            val fallbackCeiling = if (channelIndex == 0) 0.82f else 0.78f
-            val level = when {
-                energyDriven -> levels[channelIndex.coerceIn(0, 1)]
-                isPlaying -> (
-                        0.48f + sin(visualizerPhase * 6.283f + fallbackOffset) * fallbackAmplitude
-                        ).coerceIn(0.05f, fallbackCeiling)
-                else -> 0f
-            }
+            val filledCount = contiguousMeterFillCount(level, segmentCount)
             val gap = 2.dp.toPx()
-            val segmentCount = if (compact) 26 else 36
             val segmentWidth = (size.width - gap * (segmentCount - 1)) / segmentCount
-            val activeSegments = (level * segmentCount).toInt().coerceAtLeast(if (isPlaying) 1 else 0)
             repeat(segmentCount) { segment ->
+                val active = segment < filledCount
+                val position = segment / (segmentCount - 1).coerceAtLeast(1).toFloat()
+                val frontier = active && segment == filledCount - 1
+                val activeAlpha = if (frontier) {
+                    0.90f
+                } else {
+                    0.90f - position * 0.22f
+                }
                 drawRoundRect(
-                    color = if (segment < activeSegments) {
-                        colors.lcdGlow
+                    color = if (active) {
+                        colors.lcdGlow.copy(alpha = activeAlpha)
                     } else {
-                        colors.lcdGlowDim.copy(alpha = 0.16f)
+                        colors.lcdGlowDim.copy(alpha = 0.12f)
                     },
                     topLeft = Offset(segment * (segmentWidth + gap), 0f),
                     size = Size(segmentWidth, size.height),
@@ -912,6 +865,9 @@ private fun PocketDiscMeterRow(
         }
     }
 }
+
+internal const val POCKET_DISC_METER_DISPLAY_GAIN = 1.08f
+internal const val POCKET_DISC_METER_RESPONSE_EXPONENT = 2f
 
 @Composable
 private fun PocketDiscButton(

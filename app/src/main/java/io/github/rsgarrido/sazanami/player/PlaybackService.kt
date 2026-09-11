@@ -774,23 +774,22 @@ class PlaybackService : MediaLibraryService() {
             combine(
                 appPreferencesRepository.state
                     .filter { preferences -> preferences.isLoaded },
-                EqualizerRuntimeBridge.state
-                    .map { state ->
-                        AudioProcessingRequirements(
-                            equalizerEffectivelyActive =
-                                state.effectivelyActive &&
-                                        !state.limiterEffectivelyActive,
-                            limiterEffectivelyActive =
-                                state.limiterRequestedEnabled ||
-                                        state.limiterEffectivelyActive,
-                            comparisonSessionActive =
-                                state.comparisonSessionActive
-                        )
-                    }
-            ) { preferences, requirements ->
+                EqualizerRuntimeBridge.state,
+                SpectrumAnalyzerRuntimeBridge.hasActiveConsumers
+            ) { preferences, equalizerState, spectrumConsumerActive ->
                 PlaybackAudioRuntimePreferences(
                     userOffloadPreference = preferences.audioOffloadPreference,
-                    requirements = requirements,
+                    requirements = AudioProcessingRequirements(
+                        equalizerEffectivelyActive =
+                            equalizerState.effectivelyActive &&
+                                    !equalizerState.limiterEffectivelyActive,
+                        limiterEffectivelyActive =
+                            equalizerState.limiterRequestedEnabled ||
+                                    equalizerState.limiterEffectivelyActive,
+                        comparisonSessionActive =
+                            equalizerState.comparisonSessionActive,
+                        spectrumConsumerActive = spectrumConsumerActive
+                    ),
                     crossfade = CrossfadeRuntimeConfiguration(
                         enabled = preferences.crossfadeEnabled,
                         durationMillis = preferences.crossfadeDurationMs.toLong(),
@@ -878,6 +877,7 @@ class PlaybackService : MediaLibraryService() {
             equalizerEffectivelyActive = false,
             limiterEffectivelyActive = false,
             comparisonSessionActive = false,
+            spectrumConsumerActive = false,
             crossfadeEnabled = false
         )
     }
@@ -894,6 +894,8 @@ class PlaybackService : MediaLibraryService() {
                 runtime.requirements.limiterEffectivelyActive,
             comparisonSessionActive =
                 runtime.requirements.comparisonSessionActive,
+            spectrumConsumerActive =
+                runtime.requirements.spectrumConsumerActive,
             crossfadeEnabled = crossfadeEnabled
         )
     }
@@ -903,6 +905,7 @@ class PlaybackService : MediaLibraryService() {
         equalizerEffectivelyActive: Boolean,
         limiterEffectivelyActive: Boolean,
         comparisonSessionActive: Boolean,
+        spectrumConsumerActive: Boolean,
         crossfadeEnabled: Boolean
     ) {
         tracePerformance(PerformanceTraceNames.AUDIO_OFFLOAD_PREFERENCE_APPLIED) {
@@ -913,14 +916,18 @@ class PlaybackService : MediaLibraryService() {
                 limiterEffectivelyActive =
                     limiterEffectivelyActive,
                 comparisonSessionActive =
-                    comparisonSessionActive
+                    comparisonSessionActive,
+                spectrumConsumerActive =
+                    spectrumConsumerActive
             )
             val effectiveOffloadPreference = CrossfadeOffloadPolicy.effectivePreference(
                 normalPreference = decision.effectiveOffloadPreference,
                 crossfadeEnabled = crossfadeEnabled
             )
             CrossfadeTrace.log(
-                "OFFLOAD crossfadeEnabled=$crossfadeEnabled effectivePreference=" +
+                "OFFLOAD crossfadeEnabled=$crossfadeEnabled " +
+                        "spectrumConsumerActive=$spectrumConsumerActive " +
+                        "effectivePreference=" +
                         effectiveOffloadPreference
             )
             physicalPlayers.forEachPipeline { pipeline ->
@@ -941,7 +948,8 @@ class PlaybackService : MediaLibraryService() {
     private data class AudioProcessingRequirements(
         val equalizerEffectivelyActive: Boolean,
         val limiterEffectivelyActive: Boolean,
-        val comparisonSessionActive: Boolean
+        val comparisonSessionActive: Boolean,
+        val spectrumConsumerActive: Boolean
     )
 
     private data class PlaybackAudioRuntimePreferences(

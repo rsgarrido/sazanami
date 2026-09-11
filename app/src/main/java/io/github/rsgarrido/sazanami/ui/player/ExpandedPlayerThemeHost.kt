@@ -142,8 +142,6 @@ fun ExpandedPlayerThemeHost(
         modernSeekbarStyle = modernPlayerAppearance.seekbar.style
     ) && when (selectedPlayerTheme) {
         PlayerTheme.DEFAULT -> shouldRunDefaultExpandedWork(playerMorphState.progress)
-        PlayerTheme.POCKET_FLIP -> shouldRunPocketFlipExpandedWork(playerMorphState.progress)
-        PlayerTheme.POCKET_DISC -> shouldRunPocketDiscExpandedWork(playerMorphState.progress)
         else -> true
     }
     val shouldPrefetchWaveforms = selectedPlayerTheme == PlayerTheme.DEFAULT &&
@@ -407,7 +405,6 @@ fun ExpandedPlayerThemeHost(
                 ) { deckReveal, spectrumReveal, queueReveal, controlsReveal, inputEnabled ->
                     RetroRackExpandedPlayer(
                         currentSong = currentSong,
-                        waveformData = waveformData,
                         isVisualizerWorkAllowed = isVisualizerWorkAllowed && shouldRunRetroRackExpandedWork(playerMorphState.progress),
                         isPlaying = isPlaying,
                         isShuffleEnabled = isShuffleEnabled,
@@ -483,7 +480,6 @@ fun ExpandedPlayerThemeHost(
                 ) { displayReveal, hingeReveal, controlsReveal, inputEnabled ->
                     PocketFlipExpandedPlayer(
                         currentSong = currentSong,
-                        waveformData = waveformData,
                         isVisualizerWorkAllowed = isVisualizerWorkAllowed &&
                                 shouldRunPocketFlipExpandedWork(playerMorphState.progress),
                         isPlaying = isPlaying,
@@ -653,7 +649,6 @@ fun ExpandedPlayerThemeHost(
                         activeQueuePosition = activeQueuePosition,
                         activeQueueCount = activeQueueCount,
                         albumDurationMs = albumDurationMs,
-                        waveformData = waveformData,
                         isVisualizerWorkAllowed = isVisualizerWorkAllowed &&
                                 shouldRunPocketDiscExpandedWork(playerMorphState.progress),
                         isPlaying = isPlaying,

@@ -255,11 +255,13 @@ internal class SpectrumAnalyzerRuntime(
     }
 }
 
-/** Process-local future-consumer facade; no theme registers during this session. */
+/** Process-local facade shared by visible spectrum consumers and the playback service. */
 internal object SpectrumAnalyzerRuntimeBridge {
     private val lock = Any()
     private val _state = MutableStateFlow(SpectrumFrame.unavailable())
     val state: StateFlow<SpectrumFrame> = _state.asStateFlow()
+    private val _hasActiveConsumers = MutableStateFlow(false)
+    val hasActiveConsumers: StateFlow<Boolean> = _hasActiveConsumers.asStateFlow()
 
     private var runtime: SpectrumAnalyzerRuntime? = null
     private var consumerCount = 0
@@ -289,6 +291,7 @@ internal object SpectrumAnalyzerRuntimeBridge {
     fun acquireConsumer(): AutoCloseable {
         synchronized(lock) {
             consumerCount++
+            _hasActiveConsumers.value = true
             runtime?.setConsumerCount(consumerCount)
         }
         return ConsumerRegistration()
@@ -303,6 +306,7 @@ internal object SpectrumAnalyzerRuntimeBridge {
             if (!closed.compareAndSet(false, true)) return
             synchronized(lock) {
                 consumerCount = (consumerCount - 1).coerceAtLeast(0)
+                _hasActiveConsumers.value = consumerCount > 0
                 runtime?.setConsumerCount(consumerCount)
                 if (consumerCount == 0) {
                     _state.value = SpectrumFrame.unavailable()

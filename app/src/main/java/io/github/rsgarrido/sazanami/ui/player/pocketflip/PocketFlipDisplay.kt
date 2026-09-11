@@ -49,12 +49,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.rsgarrido.sazanami.ui.player.RetainedArtworkImage
 import io.github.rsgarrido.sazanami.data.Song
-import io.github.rsgarrido.sazanami.player.waveform.WaveformData
 
 @Composable
 internal fun PocketFlipDisplayHalf(
     currentSong: Song?,
-    waveformData: WaveformData?,
     isVisualizerWorkAllowed: Boolean,
     isPlaying: Boolean,
     currentPosition: Int,
@@ -136,12 +134,8 @@ internal fun PocketFlipDisplayHalf(
                 }
 
                 PocketFlipLcdMeter(
-                    currentSong = currentSong,
-                    waveformData = waveformData,
                     isVisualizerWorkAllowed = isVisualizerWorkAllowed,
                     isPlaying = isPlaying,
-                    currentPosition = currentPosition,
-                    duration = duration,
                     compact = compact,
                     modifier = Modifier.fillMaxWidth()
                 )
