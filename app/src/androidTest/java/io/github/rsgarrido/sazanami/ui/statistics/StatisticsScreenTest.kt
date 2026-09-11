@@ -15,6 +15,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.hasClickAction
@@ -58,7 +60,8 @@ class StatisticsScreenTest {
     @Test
     fun overviewFormatsMetricsAndDefaultRangeSemantics() {
         setStatisticsContent(
-            state = ListeningAnalyticsUiState(overview = overview())
+            state = ListeningAnalyticsUiState(overview = overview()),
+            showNotCountedPlays = true
         )
 
         composeRule.onNodeWithContentDescription("Last 30 days").assertIsSelected()
@@ -67,8 +70,165 @@ class StatisticsScreenTest {
         composeRule.onNodeWithText("52").assertExists()
         composeRule.onNodeWithText("9").assertExists()
         composeRule.onNodeWithContentDescription(
-            "Not counted, 9. Attempts below the play threshold"
+            "Not counted, 9. Listening attempts of at least 5 seconds that did not qualify as a play"
         ).assertExists()
+    }
+
+    @Test
+    fun notCountedMetricIsHiddenByDefaultWhilePlaysAndCompletedRemain() {
+        setStatisticsContent(
+            state = ListeningAnalyticsUiState(overview = overview())
+        )
+
+        composeRule.onNodeWithTag("statistics_metric_not_counted").assertDoesNotExist()
+        composeRule.onNodeWithTag("statistics_metric_plays").assertExists()
+        composeRule.onNodeWithTag("statistics_metric_completed").assertExists()
+        composeRule.onNodeWithText("1,234").assertExists()
+        composeRule.onNodeWithText("52").assertExists()
+    }
+
+    @Test
+    fun notCountedMetricIsVisibleWhenEnabled() {
+        setStatisticsContent(
+            state = ListeningAnalyticsUiState(overview = overview()),
+            showNotCountedPlays = true
+        )
+
+        composeRule.onNodeWithTag("statistics_metric_not_counted").assertExists()
+        composeRule.onNodeWithText("9").assertExists()
+    }
+
+    @Test
+    fun wideLayoutRebalancesRemainingMetricsWhenNotCountedIsHidden() {
+        composeRule.setContent {
+            MaterialTheme {
+                val currentConfiguration = LocalConfiguration.current
+                val wideConfiguration = Configuration(currentConfiguration).apply {
+                    screenWidthDp = 600
+                }
+                CompositionLocalProvider(LocalConfiguration provides wideConfiguration) {
+                    Box(Modifier.width(600.dp).height(700.dp)) {
+                        StatisticsScreen(
+                            state = ListeningAnalyticsUiState(overview = overview()),
+                            onBackClick = {},
+                            onPresetSelected = {},
+                            onCustomRangeSelected = { _, _ -> },
+                            onRetry = {},
+                            showNotCountedPlays = false,
+                            listState = remember { LazyListState() }
+                        )
+                    }
+                }
+            }
+        }
+
+        val overviewWidth = composeRule.onNodeWithTag("statistics_overview")
+            .fetchSemanticsNode().boundsInRoot.width
+        val playsWidth = composeRule.onNodeWithTag("statistics_metric_plays")
+            .fetchSemanticsNode().boundsInRoot.width
+        val completedWidth = composeRule.onNodeWithTag("statistics_metric_completed")
+            .fetchSemanticsNode().boundsInRoot.width
+
+        assertEquals(playsWidth, completedWidth, 1f)
+        assertTrue(playsWidth > overviewWidth * 0.4f)
+        composeRule.onNodeWithTag("statistics_metric_not_counted").assertDoesNotExist()
+    }
+
+    @Test
+    fun narrowLayoutRemovesNotCountedRowWithoutLeavingItsHeight() {
+        val visibility = mutableStateOf(false)
+        composeRule.setContent {
+            MaterialTheme {
+                val currentConfiguration = LocalConfiguration.current
+                val currentDensity = LocalDensity.current
+                val narrowConfiguration = Configuration(currentConfiguration).apply {
+                    fontScale = 2f
+                    screenWidthDp = 280
+                }
+                CompositionLocalProvider(
+                    LocalConfiguration provides narrowConfiguration,
+                    LocalDensity provides Density(currentDensity.density, fontScale = 2f)
+                ) {
+                    Box(Modifier.width(280.dp).height(700.dp)) {
+                        StatisticsScreen(
+                            state = ListeningAnalyticsUiState(overview = overview()),
+                            onBackClick = {},
+                            onPresetSelected = {},
+                            onCustomRangeSelected = { _, _ -> },
+                            onRetry = {},
+                            showNotCountedPlays = visibility.value,
+                            listState = remember { LazyListState() }
+                        )
+                    }
+                }
+            }
+        }
+
+        val hiddenHeight = composeRule.onNodeWithTag("statistics_overview")
+            .fetchSemanticsNode().boundsInRoot.height
+        composeRule.runOnIdle { visibility.value = true }
+        composeRule.waitForIdle()
+        val visibleHeight = composeRule.onNodeWithTag("statistics_overview")
+            .fetchSemanticsNode().boundsInRoot.height
+
+        assertTrue(visibleHeight > hiddenHeight)
+        composeRule.runOnIdle { visibility.value = false }
+        composeRule.onNodeWithTag("statistics_metric_not_counted").assertDoesNotExist()
+        assertEquals(
+            hiddenHeight,
+            composeRule.onNodeWithTag("statistics_overview")
+                .fetchSemanticsNode().boundsInRoot.height,
+            1f
+        )
+    }
+
+    @Test
+    fun aboutStatisticsToggleReflectsAndUpdatesPreferenceAtLargeFontScale() {
+        val visibility = mutableStateOf(false)
+        var callbackValue: Boolean? = null
+        composeRule.setContent {
+            MaterialTheme {
+                val currentConfiguration = LocalConfiguration.current
+                val currentDensity = LocalDensity.current
+                val largeConfiguration = Configuration(currentConfiguration).apply {
+                    fontScale = 2f
+                    screenWidthDp = 280
+                }
+                CompositionLocalProvider(
+                    LocalConfiguration provides largeConfiguration,
+                    LocalDensity provides Density(currentDensity.density, fontScale = 2f)
+                ) {
+                    Box(Modifier.width(280.dp).height(420.dp)) {
+                        StatisticsScreen(
+                            state = ListeningAnalyticsUiState(overview = overview()),
+                            onBackClick = {},
+                            onPresetSelected = {},
+                            onCustomRangeSelected = { _, _ -> },
+                            onRetry = {},
+                            showNotCountedPlays = visibility.value,
+                            onShowNotCountedPlaysChanged = { show ->
+                                callbackValue = show
+                                visibility.value = show
+                            },
+                            listState = remember { LazyListState() }
+                        )
+                    }
+                }
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("About Statistics").performClick()
+        composeRule.onNodeWithText(
+            "Listening attempts of at least 5 seconds that ended before qualifying as a play. " +
+                "Very short skips are ignored."
+        ).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("statistics_show_not_counted_toggle")
+            .performScrollTo()
+            .assertIsOff()
+            .performClick()
+            .assertIsOn()
+        composeRule.runOnIdle { assertEquals(true, callbackValue) }
+        composeRule.onNodeWithText("Close").assertIsDisplayed()
     }
 
     @Test
@@ -199,8 +359,8 @@ class StatisticsScreenTest {
         val indexBeforeDialog = listState.firstVisibleItemIndex
         val offsetBeforeDialog = listState.firstVisibleItemScrollOffset
         assertTrue(indexBeforeDialog > 0 || offsetBeforeDialog > 0)
-        composeRule.onNodeWithContentDescription("About listening history coverage").performClick()
-        composeRule.onNodeWithText("About your listening history").assertExists()
+        composeRule.onNodeWithContentDescription("About Statistics").performClick()
+        composeRule.onNodeWithText("About Statistics").assertExists()
         composeRule.onNodeWithText("Close").performClick()
         composeRule.runOnIdle {
             assertEquals(indexBeforeDialog, listState.firstVisibleItemIndex)
@@ -400,7 +560,8 @@ class StatisticsScreenTest {
         state: ListeningAnalyticsUiState,
         onPresetSelected: (AnalyticsRangePreset) -> Unit = {},
         onCustomRangeSelected: (LocalDate, LocalDate) -> Unit = { _, _ -> },
-        onRetry: () -> Unit = {}
+        onRetry: () -> Unit = {},
+        showNotCountedPlays: Boolean = false
     ) {
         composeRule.setContent {
             MaterialTheme {
@@ -410,6 +571,7 @@ class StatisticsScreenTest {
                     onPresetSelected = onPresetSelected,
                     onCustomRangeSelected = onCustomRangeSelected,
                     onRetry = onRetry,
+                    showNotCountedPlays = showNotCountedPlays,
                     listState = remember { LazyListState() }
                 )
             }

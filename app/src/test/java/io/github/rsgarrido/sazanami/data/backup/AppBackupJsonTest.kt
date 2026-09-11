@@ -637,7 +637,7 @@ class AppBackupJsonTest {
 
 
     @Test
-    fun homePinsAndRecentlyAddedVisibilityRoundTripWithPreferences() {
+    fun homePinsAndPresentationVisibilityRoundTripWithPreferences() {
         val pin = BackupHomePin(
             id = "pin-1",
             type = "ALBUM",
@@ -654,7 +654,8 @@ class AppBackupJsonTest {
         val backup = emptyBackup().copy(
             preferences = BackupPreferences(
                 homePins = listOf(pin),
-                showRecentlyAddedOnHome = false
+                showRecentlyAddedOnHome = false,
+                showNotCountedPlays = true
             )
         )
 
@@ -662,6 +663,7 @@ class AppBackupJsonTest {
 
         assertEquals(listOf(pin), decoded.preferences.homePins)
         assertFalse(decoded.preferences.showRecentlyAddedOnHome)
+        assertTrue(decoded.preferences.showNotCountedPlays)
     }
 
     @Test

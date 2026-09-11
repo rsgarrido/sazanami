@@ -107,6 +107,7 @@ data class AppPreferencesState(
     val playlistsGridColumnCount: Int = LibraryGridColumns.DEFAULT,
     val homePins: List<HomePin> = emptyList(),
     val showRecentlyAddedOnHome: Boolean = true,
+    val showNotCountedPlays: Boolean = false,
     val isLoaded: Boolean = false
 ) {
     val modernSeekbarStyle: ModernSeekbarStyle
@@ -541,6 +542,10 @@ class AppPreferencesRepository private constructor(
         preferences[Keys.showRecentlyAddedOnHome] = show
     }
 
+    suspend fun setShowNotCountedPlays(show: Boolean) = edit { preferences ->
+        preferences[Keys.showNotCountedPlays] = show
+    }
+
     suspend fun setThemeTokenOverrides(
         theme: PlayerTheme,
         overrides: PlayerThemeTokenOverrides
@@ -583,6 +588,7 @@ class AppPreferencesRepository private constructor(
         }
         preferences.writeHomePins(restored.homePins)
         preferences[Keys.showRecentlyAddedOnHome] = restored.showRecentlyAddedOnHome
+        preferences[Keys.showNotCountedPlays] = restored.showNotCountedPlays
         restored.playerThemeTokenOverrides.forEach { (theme, overrides) ->
             preferences.putColor(theme, Keys.SHELL, overrides.shellColor)
             preferences.putColor(theme, Keys.ACCENT, overrides.accentColor)
@@ -757,6 +763,7 @@ internal fun decodeAppPreferences(preferences: Preferences): AppPreferencesState
             ?.let(::decodeHomePins)
             .orEmpty(),
         showRecentlyAddedOnHome = preferences[Keys.showRecentlyAddedOnHome] ?: true,
+        showNotCountedPlays = preferences[Keys.showNotCountedPlays] ?: false,
         isLoaded = true
     )
 }
@@ -1240,6 +1247,7 @@ private object Keys {
     val playlistsGridColumns = intPreferencesKey("playlists_view_mode_columns")
     val homePins = stringPreferencesKey("home_pins_json")
     val showRecentlyAddedOnHome = booleanPreferencesKey("show_recently_added_on_home")
+    val showNotCountedPlays = booleanPreferencesKey("show_not_counted_plays")
 
     const val SHELL = "shell"
     const val ACCENT = "accent"

@@ -195,6 +195,8 @@ internal fun MusicScreenBody(
     reconciliationActions: ListeningHistoryReconciliationUiActions,
     spotifyImportActions: SpotifyImportUiActions,
     listeningAnalyticsUiState: ListeningAnalyticsUiState,
+    showNotCountedPlays: Boolean,
+    onShowNotCountedPlaysChanged: (Boolean) -> Unit,
     queueSnackbarActions: QueueSnackbarActions,
     onSettingsClick: () -> Unit,
     onStatisticsClick: () -> Unit,
@@ -357,6 +359,8 @@ internal fun MusicScreenBody(
         isStatisticsScreenVisible -> {
             StatisticsScreen(
                 state = listeningAnalyticsUiState,
+                showNotCountedPlays = showNotCountedPlays,
+                onShowNotCountedPlaysChanged = onShowNotCountedPlaysChanged,
                 onBackClick = onStatisticsBackClick,
                 onPresetSelected = onListeningAnalyticsPresetSelected,
                 onCustomRangeSelected = onListeningAnalyticsCustomRangeSelected,

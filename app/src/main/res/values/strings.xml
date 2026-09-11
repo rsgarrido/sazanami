@@ -105,7 +105,7 @@
     <string name="statistics_plays">Plays</string>
     <string name="statistics_completed">Completed</string>
     <string name="statistics_not_counted">Not counted</string>
-    <string name="statistics_not_counted_support">Playback attempts that did not qualify as a play</string>
+    <string name="statistics_not_counted_support">Listening attempts of at least 5 seconds that did not qualify as a play</string>
     <string name="statistics_not_counted_support_compact">Did not qualify</string>
     <string name="statistics_loading">Loading listening statistics…</string>
     <string name="statistics_refreshing">Updating statistics</string>
@@ -117,7 +117,8 @@
     <string name="statistics_info_qualified_title">Qualified plays</string>
     <string name="statistics_info_qualified_body">A play is counted after playback reaches Sazanami’s play qualification threshold.</string>
     <string name="statistics_info_not_counted_title">Not counted</string>
-    <string name="statistics_info_not_counted_body">Playback attempts that end before qualifying are kept as not-counted activity instead of being added to play totals.</string>
+    <string name="statistics_info_not_counted_body">Listening attempts of at least 5 seconds that ended before qualifying as a play. Very short skips are ignored.</string>
+    <string name="statistics_show_not_counted_plays">Show not counted plays</string>
     <string name="statistics_info_recorded_title">Recorded listening</string>
     <string name="statistics_info_recorded_body">Listening duration and completion details are available for activity recorded with detailed listening history.</string>
     <string name="statistics_info_all_time_title">All Time</string>

@@ -304,6 +304,8 @@ internal fun MusicScreen(
     onLibraryViewOptionSelected: (LibraryViewCategory, LibraryViewOption) -> Unit,
     mostPlayedSongs: List<Song>,
     listeningAnalyticsUiState: ListeningAnalyticsUiState,
+    showNotCountedPlays: Boolean,
+    onShowNotCountedPlaysChanged: (Boolean) -> Unit,
     onListeningAnalyticsActiveChanged: (Boolean) -> Unit,
     onListeningAnalyticsPresetSelected: (AnalyticsRangePreset) -> Unit,
     onListeningAnalyticsCustomRangeSelected: (LocalDate, LocalDate) -> Unit,
@@ -1214,6 +1216,8 @@ internal fun MusicScreen(
                         }
                     ),
                     listeningAnalyticsUiState = listeningAnalyticsUiState,
+                    showNotCountedPlays = showNotCountedPlays,
+                    onShowNotCountedPlaysChanged = onShowNotCountedPlaysChanged,
                     onStatisticsClick = { isStatisticsScreenVisible = true },
                     onStatisticsBackClick = { isStatisticsScreenVisible = false },
                     onListeningAnalyticsPresetSelected = onListeningAnalyticsPresetSelected,
