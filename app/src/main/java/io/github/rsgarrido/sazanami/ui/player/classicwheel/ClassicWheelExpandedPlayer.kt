@@ -31,6 +31,7 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.RepeatMode
@@ -76,6 +77,7 @@ fun ClassicWheelExpandedPlayer(
     modifier: Modifier = Modifier
 ) {
     val palette = remember(tokens) { ClassicWheelPalette.from(tokens) }
+    val density = LocalDensity.current
 
     CompositionLocalProvider(LocalClassicWheelPalette provides palette) {
     BoxWithConstraints(
@@ -348,17 +350,21 @@ fun ClassicWheelExpandedPlayer(
                 modifier = Modifier
                     .size(wheelSize)
                     .onGloballyPositioned { coordinates ->
-                        val wheel = coordinates.boundsInRoot()
-                        val width = wheel.width * .28f
-                        val height = wheel.height * .24f
-                        morphBounds?.updateExpandedPlayPause(
-                            androidx.compose.ui.geometry.Rect(
-                                wheel.center.x - width / 2f,
-                                wheel.bottom - height - wheel.height * .06f,
-                                wheel.center.x + width / 2f,
-                                wheel.bottom - wheel.height * .06f
-                            )
+                        val visibleBounds = classicWheelExpandedPlayPauseVisualBounds(
+                            wheelBounds = coordinates.boundsInRoot(),
+                            visibleIconSizePx = with(density) {
+                                ClassicWheelPlayPauseVisualSize.toPx()
+                            },
+                            touchTargetSizePx = with(density) {
+                                ClassicWheelPlayPauseTouchTargetSize.toPx()
+                            },
+                            bottomPaddingPx = with(density) {
+                                ClassicWheelPlayPauseBottomPadding.toPx()
+                            }
                         )
+                        if (visibleBounds != null) {
+                            morphBounds?.updateExpandedPlayPause(visibleBounds)
+                        }
                     }
                     .graphicsLayer {
                         alpha = wheelAlpha.coerceIn(0f, 1f)

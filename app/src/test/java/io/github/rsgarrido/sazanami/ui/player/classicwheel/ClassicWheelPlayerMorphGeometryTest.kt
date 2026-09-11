@@ -74,7 +74,7 @@ class ClassicWheelPlayerMorphGeometryTest {
         assertEquals(firstExpanded, secondExpanded)
     }
 
-    @Test fun `shared artwork and metadata reach their measured anchors`() {
+    @Test fun `shared content reaches its measured visual anchors`() {
         val elements = ClassicWheelMorphBounds().also {
             it.updateMiniArtwork(Rect(16f, 710f, 60f, 754f))
             it.updateExpandedArtwork(Rect(30f, 120f, 170f, 260f))
@@ -82,15 +82,46 @@ class ClassicWheelPlayerMorphGeometryTest {
             it.updateExpandedTitle(Rect(185f, 120f, 360f, 170f))
             it.updateMiniArtist(Rect(70f, 734f, 240f, 750f))
             it.updateExpandedArtist(Rect(185f, 176f, 360f, 205f))
-            it.updateMiniPlayPause(Rect(330f, 705f, 378f, 753f))
-            it.updateExpandedPlayPause(Rect(170f, 600f, 250f, 670f))
+            it.updateMiniPlayPause(Rect(332f, 707f, 376f, 751f))
+            it.updateExpandedPlayPause(Rect(179f, 614f, 221f, 656f))
         }
         assertEquals(Rect(16f, 710f, 60f, 754f), resolveClassicWheelSharedGeometry(0f, elements)!!.artwork)
         assertEquals(Rect(30f, 120f, 170f, 260f), resolveClassicWheelSharedGeometry(1f, elements)!!.artwork)
         assertEquals(Rect(70f, 710f, 240f, 730f), resolveClassicWheelSharedGeometry(0f, elements)!!.title)
         assertEquals(Rect(185f, 176f, 360f, 205f), resolveClassicWheelSharedGeometry(1f, elements)!!.artist)
-        assertEquals(Rect(330f, 705f, 378f, 753f), resolveClassicWheelSharedGeometry(0f, elements)!!.playPause)
-        assertEquals(Rect(170f, 600f, 250f, 670f), resolveClassicWheelSharedGeometry(1f, elements)!!.playPause)
+        assertEquals(Rect(332f, 707f, 376f, 751f), resolveClassicWheelSharedGeometry(0f, elements)!!.playPause)
+        assertEquals(Rect(179f, 614f, 221f, 656f), resolveClassicWheelSharedGeometry(1f, elements)!!.playPause)
+    }
+
+    @Test fun `play pause morph stays within measured visible dimensions`() {
+        val elements = completeElementBounds(
+            miniPlayPause = Rect(332f, 707f, 376f, 751f),
+            expandedPlayPause = Rect(179f, 614f, 221f, 656f)
+        )
+
+        val middle = resolveClassicWheelSharedGeometry(.5f, elements)!!.playPause
+
+        assertEquals(43f, middle.width, 0f)
+        assertEquals(43f, middle.height, 0f)
+        assertTrue(middle.width in 42f..44f)
+        assertTrue(middle.height in 42f..44f)
+    }
+
+    @Test fun `expanded play pause anchor uses icon dimensions rather than touch target`() {
+        val measured = classicWheelExpandedPlayPauseVisualBounds(
+            wheelBounds = Rect(20f, 100f, 380f, 460f),
+            visibleIconSizePx = 42f,
+            touchTargetSizePx = 72f,
+            bottomPaddingPx = 26f
+        )
+        assertNotNull(measured)
+        val anchor = measured!!
+
+        assertEquals(Rect(179f, 377f, 221f, 419f), anchor)
+        assertEquals(42f, anchor.width, 0f)
+        assertEquals(42f, anchor.height, 0f)
+        assertTrue(anchor.width < 72f)
+        assertTrue(anchor.height < 72f)
     }
 
     @Test fun `invalid measurement preserves the last valid anchor`() {
@@ -104,5 +135,19 @@ class ClassicWheelPlayerMorphGeometryTest {
     private fun bounds(): PlayerEndpointBounds = PlayerEndpointBounds().also {
         it.updateMini(Rect(10f, 700f, 390f, 770f))
         it.updateExpanded(Rect(0f, 0f, 400f, 800f))
+    }
+
+    private fun completeElementBounds(
+        miniPlayPause: Rect,
+        expandedPlayPause: Rect
+    ) = ClassicWheelMorphBounds().also {
+        it.updateMiniArtwork(Rect(16f, 710f, 60f, 754f))
+        it.updateExpandedArtwork(Rect(30f, 120f, 170f, 260f))
+        it.updateMiniTitle(Rect(70f, 710f, 240f, 730f))
+        it.updateExpandedTitle(Rect(185f, 120f, 360f, 170f))
+        it.updateMiniArtist(Rect(70f, 734f, 240f, 750f))
+        it.updateExpandedArtist(Rect(185f, 176f, 360f, 205f))
+        it.updateMiniPlayPause(miniPlayPause)
+        it.updateExpandedPlayPause(expandedPlayPause)
     }
 }

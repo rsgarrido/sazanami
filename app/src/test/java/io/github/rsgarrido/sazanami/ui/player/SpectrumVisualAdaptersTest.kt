@@ -70,6 +70,44 @@ class SpectrumVisualAdaptersTest {
     }
 
     @Test
+    fun retroRack_upperRangeResponsePreservesLowLevelsAndExpandsStrongLevels() {
+        val low = retroRackDisplayResponse(0.25f)
+        val upperMiddle = retroRackDisplayResponse(0.60f)
+        val strong = retroRackDisplayResponse(0.90f)
+
+        assertEquals(0.25f, low, 0f)
+        assertTrue(upperMiddle > 0.60f && upperMiddle < 0.80f)
+        assertTrue(strong > 0.95f && strong < 1f)
+        assertEquals(1f, retroRackDisplayResponse(1f), 0f)
+        assertEquals(0f, retroRackDisplayResponse(Float.NaN), 0f)
+    }
+
+    @Test
+    fun retroRack_representativeModerateInputRetainsHeadroomWhileStrongInputCanPeak() {
+        val moderate = FloatArray(18)
+        val strong = FloatArray(18)
+
+        fillRetroRackSpectrum(availableFrame(FloatArray(28) { 0.55f }), moderate)
+        fillRetroRackSpectrum(availableFrame(FloatArray(28) { 0.95f }), strong)
+
+        assertTrue(moderate.max() < 0.80f)
+        assertTrue(strong.max() > moderate.max())
+        assertEquals(1f, strong.max(), 0f)
+    }
+
+    @Test
+    fun retroRack_doesNotNormalizeEachFrameToItsOwnMaximum() {
+        val quiet = FloatArray(18)
+        val loud = FloatArray(18)
+
+        fillRetroRackSpectrum(availableFrame(FloatArray(28) { 0.20f }), quiet)
+        fillRetroRackSpectrum(availableFrame(FloatArray(28) { 0.80f }), loud)
+
+        assertTrue(quiet.max() < 0.30f)
+        assertTrue(loud.max() > quiet.max() * 2f)
+    }
+
+    @Test
     fun availableSpectrum_sanitizesAndBoundsUnexpectedBandValues() {
         val bands = FloatArray(28) { index ->
             when (index % 4) {

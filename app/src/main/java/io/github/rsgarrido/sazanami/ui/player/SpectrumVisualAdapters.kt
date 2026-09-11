@@ -4,6 +4,7 @@ import io.github.rsgarrido.sazanami.player.spectrum.SpectrumAvailability
 import io.github.rsgarrido.sazanami.player.spectrum.SpectrumFrame
 import kotlin.math.ceil
 import kotlin.math.floor
+import kotlin.math.pow
 
 /**
  * Resamples the analyzer's logarithmic bands into a caller-owned visual buffer.
@@ -71,10 +72,27 @@ internal fun fillRetroRackSpectrum(
         val displayGain = RETRO_RACK_LOW_FREQUENCY_GAIN +
                 (RETRO_RACK_HIGH_FREQUENCY_GAIN - RETRO_RACK_LOW_FREQUENCY_GAIN) *
                 frequencyPosition
-        columns[index] = (columns[index] * displayGain).coerceIn(0f, 1f)
+        columns[index] = retroRackDisplayResponse(columns[index] * displayGain)
     }
     return true
 }
 
+/**
+ * Preserves low-level separation while expanding only the upper display range.
+ * This is an absolute, fixed curve and never depends on the loudest band in a frame.
+ */
+internal fun retroRackDisplayResponse(tiltedLevel: Float): Float {
+    if (!tiltedLevel.isFinite()) return 0f
+    val level = tiltedLevel.coerceIn(0f, 1f)
+    if (level <= RETRO_RACK_RESPONSE_KNEE) return level
+
+    val upperRange = 1f - RETRO_RACK_RESPONSE_KNEE
+    val upperPosition = (level - RETRO_RACK_RESPONSE_KNEE) / upperRange
+    val expandedPosition = 1f - (1f - upperPosition).pow(RETRO_RACK_RESPONSE_EXPONENT)
+    return (RETRO_RACK_RESPONSE_KNEE + upperRange * expandedPosition).coerceIn(0f, 1f)
+}
+
 private const val RETRO_RACK_LOW_FREQUENCY_GAIN = 0.72f
 private const val RETRO_RACK_HIGH_FREQUENCY_GAIN = 1.08f
+private const val RETRO_RACK_RESPONSE_KNEE = 0.40f
+private const val RETRO_RACK_RESPONSE_EXPONENT = 1.65f

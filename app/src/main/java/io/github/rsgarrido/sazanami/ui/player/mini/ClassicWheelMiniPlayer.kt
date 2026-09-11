@@ -86,14 +86,14 @@ fun ClassicWheelMiniPlayer(
             MiniPlayerPlayPauseButton(
                 isPlaying = displayedState.isPlaying,
                 onClick = callbacks.onPlayPauseClick,
-                modifier = Modifier.onGloballyPositioned {
-                    morphBounds?.updateMiniPlayPause(it.boundsInRoot())
-                },
                 iconTint = tokens.displayTextColor,
                 decoration = {
                     Canvas(
                         modifier = Modifier
                             .size(44.dp)
+                            .onGloballyPositioned { coordinates ->
+                                morphBounds?.updateMiniPlayPause(coordinates.boundsInRoot())
+                            }
                             .background(wheelColor, CircleShape)
                     ) {
                         drawCircle(

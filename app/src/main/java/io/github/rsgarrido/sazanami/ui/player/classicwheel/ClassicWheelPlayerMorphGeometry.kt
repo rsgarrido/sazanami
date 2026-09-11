@@ -91,6 +91,36 @@ internal fun resolveClassicWheelSharedGeometry(
     )
 }
 
+/**
+ * Locates the expanded wheel's visible play/pause icon inside its larger touch target.
+ * The touch target affects placement only; its dimensions never become morph dimensions.
+ */
+internal fun classicWheelExpandedPlayPauseVisualBounds(
+    wheelBounds: Rect,
+    visibleIconSizePx: Float,
+    touchTargetSizePx: Float,
+    bottomPaddingPx: Float
+): Rect? {
+    if (!wheelBounds.isValidClassicWheelRect() ||
+        !visibleIconSizePx.isFinite() || visibleIconSizePx <= 0f ||
+        !touchTargetSizePx.isFinite() || touchTargetSizePx <= 0f ||
+        !bottomPaddingPx.isFinite() || bottomPaddingPx < 0f
+    ) {
+        return null
+    }
+
+    val halfIcon = visibleIconSizePx / 2f
+    val centerX = wheelBounds.center.x
+    val centerY = wheelBounds.bottom - bottomPaddingPx - touchTargetSizePx / 2f
+    val visualBounds = Rect(
+        left = centerX - halfIcon,
+        top = centerY - halfIcon,
+        right = centerX + halfIcon,
+        bottom = centerY + halfIcon
+    )
+    return visualBounds.takeIf { it.isValidClassicWheelRect() }
+}
+
 internal fun classicWheelMorphTravelDistance(endpointBounds: PlayerEndpointBounds): Float {
     val mini = (endpointBounds.mini as? PlayerBoundsMeasurement.Measured)?.bounds
     val expanded = (endpointBounds.expanded as? PlayerBoundsMeasurement.Measured)?.bounds
