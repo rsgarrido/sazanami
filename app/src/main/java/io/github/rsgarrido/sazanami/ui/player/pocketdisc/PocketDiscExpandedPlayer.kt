@@ -59,6 +59,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -68,6 +69,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.rsgarrido.sazanami.ui.player.RetainedArtworkImage
+import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsGestureRegion
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.knownDiscNumber
 import io.github.rsgarrido.sazanami.data.trackNumberWithinDisc
@@ -117,7 +119,9 @@ fun PocketDiscExpandedPlayer(
     onMorphDragStart: () -> Unit = {},
     onMorphDragBy: (Float) -> Unit = {},
     onMorphDragEnd: (Float) -> Unit = {},
-    onMorphDragCancel: () -> Unit = {}
+    onMorphDragCancel: () -> Unit = {},
+    lyricsGestureModifier: Modifier = Modifier,
+    lyricsGestureRegion: PlayerLyricsGestureRegion? = null
 ) {
     val palette = remember(tokens) { PocketDiscPalette.from(tokens) }
     val safeCollapseDragModifier = Modifier.pocketDiscDownwardCollapseGesture(
@@ -160,9 +164,13 @@ fun PocketDiscExpandedPlayer(
                     onCollapseClick = onCollapseClick,
                     enabled = inputEnabled,
                     compact = compact,
-                    modifier = safeCollapseDragModifier.graphicsLayer {
-                        alpha = headerReveal.coerceIn(0f, 1f)
-                    }
+                    modifier = Modifier
+                        .onGloballyPositioned { coordinates ->
+                            lyricsGestureRegion?.updateTop(coordinates.boundsInRoot())
+                        }
+                        .then(safeCollapseDragModifier)
+                        .then(lyricsGestureModifier)
+                        .graphicsLayer { alpha = headerReveal.coerceIn(0f, 1f) }
                 )
 
                 Row(
@@ -173,7 +181,8 @@ fun PocketDiscExpandedPlayer(
                             scaleX = 0.96f + 0.04f * mediaReveal.coerceIn(0f, 1f)
                             scaleY = scaleX
                         }
-                        .then(safeCollapseDragModifier),
+                        .then(safeCollapseDragModifier)
+                        .then(lyricsGestureModifier),
                     horizontalArrangement = Arrangement.spacedBy(gap, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -201,6 +210,7 @@ fun PocketDiscExpandedPlayer(
                     modifier = Modifier
                         .fillMaxWidth()
                         .graphicsLayer { alpha = panelReveal.coerceIn(0f, 1f) }
+                        .then(lyricsGestureModifier)
                 )
 
                 PocketDiscPositionPanel(
@@ -214,6 +224,7 @@ fun PocketDiscExpandedPlayer(
                     modifier = Modifier
                         .fillMaxWidth()
                         .graphicsLayer { alpha = panelReveal.coerceIn(0f, 1f) }
+                        .then(lyricsGestureModifier)
                 )
 
                 PocketDiscTransportControls(
@@ -231,6 +242,7 @@ fun PocketDiscExpandedPlayer(
                     modifier = Modifier
                         .fillMaxWidth()
                         .graphicsLayer { alpha = controlsReveal.coerceIn(0f, 1f) }
+                        .then(lyricsGestureModifier)
                 )
 
                 PocketDiscUtilityControls(
@@ -247,6 +259,10 @@ fun PocketDiscExpandedPlayer(
                     modifier = Modifier
                         .fillMaxWidth()
                         .graphicsLayer { alpha = controlsReveal.coerceIn(0f, 1f) }
+                        .onGloballyPositioned { coordinates ->
+                            lyricsGestureRegion?.updateBottom(coordinates.boundsInRoot())
+                        }
+                        .then(lyricsGestureModifier)
                 )
 
                 PocketDiscLevelMeter(

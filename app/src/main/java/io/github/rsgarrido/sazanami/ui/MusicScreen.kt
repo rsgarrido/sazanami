@@ -1630,8 +1630,10 @@ internal fun MusicScreen(
                     onShuffleClick = onShuffleClick,
                     onRepeatClick = onRepeatClick,
                     onCollapseExpandedPlayer = {
-                        playerMorphState.collapse()
-                        restorePlaybackLaunchContext()
+                        dismissExpandedPlayerPresentation(
+                            resetLyricsPresentation = lyricsTransitionState::snapToExpanded,
+                            collapsePlayer = playerMorphState::collapse
+                        )
                     },
                     onShowQueueHub = {
                         isQueueHubVisible = true
@@ -1729,6 +1731,14 @@ internal fun MusicScreen(
             }
         }
     }
+}
+
+internal fun dismissExpandedPlayerPresentation(
+    resetLyricsPresentation: () -> Unit,
+    collapsePlayer: () -> Unit
+) {
+    resetLyricsPresentation()
+    collapsePlayer()
 }
 
 private fun LibraryTab.selectionEntity(): LibrarySelectionEntity? = when (this) {

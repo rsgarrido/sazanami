@@ -1,5 +1,6 @@
 package io.github.rsgarrido.sazanami.ui.player
 
+import androidx.compose.ui.geometry.Rect
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
@@ -8,6 +9,43 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ExpandedPlayerDragStateTest {
+    @Test
+    fun retroRackLyricsRegionEndsBeforePlaybackRack() {
+        val region = measuredLyricsRegion(top = 20f, bottom = 430f)
+
+        assertTrue(region.contains(120f))
+        assertTrue(region.contains(420f))
+        assertFalse(region.contains(431f))
+        assertFalse(region.contains(760f))
+    }
+
+    @Test
+    fun pocketFlipLyricsRegionEndsWithMainPlaybackButtons() {
+        val region = measuredLyricsRegion(top = 16f, bottom = 610f)
+
+        assertTrue(region.contains(500f))
+        assertFalse(region.contains(650f))
+        assertFalse(region.contains(790f))
+    }
+
+    @Test
+    fun pocketCassetteLyricsRegionExcludesLowerSeamAndBottomEdge() {
+        val region = measuredLyricsRegion(top = 12f, bottom = 704f)
+
+        assertTrue(region.contains(680f))
+        assertFalse(region.contains(730f))
+        assertFalse(region.contains(799f))
+    }
+
+    @Test
+    fun pocketDiscLyricsRegionEndsAboveLevelMeterAndBottomEdge() {
+        val region = measuredLyricsRegion(top = 11f, bottom = 682f)
+
+        assertTrue(region.contains(660f))
+        assertFalse(region.contains(720f))
+        assertFalse(region.contains(799f))
+    }
+
     @Test
     fun lyricsTransitionCanExplicitlyResetExpandedPlayerOffset() {
         val state = PlayerMorphState(
@@ -98,4 +136,10 @@ class ExpandedPlayerDragStateTest {
             )
         )
     }
+
+    private fun measuredLyricsRegion(top: Float, bottom: Float) =
+        PlayerLyricsGestureRegion().also { region ->
+            region.updateTop(Rect(0f, top, 400f, top + 80f))
+            region.updateBottom(Rect(0f, bottom - 80f, 400f, bottom))
+        }
 }

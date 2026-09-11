@@ -77,6 +77,7 @@ import io.github.rsgarrido.sazanami.performance.VisualizerPerformanceCounters
 import io.github.rsgarrido.sazanami.performance.tracePerformance
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 import io.github.rsgarrido.sazanami.ui.player.playerEndpointInput
+import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsGestureRegion
 import kotlin.math.abs
 
 @Composable
@@ -112,7 +113,9 @@ fun RetroRackExpandedPlayer(
     onMorphDragStart: () -> Unit = {},
     onMorphDragBy: (Float) -> Unit = {},
     onMorphDragEnd: (Float) -> Unit = {},
-    onMorphDragCancel: () -> Unit = {}
+    onMorphDragCancel: () -> Unit = {},
+    lyricsGestureModifier: Modifier = Modifier,
+    lyricsGestureRegion: PlayerLyricsGestureRegion? = null
 ) {
     val palette = remember(tokens) { RetroRackPalette.from(tokens) }
     val playbackContext = activeQueueSongs
@@ -161,7 +164,11 @@ fun RetroRackExpandedPlayer(
             title = "MAIN DECK",
             modifier = Modifier
                 .height(layoutProfile.mainDeckHeightDp.dp)
-                .graphicsLayer { alpha = deckReveal },
+                .graphicsLayer { alpha = deckReveal }
+                .onGloballyPositioned { coordinates ->
+                    lyricsGestureRegion?.updateTop(coordinates.boundsInRoot())
+                }
+                .then(lyricsGestureModifier),
             titleModifier = safeHeaderGesture,
             trailingAction = {
                 RackIconButton(
@@ -206,7 +213,11 @@ fun RetroRackExpandedPlayer(
                 .graphicsLayer {
                     alpha = spectrumReveal
                     scaleY = .92f + .08f * spectrumReveal
-                },
+                }
+                .onGloballyPositioned { coordinates ->
+                    lyricsGestureRegion?.updateBottom(coordinates.boundsInRoot())
+                }
+                .then(lyricsGestureModifier),
             titleModifier = safeHeaderGesture,
             trailingAction = {
                 RackIndicator(color = visualProfile.accent)

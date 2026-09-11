@@ -117,6 +117,7 @@ fun ExpandedPlayerThemeHost(
     onCollapseClick: () -> Unit,
     playerMorphState: PlayerMorphState,
     lyricsTransitionState: PlayerLyricsTransitionState,
+    lyricsGestureRegion: PlayerLyricsGestureRegion,
     onOpenQueueHubClick: () -> Unit,
     onOpenSleepTimerClick: () -> Unit,
     onOpenMoreClick: () -> Unit,
@@ -201,14 +202,6 @@ fun ExpandedPlayerThemeHost(
             hostDragOffset = 0f
         }
     )
-    val sharedGestureModifier = if (
-        selectedPlayerTheme == PlayerTheme.DEFAULT ||
-        selectedPlayerTheme == PlayerTheme.CLASSIC_WHEEL
-    ) {
-        Modifier
-    } else {
-        lyricsDragModifier
-    }
     val sharedLyricsSemanticsModifier = if (
         selectedPlayerTheme == PlayerTheme.CLASSIC_WHEEL
     ) {
@@ -225,7 +218,6 @@ fun ExpandedPlayerThemeHost(
                 hostHeightPx = size.height.toFloat().coerceAtLeast(1f)
             }
             .then(sharedLyricsSemanticsModifier)
-            .then(sharedGestureModifier)
     ) {
         when (selectedPlayerTheme) {
             PlayerTheme.DEFAULT -> {
@@ -455,7 +447,9 @@ fun ExpandedPlayerThemeHost(
                                 RetroRackMorphSpec.collapseVelocityThresholdPxPerSecond
                             )
                         },
-                        onMorphDragCancel = playerMorphState::cancelDrag
+                        onMorphDragCancel = playerMorphState::cancelDrag,
+                        lyricsGestureModifier = lyricsDragModifier,
+                        lyricsGestureRegion = lyricsGestureRegion
                     ) }
             }
 
@@ -530,7 +524,9 @@ fun ExpandedPlayerThemeHost(
                                     PocketFlipMorphSpec.collapseVelocityThresholdPxPerSecond
                             )
                         },
-                        onMorphDragCancel = playerMorphState::cancelDrag
+                        onMorphDragCancel = playerMorphState::cancelDrag,
+                        lyricsGestureModifier = lyricsDragModifier,
+                        lyricsGestureRegion = lyricsGestureRegion
                     )
                 }
             }
@@ -607,7 +603,9 @@ fun ExpandedPlayerThemeHost(
                                     PocketCassetteMorphSpec.collapseVelocityThresholdPxPerSecond
                             )
                         },
-                        onMorphDragCancel = playerMorphState::cancelDrag
+                        onMorphDragCancel = playerMorphState::cancelDrag,
+                        lyricsGestureModifier = lyricsDragModifier,
+                        lyricsGestureRegion = lyricsGestureRegion
                     )
                 }
             }
@@ -703,7 +701,9 @@ fun ExpandedPlayerThemeHost(
                                     PocketDiscMorphSpec.collapseVelocityThresholdPxPerSecond
                             )
                         },
-                        onMorphDragCancel = playerMorphState::cancelDrag
+                        onMorphDragCancel = playerMorphState::cancelDrag,
+                        lyricsGestureModifier = lyricsDragModifier,
+                        lyricsGestureRegion = lyricsGestureRegion
                     )
                 }
             }

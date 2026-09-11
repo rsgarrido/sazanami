@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.RepeatMode
+import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsGestureRegion
 import kotlinx.coroutines.delay
 
 private const val TransportSeekStepMillis = 2_000
@@ -96,7 +97,9 @@ internal fun PocketCassetteControls(
     controlsReveal: Float = 1f,
     inputEnabled: Boolean = true,
     morphBounds: PocketCassetteMorphBounds? = null,
-    sharedOwner: PocketCassetteSharedOwner = PocketCassetteSharedOwner.EXPANDED
+    sharedOwner: PocketCassetteSharedOwner = PocketCassetteSharedOwner.EXPANDED,
+    lyricsGestureModifier: Modifier = Modifier,
+    lyricsGestureRegion: PlayerLyricsGestureRegion? = null
 ) {
     var rewindTarget by remember(currentSong?.id) { mutableIntStateOf(currentPosition) }
     var forwardTarget by remember(currentSong?.id) { mutableIntStateOf(currentPosition) }
@@ -120,11 +123,17 @@ internal fun PocketCassetteControls(
             compact = compact,
             enabled = inputEnabled && sharedOwner == PocketCassetteSharedOwner.EXPANDED,
             morphBounds = morphBounds,
-            sharedOwner = sharedOwner
+            sharedOwner = sharedOwner,
+            modifier = lyricsGestureModifier
         )
 
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onGloballyPositioned { coordinates ->
+                    lyricsGestureRegion?.updateBottom(coordinates.boundsInRoot())
+                }
+                .then(lyricsGestureModifier),
             horizontalArrangement = Arrangement.spacedBy(if (compact) 7.dp else 10.dp)
         ) {
             PocketCassetteMechanicalButton(
@@ -392,14 +401,15 @@ private fun PocketCassetteSeekSlot(
     compact: Boolean,
     enabled: Boolean,
     morphBounds: PocketCassetteMorphBounds?,
-    sharedOwner: PocketCassetteSharedOwner
+    sharedOwner: PocketCassetteSharedOwner,
+    modifier: Modifier = Modifier
 ) {
     val colors = PocketCassetteColors
     val safeDuration = duration.coerceAtLeast(1)
     val safePosition = currentPosition.coerceIn(0, safeDuration)
     val progress = safePosition.toFloat() / safeDuration.toFloat()
 
-    Column {
+    Column(modifier = modifier) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
