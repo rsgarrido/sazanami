@@ -32,6 +32,7 @@ import io.github.rsgarrido.sazanami.ui.player.classicwheel.PlayerMorphRenderer
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.resolveClassicWheelMorphGeometry
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.resolveClassicWheelSharedGeometry
+import io.github.rsgarrido.sazanami.ui.player.classicwheel.resolveClassicWheelMiniChromeGeometry
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.classicWheelMorphTravelDistance
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernExpandedPlayer
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernArtworkTransitionStyle
@@ -325,10 +326,13 @@ fun ExpandedPlayerThemeHost(
                 val ownsNowPlayingMorphContent =
                     classicWheelMenuState.currentScreen.ownsNowPlayingMorphContent()
                 val geometry = resolveClassicWheelMorphGeometry(
-                    playerMorphState.progress, endpointBounds
+                    playerMorphState.progress, endpointBounds, classicMorphBounds
                 )
                 val sharedGeometry = resolveClassicWheelSharedGeometry(
                     playerMorphState.progress, classicMorphBounds
+                )
+                val miniChromeGeometry = resolveClassicWheelMiniChromeGeometry(
+                    classicMorphBounds
                 )
                 val ownedSharedGeometry = sharedGeometry.takeIf {
                     ownsNowPlayingMorphContent
@@ -347,8 +351,11 @@ fun ExpandedPlayerThemeHost(
                     progress = playerMorphState.progress,
                     geometry = geometry,
                     sharedGeometry = ownedSharedGeometry,
+                    miniChromeGeometry = miniChromeGeometry,
                     currentSong = currentSong,
                     isPlaying = isPlaying,
+                    currentPosition = currentPosition,
+                    duration = duration,
                     sharedPlayPauseAlpha = playPauseOwnership.sharedAlpha,
                     tokens = tokens
                 ) { screenAlpha, wheelAlpha, controlsActive -> ClassicWheelExpandedPlayer(
@@ -378,7 +385,9 @@ fun ExpandedPlayerThemeHost(
                     morphBounds = classicMorphBounds,
                     sharedContentVisible = ownedSharedGeometry == null,
                     onMorphDragStart = {
-                        playerMorphState.beginDragWithRange(classicWheelMorphTravelDistance(endpointBounds))
+                        playerMorphState.beginDragWithRange(
+                            classicWheelMorphTravelDistance(endpointBounds, classicMorphBounds)
+                        )
                     },
                     onMorphDragBy = playerMorphState::dragBy,
                     onMorphDragEnd = playerMorphState::endDrag,

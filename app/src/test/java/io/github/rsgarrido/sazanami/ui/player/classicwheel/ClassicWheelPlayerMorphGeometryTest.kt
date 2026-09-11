@@ -19,22 +19,74 @@ class ClassicWheelPlayerMorphGeometryTest {
         assertEquals(PlayerMorphRenderer.ENDPOINT, playerMorphRendererFor(PlayerTheme.POCKET_CASSETTE))
     }
 
-    @Test fun `shell reaches measured endpoints and interpolates validly`() {
+    @Test fun `shell uses the visible mini card rather than its outer layout slot`() {
         val bounds = bounds()
-        val start = resolveClassicWheelMorphGeometry(0f, bounds)!!.shell
-        val middle = resolveClassicWheelMorphGeometry(.5f, bounds)!!.shell
-        val end = resolveClassicWheelMorphGeometry(1f, bounds)!!.shell
-        assertEquals(Rect(10f, 700f, 390f, 770f), start)
-        assertEquals(Rect(5f, 350f, 395f, 785f), middle)
+        val elements = shellElementBounds()
+        val start = resolveClassicWheelMorphGeometry(0f, bounds, elements)!!.shell
+        val middle = resolveClassicWheelMorphGeometry(.5f, bounds, elements)!!.shell
+        val end = resolveClassicWheelMorphGeometry(1f, bounds, elements)!!.shell
+
+        assertEquals(Rect(12f, 706f, 388f, 774f), start)
+        assertFalse(start == Rect(0f, 700f, 400f, 780f))
+        assertEquals(Rect(6f, 353f, 394f, 787f), middle)
         assertEquals(Rect(0f, 0f, 400f, 800f), end)
-        assertTrue(middle.width > 0f && middle.height > 0f)
+        assertTrue(middle.left in end.left..start.left)
+        assertTrue(middle.top in end.top..start.top)
+        assertTrue(middle.width in start.width..end.width)
+        assertTrue(middle.height in start.height..end.height)
+        assertEquals(706f, classicWheelMorphTravelDistance(bounds, elements))
     }
 
-    @Test fun `missing mini bounds fails safely`() {
+    @Test fun `collapse and expansion resolve the same visible mini endpoint`() {
+        val bounds = bounds()
+        val elements = shellElementBounds()
+
+        val collapseEndpoint = resolveClassicWheelMorphGeometry(0f, bounds, elements)!!.shell
+        val expansionStart = resolveClassicWheelMorphGeometry(0f, bounds, elements)!!.shell
+
+        assertEquals(Rect(12f, 706f, 388f, 774f), collapseEndpoint)
+        assertEquals(collapseEndpoint, expansionStart)
+    }
+
+    @Test fun `missing or stale mini bounds fail safely`() {
         val bounds = PlayerEndpointBounds()
         bounds.updateExpanded(Rect(0f, 0f, 400f, 800f))
-        assertNull(resolveClassicWheelMorphGeometry(.5f, bounds))
-        assertEquals(ClassicWheelMorphSpec.MinimumDragRangePx, classicWheelMorphTravelDistance(bounds))
+        val elements = shellElementBounds()
+        assertNull(resolveClassicWheelMorphGeometry(.5f, bounds, elements))
+        assertEquals(
+            ClassicWheelMorphSpec.MinimumDragRangePx,
+            classicWheelMorphTravelDistance(bounds, elements)
+        )
+
+        bounds.updateMini(Rect(0f, 700f, 400f, 780f))
+        bounds.markMiniStale()
+        assertNull(resolveClassicWheelMorphGeometry(.5f, bounds, elements))
+        assertEquals(
+            ClassicWheelMorphSpec.MinimumDragRangePx,
+            classicWheelMorphTravelDistance(bounds, elements)
+        )
+    }
+
+    @Test fun `missing visible mini card bounds fail safely`() {
+        val bounds = bounds()
+        val elements = ClassicWheelMorphBounds()
+
+        assertNull(resolveClassicWheelMorphGeometry(.5f, bounds, elements))
+        assertEquals(
+            ClassicWheelMorphSpec.MinimumDragRangePx,
+            classicWheelMorphTravelDistance(bounds, elements)
+        )
+    }
+
+    @Test fun `mini queue chrome uses its measured static bounds`() {
+        val elements = ClassicWheelMorphBounds().also {
+            it.updateMiniQueue(Rect(286f, 719f, 328f, 761f))
+        }
+
+        assertEquals(
+            Rect(286f, 719f, 328f, 761f),
+            resolveClassicWheelMiniChromeGeometry(elements)!!.queue
+        )
     }
 
     @Test fun `reveal and control ownership policies have stable endpoints`() {
@@ -133,8 +185,12 @@ class ClassicWheelPlayerMorphGeometryTest {
     }
 
     private fun bounds(): PlayerEndpointBounds = PlayerEndpointBounds().also {
-        it.updateMini(Rect(10f, 700f, 390f, 770f))
+        it.updateMini(Rect(0f, 700f, 400f, 780f))
         it.updateExpanded(Rect(0f, 0f, 400f, 800f))
+    }
+
+    private fun shellElementBounds(): ClassicWheelMorphBounds = ClassicWheelMorphBounds().also {
+        it.updateMiniShell(Rect(12f, 706f, 388f, 774f))
     }
 
     private fun completeElementBounds(

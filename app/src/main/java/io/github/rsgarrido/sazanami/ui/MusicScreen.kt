@@ -84,8 +84,11 @@ import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.modern.defaultMorphMetadataOwner
 import io.github.rsgarrido.sazanami.ui.player.modern.resolveDefaultPlayerMorphGeometry
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.classicWheelMorphTravelDistance
+import io.github.rsgarrido.sazanami.ui.player.classicwheel.classicWheelMiniVisualOwner
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMenuState
+import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMiniVisualOwner
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.resolveClassicWheelMorphGeometry
+import io.github.rsgarrido.sazanami.ui.player.classicwheel.resolveClassicWheelMiniChromeGeometry
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ownsNowPlayingMorphContent
 import io.github.rsgarrido.sazanami.ui.player.retrorack.resolveRetroRackMorphGeometry
@@ -788,17 +791,28 @@ internal fun MusicScreen(
                             isMorphActive = !playerMorphState.isCollapsedAndIdle,
                             geometryReady = defaultMorphGeometry != null
                         ) == DefaultMorphMetadataOwner.Morph
+            val classicWheelShellGeometry = resolveClassicWheelMorphGeometry(
+                playerMorphState.progress,
+                playerEndpointBounds,
+                classicMorphBounds
+            )
+            val classicWheelSharedGeometry = resolveClassicWheelSharedGeometry(
+                playerMorphState.progress,
+                classicMorphBounds
+            )
+            val classicWheelMiniChromeGeometry = resolveClassicWheelMiniChromeGeometry(
+                classicMorphBounds
+            )
             val classicWheelMorphOwnsVisuals =
                 selectedPlayerTheme == PlayerTheme.CLASSIC_WHEEL &&
-                        classicWheelMenuState.currentScreen.ownsNowPlayingMorphContent() &&
-                        !playerMorphState.isCollapsedAndIdle &&
-                        resolveClassicWheelMorphGeometry(
-                            playerMorphState.progress,
-                            playerEndpointBounds
-                        ) != null && resolveClassicWheelSharedGeometry(
-                    playerMorphState.progress,
-                    classicMorphBounds
-                ) != null
+                        classicWheelMiniVisualOwner(
+                            progress = playerMorphState.progress,
+                            shellGeometryReady = classicWheelShellGeometry != null,
+                            sharedGeometryReady = classicWheelSharedGeometry != null,
+                            miniChromeGeometryReady = classicWheelMiniChromeGeometry != null,
+                            ownsNowPlayingContent = classicWheelMenuState.currentScreen
+                                .ownsNowPlayingMorphContent()
+                        ) == ClassicWheelMiniVisualOwner.TRANSITION
             val retroRackMorphOwnsVisuals = selectedPlayerTheme == PlayerTheme.RETRO_RACK &&
                     retroRackMorphOwnsVisuals(
                         progress = playerMorphState.progress,
@@ -840,11 +854,18 @@ internal fun MusicScreen(
                             playerMorphState.progress,
                             pocketDiscMorphBounds
                         ) != null
-            val classicMiniMorphCallbacks = remember(playerMorphState, playerEndpointBounds) {
+            val classicMiniMorphCallbacks = remember(
+                playerMorphState,
+                playerEndpointBounds,
+                classicMorphBounds
+            ) {
                 DefaultMiniPlayerMorphCallbacks(
                     onDragStart = {
                         playerMorphState.beginDragWithRange(
-                            classicWheelMorphTravelDistance(playerEndpointBounds)
+                            classicWheelMorphTravelDistance(
+                                playerEndpointBounds,
+                                classicMorphBounds
+                            )
                         )
                     },
                     onDragBy = playerMorphState::dragBy,
