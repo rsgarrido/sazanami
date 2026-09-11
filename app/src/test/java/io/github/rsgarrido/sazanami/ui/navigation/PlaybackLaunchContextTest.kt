@@ -1,8 +1,13 @@
 package io.github.rsgarrido.sazanami.ui.navigation
 
+import android.net.Uri
+import io.github.rsgarrido.sazanami.data.FolderId
+import io.github.rsgarrido.sazanami.data.Song
+import io.github.rsgarrido.sazanami.data.buildFolderBrowseIndex
 import io.github.rsgarrido.sazanami.ui.library.LibraryTab
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.mockito.Mockito.mock
 
 class PlaybackLaunchContextTest {
     @Test
@@ -82,6 +87,55 @@ class PlaybackLaunchContextTest {
     }
 
     @Test
+    fun captureAndSerializationPreserveExactNestedFolder() {
+        val folderId = FolderId("1234-5678", "music/artist/album")
+        val context = capturePlaybackLaunchContext(
+            mainDestination = MainDestination.LIBRARY,
+            selectedLibraryTab = LibraryTab.FOLDERS,
+            selectedAlbumKey = null,
+            selectedArtistName = null,
+            selectedGenreKey = null,
+            selectedPlaylistId = null,
+            searchQuery = "",
+            selectedFolderId = folderId
+        )
+
+        assertEquals(PlaybackLaunchContext.FolderDetail(folderId), context)
+        assertEquals(
+            context,
+            playbackLaunchContextFromSavedValues(context.toSavedValues())
+        )
+    }
+
+    @Test
+    fun removedFolderPlaybackContextResolvesToNearestAncestorOrRoot() {
+        val index = buildFolderBrowseIndex(
+            listOf(song(relativePath = "Music/Artist/Retained/"))
+        )
+        val removedAlbum = PlaybackLaunchContext.FolderDetail(
+            FolderId("external_primary", "music/artist/removed/album")
+        )
+        val unrelated = PlaybackLaunchContext.FolderDetail(
+            FolderId("external_primary", "audiobooks/missing")
+        )
+
+        assertEquals(
+            PlaybackLaunchContext.FolderDetail(
+                FolderId("external_primary", "music/artist")
+            ),
+            removedAlbum.withValidDetails(
+                emptySet(), emptySet(), emptySet(), emptySet(), index
+            )
+        )
+        assertEquals(
+            PlaybackLaunchContext.LibrarySection(LibraryTab.FOLDERS),
+            unrelated.withValidDetails(
+                emptySet(), emptySet(), emptySet(), emptySet(), index
+            )
+        )
+    }
+
+    @Test
     fun existingGenreDetailRemainsValidForPlaybackReturn() {
         val genreContext = PlaybackLaunchContext.GenreDetail("known:rock")
 
@@ -124,4 +178,20 @@ class PlaybackLaunchContextTest {
             playlistContext
         )
     }
+
+    private fun song(relativePath: String): Song = Song(
+        id = 1,
+        title = "Song",
+        artist = "Artist",
+        album = "Album",
+        trackNumber = 1,
+        duration = 1_000,
+        uri = mock(Uri::class.java),
+        filePath = "/storage/emulated/0/$relativePath/song.flac",
+        folderPath = "/storage/emulated/0/$relativePath",
+        albumArtUri = null,
+        volumeName = "external_primary",
+        displayName = "song.flac",
+        relativePath = relativePath
+    )
 }

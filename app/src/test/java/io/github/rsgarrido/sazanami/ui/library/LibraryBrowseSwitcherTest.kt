@@ -20,8 +20,24 @@ class LibraryBrowseSwitcherTest {
     fun primaryCategoriesRemainSelected() {
         assertEquals(LibraryTab.ALBUMS, LibraryTab.ALBUMS.primaryBrowseTab())
         assertEquals(LibraryTab.ARTISTS, LibraryTab.ARTISTS.primaryBrowseTab())
+        assertEquals(LibraryTab.FOLDERS, LibraryTab.FOLDERS.primaryBrowseTab())
         assertEquals(LibraryTab.GENRES, LibraryTab.GENRES.primaryBrowseTab())
         assertEquals(LibraryTab.PLAYLISTS, LibraryTab.PLAYLISTS.primaryBrowseTab())
+    }
+
+    @Test
+    fun playlistsStayBeforeFoldersInStaticTabOrder() {
+        assertEquals(
+            listOf(
+                LibraryTab.SONGS,
+                LibraryTab.ALBUMS,
+                LibraryTab.ARTISTS,
+                LibraryTab.PLAYLISTS,
+                LibraryTab.FOLDERS,
+                LibraryTab.GENRES
+            ),
+            primaryLibraryTabs
+        )
     }
 
     @Test
@@ -45,6 +61,7 @@ class LibraryBrowseSwitcherTest {
         listOf(
             LibraryTab.ALBUMS,
             LibraryTab.ARTISTS,
+            LibraryTab.FOLDERS,
             LibraryTab.PLAYLISTS,
             LibraryTab.GENRES,
             LibraryTab.QUEUE
@@ -68,6 +85,7 @@ class LibraryBrowseSwitcherTest {
         listOf(
             LibraryTab.ALBUMS,
             LibraryTab.ARTISTS,
+            LibraryTab.FOLDERS,
             LibraryTab.PLAYLISTS,
             LibraryTab.GENRES
         ).forEach { tab ->
@@ -120,6 +138,55 @@ class LibraryBrowseSwitcherTest {
         assertFalse(fullyFitting.showEnd)
         assertFalse(notMeasured.showStart)
         assertFalse(notMeasured.showEnd)
+    }
+
+    @Test
+    fun selectedTabScrollTargetOnlyMovesEnoughToBecomeFullyVisible() {
+        assertEquals(
+            100,
+            libraryTabScrollTarget(
+                currentScroll = 100,
+                viewportWidth = 300,
+                selectedStart = 150f,
+                selectedEnd = 250f,
+                maxScroll = 500,
+                visibilityInset = 20
+            )
+        )
+        assertEquals(
+            180,
+            libraryTabScrollTarget(
+                currentScroll = 100,
+                viewportWidth = 300,
+                selectedStart = 360f,
+                selectedEnd = 460f,
+                maxScroll = 500,
+                visibilityInset = 20
+            )
+        )
+        assertEquals(
+            60,
+            libraryTabScrollTarget(
+                currentScroll = 100,
+                viewportWidth = 300,
+                selectedStart = 80f,
+                selectedEnd = 160f,
+                maxScroll = 500,
+                visibilityInset = 20
+            )
+        )
+    }
+
+    @Test
+    fun selectedTabScrollTargetClampsAtStripEdges() {
+        assertEquals(
+            0,
+            libraryTabScrollTarget(40, 300, 0f, 84f, 500, 20)
+        )
+        assertEquals(
+            500,
+            libraryTabScrollTarget(450, 300, 760f, 800f, 500, 20)
+        )
     }
 
     @Test

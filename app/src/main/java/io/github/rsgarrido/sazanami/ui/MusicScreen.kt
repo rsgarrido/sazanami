@@ -44,6 +44,7 @@ import io.github.rsgarrido.sazanami.data.BatchMetadataPlan
 import io.github.rsgarrido.sazanami.data.deriveBatchMetadataEditorState
 import io.github.rsgarrido.sazanami.data.LibraryFolder
 import io.github.rsgarrido.sazanami.data.FolderSelectionMode
+import io.github.rsgarrido.sazanami.data.buildFolderBrowseIndex
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.data.preferences.AppFont
@@ -61,6 +62,9 @@ import io.github.rsgarrido.sazanami.ui.library.LibraryTab
 import io.github.rsgarrido.sazanami.ui.library.LibraryAlbumGroup
 import io.github.rsgarrido.sazanami.ui.library.buildLibraryAlbumGroups
 import io.github.rsgarrido.sazanami.ui.library.findLibraryAlbumGroupForSong
+import io.github.rsgarrido.sazanami.ui.library.FolderBrowseScrollStateHolder
+import io.github.rsgarrido.sazanami.ui.library.folderBrowseBackDestination
+import io.github.rsgarrido.sazanami.ui.library.resolveFolderBrowseSelection
 import io.github.rsgarrido.sazanami.ui.library.isAlbumGroupAvailable
 import io.github.rsgarrido.sazanami.ui.library.metadataEditingSongs
 import io.github.rsgarrido.sazanami.ui.navigation.MainDestination
@@ -322,12 +326,32 @@ internal fun MusicScreen(
     var selectedAlbumKey by navigationState.selectedAlbumKey
     var selectedGenreKey by navigationState.selectedGenreKey
     var selectedPlaylistId by navigationState.selectedPlaylistId
+    var selectedFolderId by navigationState.selectedFolderId
     var searchQuery by navigationState.searchQuery
     var selectedSongFilterState by navigationState.selectedSongFilterState
     var selectedSongSortState by navigationState.selectedSongSortState
     var selectedArtistSortState by navigationState.selectedArtistSortState
     var selectedAlbumSortState by navigationState.selectedAlbumSortState
     var selectedFavoriteSortState by navigationState.selectedFavoriteSortState
+    val folderBrowseIndex = remember(songs) { buildFolderBrowseIndex(songs) }
+    val folderBrowseScrollStateHolder = remember { FolderBrowseScrollStateHolder() }
+    val canValidateFolderSelection = !isLibraryLoading && !isLibraryRefreshing
+    val resolvedFolderId = if (canValidateFolderSelection) {
+        resolveFolderBrowseSelection(folderBrowseIndex, selectedFolderId)
+    } else {
+        selectedFolderId
+    }
+
+    LaunchedEffect(folderBrowseIndex, selectedFolderId, canValidateFolderSelection) {
+        if (canValidateFolderSelection && selectedFolderId != resolvedFolderId) {
+            selectedFolderId = resolvedFolderId
+        }
+    }
+    LaunchedEffect(folderBrowseIndex, canValidateFolderSelection) {
+        if (canValidateFolderSelection) {
+            folderBrowseScrollStateHolder.retainFolderIds(folderBrowseIndex.nodesById.keys)
+        }
+    }
 
     val overlayState = rememberMusicOverlayState()
     val settingsScrollState = rememberScrollState()
@@ -539,7 +563,8 @@ internal fun MusicScreen(
             selectedArtistName = selectedArtistName,
             selectedGenreKey = selectedGenreKey,
             selectedPlaylistId = selectedPlaylistId,
-            searchQuery = searchQuery
+            searchQuery = searchQuery,
+            selectedFolderId = selectedFolderId
         )
     }
 
@@ -564,7 +589,8 @@ internal fun MusicScreen(
             genreKeys = buildGenreCollections(songs).mapTo(mutableSetOf()) { genre ->
                 genre.key
             },
-            playlistIds = playlists.mapTo(mutableSetOf()) { playlist -> playlist.playlistId }
+            playlistIds = playlists.mapTo(mutableSetOf()) { playlist -> playlist.playlistId },
+            folderBrowseIndex = folderBrowseIndex
         )
 
         lyricsTransitionState.snapToExpanded()
@@ -573,6 +599,7 @@ internal fun MusicScreen(
         val restoredPlaylistOrigin = navigationState.playlistDetailOrigin.value
         navigationState.clearArtist()
         navigationState.clearAlbum()
+        navigationState.clearFolder()
         selectedGenreKey = null
         clearPlaylistSelection()
 
@@ -618,6 +645,12 @@ internal fun MusicScreen(
                 mainDestination = MainDestination.LIBRARY
             }
 
+            is PlaybackLaunchContext.FolderDetail -> {
+                navigationState.openFolder(validContext.folderId)
+                searchQuery = ""
+                mainDestination = MainDestination.LIBRARY
+            }
+
             is PlaybackLaunchContext.Search -> {
                 selectedLibraryTab = LibraryTab.SONGS
                 searchQuery = validContext.query
@@ -644,6 +677,9 @@ internal fun MusicScreen(
                 selectedAlbumKey != null ||
                 selectedGenreKey != null ||
                 selectedPlaylistId != null ||
+                (mainDestination == MainDestination.LIBRARY &&
+                        selectedLibraryTab == LibraryTab.FOLDERS &&
+                        selectedFolderId != null) ||
                 librarySelectionUi.state.isActive ||
                 mainDestination != MainDestination.HOME
     ) {
@@ -722,6 +758,15 @@ internal fun MusicScreen(
 
             isSettingsScreenVisible -> {
                 closeSettings()
+            }
+
+            mainDestination == MainDestination.LIBRARY &&
+                    selectedLibraryTab == LibraryTab.FOLDERS &&
+                    selectedFolderId != null -> {
+                selectedFolderId = folderBrowseBackDestination(
+                    folderBrowseIndex,
+                    selectedFolderId
+                )
             }
 
             selectedAlbumKey != null -> {
@@ -1117,6 +1162,9 @@ internal fun MusicScreen(
                     isSelectedPlaylistLoading = isSelectedPlaylistLoading,
                     mainDestination = mainDestination,
                     selectedLibraryTab = selectedLibraryTab,
+                    folderBrowseIndex = folderBrowseIndex,
+                    folderBrowseScrollStateHolder = folderBrowseScrollStateHolder,
+                    selectedFolderId = resolvedFolderId,
                     selectedArtistName = selectedArtistName,
                     selectedAlbumKey = selectedAlbumKey,
                     selectedGenreKey = selectedGenreKey,
@@ -1188,6 +1236,7 @@ internal fun MusicScreen(
                             librarySelectionUi.onClear()
                         }
                         selectedLibraryTab = tab
+                        if (tab != LibraryTab.FOLDERS) navigationState.clearFolder()
                         navigationState.clearArtist()
                         navigationState.clearAlbum()
                         selectedGenreKey = null
@@ -1316,6 +1365,17 @@ internal fun MusicScreen(
                     },
                     onAddSongsToPlaylistClick = { songs ->
                         songsPendingPlaylistAdd = songs
+                    },
+                    onFolderSelected = { folderId ->
+                        librarySelectionUi.onClear()
+                        navigationState.openFolder(folderId)
+                    },
+                    onBackFromFolder = {
+                        librarySelectionUi.onClear()
+                        selectedFolderId = folderBrowseBackDestination(
+                            folderBrowseIndex,
+                            selectedFolderId
+                        )
                     },
                     onArtistSelected = { artistName ->
                         librarySelectionUi.onClear()
@@ -1747,7 +1807,8 @@ private fun LibraryTab.selectionEntity(): LibrarySelectionEntity? = when (this) 
     LibraryTab.RATED,
     LibraryTab.RECENTLY_ADDED,
     LibraryTab.RECENTLY_PLAYED,
-    LibraryTab.MOST_PLAYED -> LibrarySelectionEntity.SONG
+    LibraryTab.MOST_PLAYED,
+    LibraryTab.FOLDERS -> LibrarySelectionEntity.SONG
     LibraryTab.ALBUMS -> LibrarySelectionEntity.ALBUM
     else -> null
 }

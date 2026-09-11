@@ -6,6 +6,8 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
+import io.github.rsgarrido.sazanami.data.FolderId
 import io.github.rsgarrido.sazanami.ui.library.LibrarySortDirection
 import io.github.rsgarrido.sazanami.ui.library.LibrarySortOption
 import io.github.rsgarrido.sazanami.ui.library.LibrarySortState
@@ -14,6 +16,8 @@ import io.github.rsgarrido.sazanami.ui.library.LibrarySongFilterState
 import io.github.rsgarrido.sazanami.ui.library.LibrarySongFilterStateSaver
 import io.github.rsgarrido.sazanami.ui.library.LibrarySharedArtworkSourceScope
 import io.github.rsgarrido.sazanami.ui.library.LibraryTab
+import io.github.rsgarrido.sazanami.ui.library.restoreFolderBrowseSelection
+import io.github.rsgarrido.sazanami.ui.library.saveFolderBrowseSelection
 import io.github.rsgarrido.sazanami.ui.library.SearchCategory
 import io.github.rsgarrido.sazanami.ui.navigation.MainDestination
 import io.github.rsgarrido.sazanami.ui.navigation.PlaybackLaunchContext
@@ -55,6 +59,7 @@ class MusicNavigationState internal constructor(
     val selectedArtistSortState: MutableState<LibrarySortState>,
     val selectedAlbumSortState: MutableState<LibrarySortState>,
     val selectedFavoriteSortState: MutableState<LibrarySortState>,
+    val selectedFolderId: MutableState<FolderId?> = mutableStateOf(null),
     val searchCategory: MutableState<SearchCategory> = mutableStateOf(SearchCategory.ALL),
     internal val albumDetailOrigin: MutableState<DetailEntryOrigin> =
         mutableStateOf(DetailEntryOrigin.LIBRARY),
@@ -90,6 +95,15 @@ class MusicNavigationState internal constructor(
 
     fun openPlaylist(id: Long) {
         openPlaylist(id, currentDetailOrigin())
+    }
+
+    fun openFolder(id: FolderId) {
+        selectedFolderId.value = id
+        selectedLibraryTab.value = LibraryTab.FOLDERS
+    }
+
+    fun clearFolder() {
+        selectedFolderId.value = null
     }
 
     internal fun openPlaylist(id: Long, origin: DetailEntryOrigin) {
@@ -159,6 +173,9 @@ fun rememberMusicNavigationState(): MusicNavigationState {
     val selectedAlbumKey = rememberSaveable { mutableStateOf<String?>(null) }
     val selectedGenreKey = rememberSaveable { mutableStateOf<String?>(null) }
     val selectedPlaylistId = rememberSaveable { mutableStateOf<Long?>(null) }
+    val selectedFolderId = rememberSaveable(saver = FolderBrowseSelectionSaver) {
+        mutableStateOf<FolderId?>(null)
+    }
     val albumDetailOrigin = rememberSaveable {
         mutableStateOf(DetailEntryOrigin.LIBRARY)
     }
@@ -201,6 +218,7 @@ fun rememberMusicNavigationState(): MusicNavigationState {
         selectedAlbumKey,
         selectedGenreKey,
         selectedPlaylistId,
+        selectedFolderId,
         albumDetailOrigin,
         artistDetailOrigin,
         playlistDetailOrigin,
@@ -226,6 +244,7 @@ fun rememberMusicNavigationState(): MusicNavigationState {
             selectedArtistSortState,
             selectedAlbumSortState,
             selectedFavoriteSortState,
+            selectedFolderId,
             searchCategory,
             albumDetailOrigin,
             artistDetailOrigin,
@@ -233,6 +252,11 @@ fun rememberMusicNavigationState(): MusicNavigationState {
         )
     }
 }
+
+private val FolderBrowseSelectionSaver = Saver<MutableState<FolderId?>, List<String>>(
+    save = { state -> saveFolderBrowseSelection(state.value) },
+    restore = { saved -> mutableStateOf(restoreFolderBrowseSelection(saved)) }
+)
 
 enum class MusicPrimaryDestination {
     FOLDERS,

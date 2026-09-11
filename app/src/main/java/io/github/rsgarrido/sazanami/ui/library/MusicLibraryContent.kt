@@ -15,6 +15,8 @@ import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.data.Playlist
 import io.github.rsgarrido.sazanami.data.PlaylistFolder
 import io.github.rsgarrido.sazanami.data.PlaylistSong
+import io.github.rsgarrido.sazanami.data.FolderBrowseIndex
+import io.github.rsgarrido.sazanami.data.FolderId
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.PlaybackShuffleMode
 import io.github.rsgarrido.sazanami.ui.playlist.PlaylistsTabContent
@@ -22,8 +24,11 @@ import io.github.rsgarrido.sazanami.ui.queue.QueueScreen
 import io.github.rsgarrido.sazanami.ui.state.LibrarySelectionEntity
 
 @Composable
-fun MusicLibraryContent(
+internal fun MusicLibraryContent(
     selectedLibraryTab: LibraryTab,
+    folderBrowseIndex: FolderBrowseIndex,
+    folderBrowseScrollStateHolder: FolderBrowseScrollStateHolder,
+    selectedFolderId: FolderId?,
     songs: List<Song>,
     searchQuery: String,
     selectedSongFilterState: LibrarySongFilterState,
@@ -58,6 +63,8 @@ fun MusicLibraryContent(
     onAddSongsToQueueClick: (String, List<Song>) -> Unit,
     onToggleFavoriteClick: (Song) -> Unit,
     onAddToPlaylistClick: (Song) -> Unit,
+    onFolderSelected: (FolderId) -> Unit,
+    onBackFromFolder: () -> Unit,
     onArtistSelected: (String) -> Unit,
     onBackFromArtist: () -> Unit,
     onAlbumSelected: (String) -> Unit,
@@ -173,6 +180,28 @@ fun MusicLibraryContent(
                 onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
                 onEditSongTagsClick = onEditSongTagsClick,
                 collectionContentTopPadding = collectionContentTopPadding,
+                bottomContentPadding = bottomContentPadding,
+                modifier = modifier
+            )
+        }
+
+        LibraryTab.FOLDERS -> {
+            FoldersTabContent(
+                index = folderBrowseIndex,
+                selectedFolderId = selectedFolderId,
+                scrollStateHolder = folderBrowseScrollStateHolder,
+                currentSong = currentSong,
+                recentlyAddedSongIds = recentlyAddedSongIds,
+                favoriteMembershipKeys = favoriteMembershipKeys,
+                onFolderSelected = onFolderSelected,
+                onBackFromFolder = onBackFromFolder,
+                onSongClick = onSongClick,
+                onPlayNextClick = onPlayNextClick,
+                onAddToQueueClick = onAddToQueueClick,
+                onToggleFavoriteClick = onToggleFavoriteClick,
+                onAddToPlaylistClick = onAddToPlaylistClick,
+                onAddSongsToPlaylistClick = onAddSongsToPlaylistClick,
+                onEditSongTagsClick = onEditSongTagsClick,
                 bottomContentPadding = bottomContentPadding,
                 modifier = modifier
             )

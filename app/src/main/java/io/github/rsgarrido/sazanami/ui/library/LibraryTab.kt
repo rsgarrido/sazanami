@@ -3,6 +3,7 @@ package io.github.rsgarrido.sazanami.ui.library
 enum class LibraryTab(val title: String) {
     SONGS("Songs"),
     ARTISTS("Artists"),
+    FOLDERS("Folders"),
     ALBUMS("Albums"),
     GENRES("Genres"),
     FAVORITES("Favorites"),

@@ -74,6 +74,7 @@ class LibraryCollectionModelTest {
                 LibraryTab.ALBUMS,
                 LibraryTab.ARTISTS,
                 LibraryTab.PLAYLISTS,
+                LibraryTab.FOLDERS,
                 LibraryTab.GENRES
             ),
             primaryLibraryTabs
@@ -81,6 +82,8 @@ class LibraryCollectionModelTest {
         assertEquals(LibraryTab.GENRES, LibraryTab.GENRES.primaryBrowseTab())
         assertEquals(null, LibraryTab.GENRES.viewCategory())
         assertTrue(librarySortOptionsFor(LibraryTab.GENRES).isEmpty())
+        assertEquals(null, LibraryTab.FOLDERS.viewCategory())
+        assertTrue(librarySortOptionsFor(LibraryTab.FOLDERS).isEmpty())
     }
 
     @Test

@@ -31,9 +31,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,6 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.boundsInParent
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -58,6 +62,7 @@ private const val LibrarySelectionColorDurationMillis = 180
 private const val LibrarySongsFilterMotionDurationMillis = 180
 private val LibraryPrimaryIndicatorHeight = 42.dp
 private val LibraryFilterIndicatorHeight = 34.dp
+private val LibraryTabSelectedVisibilityInset = 36.dp
 internal val LibrarySongsFilterRowSlotHeight = 42.dp
 
 val primaryLibraryTabs = listOf(
@@ -65,6 +70,7 @@ val primaryLibraryTabs = listOf(
     LibraryTab.ALBUMS,
     LibraryTab.ARTISTS,
     LibraryTab.PLAYLISTS,
+    LibraryTab.FOLDERS,
     LibraryTab.GENRES
 )
 
@@ -81,6 +87,29 @@ internal fun libraryTabOverflowAffordances(
     showStart = hasMeasuredContent && canScrollBackward,
     showEnd = hasMeasuredContent && canScrollForward
 )
+
+internal fun libraryTabScrollTarget(
+    currentScroll: Int,
+    viewportWidth: Int,
+    selectedStart: Float,
+    selectedEnd: Float,
+    maxScroll: Int,
+    visibilityInset: Int
+): Int {
+    if (viewportWidth <= 0 || selectedEnd <= selectedStart || maxScroll == Int.MAX_VALUE) {
+        return currentScroll
+    }
+
+    val clampedCurrent = currentScroll.coerceIn(0, maxScroll)
+    val visibleStart = clampedCurrent + visibilityInset
+    val visibleEnd = clampedCurrent + viewportWidth - visibilityInset
+    val target = when {
+        selectedStart < visibleStart -> (selectedStart - visibilityInset).toInt()
+        selectedEnd > visibleEnd -> (selectedEnd - viewportWidth + visibilityInset).toInt()
+        else -> clampedCurrent
+    }
+    return target.coerceIn(0, maxScroll)
+}
 
 val songCollectionTabs = listOf(
     LibraryTab.SONGS,
@@ -113,14 +142,40 @@ fun LibraryBrowseSwitcher(
     val selectedPrimaryTab = selectedTab.primaryBrowseTab() ?: return
     val primaryTabScrollState = rememberScrollState()
     val filterScrollState = rememberScrollState()
+    var primaryTabViewportWidth by remember { mutableIntStateOf(0) }
     val primaryTabBounds = remember { mutableStateMapOf<LibraryTab, Rect>() }
     val filterBounds = remember { mutableStateMapOf<LibraryTab, Rect>() }
     val primaryTabContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val selectedPrimaryBounds = primaryTabBounds[selectedPrimaryTab]
+    val selectedVisibilityInsetPx = with(LocalDensity.current) {
+        LibraryTabSelectedVisibilityInset.roundToPx()
+    }
     val overflowAffordances = libraryTabOverflowAffordances(
         hasMeasuredContent = primaryTabScrollState.maxValue != Int.MAX_VALUE,
         canScrollBackward = primaryTabScrollState.canScrollBackward,
         canScrollForward = primaryTabScrollState.canScrollForward
     )
+
+    LaunchedEffect(
+        selectedPrimaryTab,
+        selectedPrimaryBounds,
+        primaryTabViewportWidth,
+        primaryTabScrollState.maxValue,
+        selectedVisibilityInsetPx
+    ) {
+        val bounds = selectedPrimaryBounds ?: return@LaunchedEffect
+        val target = libraryTabScrollTarget(
+            currentScroll = primaryTabScrollState.value,
+            viewportWidth = primaryTabViewportWidth,
+            selectedStart = bounds.left,
+            selectedEnd = bounds.right,
+            maxScroll = primaryTabScrollState.maxValue,
+            visibilityInset = selectedVisibilityInsetPx
+        )
+        if (target != primaryTabScrollState.value) {
+            primaryTabScrollState.animateScrollTo(target)
+        }
+    }
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -145,6 +200,8 @@ fun LibraryBrowseSwitcher(
                 Box(
                     modifier = Modifier
                         .padding(4.dp)
+                        .fillMaxWidth()
+                        .onSizeChanged { size -> primaryTabViewportWidth = size.width }
                         .horizontalScroll(primaryTabScrollState)
                         .selectableGroup()
                 ) {
@@ -177,6 +234,8 @@ fun LibraryBrowseSwitcher(
                         modifier = Modifier.align(Alignment.CenterStart),
                         colors = listOf(
                             primaryTabContainerColor,
+                            primaryTabContainerColor.copy(alpha = 0.94f),
+                            primaryTabContainerColor.copy(alpha = 0.72f),
                             Color.Transparent
                         )
                     )
@@ -187,6 +246,8 @@ fun LibraryBrowseSwitcher(
                         modifier = Modifier.align(Alignment.CenterEnd),
                         colors = listOf(
                             Color.Transparent,
+                            primaryTabContainerColor.copy(alpha = 0.72f),
+                            primaryTabContainerColor.copy(alpha = 0.94f),
                             primaryTabContainerColor
                         )
                     )
@@ -254,7 +315,7 @@ private fun LibraryTabOverflowFade(
     Box(
         modifier = modifier
             .fillMaxHeight()
-            .width(28.dp)
+            .width(44.dp)
             .background(Brush.horizontalGradient(colors = colors))
     )
 }
