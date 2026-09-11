@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -63,11 +62,14 @@ import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.RepeatMode
+import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsGestureRegion
 import kotlinx.coroutines.delay
 
 private const val TransportSeekStepMillis = 2_000
@@ -95,7 +97,9 @@ internal fun PocketCassetteControls(
     controlsReveal: Float = 1f,
     inputEnabled: Boolean = true,
     morphBounds: PocketCassetteMorphBounds? = null,
-    sharedOwner: PocketCassetteSharedOwner = PocketCassetteSharedOwner.EXPANDED
+    sharedOwner: PocketCassetteSharedOwner = PocketCassetteSharedOwner.EXPANDED,
+    lyricsGestureModifier: Modifier = Modifier,
+    lyricsGestureRegion: PlayerLyricsGestureRegion? = null
 ) {
     var rewindTarget by remember(currentSong?.id) { mutableIntStateOf(currentPosition) }
     var forwardTarget by remember(currentSong?.id) { mutableIntStateOf(currentPosition) }
@@ -119,11 +123,17 @@ internal fun PocketCassetteControls(
             compact = compact,
             enabled = inputEnabled && sharedOwner == PocketCassetteSharedOwner.EXPANDED,
             morphBounds = morphBounds,
-            sharedOwner = sharedOwner
+            sharedOwner = sharedOwner,
+            modifier = lyricsGestureModifier
         )
 
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onGloballyPositioned { coordinates ->
+                    lyricsGestureRegion?.updateBottom(coordinates.boundsInRoot())
+                }
+                .then(lyricsGestureModifier),
             horizontalArrangement = Arrangement.spacedBy(if (compact) 7.dp else 10.dp)
         ) {
             PocketCassetteMechanicalButton(
@@ -391,14 +401,15 @@ private fun PocketCassetteSeekSlot(
     compact: Boolean,
     enabled: Boolean,
     morphBounds: PocketCassetteMorphBounds?,
-    sharedOwner: PocketCassetteSharedOwner
+    sharedOwner: PocketCassetteSharedOwner,
+    modifier: Modifier = Modifier
 ) {
     val colors = PocketCassetteColors
     val safeDuration = duration.coerceAtLeast(1)
     val safePosition = currentPosition.coerceIn(0, safeDuration)
     val progress = safePosition.toFloat() / safeDuration.toFloat()
 
-    Column {
+    Column(modifier = modifier) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -410,16 +421,20 @@ private fun PocketCassetteSeekSlot(
                 fontWeight = FontWeight.Bold,
                 fontSize = if (compact) 9.sp else 10.sp
             )
-            Spacer(modifier = Modifier.weight(1f))
             Text(
                 text = "TAPE COUNTER // POSITION",
                 color = PocketCassetteColors.shellInk.copy(alpha = 0.72f),
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
                 fontSize = 7.sp,
-                letterSpacing = 0.5.sp
+                letterSpacing = 0.5.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = if (compact) 6.dp else 8.dp)
             )
-            Spacer(modifier = Modifier.weight(1f))
             Text(
                 text = formatPocketCassetteTime(duration),
                 color = PocketCassetteColors.shellInk,

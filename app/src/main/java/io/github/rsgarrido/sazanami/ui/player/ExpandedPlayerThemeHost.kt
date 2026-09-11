@@ -32,6 +32,7 @@ import io.github.rsgarrido.sazanami.ui.player.classicwheel.PlayerMorphRenderer
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.resolveClassicWheelMorphGeometry
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.resolveClassicWheelSharedGeometry
+import io.github.rsgarrido.sazanami.ui.player.classicwheel.resolveClassicWheelMiniChromeGeometry
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.classicWheelMorphTravelDistance
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernExpandedPlayer
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernArtworkTransitionStyle
@@ -116,6 +117,7 @@ fun ExpandedPlayerThemeHost(
     onCollapseClick: () -> Unit,
     playerMorphState: PlayerMorphState,
     lyricsTransitionState: PlayerLyricsTransitionState,
+    lyricsGestureRegion: PlayerLyricsGestureRegion,
     onOpenQueueHubClick: () -> Unit,
     onOpenSleepTimerClick: () -> Unit,
     onOpenMoreClick: () -> Unit,
@@ -142,8 +144,6 @@ fun ExpandedPlayerThemeHost(
         modernSeekbarStyle = modernPlayerAppearance.seekbar.style
     ) && when (selectedPlayerTheme) {
         PlayerTheme.DEFAULT -> shouldRunDefaultExpandedWork(playerMorphState.progress)
-        PlayerTheme.POCKET_FLIP -> shouldRunPocketFlipExpandedWork(playerMorphState.progress)
-        PlayerTheme.POCKET_DISC -> shouldRunPocketDiscExpandedWork(playerMorphState.progress)
         else -> true
     }
     val shouldPrefetchWaveforms = selectedPlayerTheme == PlayerTheme.DEFAULT &&
@@ -202,14 +202,6 @@ fun ExpandedPlayerThemeHost(
             hostDragOffset = 0f
         }
     )
-    val sharedGestureModifier = if (
-        selectedPlayerTheme == PlayerTheme.DEFAULT ||
-        selectedPlayerTheme == PlayerTheme.CLASSIC_WHEEL
-    ) {
-        Modifier
-    } else {
-        lyricsDragModifier
-    }
     val sharedLyricsSemanticsModifier = if (
         selectedPlayerTheme == PlayerTheme.CLASSIC_WHEEL
     ) {
@@ -226,7 +218,6 @@ fun ExpandedPlayerThemeHost(
                 hostHeightPx = size.height.toFloat().coerceAtLeast(1f)
             }
             .then(sharedLyricsSemanticsModifier)
-            .then(sharedGestureModifier)
     ) {
         when (selectedPlayerTheme) {
             PlayerTheme.DEFAULT -> {
@@ -327,10 +318,13 @@ fun ExpandedPlayerThemeHost(
                 val ownsNowPlayingMorphContent =
                     classicWheelMenuState.currentScreen.ownsNowPlayingMorphContent()
                 val geometry = resolveClassicWheelMorphGeometry(
-                    playerMorphState.progress, endpointBounds
+                    playerMorphState.progress, endpointBounds, classicMorphBounds
                 )
                 val sharedGeometry = resolveClassicWheelSharedGeometry(
                     playerMorphState.progress, classicMorphBounds
+                )
+                val miniChromeGeometry = resolveClassicWheelMiniChromeGeometry(
+                    classicMorphBounds
                 )
                 val ownedSharedGeometry = sharedGeometry.takeIf {
                     ownsNowPlayingMorphContent
@@ -349,8 +343,11 @@ fun ExpandedPlayerThemeHost(
                     progress = playerMorphState.progress,
                     geometry = geometry,
                     sharedGeometry = ownedSharedGeometry,
+                    miniChromeGeometry = miniChromeGeometry,
                     currentSong = currentSong,
                     isPlaying = isPlaying,
+                    currentPosition = currentPosition,
+                    duration = duration,
                     sharedPlayPauseAlpha = playPauseOwnership.sharedAlpha,
                     tokens = tokens
                 ) { screenAlpha, wheelAlpha, controlsActive -> ClassicWheelExpandedPlayer(
@@ -380,7 +377,9 @@ fun ExpandedPlayerThemeHost(
                     morphBounds = classicMorphBounds,
                     sharedContentVisible = ownedSharedGeometry == null,
                     onMorphDragStart = {
-                        playerMorphState.beginDragWithRange(classicWheelMorphTravelDistance(endpointBounds))
+                        playerMorphState.beginDragWithRange(
+                            classicWheelMorphTravelDistance(endpointBounds, classicMorphBounds)
+                        )
                     },
                     onMorphDragBy = playerMorphState::dragBy,
                     onMorphDragEnd = playerMorphState::endDrag,
@@ -407,7 +406,6 @@ fun ExpandedPlayerThemeHost(
                 ) { deckReveal, spectrumReveal, queueReveal, controlsReveal, inputEnabled ->
                     RetroRackExpandedPlayer(
                         currentSong = currentSong,
-                        waveformData = waveformData,
                         isVisualizerWorkAllowed = isVisualizerWorkAllowed && shouldRunRetroRackExpandedWork(playerMorphState.progress),
                         isPlaying = isPlaying,
                         isShuffleEnabled = isShuffleEnabled,
@@ -449,7 +447,9 @@ fun ExpandedPlayerThemeHost(
                                 RetroRackMorphSpec.collapseVelocityThresholdPxPerSecond
                             )
                         },
-                        onMorphDragCancel = playerMorphState::cancelDrag
+                        onMorphDragCancel = playerMorphState::cancelDrag,
+                        lyricsGestureModifier = lyricsDragModifier,
+                        lyricsGestureRegion = lyricsGestureRegion
                     ) }
             }
 
@@ -483,7 +483,6 @@ fun ExpandedPlayerThemeHost(
                 ) { displayReveal, hingeReveal, controlsReveal, inputEnabled ->
                     PocketFlipExpandedPlayer(
                         currentSong = currentSong,
-                        waveformData = waveformData,
                         isVisualizerWorkAllowed = isVisualizerWorkAllowed &&
                                 shouldRunPocketFlipExpandedWork(playerMorphState.progress),
                         isPlaying = isPlaying,
@@ -525,7 +524,9 @@ fun ExpandedPlayerThemeHost(
                                     PocketFlipMorphSpec.collapseVelocityThresholdPxPerSecond
                             )
                         },
-                        onMorphDragCancel = playerMorphState::cancelDrag
+                        onMorphDragCancel = playerMorphState::cancelDrag,
+                        lyricsGestureModifier = lyricsDragModifier,
+                        lyricsGestureRegion = lyricsGestureRegion
                     )
                 }
             }
@@ -602,7 +603,9 @@ fun ExpandedPlayerThemeHost(
                                     PocketCassetteMorphSpec.collapseVelocityThresholdPxPerSecond
                             )
                         },
-                        onMorphDragCancel = playerMorphState::cancelDrag
+                        onMorphDragCancel = playerMorphState::cancelDrag,
+                        lyricsGestureModifier = lyricsDragModifier,
+                        lyricsGestureRegion = lyricsGestureRegion
                     )
                 }
             }
@@ -653,7 +656,6 @@ fun ExpandedPlayerThemeHost(
                         activeQueuePosition = activeQueuePosition,
                         activeQueueCount = activeQueueCount,
                         albumDurationMs = albumDurationMs,
-                        waveformData = waveformData,
                         isVisualizerWorkAllowed = isVisualizerWorkAllowed &&
                                 shouldRunPocketDiscExpandedWork(playerMorphState.progress),
                         isPlaying = isPlaying,
@@ -699,7 +701,9 @@ fun ExpandedPlayerThemeHost(
                                     PocketDiscMorphSpec.collapseVelocityThresholdPxPerSecond
                             )
                         },
-                        onMorphDragCancel = playerMorphState::cancelDrag
+                        onMorphDragCancel = playerMorphState::cancelDrag,
+                        lyricsGestureModifier = lyricsDragModifier,
+                        lyricsGestureRegion = lyricsGestureRegion
                     )
                 }
             }

@@ -306,7 +306,7 @@ private fun ClassicWheelProgress(
                 },
             contentAlignment = Alignment.Center
         ) {
-            ClassicWheelBarCanvas(
+            ClassicWheelProgressBarCanvas(
                 progress = progress
             )
         }
@@ -348,7 +348,7 @@ private fun ClassicWheelVolumeProgress(
                 .padding(horizontal = 10.dp),
             contentAlignment = Alignment.Center
         ) {
-            ClassicWheelBarCanvas(
+            ClassicWheelProgressBarCanvas(
                 progress = progress
             )
         }
@@ -363,68 +363,47 @@ private fun ClassicWheelVolumeProgress(
 }
 
 @Composable
-private fun ClassicWheelBarCanvas(
+private fun ClassicWheelProgressBarCanvas(
     progress: Float
 ) {
     Canvas(
         modifier = Modifier.fillMaxSize()
     ) {
-        val trackHeight = 10.dp.toPx()
+        val safeProgress = progress.coerceIn(0f, 1f)
+        val trackHeight = 6.dp.toPx()
         val trackTop = (size.height - trackHeight) / 2f
-        val trackCorner = CornerRadius(
-            x = trackHeight / 2f,
-            y = trackHeight / 2f
-        )
-
-        val progressWidth = size.width * progress.coerceIn(0f, 1f)
+        val trackCorner = CornerRadius(trackHeight / 2f, trackHeight / 2f)
+        val progressWidth = size.width * safeProgress
 
         drawRoundRect(
             color = Color(0xFFD8D8D2),
-            topLeft = Offset(
-                x = 0f,
-                y = trackTop
-            ),
-            size = Size(
-                width = size.width,
-                height = trackHeight
-            ),
+            topLeft = Offset(0f, trackTop),
+            size = Size(size.width, trackHeight),
             cornerRadius = trackCorner
         )
-
         drawRoundRect(
             color = Color(0xFF67AEE7),
-            topLeft = Offset(
-                x = 0f,
-                y = trackTop
-            ),
-            size = Size(
-                width = progressWidth,
-                height = trackHeight
-            ),
+            topLeft = Offset(0f, trackTop),
+            size = Size(progressWidth, trackHeight),
             cornerRadius = trackCorner
         )
 
-        val handleWidth = 5.dp.toPx()
-        val handleHeight = 28.dp.toPx()
-        val handleCorner = CornerRadius(
-            x = 3.dp.toPx(),
-            y = 3.dp.toPx()
+        val indicatorRadius = 3.5.dp.toPx()
+        val indicatorCenterX = if (size.width >= indicatorRadius * 2f) {
+            progressWidth.coerceIn(indicatorRadius, size.width - indicatorRadius)
+        } else {
+            size.width / 2f
+        }
+        val indicatorCenter = Offset(indicatorCenterX, size.height / 2f)
+        drawCircle(
+            color = Color(0xFFF7F7F2),
+            radius = indicatorRadius,
+            center = indicatorCenter
         )
-
-        val handleLeft = (progressWidth - handleWidth / 2f)
-            .coerceIn(0f, size.width - handleWidth)
-
-        drawRoundRect(
-            color = Color(0xFF9DB2FF),
-            topLeft = Offset(
-                x = handleLeft,
-                y = (size.height - handleHeight) / 2f
-            ),
-            size = Size(
-                width = handleWidth,
-                height = handleHeight
-            ),
-            cornerRadius = handleCorner
+        drawCircle(
+            color = Color(0xFF67AEE7),
+            radius = 2.dp.toPx(),
+            center = indicatorCenter
         )
     }
 }

@@ -167,8 +167,8 @@ fun ClassicControlWheel(
             onClick = onPlayPauseClick,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 26.dp)
-                .size(72.dp)
+                .padding(bottom = ClassicWheelPlayPauseBottomPadding)
+                .size(ClassicWheelPlayPauseTouchTargetSize)
                 .graphicsLayer { alpha = playControlAlpha.coerceIn(0f, 1f) }
         ) {
             Icon(
@@ -183,7 +183,7 @@ fun ClassicControlWheel(
                     "Play"
                 },
                 tint = ClassicWheelColors.wheelContent,
-                modifier = Modifier.size(42.dp)
+                modifier = Modifier.size(ClassicWheelPlayPauseVisualSize)
             )
         }
 
@@ -199,6 +199,10 @@ fun ClassicControlWheel(
         ) {}
     }
 }
+
+internal val ClassicWheelPlayPauseVisualSize = 42.dp
+internal val ClassicWheelPlayPauseTouchTargetSize = 72.dp
+internal val ClassicWheelPlayPauseBottomPadding = 26.dp
 
 private fun Offset.angleDegreesFromCenter(
     width: Float,

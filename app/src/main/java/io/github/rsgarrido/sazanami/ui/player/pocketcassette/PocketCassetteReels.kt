@@ -6,10 +6,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -67,7 +68,12 @@ internal fun PocketCassetteWindow(
     } else {
         0f
     }
-    val trackLabelHeight = if (compact) 78.dp else 90.dp
+    val largeTextHeightAdjustment = if (LocalDensity.current.fontScale > 1.3f) {
+        24.dp
+    } else {
+        0.dp
+    }
+    val trackLabelHeight = (if (compact) 60.dp else 70.dp) + largeTextHeightAdjustment
 
     Box(
         modifier = modifier
@@ -77,19 +83,21 @@ internal fun PocketCassetteWindow(
             .pocketCassetteBluePanelFinish(10.dp)
             .padding(if (compact) 10.dp else 14.dp)
     ) {
-        PocketCassetteScrew(modifier = Modifier.align(Alignment.TopStart))
-        PocketCassetteScrew(modifier = Modifier.align(Alignment.TopEnd))
-        PocketCassetteScrew(modifier = Modifier.align(Alignment.BottomStart))
-        PocketCassetteScrew(modifier = Modifier.align(Alignment.BottomEnd))
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = if (compact) 8.dp else 12.dp),
+                .padding(
+                    start = if (compact) 8.dp else 12.dp,
+                    end = if (compact) 8.dp else 12.dp,
+                    bottom = if (compact) 16.dp else 18.dp
+                ),
             verticalArrangement = Arrangement.spacedBy(if (compact) 5.dp else 7.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 12.dp)
+                    .padding(horizontal = if (compact) 6.dp else 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 androidx.compose.material3.Text(
@@ -98,23 +106,34 @@ internal fun PocketCassetteWindow(
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
                     fontSize = if (compact) 8.sp else 9.sp,
-                    letterSpacing = 0.7.sp
+                    lineHeight = if (compact) 8.sp else 9.sp,
+                    letterSpacing = 0.7.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                 )
-                Spacer(modifier = Modifier.weight(1f))
-                Box(
-                    modifier = Modifier
-                        .size(6.dp)
-                        .background(
-                            if (isPlaying) PocketCassetteColors.orange else Color(0xFF623C34),
-                            RoundedCornerShape(50)
-                        )
-                )
-                androidx.compose.material3.Text(
-                    text = if (isPlaying) "  MOTION" else "  HOLD",
-                    color = Color.White.copy(alpha = 0.7f),
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 8.sp
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(
+                                if (isPlaying) {
+                                    PocketCassetteColors.orange
+                                } else {
+                                    Color(0xFF623C34)
+                                },
+                                RoundedCornerShape(50)
+                            )
+                    )
+                    androidx.compose.material3.Text(
+                        text = if (isPlaying) "MOTION" else "HOLD",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 8.sp,
+                        lineHeight = 8.sp,
+                        modifier = Modifier.padding(start = 4.dp)
+                    )
+                }
             }
 
             Box(
@@ -146,7 +165,9 @@ internal fun PocketCassetteWindow(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.56f))
+                        .background(
+                            Color.Black.copy(alpha = pocketCassetteArtworkOverlayAlpha(1f))
+                        )
                 )
 
                 PocketCassetteMechanism(
@@ -186,6 +207,12 @@ internal fun PocketCassetteWindow(
                 }
             }
         }
+
+        // Keep hardware above the panel; the adjacent labels reserve their own safe inset.
+        PocketCassetteScrew(modifier = Modifier.align(Alignment.TopStart))
+        PocketCassetteScrew(modifier = Modifier.align(Alignment.TopEnd))
+        PocketCassetteScrew(modifier = Modifier.align(Alignment.BottomStart))
+        PocketCassetteScrew(modifier = Modifier.align(Alignment.BottomEnd))
     }
 }
 
@@ -411,7 +438,11 @@ private fun PocketCassetteTrackLabel(
                     else Modifier.clearAndSetSemantics { }
                 )
         )
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             androidx.compose.material3.Text(
                 text = currentSong?.artist?.ifBlank { "Unknown artist" }.orEmpty(),
                 color = PocketCassetteColors.windowTextMuted,

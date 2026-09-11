@@ -1,12 +1,11 @@
 package io.github.rsgarrido.sazanami.ui.player.retrorack
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
@@ -19,9 +18,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -34,6 +36,8 @@ import androidx.compose.ui.res.painterResource
 import io.github.rsgarrido.sazanami.ui.player.RetainedArtworkImage
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
+import io.github.rsgarrido.sazanami.ui.player.theme.darken
+import io.github.rsgarrido.sazanami.ui.player.theme.lighten
 import kotlin.math.roundToInt
 
 /** A transparent root plus a physically interpolated rack shell. */
@@ -52,12 +56,14 @@ internal fun RetroRackPlayerMorph(
 ) {
     val density = LocalDensity.current
     val p = progress.coerceIn(0f, 1f)
+    val miniShellColor = tokens.shellColor.darken(0.35f)
+    val expandedShellColor = RetroRackPalette.from(tokens).rackBackground
     Box(Modifier.fillMaxSize()) {
         geometry?.shell?.let { shell ->
             Box(Modifier.offset { IntOffset(shell.left.roundToInt(), shell.top.roundToInt()) }
                 .size(with(density) { shell.width.toDp() }, with(density) { shell.height.toDp() })
                 .clip(androidx.compose.foundation.shape.RoundedCornerShape((8f * (1f - p)).dp))
-                .background(RackBackground))
+                .background(lerp(miniShellColor, expandedShellColor, p)))
         }
         Box(Modifier.fillMaxSize().clipRackShell(geometry, p)) {
             content(retroRackDeckReveal(p), retroRackSpectrumReveal(p), retroRackQueueReveal(p), retroRackControlsReveal(p), retroRackExpandedInputEnabled(p))
@@ -113,12 +119,51 @@ private fun RetroRackSharedContent(
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier.at(geometry.artist)
     )
-    Box(Modifier.at(geometry.progress).background(tokens.shellColor)) {
-        Box(
-            Modifier.fillMaxWidth(normalizedProgress(currentPosition, duration))
-                .height(with(density) { geometry.progress.height.toDp() })
-                .background(tokens.accentColor)
+    Canvas(Modifier.at(geometry.progress)) {
+        val visualProgress = normalizedProgress(currentPosition, duration)
+        val frameInset = 1.dp.toPx() * progress
+        val channelInset = 4.dp.toPx() * progress
+        val channelHeight = retroRackMorphProgressTrackHeightDp(progress).dp.toPx()
+            .coerceAtMost(size.height)
+        val channelTop = (size.height - channelHeight) / 2f
+        val channelWidth = (size.width - channelInset * 2f).coerceAtLeast(1f)
+
+        drawRect(tokens.displayBackgroundColor)
+        if (progress > 0f) {
+            drawRect(tokens.shellColor.darken(0.822f).copy(alpha = progress))
+            drawRect(
+                color = tokens.displayBackgroundColor,
+                topLeft = Offset(frameInset, frameInset),
+                size = Size(
+                    width = (size.width - frameInset * 2f).coerceAtLeast(1f),
+                    height = (size.height - frameInset * 2f).coerceAtLeast(1f)
+                )
+            )
+        }
+        drawRect(
+            color = tokens.shellColor.lighten(0.076f),
+            topLeft = Offset(channelInset, channelTop),
+            size = Size(channelWidth, channelHeight)
         )
+        drawRect(
+            color = tokens.accentColor,
+            topLeft = Offset(channelInset, channelTop),
+            size = Size(channelWidth * visualProgress, channelHeight)
+        )
+
+        if (progress > 0f) {
+            val markerWidth = 5.dp.toPx() * progress
+            val markerLeft = (channelInset + channelWidth * visualProgress - markerWidth / 2f)
+                .coerceIn(frameInset, (size.width - frameInset - markerWidth).coerceAtLeast(frameInset))
+            drawRect(
+                color = tokens.displayTextColor.copy(alpha = progress),
+                topLeft = Offset(markerLeft, frameInset),
+                size = Size(
+                    markerWidth,
+                    (size.height - frameInset * 2f).coerceAtLeast(1f)
+                )
+            )
+        }
     }
     Box(
         Modifier.at(geometry.play).background(tokens.shellColor, RoundedCornerShape(3.dp)),

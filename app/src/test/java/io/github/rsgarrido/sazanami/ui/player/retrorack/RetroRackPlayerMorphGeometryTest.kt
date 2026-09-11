@@ -50,9 +50,16 @@ class RetroRackPlayerMorphGeometryTest {
         assertEquals(Rect(66f, 730f, 250f, 746f), start.artist)
         assertEquals(Rect(94f, 62f, 360f, 76f), end.artist)
         assertEquals(Rect(66f, 748f, 250f, 750f), start.progress)
-        assertEquals(Rect(10f, 122f, 390f, 142f), end.progress)
+        assertEquals(Rect(10f, 126f, 390f, 138f), end.progress)
         assertEquals(Rect(330f, 706f, 378f, 754f), start.play)
         assertEquals(Rect(174f, 148f, 222f, 182f), end.play)
+        val midpoint = resolveRetroRackSharedGeometry(.5f, b)!!
+        assertEquals(7f, midpoint.progress.height)
+        assertTrue(midpoint.progress.height in start.progress.height..end.progress.height)
+        assertEquals(2f, retroRackMorphProgressTrackHeightDp(0f))
+        assertEquals(3f, retroRackMorphProgressTrackHeightDp(.5f))
+        assertEquals(4f, retroRackMorphProgressTrackHeightDp(1f))
+        assertTrue(retroRackMorphProgressTrackHeightDp(.5f) < midpoint.progress.height)
         assertTrue(resolveRetroRackSharedGeometry(.5f, b)!!.play.width > 0f)
     }
 
@@ -70,6 +77,10 @@ class RetroRackPlayerMorphGeometryTest {
         assertEquals(RetroRackSharedOwner.MINI, retroRackSharedOwner(.5f, false))
         assertEquals(RetroRackSharedOwner.TRANSITION, retroRackSharedOwner(.5f, true))
         assertEquals(RetroRackSharedOwner.EXPANDED, retroRackSharedOwner(1f, true))
+        assertFalse(retroRackMorphOwnsVisuals(0f, true))
+        assertFalse(retroRackMorphOwnsVisuals(.5f, false))
+        assertTrue(retroRackMorphOwnsVisuals(.001f, true))
+        assertTrue(retroRackMorphOwnsVisuals(1f, true))
     }
 
     @Test fun `expanded sections and expensive work use stable thresholds`() {
@@ -133,7 +144,7 @@ class RetroRackPlayerMorphGeometryTest {
         it.updateMiniArtwork(Rect(16f, 710f, 58f, 752f)); it.updateExpandedArtwork(Rect(10f, 40f, 86f, 116f))
         it.updateMiniTitle(Rect(66f, 710f, 250f, 728f)); it.updateExpandedTitle(Rect(94f, 42f, 360f, 58f))
         it.updateMiniArtist(Rect(66f, 730f, 250f, 746f)); it.updateExpandedArtist(Rect(94f, 62f, 360f, 76f))
-        it.updateMiniProgress(Rect(66f, 748f, 250f, 750f)); it.updateExpandedProgress(Rect(10f, 122f, 390f, 142f))
+        it.updateMiniProgress(Rect(66f, 748f, 250f, 750f)); it.updateExpandedProgress(Rect(10f, 126f, 390f, 138f))
         it.updateMiniPlay(Rect(330f, 706f, 378f, 754f)); it.updateExpandedPlay(Rect(174f, 148f, 222f, 182f))
     }
 }

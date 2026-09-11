@@ -28,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -35,6 +36,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.progressBarRangeInfo
@@ -47,12 +49,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.rsgarrido.sazanami.ui.player.RetainedArtworkImage
 import io.github.rsgarrido.sazanami.data.Song
-import io.github.rsgarrido.sazanami.player.waveform.WaveformData
 
 @Composable
 internal fun PocketFlipDisplayHalf(
     currentSong: Song?,
-    waveformData: WaveformData?,
     isVisualizerWorkAllowed: Boolean,
     isPlaying: Boolean,
     currentPosition: Int,
@@ -134,12 +134,8 @@ internal fun PocketFlipDisplayHalf(
                 }
 
                 PocketFlipLcdMeter(
-                    currentSong = currentSong,
-                    waveformData = waveformData,
                     isVisualizerWorkAllowed = isVisualizerWorkAllowed,
                     isPlaying = isPlaying,
-                    currentPosition = currentPosition,
-                    duration = duration,
                     compact = compact,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -155,8 +151,8 @@ internal fun PocketFlipDisplayHalf(
             compact = compact,
             inputEnabled = inputEnabled && sharedOwner == PocketFlipSharedOwner.EXPANDED,
             trackVisible = sharedOwner == PocketFlipSharedOwner.EXPANDED,
-            trackModifier = Modifier.onGloballyPositioned { coordinates ->
-                morphBounds?.updateExpandedProgress(coordinates.boundsInRoot())
+            onVisualTrackBoundsChanged = { bounds ->
+                morphBounds?.updateExpandedProgress(bounds)
             }
         )
     }
@@ -384,18 +380,29 @@ private fun PocketFlipSeekBar(
     compact: Boolean,
     inputEnabled: Boolean,
     trackVisible: Boolean,
-    trackModifier: Modifier = Modifier
+    onVisualTrackBoundsChanged: (Rect) -> Unit = {}
 ) {
     val colors = PocketFlipColors
     val safeDuration = duration.coerceAtLeast(1)
     val safePosition = currentPosition.coerceIn(0, safeDuration)
     val progress = safePosition.toFloat() / safeDuration.toFloat()
+    val housingHeight = if (compact) 15.dp else 17.dp
+    val housingHeightPx = with(LocalDensity.current) { housingHeight.toPx() }
 
     Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
         Canvas(
-            modifier = trackModifier
+            modifier = Modifier
                 .fillMaxWidth()
                 .height(if (compact) 38.dp else 42.dp)
+                .onGloballyPositioned { coordinates ->
+                    // Keep the full Canvas as the seek target, but morph only its visible housing.
+                    onVisualTrackBoundsChanged(
+                        pocketFlipSeekVisualBounds(
+                            interactiveBounds = coordinates.boundsInRoot(),
+                            visualHeightPx = housingHeightPx
+                        )
+                    )
+                }
                 .graphicsLayer { alpha = if (trackVisible) 1f else 0f }
                 .then(
                     if (inputEnabled) {
@@ -438,8 +445,8 @@ private fun PocketFlipSeekBar(
                     }
                 }
         ) {
-            val housingHeight = if (compact) 15.dp.toPx() else 17.dp.toPx()
-            val housingTop = (size.height - housingHeight) / 2f
+            val housingHeightPx = housingHeight.toPx()
+            val housingTop = (size.height - housingHeightPx) / 2f
             val inset = 4.dp.toPx()
             val segmentGap = 2.dp.toPx()
             val segmentCount = 18
@@ -449,7 +456,7 @@ private fun PocketFlipSeekBar(
             drawRoundRect(
                 color = colors.seekHousing,
                 topLeft = Offset(0f, housingTop),
-                size = Size(size.width, housingHeight),
+                size = Size(size.width, housingHeightPx),
                 cornerRadius = CornerRadius(3.dp.toPx())
             )
             repeat(segmentCount) { index ->
@@ -464,12 +471,12 @@ private fun PocketFlipSeekBar(
                         x = inset + index * (segmentWidth + segmentGap),
                         y = housingTop + 4.dp.toPx()
                     ),
-                    size = Size(segmentWidth, housingHeight - 8.dp.toPx())
+                    size = Size(segmentWidth, housingHeightPx - 8.dp.toPx())
                 )
             }
 
             val thumbWidth = 7.dp.toPx()
-            val thumbHeight = housingHeight + 8.dp.toPx()
+            val thumbHeight = housingHeightPx + 8.dp.toPx()
             val thumbX = (progress * size.width - thumbWidth / 2f)
                 .coerceIn(0f, size.width - thumbWidth)
             drawRoundRect(

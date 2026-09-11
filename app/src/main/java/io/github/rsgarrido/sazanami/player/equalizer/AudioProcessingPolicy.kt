@@ -16,12 +16,14 @@ internal object AudioProcessingPolicy {
         userOffloadPreference: AudioOffloadPreference,
         equalizerEffectivelyActive: Boolean,
         limiterEffectivelyActive: Boolean = false,
-        comparisonSessionActive: Boolean = false
+        comparisonSessionActive: Boolean = false,
+        spectrumConsumerActive: Boolean = false
     ): AudioProcessingPolicyDecision {
         return if (
             equalizerEffectivelyActive ||
             limiterEffectivelyActive ||
-            comparisonSessionActive
+            comparisonSessionActive ||
+            spectrumConsumerActive
         ) {
             AudioProcessingPolicyDecision(
                 pathRequirement =

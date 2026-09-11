@@ -27,16 +27,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.rsgarrido.sazanami.data.Song
-import io.github.rsgarrido.sazanami.player.waveform.WaveformData
-import io.github.rsgarrido.sazanami.ui.player.fillRetroMeterLevels
-import io.github.rsgarrido.sazanami.ui.player.isRetroMeterEffectivelySilent
-import io.github.rsgarrido.sazanami.ui.player.rememberBoundedVisualizerPhase
-import io.github.rsgarrido.sazanami.ui.player.RETRO_VISUALIZER_CADENCE_HZ
+import io.github.rsgarrido.sazanami.ui.player.aggregateSpectrumRegionRms
+import io.github.rsgarrido.sazanami.ui.player.calibrateSpectrumMeterLevel
+import io.github.rsgarrido.sazanami.ui.player.contiguousMeterFillCount
+import io.github.rsgarrido.sazanami.ui.player.rememberSpectrumVisualizerState
 import io.github.rsgarrido.sazanami.performance.PerformanceTraceNames
 import io.github.rsgarrido.sazanami.performance.VisualizerPerformanceCounters
 import io.github.rsgarrido.sazanami.performance.tracePerformance
-import kotlin.math.PI
-import kotlin.math.sin
 
 @Composable
 internal fun PocketFlipLcdStatusRow(
@@ -101,31 +98,12 @@ private fun PocketFlipStatusChip(
 
 @Composable
 internal fun PocketFlipLcdMeter(
-    currentSong: Song?,
-    waveformData: WaveformData?,
     isVisualizerWorkAllowed: Boolean,
     isPlaying: Boolean,
-    currentPosition: Int,
-    duration: Int,
     compact: Boolean,
     modifier: Modifier = Modifier
 ) {
     val colors = PocketFlipColors
-    val songKey = remember(currentSong?.id, currentSong?.title, currentSong?.artist) {
-        buildMeterKey(currentSong)
-    }
-    val isSilent = isRetroMeterEffectivelySilent(
-        amplitudes = waveformData?.amplitudes,
-        currentPositionMs = currentPosition.toLong(),
-        durationMs = duration.toLong()
-    )
-    val phase = rememberBoundedVisualizerPhase(
-        animationEnabled = isPlaying && isVisualizerWorkAllowed && !isSilent,
-        targetCadenceHz = RETRO_VISUALIZER_CADENCE_HZ,
-        cycleDurationMillis = 900,
-        updateTraceName = PerformanceTraceNames.POCKET_FLIP_UPDATE
-    )
-    val meterLevels = remember { FloatArray(POCKET_FLIP_METER_LINE_COUNT) }
 
     Column(
         modifier = modifier
@@ -161,46 +139,58 @@ internal fun PocketFlipLcdMeter(
             )
         }
 
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(if (compact) 17.dp else 21.dp)
-        ) {
-            tracePerformance(PerformanceTraceNames.POCKET_FLIP_DRAW) {
+        PocketFlipSpectrumCanvas(
+            isVisualizerWorkAllowed = isVisualizerWorkAllowed,
+            compact = compact,
+            colors = colors,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+@Composable
+private fun PocketFlipSpectrumCanvas(
+    isVisualizerWorkAllowed: Boolean,
+    compact: Boolean,
+    colors: PocketFlipPalette,
+    modifier: Modifier = Modifier
+) {
+    val spectrumState = rememberSpectrumVisualizerState(isVisualizerWorkAllowed)
+
+    Canvas(modifier = modifier.height(if (compact) 17.dp else 21.dp)) {
+        val frame = spectrumState.value
+        val lowerToMidLevel = calibrateSpectrumMeterLevel(
+            aggregateLevel = aggregateSpectrumRegionRms(
+                frame = frame,
+                startBand = POCKET_FLIP_LOWER_START_BAND,
+                endBandExclusive = POCKET_FLIP_LOWER_END_BAND_EXCLUSIVE
+            ),
+            displayGain = POCKET_FLIP_METER_DISPLAY_GAIN,
+            responseExponent = POCKET_FLIP_METER_RESPONSE_EXPONENT
+        )
+        val upperMidToHighLevel = calibrateSpectrumMeterLevel(
+            aggregateLevel = aggregateSpectrumRegionRms(
+                frame = frame,
+                startBand = POCKET_FLIP_UPPER_START_BAND,
+                endBandExclusive = frame.bandCount
+            ),
+            displayGain = POCKET_FLIP_METER_DISPLAY_GAIN,
+            responseExponent = POCKET_FLIP_METER_RESPONSE_EXPONENT
+        )
+        tracePerformance(PerformanceTraceNames.POCKET_FLIP_DRAW) {
             VisualizerPerformanceCounters.onDraw()
-            val currentPhase = phase.value
-            val isEnergyDriven = fillRetroMeterLevels(
-                output = meterLevels,
-                amplitudes = waveformData?.amplitudes,
-                currentPositionMs = currentPosition.toLong(),
-                durationMs = duration.toLong(),
-                animationPhase = currentPhase,
-                isPlaying = isPlaying,
-                songSeed = songKey.toLong()
-            )
-            val firstLevel = meterLevels.takeIf { isEnergyDriven }?.get(0) ?:
-                meterLevel(songKey, channel = 0, phase = currentPhase)
-            val secondLevel = meterLevels.takeIf { isEnergyDriven }?.get(1) ?:
-                meterLevel(songKey, channel = 1, phase = currentPhase)
             drawLcdMeterLine(
-                level = firstLevel,
-                animationPhase = currentPhase,
-                channel = 0,
-                isEnergyDriven = isEnergyDriven,
+                level = lowerToMidLevel,
                 top = 0f,
                 height = size.height * 0.42f,
                 colors = colors
             )
             drawLcdMeterLine(
-                level = secondLevel,
-                animationPhase = currentPhase,
-                channel = 1,
-                isEnergyDriven = isEnergyDriven,
+                level = upperMidToHighLevel,
                 top = size.height * 0.58f,
                 height = size.height * 0.42f,
                 colors = colors
             )
-            }
         }
     }
 }
@@ -281,36 +271,23 @@ internal fun PocketFlipArtworkLcdTreatment(modifier: Modifier = Modifier) {
 
 private fun DrawScope.drawLcdMeterLine(
     level: Float,
-    animationPhase: Float,
-    channel: Int,
-    isEnergyDriven: Boolean,
     top: Float,
     height: Float,
     colors: PocketFlipPalette
 ) {
-    val segmentCount = 24
     val gap = 1.dp.toPx()
-    val segmentWidth = (size.width - gap * (segmentCount - 1)) / segmentCount
-    val litSegments = (level.coerceIn(0f, 1f) * segmentCount).toInt()
-    val pulsePosition = ((animationPhase + channel * 0.37f) % 1f) * (segmentCount - 1)
-    val inactiveAlpha = if (isEnergyDriven) {
-        0.16f + level.coerceIn(0f, 1f) * 0.25f
-    } else {
-        0.48f
-    }
+    val segmentWidth = (size.width - gap * (POCKET_FLIP_METER_SEGMENT_COUNT - 1)) /
+            POCKET_FLIP_METER_SEGMENT_COUNT
+    val filledCount = contiguousMeterFillCount(level, POCKET_FLIP_METER_SEGMENT_COUNT)
 
-    repeat(segmentCount) { index ->
-        val pulseStrength = (
-                1f - kotlin.math.abs(index - pulsePosition) / 2f
-                ).coerceIn(0f, 1f) * level.coerceIn(0f, 1f)
+    repeat(POCKET_FLIP_METER_SEGMENT_COUNT) { index ->
+        val active = index < filledCount
+        val frontier = active && index == filledCount - 1
         drawRect(
-            color = when {
-                index < litSegments -> colors.screenAccent.copy(
-                    alpha = (0.52f + level * 0.28f + pulseStrength * 0.12f)
-                        .coerceAtMost(0.92f)
-                )
-                pulseStrength > 0f -> colors.screenAccent.copy(alpha = pulseStrength * 0.24f)
-                else -> colors.seekInactive.copy(alpha = inactiveAlpha)
+            color = if (active) {
+                colors.screenAccent.copy(alpha = if (frontier) 1f else 0.82f)
+            } else {
+                colors.seekInactive.copy(alpha = 0.10f)
             },
             topLeft = Offset(index * (segmentWidth + gap), top),
             size = Size(segmentWidth, height)
@@ -318,22 +295,9 @@ private fun DrawScope.drawLcdMeterLine(
     }
 }
 
-private fun meterLevel(songKey: Int, channel: Int, phase: Float): Float {
-    val shifted = songKey ushr (channel * 8)
-    val base = 0.48f + (shifted and 0xFF) / 255f * 0.30f
-    val offset = (shifted ushr 4 and 0x0F) / 15f
-    val movement = sin((phase + offset) * (2f * PI.toFloat())) * 0.10f
-    return (base + movement).coerceIn(0.22f, 0.92f)
-}
-
-private fun buildMeterKey(song: Song?): Int {
-    if (song == null) {
-        return 0x5046
-    }
-    var result = song.id.hashCode()
-    result = 31 * result + song.title.hashCode()
-    result = 31 * result + song.artist.hashCode()
-    return result
-}
-
-internal const val POCKET_FLIP_METER_LINE_COUNT = 2
+internal const val POCKET_FLIP_METER_SEGMENT_COUNT = 24
+internal const val POCKET_FLIP_LOWER_START_BAND = 0
+internal const val POCKET_FLIP_LOWER_END_BAND_EXCLUSIVE = 16
+internal const val POCKET_FLIP_UPPER_START_BAND = 16
+internal const val POCKET_FLIP_METER_DISPLAY_GAIN = 1.05f
+internal const val POCKET_FLIP_METER_RESPONSE_EXPONENT = 1.65f

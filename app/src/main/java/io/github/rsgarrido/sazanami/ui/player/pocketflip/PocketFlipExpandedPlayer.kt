@@ -17,17 +17,18 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.RepeatMode
-import io.github.rsgarrido.sazanami.player.waveform.WaveformData
+import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsGestureRegion
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 
 @Composable
 fun PocketFlipExpandedPlayer(
     currentSong: Song?,
-    waveformData: WaveformData? = null,
     isVisualizerWorkAllowed: Boolean = true,
     isPlaying: Boolean,
     isShuffleEnabled: Boolean,
@@ -56,7 +57,9 @@ fun PocketFlipExpandedPlayer(
     onMorphDragStart: () -> Unit = {},
     onMorphDragBy: (Float) -> Unit = {},
     onMorphDragEnd: (Float) -> Unit = {},
-    onMorphDragCancel: () -> Unit = {}
+    onMorphDragCancel: () -> Unit = {},
+    lyricsGestureModifier: Modifier = Modifier,
+    lyricsGestureRegion: PlayerLyricsGestureRegion? = null
 ) {
     val palette = remember(tokens) { PocketFlipPalette.from(tokens) }
     val configuration = LocalConfiguration.current
@@ -82,14 +85,18 @@ fun PocketFlipExpandedPlayer(
         ) {
             PocketFlipDisplayHalf(
                 currentSong = currentSong,
-                waveformData = waveformData,
                 isVisualizerWorkAllowed = isVisualizerWorkAllowed,
                 isPlaying = isPlaying,
                 currentPosition = currentPosition,
                 duration = duration,
                 onSeekChange = onSeekChange,
                 compact = compact,
-                modifier = Modifier.weight(if (compact) 0.54f else 0.57f),
+                modifier = Modifier
+                    .weight(if (compact) 0.54f else 0.57f)
+                    .onGloballyPositioned { coordinates ->
+                        lyricsGestureRegion?.updateTop(coordinates.boundsInRoot())
+                    }
+                    .then(lyricsGestureModifier),
                 displayReveal = displayReveal,
                 inputEnabled = inputEnabled,
                 morphBounds = morphBounds,
@@ -102,6 +109,7 @@ fun PocketFlipExpandedPlayer(
                     .fillMaxWidth()
                     .graphicsLayer { alpha = hingeReveal.coerceIn(0f, 1f) }
                     .then(safeCollapseDragModifier)
+                    .then(lyricsGestureModifier)
             ) {
                 PocketFlipHinge(compact = compact)
             }
@@ -126,7 +134,9 @@ fun PocketFlipExpandedPlayer(
                 inputEnabled = inputEnabled,
                 morphBounds = morphBounds,
                 sharedOwner = sharedOwner,
-                deckDetailsDragModifier = safeCollapseDragModifier
+                deckDetailsDragModifier = safeCollapseDragModifier,
+                lyricsGestureModifier = lyricsGestureModifier,
+                lyricsGestureRegion = lyricsGestureRegion
             )
         }
     }

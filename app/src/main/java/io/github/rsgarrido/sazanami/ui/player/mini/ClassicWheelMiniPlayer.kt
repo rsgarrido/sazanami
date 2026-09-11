@@ -49,7 +49,10 @@ fun ClassicWheelMiniPlayer(
         },
         containerColor = tokens.shellColor,
         borderColor = tokens.shellColor.darken(0.35f),
-        defaultMorphCallbacks = morphCallbacks
+        defaultMorphCallbacks = morphCallbacks,
+        onSurfaceBoundsChanged = { bounds ->
+            morphBounds?.updateMiniShell(bounds)
+        }
     ) { displayedState ->
         Row(verticalAlignment = Alignment.CenterVertically) {
             MiniPlayerArtwork(
@@ -81,19 +84,22 @@ fun ClassicWheelMiniPlayer(
             }
             MiniPlayerQueueButton(
                 onClick = callbacks.onQueueHubClick,
-                iconTint = tokens.displayTextColor
+                iconTint = tokens.displayTextColor,
+                modifier = Modifier.onGloballyPositioned { coordinates ->
+                    morphBounds?.updateMiniQueue(coordinates.boundsInRoot())
+                }
             )
             MiniPlayerPlayPauseButton(
                 isPlaying = displayedState.isPlaying,
                 onClick = callbacks.onPlayPauseClick,
-                modifier = Modifier.onGloballyPositioned {
-                    morphBounds?.updateMiniPlayPause(it.boundsInRoot())
-                },
                 iconTint = tokens.displayTextColor,
                 decoration = {
                     Canvas(
                         modifier = Modifier
                             .size(44.dp)
+                            .onGloballyPositioned { coordinates ->
+                                morphBounds?.updateMiniPlayPause(coordinates.boundsInRoot())
+                            }
                             .background(wheelColor, CircleShape)
                     ) {
                         drawCircle(

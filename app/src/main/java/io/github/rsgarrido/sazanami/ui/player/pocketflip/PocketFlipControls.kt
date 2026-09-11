@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.RepeatMode
+import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsGestureRegion
 
 @Composable
 internal fun PocketFlipControlHalf(
@@ -78,7 +79,9 @@ internal fun PocketFlipControlHalf(
     inputEnabled: Boolean = true,
     morphBounds: PocketFlipMorphBounds? = null,
     sharedOwner: PocketFlipSharedOwner = PocketFlipSharedOwner.EXPANDED,
-    deckDetailsDragModifier: Modifier = Modifier
+    deckDetailsDragModifier: Modifier = Modifier,
+    lyricsGestureModifier: Modifier = Modifier,
+    lyricsGestureRegion: PlayerLyricsGestureRegion? = null
 ) {
     Column(
         modifier = modifier
@@ -90,7 +93,11 @@ internal fun PocketFlipControlHalf(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f),
+                .weight(1f)
+                .onGloballyPositioned { coordinates ->
+                    lyricsGestureRegion?.updateBottom(coordinates.boundsInRoot())
+                }
+                .then(lyricsGestureModifier),
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -384,7 +391,7 @@ private fun PocketFlipActionCluster(
                 onClick = onPlayPauseClick,
                 enabled = inputEnabled && sharedOwner == PocketFlipSharedOwner.EXPANDED,
                 visualAlpha = if (sharedOwner == PocketFlipSharedOwner.EXPANDED) 1f else 0f,
-                modifier = Modifier.onGloballyPositioned { coordinates ->
+                faceModifier = Modifier.onGloballyPositioned { coordinates ->
                     morphBounds?.updateExpandedPlay(coordinates.boundsInRoot())
                 }
             )
@@ -417,6 +424,7 @@ private fun PocketFlipRoundAction(
     faceSize: Dp,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    faceModifier: Modifier = Modifier,
     active: Boolean = false,
     enabled: Boolean = true,
     visualAlpha: Float = 1f
@@ -456,6 +464,7 @@ private fun PocketFlipRoundAction(
                 modifier = Modifier
                     .offset(y = if (isPressed) 2.dp else 0.dp)
                     .size(faceSize)
+                    .then(faceModifier)
                     .background(
                         Brush.radialGradient(
                             colors = listOf(

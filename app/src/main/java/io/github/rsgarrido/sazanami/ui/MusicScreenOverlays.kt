@@ -22,6 +22,7 @@ import io.github.rsgarrido.sazanami.data.membershipKey
 import io.github.rsgarrido.sazanami.player.RepeatMode
 import io.github.rsgarrido.sazanami.ui.player.ExpandedPlayerThemeHost
 import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsTransitionState
+import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsGestureRegion
 import io.github.rsgarrido.sazanami.ui.player.PlayerMorphState
 import io.github.rsgarrido.sazanami.ui.player.PlayerEndpointBounds
 import io.github.rsgarrido.sazanami.ui.player.WarmCurrentSongWaveform
@@ -138,6 +139,9 @@ fun MusicScreenOverlays(
     pocketDiscMorphBounds: PocketDiscMorphBounds
 ) {
     val isPlayerExpanded = playerMorphState.shouldComposeExpanded
+    val lyricsGestureRegion = remember(selectedPlayerTheme) {
+        PlayerLyricsGestureRegion()
+    }
     val shouldWarmCurrentWaveform = shouldLoadExpandedPlayerWaveform(
         selectedPlayerTheme = selectedPlayerTheme,
         modernSeekbarStyle = selectedModernPlayerAppearance.seekbar.style
@@ -218,6 +222,7 @@ fun MusicScreenOverlays(
                     onCollapseClick = onCollapseExpandedPlayer,
                     playerMorphState = playerMorphState,
                     lyricsTransitionState = lyricsTransitionState,
+                    lyricsGestureRegion = lyricsGestureRegion,
                     onOpenQueueHubClick = onShowQueueHub,
                     onOpenSleepTimerClick = onShowExpandedSleepTimer,
                     onOpenMoreClick = onShowExpandedMore,
@@ -248,6 +253,7 @@ fun MusicScreenOverlays(
             state = lyricsPlaybackUiState,
             isPlaying = isPlaying,
             transitionState = lyricsTransitionState,
+            closeGestureRegion = lyricsGestureRegion,
             interactive = lyricsTransitionState.lyricsInteractive,
             onBack = lyricsTransitionState::returnToExpanded,
             onPlayPause = onPlayPauseClick,

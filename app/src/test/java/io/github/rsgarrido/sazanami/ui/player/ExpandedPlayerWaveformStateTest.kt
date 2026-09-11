@@ -8,16 +8,22 @@ import org.junit.Test
 
 class ExpandedPlayerWaveformStateTest {
     @Test
-    fun retroWaveformThemes_requestWaveformLoading() {
-        assertTrue(
+    fun spectrumRetroThemes_doNotRequestWaveformLoading() {
+        assertFalse(
             shouldLoadExpandedPlayerWaveform(
                 PlayerTheme.POCKET_FLIP,
                 ModernSeekbarStyle.CLASSIC_BAR
             )
         )
-        assertTrue(
+        assertFalse(
             shouldLoadExpandedPlayerWaveform(
                 PlayerTheme.RETRO_RACK,
+                ModernSeekbarStyle.CLASSIC_BAR
+            )
+        )
+        assertFalse(
+            shouldLoadExpandedPlayerWaveform(
+                PlayerTheme.POCKET_DISC,
                 ModernSeekbarStyle.CLASSIC_BAR
             )
         )

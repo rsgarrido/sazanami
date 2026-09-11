@@ -4,6 +4,8 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -44,6 +46,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -56,6 +59,8 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
@@ -91,7 +96,9 @@ import io.github.rsgarrido.sazanami.lyrics.generateLyricsNameCandidates
 import io.github.rsgarrido.sazanami.lyrics.calculateLyricAnchorScrollDelta
 import io.github.rsgarrido.sazanami.lyrics.toLyricsIdentity
 import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsTransitionState
+import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsGestureRegion
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 const val LyricsScreenTag = "lyrics_screen"
 const val LyricsListTag = "lyrics_list"
@@ -105,6 +112,7 @@ fun LyricsScreen(
     state: LyricsPlaybackUiState,
     isPlaying: Boolean,
     transitionState: PlayerLyricsTransitionState,
+    closeGestureRegion: PlayerLyricsGestureRegion? = null,
     interactive: Boolean,
     onBack: () -> Unit,
     onPlayPause: () -> Unit,
@@ -117,11 +125,28 @@ fun LyricsScreen(
 ) {
     val song = state.songOrNull() ?: return
     var surfaceHeightPx by remember { mutableIntStateOf(1) }
+    var surfaceTopPx by remember { mutableFloatStateOf(0f) }
+    val usesLayoutCloseRegion = closeGestureRegion?.isReady == true
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .onSizeChanged { surfaceHeightPx = it.height.coerceAtLeast(1) }
+            .onGloballyPositioned { coordinates ->
+                surfaceTopPx = coordinates.boundsInRoot().top
+            }
+            .then(
+                if (interactive && usesLayoutCloseRegion) {
+                    Modifier.lyricsRegionCloseGesture(
+                        transitionState = transitionState,
+                        gestureRegion = checkNotNull(closeGestureRegion),
+                        surfaceTopPx = surfaceTopPx,
+                        surfaceHeightPx = surfaceHeightPx
+                    )
+                } else {
+                    Modifier
+                }
+            )
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {
@@ -143,6 +168,7 @@ fun LyricsScreen(
                 transitionState = transitionState,
                 surfaceHeightPx = surfaceHeightPx,
                 interactive = interactive,
+                regionCloseEnabled = usesLayoutCloseRegion,
                 onBack = onBack,
                 onPlayPause = onPlayPause,
                 modifier = Modifier
@@ -174,6 +200,66 @@ fun LyricsScreen(
                     LyricsPlaybackUiState.Hidden -> Unit
                 }
             }
+        }
+    }
+}
+
+private fun Modifier.lyricsRegionCloseGesture(
+    transitionState: PlayerLyricsTransitionState,
+    gestureRegion: PlayerLyricsGestureRegion,
+    surfaceTopPx: Float,
+    surfaceHeightPx: Int
+): Modifier = pointerInput(
+    transitionState,
+    gestureRegion,
+    surfaceTopPx,
+    surfaceHeightPx
+) {
+    awaitEachGesture {
+        val down = awaitFirstDown(
+            requireUnconsumed = false,
+            pass = PointerEventPass.Initial
+        )
+        val downInRoot = down.position.y + surfaceTopPx
+        if (!gestureRegion.contains(downInRoot)) return@awaitEachGesture
+
+        var ownsGesture = false
+        var lastPosition = down.position
+        var totalDelta = Offset.Zero
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+            val delta = change.position - lastPosition
+            lastPosition = change.position
+            totalDelta += delta
+
+            if (!ownsGesture &&
+                abs(totalDelta.x) > viewConfiguration.touchSlop &&
+                abs(totalDelta.x) > abs(totalDelta.y)
+            ) {
+                break
+            }
+
+            if (!ownsGesture &&
+                totalDelta.y > viewConfiguration.touchSlop &&
+                totalDelta.y > abs(totalDelta.x)
+            ) {
+                ownsGesture = true
+                change.consume()
+                transitionState.beginClosingDrag()
+                transitionState.dragClosingBy(
+                    totalDelta.y,
+                    surfaceHeightPx.toFloat()
+                )
+            } else if (ownsGesture && delta.y != 0f) {
+                change.consume()
+                transitionState.dragClosingBy(delta.y, surfaceHeightPx.toFloat())
+            }
+
+            if (!change.pressed) break
+        }
+        if (ownsGesture) {
+            transitionState.settleClosing(0f)
         }
     }
 }
@@ -210,6 +296,7 @@ private fun LyricsHeader(
     transitionState: PlayerLyricsTransitionState,
     surfaceHeightPx: Int,
     interactive: Boolean,
+    regionCloseEnabled: Boolean,
     onBack: () -> Unit,
     onPlayPause: () -> Unit,
     modifier: Modifier = Modifier
@@ -218,7 +305,7 @@ private fun LyricsHeader(
         modifier = modifier
             .testTag(LyricsHeaderTag)
             .then(
-                if (!interactive) {
+                if (!interactive || regionCloseEnabled) {
                     Modifier
                 } else {
                     Modifier.pointerInput(transitionState, surfaceHeightPx) {

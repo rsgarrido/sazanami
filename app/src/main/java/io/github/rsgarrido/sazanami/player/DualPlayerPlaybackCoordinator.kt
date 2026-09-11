@@ -15,6 +15,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import io.github.rsgarrido.sazanami.player.equalizer.EqualizerAudioProcessor
 import io.github.rsgarrido.sazanami.player.equalizer.EqualizerDspRuntime
 import io.github.rsgarrido.sazanami.player.equalizer.EqualizerRuntimeBridge
+import io.github.rsgarrido.sazanami.player.spectrum.Pcm16Observer
 import kotlinx.coroutines.CoroutineScope
 
 internal enum class PhysicalPlayerRole(
@@ -33,7 +34,8 @@ internal class PhysicalPlayerPipeline(
     val player: ExoPlayer,
     val equalizerRuntime: EqualizerDspRuntime,
     val equalizerAudioProcessor: EqualizerAudioProcessor,
-    private val audioAttributes: AudioAttributes
+    private val audioAttributes: AudioAttributes,
+    val spectrumPcmObserver: Pcm16Observer? = null
 ) {
     var role: PhysicalPlayerRole = initialRole
         private set
@@ -48,6 +50,7 @@ internal class PhysicalPlayerPipeline(
 
     fun assignRole(newRole: PhysicalPlayerRole) {
         if (newRole == PhysicalPlayerRole.STANDBY) enforceSilence()
+        spectrumPcmObserver?.setSourceActive(newRole == PhysicalPlayerRole.ACTIVE)
         player.setAudioAttributes(audioAttributes, newRole.managesAudioFocus)
         player.setHandleAudioBecomingNoisy(newRole.handlesAudioBecomingNoisy)
         role = newRole
@@ -87,6 +90,7 @@ internal class PhysicalPlayerPipeline(
     }
 
     fun clearForStandbyReuse() {
+        spectrumPcmObserver?.onDiscontinuity()
         enforceSilence()
         player.stop()
         player.pauseAtEndOfMediaItems = false
@@ -102,6 +106,7 @@ internal class PhysicalPlayerPipeline(
         try {
             player.release()
         } finally {
+            spectrumPcmObserver?.close()
             EqualizerRuntimeBridge.releaseRuntime(equalizerRuntime)
         }
     }

@@ -22,6 +22,11 @@ import io.github.rsgarrido.sazanami.ui.player.theme.darken
 import io.github.rsgarrido.sazanami.ui.player.theme.lighten
 import io.github.rsgarrido.sazanami.ui.player.theme.withAlpha
 
+internal const val PocketCassetteArtworkDimmingAlpha = 0.48f
+
+internal fun pocketCassetteArtworkOverlayAlpha(morphProgress: Float): Float =
+    PocketCassetteArtworkDimmingAlpha * morphProgress.coerceIn(0f, 1f)
+
 internal val PocketCassetteDefaultTokens = PlayerThemeTokens(
     shellColor = Color(0xFFB9BEC0),
     accentColor = Color(0xFF456D8E),

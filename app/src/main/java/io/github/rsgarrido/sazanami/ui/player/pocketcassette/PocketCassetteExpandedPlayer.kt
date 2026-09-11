@@ -37,6 +37,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -46,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.RepeatMode
+import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsGestureRegion
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 
 @Composable
@@ -80,7 +83,9 @@ fun PocketCassetteExpandedPlayer(
     onMorphDragStart: () -> Unit = {},
     onMorphDragBy: (Float) -> Unit = {},
     onMorphDragEnd: (Float) -> Unit = {},
-    onMorphDragCancel: () -> Unit = {}
+    onMorphDragCancel: () -> Unit = {},
+    lyricsGestureModifier: Modifier = Modifier,
+    lyricsGestureRegion: PlayerLyricsGestureRegion? = null
 ) {
     val palette = remember(tokens) { PocketCassettePalette.from(tokens) }
     val safeCollapseDragModifier = Modifier.pocketCassetteDownwardCollapseGesture(
@@ -114,7 +119,9 @@ fun PocketCassetteExpandedPlayer(
                     compact = compact,
                     inputEnabled = inputEnabled,
                     headerReveal = headerReveal,
-                    safeDragModifier = safeCollapseDragModifier
+                    safeDragModifier = safeCollapseDragModifier,
+                    lyricsGestureModifier = lyricsGestureModifier,
+                    lyricsGestureRegion = lyricsGestureRegion
                 )
 
                 PocketCassetteWindow(
@@ -124,7 +131,9 @@ fun PocketCassetteExpandedPlayer(
                     currentPosition = currentPosition,
                     duration = duration,
                     compact = compact,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .then(lyricsGestureModifier),
                     windowReveal = windowReveal,
                     mechanismReveal = mechanismReveal,
                     morphBounds = morphBounds,
@@ -152,7 +161,9 @@ fun PocketCassetteExpandedPlayer(
                     controlsReveal = controlsReveal,
                     inputEnabled = inputEnabled,
                     morphBounds = morphBounds,
-                    sharedOwner = sharedOwner
+                    sharedOwner = sharedOwner,
+                    lyricsGestureModifier = lyricsGestureModifier,
+                    lyricsGestureRegion = lyricsGestureRegion
                 )
 
                 PocketCassetteLowerSeam(
@@ -171,13 +182,19 @@ private fun PocketCassetteDeviceHeader(
     compact: Boolean,
     inputEnabled: Boolean,
     headerReveal: Float,
-    safeDragModifier: Modifier
+    safeDragModifier: Modifier,
+    lyricsGestureModifier: Modifier,
+    lyricsGestureRegion: PlayerLyricsGestureRegion?
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(if (compact) 48.dp else 54.dp)
-            .graphicsLayer { alpha = headerReveal.coerceIn(0f, 1f) },
+            .graphicsLayer { alpha = headerReveal.coerceIn(0f, 1f) }
+            .onGloballyPositioned { coordinates ->
+                lyricsGestureRegion?.updateTop(coordinates.boundsInRoot())
+            }
+            .then(lyricsGestureModifier),
         verticalAlignment = Alignment.CenterVertically
     ) {
         PocketCassetteScrew(size = if (compact) 10.dp else 12.dp)
