@@ -1,6 +1,7 @@
 package io.github.rsgarrido.sazanami.ui.player
 
 import androidx.compose.ui.geometry.Rect
+import io.github.rsgarrido.sazanami.ui.player.pocketdisc.shouldStartPocketDiscCollapse
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
@@ -38,12 +39,14 @@ class ExpandedPlayerDragStateTest {
     }
 
     @Test
-    fun pocketDiscLyricsRegionEndsAboveLevelMeterAndBottomEdge() {
+    fun pocketDiscSeparatesSafeLyricsRegionFromPlayerWideCollapse() {
         val region = measuredLyricsRegion(top = 11f, bottom = 682f)
 
         assertTrue(region.contains(660f))
         assertFalse(region.contains(720f))
         assertFalse(region.contains(799f))
+        assertTrue(shouldStartPocketDiscCollapse(1f))
+        assertFalse(shouldStartPocketDiscCollapse(-1f))
     }
 
     @Test

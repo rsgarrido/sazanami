@@ -137,6 +137,7 @@ fun PocketDiscExpandedPlayer(
             modifier = Modifier
                 .fillMaxSize()
                 .background(if (renderShell) PocketDiscColors.shell else Color.Transparent)
+                .then(safeCollapseDragModifier)
         ) {
             val compact = maxHeight < 750.dp || maxWidth < 360.dp
             val horizontalPadding = if (compact) 10.dp else 16.dp
@@ -168,8 +169,8 @@ fun PocketDiscExpandedPlayer(
                         .onGloballyPositioned { coordinates ->
                             lyricsGestureRegion?.updateTop(coordinates.boundsInRoot())
                         }
-                        .then(safeCollapseDragModifier)
                         .then(lyricsGestureModifier)
+                        .then(safeCollapseDragModifier)
                         .graphicsLayer { alpha = headerReveal.coerceIn(0f, 1f) }
                 )
 
@@ -181,8 +182,8 @@ fun PocketDiscExpandedPlayer(
                             scaleX = 0.96f + 0.04f * mediaReveal.coerceIn(0f, 1f)
                             scaleY = scaleX
                         }
-                        .then(safeCollapseDragModifier)
-                        .then(lyricsGestureModifier),
+                        .then(lyricsGestureModifier)
+                        .then(safeCollapseDragModifier),
                     horizontalArrangement = Arrangement.spacedBy(gap, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -211,6 +212,7 @@ fun PocketDiscExpandedPlayer(
                         .fillMaxWidth()
                         .graphicsLayer { alpha = panelReveal.coerceIn(0f, 1f) }
                         .then(lyricsGestureModifier)
+                        .then(safeCollapseDragModifier)
                 )
 
                 PocketDiscPositionPanel(
@@ -225,6 +227,7 @@ fun PocketDiscExpandedPlayer(
                         .fillMaxWidth()
                         .graphicsLayer { alpha = panelReveal.coerceIn(0f, 1f) }
                         .then(lyricsGestureModifier)
+                        .then(safeCollapseDragModifier)
                 )
 
                 PocketDiscTransportControls(
@@ -243,6 +246,7 @@ fun PocketDiscExpandedPlayer(
                         .fillMaxWidth()
                         .graphicsLayer { alpha = controlsReveal.coerceIn(0f, 1f) }
                         .then(lyricsGestureModifier)
+                        .then(safeCollapseDragModifier)
                 )
 
                 PocketDiscUtilityControls(
@@ -263,6 +267,7 @@ fun PocketDiscExpandedPlayer(
                             lyricsGestureRegion?.updateBottom(coordinates.boundsInRoot())
                         }
                         .then(lyricsGestureModifier)
+                        .then(safeCollapseDragModifier)
                 )
 
                 PocketDiscLevelMeter(
@@ -271,7 +276,6 @@ fun PocketDiscExpandedPlayer(
                     modifier = Modifier
                         .fillMaxWidth()
                         .graphicsLayer { alpha = controlsReveal.coerceIn(0f, 1f) }
-                        .then(safeCollapseDragModifier)
                 )
             }
         }
@@ -939,7 +943,7 @@ private fun Modifier.pocketDiscDownwardCollapseGesture(
             }
             var started = false
             val slopChange = awaitVerticalTouchSlopOrCancellation(down.id) { change, overSlop ->
-                if (overSlop > 0f) {
+                if (shouldStartPocketDiscCollapse(overSlop)) {
                     started = true
                     change.consume()
                     velocityTracker.addPosition(change.uptimeMillis, change.position)
@@ -967,5 +971,7 @@ private fun Modifier.pocketDiscDownwardCollapseGesture(
         }
     }
 }
+
+internal fun shouldStartPocketDiscCollapse(overSlopY: Float): Boolean = overSlopY > 0f
 
 private const val SEEK_STEP_MS = 10_000
