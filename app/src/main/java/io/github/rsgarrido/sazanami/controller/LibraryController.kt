@@ -12,6 +12,7 @@ import io.github.rsgarrido.sazanami.data.ArtistIdentity
 import io.github.rsgarrido.sazanami.data.ArtistPictureAssignment
 import io.github.rsgarrido.sazanami.data.ArtistPictureRepository
 import io.github.rsgarrido.sazanami.data.DuplicateListeningHistoryResolution
+import io.github.rsgarrido.sazanami.data.CURRENT_EMBEDDED_METADATA_ENRICHMENT_VERSION
 import io.github.rsgarrido.sazanami.data.FavoritesRepository
 import io.github.rsgarrido.sazanami.data.FavoriteBatchOperation
 import io.github.rsgarrido.sazanami.data.planFavoriteBatch
@@ -30,6 +31,8 @@ import io.github.rsgarrido.sazanami.data.buildInitialSelectedCoreLibrary
 import io.github.rsgarrido.sazanami.data.buildInitialSelectedLibraryData
 import io.github.rsgarrido.sazanami.data.buildLibraryFolders
 import io.github.rsgarrido.sazanami.data.initialLibraryFolderSelectionWithRestoredHints
+import io.github.rsgarrido.sazanami.data.isSupportedEmbeddedMetadataFile
+import io.github.rsgarrido.sazanami.data.isWavFile
 import io.github.rsgarrido.sazanami.data.MediaLibraryAccessException
 import io.github.rsgarrido.sazanami.data.stableKey
 import io.github.rsgarrido.sazanami.data.MusicRepository
@@ -156,7 +159,7 @@ class LibraryController(
     private val artistVisualAssetStore = VisualAssetStore(applicationContext)
     private val artistPictureReplacements = VisualAssetReplacementCoordinator()
     private var refreshJob: Job? = null
-    private var artworkEnrichmentJob: Job? = null
+    private var progressiveEnrichmentJob: Job? = null
     private var reconciliationJob: Job? = null
     private var automaticHistoryReconciliationJob: Job? = null
     private val reconciliationCoordinator = ReconciliationGenerationCoordinator()
@@ -295,7 +298,7 @@ class LibraryController(
         if (!changed) return false
         if (!granted) {
             refreshJob?.cancel()
-            artworkEnrichmentJob?.cancel()
+            progressiveEnrichmentJob?.cancel()
             reconciliationJob?.cancel()
             automaticHistoryReconciliationJob?.cancel()
             initialFolderDiscoverySongs = emptyList()
@@ -330,7 +333,7 @@ class LibraryController(
     }
 
     fun refreshFolderArtwork() {
-        artworkEnrichmentJob?.cancel()
+        progressiveEnrichmentJob?.cancel()
         val scanToken = permissionGate.tokenOrNull() ?: return
         if (songs.isNotEmpty()) {
             updateState { copy(isRefreshing = true, errorMessage = null) }
@@ -364,7 +367,11 @@ class LibraryController(
                 }
                 if (permissionGate.isCurrent(scanToken)) {
                     publishLibraryData(libraryData, reconcilePlayback = true)
-                    startProgressiveArtworkEnrichment(libraryData, scanToken)
+                    startProgressiveLibraryEnrichment(
+                        coreLibraryData = libraryData,
+                        scanToken = scanToken,
+                        reconcileEmbeddedMetadata = false
+                    )
                 }
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -553,9 +560,10 @@ class LibraryController(
                             "${SystemClock.elapsedRealtime() - continueStartedAt} " +
                             "songs=${libraryData.songs.size}"
                 )
-                startProgressiveArtworkEnrichment(
+                startProgressiveLibraryEnrichment(
                     coreLibraryData = libraryData,
-                    scanToken = scanToken
+                    scanToken = scanToken,
+                    reconcileEmbeddedMetadata = true
                 )
             }
         }
@@ -1452,36 +1460,49 @@ class LibraryController(
         }
     }
 
-    private fun startProgressiveArtworkEnrichment(
+    private fun startProgressiveLibraryEnrichment(
         coreLibraryData: MusicLibraryData,
-        scanToken: Long
+        scanToken: Long,
+        reconcileEmbeddedMetadata: Boolean
     ) {
-        artworkEnrichmentJob?.cancel()
+        progressiveEnrichmentJob?.cancel()
         val enrichmentStartedAt = SystemClock.elapsedRealtime()
         debugLibraryTiming(
-            "progressive-artwork-start songs=${coreLibraryData.songs.size} token=$scanToken"
+            "progressive-library-enrichment-start songs=${coreLibraryData.songs.size} " +
+                    "metadata=$reconcileEmbeddedMetadata token=$scanToken"
         )
-        coroutineScope.launch(Dispatchers.IO) {
-            try {
-                smartPlaylistRepository.invalidateLibraryEligibility()
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (exception: Exception) {
-                Log.w("LibraryRefresh", "Smart-playlist invalidation failed.", exception)
-            }
-        }
-        artworkEnrichmentJob = coroutineScope.launch(Dispatchers.IO) {
+        progressiveEnrichmentJob = coroutineScope.launch(Dispatchers.IO) {
             if (coreLibraryData.songs.isEmpty()) {
                 libraryScanMutex.withLock {
                     if (!permissionGate.isCurrent(scanToken)) throw CancellationException()
                     libraryCacheRepository.replaceCachedSongs(coreLibraryData.referenceSongs)
                 }
+                invalidateSmartPlaylistEligibility()
                 debugLibraryTiming(
-                    "progressive-artwork-complete elapsedMs=" +
+                    "progressive-library-enrichment-complete elapsedMs=" +
                             "${SystemClock.elapsedRealtime() - enrichmentStartedAt} songs=0 batches=0"
                 )
                 return@launch
             }
+
+            val repository = MusicRepository(applicationContext)
+            var latestSongs = coreLibraryData.songs
+            var metadataBatchCount = 0
+            if (reconcileEmbeddedMetadata) {
+                val wavResult = enrichEmbeddedMetadataInBatches(
+                    songs = latestSongs,
+                    repository = repository,
+                    scanToken = scanToken,
+                    shouldEnrich = { song ->
+                        isWavFile(song.filePath, song.displayName) &&
+                                song.embeddedMetadataEnrichmentVersion <
+                                CURRENT_EMBEDDED_METADATA_ENRICHMENT_VERSION
+                    }
+                )
+                latestSongs = wavResult.songs
+                metadataBatchCount += wavResult.batchCount
+            }
+
             val embeddedResolver = EmbeddedArtworkResolver(applicationContext)
             val folderResolver = FolderArtworkResolver(
                 context = applicationContext,
@@ -1493,16 +1514,31 @@ class LibraryController(
                 resolveFolder = folderResolver::resolve,
                 resolverNamespace = folderArtworkTreeUri?.toString().orEmpty()
             )
-            var latestSongs = coreLibraryData.songs
-            var batchCount = 0
-            for (batch in enricher.batches(coreLibraryData.songs)) {
+            var artworkBatchCount = 0
+            for (batch in enricher.batches(latestSongs)) {
                 coroutineContext.ensureActive()
                 if (!permissionGate.isCurrent(scanToken)) throw CancellationException()
                 latestSongs = batch
-                batchCount += 1
+                artworkBatchCount += 1
                 withContext(Dispatchers.Main.immediate) {
-                    publishProgressiveArtworkBatch(batch, scanToken)
+                    publishProgressiveEnrichmentBatch(batch, scanToken)
                 }
+            }
+
+            if (reconcileEmbeddedMetadata) {
+                val remainingResult = enrichEmbeddedMetadataInBatches(
+                    songs = latestSongs,
+                    repository = repository,
+                    scanToken = scanToken,
+                    shouldEnrich = { song ->
+                        !isWavFile(song.filePath, song.displayName) &&
+                                isSupportedEmbeddedMetadataFile(song.filePath, song.displayName) &&
+                                song.embeddedMetadataEnrichmentVersion <
+                                CURRENT_EMBEDDED_METADATA_ENRICHMENT_VERSION
+                    }
+                )
+                latestSongs = remainingResult.songs
+                metadataBatchCount += remainingResult.batchCount
             }
 
             if (!permissionGate.isCurrent(scanToken)) throw CancellationException()
@@ -1514,6 +1550,7 @@ class LibraryController(
                 if (!permissionGate.isCurrent(scanToken)) throw CancellationException()
                 libraryCacheRepository.replaceCachedSongs(finalReferenceSongs)
             }
+            invalidateSmartPlaylistEligibility()
             if (latestSongs != coreLibraryData.songs) {
                 val finalData = coreLibraryData.copy(
                     songs = latestSongs,
@@ -1526,14 +1563,76 @@ class LibraryController(
                 }
             }
             debugLibraryTiming(
-                "progressive-artwork-complete elapsedMs=" +
+                "progressive-library-enrichment-complete elapsedMs=" +
                         "${SystemClock.elapsedRealtime() - enrichmentStartedAt} " +
-                        "songs=${coreLibraryData.songs.size} batches=$batchCount"
+                        "songs=${coreLibraryData.songs.size} metadataBatches=$metadataBatchCount " +
+                        "artworkBatches=$artworkBatchCount"
             )
         }
     }
 
-    private fun publishProgressiveArtworkBatch(
+    private suspend fun enrichEmbeddedMetadataInBatches(
+        songs: List<Song>,
+        repository: MusicRepository,
+        scanToken: Long,
+        shouldEnrich: (Song) -> Boolean
+    ): ProgressiveMetadataEnrichmentResult {
+        val workingSongs = songs.toMutableList()
+        var processedSincePublication = 0
+        var hasUnpublishedChanges = false
+        var batchCount = 0
+
+        workingSongs.indices.forEach { index ->
+            val song = workingSongs[index]
+            if (!shouldEnrich(song)) return@forEach
+            coroutineContext.ensureActive()
+            if (!permissionGate.isCurrent(scanToken)) throw CancellationException()
+
+            val enriched = repository.enrichEmbeddedLibraryMetadata(song)
+            if (enriched != song) {
+                workingSongs[index] = enriched
+                hasUnpublishedChanges = true
+            }
+            processedSincePublication += 1
+
+            if (processedSincePublication >= INITIAL_METADATA_ENRICHMENT_BATCH_SIZE) {
+                if (hasUnpublishedChanges) {
+                    val batch = workingSongs.toList()
+                    withContext(Dispatchers.Main.immediate) {
+                        publishProgressiveEnrichmentBatch(batch, scanToken)
+                    }
+                    batchCount += 1
+                    hasUnpublishedChanges = false
+                }
+                processedSincePublication = 0
+            }
+        }
+
+        if (hasUnpublishedChanges) {
+            val batch = workingSongs.toList()
+            withContext(Dispatchers.Main.immediate) {
+                publishProgressiveEnrichmentBatch(batch, scanToken)
+            }
+            batchCount += 1
+        }
+
+        return ProgressiveMetadataEnrichmentResult(
+            songs = workingSongs.toList(),
+            batchCount = batchCount
+        )
+    }
+
+    private suspend fun invalidateSmartPlaylistEligibility() {
+        try {
+            smartPlaylistRepository.invalidateLibraryEligibility()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (exception: Exception) {
+            Log.w("LibraryRefresh", "Smart-playlist invalidation failed.", exception)
+        }
+    }
+
+    private fun publishProgressiveEnrichmentBatch(
         updatedSongs: List<Song>,
         scanToken: Long
     ) {
@@ -1567,7 +1666,7 @@ class LibraryController(
             onComplete?.invoke(Result.failure(IllegalStateException("Audio access is unavailable.")))
             return
         }
-        artworkEnrichmentJob?.cancel()
+        progressiveEnrichmentJob?.cancel()
         refreshJob?.cancel()
         updateState {
             copy(
@@ -2050,6 +2149,13 @@ class LibraryController(
         }
     }
 }
+
+private data class ProgressiveMetadataEnrichmentResult(
+    val songs: List<Song>,
+    val batchCount: Int
+)
+
+private const val INITIAL_METADATA_ENRICHMENT_BATCH_SIZE = 24
 
 private data class BackupRestoredUserData(
     val folderSelection: FolderSelection,

@@ -73,15 +73,20 @@ class MusicRepository(private val context: Context) {
                     requiresArtworkRepair || requiresMetadataEnrichment
                 },
                 enrich = { indexSong ->
-                    val embeddedMetadata = embeddedMetadataReader
-                        .readOrNull(File(indexSong.filePath))
-                        ?.metadata
+                    val metadataSong = if (
+                        indexSong.embeddedMetadataEnrichmentVersion <
+                        CURRENT_EMBEDDED_METADATA_ENRICHMENT_VERSION
+                    ) {
+                        enrichEmbeddedLibraryMetadata(indexSong)
+                    } else {
+                        indexSong
+                    }
                     val embeddedStartedAt = SystemClock.elapsedRealtime()
                     val embeddedArtwork = embeddedArtworkResolver.resolve(indexSong)
                     embeddedArtworkExtractionMs +=
                         SystemClock.elapsedRealtime() - embeddedStartedAt
                     embeddedArtworkExtractionCount += 1
-                    indexSong.withEmbeddedLibraryMetadata(embeddedMetadata).copy(
+                    metadataSong.copy(
                         albumArtUri = selectArtwork(
                             embedded = embeddedArtwork,
                             folder = folderArtworkResolver.resolve(indexSong)
@@ -100,6 +105,17 @@ class MusicRepository(private val context: Context) {
                     "files=$embeddedArtworkExtractionCount"
         )
         return result.copy(artworkRepairCount = artworkRepairKeys.size)
+    }
+
+    /**
+     * Reads and applies the embedded fields represented by [Song]. A failed read is deliberately a
+     * no-op so progressive discovery can continue and a later reconciliation can retry the file.
+     */
+    fun enrichEmbeddedLibraryMetadata(song: Song): Song {
+        if (!isSupportedEmbeddedMetadataFile(song.filePath, song.displayName)) return song
+        val result = embeddedMetadataReader.readOrNull(File(song.filePath)) ?: return song
+        if (result.format == AudioMetadataFormat.UNKNOWN) return song
+        return mergeEmbeddedLibraryMetadata(song, result)
     }
 
     fun applyFolderArtwork(
@@ -238,11 +254,12 @@ class MusicRepository(private val context: Context) {
                     mode = mode,
                     isWav = isWavFile(filePath, displayName)
                 ) { wavSong ->
-                    val embeddedMetadata = embeddedMetadataReader
+                    val embeddedResult = embeddedMetadataReader
                         .readOrNull(File(wavSong.filePath))
                         ?.takeIf { it.format == AudioMetadataFormat.WAV }
-                        ?.metadata
-                    mergeWavEmbeddedMetadata(wavSong, embeddedMetadata)
+                    embeddedResult?.let { result ->
+                        mergeEmbeddedLibraryMetadata(wavSong, result)
+                    } ?: wavSong
                 }
 
                 songs.add(song)
@@ -278,9 +295,10 @@ internal inline fun Song.withIndexRowEnrichment(
     this
 }
 
-internal const val CURRENT_EMBEDDED_METADATA_ENRICHMENT_VERSION = 4
+internal const val CURRENT_EMBEDDED_METADATA_ENRICHMENT_VERSION = 5
 
 internal fun Song.withEmbeddedLibraryMetadata(metadata: AudioMetadata?): Song = copy(
+    albumArtist = metadata?.primaryAlbumArtist ?: albumArtist,
     year = parseMetadataYear(metadata?.date) ?: year,
     genres = metadata?.genres.orEmpty(),
     composers = metadata?.composers.orEmpty(),
@@ -340,6 +358,24 @@ internal fun isWavFile(filePath: String, displayName: String): Boolean =
     sequenceOf(filePath, displayName)
         .map { it.substringAfterLast('.', missingDelimiterValue = "") }
         .any { it.equals("wav", ignoreCase = true) }
+
+internal fun isSupportedEmbeddedMetadataFile(filePath: String, displayName: String): Boolean =
+    sequenceOf(filePath, displayName)
+        .map { it.substringAfterLast('.', missingDelimiterValue = "").lowercase() }
+        .any { it.toAudioMetadataFormat() != AudioMetadataFormat.UNKNOWN }
+
+/** Applies one successful embedded read consistently in progressive and full-refresh paths. */
+internal fun mergeEmbeddedLibraryMetadata(
+    song: Song,
+    result: EmbeddedMetadataReadResult
+): Song {
+    val coreSong = if (result.format == AudioMetadataFormat.WAV) {
+        mergeWavEmbeddedMetadata(song, result.metadata)
+    } else {
+        song
+    }
+    return coreSong.withEmbeddedLibraryMetadata(result.metadata)
+}
 
 /**
  * MediaStore remains the library index, while valid embedded WAV fields take precedence over
