@@ -11,11 +11,11 @@ import org.mockito.Mockito.mock
 
 class NativeWaveformAnalyzerTest {
     @Test
-    fun nativeSuccess_returnsNativeBarsWithoutCallingFallback() = runBlocking {
+    fun nonzeroNativeResult_skipsJavaFallback() = runBlocking {
         var fallbackCalls = 0
         val analyzer = NativeWaveformAnalyzer(
             nativeDecoder = NativeWaveformDecoder { _, barCount ->
-                List(barCount) { index -> if (index == 0) Float.NaN else 1.25f }
+                List(barCount) { index -> index / (barCount - 1f) }
             },
             fallbackAnalyzer = WaveformAnalyzer { _, _, _ ->
                 fallbackCalls++
@@ -25,9 +25,55 @@ class NativeWaveformAnalyzerTest {
 
         val result = analyzer.analyze(song(), "source-key", 4)
 
-        assertEquals(listOf(0f, 1f, 1f, 1f), result?.amplitudes)
+        assertEquals(listOf(0f, 1f / 3f, 2f / 3f, 1f), result?.amplitudes)
         assertEquals("source-key", result?.sourceKey)
         assertEquals(0, fallbackCalls)
+    }
+
+    @Test
+    fun allZeroNativeResult_meaningfulJavaResultWins() = runBlocking {
+        var fallbackCalls = 0
+        val analyzer = NativeWaveformAnalyzer(
+            nativeDecoder = NativeWaveformDecoder { _, barCount -> List(barCount) { 0f } },
+            fallbackAnalyzer = WaveformAnalyzer { _, sourceKey, barCount ->
+                fallbackCalls++
+                WaveformData(List(barCount) { 0.75f }, sourceKey)
+            }
+        )
+
+        val result = analyzer.analyze(song(), "fallback-key", 4)
+
+        assertEquals(List(4) { 0.75f }, result?.amplitudes)
+        assertEquals("fallback-key", result?.sourceKey)
+        assertEquals(1, fallbackCalls)
+    }
+
+    @Test
+    fun allZeroNativeResult_allZeroJavaResultPreservesSilentWaveform() = runBlocking {
+        var fallbackCalls = 0
+        val analyzer = NativeWaveformAnalyzer(
+            nativeDecoder = NativeWaveformDecoder { _, barCount -> List(barCount) { 0f } },
+            fallbackAnalyzer = WaveformAnalyzer { _, sourceKey, barCount ->
+                fallbackCalls++
+                WaveformData(List(barCount) { 0f }, sourceKey)
+            }
+        )
+
+        val result = analyzer.analyze(song(), "silent-key", 4)
+
+        assertEquals(List(4) { 0f }, result?.amplitudes)
+        assertEquals("silent-key", result?.sourceKey)
+        assertEquals(1, fallbackCalls)
+    }
+
+    @Test
+    fun allZeroNativeResult_failedJavaFallbackReturnsFailure() = runBlocking {
+        val analyzer = NativeWaveformAnalyzer(
+            nativeDecoder = NativeWaveformDecoder { _, barCount -> List(barCount) { 0f } },
+            fallbackAnalyzer = WaveformAnalyzer { _, _, _ -> null }
+        )
+
+        assertNull(analyzer.analyze(song(), "source-key", 4))
     }
 
     @Test

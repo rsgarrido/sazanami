@@ -1,5 +1,6 @@
 package io.github.rsgarrido.sazanami.player.waveform
 
+import java.security.MessageDigest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -8,7 +9,10 @@ import org.junit.Test
 class WaveformDataTest {
     @Test
     fun cacheKeyVersion_invalidatesPreviousWaveformAlgorithm() {
-        assertEquals(5, WAVEFORM_CACHE_KEY_VERSION)
+        val source = source()
+
+        assertEquals(6, WAVEFORM_CACHE_KEY_VERSION)
+        assertNotEquals(waveformCacheKeyForVersion(source, 5), waveformCacheKey(source))
     }
 
     @Test
@@ -80,4 +84,21 @@ class WaveformDataTest {
         lastModified = 1_700_000_000L,
         fileLength = 12_345_678L
     )
+
+    private fun waveformCacheKeyForVersion(source: WaveformSource, version: Int): String {
+        val identity = buildString {
+            append(version)
+            append('\u0000')
+            append(source.songId)
+            append('\u0000')
+            append(source.filePath)
+            append('\u0000')
+            append(source.lastModified)
+            append('\u0000')
+            append(source.fileLength)
+        }
+        return MessageDigest.getInstance("SHA-256")
+            .digest(identity.toByteArray(Charsets.UTF_8))
+            .joinToString(separator = "") { byte -> "%02x".format(byte) }
+    }
 }

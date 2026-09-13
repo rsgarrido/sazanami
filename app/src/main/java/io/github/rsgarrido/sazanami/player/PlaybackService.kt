@@ -25,6 +25,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.CommandButton
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.SessionError
@@ -85,6 +86,7 @@ class PlaybackService : MediaLibraryService() {
 
     private var mediaSession: MediaLibrarySession? = null
     private lateinit var physicalPlayers: DualPlayerPlaybackCoordinator
+    private lateinit var fragmentedMp4ExtractorsFactory: FragmentedMp4SeekExtractorsFactory
     private val player: ExoPlayer
         get() = physicalPlayers.logicalPhysicalPlayer
     private lateinit var sessionPlayer: SmoothPlaybackPlayer
@@ -574,6 +576,7 @@ class PlaybackService : MediaLibraryService() {
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
+        fragmentedMp4ExtractorsFactory = FragmentedMp4SeekExtractorsFactory(this)
 
         val activePipeline = createPhysicalPlayerPipeline(
             role = PhysicalPlayerRole.ACTIVE,
@@ -1085,6 +1088,9 @@ class PlaybackService : MediaLibraryService() {
         )
         return try {
             val physicalPlayer = ExoPlayer.Builder(this, renderersFactory)
+                .setMediaSourceFactory(
+                    DefaultMediaSourceFactory(this, fragmentedMp4ExtractorsFactory)
+                )
                 .setAudioAttributes(
                     audioAttributes,
                     role.managesAudioFocus
