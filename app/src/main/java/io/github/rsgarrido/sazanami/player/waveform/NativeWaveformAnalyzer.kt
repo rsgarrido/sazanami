@@ -40,7 +40,12 @@ class NativeWaveformAnalyzer internal constructor(
                 if (amplitude.isFinite()) amplitude.coerceIn(0f, 1f) else 0f
             }
             ?.let { amplitudes -> WaveformData(amplitudes, sourceKey) }
-        if (nativeData != null) return nativeData
+        val nativeIsFiniteAllZero = nativeData != null &&
+            (nativeAmplitudes?.all(Float::isFinite) == true) &&
+            nativeData.amplitudes.none { amplitude -> amplitude > 0f }
+        if (nativeData != null && !nativeIsFiniteAllZero) {
+            return nativeData
+        }
 
         return fallbackAnalyzer.analyze(song, sourceKey, barCount)
     }
