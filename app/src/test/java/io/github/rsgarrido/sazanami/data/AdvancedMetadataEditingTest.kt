@@ -4,6 +4,7 @@ import org.jaudiotagger.tag.FieldKey
 import org.jaudiotagger.tag.flac.FlacTag
 import org.jaudiotagger.tag.id3.ID3v24Tag
 import org.jaudiotagger.tag.images.ArtworkFactory
+import org.jaudiotagger.tag.mp4.Mp4Tag
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -144,6 +145,106 @@ class AdvancedMetadataEditingTest {
 
         assertArrayEquals(artworkBytes, tag.firstArtwork.binaryData)
         assertEquals("keep-custom-frame", tag.getFirst(FieldKey.CUSTOM1))
+    }
+
+    @Test
+    fun `MP4 track number edit preserves existing track total`() {
+        val tag = Mp4Tag().apply {
+            setField(FieldKey.TRACK, "3")
+            setField(FieldKey.TRACK_TOTAL, "12")
+        }
+
+        applyMetadataTextEdits(tag, mapOf(FieldKey.TRACK to edit("4")))
+
+        assertEquals("4", tag.getFirst(FieldKey.TRACK))
+        assertEquals("12", tag.getFirst(FieldKey.TRACK_TOTAL))
+    }
+
+    @Test
+    fun `MP4 track number edit remains valid without a track total`() {
+        val tag = Mp4Tag().apply {
+            setField(FieldKey.TRACK, "3")
+        }
+
+        applyMetadataTextEdits(tag, mapOf(FieldKey.TRACK to edit("4")))
+
+        assertEquals("4", tag.getFirst(FieldKey.TRACK))
+        assertEquals("", tag.getFirst(FieldKey.TRACK_TOTAL))
+    }
+
+    @Test
+    fun `MP4 track total edit preserves existing track number`() {
+        val tag = Mp4Tag().apply {
+            setField(FieldKey.TRACK, "3")
+            setField(FieldKey.TRACK_TOTAL, "12")
+        }
+
+        applyMetadataTextEdits(tag, mapOf(FieldKey.TRACK_TOTAL to edit("14")))
+
+        assertEquals("3", tag.getFirst(FieldKey.TRACK))
+        assertEquals("14", tag.getFirst(FieldKey.TRACK_TOTAL))
+    }
+
+    @Test
+    fun `MP4 disc edits preserve the other paired value`() {
+        val discNumberEdit = Mp4Tag().apply {
+            setField(FieldKey.DISC_NO, "1")
+            setField(FieldKey.DISC_TOTAL, "3")
+        }
+        val discTotalEdit = Mp4Tag().apply {
+            setField(FieldKey.DISC_NO, "1")
+            setField(FieldKey.DISC_TOTAL, "3")
+        }
+
+        applyMetadataTextEdits(discNumberEdit, mapOf(FieldKey.DISC_NO to edit("2")))
+        applyMetadataTextEdits(discTotalEdit, mapOf(FieldKey.DISC_TOTAL to edit("4")))
+
+        assertEquals("2", discNumberEdit.getFirst(FieldKey.DISC_NO))
+        assertEquals("3", discNumberEdit.getFirst(FieldKey.DISC_TOTAL))
+        assertEquals("1", discTotalEdit.getFirst(FieldKey.DISC_NO))
+        assertEquals("4", discTotalEdit.getFirst(FieldKey.DISC_TOTAL))
+    }
+
+    @Test
+    fun `MP4 clearing one paired value preserves its counterpart`() {
+        val track = Mp4Tag().apply {
+            setField(FieldKey.TRACK, "3")
+            setField(FieldKey.TRACK_TOTAL, "12")
+        }
+        val disc = Mp4Tag().apply {
+            setField(FieldKey.DISC_NO, "1")
+            setField(FieldKey.DISC_TOTAL, "2")
+        }
+
+        applyMetadataTextEdits(track, mapOf(FieldKey.TRACK_TOTAL to MetadataTextEdit(emptyList())))
+        applyMetadataTextEdits(disc, mapOf(FieldKey.DISC_NO to MetadataTextEdit(emptyList())))
+
+        assertEquals("3", track.getFirst(FieldKey.TRACK))
+        assertEquals("", track.getFirst(FieldKey.TRACK_TOTAL))
+        assertEquals("", disc.getFirst(FieldKey.DISC_NO))
+        assertEquals("2", disc.getFirst(FieldKey.DISC_TOTAL))
+    }
+
+    @Test
+    fun `MP4 text edit preserves artwork and unrelated fields`() {
+        val artworkBytes = byteArrayOf(0xff.toByte(), 0xd8.toByte(), 1, 2, 3, 0xff.toByte(), 0xd9.toByte())
+        val artwork = ArtworkFactory.getNew().apply {
+            binaryData = artworkBytes
+            mimeType = "image/jpeg"
+            description = "Cover"
+            pictureType = 3
+        }
+        val tag = Mp4Tag().apply {
+            setField(FieldKey.TITLE, "Old title")
+            setField(FieldKey.ALBUM, "Keep album")
+            setField(artwork)
+        }
+
+        applyMetadataTextEdits(tag, mapOf(FieldKey.TITLE to edit("New title")))
+
+        assertEquals("New title", tag.getFirst(FieldKey.TITLE))
+        assertEquals("Keep album", tag.getFirst(FieldKey.ALBUM))
+        assertArrayEquals(artworkBytes, tag.firstArtwork.binaryData)
     }
 
     @Test
