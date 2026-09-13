@@ -100,7 +100,7 @@ class MainActivity : ComponentActivity() {
         folderArtworkAccessState = folderArtworkAccessStore.readState()
         musicViewModel.setFolderArtworkTreeUri(uri)
         // During first-run folder selection there is no normal library to refresh yet. The
-        // confirmed core scan will use this same URI when progressive artwork starts.
+        // confirmed core scan will use this same URI when progressive enrichment starts.
         if (musicViewModel.libraryUiState.value.initialFolderSelectionCompleted) {
             musicViewModel.refreshFolderArtwork()
         }

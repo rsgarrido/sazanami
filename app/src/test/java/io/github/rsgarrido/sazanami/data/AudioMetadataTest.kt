@@ -142,6 +142,60 @@ class AudioMetadataTest {
     }
 
     @Test
+    fun `generic library merge preserves MediaStore core fields and adds embedded fields`() {
+        val merged = mergeEmbeddedLibraryMetadata(
+            song("MediaStore title", "MediaStore artist", "MediaStore album"),
+            EmbeddedMetadataReadResult(
+                metadata = AudioMetadata(
+                    title = "Embedded title",
+                    artists = listOf("Embedded artist"),
+                    album = "Embedded album",
+                    albumArtists = listOf("Embedded album artist"),
+                    genres = listOf("Alternative Metal"),
+                    publisher = "Label"
+                ),
+                format = AudioMetadataFormat.FLAC
+            )
+        )
+
+        assertEquals("MediaStore title", merged.title)
+        assertEquals("MediaStore artist", merged.artist)
+        assertEquals("MediaStore album", merged.album)
+        assertEquals("Embedded album artist", merged.albumArtist)
+        assertEquals(listOf("Alternative Metal"), merged.genres)
+        assertEquals("Label", merged.publisher)
+    }
+
+    @Test
+    fun `WAV library merge applies core and generic metadata in one result`() {
+        val merged = mergeEmbeddedLibraryMetadata(
+            song("filename", "<unknown>", "<unknown>"),
+            EmbeddedMetadataReadResult(
+                metadata = AudioMetadata(
+                    title = "Dust to Dust",
+                    artists = listOf("The Warning"),
+                    album = "Queen of the Murder Scene",
+                    albumArtists = listOf("The Warning"),
+                    genres = listOf("Hard Rock"),
+                    bpm = "128"
+                ),
+                format = AudioMetadataFormat.WAV
+            )
+        )
+
+        assertEquals("Dust to Dust", merged.title)
+        assertEquals("The Warning", merged.artist)
+        assertEquals("Queen of the Murder Scene", merged.album)
+        assertEquals("The Warning", merged.albumArtist)
+        assertEquals(listOf("Hard Rock"), merged.genres)
+        assertEquals(128, merged.bpm)
+        assertEquals(
+            CURRENT_EMBEDDED_METADATA_ENRICHMENT_VERSION,
+            merged.embeddedMetadataEnrichmentVersion
+        )
+    }
+
+    @Test
     fun `writable extensions match formats backed by configured jaudiotagger writers`() {
         assertEquals(
             setOf("mp3", "flac", "m4a", "mp4", "ogg", "wav", "aif", "aiff"),
