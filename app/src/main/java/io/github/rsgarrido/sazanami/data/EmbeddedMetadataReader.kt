@@ -1,6 +1,5 @@
 package io.github.rsgarrido.sazanami.data
 
-import org.jaudiotagger.audio.AudioFileIO
 import org.jaudiotagger.tag.FieldKey
 import org.jaudiotagger.tag.Tag
 import org.jaudiotagger.tag.wav.WavTag
@@ -9,8 +8,7 @@ import java.io.File
 /** Reads embedded tags without applying MediaStore or filename fallbacks. */
 class EmbeddedMetadataReader {
     fun read(file: File): EmbeddedMetadataReadResult {
-        val audioFile = AudioFileIO.read(file)
-        val tag = audioFile.tag
+        val tag = MetadataTagIO.readTag(file)
         val extension = file.extension.lowercase()
 
         if (tag is WavTag) {

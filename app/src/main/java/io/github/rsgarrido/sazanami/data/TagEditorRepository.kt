@@ -12,6 +12,7 @@ import org.jaudiotagger.tag.Tag
 import org.jaudiotagger.tag.TagOptionSingleton
 import org.jaudiotagger.tag.flac.FlacTag
 import org.jaudiotagger.tag.images.ArtworkFactory
+import org.jaudiotagger.tag.mp4.Mp4Tag
 import org.jaudiotagger.tag.wav.WavTag
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -112,8 +113,8 @@ class TagEditorRepository {
         }
 
         return try {
-            val audioFile = AudioFileIO.read(file)
-            val tag = audioFile.tagOrCreateAndSetDefault
+            val writeTarget = MetadataTagIO.openForWrite(file)
+            val tag = writeTarget.tag
             val originalTags = metadataForTag(tag).toEditableSongTags(song)
             val edits = editedTags.changedFieldsFrom(originalTags)
 
@@ -133,7 +134,7 @@ class TagEditorRepository {
                 edits = edits
             )
 
-            AudioFileIO.write(audioFile)
+            writeTarget.write()
 
             if (!writtenTextEditsMatch(file, edits)) {
                 return TagEditorResult(
@@ -178,8 +179,8 @@ class TagEditorRepository {
         var selectedArtworkHash: String? = null
 
         return try {
-            val audioFile = AudioFileIO.read(audioFileOnDisk)
-            val tag = audioFile.tagOrCreateAndSetDefault
+            val writeTarget = MetadataTagIO.openForWrite(audioFileOnDisk)
+            val tag = writeTarget.tag
             val originalTags = metadataForTag(tag).toEditableSongTags(song)
             val edits = editedTags.changedFieldsFrom(originalTags)
 
@@ -236,7 +237,7 @@ class TagEditorRepository {
                 }
             }
 
-            AudioFileIO.write(audioFile)
+            writeTarget.write()
 
             if (!writtenTextEditsMatch(audioFileOnDisk, edits)) {
                 return TagEditorResult(
@@ -358,8 +359,8 @@ class TagEditorRepository {
                     ExplicitPatchFailureKind.WRITE
                 )
             }
-            val audioFile = AudioFileIO.read(file)
-            val tag = audioFile.tagOrCreateAndSetDefault
+            val writeTarget = MetadataTagIO.openForWrite(file)
+            val tag = writeTarget.tag
             applyMetadataTextEdits(tag, edits)
             val artworkTag = if (tag is WavTag) tag.getID3Tag() else tag
             when (artworkEdit) {
@@ -384,7 +385,7 @@ class TagEditorRepository {
                     }
                 }
             }
-            AudioFileIO.write(audioFile)
+            writeTarget.write()
             if (!writtenTextEditsMatch(file, edits)) {
                 return ExplicitMetadataPatchResult(
                     false,
@@ -431,7 +432,7 @@ class TagEditorRepository {
         if (edits.isEmpty()) return true
 
         return try {
-            val writtenTag = AudioFileIO.read(file).tag ?: return false
+            val writtenTag = MetadataTagIO.readTag(file) ?: return false
             edits.all { (fieldKey, edit) ->
                 if (writtenTag is WavTag) {
                     tagValuesMatch(writtenTag.getID3Tag(), fieldKey, edit.values) &&
@@ -720,7 +721,7 @@ class TagEditorRepository {
 
     private fun artworkIsAbsent(audioFileOnDisk: File): Boolean {
         return try {
-            val tag = AudioFileIO.read(audioFileOnDisk).tag ?: return true
+            val tag = MetadataTagIO.readTag(audioFileOnDisk) ?: return true
             val artworkTag = if (tag is WavTag) tag.getID3Tag() else tag
             artworkTag.artworkList.isEmpty()
         } catch (_: Exception) {
@@ -735,8 +736,7 @@ class TagEditorRepository {
         expectedArtworkHash: String
     ): Boolean {
         return try {
-            val updatedAudioFile = AudioFileIO.read(audioFileOnDisk)
-            val updatedTag = updatedAudioFile.tag ?: return false
+            val updatedTag = MetadataTagIO.readTag(audioFileOnDisk) ?: return false
 
             updatedTag.artworkList.any { artwork ->
                 val artworkBytes = artwork.binaryData
@@ -833,6 +833,13 @@ internal fun applyMetadataTextEdits(
 }
 
 private fun applyMetadataTextEdit(tag: Tag, fieldKey: FieldKey, edit: MetadataTextEdit) {
+    if (tag is Mp4Tag && fieldKey in mp4PairedFieldKeys && !edit.isClear) {
+        // MP4 merges each half into the existing trkn/disk atom. Deleting first would discard
+        // the untouched track/disc number or total before Jaudiotagger can preserve it.
+        tag.setField(fieldKey, edit.values.single())
+        return
+    }
+
     if (edit.isClear) {
         tag.deleteField(fieldKey)
         return
@@ -850,6 +857,13 @@ private fun applyMetadataTextEdit(tag: Tag, fieldKey: FieldKey, edit: MetadataTe
         tag.addField(fieldKey, value)
     }
 }
+
+private val mp4PairedFieldKeys = setOf(
+    FieldKey.TRACK,
+    FieldKey.TRACK_TOTAL,
+    FieldKey.DISC_NO,
+    FieldKey.DISC_TOTAL
+)
 
 private val multiValueFieldKeys = setOf(
     FieldKey.ARTIST,
