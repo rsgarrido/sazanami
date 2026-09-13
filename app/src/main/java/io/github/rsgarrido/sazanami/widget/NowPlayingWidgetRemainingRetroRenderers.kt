@@ -529,7 +529,8 @@ private fun PocketFlipControlDeck(
             modifier = GlanceModifier
                 .fillMaxSize()
                 .background(appearance.background.asGlanceColorProvider())
-                .cornerRadius((appearance.panelCornerRadiusDp - 1).coerceAtLeast(0).dp),
+                .cornerRadius((appearance.panelCornerRadiusDp - 1).coerceAtLeast(0).dp)
+                .padding(end = if (showDeckDetails) 4.dp else 0.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (showDeckDetails) {
@@ -545,7 +546,6 @@ private fun PocketFlipControlDeck(
                 PocketFlipSpeakerGrille(appearance)
                 Spacer(GlanceModifier.width(5.dp))
                 PocketFlipHardwareScrew(appearance, edgeDp = 6)
-                Spacer(GlanceModifier.width(4.dp))
             }
         }
     }

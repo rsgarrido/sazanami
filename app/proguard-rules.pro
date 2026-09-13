@@ -34,3 +34,15 @@
 # WavTag initializes its logger from WavTag.class.getPackage().getName(), so
 # preserve this package name to prevent R8 from moving it into the unnamed package.
 -keeppackagenames org.jaudiotagger.tag.wav
+
+# Jaudiotagger registers ASF chunk readers by Class and constructs them through
+# Class.newInstance(), so their zero-argument constructors must survive R8.
+-keep,allowobfuscation class * implements org.jaudiotagger.audio.asf.io.ChunkReader {
+    <init>();
+}
+
+# Glance instantiates ActionCallback implementations through their public
+# zero-argument constructors.
+-keepclassmembers class * implements androidx.glance.appwidget.action.ActionCallback {
+    public <init>();
+}
