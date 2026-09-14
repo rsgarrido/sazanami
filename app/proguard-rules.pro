@@ -31,6 +31,12 @@
 # preserve those classes and their constructors for metadata reads and writes.
 -keep class org.jaudiotagger.tag.id3.framebody.** { *; }
 
+# ID3Tags.copyObject() reflectively invokes each datatype's public self-copy
+# constructor through runtime Class objects when converting older ID3 frames.
+-keepclassmembers class org.jaudiotagger.tag.datatype.** extends org.jaudiotagger.tag.datatype.AbstractDataType {
+    public <init>(org.jaudiotagger.tag.datatype.**);
+}
+
 # WavTag initializes its logger from WavTag.class.getPackage().getName(), so
 # preserve this package name to prevent R8 from moving it into the unnamed package.
 -keeppackagenames org.jaudiotagger.tag.wav
