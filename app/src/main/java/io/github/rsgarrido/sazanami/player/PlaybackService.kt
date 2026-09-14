@@ -22,6 +22,8 @@ import androidx.media3.common.Player
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.extractor.ts.AdtsExtractor
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.analytics.AnalyticsListener
@@ -576,7 +578,12 @@ class PlaybackService : MediaLibraryService() {
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
-        fragmentedMp4ExtractorsFactory = FragmentedMp4SeekExtractorsFactory(this)
+        fragmentedMp4ExtractorsFactory = FragmentedMp4SeekExtractorsFactory(
+            this,
+            DefaultExtractorsFactory().setAdtsExtractorFlags(
+                AdtsExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING
+            )
+        )
 
         val activePipeline = createPhysicalPlayerPipeline(
             role = PhysicalPlayerRole.ACTIVE,
