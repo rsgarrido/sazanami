@@ -5,7 +5,7 @@
 
     <style name="Theme.Sazanami.Starting" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/sazanami_splash_background</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_sazanami</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
         <item name="postSplashScreenTheme">@style/Theme.Sazanami</item>
     </style>
 </resources>
