@@ -2,12 +2,14 @@ package io.github.rsgarrido.sazanami.ui.library
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.unit.Dp
@@ -78,10 +80,9 @@ fun SongsTabContent(
     )
 
     if (songs.isEmpty()) {
-        Text(
-            text = "No songs found.",
-            modifier = Modifier.padding(16.dp)
-        )
+        EmptySongsContent(modifier, bottomContentPadding) {
+            Text(text = "No songs found.", modifier = Modifier.padding(16.dp))
+        }
     } else if (metadataFilteredSongs.isEmpty() && filterState.isActive) {
         LibrarySelectionHeader(
             LibrarySelectionEntity.SONG,
@@ -89,13 +90,15 @@ fun SongsTabContent(
             searchActive = true,
             selectionActionTarget = null
         )
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(text = "No songs match these filters.")
-            Button(onClick = onClearFilters) {
-                Text(text = "Clear filters")
+        EmptySongsContent(modifier, bottomContentPadding) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(text = "No songs match these filters.")
+                Button(onClick = onClearFilters) {
+                    Text(text = "Clear filters")
+                }
             }
         }
     } else if (filteredSongs.isEmpty()) {
@@ -105,10 +108,9 @@ fun SongsTabContent(
             searchActive = true,
             selectionActionTarget = null
         )
-        Text(
-            text = "No songs match your search.",
-            modifier = Modifier.padding(16.dp)
-        )
+        EmptySongsContent(modifier, bottomContentPadding) {
+            Text(text = "No songs match your search.", modifier = Modifier.padding(16.dp))
+        }
     } else {
         LibraryLayoutTransition(
             viewMode = viewMode,
@@ -233,14 +235,16 @@ fun RatedSongsTabContent(
             searchActive = searchQuery.isNotBlank() || selectedFilter != RatedSongFilter.ALL,
             selectionActionTarget = null
         )
-        Text(
-            ratedCollectionEmptyMessage(
-                filter = selectedFilter,
-                searchQuery = searchQuery,
-                quickRateActive = quickRateActive
-            ),
-            modifier = Modifier.padding(16.dp)
-        )
+        EmptySongsContent(modifier, bottomContentPadding) {
+            Text(
+                ratedCollectionEmptyMessage(
+                    filter = selectedFilter,
+                    searchQuery = searchQuery,
+                    quickRateActive = quickRateActive
+                ),
+                modifier = Modifier.padding(16.dp)
+            )
+        }
     } else {
         LibraryLayoutTransition(
             viewMode = viewMode,
@@ -335,10 +339,9 @@ fun FavoritesTabContent(
             searchActive = searchQuery.isNotBlank(),
             selectionActionTarget = null
         )
-        Text(
-            text = "No favorite songs yet.",
-            modifier = Modifier.padding(16.dp)
-        )
+        EmptySongsContent(modifier, bottomContentPadding) {
+            Text(text = "No favorite songs yet.", modifier = Modifier.padding(16.dp))
+        }
     } else if (filteredSongs.isEmpty()) {
         LibrarySelectionHeader(
             LibrarySelectionEntity.SONG,
@@ -346,10 +349,12 @@ fun FavoritesTabContent(
             searchActive = true,
             selectionActionTarget = null
         )
-        Text(
-            text = "No favorite songs match your search.",
-            modifier = Modifier.padding(16.dp)
-        )
+        EmptySongsContent(modifier, bottomContentPadding) {
+            Text(
+                text = "No favorite songs match your search.",
+                modifier = Modifier.padding(16.dp)
+            )
+        }
     } else {
         Column(
             modifier = modifier
@@ -410,6 +415,20 @@ fun FavoritesTabContent(
                 }
             )
         }
+    }
+}
+
+@Composable
+private fun EmptySongsContent(
+    modifier: Modifier,
+    bottomContentPadding: Dp,
+    content: @Composable () -> Unit
+) {
+    Box(
+        modifier = modifier.fillMaxSize().padding(bottom = bottomContentPadding),
+        contentAlignment = Alignment.Center
+    ) {
+        content()
     }
 }
 
