@@ -47,15 +47,42 @@ Sazanami is designed around local playback and privacy. Your music library does 
 
 Sazanami includes six expanded-player designs built on the same playback system. Each has its own mini player, interactions, visual identity, and transition into the full player.
 
-|                        Sazanami Default                        | Classic Wheel | Retro Rack |
-|:--------------------------------------------------------------:| :---: | :---: |
-| <img src="docs/assets/readme/themes/default.webp" width="260"> | <img src="docs/assets/readme/themes/classic-wheel.webp" width="260"> | <img src="docs/assets/readme/themes/retro-rack.webp" width="260"> |
-|               Artwork-focused and  customizable                | Wheel-driven portable-player interface | Rack-style player with a live spectrum and queue |
-
-| Pocket Flip | Pocket Cassette | Pocket Disc |
-| :---: | :---: | :---: |
-| <img src="docs/assets/readme/themes/pocket-flip.webp" width="260"> | <img src="docs/assets/readme/themes/pocket-cassette.webp" width="260"> | <img src="docs/assets/readme/themes/pocket-disc.webp" width="260"> |
-| Handheld-inspired controls and reactive track data | Cassette-inspired reels, tape motion, and transport controls | Digital portable-player layout with reactive levels |
+<table>
+  <tr>
+    <td align="center" valign="top">
+      <strong>Sazanami Default</strong><br><br>
+      <img src="docs/assets/readme/themes/default.webp" height="480" alt="Sazanami Default theme"><br><br>
+      Highly customizable
+    </td>
+    <td align="center" valign="top">
+      <strong>Classic Wheel</strong><br><br>
+      <img src="docs/assets/readme/themes/classic-wheel.webp" height="480" alt="Classic Wheel theme"><br><br>
+      Wheel-driven portable-player interface
+    </td>
+    <td align="center" valign="top">
+      <strong>Retro Rack</strong><br><br>
+      <img src="docs/assets/readme/themes/retro-rack.webp" height="480" alt="Retro Rack theme"><br><br>
+      Rack-style player with a live spectrum and queue
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top">
+      <strong>Pocket Flip</strong><br><br>
+      <img src="docs/assets/readme/themes/pocket-flip.webp" height="480" alt="Pocket Flip theme"><br><br>
+      Handheld-inspired controls and reactive track data
+    </td>
+    <td align="center" valign="top">
+      <strong>Pocket Cassette</strong><br><br>
+      <img src="docs/assets/readme/themes/pocket-cassette.webp" height="480" alt="Pocket Cassette theme"><br><br>
+      Cassette-inspired reels, tape motion, and transport controls
+    </td>
+    <td align="center" valign="top">
+      <strong>Pocket Disc</strong><br><br>
+      <img src="docs/assets/readme/themes/pocket-disc.webp" height="480" alt="Pocket Disc theme"><br><br>
+      Digital portable-player layout with reactive levels
+    </td>
+  </tr>
+</table>
 
 ### Make the Default player yours
 
@@ -366,11 +393,9 @@ Additional technical documentation will be added under [`docs/`](docs/).
 
 The repository also maintains internal architecture/status documentation used during development and technical audits.
 
-## Contributing
+## Feedback and Issues
 
 Bug reports and feature suggestions are welcome through GitHub Issues.
-
-For larger behavioral or architectural changes, opening an issue before beginning a pull request is recommended so the change can be discussed first.
 
 ## License
 
