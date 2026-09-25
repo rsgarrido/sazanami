@@ -671,7 +671,8 @@ private data class LibraryGridMetrics(
 
 @Composable
 private fun libraryGridMetrics(columnCount: Int): LibraryGridMetrics {
-    return when (LibraryGridColumns.normalize(columnCount)) {
+    val normalizedColumnCount = LibraryGridColumns.normalize(columnCount)
+    return when (normalizedColumnCount) {
         2 -> LibraryGridMetrics(
             columnCount = 2,
             horizontalSpacing = 12.dp,
@@ -713,7 +714,7 @@ private fun libraryGridMetrics(columnCount: Int): LibraryGridMetrics {
         )
 
         else -> LibraryGridMetrics(
-            columnCount = 4,
+            columnCount = normalizedColumnCount,
             horizontalSpacing = 8.dp,
             verticalSpacing = 14.dp,
             contentHorizontalPadding = 8.dp,
