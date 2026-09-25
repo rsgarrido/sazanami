@@ -38,10 +38,11 @@ import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import io.github.rsgarrido.sazanami.MainActivity
 import io.github.rsgarrido.sazanami.R
-import io.github.rsgarrido.sazanami.data.Song
+import io.github.rsgarrido.sazanami.data.LibraryCacheRepository
 import io.github.rsgarrido.sazanami.data.ListeningEventRepository
 import io.github.rsgarrido.sazanami.data.ListeningNativeTrackResolver
 import io.github.rsgarrido.sazanami.data.PlaybackQueueRepository
+import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.local.DatabaseProvider
 import io.github.rsgarrido.sazanami.data.membershipKey
 import io.github.rsgarrido.sazanami.data.preferences.AppPreferencesRepository
@@ -82,6 +83,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaLibraryService() {
@@ -97,6 +99,7 @@ class PlaybackService : MediaLibraryService() {
     private lateinit var playbackQueueCoordinator: PlaybackQueueCoordinator
     private var nowPlayingWidgetPublisher: NowPlayingWidgetPublisher? = null
     private var playbackQueueRestorationComplete = false
+    private var playbackQueueRestorationJob: Job? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val spectrumAnalyzerRuntime = SpectrumAnalyzerRuntime()
     private lateinit var appPreferencesRepository: AppPreferencesRepository
@@ -340,6 +343,43 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private val libraryCallback = object : MediaLibrarySession.Callback {
+        override fun onPlaybackResumption(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            isForPlayback: Boolean
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = serviceFuture {
+            Log.d(
+                "PlaybackResumption",
+                "requested forPlayback=$isForPlayback controller=${controller.packageName}"
+            )
+            // The service owns cold restoration. Waiting for that same coordinator also ensures
+            // an external controller's live timeline wins over the saved Room snapshot.
+            playbackQueueRestorationJob?.join()
+            val count = sessionPlayer.mediaItemCount
+            if (count == 0) {
+                Log.d("PlaybackResumption", "no resumable active queue")
+                MediaSession.MediaItemsWithStartPosition(emptyList(), C.INDEX_UNSET, C.TIME_UNSET)
+            } else {
+                val currentIndex = sessionPlayer.currentMediaItemIndex.coerceIn(0, count - 1)
+                val positionMs = sessionPlayer.currentPosition.coerceAtLeast(0L)
+                val items = if (isForPlayback) {
+                    (0 until count).map(sessionPlayer::getMediaItemAt)
+                } else {
+                    listOf(sessionPlayer.getMediaItemAt(currentIndex))
+                }
+                Log.d(
+                    "PlaybackResumption",
+                    "resolved forPlayback=$isForPlayback queueSize=$count " +
+                        "currentIndex=$currentIndex positionMs=$positionMs"
+                )
+                MediaSession.MediaItemsWithStartPosition(
+                    items,
+                    if (isForPlayback) currentIndex else 0,
+                    positionMs
+                )
+            }
+        }
+
         override fun onConnect(
             session: MediaSession,
             controller: MediaSession.ControllerInfo
@@ -651,7 +691,14 @@ class PlaybackService : MediaLibraryService() {
             persistence = PlaybackQueueRepository(database).asPlaybackQueuePersistence(),
             trackAccess = RoomPlaybackQueueTrackAccess(
                 database = database,
-                catalogSongs = { androidAutoCatalogRepository.loadSnapshot().songs }
+                // Cold queue restoration only needs cached tracks, not the browse catalog's
+                // playlists, artwork preparation, or progressive metadata work.
+                catalogSongs = {
+                    val liveSongs = PlaybackLibraryBridge.songs
+                    if (liveSongs.isNotEmpty()) liveSongs else withContext(Dispatchers.IO) {
+                        LibraryCacheRepository(database.cachedSongDao()).getAllCachedSongs()
+                    }
+                }
             ),
             runtime = Media3PlaybackQueueRuntime(
                 player = sessionPlayer,
@@ -687,7 +734,7 @@ class PlaybackService : MediaLibraryService() {
             onActiveQueueChanged = PlaybackQueueRuntimeBridge::updateActiveQueueId
         )
         PlaybackQueueRuntimeBridge.register(playbackQueueCoordinator)
-        serviceScope.launch {
+        playbackQueueRestorationJob = serviceScope.launch {
             try {
                 playbackQueueCoordinator.initialize()
                 playbackQueueRestorationComplete = true
