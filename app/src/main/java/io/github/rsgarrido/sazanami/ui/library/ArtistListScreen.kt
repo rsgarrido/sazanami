@@ -50,7 +50,8 @@ fun ArtistListScreen(
         LibrarySortDirection.ASCENDING
     ),
     listState: LazyListState? = null,
-    bottomContentPadding: Dp = 0.dp
+    bottomContentPadding: Dp = 0.dp,
+    fastScrollSessionKey: Any? = null
 ) {
     val artists = remember(songs, sortState) {
         sortedLibraryArtistGroups(songs, sortState)
@@ -62,10 +63,17 @@ fun ArtistListScreen(
     val artistPictureUi = LocalArtistPictureUi.current
     val libraryQueueUi = LocalLibraryQueueUi.current
     val rememberedListState = rememberLazyListState()
+    val activeListState = listState ?: rememberedListState
 
+    LibraryFastScrollViewport(
+        state = activeListState,
+        enabled = true,
+        sessionKey = sortState to fastScrollSessionKey,
+        modifier = modifier.fillMaxSize()
+    ) {
     LazyColumn(
-        state = listState ?: rememberedListState,
-        modifier = modifier.fillMaxSize(),
+        state = activeListState,
+        modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = bottomContentPadding)
     ) {
         items(
@@ -146,6 +154,7 @@ fun ArtistListScreen(
                     )
             )
         }
+    }
     }
 
     actionSheetTarget?.let { target ->

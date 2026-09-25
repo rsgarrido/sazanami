@@ -72,7 +72,9 @@ fun SongGrid(
     bottomContentPadding: Dp,
     modifier: Modifier = Modifier,
     ratingValuesByReferenceKey: Map<String, Int> = emptyMap(),
-    gridState: LazyGridState? = null
+    gridState: LazyGridState? = null,
+    fastScrollEnabled: Boolean = false,
+    fastScrollSessionKey: Any? = null
 ) {
     val gridMetrics = libraryGridMetrics(gridColumnCount)
     var actionSheetTarget by remember {
@@ -83,6 +85,7 @@ fun SongGrid(
     val libraryQueueUi = LocalLibraryQueueUi.current
     val rateSongLabel = stringResource(R.string.rate_song)
     val rememberedGridState = rememberLazyGridState()
+    val activeGridState = gridState ?: rememberedGridState
     val selectionUi = LocalLibrarySelectionUi.current
     val selectionActive = selectionEnabled &&
         selectionUi.state.entity == LibrarySelectionEntity.SONG && selectionUi.state.isActive
@@ -128,10 +131,17 @@ fun SongGrid(
             )
         }
 
+    LibraryFastScrollViewport(
+        state = activeGridState,
+        columns = gridMetrics.columnCount,
+        enabled = fastScrollEnabled,
+        sessionKey = fastScrollSessionKey to selectionActive,
+        modifier = Modifier.weight(1f).fillMaxWidth()
+    ) {
     LazyVerticalGrid(
-        state = gridState ?: rememberedGridState,
+        state = activeGridState,
         columns = GridCells.Fixed(gridMetrics.columnCount),
-        modifier = Modifier.weight(1f).fillMaxWidth(),
+        modifier = Modifier.fillMaxSize(),
         contentPadding = libraryGridPadding(
             if (selectionActive) 0.dp else bottomContentPadding,
             gridMetrics
@@ -197,6 +207,7 @@ fun SongGrid(
             )
         }
     }
+    }
 
         if (selectionActive) {
             LibrarySelectionActionBar(
@@ -232,7 +243,8 @@ fun AlbumGridScreen(
     searchActive: Boolean = false,
     bottomContentPadding: Dp,
     gridState: LazyGridState? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    fastScrollSessionKey: Any? = null
 ) {
     val albums = sortedLibraryAlbumGroups(songs, sortState)
     val gridMetrics = libraryGridMetrics(gridColumnCount)
@@ -242,6 +254,7 @@ fun AlbumGridScreen(
     val homePinUi = LocalHomePinUi.current
     val libraryQueueUi = LocalLibraryQueueUi.current
     val rememberedGridState = rememberLazyGridState()
+    val activeGridState = gridState ?: rememberedGridState
     val selectionUi = LocalLibrarySelectionUi.current
     val selectionActive = selectionEnabled &&
         selectionUi.state.entity == LibrarySelectionEntity.ALBUM && selectionUi.state.isActive
@@ -287,10 +300,17 @@ fun AlbumGridScreen(
             )
         }
 
+    LibraryFastScrollViewport(
+        state = activeGridState,
+        columns = gridMetrics.columnCount,
+        enabled = true,
+        sessionKey = Triple(sortState, selectionActive, fastScrollSessionKey),
+        modifier = Modifier.weight(1f).fillMaxWidth()
+    ) {
     LazyVerticalGrid(
-        state = gridState ?: rememberedGridState,
+        state = activeGridState,
         columns = GridCells.Fixed(gridMetrics.columnCount),
-        modifier = Modifier.weight(1f).fillMaxWidth(),
+        modifier = Modifier.fillMaxSize(),
         contentPadding = libraryGridPadding(
             if (selectionActive) 0.dp else bottomContentPadding,
             gridMetrics
@@ -381,6 +401,7 @@ fun AlbumGridScreen(
             )
         }
     }
+    }
 
         if (selectionActive) {
             LibrarySelectionActionBar(
@@ -416,7 +437,8 @@ fun ArtistGridScreen(
     onArtistAddToPlaylistClick: (String, List<Song>) -> Unit,
     bottomContentPadding: Dp,
     gridState: LazyGridState? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    fastScrollSessionKey: Any? = null
 ) {
     val artists = remember(songs, sortState) {
         sortedLibraryArtistGroups(songs, sortState)
@@ -429,11 +451,19 @@ fun ArtistGridScreen(
     val artistPictureUi = LocalArtistPictureUi.current
     val libraryQueueUi = LocalLibraryQueueUi.current
     val rememberedGridState = rememberLazyGridState()
+    val activeGridState = gridState ?: rememberedGridState
 
+    LibraryFastScrollViewport(
+        state = activeGridState,
+        columns = gridMetrics.columnCount,
+        enabled = true,
+        sessionKey = sortState to fastScrollSessionKey,
+        modifier = modifier.fillMaxSize()
+    ) {
     LazyVerticalGrid(
-        state = gridState ?: rememberedGridState,
+        state = activeGridState,
         columns = GridCells.Fixed(gridMetrics.columnCount),
-        modifier = modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize(),
         contentPadding = libraryGridPadding(bottomContentPadding, gridMetrics),
         horizontalArrangement = Arrangement.spacedBy(gridMetrics.horizontalSpacing),
         verticalArrangement = Arrangement.spacedBy(gridMetrics.verticalSpacing)
@@ -506,6 +536,7 @@ fun ArtistGridScreen(
                 )
             )
         }
+    }
     }
 
     actionSheetTarget?.let { target ->

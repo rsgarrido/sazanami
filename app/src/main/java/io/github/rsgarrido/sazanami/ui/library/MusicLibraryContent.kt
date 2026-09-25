@@ -355,6 +355,8 @@ internal fun MusicLibraryContent(
             } else {
                 SongList(
                     songs = recentlyPlayedSongs,
+                    fastScrollEnabled = true,
+                    fastScrollSessionKey = LibraryTab.RECENTLY_PLAYED,
                     currentSongId = currentSong?.id,
                     recentlyAddedSongIds = recentlyAddedSongIds,
                     favoriteMembershipKeys = favoriteMembershipKeys,
@@ -402,6 +404,8 @@ internal fun MusicLibraryContent(
                         SongList(
                             songs = displayedSongs,
                             listState = scrollStates.list,
+                            fastScrollEnabled = true,
+                            fastScrollSessionKey = selectedSongSortState to searchQuery,
                             currentSongId = currentSong?.id,
                             recentlyAddedSongIds = recentlyAddedSongIds,
                             favoriteMembershipKeys = favoriteMembershipKeys,
@@ -422,6 +426,8 @@ internal fun MusicLibraryContent(
                         SongGrid(
                             songs = displayedSongs,
                             gridState = scrollStates.grid,
+                            fastScrollEnabled = true,
+                            fastScrollSessionKey = selectedSongSortState to searchQuery,
                             currentSongId = currentSong?.id,
                             gridColumnCount = gridColumnCount,
                             recentlyAddedSongIds = recentlyAddedSongIds,
@@ -458,6 +464,8 @@ internal fun MusicLibraryContent(
             } else {
                 SongList(
                     songs = mostPlayedSongs,
+                    fastScrollEnabled = true,
+                    fastScrollSessionKey = LibraryTab.MOST_PLAYED,
                     currentSongId = currentSong?.id,
                     recentlyAddedSongIds = recentlyAddedSongIds,
                     favoriteMembershipKeys = favoriteMembershipKeys,
