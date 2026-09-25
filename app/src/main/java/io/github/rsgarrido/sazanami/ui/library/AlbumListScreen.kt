@@ -61,7 +61,8 @@ fun AlbumListScreen(
         LibrarySortDirection.ASCENDING
     ),
     listState: LazyListState? = null,
-    bottomContentPadding: Dp = 0.dp
+    bottomContentPadding: Dp = 0.dp,
+    fastScrollSessionKey: Any? = null
 ) {
     val albums = sortedLibraryAlbumGroups(songs, sortState)
     var actionSheetTarget by remember {
@@ -70,6 +71,7 @@ fun AlbumListScreen(
     val homePinUi = LocalHomePinUi.current
     val libraryQueueUi = LocalLibraryQueueUi.current
     val rememberedListState = rememberLazyListState()
+    val activeListState = listState ?: rememberedListState
     val selectionUi = LocalLibrarySelectionUi.current
     val selectionActive = selectionEnabled &&
         selectionUi.state.entity == LibrarySelectionEntity.ALBUM && selectionUi.state.isActive
@@ -115,9 +117,15 @@ fun AlbumListScreen(
             )
         }
 
+    LibraryFastScrollViewport(
+        state = activeListState,
+        enabled = true,
+        sessionKey = Triple(sortState, selectionActive, fastScrollSessionKey),
+        modifier = Modifier.weight(1f).fillMaxWidth()
+    ) {
     LazyColumn(
-        state = listState ?: rememberedListState,
-        modifier = Modifier.weight(1f).fillMaxWidth(),
+        state = activeListState,
+        modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = if (selectionActive) 0.dp else bottomContentPadding)
     ) {
         items(
@@ -225,6 +233,7 @@ fun AlbumListScreen(
                     )
             )
         }
+    }
     }
 
         if (selectionActive) {

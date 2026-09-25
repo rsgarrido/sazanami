@@ -6,6 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.PaddingValues
@@ -77,6 +78,8 @@ fun SongList(
     ratingValuesByReferenceKey: Map<String, Int> = emptyMap(),
     quickRatingMode: Boolean = false,
     listState: LazyListState? = null,
+    fastScrollEnabled: Boolean = false,
+    fastScrollSessionKey: Any? = null,
     headerContent: (@Composable () -> Unit)? = null,
     emptyContent: (@Composable () -> Unit)? = null,
     beforeSongsContent: (androidx.compose.foundation.lazy.LazyListScope.() -> Unit)? = null,
@@ -92,6 +95,7 @@ fun SongList(
     val libraryQueueUi = LocalLibraryQueueUi.current
     val rateSongLabel = stringResource(AppR.string.rate_song)
     val rememberedListState = rememberLazyListState()
+    val activeListState = listState ?: rememberedListState
     val selectionUi = LocalLibrarySelectionUi.current
     val selectionActive = selectionEnabled &&
         selectionUi.state.entity == LibrarySelectionEntity.SONG && selectionUi.state.isActive
@@ -137,9 +141,15 @@ fun SongList(
             )
         }
 
+    LibraryFastScrollViewport(
+        state = activeListState,
+        enabled = fastScrollEnabled,
+        sessionKey = fastScrollSessionKey to selectionActive,
+        modifier = Modifier.weight(1f).fillMaxWidth()
+    ) {
     LazyColumn(
-        state = listState ?: rememberedListState,
-        modifier = Modifier.weight(1f).fillMaxWidth(),
+        state = activeListState,
+        modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = if (selectionActive) 0.dp else bottomContentPadding)
     ) {
         beforeSongsContent?.invoke(this)
@@ -325,6 +335,7 @@ fun SongList(
             )
         }
         afterSongsContent?.invoke(this)
+    }
     }
 
         if (selectionActive) {
