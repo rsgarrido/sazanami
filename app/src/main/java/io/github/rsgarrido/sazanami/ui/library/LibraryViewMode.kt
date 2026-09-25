@@ -51,7 +51,7 @@ enum class LibraryViewCategory(val storageKey: String) {
 
 object LibraryGridColumns {
     const val DEFAULT = 2
-    val supported = 2..4
+    val supported = 2..5
 
     fun normalize(value: Int): Int {
         return if (value in supported) value else DEFAULT
@@ -65,7 +65,8 @@ enum class LibraryViewOption(
     LIST(LibraryViewMode.LIST, null),
     GRID_2(LibraryViewMode.GRID, 2),
     GRID_3(LibraryViewMode.GRID, 3),
-    GRID_4(LibraryViewMode.GRID, 4);
+    GRID_4(LibraryViewMode.GRID, 4),
+    GRID_5(LibraryViewMode.GRID, 5);
 
     val label: String
         get() = if (this == LIST) "List" else "Grid: $gridColumnCount columns"
