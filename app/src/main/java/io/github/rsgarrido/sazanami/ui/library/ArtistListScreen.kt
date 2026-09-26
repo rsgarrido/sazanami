@@ -105,6 +105,8 @@ fun ArtistListScreen(
                         ArtistPicture(
                             identity = artist.identity,
                             fallbackModel = firstSong?.albumArtUri,
+                            unresolvedFallbackArtwork = firstSong.hasUnresolvedLibraryArtwork(),
+                            neutralWhileLoading = true,
                             contentDescription = "Artwork for ${artist.name}",
                             modifier = artworkModifier,
                             variant = VisualAssetVariant.THUMBNAIL

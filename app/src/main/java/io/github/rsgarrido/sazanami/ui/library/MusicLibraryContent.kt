@@ -355,6 +355,7 @@ internal fun MusicLibraryContent(
             } else {
                 SongList(
                     songs = recentlyPlayedSongs,
+                    neutralArtworkWhileLoading = true,
                     fastScrollEnabled = true,
                     fastScrollSessionKey = LibraryTab.RECENTLY_PLAYED,
                     currentSongId = currentSong?.id,
@@ -403,6 +404,7 @@ internal fun MusicLibraryContent(
                     listContent = {
                         SongList(
                             songs = displayedSongs,
+                            neutralArtworkWhileLoading = true,
                             listState = scrollStates.list,
                             fastScrollEnabled = true,
                             fastScrollSessionKey = selectedSongSortState to searchQuery,
@@ -464,6 +466,7 @@ internal fun MusicLibraryContent(
             } else {
                 SongList(
                     songs = mostPlayedSongs,
+                    neutralArtworkWhileLoading = true,
                     fastScrollEnabled = true,
                     fastScrollSessionKey = LibraryTab.MOST_PLAYED,
                     currentSongId = currentSong?.id,

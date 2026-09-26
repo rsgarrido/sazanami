@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -36,7 +37,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
-import coil.compose.AsyncImage
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.visual.VisualAssetVariant
 import io.github.rsgarrido.sazanami.ui.home.LocalHomePinUi
@@ -161,14 +161,19 @@ fun AlbumListScreen(
                             LibrarySharedArtworkSourceSlotTreatment.NEUTRAL_SURFACE,
                         hasResolvedArtwork = artworkRequest != null
                     ) { artworkModifier ->
-                        AsyncImage(
+                        LibraryArtworkImage(
                             model = artworkRequest,
+                            unresolvedNull = firstSong.hasUnresolvedLibraryArtwork(),
                             contentDescription = "Album art for ${album.title}",
-                            modifier = artworkModifier,
-                            contentScale = ContentScale.Crop,
-                            error = painterResource(R.drawable.ic_media_play),
-                            placeholder = painterResource(R.drawable.ic_media_play)
-                        )
+                            modifier = artworkModifier
+                        ) {
+                            Image(
+                                painter = painterResource(R.drawable.ic_media_play),
+                                contentDescription = "Album art for ${album.title}",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
                     }
                 },
                 headlineContent = {

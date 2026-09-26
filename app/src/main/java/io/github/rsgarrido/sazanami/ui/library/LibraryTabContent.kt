@@ -118,6 +118,7 @@ fun SongsTabContent(
             listContent = {
                 SongList(
                     songs = displayedSongs,
+                    neutralArtworkWhileLoading = true,
                     listState = scrollStates.list,
                     fastScrollEnabled = true,
                     fastScrollSessionKey = Triple(sortState, filterState, searchQuery),
@@ -214,6 +215,7 @@ fun RatedSongsTabContent(
     if (quickRateActive && displayedSongs.isNotEmpty()) {
         SongList(
             songs = displayedSongs,
+            neutralArtworkWhileLoading = true,
             listState = scrollStates.list,
             fastScrollEnabled = true,
             fastScrollSessionKey = Triple(sortState, selectedFilter, quickRateActive) to searchQuery,
@@ -258,6 +260,7 @@ fun RatedSongsTabContent(
             listContent = {
                 SongList(
                     songs = displayedSongs,
+                    neutralArtworkWhileLoading = true,
                     listState = scrollStates.list,
                     fastScrollEnabled = true,
                     fastScrollSessionKey = Triple(sortState, selectedFilter, quickRateActive) to searchQuery,
@@ -385,6 +388,7 @@ fun FavoritesTabContent(
                 listContent = {
                     SongList(
                         songs = displayedSongs,
+                        neutralArtworkWhileLoading = true,
                         listState = scrollStates.list,
                         fastScrollEnabled = true,
                         fastScrollSessionKey = sortState to searchQuery,
