@@ -2,6 +2,7 @@ package io.github.rsgarrido.sazanami.ui.library
 
 import android.net.Uri
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -376,15 +377,19 @@ internal fun MusicLibraryContent(
         }
 
         LibraryTab.RECENTLY_ADDED -> {
-            val searchedSongs = io.github.rsgarrido.sazanami.ui.filterSongsForSearch(
-                recentlyAddedSongs,
-                searchQuery
-            )
-            val displayedSongs = io.github.rsgarrido.sazanami.ui.sortSongsForLibrary(
-                searchedSongs,
-                selectedSongSortState.option,
-                selectedSongSortState.direction
-            )
+            val searchedSongs = remember(recentlyAddedSongs, searchQuery) {
+                io.github.rsgarrido.sazanami.ui.filterSongsForSearch(
+                    recentlyAddedSongs,
+                    searchQuery
+                )
+            }
+            val displayedSongs = remember(searchedSongs, selectedSongSortState) {
+                io.github.rsgarrido.sazanami.ui.sortSongsForLibrary(
+                    searchedSongs,
+                    selectedSongSortState.option,
+                    selectedSongSortState.direction
+                )
+            }
             val scrollStates = rememberLibrarySortScrollStates(selectedSongSortState)
             if (displayedSongs.isEmpty()) {
                 LibrarySelectionHeader(

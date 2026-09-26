@@ -64,7 +64,9 @@ fun AlbumListScreen(
     bottomContentPadding: Dp = 0.dp,
     fastScrollSessionKey: Any? = null
 ) {
-    val albums = sortedLibraryAlbumGroups(songs, sortState)
+    val albums = remember(songs, sortState) {
+        sortedLibraryAlbumGroups(songs, sortState)
+    }
     var actionSheetTarget by remember {
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
     }

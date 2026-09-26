@@ -246,7 +246,9 @@ fun AlbumGridScreen(
     modifier: Modifier = Modifier,
     fastScrollSessionKey: Any? = null
 ) {
-    val albums = sortedLibraryAlbumGroups(songs, sortState)
+    val albums = remember(songs, sortState) {
+        sortedLibraryAlbumGroups(songs, sortState)
+    }
     val gridMetrics = libraryGridMetrics(gridColumnCount)
     var actionSheetTarget by remember {
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
