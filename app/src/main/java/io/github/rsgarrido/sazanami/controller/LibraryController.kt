@@ -105,12 +105,14 @@ internal suspend fun <T> runLibraryScanOffMain(block: suspend () -> T): T {
 internal class LibraryPublicationTracker {
     private var lastSnapshot: MusicLibraryData? = null
 
+    @Synchronized
     fun shouldPublish(snapshot: MusicLibraryData): Boolean {
         if (snapshot == lastSnapshot) return false
         lastSnapshot = snapshot
         return true
     }
 
+    @Synchronized
     fun reset() {
         lastSnapshot = null
     }
@@ -171,6 +173,7 @@ class LibraryController(
     private var libraryPublishCount = 0L
     private var libraryScanCount = 0L
     private val publicationTracker = LibraryPublicationTracker()
+    private val libraryPublicationMutex = Mutex()
     private val libraryScanMutex = Mutex()
     private val permissionGate = LibraryPermissionGate()
     private var folderArtworkTreeUri: Uri? = null
@@ -1520,8 +1523,9 @@ class LibraryController(
                 if (!permissionGate.isCurrent(scanToken)) throw CancellationException()
                 latestSongs = batch
                 artworkBatchCount += 1
+                val recentlyAddedBatch = sortSongsByDateAddedDescending(batch)
                 withContext(Dispatchers.Main.immediate) {
-                    publishProgressiveEnrichmentBatch(batch, scanToken)
+                    publishProgressiveEnrichmentBatch(batch, recentlyAddedBatch, scanToken)
                 }
             }
 
@@ -1598,8 +1602,9 @@ class LibraryController(
             if (processedSincePublication >= INITIAL_METADATA_ENRICHMENT_BATCH_SIZE) {
                 if (hasUnpublishedChanges) {
                     val batch = workingSongs.toList()
+                    val recentlyAddedBatch = sortSongsByDateAddedDescending(batch)
                     withContext(Dispatchers.Main.immediate) {
-                        publishProgressiveEnrichmentBatch(batch, scanToken)
+                        publishProgressiveEnrichmentBatch(batch, recentlyAddedBatch, scanToken)
                     }
                     batchCount += 1
                     hasUnpublishedChanges = false
@@ -1610,8 +1615,9 @@ class LibraryController(
 
         if (hasUnpublishedChanges) {
             val batch = workingSongs.toList()
+            val recentlyAddedBatch = sortSongsByDateAddedDescending(batch)
             withContext(Dispatchers.Main.immediate) {
-                publishProgressiveEnrichmentBatch(batch, scanToken)
+                publishProgressiveEnrichmentBatch(batch, recentlyAddedBatch, scanToken)
             }
             batchCount += 1
         }
@@ -1634,6 +1640,7 @@ class LibraryController(
 
     private fun publishProgressiveEnrichmentBatch(
         updatedSongs: List<Song>,
+        recentlyAddedSongs: List<Song>,
         scanToken: Long
     ) {
         if (!permissionGate.isCurrent(scanToken)) return
@@ -1649,8 +1656,8 @@ class LibraryController(
         )
         updateState {
             copy(
-                songs = updatedSongs.toList(),
-                recentlyAddedSongs = sortSongsByDateAddedDescending(updatedSongs)
+                songs = updatedSongs,
+                recentlyAddedSongs = recentlyAddedSongs
             )
         }
         PlaybackLibraryBridge.updateSongs(updatedSongs)
@@ -1715,8 +1722,11 @@ class LibraryController(
         libraryData: MusicLibraryData,
         reconcilePlayback: Boolean,
         traceName: String = PerformanceTraceNames.LIBRARY_PUBLICATION
-    ) {
-        if (!publicationTracker.shouldPublish(libraryData)) {
+    ) = libraryPublicationMutex.withLock {
+        val hasChanged = withContext(Dispatchers.Default) {
+            publicationTracker.shouldPublish(libraryData)
+        }
+        if (!hasChanged) {
             updateState {
                 copy(
                     lastRefreshSummary = lastLibraryRefreshResult?.toUiSummary(),
@@ -1725,11 +1735,11 @@ class LibraryController(
                     errorMessage = null
                 )
             }
-            return
+            return@withLock
         }
         val indexStartedAt = SystemClock.elapsedRealtime()
-        val indexedSnapshot = withContext(Dispatchers.Default) {
-            tracePerformance(PerformanceTraceNames.LIBRARY_INDEX_CONSTRUCTION) {
+        val (indexedSnapshot, recentlyAddedSongs) = withContext(Dispatchers.Default) {
+            val index = tracePerformance(PerformanceTraceNames.LIBRARY_INDEX_CONSTRUCTION) {
                 IndexedLibrarySnapshot(
                     index = SongReferenceIndex.build(libraryData.referenceSongs),
                     visibleMembershipKeys = libraryData.songs.mapTo(mutableSetOf()) {
@@ -1737,14 +1747,21 @@ class LibraryController(
                     }
                 )
             }
+            index to sortSongsByDateAddedDescending(libraryData.songs)
         }
         debugLibraryTiming(
-            "final-library-index elapsedMs=${SystemClock.elapsedRealtime() - indexStartedAt} " +
+            "final-library-index-and-recent elapsedMs=${SystemClock.elapsedRealtime() - indexStartedAt} " +
                     "referenceSongs=${libraryData.referenceSongs.size} " +
                     "visibleSongs=${libraryData.songs.size}"
         )
         val publicationStartedAt = SystemClock.elapsedRealtime()
-        publishLibrarySnapshot(libraryData, reconcilePlayback, indexedSnapshot, traceName)
+        publishLibrarySnapshot(
+            libraryData,
+            reconcilePlayback,
+            indexedSnapshot,
+            recentlyAddedSongs,
+            traceName
+        )
         debugLibraryTiming(
             "library-publication-complete trace=$traceName elapsedMs=" +
                     "${SystemClock.elapsedRealtime() - publicationStartedAt} " +
@@ -1756,6 +1773,7 @@ class LibraryController(
         libraryData: MusicLibraryData,
         reconcilePlayback: Boolean,
         indexedSnapshot: IndexedLibrarySnapshot,
+        recentlyAddedSongs: List<Song>,
         traceName: String
     ) = tracePerformance(traceName) {
         songReferenceIndex = indexedSnapshot.index
@@ -1781,7 +1799,7 @@ class LibraryController(
                 isSelectedPlaylistLoading = current.isSelectedPlaylistLoading,
                 recentlyPlayedSongs = current.recentlyPlayedSongs,
                 mostPlayedSongs = current.mostPlayedSongs,
-                recentlyAddedSongs = sortSongsByDateAddedDescending(publishedSongs),
+                recentlyAddedSongs = recentlyAddedSongs,
                 songRatingFilter = current.songRatingFilter,
                 unresolvedFavoriteCount = current.unresolvedFavoriteCount,
                 unresolvedPlaylistRowCount = current.unresolvedPlaylistRowCount,

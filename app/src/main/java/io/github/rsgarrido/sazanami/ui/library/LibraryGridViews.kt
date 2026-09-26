@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
@@ -30,7 +31,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -39,7 +39,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.membershipKey
@@ -158,6 +157,7 @@ fun SongGrid(
                 song.membershipKey() in selectionUi.state.selectedKeys
             LibraryGridCard(
                 artworkUri = song.albumArtUri,
+                unresolvedNull = song.hasUnresolvedLibraryArtwork(),
                 artworkDescription = "Album art for ${song.title}",
                 title = song.title.ifBlank { "Unknown Title" },
                 subtitle = song.artist.ifBlank { "Unknown Artist" },
@@ -246,7 +246,9 @@ fun AlbumGridScreen(
     modifier: Modifier = Modifier,
     fastScrollSessionKey: Any? = null
 ) {
-    val albums = sortedLibraryAlbumGroups(songs, sortState)
+    val albums = remember(songs, sortState) {
+        sortedLibraryAlbumGroups(songs, sortState)
+    }
     val gridMetrics = libraryGridMetrics(gridColumnCount)
     var actionSheetTarget by remember {
         mutableStateOf<LibraryItemActionSheetTarget?>(null)
@@ -350,12 +352,15 @@ fun AlbumGridScreen(
                             LibrarySharedArtworkSourceSlotTreatment.NEUTRAL_SURFACE,
                         hasResolvedArtwork = artworkRequest != null
                     ) { artworkModifier ->
-                        AsyncImage(
+                        LibraryArtworkImage(
                             model = artworkRequest,
+                            unresolvedNull = album.songs.firstOrNull()
+                                .hasUnresolvedLibraryArtwork(),
                             contentDescription = "Album art for ${album.title}",
-                            modifier = artworkModifier,
-                            contentScale = ContentScale.Crop
-                        )
+                            modifier = artworkModifier
+                        ) {
+                            LibraryGridArtworkFallback(gridMetrics)
+                        }
                     }
                 },
                 title = album.title,
@@ -497,6 +502,9 @@ fun ArtistGridScreen(
                         ArtistPicture(
                             identity = artist.identity,
                             fallbackModel = artist.songs.firstOrNull()?.albumArtUri,
+                            unresolvedFallbackArtwork = artist.songs.firstOrNull()
+                                .hasUnresolvedLibraryArtwork(),
+                            neutralWhileLoading = true,
                             contentDescription = "Artwork for ${artist.name}",
                             modifier = artworkModifier,
                             variant = VisualAssetVariant.THUMBNAIL
@@ -552,6 +560,7 @@ fun ArtistGridScreen(
 @Composable
 private fun LibraryGridCard(
     artworkUri: Any?,
+    unresolvedNull: Boolean = false,
     artworkDescription: String,
     artworkContent: (@Composable () -> Unit)? = null,
     title: String,
@@ -604,23 +613,17 @@ private fun LibraryGridCard(
                     } else Modifier
                 )
         ) {
-            Icon(
-                imageVector = AppShellIcons.AlbumStack,
-                contentDescription = null,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(gridMetrics.placeholderIconSize),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f)
-            )
             if (artworkContent != null) {
                 artworkContent()
             } else {
-                AsyncImage(
+                LibraryArtworkImage(
                     model = artworkUri,
+                    unresolvedNull = unresolvedNull,
                     contentDescription = artworkDescription,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    LibraryGridArtworkFallback(gridMetrics)
+                }
             }
 
             if (selected) {
@@ -681,6 +684,18 @@ private fun LibraryGridCard(
             }
         }
     }
+}
+
+@Composable
+private fun BoxScope.LibraryGridArtworkFallback(gridMetrics: LibraryGridMetrics) {
+    Icon(
+        imageVector = AppShellIcons.AlbumStack,
+        contentDescription = null,
+        modifier = Modifier
+            .align(Alignment.Center)
+            .size(gridMetrics.placeholderIconSize),
+        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f)
+    )
 }
 
 private data class LibraryGridMetrics(

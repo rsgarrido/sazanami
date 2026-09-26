@@ -1,7 +1,5 @@
 package io.github.rsgarrido.sazanami.ui.library
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -12,10 +10,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import coil.Coil
-import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import io.github.rsgarrido.sazanami.data.ArtistIdentity
 import io.github.rsgarrido.sazanami.data.ArtistPictureAssignment
@@ -41,7 +37,9 @@ fun ArtistPicture(
     fallbackModel: Any?,
     contentDescription: String,
     modifier: Modifier = Modifier,
-    variant: VisualAssetVariant = VisualAssetVariant.THUMBNAIL
+    variant: VisualAssetVariant = VisualAssetVariant.THUMBNAIL,
+    unresolvedFallbackArtwork: Boolean = false,
+    neutralWhileLoading: Boolean = false
 ) {
     val context = LocalContext.current
     val assignment = LocalArtistPictureUi.current.assignments[identity.key]
@@ -115,21 +113,20 @@ fun ArtistPicture(
         enabled = variant == VisualAssetVariant.THUMBNAIL
     )
 
-    Box(
-        modifier = modifier.background(MaterialTheme.colorScheme.surfaceContainerHighest),
-        contentAlignment = Alignment.Center
+    LibraryArtworkImage(
+        model = request,
+        unresolvedNull = managedFile == null && unresolvedFallbackArtwork,
+        contentDescription = if (model != null) contentDescription else null,
+        modifier = modifier,
+        neutralWhileLoading = neutralWhileLoading
     ) {
         Icon(
             imageVector = AppShellIcons.AlbumStack,
             contentDescription = if (model == null) contentDescription else null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.fillMaxSize(0.42f)
-        )
-        AsyncImage(
-            model = request,
-            contentDescription = if (model != null) contentDescription else null,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxSize(0.42f)
         )
     }
 }

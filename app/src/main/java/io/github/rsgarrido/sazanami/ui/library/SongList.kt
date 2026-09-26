@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.PaddingValues
@@ -43,7 +44,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
-import coil.compose.AsyncImage
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.ui.AppShellAccent
 import io.github.rsgarrido.sazanami.data.membershipKey
@@ -79,6 +79,7 @@ fun SongList(
     quickRatingMode: Boolean = false,
     listState: LazyListState? = null,
     fastScrollEnabled: Boolean = false,
+    neutralArtworkWhileLoading: Boolean = false,
     fastScrollSessionKey: Any? = null,
     headerContent: (@Composable () -> Unit)? = null,
     emptyContent: (@Composable () -> Unit)? = null,
@@ -187,16 +188,23 @@ fun SongList(
                             modifier = Modifier.width(56.dp)
                         )
                     } else {
-                        AsyncImage(
+                        LibraryArtworkImage(
                             model = song.albumArtUri,
+                            unresolvedNull = neutralArtworkWhileLoading &&
+                                song.hasUnresolvedLibraryArtwork(),
                             contentDescription = "Album art for ${song.title}",
                             modifier = Modifier
                                 .size(56.dp)
                                 .clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Crop,
-                            error = painterResource(R.drawable.ic_media_play),
-                            placeholder = painterResource(R.drawable.ic_media_play)
-                        )
+                            neutralWhileLoading = neutralArtworkWhileLoading
+                        ) {
+                            Image(
+                                painter = painterResource(R.drawable.ic_media_play),
+                                contentDescription = "Album art for ${song.title}",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
                     }
                 },
                 headlineContent = {

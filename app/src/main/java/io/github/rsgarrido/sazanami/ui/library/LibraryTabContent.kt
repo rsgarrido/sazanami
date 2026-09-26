@@ -118,6 +118,7 @@ fun SongsTabContent(
             listContent = {
                 SongList(
                     songs = displayedSongs,
+                    neutralArtworkWhileLoading = true,
                     listState = scrollStates.list,
                     fastScrollEnabled = true,
                     fastScrollSessionKey = Triple(sortState, filterState, searchQuery),
@@ -214,6 +215,7 @@ fun RatedSongsTabContent(
     if (quickRateActive && displayedSongs.isNotEmpty()) {
         SongList(
             songs = displayedSongs,
+            neutralArtworkWhileLoading = true,
             listState = scrollStates.list,
             fastScrollEnabled = true,
             fastScrollSessionKey = Triple(sortState, selectedFilter, quickRateActive) to searchQuery,
@@ -258,6 +260,7 @@ fun RatedSongsTabContent(
             listContent = {
                 SongList(
                     songs = displayedSongs,
+                    neutralArtworkWhileLoading = true,
                     listState = scrollStates.list,
                     fastScrollEnabled = true,
                     fastScrollSessionKey = Triple(sortState, selectedFilter, quickRateActive) to searchQuery,
@@ -326,20 +329,26 @@ fun FavoritesTabContent(
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
-    val favoriteSongs = songs.filter { song ->
-        song.membershipKey() in favoriteMembershipKeys
+    val favoriteSongs = remember(songs, favoriteMembershipKeys) {
+        songs.filter { song ->
+            song.membershipKey() in favoriteMembershipKeys
+        }
     }
 
-    val filteredSongs = filterSongsForSearch(
-        songs = favoriteSongs,
-        searchQuery = searchQuery
-    )
+    val filteredSongs = remember(favoriteSongs, searchQuery) {
+        filterSongsForSearch(
+            songs = favoriteSongs,
+            searchQuery = searchQuery
+        )
+    }
 
-    val displayedSongs = sortSongsForLibrary(
-        songs = filteredSongs,
-        sortOption = sortState.option,
-        sortDirection = sortState.direction
-    )
+    val displayedSongs = remember(filteredSongs, sortState) {
+        sortSongsForLibrary(
+            songs = filteredSongs,
+            sortOption = sortState.option,
+            sortDirection = sortState.direction
+        )
+    }
     val scrollStates = rememberLibrarySortScrollStates(sortState)
 
     if (favoriteSongs.isEmpty()) {
@@ -385,6 +394,7 @@ fun FavoritesTabContent(
                 listContent = {
                     SongList(
                         songs = displayedSongs,
+                        neutralArtworkWhileLoading = true,
                         listState = scrollStates.list,
                         fastScrollEnabled = true,
                         fastScrollSessionKey = sortState to searchQuery,
@@ -648,10 +658,12 @@ fun AlbumsTabContent(
     bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
-    val albumSearchSongs = filterSongsByAlbumSearch(
-        songs = songs,
-        searchQuery = searchQuery
-    )
+    val albumSearchSongs = remember(songs, searchQuery) {
+        filterSongsByAlbumSearch(
+            songs = songs,
+            searchQuery = searchQuery
+        )
+    }
     val scrollStates = rememberLibrarySortScrollStates(sortState)
 
     LibraryDetailAnimatedContent(

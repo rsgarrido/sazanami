@@ -2,6 +2,7 @@ package io.github.rsgarrido.sazanami.ui.library
 
 import android.net.Uri
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -355,6 +356,7 @@ internal fun MusicLibraryContent(
             } else {
                 SongList(
                     songs = recentlyPlayedSongs,
+                    neutralArtworkWhileLoading = true,
                     fastScrollEnabled = true,
                     fastScrollSessionKey = LibraryTab.RECENTLY_PLAYED,
                     currentSongId = currentSong?.id,
@@ -375,15 +377,19 @@ internal fun MusicLibraryContent(
         }
 
         LibraryTab.RECENTLY_ADDED -> {
-            val searchedSongs = io.github.rsgarrido.sazanami.ui.filterSongsForSearch(
-                recentlyAddedSongs,
-                searchQuery
-            )
-            val displayedSongs = io.github.rsgarrido.sazanami.ui.sortSongsForLibrary(
-                searchedSongs,
-                selectedSongSortState.option,
-                selectedSongSortState.direction
-            )
+            val searchedSongs = remember(recentlyAddedSongs, searchQuery) {
+                io.github.rsgarrido.sazanami.ui.filterSongsForSearch(
+                    recentlyAddedSongs,
+                    searchQuery
+                )
+            }
+            val displayedSongs = remember(searchedSongs, selectedSongSortState) {
+                io.github.rsgarrido.sazanami.ui.sortSongsForLibrary(
+                    searchedSongs,
+                    selectedSongSortState.option,
+                    selectedSongSortState.direction
+                )
+            }
             val scrollStates = rememberLibrarySortScrollStates(selectedSongSortState)
             if (displayedSongs.isEmpty()) {
                 LibrarySelectionHeader(
@@ -403,6 +409,7 @@ internal fun MusicLibraryContent(
                     listContent = {
                         SongList(
                             songs = displayedSongs,
+                            neutralArtworkWhileLoading = true,
                             listState = scrollStates.list,
                             fastScrollEnabled = true,
                             fastScrollSessionKey = selectedSongSortState to searchQuery,
@@ -464,6 +471,7 @@ internal fun MusicLibraryContent(
             } else {
                 SongList(
                     songs = mostPlayedSongs,
+                    neutralArtworkWhileLoading = true,
                     fastScrollEnabled = true,
                     fastScrollSessionKey = LibraryTab.MOST_PLAYED,
                     currentSongId = currentSong?.id,
