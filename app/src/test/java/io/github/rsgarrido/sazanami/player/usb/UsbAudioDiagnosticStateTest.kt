@@ -77,7 +77,7 @@ class UsbAudioDiagnosticStateTest {
         assertFalse(report.contains("06 03 53 00 4E 00"))
         assertFalse(report.contains(identity.deviceName))
         assertTrue(report.contains("Rate range not yet queried"))
-        assertTrue(report.contains("No UAC2 class-control reads issued for this generation"))
+        assertTrue(report.contains("No UAC2 class-control reads recorded in this query set"))
     }
 
     @Test fun conciseReportDoesNotRepeatRawBytesAndCopiedReportHasEveryRecord() {

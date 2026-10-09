@@ -18,10 +18,11 @@ internal data class UsbAudioClockResolution(
 internal enum class UsbClockQuery { CURRENT_FREQUENCY, FREQUENCY_RANGE, CLOCK_VALIDITY }
 internal enum class UsbClockQueryStatus {
     SUCCESS, UNSUPPORTED, REJECTED_OR_TRANSPORT_ERROR, SHORT_RESPONSE, MALFORMED_RESPONSE,
-    DEVICE_DISCONNECTED, STALE_GENERATION, PERMISSION_LOST, AMBIGUOUS_TARGET, TRANSPORT_ERROR
+    DEVICE_DISCONNECTED, STALE_GENERATION, PERMISSION_LOST, AMBIGUOUS_TARGET, TRANSPORT_ERROR,
+    STALL_LIKE, INTERFACE_BUSY, INVALID_REQUEST
 }
 internal enum class UsbClockDiagnosticPhase { QUERYING, COMPLETE, PARTIAL, UNAVAILABLE }
-internal enum class UsbClockClaimMode { NOT_ATTEMPTED, UNCLAIMED, AUDIOCONTROL_NON_FORCED }
+internal enum class UsbClockClaimMode { NOT_ATTEMPTED, UNCLAIMED, AUDIOCONTROL_NON_FORCED, AUDIOCONTROL_FORCED_NATIVE }
 internal enum class UsbClockRateSupport { REPRESENTED, NOT_REPRESENTED, INDETERMINATE }
 
 internal data class UsbSamplingFrequencyRange(val minimumHz: Long, val maximumHz: Long, val resolutionHz: Long)
@@ -60,7 +61,8 @@ internal data class UsbClockReadAttempt(
     val returnedByteCount: Int?,
     val rawBytes: List<Int>,
     val status: UsbClockQueryStatus,
-    val detail: String? = null
+    val detail: String? = null,
+    val nativeResult: UsbFsControlEvidence? = null
 )
 
 internal data class UsbClockQueryResult(
@@ -100,10 +102,19 @@ internal object UsbAudioClockControl {
         generation: Long,
         transport: UsbClockReadTransport,
         accessFailure: () -> UsbClockQueryStatus? = { null }
+    ): UsbAudioClockDiagnostics = queryInOrder(resolution, generation, transport, UsbClockQuery.entries, accessFailure)
+
+    fun queryInOrder(
+        resolution: UsbAudioClockResolution,
+        generation: Long,
+        transport: UsbClockReadTransport,
+        queryOrder: List<UsbClockQuery>,
+        accessFailure: () -> UsbClockQueryStatus? = { null }
     ): UsbAudioClockDiagnostics {
         val target = resolution.target ?: return unavailable(generation, resolution,
             UsbClockQueryStatus.AMBIGUOUS_TARGET, "No unambiguous playback Clock Source target; no reads issued.")
-        val results = UsbClockQuery.entries.map { kind ->
+        require(queryOrder.size == UsbClockQuery.entries.size && queryOrder.toSet() == UsbClockQuery.entries.toSet())
+        val results = queryOrder.map { kind ->
             val selector = if (kind == UsbClockQuery.CLOCK_VALIDITY) 2 else 1
             val pair = ((target.controls shr ((selector - 1) * 2)) and 3L).toInt()
             when {
@@ -163,22 +174,23 @@ internal object UsbAudioClockControl {
         val buffer = ByteArray(request.length)
         return try {
             val count = transport.read(request, buffer)
+            val native = (transport as? UsbClockNativeReadTransport)?.lastControlEvidence()
             val raw = if (count > 0) buffer.take(count.coerceAtMost(buffer.size)).map { it.toInt() and 0xff } else emptyList()
             val access = accessFailure()
             val status = access ?: when {
-                count < 0 -> UsbClockQueryStatus.REJECTED_OR_TRANSPORT_ERROR
+                count < 0 -> native?.failureStatus() ?: UsbClockQueryStatus.REJECTED_OR_TRANSPORT_ERROR
                 count < request.length -> UsbClockQueryStatus.SHORT_RESPONSE
                 count > buffer.size -> UsbClockQueryStatus.MALFORMED_RESPONSE
                 else -> UsbClockQueryStatus.SUCCESS
             }
-            val detail = when (status) {
+            val detail = native?.takeIf { count < 0 }?.errorExplanation() ?: when (status) {
                 UsbClockQueryStatus.REJECTED_OR_TRANSPORT_ERROR -> "Android returned $count; STALL/rejection and transport failure cannot be distinguished by this API."
                 UsbClockQueryStatus.SHORT_RESPONSE -> "Returned $count of ${request.length} requested bytes."
                 UsbClockQueryStatus.MALFORMED_RESPONSE -> "Returned byte count exceeds response buffer."
                 UsbClockQueryStatus.SUCCESS -> null
                 else -> "Response arrived after access/generation changed; it is not authoritative."
             }
-            UsbClockReadAttempt(request, count, raw, status, detail)
+            UsbClockReadAttempt(request, count, raw, status, detail, native)
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: SecurityException) { UsbClockReadAttempt(request, null, emptyList(),
             accessFailure() ?: UsbClockQueryStatus.PERMISSION_LOST, "USB access denied during control read.") }

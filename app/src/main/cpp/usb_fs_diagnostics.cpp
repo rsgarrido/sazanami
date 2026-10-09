@@ -9,7 +9,7 @@
 // Uses the installed NDK Linux UAPI directly. No driver implementation, local
 // ioctl declarations, fd owner, persistent session, or streaming transport.
 namespace {
-constexpr jint kApiVersion = 1;
+constexpr jint kApiVersion = 2;
 constexpr int kMaxInterfaces = 256;
 constexpr int kMaxRecords = 10 + 3 * kMaxInterfaces;
 static_assert(sizeof(unsigned int) == 4, "usbfs interface argument must be a UAPI unsigned int");
@@ -210,4 +210,46 @@ Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeInspect(
     jstring speedLabel = env->NewStringUTF(speed.value >= 0 ? speedName(speed.value) : "UNKNOWN");
     if (speedLabel == nullptr) return nullptr;
     return env->NewObject(resultClass, constructor, numbers, drivers, errors, speedLabel);
+}
+
+
+// Session 5: one synchronous, borrowed-fd endpoint-zero class READ. The JNI
+// boundary independently rejects writes, other selectors and unbounded lengths.
+extern "C" JNIEXPORT jobject JNICALL
+Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeReadClock(
+        JNIEnv* env, jobject, jint borrowedFd, jint requestType, jint request,
+        jint value, jint index, jint length) {
+    const bool frequencyCur = request == 0x01 && value == 0x0100 && length == 4;
+    const bool validityCur = request == 0x01 && value == 0x0200 && length == 1;
+    const bool frequencyRange = request == 0x02 && value == 0x0100 &&
+        (length == 2 || (length >= 14 && length <= 770 && (length - 2) % 12 == 0));
+    if (borrowedFd < 0 || requestType != 0xA1 || index < 0x0100 || index > 0xffff ||
+        !(frequencyCur || validityCur || frequencyRange)) {
+        invalidArguments(env);
+        return nullptr;
+    }
+    std::array<jbyte, 770> bytes{};
+    usbdevfs_ctrltransfer control{};
+    control.bRequestType = static_cast<__u8>(requestType);
+    control.bRequest = static_cast<__u8>(request);
+    control.wValue = static_cast<__u16>(value);
+    control.wIndex = static_cast<__u16>(index);
+    control.wLength = static_cast<__u16>(length);
+    control.timeout = 1000;
+    control.data = bytes.data();
+    const int returned = ::ioctl(borrowedFd, USBDEVFS_CONTROL, &control);
+    const int savedError = returned < 0 ? errno : 0; // Immediately, before JNI/allocation.
+    const int actual = returned > 0 ? (returned < length ? returned : length) : 0;
+    jclass resultClass = env->FindClass("io/github/rsgarrido/sazanami/player/usb/UsbFsNativeControlResult");
+    if (resultClass == nullptr) return nullptr;
+    jmethodID constructor = env->GetMethodID(resultClass, "<init>", "(IIILjava/lang/String;[B)V");
+    if (constructor == nullptr) return nullptr;
+    jstring errorName = env->NewStringUTF(errnoName(savedError));
+    if (errorName == nullptr) return nullptr;
+    jbyteArray raw = env->NewByteArray(actual);
+    if (raw == nullptr) return nullptr;
+    if (actual > 0) env->SetByteArrayRegion(raw, 0, actual, bytes.data());
+    if (env->ExceptionCheck()) return nullptr;
+    // Never closes, duplicates or retains borrowedFd. Android owns its lifetime.
+    return env->NewObject(resultClass, constructor, length, returned, savedError, errorName, raw);
 }

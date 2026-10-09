@@ -5,12 +5,14 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
 
-/** Secondary framework evidence only. Does not select routes, change attributes or match by product name. */
+/** Secondary enumeration only: presence/ID/address/capabilities do not prove playback routing.
+ * Does not select routes, exercise audio streams or match by product name.
+ */
 internal object UsbAndroidAudioInspector {
     fun inspect(context: Context): UsbAndroidAudioDiagnostics {
         return try {
             val manager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-                ?: return UsbAndroidAudioDiagnostics(detail = "AudioManager unavailable.")
+                ?: return UsbAndroidAudioDiagnostics(detail = "AudioManager unavailable.", querySucceeded = false)
             val outputs = manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).filter {
                 it.type in setOf(AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_ACCESSORY)
             }.map {
@@ -19,7 +21,7 @@ internal object UsbAndroidAudioInspector {
                     it.sampleRates.toList(), it.encodings.toList(), it.channelCounts.toList(), it.channelMasks.toList(), it.channelIndexMasks.toList())
             }
             UsbAndroidAudioDiagnostics(outputs, "USB output candidates only; no unique match to the selected UsbDevice is asserted.")
-        } catch (_: SecurityException) { UsbAndroidAudioDiagnostics(detail = "Android denied the AudioDeviceInfo query.") }
-        catch (_: RuntimeException) { UsbAndroidAudioDiagnostics(detail = "Android USB audio capability query unavailable.") }
+        } catch (_: SecurityException) { UsbAndroidAudioDiagnostics(detail = "Android denied the AudioDeviceInfo query.", querySucceeded = false) }
+        catch (_: RuntimeException) { UsbAndroidAudioDiagnostics(detail = "Android USB audio capability query unavailable.", querySucceeded = false) }
     }
 }

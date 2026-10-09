@@ -77,9 +77,10 @@ internal data class UsbAndroidAudioOutput(
     val sampleRates: List<Int>, val encodings: List<Int>, val channelCounts: List<Int>,
     val channelMasks: List<Int>, val channelIndexMasks: List<Int>
 )
-internal data class UsbAndroidAudioDiagnostics(val outputs: List<UsbAndroidAudioOutput> = emptyList(), val detail: String? = null)
+internal data class UsbAndroidAudioDiagnostics(val outputs: List<UsbAndroidAudioOutput> = emptyList(),
+    val detail: String? = null, val querySucceeded: Boolean = true)
 
-/** Stable, bounded JNI packet, version 1. Numbers: version, interface count, then
+/** Stable, bounded JNI packet, API version 2. Numbers: version, interface count, then
  * [interface, return, errno] per driver; speed [return, errno]; claim and release
  * [attempted 0/1, return, errno]. Names have count drivers / count+3 errno labels.
  * Names are supplementary; numeric ioctl results and errno remain separate evidence.
@@ -90,7 +91,7 @@ internal data class UsbFsNativeResult(val numbers: IntArray, val driverNames: Ar
 
 /** Pure interpretation and packet validation. Never infers rates, speed, or kernel ownership from descriptors. */
 internal object UsbFsEvidence {
-    const val NATIVE_API_VERSION = 1
+    const val NATIVE_API_VERSION = 2
     const val MAX_INTERFACES = 256
 
     // Values from linux/usb/ch9.h enum usb_device_speed. Native code also uses the actual NDK enum.
@@ -105,7 +106,8 @@ internal object UsbFsEvidence {
     fun errnoName(number: Int, nativeLabel: String): String? =
         if (number == 0) null else nativeLabel.takeIf { it in errnoLabels } ?: "UNKNOWN"
 
-    fun decode(packet: UsbFsNativeResult, plan: UsbFsProbePlan, generation: Long): UsbFsOwnershipDiagnostics {
+    fun decode(packet: UsbFsNativeResult, plan: UsbFsProbePlan, generation: Long,
+        claimProbeExpected: Boolean = plan.audioControl != null): UsbFsOwnershipDiagnostics {
         fun malformed(detail: String) = UsbFsOwnershipDiagnostics(generation, plan, UsbFsProbeStatus.MALFORMED_NATIVE_RESULT, detail = detail)
         val data = packet.numbers
         val count = plan.interfaces.size
@@ -127,7 +129,7 @@ internal object UsbFsEvidence {
         val claimOffset = speedOffset + 2
         val releaseOffset = claimOffset + 3
         if (data[claimOffset] !in 0..1 || data[releaseOffset] !in 0..1 ||
-            (data[claimOffset] == 1) != (plan.audioControl != null)) return malformed("Invalid native claim/release attempt metadata.")
+            (data[claimOffset] == 1) != claimProbeExpected) return malformed("Invalid native claim/release attempt metadata.")
         val claim = if (data[claimOffset] == 1) ioctlResult(UsbFsIoctlOperation.CLAIMINTERFACE, claimOffset + 1, count + 1) else null
         val release = if (data[releaseOffset] == 1) ioctlResult(UsbFsIoctlOperation.RELEASEINTERFACE, releaseOffset + 1, count + 2) else null
         val ioctls = bindings.map { it.result } + speedResult + listOfNotNull(claim, release)

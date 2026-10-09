@@ -28,6 +28,9 @@ import io.github.rsgarrido.sazanami.player.usb.UsbAudioDiagnosticReport
 import io.github.rsgarrido.sazanami.player.usb.UsbAudioDiagnosticStatus
 import io.github.rsgarrido.sazanami.player.usb.UsbClockDiagnosticPhase
 import io.github.rsgarrido.sazanami.player.usb.UsbFsProbeStatus
+import io.github.rsgarrido.sazanami.player.usb.UsbForcedPhase
+import io.github.rsgarrido.sazanami.player.usb.UsbKernelBindingRecovery
+import io.github.rsgarrido.sazanami.player.usb.UsbFrameworkEnumerationRecovery
 import io.github.rsgarrido.sazanami.player.usb.usbHex
 
 /** Presentation only. Receivers, connection ownership, parsing and commands live in player/usb. */
@@ -35,6 +38,7 @@ import io.github.rsgarrido.sazanami.player.usb.usbHex
 internal fun UsbAudioDiagnosticsSection() {
     val state by UsbAudioDiagnosticBridge.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val diagnosticsTitle = stringResource(R.string.usb_diagnostics_title)
     var copied by remember(state) { mutableStateOf(false) }
     val parsedReport = remember(state) { UsbAudioDiagnosticReport.format(state, includeRaw = false) }
     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
@@ -42,7 +46,7 @@ internal fun UsbAudioDiagnosticsSection() {
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(stringResource(R.string.usb_diagnostics_title), style = MaterialTheme.typography.titleMedium)
+        Text(diagnosticsTitle, style = MaterialTheme.typography.titleMedium)
         Text(stringResource(R.string.usb_diagnostics_note), style = MaterialTheme.typography.bodySmall)
         if (!state.serviceAvailable) {
             Text(stringResource(R.string.usb_diagnostics_service_unavailable))
@@ -99,12 +103,55 @@ internal fun UsbAudioDiagnosticsSection() {
                     R.string.usb_diagnostics_inspecting_kernel else R.string.usb_diagnostics_inspect_kernel))
             }
             Text(stringResource(R.string.usb_diagnostics_kernel_note), style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.usb_diagnostics_force_note), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error)
+            // Known manual evidence is visible without asking for another forced run.
+            Text(stringResource(R.string.usb_diagnostics_manual_ka15_note), style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(
+                onClick = { UsbAudioDiagnosticBridge.forceOwnAudioControl(selected.identity) },
+                enabled = state.serviceAvailable && selected.hasPermission && state.descriptors != null &&
+                    !state.diagnosticOperationRunning && state.usbFsDiagnostics?.let {
+                        it.generation == state.generation && it.status == UsbFsProbeStatus.RECORDED && it.plan.audioControl != null
+                    } == true,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(if (state.forcedExperiment?.phase == UsbForcedPhase.QUERYING)
+                    R.string.usb_diagnostics_forcing else R.string.usb_diagnostics_force))
+            }
+        }
+        state.forcedExperiment?.takeIf {
+            it.generation == state.generation && it.phase == UsbForcedPhase.FINISHED
+        }?.let { result ->
+            val kernelText = stringResource(when (result.kernelRecovery) {
+                UsbKernelBindingRecovery.RESTORED -> R.string.usb_diagnostics_bindings_restored
+                UsbKernelBindingRecovery.NOT_RESTORED -> R.string.usb_diagnostics_bindings_not_restored
+                UsbKernelBindingRecovery.INDETERMINATE -> R.string.diagnostics_unknown
+            })
+            val frameworkText = stringResource(when (result.frameworkRecovery) {
+                UsbFrameworkEnumerationRecovery.CANDIDATE_PRESENT -> R.string.usb_diagnostics_candidate_present
+                UsbFrameworkEnumerationRecovery.CANDIDATE_MISSING -> R.string.usb_diagnostics_candidate_missing
+                UsbFrameworkEnumerationRecovery.AMBIGUOUS -> R.string.usb_diagnostics_candidate_ambiguous
+                UsbFrameworkEnumerationRecovery.INDETERMINATE -> R.string.diagnostics_unknown
+            })
+            Text(stringResource(R.string.usb_diagnostics_kernel_result, kernelText))
+            Text(stringResource(R.string.usb_diagnostics_framework_result, frameworkText))
+            Text(stringResource(R.string.usb_diagnostics_functional_not_verified),
+                style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.error)
+            if (result.claimReturned == true) {
+                Text(stringResource(R.string.usb_diagnostics_post_force_warning),
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+            }
+        }
+        if (state.forcedExperiment == null || state.forcedExperiment?.generation != state.generation ||
+            state.forcedExperiment?.phase == UsbForcedPhase.QUERYING) {
+            Text(stringResource(R.string.usb_diagnostics_functional_not_verified),
+                style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.error)
         }
         OutlinedButton(
             onClick = {
                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
                 clipboard?.setPrimaryClip(ClipData.newPlainText(
-                    context.getString(R.string.usb_diagnostics_title), UsbAudioDiagnosticReport.format(state)))
+                    diagnosticsTitle, UsbAudioDiagnosticReport.format(state)))
                 copied = clipboard != null
             },
             modifier = Modifier.fillMaxWidth()

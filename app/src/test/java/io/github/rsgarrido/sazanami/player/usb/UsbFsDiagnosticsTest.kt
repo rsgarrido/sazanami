@@ -286,7 +286,7 @@ class UsbFsDiagnosticsTest {
         claimErrno: Int = 16, claimErrnoName: String = "EBUSY", releaseAttempted: Boolean = false,
         releaseReturn: Int = 0, releaseErrno: Int = 0, releaseErrnoName: String = ""): UsbFsNativeResult {
         val claimAttempted = selectedPlan.audioControl != null
-        val numbers = listOf(1, selectedPlan.interfaces.size) + selectedPlan.interfaces.flatMap { listOf(it.number, 0, 0) } +
+        val numbers = listOf(UsbFsEvidence.NATIVE_API_VERSION, selectedPlan.interfaces.size) + selectedPlan.interfaces.flatMap { listOf(it.number, 0, 0) } +
             listOf(speedRaw, speedErrno, if (claimAttempted) 1 else 0, if (claimAttempted) claimReturn else 0,
                 if (claimAttempted) claimErrno else 0, if (releaseAttempted) 1 else 0, releaseReturn, releaseErrno)
         val drivers = selectedPlan.interfaces.map { if (it.number == 7) "synthetic_control_driver" else "synthetic_driver_${it.number}" }.toTypedArray()

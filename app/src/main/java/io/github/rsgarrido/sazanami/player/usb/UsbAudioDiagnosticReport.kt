@@ -3,7 +3,7 @@ package io.github.rsgarrido.sazanami.player.usb
 /** Offline, plain-text evidence. No serial strings, Android bus paths, music paths, or remote lookup. */
 internal object UsbAudioDiagnosticReport {
     fun format(state: UsbAudioDiagnosticState, includeRaw: Boolean = true): String = buildString {
-        appendLine("SAZANAMI USB AUDIO DIAGNOSTIC — SESSION 4")
+        appendLine("SAZANAMI USB AUDIO DIAGNOSTIC — SESSION 5")
         appendLine("Descriptors and read-only clock diagnostics. Direct USB playback is not implemented.")
         appendLine("Service: ${if (state.serviceAvailable) "available" else "unavailable"}")
         appendLine("Status: ${statusText(state.status)}")
@@ -42,6 +42,7 @@ internal object UsbAudioDiagnosticReport {
             }
         }
         section("UAC2 Clock Queries")
+        appendLine("Sessions 2/3 query evidence; Session 5 native reads have their own section below.")
         appendClockQueries(state.clockDiagnostics, state.generation)
         section("AudioControl Claim Experiment")
         appendClaimExperiment(state.clockDiagnostics?.claimExperiment, state.generation,
@@ -50,6 +51,8 @@ internal object UsbAudioDiagnosticReport {
         appendUsbFs(state.usbFsDiagnostics, state.generation)
         section("Android AudioDeviceInfo")
         appendAndroidAudio(state.usbFsDiagnostics, state.generation)
+        section("Forced AudioControl Ownership Experiment — Session 5")
+        appendForcedExperiment(state.forcedExperiment, state.generation)
         val model = state.descriptors
         if (model == null) {
             section("Raw descriptors")
@@ -138,8 +141,8 @@ internal object UsbAudioDiagnosticReport {
         }
         section("Read-only scope / limitations")
         appendLine("Clock selectors list possible input pins; selected clock is unknown.")
-        appendLine("Explicit Android/raw-usbfs experiments may temporarily claim only resolved AudioControl without force or driver detach.")
-        appendLine("No AudioStreaming/HID claim, SET_INTERFACE, reset, kernel detach, streaming or USB audio data transmission.")
+        appendLine("Sessions 3/4 use non-forced AC ownership. Explicit Session 5 force-owns only resolved AC through Android, then releases it.")
+        appendLine("No AudioStreaming/HID claim, SET_INTERFACE, reset, manual kernel detach/rebind, streaming or USB audio data transmission.")
         section("Parser warnings / limitations")
         if (model.warnings.isEmpty()) appendLine("No structural parser warnings.")
         model.warnings.forEach { appendLine(it) }
@@ -155,6 +158,7 @@ internal object UsbAudioDiagnosticReport {
     }
 
     private fun StringBuilder.appendUsbFs(diagnostics: UsbFsOwnershipDiagnostics?, generation: Long) {
+        appendLine("Session 4 scope only (separate from Session 5):")
         appendLine("Forced detach attempted: NO")
         appendLine("Native fd is borrowed synchronously; Kotlin retains connection ownership.")
         if (diagnostics == null) { appendLine("Not requested. Use Inspect kernel USB ownership."); return }
@@ -191,6 +195,103 @@ internal object UsbAudioDiagnosticReport {
         appendLine("These are kernel observations at query time; speed is not inferred from descriptors or marketing.")
     }
 
+    private fun StringBuilder.appendForcedExperiment(result: UsbAudioForcedExperimentResult?, generation: Long) {
+        appendLine("AudioStreaming force claim attempted: NO")
+        appendLine("HID claim attempted: NO")
+        appendLine("SET_CUR issued: NO")
+        appendLine("SET_INTERFACE issued: NO")
+        appendLine("Audio data transmitted: NO")
+        appendLine("No reset, configuration change, manual detach/rebind or Feature Unit queries. No Bit-perfect active state.")
+        appendLine("Functional audio recovery: ${UsbFunctionalAudioRecovery.NOT_VERIFIED}; no playback stream is exercised by Session 5.")
+        appendLine("Kernel driver rebinding and AudioDeviceInfo continuity do not prove that audio routing or DAC playback is functional.")
+        appendLine("HID availability is independent evidence and must not be treated as proof that USB audio playback is restored.")
+        appendLine("Observed manual hardware caveat (known test evidence; not automatically detected by the app):")
+        appendLine(UsbAudioForcedExperiment.MANUAL_HARDWARE_CAVEAT)
+        appendLine(UsbAudioForcedExperiment.MANUAL_DEVICE_STATE_NOTE)
+        if (result == null) { appendLine("Not requested. Stop music, inspect Session 4, then use Force-own AudioControl + read clock."); return }
+        if (result.generation != generation) { appendLine("Stale generation; Session 5 device evidence omitted."); return }
+        appendLine("Experiment: ${result.phase}; generation=${result.generation}")
+        appendLine("Resolved AudioControl interface: ${result.plan.audioControl?.diagnosticName() ?: "unresolved"}")
+        appendLine("Resolved Clock Source: ${result.plan.resolution.target?.clockEntityId ?: "unresolved"}")
+        appendLine("force: true (Session 5 only); claimInterface result: ${result.claimReturned ?: "not observed / not attempted"}")
+        result.claimException?.let { appendLine("Claim exception type: ${safeText(it)}; private message omitted") }
+        appendLine("Release attempted: ${result.releaseStatus != UsbAudioCleanupStatus.NOT_ATTEMPTED}")
+        appendLine("Android releaseInterface result: ${result.releaseReturned ?: "not observed"}; status=${result.releaseStatus}")
+        result.releaseException?.let { appendLine("Release exception type: ${safeText(it)}; private message omitted") }
+        appendLine("Connection close: ${result.closeStatus}; fd borrowed by JNI, never closed/retained there")
+        appendLine("Kernel/framework recovery: ${result.recoveryStatus}; bounded window expired=${result.recoveryWindowExpired}")
+        appendLine("Kernel bindings: ${result.kernelRecovery}")
+        appendLine("Android USB audio enumeration: ${result.frameworkRecovery}")
+        appendLine("Recovery polls: at most ${UsbAudioForcedExperiment.MAX_RECOVERY_POLLS} at ${UsbAudioForcedExperiment.RECOVERY_INTERVAL_MS} ms; window <= ${UsbAudioForcedExperiment.RECOVERY_WINDOW_MS} ms, apart from synchronous observation latency.")
+        result.detail?.let { appendLine("Note: $it") }
+        result.plan.warnings.forEach { appendLine("Resolution warning: $it") }
+        if (result.accessFailure != null) {
+            appendLine("Access: ${result.accessFailure}; device/rate evidence omitted. Release/close facts retained.")
+            appendLine("44.1 kHz / 44100 Hz — CD milestone: INDETERMINATE")
+            return
+        }
+        appendLine("Before forced ownership (fresh snapshot; USB permission revalidated):")
+        appendForcedSnapshot(result.before, generation)
+        appendLine("While AudioControl owned:")
+        appendForcedSnapshot(result.whileOwned, generation)
+        appendLine("Native UAC2 Clock Reads — USBDEVFS_CONTROL, RANGE then frequency CUR then validity CUR:")
+        if (result.clocks == null) appendLine("No native clock query set retained; see claim/access/observation outcome.")
+        else appendClockQueries(result.clocks, generation)
+        val range = result.clocks?.results?.firstOrNull { it.query == UsbClockQuery.FREQUENCY_RANGE }
+        appendLine("Session 5 initial milestone rates — solely native Clock Source GET_RANGE:")
+        UsbAudioClockControl.milestoneRatesHz.forEach { rate ->
+            val support = when (UsbAudioClockControl.assessRate(rate, range)) {
+                UsbClockRateSupport.REPRESENTED -> "SUPPORTED"
+                UsbClockRateSupport.NOT_REPRESENTED -> "NOT REPRESENTED"
+                UsbClockRateSupport.INDETERMINATE -> "INDETERMINATE"
+            }
+            appendLine(if (rate == 44_100L) "44.1 kHz / 44100 Hz — CD milestone: $support" else "$rate Hz: $support")
+        }
+        appendLine("After release (immediate and bounded recovery observations, before connection close):")
+        if (result.recoveryObservations.isEmpty()) appendLine("No post-release observations retained.")
+        result.recoveryObservations.forEachIndexed { index, observation ->
+            appendLine("Observation ${index + 1}: ${observation.elapsedMs} ms after release observation began${if (index == 0) " (immediate)" else ""}")
+            appendForcedSnapshot(observation.snapshot, generation)
+        }
+        appendLine("Final Android AudioDeviceInfo after connection close (secondary):")
+        result.afterAndroidAudio?.let { audio ->
+            appendAndroidAudio(UsbFsOwnershipDiagnostics(generation, result.plan, UsbFsProbeStatus.RECORDED,
+                androidAudio = audio), generation)
+        } ?: appendLine("Not captured / non-authoritative.")
+        appendLine("Kernel baseline bindings restored: ${UsbAudioForcedExperiment.kernelRestored(result)} (AC plus all observed baseline-bound interfaces)")
+        appendLine("Framework candidate continuity: ${UsbAudioForcedExperiment.frameworkCandidateReturned(result)}")
+        appendLine("ENUMERATION_RECOVERED requires release=true, baseline drivers observed again and one before/after USB output candidate with the same numeric ALSA address/type. It confirms only kernel/framework enumeration evidence.")
+        appendLine("It does not verify audio routing, AudioTrack routing, DAC/IEM playback, device-side state, Bit-perfect usability, or whether a physical reconnect is required.")
+        appendLine("Framework pending includes missing candidates, unavailable addresses, multiple candidates or incomplete queries; product names alone cannot establish candidate continuity.")
+        if (result.claimReturned == true) appendLine("Post-experiment warning: audio routing has not been functionally verified. If audio routes to the phone speaker or the DAC behaves abnormally, physically disconnect and reconnect the DAC before continuing.")
+        val beforeAudio = result.before?.androidAudio?.outputs?.singleOrNull()
+        val afterAudio = (result.afterAndroidAudio ?: result.after?.androidAudio)?.outputs?.singleOrNull()
+        if (beforeAudio != null && afterAudio != null) {
+            appendLine("Secondary candidate ID change: ${beforeAudio.id} -> ${afterAudio.id}")
+            val capabilitiesChanged = beforeAudio.sampleRates != afterAudio.sampleRates || beforeAudio.encodings != afterAudio.encodings ||
+                beforeAudio.channelCounts != afterAudio.channelCounts || beforeAudio.channelMasks != afterAudio.channelMasks ||
+                beforeAudio.channelIndexMasks != afterAudio.channelIndexMasks
+            appendLine("Secondary capability arrays changed: $capabilitiesChanged")
+        }
+        appendLine("Snapshots may miss transient remove/add events. No AudioDeviceCallback registered; no automatic repair on incomplete recovery.")
+    }
+
+    private fun StringBuilder.appendForcedSnapshot(snapshot: UsbFsOwnershipDiagnostics?, generation: Long) {
+        if (snapshot == null) { appendLine("Not captured."); return }
+        appendLine("Snapshot status: ${snapshot.status}")
+        if (snapshot.generation != generation || snapshot.status != UsbFsProbeStatus.RECORDED) {
+            appendLine("Snapshot device values unavailable/non-authoritative."); return
+        }
+        snapshot.speed?.let { appendIoctl(it.result); appendLine("Bus speed: ${it.mapped}; raw=${it.rawSpeed}") }
+        snapshot.driverBindings.forEach { binding ->
+            appendLine("Interface ${binding.iface.number} (${binding.iface.roles.joinToString()}): driver=${safeText(binding.driver, 256)}")
+            appendIoctl(binding.result)
+            appendLine(UsbFsEvidence.driverExplanation(binding))
+        }
+        appendLine("Android USB audio candidates: ${snapshot.androidAudio?.outputs?.size ?: "unavailable"}")
+        appendAndroidAudio(snapshot, generation)
+    }
+
     private fun StringBuilder.appendIoctl(result: UsbFsIoctlResult) {
         appendLine("    USBDEVFS_${result.operation}: return=${result.returnValue} errno=${result.errno} errno name=${result.errnoName ?: if (result.succeeded) "none (successful call)" else "unknown/unavailable"}")
     }
@@ -198,6 +299,7 @@ internal object UsbAudioDiagnosticReport {
     private fun StringBuilder.appendAndroidAudio(diagnostics: UsbFsOwnershipDiagnostics?, generation: Long) {
         appendLine("SECONDARY framework evidence; no unique association with the selected UsbDevice is asserted.")
         appendLine("AudioDeviceInfo values do not override USB descriptors, clock results or direct USB rate assessments.")
+        appendLine("AudioDeviceInfo presence, the same ID, ALSA address or capability arrays do not prove that an active playback stream will route to that device.")
         if (diagnostics == null) { appendLine("Not requested."); return }
         if (diagnostics.generation != generation || diagnostics.status in setOf(UsbFsProbeStatus.DEVICE_DISCONNECTED,
                 UsbFsProbeStatus.STALE_GENERATION, UsbFsProbeStatus.PERMISSION_LOST, UsbFsProbeStatus.TRANSPORT_ERROR)) {
@@ -207,6 +309,7 @@ internal object UsbAudioDiagnosticReport {
         val audio = diagnostics.androidAudio
         if (audio == null) { appendLine("No Android USB output snapshot returned yet."); return }
         audio.detail?.let { appendLine(it) }
+        if (!audio.querySucceeded) { appendLine("Framework enumeration query unavailable; device absence is not inferred."); return }
         if (audio.outputs.isEmpty()) appendLine("No USB output candidates reported by Android.")
         audio.outputs.forEachIndexed { index, output ->
             val type = when (output.type) { 11 -> "TYPE_USB_DEVICE"; 12 -> "TYPE_USB_ACCESSORY"; 22 -> "TYPE_USB_HEADSET"; else -> "UNKNOWN_USB_TYPE" }
@@ -224,7 +327,7 @@ internal object UsbAudioDiagnosticReport {
     private fun StringBuilder.appendClockQueries(diagnostics: UsbAudioClockDiagnostics?, currentGeneration: Long) {
         if (diagnostics == null) {
             appendLine("Not requested for this generation. Use Query UAC2 clock capabilities.")
-            appendLine("Rate range not yet queried. No UAC2 class-control reads issued for this generation.")
+            appendLine("Rate range not yet queried. No UAC2 class-control reads recorded in this query set.")
             appendLine("No SET request is implemented. The separate AudioControl claim experiment requires an explicit action.")
             return
         }
@@ -244,6 +347,8 @@ internal object UsbAudioDiagnosticReport {
         val issued = diagnostics.results.any { result -> result.attempts.any { it.returnedByteCount != null } }
         appendLine("Claim mode: ${diagnostics.claimMode}; automatic interface claim fallback is disabled.")
         appendLine(when {
+            diagnostics.claimMode == UsbClockClaimMode.AUDIOCONTROL_FORCED_NATIVE ->
+                "Session 5: these reads were issued only after Android force=true AC ownership; native USBDEVFS_CONTROL evidence follows."
             diagnostics.claimMode == UsbClockClaimMode.AUDIOCONTROL_NON_FORCED ->
                 "Operation used temporary non-forced AudioControl ownership; see the experiment for query comparison and release status."
             diagnostics.phase == UsbClockDiagnosticPhase.COMPLETE -> "Claim needed: no, these reads completed without claiming any interface."
@@ -302,6 +407,10 @@ internal object UsbAudioDiagnosticReport {
                     "bRequest=0x${usbHex(request.request)} wValue=0x${usbHex(request.value, 4)} " +
                     "wIndex=0x${usbHex(request.index, 4)} wLength=${request.length} returned=${attempt.returnedByteCount ?: "not issued/no byte count"} ${attempt.status}")
                 appendLine("    Raw: ${attempt.rawBytes.joinToString(" ") { usbHex(it) }.ifEmpty { "none" }}")
+                attempt.nativeResult?.let { native ->
+                    val actualLength = if (native.returnValue >= 0) native.returnValue.toString() else "unavailable (failed ioctl)"
+                    appendLine("    USBDEVFS_CONTROL: ioctl return=${native.returnValue} errno=${native.errno} errno name=${native.errnoName ?: "none"} requested length=${native.requestedLength} actual length=$actualLength; retained bytes=${native.rawBytes.size}")
+                }
                 attempt.detail?.let { appendLine("    $it") }
             }
         }
@@ -310,6 +419,7 @@ internal object UsbAudioDiagnosticReport {
     }
 
     private fun StringBuilder.appendClaimExperiment(experiment: UsbAudioClaimExperimentResult?, generation: Long, querying: Boolean) {
+        appendLine("Session 3 scope only (separate from Session 5):")
         if (experiment == null) {
             appendLine("Not requested. Use Test AudioControl claim + clock reads.")
             appendLine("No forced claim was attempted.")
