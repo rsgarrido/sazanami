@@ -3,7 +3,7 @@ package io.github.rsgarrido.sazanami.player.usb
 /** Offline, plain-text evidence. No serial strings, Android bus paths, music paths, or remote lookup. */
 internal object UsbAudioDiagnosticReport {
     fun format(state: UsbAudioDiagnosticState, includeRaw: Boolean = true): String = buildString {
-        appendLine("SAZANAMI USB AUDIO DIAGNOSTIC — SESSION 3")
+        appendLine("SAZANAMI USB AUDIO DIAGNOSTIC — SESSION 4")
         appendLine("Descriptors and read-only clock diagnostics. Direct USB playback is not implemented.")
         appendLine("Service: ${if (state.serviceAvailable) "available" else "unavailable"}")
         appendLine("Status: ${statusText(state.status)}")
@@ -46,6 +46,10 @@ internal object UsbAudioDiagnosticReport {
         section("AudioControl Claim Experiment")
         appendClaimExperiment(state.clockDiagnostics?.claimExperiment, state.generation,
             state.clockDiagnostics?.phase == UsbClockDiagnosticPhase.QUERYING)
+        section("USBFS Ownership Diagnostics")
+        appendUsbFs(state.usbFsDiagnostics, state.generation)
+        section("Android AudioDeviceInfo")
+        appendAndroidAudio(state.usbFsDiagnostics, state.generation)
         val model = state.descriptors
         if (model == null) {
             section("Raw descriptors")
@@ -62,7 +66,7 @@ internal object UsbAudioDiagnosticReport {
             appendLine("Configuration ${c.value} @${c.offset}: wTotalLength=${c.totalLength} " +
                 "interfaces=${c.interfaceCount} attributes=0x${usbHex(c.attributes)} bMaxPower(raw)=${c.maxPowerRaw}")
         }
-        appendLine("Active configuration/device speed: not queried; all supplied descriptor sets are shown.")
+        appendLine("Active configuration not queried; all supplied descriptor sets are shown. Bus speed evidence is in USBFS Ownership Diagnostics.")
         model.associations.forEach { iad ->
             appendLine("IAD configuration@${iad.configurationOffset ?: "unknown"}: " +
                 "first=${iad.firstInterface} count=${iad.interfaceCount} " +
@@ -79,7 +83,7 @@ internal object UsbAudioDiagnosticReport {
                     (if (ep.transferType == 1) "sync=${syncName(ep.synchronizationType)} usage=${usageName(ep.usageType)}" else ""))
                 appendLine("    wMaxPacketSize=0x${usbHex(ep.maxPacketSizeRaw, 4)} payload=${ep.packetPayloadBytes} " +
                     "encoded additional transactions=${ep.additionalTransactions} bInterval=${ep.interval}")
-                appendLine("    Interval units/bus capacity depend on speed; not inferred.")
+                appendLine("    Interval units/bus capacity are not inferred here; see the separate usbfs speed evidence.")
                 ep.synchronizationAddress?.let { appendLine("    bSynchAddress=0x${usbHex(it)} bRefresh=${ep.refresh}") }
                 ep.audio?.let { audio -> appendLine("    UAC2 endpoint attributes=0x${usbHex(audio.attributes)} " +
                     "controls=0x${usbHex(audio.controls)} lockDelayUnits=${audio.lockDelayUnits} lockDelay=${audio.lockDelay}") }
@@ -134,7 +138,7 @@ internal object UsbAudioDiagnosticReport {
         }
         section("Read-only scope / limitations")
         appendLine("Clock selectors list possible input pins; selected clock is unknown.")
-        appendLine("Only the explicit experiment may temporarily claim resolved AudioControl with force=false.")
+        appendLine("Explicit Android/raw-usbfs experiments may temporarily claim only resolved AudioControl without force or driver detach.")
         appendLine("No AudioStreaming/HID claim, SET_INTERFACE, reset, kernel detach, streaming or USB audio data transmission.")
         section("Parser warnings / limitations")
         if (model.warnings.isEmpty()) appendLine("No structural parser warnings.")
@@ -148,6 +152,73 @@ internal object UsbAudioDiagnosticReport {
                 (d.endpointAddress?.let { " EP=0x${usbHex(it)}" } ?: "") + " — ${d.interpretation}")
             appendLine(d.hex)
         } else appendLine("Use Copy USB audio report for complete descriptor-by-descriptor hex, including unknown/malformed bytes.")
+    }
+
+    private fun StringBuilder.appendUsbFs(diagnostics: UsbFsOwnershipDiagnostics?, generation: Long) {
+        appendLine("Forced detach attempted: NO")
+        appendLine("Native fd is borrowed synchronously; Kotlin retains connection ownership.")
+        if (diagnostics == null) { appendLine("Not requested. Use Inspect kernel USB ownership."); return }
+        if (diagnostics.generation != generation) { appendLine("Stale generation; prior ownership/speed evidence omitted."); return }
+        appendLine("Status: ${diagnostics.status}; generation=${diagnostics.generation}")
+        diagnostics.detail?.let { appendLine("Note: $it") }
+        if (diagnostics.status in setOf(UsbFsProbeStatus.DEVICE_DISCONNECTED, UsbFsProbeStatus.STALE_GENERATION,
+                UsbFsProbeStatus.PERMISSION_LOST, UsbFsProbeStatus.TRANSPORT_ERROR)) {
+            appendLine("Ownership evidence is non-authoritative and omitted.")
+            return
+        }
+        diagnostics.plan.warnings.forEach { appendLine("Plan warning: $it") }
+        appendLine("Bus speed:")
+        diagnostics.speed?.let {
+            appendIoctl(it.result)
+            appendLine("  raw speed: ${it.rawSpeed ?: "unavailable"}; mapped: ${it.mapped}")
+        } ?: appendLine("  unavailable / not yet queried")
+        appendLine("Interface driver bindings (descriptor-derived roles; alternates deduplicated):")
+        if (diagnostics.driverBindings.isEmpty()) appendLine("  no native binding results returned")
+        diagnostics.driverBindings.forEach { binding ->
+            appendLine("  Interface ${binding.iface.number} (${binding.iface.roles.joinToString()}); descriptor alternates=${binding.iface.alternates}")
+            appendLine("    driver: ${binding.driver?.let { safeText(it, 256) } ?: "not returned"}")
+            appendIoctl(binding.result)
+            appendLine("    ${UsbFsEvidence.driverExplanation(binding)}")
+        }
+        appendLine("Raw AudioControl claim probe:")
+        appendLine("  Resolved AC interface: ${diagnostics.plan.audioControl?.diagnosticName() ?: "unresolved / not eligible"}")
+        appendLine("  Non-forced USBDEVFS_CLAIMINTERFACE only; no disconnect operation or retry.")
+        diagnostics.claim?.let { appendIoctl(it) } ?: appendLine("  claim: not attempted")
+        appendLine("  ${UsbFsEvidence.claimExplanation(diagnostics)}")
+        appendLine("  release attempted: ${if (diagnostics.release != null) "yes" else "no"}")
+        diagnostics.release?.let { appendIoctl(it) }
+        appendLine("No control requests, clock reads, endpoint I/O or audio data are issued by this native probe.")
+        appendLine("These are kernel observations at query time; speed is not inferred from descriptors or marketing.")
+    }
+
+    private fun StringBuilder.appendIoctl(result: UsbFsIoctlResult) {
+        appendLine("    USBDEVFS_${result.operation}: return=${result.returnValue} errno=${result.errno} errno name=${result.errnoName ?: if (result.succeeded) "none (successful call)" else "unknown/unavailable"}")
+    }
+
+    private fun StringBuilder.appendAndroidAudio(diagnostics: UsbFsOwnershipDiagnostics?, generation: Long) {
+        appendLine("SECONDARY framework evidence; no unique association with the selected UsbDevice is asserted.")
+        appendLine("AudioDeviceInfo values do not override USB descriptors, clock results or direct USB rate assessments.")
+        if (diagnostics == null) { appendLine("Not requested."); return }
+        if (diagnostics.generation != generation || diagnostics.status in setOf(UsbFsProbeStatus.DEVICE_DISCONNECTED,
+                UsbFsProbeStatus.STALE_GENERATION, UsbFsProbeStatus.PERMISSION_LOST, UsbFsProbeStatus.TRANSPORT_ERROR)) {
+            appendLine("Prior/non-authoritative Android audio candidates omitted.")
+            return
+        }
+        val audio = diagnostics.androidAudio
+        if (audio == null) { appendLine("No Android USB output snapshot returned yet."); return }
+        audio.detail?.let { appendLine(it) }
+        if (audio.outputs.isEmpty()) appendLine("No USB output candidates reported by Android.")
+        audio.outputs.forEachIndexed { index, output ->
+            val type = when (output.type) { 11 -> "TYPE_USB_DEVICE"; 12 -> "TYPE_USB_ACCESSORY"; 22 -> "TYPE_USB_HEADSET"; else -> "UNKNOWN_USB_TYPE" }
+            appendLine("USB output candidate ${index + 1}: ${safeText(output.product)}")
+            appendLine("  type: ${output.type} ($type); Android audio device ID: ${output.id}")
+            appendLine("  address: ${UsbFsEvidence.safeAudioAddress(output.safeAddress) ?: "omitted / not a recognized numeric ALSA address"}")
+            appendLine("  sample rates: ${output.sampleRates}${if (output.sampleRates.isEmpty()) " (Android reports arbitrary rates; no explicit rate list)" else ""}")
+            appendLine("  encodings: ${output.encodings}${if (output.encodings.isEmpty()) " (Android reports arbitrary encodings; no explicit list)" else ""}")
+            appendLine("  channel counts: ${output.channelCounts}${if (output.channelCounts.isEmpty()) " (Android reports arbitrary counts; no explicit list)" else ""}")
+            appendLine("  channel masks: ${output.channelMasks.joinToString(prefix = "[", postfix = "]") { "0x${hex32(it.toLong() and 0xffffffffL)}" }}")
+            appendLine("  channel index masks: ${output.channelIndexMasks.joinToString(prefix = "[", postfix = "]") { "0x${hex32(it.toLong() and 0xffffffffL)}" }}")
+        }
     }
 
     private fun StringBuilder.appendClockQueries(diagnostics: UsbAudioClockDiagnostics?, currentGeneration: Long) {
@@ -300,7 +371,7 @@ internal object UsbAudioDiagnosticReport {
 
     private fun StringBuilder.section(title: String) { appendLine(); appendLine(title); appendLine("-".repeat(title.length)) }
     private fun hex32(value: Long): String = value.toString(16).uppercase(java.util.Locale.ROOT).padStart(8, '0')
-    private fun safeText(value: String?): String = value?.map { if (it.isISOControl()) ' ' else it }?.joinToString("")?.take(160)?.takeIf { it.isNotBlank() } ?: "unknown"
+    private fun safeText(value: String?, maxLength: Int = 160): String = value?.map { if (it.isISOControl()) ' ' else it }?.joinToString("")?.take(maxLength)?.takeIf { it.isNotBlank() } ?: "unknown"
     private fun className(value: Int, subclass: Int? = null): String = when (value) {
         0 -> "per-interface/composite"
         1 -> when (subclass) { 1 -> "AudioControl"; 2 -> "AudioStreaming"; 3 -> "MIDIStreaming"; else -> "Audio" }

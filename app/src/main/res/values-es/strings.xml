@@ -118,6 +118,9 @@
     <string name="usb_diagnostics_test_claim">Probar adquisición de AudioControl + consultas del reloj</string>
     <string name="usb_diagnostics_testing_claim">Probando adquisición de AudioControl + consultas del reloj…</string>
     <string name="usb_diagnostics_claim_note">Experimento de diagnóstico: acceso temporal a AudioControl con force=false, consultas del reloj de solo lectura y liberación posterior. Sin reproducción USB.</string>
+    <string name="usb_diagnostics_inspect_kernel">Inspeccionar control USB del kernel</string>
+    <string name="usb_diagnostics_inspecting_kernel">Inspeccionando control USB del kernel…</string>
+    <string name="usb_diagnostics_kernel_note">Solo diagnóstico: controladores del kernel, velocidad USB real, una adquisición no forzada de AudioControl con liberación inmediata y capacidades de salida USB de Android. Sin desconexión de controladores ni reproducción.</string>
     <string name="diagnostics_unknown">Desconocido</string>
     <string name="diagnostics_back">Volver</string>
     <string name="diagnostics_app_version">Versión de la app</string>

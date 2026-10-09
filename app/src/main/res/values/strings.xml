@@ -89,6 +89,9 @@
     <string name="usb_diagnostics_test_claim">Test AudioControl claim + clock reads</string>
     <string name="usb_diagnostics_testing_claim">Testing AudioControl claim + clock reads…</string>
     <string name="usb_diagnostics_claim_note">Diagnostic experiment: temporary AudioControl ownership with force=false, read-only clock queries, then release. No USB playback.</string>
+    <string name="usb_diagnostics_inspect_kernel">Inspect kernel USB ownership</string>
+    <string name="usb_diagnostics_inspecting_kernel">Inspecting kernel USB ownership…</string>
+    <string name="usb_diagnostics_kernel_note">Diagnostic only: kernel drivers, actual USB speed, one non-forced AudioControl claim with immediate release, and Android USB output capabilities. No driver detach or playback.</string>
     <string name="diagnostics_unknown">Unknown</string>
     <string name="diagnostics_back">Back</string>
     <string name="diagnostics_app_version">App version</string>

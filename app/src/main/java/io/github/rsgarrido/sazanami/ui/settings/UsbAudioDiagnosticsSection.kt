@@ -27,6 +27,7 @@ import io.github.rsgarrido.sazanami.player.usb.UsbAudioDiagnosticBridge
 import io.github.rsgarrido.sazanami.player.usb.UsbAudioDiagnosticReport
 import io.github.rsgarrido.sazanami.player.usb.UsbAudioDiagnosticStatus
 import io.github.rsgarrido.sazanami.player.usb.UsbClockDiagnosticPhase
+import io.github.rsgarrido.sazanami.player.usb.UsbFsProbeStatus
 import io.github.rsgarrido.sazanami.player.usb.usbHex
 
 /** Presentation only. Receivers, connection ownership, parsing and commands live in player/usb. */
@@ -65,14 +66,14 @@ internal fun UsbAudioDiagnosticsSection() {
             OutlinedButton(
                 onClick = { UsbAudioDiagnosticBridge.requestPermission(selected.identity) },
                 enabled = state.serviceAvailable && state.status != UsbAudioDiagnosticStatus.REQUESTING_PERMISSION &&
-                    state.status != UsbAudioDiagnosticStatus.OPENING
+                    !state.diagnosticOperationRunning
             ) { Text(stringResource(R.string.usb_diagnostics_permission)) }
         }
         state.selectedDevice?.let { selected ->
             OutlinedButton(
                 onClick = { UsbAudioDiagnosticBridge.queryClockCapabilities(selected.identity) },
                 enabled = state.serviceAvailable && selected.hasPermission && state.descriptors != null &&
-                    state.clockDiagnostics?.phase != UsbClockDiagnosticPhase.QUERYING,
+                    !state.diagnosticOperationRunning,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(stringResource(if (state.clockDiagnostics?.phase == UsbClockDiagnosticPhase.QUERYING)
@@ -81,7 +82,7 @@ internal fun UsbAudioDiagnosticsSection() {
             OutlinedButton(
                 onClick = { UsbAudioDiagnosticBridge.testAudioControlClaim(selected.identity) },
                 enabled = state.serviceAvailable && selected.hasPermission && state.descriptors != null &&
-                    state.clockDiagnostics?.phase != UsbClockDiagnosticPhase.QUERYING,
+                    !state.diagnosticOperationRunning,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(stringResource(if (state.clockDiagnostics?.phase == UsbClockDiagnosticPhase.QUERYING &&
@@ -89,6 +90,15 @@ internal fun UsbAudioDiagnosticsSection() {
                     else R.string.usb_diagnostics_test_claim))
             }
             Text(stringResource(R.string.usb_diagnostics_claim_note), style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(
+                onClick = { UsbAudioDiagnosticBridge.inspectKernelOwnership(selected.identity) },
+                enabled = state.serviceAvailable && selected.hasPermission && state.descriptors != null && !state.diagnosticOperationRunning,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(if (state.usbFsDiagnostics?.status == UsbFsProbeStatus.QUERYING)
+                    R.string.usb_diagnostics_inspecting_kernel else R.string.usb_diagnostics_inspect_kernel))
+            }
+            Text(stringResource(R.string.usb_diagnostics_kernel_note), style = MaterialTheme.typography.bodySmall)
         }
         OutlinedButton(
             onClick = {

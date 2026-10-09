@@ -29,6 +29,7 @@ internal object UsbAudioDiagnosticBridge {
     @Synchronized fun requestPermission(identity: UsbAudioDeviceIdentity) { owner?.requestPermission(identity) }
     @Synchronized fun queryClockCapabilities(identity: UsbAudioDeviceIdentity) { owner?.queryClockCapabilities(identity) }
     @Synchronized fun testAudioControlClaim(identity: UsbAudioDeviceIdentity) { owner?.testAudioControlClaim(identity) }
+    @Synchronized fun inspectKernelOwnership(identity: UsbAudioDeviceIdentity) { owner?.inspectKernelOwnership(identity) }
     @Synchronized fun permissionResult(requestId: String, identity: UsbAudioDeviceIdentity?, granted: Boolean) {
         owner?.permissionResult(requestId, identity, granted)
     }

@@ -26,3 +26,8 @@ target_link_libraries(
         ${log_library}
         ${media_ndk_library}
 )
+
+# Independent USB diagnostic JNI boundary; no waveform/MediaCodec dependency.
+add_library(sazanami_usb_diagnostics SHARED src/main/cpp/usb_fs_diagnostics.cpp)
+target_compile_features(sazanami_usb_diagnostics PRIVATE cxx_std_17)
+target_compile_options(sazanami_usb_diagnostics PRIVATE -Wall -Wextra -Wpedantic)
