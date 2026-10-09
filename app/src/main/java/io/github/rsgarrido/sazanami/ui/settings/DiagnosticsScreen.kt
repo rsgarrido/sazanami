@@ -391,6 +391,7 @@ internal fun DiagnosticsScreen(
         }
 
         DiagnosticValue(stringResource(R.string.diagnostics_app_version), "${version.first} (${version.second})")
+        UsbAudioDiagnosticsSection()
         DiagnosticValue(
             stringResource(R.string.diagnostics_library),
             pluralStringResource(R.plurals.diagnostics_song_count, librarySongCount, librarySongCount)

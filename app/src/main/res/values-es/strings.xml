@@ -105,6 +105,14 @@
     <string name="external_audio_cannot_open">No se puede abrir este audio. Intenta abrirlo de nuevo desde el gestor de archivos.</string>
     <string name="external_audio_cannot_play">No se pudo reproducir este audio.</string>
     <string name="diagnostics_title">Diagnóstico</string>
+    <string name="usb_diagnostics_title">Diagnóstico de audio USB / Bit-perfect</string>
+    <string name="usb_diagnostics_note">Solo inspección del dispositivo. La reproducción USB directa aún no está implementada. La reproducción de Android continúa normalmente.</string>
+    <string name="usb_diagnostics_service_unavailable">El servicio de reproducción no está disponible. Abre Sazanami de nuevo y espera a que se conecte.</string>
+    <string name="usb_diagnostics_refresh">Actualizar dispositivos / descriptores USB</string>
+    <string name="usb_diagnostics_permission">Permitir acceso USB para inspección</string>
+    <string name="usb_diagnostics_copy">Copiar informe de audio USB</string>
+    <string name="usb_diagnostics_copied">Informe USB copiado, incluidos los descriptores sin procesar.</string>
+    <string name="usb_diagnostics_unnamed">Dispositivo USB</string>
     <string name="diagnostics_unknown">Desconocido</string>
     <string name="diagnostics_back">Volver</string>
     <string name="diagnostics_app_version">Versión de la app</string>

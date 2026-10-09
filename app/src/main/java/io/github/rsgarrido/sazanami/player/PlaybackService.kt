@@ -68,6 +68,7 @@ import io.github.rsgarrido.sazanami.player.equalizer.toDspConfiguration
 import io.github.rsgarrido.sazanami.player.equalizer.limiter.LimiterConfiguration
 import io.github.rsgarrido.sazanami.player.spectrum.SpectrumAnalyzerRuntime
 import io.github.rsgarrido.sazanami.player.spectrum.SpectrumAnalyzerRuntimeBridge
+import io.github.rsgarrido.sazanami.player.usb.UsbAudioController
 import io.github.rsgarrido.sazanami.widget.NowPlayingWidgetPublisher
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
@@ -92,6 +93,7 @@ import kotlinx.coroutines.withContext
 class PlaybackService : MediaLibraryService() {
 
     private var mediaSession: MediaLibrarySession? = null
+    private var usbAudioController: UsbAudioController? = null
     private lateinit var physicalPlayers: DualPlayerPlaybackCoordinator
     private lateinit var fragmentedMp4ExtractorsFactory: FragmentedMp4SeekExtractorsFactory
     private val player: ExoPlayer
@@ -617,6 +619,7 @@ class PlaybackService : MediaLibraryService() {
         val serviceStarted = SystemClock.elapsedRealtime()
         super.onCreate()
         SpectrumAnalyzerRuntimeBridge.attach(spectrumAnalyzerRuntime)
+        usbAudioController = UsbAudioController(this).also { it.start() }
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
@@ -812,6 +815,8 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        usbAudioController?.close()
+        usbAudioController = null
         checkpointHandler.removeCallbacks(checkpointRunnable)
         saveServicePlaybackState()
         activeServiceBinding?.release()

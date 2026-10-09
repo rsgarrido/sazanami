@@ -76,6 +76,14 @@
     <string name="settings_diagnostics_summary">Playback status and safe cache controls</string>
     <string name="settings_open_diagnostics">Open diagnostics</string>
     <string name="diagnostics_title">Diagnostics</string>
+    <string name="usb_diagnostics_title">USB Audio / Bit-perfect diagnostics</string>
+    <string name="usb_diagnostics_note">Device inspection only. Direct USB playback is not implemented. Existing Android playback continues normally.</string>
+    <string name="usb_diagnostics_service_unavailable">Playback service is unavailable. Reopen Sazanami and wait for playback to connect.</string>
+    <string name="usb_diagnostics_refresh">Refresh USB devices / descriptors</string>
+    <string name="usb_diagnostics_permission">Grant USB access for inspection</string>
+    <string name="usb_diagnostics_copy">Copy USB audio report</string>
+    <string name="usb_diagnostics_copied">USB audio report copied, including raw descriptor evidence.</string>
+    <string name="usb_diagnostics_unnamed">USB device</string>
     <string name="diagnostics_unknown">Unknown</string>
     <string name="diagnostics_back">Back</string>
     <string name="diagnostics_app_version">App version</string>
