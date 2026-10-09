@@ -21,7 +21,7 @@ internal enum class UsbClockQueryStatus {
     DEVICE_DISCONNECTED, STALE_GENERATION, PERMISSION_LOST, AMBIGUOUS_TARGET, TRANSPORT_ERROR
 }
 internal enum class UsbClockDiagnosticPhase { QUERYING, COMPLETE, PARTIAL, UNAVAILABLE }
-internal enum class UsbClockClaimMode { NOT_ATTEMPTED, UNCLAIMED }
+internal enum class UsbClockClaimMode { NOT_ATTEMPTED, UNCLAIMED, AUDIOCONTROL_NON_FORCED }
 internal enum class UsbClockRateSupport { REPRESENTED, NOT_REPRESENTED, INDETERMINATE }
 
 internal data class UsbSamplingFrequencyRange(val minimumHz: Long, val maximumHz: Long, val resolutionHz: Long)
@@ -79,7 +79,8 @@ internal data class UsbAudioClockDiagnostics(
     val resolution: UsbAudioClockResolution,
     val phase: UsbClockDiagnosticPhase,
     val claimMode: UsbClockClaimMode = UsbClockClaimMode.NOT_ATTEMPTED,
-    val results: List<UsbClockQueryResult> = emptyList()
+    val results: List<UsbClockQueryResult> = emptyList(),
+    val claimExperiment: UsbAudioClaimExperimentResult? = null
 )
 
 internal fun interface UsbClockReadTransport {

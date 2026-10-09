@@ -28,6 +28,17 @@ class UsbAudioClockTopologyTest {
         assertEquals(3, calls)
     }
 
+    @Test fun descriptorResolvedAcTargetIsTheOnlyEligibleAndroidClaim() {
+        val target = UsbAudioTopology.resolveClockTarget(model()).target!!
+        val interfaces = listOf(UsbAudioClaimInterface(0, 0, 0, 3, 0, 0),
+            UsbAudioClaimInterface(1, 8, 1, 1, 2, 0x20), UsbAudioClaimInterface(2, 7, 0, 1, 1, 0x20),
+            UsbAudioClaimInterface(3, 9, 0, 1, 1, 0x20))
+        val request = UsbAudioControlClaimRequest.resolve(target, interfaces)!!
+        assertEquals(acKey.number, request.audioControl.number)
+        assertEquals(0, request.audioControl.alternate)
+        assertEquals(false, request.force)
+    }
+
     @Test fun missingIadAndOverlappingAssociationsAreAmbiguousAndIssueNoReads() {
         val original = model()
         assertNoReads(original.copy(associations = emptyList()))

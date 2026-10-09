@@ -78,6 +78,17 @@ internal fun UsbAudioDiagnosticsSection() {
                 Text(stringResource(if (state.clockDiagnostics?.phase == UsbClockDiagnosticPhase.QUERYING)
                     R.string.usb_diagnostics_querying_clock else R.string.usb_diagnostics_query_clock))
             }
+            OutlinedButton(
+                onClick = { UsbAudioDiagnosticBridge.testAudioControlClaim(selected.identity) },
+                enabled = state.serviceAvailable && selected.hasPermission && state.descriptors != null &&
+                    state.clockDiagnostics?.phase != UsbClockDiagnosticPhase.QUERYING,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(if (state.clockDiagnostics?.phase == UsbClockDiagnosticPhase.QUERYING &&
+                    state.clockDiagnostics?.claimExperiment != null) R.string.usb_diagnostics_testing_claim
+                    else R.string.usb_diagnostics_test_claim))
+            }
+            Text(stringResource(R.string.usb_diagnostics_claim_note), style = MaterialTheme.typography.bodySmall)
         }
         OutlinedButton(
             onClick = {

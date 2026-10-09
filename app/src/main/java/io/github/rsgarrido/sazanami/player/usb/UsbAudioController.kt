@@ -35,8 +35,11 @@ internal class UsbAudioController(context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val gate = UsbAudioGenerationGate()
     private val connectionLock = Any()
-    private val ioMutex = Mutex() // Serialize connection use, including cancelled in-flight reads.
+    private val ioMutex = diagnosticIoMutex
     private var connection: UsbDeviceConnection? = null
+    // Cancellation invalidates authority immediately. This worker-owned connection must
+    // remain open until its finally has attempted AC release, then close on Dispatchers.IO.
+    private var experimentConnection: UsbDeviceConnection? = null
     @Volatile private var inspectionToken: UsbAudioInspectionToken? = null
     @Volatile private var closed = false
     private var registered = false
@@ -246,23 +249,27 @@ internal class UsbAudioController(context: Context) {
         }
     }
 
-    fun queryClockCapabilities(identity: UsbAudioDeviceIdentity) = onMain {
-        val selection = gate.current ?: return@onMain
-        val model = state.descriptors ?: return@onMain
+    fun queryClockCapabilities(identity: UsbAudioDeviceIdentity) = onMain { queryClockOnMain(identity, false) }
+    fun testAudioControlClaim(identity: UsbAudioDeviceIdentity) = onMain { queryClockOnMain(identity, true) }
+
+    private fun queryClockOnMain(identity: UsbAudioDeviceIdentity, withClaimExperiment: Boolean) {
+        val selection = gate.current ?: return
+        val model = state.descriptors ?: return
         if (selection.identity != identity || pending != null || state.status == UsbAudioDiagnosticStatus.OPENING ||
-            state.clockDiagnostics?.phase == UsbClockDiagnosticPhase.QUERYING) return@onMain
+            state.clockDiagnostics?.phase == UsbClockDiagnosticPhase.QUERYING) return
         val resolution = UsbAudioTopology.resolveClockTarget(model)
         if (resolution.target == null) {
-            publish(state.copy(clockDiagnostics = UsbAudioClockControl.unavailable(gate.generation, resolution,
-                UsbClockQueryStatus.AMBIGUOUS_TARGET, "Playback clock target is ambiguous; no control request issued.")))
-            return@onMain
+            publish(state.copy(clockDiagnostics = unavailableClockDiagnostics(gate.generation, resolution,
+                UsbClockQueryStatus.AMBIGUOUS_TARGET, "Playback clock target is ambiguous; no control request issued.", withClaimExperiment)))
+            return
         }
         readJob?.cancel()
-        val token = gate.select(identity) ?: return@onMain
+        val token = gate.select(identity) ?: return
         inspectionToken = token
         closeConnection()
         publish(state.copy(generation = token.generation,
-            clockDiagnostics = UsbAudioClockDiagnostics(token.generation, resolution, UsbClockDiagnosticPhase.QUERYING)))
+            clockDiagnostics = UsbAudioClockDiagnostics(token.generation, resolution, UsbClockDiagnosticPhase.QUERYING,
+                claimExperiment = if (withClaimExperiment) UsbAudioClaimExperimentResult(token.generation, resolution) else null)))
         readJob = scope.launch {
             val result = try {
                 withContext(Dispatchers.IO) {
@@ -279,37 +286,50 @@ internal class UsbAudioController(context: Context) {
                             } catch (_: SecurityException) { UsbClockQueryStatus.PERMISSION_LOST }
                             catch (_: RuntimeException) { UsbClockQueryStatus.TRANSPORT_ERROR }
                         }
-                        accessFailure()?.let { return@withLock UsbAudioClockControl.unavailable(token.generation,
-                            resolution, it, "Clock query access check failed; no reads issued.") }
-                        val usb = manager ?: return@withLock UsbAudioClockControl.unavailable(token.generation,
-                            resolution, UsbClockQueryStatus.TRANSPORT_ERROR, "USB API unavailable.")
+                        accessFailure()?.let { return@withLock unavailableClockDiagnostics(token.generation,
+                            resolution, it, "Clock query access check failed; no reads issued.", withClaimExperiment) }
+                        val usb = manager ?: return@withLock unavailableClockDiagnostics(token.generation,
+                            resolution, UsbClockQueryStatus.TRANSPORT_ERROR, "USB API unavailable.", withClaimExperiment)
                         val device = usb.deviceList.values.firstOrNull { it.diagnosticIdentity() == identity }
-                            ?: return@withLock UsbAudioClockControl.unavailable(token.generation, resolution,
-                                UsbClockQueryStatus.DEVICE_DISCONNECTED, "Device disconnected before open.")
-                        val opened = usb.openDevice(device) ?: return@withLock UsbAudioClockControl.unavailable(
+                            ?: return@withLock unavailableClockDiagnostics(token.generation, resolution,
+                                UsbClockQueryStatus.DEVICE_DISCONNECTED, "Device disconnected before open.", withClaimExperiment)
+                        val opened = usb.openDevice(device) ?: return@withLock unavailableClockDiagnostics(
                             token.generation, resolution, accessFailure() ?: UsbClockQueryStatus.TRANSPORT_ERROR,
-                            "USB connection could not be opened for read-only clock diagnostics.")
+                            "USB connection could not be opened for read-only clock diagnostics.", withClaimExperiment)
+                        var experimentOwnsClose = false
                         try {
                             val accepted = synchronized(connectionLock) {
-                                if (closed || inspectionToken != token) false else { connection = opened; true }
+                                if (closed || inspectionToken != token) false else {
+                                    connection = opened
+                                    if (withClaimExperiment) experimentConnection = opened
+                                    true
+                                }
                             }
-                            if (!accepted) return@withLock UsbAudioClockControl.unavailable(token.generation,
-                                resolution, UsbClockQueryStatus.STALE_GENERATION, "Generation changed before control reads.")
-                            UsbAudioClockControl.query(resolution, token.generation,
+                            if (!accepted) return@withLock unavailableClockDiagnostics(token.generation,
+                                resolution, UsbClockQueryStatus.STALE_GENERATION, "Generation changed before control reads.", withClaimExperiment)
+                            if (withClaimExperiment) {
+                                val transport = UsbAudioClaimConnection(opened, device)
+                                experimentOwnsClose = true // run owns release followed by close in its outer finally.
+                                UsbAudioClaimExperiment.diagnostics(UsbAudioClaimExperiment.run(
+                                    resolution, token.generation, transport, ::accessFailure))
+                            } else UsbAudioClockControl.query(resolution, token.generation,
                                 UsbAudioClockConnection(opened), ::accessFailure)
                         } finally {
-                            synchronized(connectionLock) { if (connection === opened) connection = null }
-                            runCatching { opened.close() }
+                            synchronized(connectionLock) {
+                                if (connection === opened) connection = null
+                                if (experimentConnection === opened) experimentConnection = null
+                            }
+                            if (!experimentOwnsClose) runCatching { opened.close() }
                         }
                     }
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: SecurityException) {
-                UsbAudioClockControl.unavailable(token.generation, resolution, UsbClockQueryStatus.PERMISSION_LOST,
-                    "USB permission denied during query setup.")
+                unavailableClockDiagnostics(token.generation, resolution, UsbClockQueryStatus.PERMISSION_LOST,
+                    "USB permission denied during query setup.", withClaimExperiment)
             } catch (_: Exception) {
-                UsbAudioClockControl.unavailable(token.generation, resolution, UsbClockQueryStatus.TRANSPORT_ERROR,
-                    "Clock-query setup failed; refresh and retry.")
+                unavailableClockDiagnostics(token.generation, resolution, UsbClockQueryStatus.TRANSPORT_ERROR,
+                    "Clock-query setup failed; refresh and retry.", withClaimExperiment)
             }
             if (!closed && gate.accepts(token)) {
                 val publicationFailure = try {
@@ -324,17 +344,29 @@ internal class UsbAudioController(context: Context) {
                     UsbClockQueryStatus.DEVICE_DISCONNECTED -> { invalidate(); refreshOnMain(excluded = identity) }
                     UsbClockQueryStatus.PERMISSION_LOST -> publish(state.copy(status = UsbAudioDiagnosticStatus.PERMISSION_REQUIRED,
                         descriptors = null, devices = state.devices.map { if (it.identity == identity) it.copy(hasPermission = false) else it },
-                        clockDiagnostics = UsbAudioClockControl.unavailable(token.generation, resolution,
-                            UsbClockQueryStatus.PERMISSION_LOST, "Permission lost; returned values are not authoritative.")))
+                        clockDiagnostics = invalidateClockDiagnostics(result, UsbClockQueryStatus.PERMISSION_LOST,
+                            "Permission lost; returned values are not authoritative.")))
                     UsbClockQueryStatus.TRANSPORT_ERROR -> publish(state.copy(
-                        clockDiagnostics = UsbAudioClockControl.unavailable(token.generation, resolution,
-                            UsbClockQueryStatus.TRANSPORT_ERROR, "Could not revalidate device access; returned values are not authoritative.")))
+                        clockDiagnostics = invalidateClockDiagnostics(result, UsbClockQueryStatus.TRANSPORT_ERROR,
+                            "Could not revalidate device access; returned values are not authoritative.")))
                     null -> publish(state.copy(clockDiagnostics = result))
                     else -> Unit // Stale result never publishes into current state.
                 }
             }
         }
     }
+
+    private fun unavailableClockDiagnostics(generation: Long, resolution: UsbAudioClockResolution,
+        failure: UsbClockQueryStatus, detail: String, withClaimExperiment: Boolean): UsbAudioClockDiagnostics =
+        if (withClaimExperiment) UsbAudioClaimExperiment.diagnostics(UsbAudioClaimExperimentResult(generation, resolution,
+            claimStatus = UsbAudioClaimExperiment.claimFailure(failure), detail = detail,
+            accessFailure = failure.takeUnless { it == UsbClockQueryStatus.AMBIGUOUS_TARGET }))
+        else UsbAudioClockControl.unavailable(generation, resolution, failure, detail)
+
+    private fun invalidateClockDiagnostics(result: UsbAudioClockDiagnostics, failure: UsbClockQueryStatus,
+        detail: String): UsbAudioClockDiagnostics = result.claimExperiment?.let {
+        UsbAudioClaimExperiment.invalidate(it, failure, detail)
+    } ?: UsbAudioClockControl.unavailable(result.generation, result.resolution, failure, detail)
 
     private fun snapshot(device: UsbDevice): UsbAudioDeviceSnapshot = UsbAudioDeviceSnapshot(
         device.diagnosticIdentity(), runCatching { device.manufacturerName }.getOrNull(),
@@ -372,7 +404,9 @@ internal class UsbAudioController(context: Context) {
     }
 
     private fun closeConnection() {
-        val opened = synchronized(connectionLock) { connection.also { connection = null } }
+        val opened = synchronized(connectionLock) {
+            connection?.takeUnless { it === experimentConnection }.also { if (it != null) connection = null }
+        }
         runCatching { opened?.close() }
     }
 
@@ -390,5 +424,11 @@ internal class UsbAudioController(context: Context) {
     private fun onMain(action: () -> Unit) {
         if (Looper.myLooper() == handler.looper) { if (!closed) action() }
         else handler.post { if (!closed) action() }
+    }
+
+    private companion object {
+        // A recreated service also waits for a cancelled predecessor to release AC and
+        // close. This is the same narrow serialized diagnostic I/O boundary, not a pool.
+        val diagnosticIoMutex = Mutex()
     }
 }

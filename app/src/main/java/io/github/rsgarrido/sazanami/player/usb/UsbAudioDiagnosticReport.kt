@@ -3,7 +3,7 @@ package io.github.rsgarrido.sazanami.player.usb
 /** Offline, plain-text evidence. No serial strings, Android bus paths, music paths, or remote lookup. */
 internal object UsbAudioDiagnosticReport {
     fun format(state: UsbAudioDiagnosticState, includeRaw: Boolean = true): String = buildString {
-        appendLine("SAZANAMI USB AUDIO DIAGNOSTIC — SESSION 2")
+        appendLine("SAZANAMI USB AUDIO DIAGNOSTIC — SESSION 3")
         appendLine("Descriptors and read-only clock diagnostics. Direct USB playback is not implemented.")
         appendLine("Service: ${if (state.serviceAvailable) "available" else "unavailable"}")
         appendLine("Status: ${statusText(state.status)}")
@@ -43,6 +43,9 @@ internal object UsbAudioDiagnosticReport {
         }
         section("UAC2 Clock Queries")
         appendClockQueries(state.clockDiagnostics, state.generation)
+        section("AudioControl Claim Experiment")
+        appendClaimExperiment(state.clockDiagnostics?.claimExperiment, state.generation,
+            state.clockDiagnostics?.phase == UsbClockDiagnosticPhase.QUERYING)
         val model = state.descriptors
         if (model == null) {
             section("Raw descriptors")
@@ -131,7 +134,8 @@ internal object UsbAudioDiagnosticReport {
         }
         section("Read-only scope / limitations")
         appendLine("Clock selectors list possible input pins; selected clock is unknown.")
-        appendLine("No interface claim, SET_INTERFACE, reset, kernel detach, streaming or USB audio data transmission.")
+        appendLine("Only the explicit experiment may temporarily claim resolved AudioControl with force=false.")
+        appendLine("No AudioStreaming/HID claim, SET_INTERFACE, reset, kernel detach, streaming or USB audio data transmission.")
         section("Parser warnings / limitations")
         if (model.warnings.isEmpty()) appendLine("No structural parser warnings.")
         model.warnings.forEach { appendLine(it) }
@@ -150,7 +154,7 @@ internal object UsbAudioDiagnosticReport {
         if (diagnostics == null) {
             appendLine("Not requested for this generation. Use Query UAC2 clock capabilities.")
             appendLine("Rate range not yet queried. No UAC2 class-control reads issued for this generation.")
-            appendLine("No SET request or interface claim is implemented.")
+            appendLine("No SET request is implemented. The separate AudioControl claim experiment requires an explicit action.")
             return
         }
         if (diagnostics.generation != currentGeneration) {
@@ -167,8 +171,10 @@ internal object UsbAudioDiagnosticReport {
             appendLine("Shared playback paths: ${target.playbackPaths.joinToString { it.diagnosticName() }}")
         }
         val issued = diagnostics.results.any { result -> result.attempts.any { it.returnedByteCount != null } }
-        appendLine("Claim mode: ${diagnostics.claimMode}; no interface claim fallback is implemented.")
+        appendLine("Claim mode: ${diagnostics.claimMode}; automatic interface claim fallback is disabled.")
         appendLine(when {
+            diagnostics.claimMode == UsbClockClaimMode.AUDIOCONTROL_NON_FORCED ->
+                "Operation used temporary non-forced AudioControl ownership; see the experiment for query comparison and release status."
             diagnostics.phase == UsbClockDiagnosticPhase.COMPLETE -> "Claim needed: no, these reads completed without claiming any interface."
             issued -> "Claim needed: unknown for unavailable reads; no AC/AS/HID interface was claimed."
             else -> "Claim needed: not tested; no control reads completed."
@@ -177,6 +183,16 @@ internal object UsbAudioDiagnosticReport {
         val frequency = diagnostics.results.firstOrNull { it.query == UsbClockQuery.CURRENT_FREQUENCY }
         val validity = diagnostics.results.firstOrNull { it.query == UsbClockQuery.CLOCK_VALIDITY }
         val range = diagnostics.results.firstOrNull { it.query == UsbClockQuery.FREQUENCY_RANGE }
+        diagnostics.claimExperiment?.let { experiment ->
+            diagnostics.results.forEach { result ->
+                val preferred = experiment.preferredStage(result.query)
+                appendLine("Preferred ${result.query} evidence: ${when {
+                    preferred == null -> "no successful current result"
+                    preferred === experiment.claimed -> "Stage B, while AudioControl claimed"
+                    else -> "Stage A, unclaimed"
+                }}")
+            }
+        }
         appendLine("Current clock sampling frequency: ${frequency?.currentFrequencyHz?.let { "$it Hz" } ?: "unavailable"}")
         appendLine("Clock valid: ${validity?.clockValid?.toString() ?: "unavailable"}")
         appendLine("Sampling frequency ranges (reported MIN/MAX/RES, Hz):")
@@ -219,7 +235,55 @@ internal object UsbAudioDiagnosticReport {
             }
         }
         appendLine("Values describe the Clock Source at query time, not track rate, PCM format support, or Bit-perfect playback.")
-        appendLine("Only endpoint-zero device-to-host Clock Source reads are allowed; no writes, claims, or streaming.")
+        appendLine("Only endpoint-zero device-to-host Clock Source reads are allowed; no writes or streaming.")
+    }
+
+    private fun StringBuilder.appendClaimExperiment(experiment: UsbAudioClaimExperimentResult?, generation: Long, querying: Boolean) {
+        if (experiment == null) {
+            appendLine("Not requested. Use Test AudioControl claim + clock reads.")
+            appendLine("No forced claim was attempted.")
+            return
+        }
+        if (experiment.generation != generation) {
+            appendLine("Stale generation; prior experiment evidence omitted.")
+            return
+        }
+        appendLine("Experiment: ${if (querying) "QUERYING" else "FINISHED"}; generation=${experiment.generation}")
+        val target = experiment.resolution.target
+        appendLine("Resolved AC interface: ${target?.audioControl?.diagnosticName() ?: "unresolved"}")
+        appendLine("Resolved Clock Source: ${target?.clockEntityId ?: "unresolved"}")
+        appendLine("Baseline policy: fresh unclaimed stage on the same temporary connection and generation before claim.")
+        appendLine("force: ${experiment.force}")
+        appendLine("Claim status: ${experiment.claimStatus}")
+        appendLine("claimInterface result: ${when (experiment.claimReturned) { true -> "success (true)"; false -> "failure (false), cause unknown"; null -> "not observed / not attempted" }}")
+        experiment.claimRequest?.audioControl?.let {
+            appendLine("Android claim target: interface ${it.number} alternate ${it.alternate} class=${it.interfaceClass} subclass=${it.subclass} protocol=0x${usbHex(it.protocol)}")
+        }
+        appendLine("release attempted: ${if (experiment.releaseStatus == UsbAudioCleanupStatus.NOT_ATTEMPTED) "no" else "yes"}")
+        appendLine("release result: ${experiment.releaseStatus}")
+        appendLine("connection close result: ${experiment.closeStatus}")
+        experiment.detail?.let { appendLine("Note: $it") }
+        experiment.resolution.issues.forEach { appendLine("Resolution warning: $it") }
+        appendLine("No forced claim was attempted. No AudioStreaming or HID interface was claimed.")
+        if (experiment.accessFailure != null) appendLine("Access check: ${experiment.accessFailure}; stage values are historical evidence, not authoritative current values.")
+        appendLine()
+        appendLine("Stage A — Unclaimed:")
+        experiment.unclaimed?.let { appendClockQueries(it, generation) } ?: appendLine("No baseline query result retained.")
+        appendLine()
+        appendLine("Stage B — While AudioControl claimed:")
+        experiment.claimed?.let { appendClockQueries(it, generation) } ?: appendLine("No claimed query set issued/retained; see claim/access status.")
+        appendLine()
+        appendLine("Comparison: ${experiment.comparison()}")
+        appendLine(when (experiment.comparison()) {
+            UsbAudioClaimComparison.NOT_ATTEMPTED -> "Claim comparison not completed."
+            UsbAudioClaimComparison.BASELINE_SUCCEEDED -> "Unclaimed reads succeeded already; claiming AC was not necessary for those baseline reads."
+            UsbAudioClaimComparison.CLAIM_UNAVAILABLE -> "Read capability remains unresolved; non-forced AC ownership was unavailable. The cause of claim failure is unknown."
+            UsbAudioClaimComparison.ACCESS_CHANGED -> "Access/generation changed; no current accessibility conclusion can be drawn."
+            UsbAudioClaimComparison.CLAIM_IMPROVED_READS -> "At least one request rejected/failed unclaimed succeeded while AC was claimed. Ownership is associated with changed query accessibility in this experiment; this does not prove the underlying cause."
+            UsbAudioClaimComparison.CLAIM_DID_NOT_RESOLVE -> "The previously rejected/failed requests also failed while AC was claimed; claiming AC alone did not resolve those failures."
+            UsbAudioClaimComparison.INDETERMINATE -> "Evidence is incomplete or mixed; inspect the per-stage request results."
+        })
+        appendLine("This is temporary diagnostic ownership and read-only clock evidence. Direct USB playback is not implemented.")
     }
 
     fun statusText(status: UsbAudioDiagnosticStatus): String = when (status) {
