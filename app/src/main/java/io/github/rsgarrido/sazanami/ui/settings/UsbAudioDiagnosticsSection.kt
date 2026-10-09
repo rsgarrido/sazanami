@@ -26,6 +26,7 @@ import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.player.usb.UsbAudioDiagnosticBridge
 import io.github.rsgarrido.sazanami.player.usb.UsbAudioDiagnosticReport
 import io.github.rsgarrido.sazanami.player.usb.UsbAudioDiagnosticStatus
+import io.github.rsgarrido.sazanami.player.usb.UsbClockDiagnosticPhase
 import io.github.rsgarrido.sazanami.player.usb.usbHex
 
 /** Presentation only. Receivers, connection ownership, parsing and commands live in player/usb. */
@@ -66,6 +67,17 @@ internal fun UsbAudioDiagnosticsSection() {
                 enabled = state.serviceAvailable && state.status != UsbAudioDiagnosticStatus.REQUESTING_PERMISSION &&
                     state.status != UsbAudioDiagnosticStatus.OPENING
             ) { Text(stringResource(R.string.usb_diagnostics_permission)) }
+        }
+        state.selectedDevice?.let { selected ->
+            OutlinedButton(
+                onClick = { UsbAudioDiagnosticBridge.queryClockCapabilities(selected.identity) },
+                enabled = state.serviceAvailable && selected.hasPermission && state.descriptors != null &&
+                    state.clockDiagnostics?.phase != UsbClockDiagnosticPhase.QUERYING,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(if (state.clockDiagnostics?.phase == UsbClockDiagnosticPhase.QUERYING)
+                    R.string.usb_diagnostics_querying_clock else R.string.usb_diagnostics_query_clock))
+            }
         }
         OutlinedButton(
             onClick = {

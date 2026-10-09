@@ -84,6 +84,8 @@
     <string name="usb_diagnostics_copy">Copy USB audio report</string>
     <string name="usb_diagnostics_copied">USB audio report copied, including raw descriptor evidence.</string>
     <string name="usb_diagnostics_unnamed">USB device</string>
+    <string name="usb_diagnostics_query_clock">Query UAC2 clock capabilities</string>
+    <string name="usb_diagnostics_querying_clock">Reading UAC2 clock capabilities…</string>
     <string name="diagnostics_unknown">Unknown</string>
     <string name="diagnostics_back">Back</string>
     <string name="diagnostics_app_version">App version</string>

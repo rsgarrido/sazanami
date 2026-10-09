@@ -2,6 +2,7 @@ package io.github.rsgarrido.sazanami.player.usb
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -47,6 +48,24 @@ class UsbAudioDiagnosticStateTest {
         assertTrue(gate.accepts(refreshRead))
     }
 
+    @Test fun clockPublicationRequiresCurrentGenerationPresenceAndPermission() {
+        val gate = UsbAudioGenerationGate()
+        val old = gate.select(identity)!!
+        assertNull(gate.clockAccessFailure(old, devicePresent = true, permissionGranted = true))
+        assertEquals(UsbClockQueryStatus.DEVICE_DISCONNECTED,
+            gate.clockAccessFailure(old, devicePresent = false, permissionGranted = false))
+        assertEquals(UsbClockQueryStatus.PERMISSION_LOST,
+            gate.clockAccessFailure(old, devicePresent = true, permissionGranted = false))
+        gate.select(null)
+        val replacement = gate.select(identity)!!
+        assertEquals(UsbClockQueryStatus.STALE_GENERATION,
+            gate.clockAccessFailure(old, devicePresent = true, permissionGranted = true))
+        assertNull(gate.clockAccessFailure(replacement, devicePresent = true, permissionGranted = true))
+        gate.select(identity.copy(deviceId = 43))
+        assertEquals(UsbClockQueryStatus.STALE_GENERATION,
+            gate.clockAccessFailure(replacement, devicePresent = true, permissionGranted = true))
+    }
+
     @Test fun copiedReportContainsUnknownAndMalformedRawEvidenceButNoBusPathOrStringPayload() {
         val bytes = byteArrayOf(4, 0x7f, 0xab.toByte(), 0xcd.toByte(),
             6, 3, 'S'.code.toByte(), 0, 'N'.code.toByte(), 0, 0, 4, 0x55)
@@ -58,7 +77,7 @@ class UsbAudioDiagnosticStateTest {
         assertFalse(report.contains("06 03 53 00 4E 00"))
         assertFalse(report.contains(identity.deviceName))
         assertTrue(report.contains("Rate range not yet queried"))
-        assertTrue(report.contains("No UAC2 GET_CUR/GET_RANGE or SET_CUR"))
+        assertTrue(report.contains("No UAC2 class-control reads issued for this generation"))
     }
 
     @Test fun conciseReportDoesNotRepeatRawBytesAndCopiedReportHasEveryRecord() {

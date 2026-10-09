@@ -47,7 +47,8 @@ internal data class UsbAudioDiagnosticState(
     val selectedIdentity: UsbAudioDeviceIdentity? = null,
     val generation: Long = 0,
     val descriptors: UsbAudioDescriptorModel? = null,
-    val message: String? = null
+    val message: String? = null,
+    val clockDiagnostics: UsbAudioClockDiagnostics? = null
 ) {
     val selectedDevice: UsbAudioDeviceSnapshot?
         get() = devices.firstOrNull { it.identity == selectedIdentity }
@@ -74,4 +75,11 @@ internal class UsbAudioGenerationGate {
     }
 
     fun accepts(token: UsbAudioInspectionToken): Boolean = current == token
+
+    fun clockAccessFailure(token: UsbAudioInspectionToken, devicePresent: Boolean, permissionGranted: Boolean): UsbClockQueryStatus? = when {
+        !accepts(token) -> UsbClockQueryStatus.STALE_GENERATION
+        !devicePresent -> UsbClockQueryStatus.DEVICE_DISCONNECTED
+        !permissionGranted -> UsbClockQueryStatus.PERMISSION_LOST
+        else -> null
+    }
 }

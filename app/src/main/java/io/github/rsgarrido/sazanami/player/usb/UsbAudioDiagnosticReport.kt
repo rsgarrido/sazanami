@@ -3,8 +3,8 @@ package io.github.rsgarrido.sazanami.player.usb
 /** Offline, plain-text evidence. No serial strings, Android bus paths, music paths, or remote lookup. */
 internal object UsbAudioDiagnosticReport {
     fun format(state: UsbAudioDiagnosticState, includeRaw: Boolean = true): String = buildString {
-        appendLine("SAZANAMI USB AUDIO DIAGNOSTIC — SESSION 1")
-        appendLine("Descriptor inspection only. Direct USB playback is not implemented.")
+        appendLine("SAZANAMI USB AUDIO DIAGNOSTIC — SESSION 2")
+        appendLine("Descriptors and read-only clock diagnostics. Direct USB playback is not implemented.")
         appendLine("Service: ${if (state.serviceAvailable) "available" else "unavailable"}")
         appendLine("Status: ${statusText(state.status)}")
         appendLine("Connection generation: ${state.generation}")
@@ -41,6 +41,8 @@ internal object UsbAudioDiagnosticReport {
                 }
             }
         }
+        section("UAC2 Clock Queries")
+        appendClockQueries(state.clockDiagnostics, state.generation)
         val model = state.descriptors
         if (model == null) {
             section("Raw descriptors")
@@ -96,7 +98,7 @@ internal object UsbAudioDiagnosticReport {
                 if (e.kind == UsbAudioEntityKind.CLOCK_SOURCE) {
                     appendLine("    Sampling-frequency / clock-valid control bit pairs: " +
                         "${e.controls?.and(3L) ?: "unknown"} / ${e.controls?.shr(2)?.and(3L) ?: "unknown"}")
-                    appendLine("    Current rate, rate range and clock-valid value: not queried")
+                    appendLine("    Descriptors contain no current/range/validity values; see UAC2 Clock Queries for read evidence.")
                 }
                 if (e.channelControls.isNotEmpty()) appendLine("    master/channel controls=${e.channelControls.joinToString { "0x${hex32(it)}" }}")
             }
@@ -127,8 +129,7 @@ internal object UsbAudioDiagnosticReport {
                 path.warnings.forEach { appendLine("  Warning: $it") }
             }
         }
-        section("Sample rates / read-only queries")
-        appendLine("Rate range not yet queried. No UAC2 GET_CUR/GET_RANGE or SET_CUR requests were issued.")
+        section("Read-only scope / limitations")
         appendLine("Clock selectors list possible input pins; selected clock is unknown.")
         appendLine("No interface claim, SET_INTERFACE, reset, kernel detach, streaming or USB audio data transmission.")
         section("Parser warnings / limitations")
@@ -143,6 +144,82 @@ internal object UsbAudioDiagnosticReport {
                 (d.endpointAddress?.let { " EP=0x${usbHex(it)}" } ?: "") + " — ${d.interpretation}")
             appendLine(d.hex)
         } else appendLine("Use Copy USB audio report for complete descriptor-by-descriptor hex, including unknown/malformed bytes.")
+    }
+
+    private fun StringBuilder.appendClockQueries(diagnostics: UsbAudioClockDiagnostics?, currentGeneration: Long) {
+        if (diagnostics == null) {
+            appendLine("Not requested for this generation. Use Query UAC2 clock capabilities.")
+            appendLine("Rate range not yet queried. No UAC2 class-control reads issued for this generation.")
+            appendLine("No SET request or interface claim is implemented.")
+            return
+        }
+        if (diagnostics.generation != currentGeneration) {
+            appendLine("Stale generation; prior clock values omitted.")
+            return
+        }
+        appendLine("Query status: ${diagnostics.phase}; generation=${diagnostics.generation}")
+        appendLine("Playback candidates examined: ${diagnostics.resolution.playbackCandidateCount}")
+        val target = diagnostics.resolution.target
+        if (target == null) appendLine("AudioControl / Clock Source: unresolved; no target chosen.") else {
+            appendLine("AudioControl interface: ${target.audioControl.number} alternate ${target.audioControl.alternate} " +
+                "configuration@${target.audioControl.configurationOffset}")
+            appendLine("Clock Source entity: ${target.clockEntityId}")
+            appendLine("Shared playback paths: ${target.playbackPaths.joinToString { it.diagnosticName() }}")
+        }
+        val issued = diagnostics.results.any { result -> result.attempts.any { it.returnedByteCount != null } }
+        appendLine("Claim mode: ${diagnostics.claimMode}; no interface claim fallback is implemented.")
+        appendLine(when {
+            diagnostics.phase == UsbClockDiagnosticPhase.COMPLETE -> "Claim needed: no, these reads completed without claiming any interface."
+            issued -> "Claim needed: unknown for unavailable reads; no AC/AS/HID interface was claimed."
+            else -> "Claim needed: not tested; no control reads completed."
+        })
+        diagnostics.resolution.issues.forEach { appendLine("Resolution warning: $it") }
+        val frequency = diagnostics.results.firstOrNull { it.query == UsbClockQuery.CURRENT_FREQUENCY }
+        val validity = diagnostics.results.firstOrNull { it.query == UsbClockQuery.CLOCK_VALIDITY }
+        val range = diagnostics.results.firstOrNull { it.query == UsbClockQuery.FREQUENCY_RANGE }
+        appendLine("Current clock sampling frequency: ${frequency?.currentFrequencyHz?.let { "$it Hz" } ?: "unavailable"}")
+        appendLine("Clock valid: ${validity?.clockValid?.toString() ?: "unavailable"}")
+        appendLine("Sampling frequency ranges (reported MIN/MAX/RES, Hz):")
+        if (range?.ranges.isNullOrEmpty()) appendLine("  unavailable / not yet returned")
+        range?.ranges.orEmpty().forEachIndexed { i, tuple ->
+            val semantics = when {
+                tuple.minimumHz == tuple.maximumHz && tuple.resolutionHz == 0L -> "discrete singleton"
+                tuple.minimumHz < tuple.maximumHz && tuple.resolutionHz == 1L -> "integer-Hz interval"
+                tuple.minimumHz < tuple.maximumHz && tuple.resolutionHz > 1L -> "stepped interval"
+                else -> "semantics indeterminate"
+            }
+            appendLine("  #${i + 1} min=${tuple.minimumHz} max=${tuple.maximumHz} res=${tuple.resolutionHz} ($semantics)")
+        }
+        appendLine("Initial milestone rate assessment:")
+        UsbAudioClockControl.milestoneRatesHz.forEach { rate ->
+            val support = when (UsbAudioClockControl.assessRate(rate, range)) {
+                UsbClockRateSupport.REPRESENTED -> "supported by returned range"
+                UsbClockRateSupport.NOT_REPRESENTED -> "not represented by returned range"
+                UsbClockRateSupport.INDETERMINATE -> "indeterminate (query/semantics incomplete)"
+            }
+            appendLine("  $rate Hz: $support")
+        }
+        appendLine("Query results / raw control-response evidence:")
+        diagnostics.results.forEach { result ->
+            val label = when (result.query) {
+                UsbClockQuery.CURRENT_FREQUENCY -> "GET_CUR sampling frequency"
+                UsbClockQuery.FREQUENCY_RANGE -> "GET_RANGE sampling frequency"
+                UsbClockQuery.CLOCK_VALIDITY -> "GET_CUR clock validity"
+            }
+            appendLine("  $label: ${result.status}")
+            result.detail?.let { appendLine("    $it") }
+            result.declaredSubrangeCount?.let { appendLine("    Declared subranges: $it") }
+            result.attempts.forEach { attempt ->
+                val request = attempt.request
+                appendLine("    ${if (request.rangeHeaderOnly) "RANGE header" else "Read"}: bmRequestType=0x${usbHex(request.requestType)} " +
+                    "bRequest=0x${usbHex(request.request)} wValue=0x${usbHex(request.value, 4)} " +
+                    "wIndex=0x${usbHex(request.index, 4)} wLength=${request.length} returned=${attempt.returnedByteCount ?: "not issued/no byte count"} ${attempt.status}")
+                appendLine("    Raw: ${attempt.rawBytes.joinToString(" ") { usbHex(it) }.ifEmpty { "none" }}")
+                attempt.detail?.let { appendLine("    $it") }
+            }
+        }
+        appendLine("Values describe the Clock Source at query time, not track rate, PCM format support, or Bit-perfect playback.")
+        appendLine("Only endpoint-zero device-to-host Clock Source reads are allowed; no writes, claims, or streaming.")
     }
 
     fun statusText(status: UsbAudioDiagnosticStatus): String = when (status) {

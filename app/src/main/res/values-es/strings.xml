@@ -113,6 +113,8 @@
     <string name="usb_diagnostics_copy">Copiar informe de audio USB</string>
     <string name="usb_diagnostics_copied">Informe USB copiado, incluidos los descriptores sin procesar.</string>
     <string name="usb_diagnostics_unnamed">Dispositivo USB</string>
+    <string name="usb_diagnostics_query_clock">Consultar capacidades del reloj UAC2</string>
+    <string name="usb_diagnostics_querying_clock">Consultando capacidades del reloj UAC2…</string>
     <string name="diagnostics_unknown">Desconocido</string>
     <string name="diagnostics_back">Volver</string>
     <string name="diagnostics_app_version">Versión de la app</string>
