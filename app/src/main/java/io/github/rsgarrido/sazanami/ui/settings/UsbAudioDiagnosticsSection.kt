@@ -12,6 +12,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +40,8 @@ import io.github.rsgarrido.sazanami.player.usb.UsbSilentPhase
 import io.github.rsgarrido.sazanami.player.usb.UsbPcmDiagnosticMode
 import io.github.rsgarrido.sazanami.player.usb.pcmHashHex
 import io.github.rsgarrido.sazanami.player.usb.usbHex
+import io.github.rsgarrido.sazanami.player.bitperfect.flac.FlacVerificationController
+import io.github.rsgarrido.sazanami.player.bitperfect.flac.FlacVerificationReport
 
 /** Presentation only. Receivers, connection ownership, parsing and commands live in player/usb. */
 @Composable
@@ -45,13 +49,21 @@ internal fun UsbAudioDiagnosticsSection() {
     val state by UsbAudioDiagnosticBridge.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val diagnosticsTitle = stringResource(R.string.usb_diagnostics_title)
-    var copied by remember(state) { mutableStateOf(false) }
-    val parsedReport = remember(state) { UsbAudioDiagnosticReport.format(state, includeRaw = false) }
+    val verificationScope = rememberCoroutineScope()
+    val flacController = remember(context.applicationContext, verificationScope) {
+        FlacVerificationController(context.applicationContext.contentResolver, verificationScope)
+    }
+    DisposableEffect(flacController) { onDispose { flacController.close() } }
+    val flacState by flacController.state.collectAsStateWithLifecycle()
+    var copied by remember(state, flacState) { mutableStateOf(false) }
+    val flacReport = if (BuildConfig.DEBUG) FlacVerificationReport.format(flacState.result, flacState.running) else ""
+    val parsedReport = remember(state, flacReport) { UsbAudioDiagnosticReport.format(state, includeRaw = false) + flacReport }
     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        if (BuildConfig.DEBUG) FlacVerificationDiagnosticsSection(flacController, flacState)
         Text(diagnosticsTitle, style = MaterialTheme.typography.titleMedium)
         Text(stringResource(R.string.usb_diagnostics_note), style = MaterialTheme.typography.bodySmall)
         if (!state.serviceAvailable) {
@@ -267,7 +279,7 @@ internal fun UsbAudioDiagnosticsSection() {
             onClick = {
                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
                 clipboard?.setPrimaryClip(ClipData.newPlainText(
-                    diagnosticsTitle, UsbAudioDiagnosticReport.format(state)))
+                    diagnosticsTitle, UsbAudioDiagnosticReport.format(state) + flacReport))
                 copied = clipboard != null
             },
             modifier = Modifier.fillMaxWidth()

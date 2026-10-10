@@ -305,4 +305,14 @@
     <string name="usb_diagnostics_reference_manual">Escucha esperada: tono IZQUIERDO → pausa → tono DERECHO. Canales físicos y recuperación de reproducción normal: NO VERIFICADOS AUTOMÁTICAMENTE.</string>
     <string name="usb_diagnostics_reference_content">Tramas generadas de silencio/IZQUIERDO/DERECHO: %1$s/%2$s/%3$s; pico PCM absoluto: %4$s</string>
     <string name="usb_diagnostics_reference_hashes">PCM generado FNV-1a: %1$s; carga enviada FNV-1a: %2$s; integridad de fuente verificada: %3$s</string>
+    <string name="flac_verification_title">Verificación de decodificación FLAC exacta — Sesión 9</string>
+    <string name="flac_verification_action">Verificar PCM exacto FLAC (16/44.1)</string>
+    <string name="flac_verification_running">Verificando FLAC…</string>
+    <string name="flac_verification_note">Selecciona un FLAC con el selector de documentos. Verifica el archivo completo en silencio; no se necesita DAC. Solo acepta FLAC nativo, 44100 Hz, estéreo y 16 bits. Sin conversión de formato. Mantén detenida la reproducción normal para evitar confusión. Copia el informe completo de diagnóstico de abajo después de verificar.</string>
+    <string name="flac_verification_result">Resultado: %1$s</string>
+    <string name="flac_verification_format">Formato: FLAC / %1$s Hz / %2$s canales / %3$s bits</string>
+    <string name="flac_verification_counts">Total de tramas STREAMINFO: %1$s; tramas decodificadas: %2$s; EOF limpio: %3$s; MD5 libFLAC: %4$s</string>
+    <string name="flac_verification_md5">MD5 STREAMINFO disponible: %1$s (1 disponible, 0 no disponible)</string>
+    <string name="flac_verification_pcm">Bytes PCM16 LE canónicos: %1$s; FNV-1a: %2$s</string>
+    <string name="flac_verification_scope">Salida de audio: NINGUNA · USB usado: NO · Reproducción de canciones Bit-perfect: NO IMPLEMENTADA</string>
 </resources>

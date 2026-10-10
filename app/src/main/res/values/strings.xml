@@ -350,4 +350,14 @@
     <string name="usb_diagnostics_reference_manual">Expected listening: LEFT tone → gap → RIGHT tone. Physical channels and normal playback recovery: NOT AUTOMATICALLY VERIFIED.</string>
     <string name="usb_diagnostics_reference_content">Generated silence/LEFT/RIGHT frames: %1$s/%2$s/%3$s; absolute PCM peak: %4$s</string>
     <string name="usb_diagnostics_reference_hashes">Generated PCM FNV-1a: %1$s; submitted payload FNV-1a: %2$s; source integrity verified: %3$s</string>
+    <string name="flac_verification_title">Exact FLAC Decode Verification — Session 9</string>
+    <string name="flac_verification_action">Verify FLAC exact PCM (16/44.1)</string>
+    <string name="flac_verification_running">Verifying FLAC…</string>
+    <string name="flac_verification_note">Select a FLAC using the document picker. This verifies the entire file silently; no DAC is required. Only native FLAC, 44100 Hz, stereo, 16-bit is accepted. No format conversion. Keep normal playback stopped to avoid confusion. Copy the complete diagnostic report below after verification.</string>
+    <string name="flac_verification_result">Result: %1$s</string>
+    <string name="flac_verification_format">Format: FLAC / %1$s Hz / %2$s channels / %3$s bits</string>
+    <string name="flac_verification_counts">STREAMINFO total frames: %1$s; decoded frames: %2$s; clean EOF: %3$s; libFLAC MD5: %4$s</string>
+    <string name="flac_verification_md5">STREAMINFO MD5 available: %1$s (1 available, 0 unavailable)</string>
+    <string name="flac_verification_pcm">Canonical PCM16 LE bytes: %1$s; FNV-1a: %2$s</string>
+    <string name="flac_verification_scope">Audio output: NONE · USB used: NO · Bit-perfect song playback: NOT IMPLEMENTED</string>
 </resources>
