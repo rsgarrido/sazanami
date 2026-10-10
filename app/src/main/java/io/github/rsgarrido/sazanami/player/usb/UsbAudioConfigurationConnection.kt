@@ -20,7 +20,7 @@ internal class UsbAudioConfigurationConnection private constructor(
     private var acOwned = false
     private var asOwned = false
     @Volatile private var silent: UsbNativeSilentTransport? = null
-    fun stopSilentTransport() { silent?.requestStop() }
+    fun stopSilentTransport(authority: Boolean=true) { silent?.requestStop(authority) }
     fun silentBackend(target: UsbSilentTransportPlan, generation: Long, stream: Long,
         mode: UsbPcmDiagnosticMode = UsbPcmDiagnosticMode.ZERO, prefixSource: UsbFlacSourceLifecycle? = null,
         accessFailure: () -> UsbClockQueryStatus?): UsbNativeSilentTransport {

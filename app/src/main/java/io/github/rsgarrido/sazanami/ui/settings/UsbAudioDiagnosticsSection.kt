@@ -66,6 +66,7 @@ internal fun UsbAudioDiagnosticsSection() {
         if (BuildConfig.DEBUG) {
             FlacVerificationDiagnosticsSection(flacController, flacState)
             UsbFlacPlaybackDiagnosticsSection(state)
+            UsbFullFlacDiagnosticsSection(state)
         }
         Text(diagnosticsTitle, style = MaterialTheme.typography.titleMedium)
         Text(stringResource(R.string.usb_diagnostics_note), style = MaterialTheme.typography.bodySmall)

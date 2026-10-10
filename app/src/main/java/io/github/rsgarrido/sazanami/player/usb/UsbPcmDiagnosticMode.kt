@@ -1,7 +1,9 @@
 package io.github.rsgarrido.sazanami.player.usb
 
 /** Closed native test vectors only. No application-supplied PCM. */
-internal enum class UsbPcmDiagnosticMode { ZERO, REFERENCE, FLAC_PREFIX }
+internal enum class UsbPcmDiagnosticMode { ZERO, REFERENCE, FLAC_PREFIX, FLAC_FULL }
+
+internal val UsbPcmDiagnosticMode.isFlac get() = this==UsbPcmDiagnosticMode.FLAC_PREFIX || this==UsbPcmDiagnosticMode.FLAC_FULL
 
 internal fun pcmHashHex(value: Long) = value.toULong().toString(16).padStart(16, '0')
 

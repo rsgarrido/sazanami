@@ -54,7 +54,8 @@ internal data class UsbAudioDiagnosticState(
     val configurationExperiment: UsbAudioConfigurationResult? = null,
     val silentExperiment: UsbSilentTransportExperimentResult? = null,
     val referenceExperiment: UsbSilentTransportExperimentResult? = null,
-    val flacUsbExperiment: UsbSilentTransportExperimentResult? = null
+    val flacUsbExperiment: UsbSilentTransportExperimentResult? = null,
+    val fullFlacUsbExperiment: UsbSilentTransportExperimentResult? = null
 ) {
     val selectedDevice: UsbAudioDeviceSnapshot?
         get() = devices.firstOrNull { it.identity == selectedIdentity }
@@ -64,18 +65,21 @@ internal data class UsbAudioDiagnosticState(
             forcedExperiment?.phase == UsbForcedPhase.QUERYING || configurationExperiment?.phase == UsbConfigurationPhase.QUERYING ||
             silentExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true ||
             referenceExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true ||
-            flacUsbExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true
+            flacUsbExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true ||
+            fullFlacUsbExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true
     fun endpointExperiment(mode: UsbPcmDiagnosticMode) =
         when (mode) {
             UsbPcmDiagnosticMode.ZERO -> silentExperiment
             UsbPcmDiagnosticMode.REFERENCE -> referenceExperiment
             UsbPcmDiagnosticMode.FLAC_PREFIX -> flacUsbExperiment
+            UsbPcmDiagnosticMode.FLAC_FULL -> fullFlacUsbExperiment
         }
     fun withEndpointExperiment(mode: UsbPcmDiagnosticMode, result: UsbSilentTransportExperimentResult?) =
         when (mode) {
             UsbPcmDiagnosticMode.ZERO -> copy(silentExperiment = result)
             UsbPcmDiagnosticMode.REFERENCE -> copy(referenceExperiment = result)
             UsbPcmDiagnosticMode.FLAC_PREFIX -> copy(flacUsbExperiment = result)
+            UsbPcmDiagnosticMode.FLAC_FULL -> copy(fullFlacUsbExperiment = result)
         }
 }
 

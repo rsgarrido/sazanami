@@ -14,7 +14,9 @@ internal data class UsbFlacSourceResult(val counters: Map<String,Long> = emptyMa
     fun count(name: String)=counters[name] ?: 0L
     val reasons get() = UsbFlacSourceEvidence.reasons.filterIndexed { i,_ -> count("sourceIntegrityMask") and (1L shl i) != 0L }
     val primed get() = exceptionType == null && count("sourceIntegrityMask")==0L && count("metadataAccepted")==1L &&
-        count("initialPrimedFrames") in 8192L..16384L && count("sampleRate")==44100L && count("channels")==2L && count("bitsPerSample")==16L
+        count("initialPrimedFrames") in (if (count("fullTrackMode")==1L) minOf(8192L,count("totalSamples")) else 8192L)..16384L &&
+        (count("fullTrackMode")==0L || count("totalSamples")>0L) &&
+        (count("initialPrimedFrames")>=8192L || count("trueEofReached")==1L) && count("sampleRate")==44100L && count("channels")==2L && count("bitsPerSample")==16L
     val clean get() = counters.keys.containsAll(UsbFlacSourceEvidence.fields) && primed && count("producerStopped")==1L && count("producerJoined")==1L &&
         count("decoderReleased")==1L && count("nativeFlacFdClosed")==1L && count("queueReleased")==1L &&
         count("queueUnderruns")==0L && count("sourceFrameGapCount")==0L && count("sourceFrameDuplicateCount")==0L &&
@@ -35,6 +37,22 @@ internal data class UsbFlacSourceResult(val counters: Map<String,Long> = emptyMa
             it.count("metadataProcessed")==1L && it.count("streamInfoReceived")==1L && it.count("md5Verification")==0L &&
             it.count("frameOrderErrors")==0L && it.count("md5CheckingEnabled")==0L && it.count("decoderErrors")==0L &&
             it.count("outOfRangeSamples")==0L && it.count("formatContradictions")==0L } == true)
+    val fullComplete get() = counters.keys.containsAll(UsbFlacSourceEvidence.fields) && primed && count("fullTrackMode")==1L && count("trueEofReached")==1L &&
+        count("producerFinishedNaturally")==1L && count("producerStopped")==1L && count("producerJoined")==1L &&
+        count("decoderReleased")==1L && count("nativeFlacFdClosed")==1L && count("queueReleased")==1L &&
+        count("md5VerificationPass")==1L && count("decodedTotalMatchesStreamInfo")==1L &&
+        count("totalSamples") in 1L..(Long.MAX_VALUE/4L) &&
+        listOf("framesDecoded","framesEnqueued","framesConsumedFromQueue","expectedNextEnqueueFrame","expectedNextConsumeFrame")
+            .all { counters[it]==count("totalSamples") } &&
+        listOf("queueFramesAtStop","prefetchedFramesDiscardedAtStop","preparedButUnsubmittedFrames","queueUnderruns",
+            "consumerEmptyEvents","sourceFrameGapCount","sourceFrameDuplicateCount","sourceFrameOrderErrors").all { counters[it]==0L } &&
+        count("firstSourceFrameEnqueued")==0L && count("firstSourceFrameConsumed")==0L &&
+        count("lastSourceFrameEnqueued")==count("totalSamples")-1 && count("lastSourceFrameConsumed")==count("totalSamples")-1 &&
+        count("minimumQueueDepthDuringStreaming") in 0L..count("maximumQueueDepthDuringStreaming") &&
+        count("maximumQueueDepthDuringStreaming")<=16384L &&
+        count("allEnqueuedPrefetchPcmHash")==count("consumedSourcePcmHash") &&
+        decoder?.let { it.count("totalSamples")==count("totalSamples") && it.nativeStatus==FlacVerificationStatus.EXACT_FLAC_DECODE_VERIFIED && it.copy(originalFdClosed=true).strongEvidence &&
+            it.count("pcmFnv1a")==count("consumedSourcePcmHash") }==true
 }
 internal object UsbFlacSourceEvidence {
     val fields=listOf("version","generation","streamGeneration","sourceIntegrityMask","initialPrimedFrames","metadataAccepted",
@@ -43,19 +61,19 @@ internal object UsbFlacSourceEvidence {
         "maximumQueueDepthDuringStreaming","producerFullWaitCount","consumerEmptyEvents","queueUnderruns",
         "firstSourceFrameEnqueued","lastSourceFrameEnqueued","firstSourceFrameConsumed","lastSourceFrameConsumed",
         "expectedNextEnqueueFrame","expectedNextConsumeFrame","sourceFrameGapCount","sourceFrameDuplicateCount","sourceFrameOrderErrors",
-        "consumedSourcePcmHash","allEnqueuedPrefetchPcmHash","producerStopped","producerJoined","decoderReleased","nativeFlacFdClosed","queueReleased")
+        "consumedSourcePcmHash","allEnqueuedPrefetchPcmHash","producerStopped","producerJoined","decoderReleased","nativeFlacFdClosed","queueReleased","fullTrackMode","trueEofReached","producerFinishedNaturally","md5VerificationPass","decodedTotalMatchesStreamInfo")
     val reasons=listOf("FLAC_DECODER_ERROR","FLAC_DECODER_INIT_FAILED","UNSUPPORTED_FLAC_FORMAT","PCM_SAMPLE_OUT_OF_RANGE",
         "SOURCE_EOF_BEFORE_DURATION","QUEUE_PRIME_FAILED","QUEUE_UNDERRUN","SOURCE_FRAME_GAP","SOURCE_FRAME_DUPLICATE",
-        "SOURCE_FRAME_ORDER_ERROR","SOURCE_SUBMITTED_HASH_MISMATCH","CANCELLED","RESOURCE_CLEANUP_FAILED","FLAC_INPUT_OPEN_FAILED","NOT_NATIVE_FLAC","FLAC_METADATA_INVALID","SOURCE_FORMAT_CONTRADICTION")
+        "SOURCE_FRAME_ORDER_ERROR","SOURCE_SUBMITTED_HASH_MISMATCH","CANCELLED","RESOURCE_CLEANUP_FAILED","FLAC_INPUT_OPEN_FAILED","NOT_NATIVE_FLAC","FLAC_METADATA_INVALID","SOURCE_FORMAT_CONTRADICTION","FLAC_MD5_UNAVAILABLE","FLAC_MD5_MISMATCH","STREAMINFO_TOTAL_MISMATCH_OR_UNAVAILABLE","TERMINAL_TAIL_ACCOUNTING_FAILED")
     fun decode(value: UsbFlacSourceSnapshot,generation: Long,stream: Long): UsbFlacSourceResult {
-        require(value.numbers.size==fields.size && value.numbers[0]==1L && value.numbers[1]==generation && value.numbers[2]==stream &&
+        require(value.numbers.size==fields.size && value.numbers[0]==2L && value.numbers[1]==generation && value.numbers[2]==stream &&
             value.examples.size%7==0 && value.examples.size<=5*7)
         val counters=fields.zip(value.numbers.toList()).toMap()
         val signed=setOf("consumedSourcePcmHash","allEnqueuedPrefetchPcmHash")
         val indices=setOf("firstSourceFrameEnqueued","lastSourceFrameEnqueued","firstSourceFrameConsumed","lastSourceFrameConsumed")
         require(counters.all { (name,number) -> name in signed || if (name in indices) number>=-1L else number>=0L })
         require(countBooleanFields.all { counters.getValue(it) in 0L..1L } &&
-            counters.getValue("sourceIntegrityMask") in 0L..131071L && counters.getValue("initialPrimedFrames")<=16384L)
+            counters.getValue("sourceIntegrityMask") in 0L..2097151L && counters.getValue("initialPrimedFrames")<=16384L)
         val examples=value.examples.toList().chunked(7).map {
             require(it[0]>=0 && it[0]<counters.getValue("framesConsumedFromQueue") &&
                 it[1] in -32768L..32767L && it[2] in -32768L..32767L && it.drop(3).all { b->b in 0L..255L })
@@ -67,16 +85,16 @@ internal object UsbFlacSourceEvidence {
         val decoder=(value.decoder as? FlacNativeSnapshot)?.let(FlacNativeEvidence::decode)
         return UsbFlacSourceResult(counters,decoder,examples)
     }
-    private val countBooleanFields=listOf("metadataAccepted","producerStopped","producerJoined","decoderReleased","nativeFlacFdClosed","queueReleased")
+    private val countBooleanFields=listOf("metadataAccepted","producerStopped","producerJoined","decoderReleased","nativeFlacFdClosed","queueReleased","fullTrackMode","trueEofReached","producerFinishedNaturally","md5VerificationPass","decodedTotalMatchesStreamInfo")
 }
 @Keep internal object UsbFlacPrefixNative {
     private val available by lazy { runCatching { System.loadLibrary("sazanami_usb_diagnostics"); true }.getOrDefault(false) }
-    fun create(fd: Int,generation: Long,stream: Long): Long { check(BuildConfig.DEBUG && available);return nativeCreate(fd,generation,stream) }
+    fun create(fd: Int,generation: Long,stream: Long,fullTrack: Boolean=false): Long { check(BuildConfig.DEBUG && available);return nativeCreate(fd,generation,stream,fullTrack) }
     fun prime(handle: Long,generation: Long,stream: Long)=UsbFlacSourceEvidence.decode(nativePrime(handle,generation,stream),generation,stream)
     fun healthy(handle: Long,generation: Long,stream: Long)=nativeHealthy(handle,generation,stream)
     fun stop(handle: Long,generation: Long,stream: Long)=nativeStop(handle,generation,stream)
     fun finish(handle: Long,generation: Long,stream: Long)=UsbFlacSourceEvidence.decode(nativeFinish(handle,generation,stream),generation,stream)
-    private external fun nativeCreate(fd: Int,generation: Long,stream: Long): Long
+    private external fun nativeCreate(fd: Int,generation: Long,stream: Long,fullTrack: Boolean): Long
     private external fun nativePrime(handle: Long,generation: Long,stream: Long): UsbFlacSourceSnapshot
     private external fun nativeHealthy(handle: Long,generation: Long,stream: Long): Boolean
     private external fun nativeStop(handle: Long,generation: Long,stream: Long)
@@ -91,21 +109,23 @@ internal interface UsbFlacSourceLifecycle {
     suspend fun finish()
 }
 /** One narrow debug source owner. Every native operation uses both attachment and stream identities. */
-internal class UsbFlacPrefixSource(private val fd: Int,private val generation: Long,private val stream: Long) : UsbFlacSourceLifecycle {
+internal class UsbFlacPrefixSource(private val fd: Int,private val generation: Long,private val stream: Long, private val fullTrack: Boolean=false) : UsbFlacSourceLifecycle {
     @Volatile override var handle=0L; private set
     override var result=UsbFlacSourceResult(); private set
-    override fun requestStop() { val h=handle;if(h>0) runCatching { UsbFlacPrefixNative.stop(h,generation,stream) } }
+    @Volatile private var stopRequested=false
+    override fun requestStop() { stopRequested=true;val h=handle;if(h>0) runCatching { UsbFlacPrefixNative.stop(h,generation,stream) } }
     override fun healthy() = handle>0 && result.primed && runCatching { UsbFlacPrefixNative.healthy(handle,generation,stream) }.getOrDefault(false)
     override suspend fun prepare(access: ()->UsbClockQueryStatus?): Boolean {
         val parent=currentCoroutineContext()
         withContext(NonCancellable) {
             try {
-                handle=UsbFlacPrefixNative.create(fd,generation,stream)
+                handle=UsbFlacPrefixNative.create(fd,generation,stream,fullTrack)
                 if (handle<0) {
                     result=UsbFlacSourceResult(mapOf("sourceIntegrityMask" to 8192L,"createErrno" to -handle), exceptionType="NativeDuplicateFailed")
                     handle=0;return@withContext
                 }
                 check(handle>0)
+                if (stopRequested) requestStop()
                 coroutineScope {
                     val worker=async(Dispatchers.IO) { UsbFlacPrefixNative.prime(handle,generation,stream) }
                     try {

@@ -36,6 +36,8 @@ internal object UsbAudioDiagnosticBridge {
     @Synchronized fun streamSilentPcm16(identity: UsbAudioDeviceIdentity) { owner?.streamSilentPcm16(identity) }
     @Synchronized fun playReferencePcm16(identity: UsbAudioDeviceIdentity) { owner?.playReferencePcm16(identity) }
     @Synchronized fun playFlacPrefix(identity: UsbAudioDeviceIdentity, generation: Long, uri: Uri) { owner?.playFlacPrefix(identity, generation, uri) }
+    @Synchronized fun playFullFlac(identity: UsbAudioDeviceIdentity, generation: Long, uri: Uri) { owner?.playFullFlac(identity,generation,uri) }
+    @Synchronized fun stopFullFlac(identity: UsbAudioDeviceIdentity, generation: Long, stream: Long) { owner?.stopFullFlac(identity,generation,stream) }
     @Synchronized fun permissionResult(requestId: String, identity: UsbAudioDeviceIdentity?, granted: Boolean) {
         owner?.permissionResult(requestId, identity, granted)
     }

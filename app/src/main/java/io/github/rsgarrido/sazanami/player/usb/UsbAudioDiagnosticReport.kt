@@ -3,7 +3,7 @@ package io.github.rsgarrido.sazanami.player.usb
 /** Offline, plain-text evidence. No serial strings, Android bus paths, music paths, or remote lookup. */
 internal object UsbAudioDiagnosticReport {
     fun format(state: UsbAudioDiagnosticState, includeRaw: Boolean = true): String = buildString {
-        appendLine("SAZANAMI USB AUDIO DIAGNOSTIC — SESSION 8")
+        appendLine("SAZANAMI USB AUDIO DIAGNOSTIC — SESSION 11")
         appendLine("Descriptors, ownership, clock, configuration and independent debug PCM diagnostics. Normal-player direct USB integration is not implemented.")
         appendLine("Service: ${if (state.serviceAvailable) "available" else "unavailable"}")
         appendLine("Status: ${statusText(state.status)}")
@@ -61,6 +61,8 @@ internal object UsbAudioDiagnosticReport {
         appendSilentTransport(state.referenceExperiment, state.generation, UsbPcmDiagnosticMode.REFERENCE)
         section("Bounded FLAC Direct USB Transport — Session 10")
         appendSilentTransport(state.flacUsbExperiment, state.generation, UsbPcmDiagnosticMode.FLAC_PREFIX)
+        section("Full FLAC Direct USB Transport — Session 11")
+        appendSilentTransport(state.fullFlacUsbExperiment, state.generation, UsbPcmDiagnosticMode.FLAC_FULL)
         val model = state.descriptors
         if (model == null) {
             section("Raw descriptors")
@@ -386,17 +388,19 @@ internal object UsbAudioDiagnosticReport {
     private fun StringBuilder.appendSilentTransport(result: UsbSilentTransportExperimentResult?, generation: Long,
         mode: UsbPcmDiagnosticMode = UsbPcmDiagnosticMode.ZERO) {
         val reference = mode == UsbPcmDiagnosticMode.REFERENCE
-        val flac = mode == UsbPcmDiagnosticMode.FLAC_PREFIX
+        val full = mode == UsbPcmDiagnosticMode.FLAC_FULL
+        val flac = mode.isFlac
         if (result != null && result.generation != generation) {
-            appendLine("Stale attachment generation; previous Session ${if (flac) 10 else if (reference) 8 else 7} evidence omitted."); return
+            appendLine("Stale attachment generation; previous Session ${if (full) 11 else if (flac) 10 else if (reference) 8 else 7} evidence omitted."); return
         }
         appendLine("Development-only direct USB diagnostic; never starts automatically.")
         appendLine("Target: PCM stereo signed integer 16-bit little-endian / 44100 Hz; bytes/frame=4")
-        if (flac) appendFlacSource(result) else if (reference) appendReferenceSource(result) else appendLine("Source: DIGITAL ZERO ONLY")
-        appendLine("Duration target=${if (flac) 5000 else UsbIsoTiming.DURATION_MS} ms; duration stop, no successful natural EOF")
+        if (full) appendFullFlacSource(result) else if (flac) appendFlacSource(result) else if (reference) appendReferenceSource(result) else appendLine("Source: DIGITAL ZERO ONLY")
+        if (full) appendLine("Duration target=NONE; successful stop only at verified natural EOF after every source-bearing OUT completion. Progress watchdogs fail; no successful duration timer.")
+        else appendLine("Duration target=${if (flac) 5000 else UsbIsoTiming.DURATION_MS} ms; duration stop, no successful natural EOF")
         appendLine("Audible signal intentionally generated: ${if (flac) "YES, selected real FLAC at its original amplitude" else if (reference) "YES, low-level fixed reference" else "NO"}; DSP/sample modification: NONE")
         appendLine("Functional normal USB playback: NOT_VERIFIED; Bit-perfect song playback: NOT IMPLEMENTED / NOT ASSERTED")
-        if (result == null) { appendLine("Not requested. Debug action: ${if (flac) "Play FLAC directly over USB (5 s)" else if (reference) "Play USB L/R reference tone (1 s)" else "Stream silent USB 16/44.1 (1 s)"}"); return }
+        if (result == null) { appendLine("Not requested. Debug action: ${if (full) "Play full FLAC directly over USB" else if (flac) "Play FLAC directly over USB (5 s)" else if (reference) "Play USB L/R reference tone (1 s)" else "Stream silent USB 16/44.1 (1 s)"}"); return }
         appendLine("Attachment generation=${result.generation}; stream generation=${result.streamGeneration}; phase=${result.phase}; result=${result.status}")
         result.detail?.let { appendLine("Note: ${safeText(it, 400)}") }
         result.resolution.issues.forEach { appendLine("Resolution issue: ${safeText(it, 400)}") }
@@ -411,6 +415,7 @@ internal object UsbAudioDiagnosticReport {
             appendLine("Feedback format: ${it.feedbackFormat}; plausibility=44100 Hz +/-${UsbExplicitFeedback.PLAUSIBILITY_PERCENT}%")
             appendLine("Nominal bootstrap <=${UsbIsoTiming.BOOTSTRAP_MS} ms; last-valid feedback holdover <=${it.feedbackHoldoverMs} ms; invalid consecutive limit=${UsbIsoTiming.INVALID_FEEDBACK_LIMIT}")
         }
+        if (full) appendLine("Terminal OUT: 1..8 source-bearing ISO packets; shortened final packet allowed; no zero-length trailing descriptors or PCM padding. Each actual length must equal its requested length.")
         appendLine("OUT pool=${UsbIsoTiming.OUT_POOL}; packets/OUT URB=${UsbIsoTiming.OUT_PACKETS}; feedback pool=${UsbIsoTiming.FEEDBACK_POOL}; packets/feedback URB=1")
         appendLine("Scheduler: exact common denominator 8000*65536; nominal numerator 44100*65536, feedback numerator raw16.16*8000; remainder preserved across feedback lock. Feedback changes packetization only.")
         val native = result.transport
@@ -446,6 +451,43 @@ internal object UsbAudioDiagnosticReport {
         appendConfigurationExperiment(result.configuration, generation, endpointWork = true)
         appendLine("Kernel recovery=${result.kernelRecovery}; framework enumeration=${result.frameworkRecovery}; functional recovery=NOT_VERIFIED")
         appendLine("Copy this complete report before reconnecting. Do not immediately repeat this diagnostic. A physical reconnect may be needed for normal playback afterward.")
+    }
+
+    private fun StringBuilder.appendFullFlacSource(result: UsbSilentTransportExperimentResult?) {
+        appendLine("Scope: debug-only one-track full direct USB playback; source start frame=0; no duration-success timer")
+        appendLine("Input: native FLAC; accepted format ONLY 44100 Hz / stereo / 16-bit integer PCM; original amplitude")
+        appendLine("libFLAC version=1.5.0; Session 9 whole-file verifier reused; MD5 checking enabled before init; nonzero STREAMINFO reference and true physical EOS required")
+        appendLine("Queue capacity frames=16384; prebuffer target frames=8192; shorter complete tracks prime min(total,8192) only after verified EOF/MD5. Prime before AC/AS ownership.")
+        appendLine("Producer EOF preserves queued PCM. Consumer drains through totalSamples-1; exact terminal tail; no zero padding, repetition, interpolation or truncation.")
+        appendLine("ACTIVE insufficient source frames = QUEUE_UNDERRUN; verified EOF tail is distinct. Refill precedes OUT_POOL_STALL. No-progress terminal verification timeout fails.")
+        appendLine("Production Bit-perfect playback: NOT IMPLEMENTED; no Media3/AudioTrack integration, pause, seek, multi-track or DSP. Manual listening: NOT AUTOMATICALLY VERIFIED.")
+        appendLine("Kernel exact completions establish host USB transport evidence; DAC-internal reconstructed samples are not measured.")
+        val source=result?.flacSource
+        if (source==null) { appendLine("Full FLAC source evidence unavailable / not requested"); return }
+        appendLine("Source reasons=${source.reasons.joinToString().ifEmpty { "none" }}; source full-completion evidence=${source.fullComplete}")
+        source.exceptionType?.let { appendLine("Source boundary exception=${safeText(it)}; private message omitted") }
+        source.counters.forEach { (name,value) -> appendLine("  $name: ${if (name.endsWith("Hash")) pcmHashHex(value) else value}") }
+        val decoder=source.decoder
+        decoder?.let {
+            appendLine("Whole-file result=${it.nativeStatus}; libFLAC=${it.decoderVersion}; MD5 reference available=${it.count("md5ReferenceAvailable")}; reference=${it.streamInfoMd5 ?: "unavailable"}; checking=${it.count("md5CheckingEnabled")}; verification=${it.md5Verification}")
+            appendLine("True EOS: clean=${it.count("cleanEndOfStream")}; physical=${it.count("physicalInputEof")}; state=${it.count("decoderState")}; process=${it.count("processSucceeded")}; finish called=${it.count("finishCalled")}; finish returned=${it.count("finishReturned")}")
+            appendLine("Format: native=${it.count("nativeFlacRecognized")}; init=${it.count("initStatus")}; STREAMINFO=${it.count("streamInfoReceived")}; sampleRate=${it.count("sampleRate")}; channels=${it.count("channels")}; bits/sample=${it.count("bitsPerSample")}; accepted=${source.count("metadataAccepted")}")
+            appendLine("Decoder errors=${it.count("decoderErrors")}; range errors=${it.count("outOfRangeSamples")}; contradictions=${it.count("formatContradictions")}; frame order errors=${it.count("frameOrderErrors")}; bounded error codes=${it.errors.joinToString().ifEmpty { "none" }}; read errno=${it.count("readErrno")}")
+            appendLine("Whole decoded frames=${it.count("decodedStereoFrames")}; STREAMINFO total=${it.count("totalSamples")}; decoded total match=${source.count("decodedTotalMatchesStreamInfo")}; whole decoded bytes=${it.count("canonicalPcmBytesHashed")}")
+        }
+        val native=result.transport
+        val total=source.count("totalSamples")
+        appendLine("Whole-track frames: decoded=${source.count("framesDecoded")}; enqueued=${source.count("framesEnqueued")}; consumed=${source.count("framesConsumedFromQueue")}; submitted=${native?.count("framesSubmitted")}; completed=${native?.count("framesCompleted")}; total=$total")
+        appendLine("Whole-track bytes: decoded=${decoder?.count("canonicalPcmBytesHashed")}; enqueued=${source.count("framesEnqueued")*4}; consumed=${source.count("framesConsumedFromQueue")*4}; submitted=${native?.count("outBytesSubmitted")}; kernel exact actual=${native?.count("kernelOutActualBytes")}")
+        appendLine("Decoded first/last index=${if (source.count("framesDecoded")>0) "0/${source.count("framesDecoded")-1}" else "unavailable"}; submitted first index=${if ((native?.count("framesSubmitted") ?: 0)>0) "0" else "unavailable"}; completed first index=${if (native?.verified==true) "0" else "unavailable"}; expected final index=${if (total>0) total-1 else "unavailable"}; actual final indices recorded below")
+        val hashes=listOf(decoder?.counters?.get("pcmFnv1a"),source.counters["allEnqueuedPrefetchPcmHash"],source.counters["consumedSourcePcmHash"],native?.counters?.get("submittedPcmHash"))
+        listOf("wholeDecodedPcmFNV","wholeEnqueuedPcmFNV","consumedPcmFNV","submittedUsbPcmFNV").zip(hashes).forEach { (name,value) -> appendLine("$name=${value?.let(::pcmHashHex) ?: "unavailable"}") }
+        appendLine("All whole-track FNVs equal=${hashes.all { it!=null && it==hashes.first() }}; FNV over canonical ordered L-low/L-high/R-low/R-high bytes only; no metadata or unused capacity")
+        appendLine("Producer natural EOF=${source.count("trueEofReached")}; finished naturally=${source.count("producerFinishedNaturally")}; queue after final consumption=${native?.count("queueFramesAtNaturalCompletion")}; natural prefetch discarded=${native?.count("prefetchedFramesDiscardedAtNaturalCompletion")}")
+        appendLine("Terminal remaining=${native?.count("remainingFramesAtTerminalTransition")}; frames=${native?.count("terminalTailFrames")}; packets=${native?.count("terminalTailPackets")}; URBs=${native?.count("terminalTailOutUrbs")}; exact packet completions=${native?.count("terminalTailPacketCompletions")}; exact frame completions=${native?.count("terminalTailFrameCompletions")}; eofPaddingFrames=${native?.count("eofPaddingFrames")}")
+        appendLine("Bounded source examples: first four and latest committed frame (final source frame on natural success); never substantial PCM content")
+        source.examples.forEach { appendLine("  ${it.index}; ${it.left}; ${it.right}; ${it.bytes.joinToString(" ") { byte -> usbHex(byte) }}") }
+        appendLine("Original Kotlin FLAC fd closed=${result.originalFlacFdClosed}; native duplicate/decoder/producer/queue release recorded above. Natural completion precedes feedback-only cancellation, USB reconciliation, then Session 6 restoration.")
     }
 
     private fun StringBuilder.appendFlacSource(result: UsbSilentTransportExperimentResult?) {

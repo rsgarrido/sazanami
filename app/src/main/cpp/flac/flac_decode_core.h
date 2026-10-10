@@ -17,6 +17,7 @@ struct Verification {
     std::function<void(const Verification&)> metadataAccepted;
     std::function<void(Outcome)> failureObserved;
     bool wholeFile = true;
+    bool enforceExpectedTotal = false; // Session 11 only; Sessions 9/10 retain their established gates.
     std::array<int64_t, FieldCount> facts{};
     std::array<uint8_t, 16> md5{};
     std::array<int64_t, 8> errors{};
@@ -124,6 +125,10 @@ struct Verification {
         }
         v.phase(Phase::Decoding);
         for (uint32_t i = 0; i < h.blocksize; ++i) {
+            if (v.enforceExpectedTotal && (!v.facts[Total] || v.pcm.frames>=static_cast<uint64_t>(v.facts[Total]))) {
+                ++v.facts[Contradictions]; v.fail(Outcome::FormatContradiction);
+                return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT; // Never serialize a frame beyond STREAMINFO.
+            }
             uint8_t canonical[4];
             if ((i % 1024 == 0 && v.cancelled()) || !v.pcm.append(channels[0][i], channels[1][i], v.consumeCanonical ? canonical : nullptr)) {
                 if (v.pcm.failure != Outcome::Pending) v.fail(v.pcm.failure);

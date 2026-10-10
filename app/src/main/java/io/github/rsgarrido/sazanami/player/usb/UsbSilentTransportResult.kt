@@ -5,7 +5,8 @@ import androidx.annotation.Keep
 internal enum class UsbSilentPhase { CONFIGURING, STARTING_TRANSPORT, TRANSPORT_STOPPED, RESTORING_USB, FINISHED, PRIMING_SOURCE }
 internal enum class UsbSilentStatus { NOT_ATTEMPTED, BLOCKED, FAILED, SILENT_TRANSPORT_VERIFIED, NON_AUTHORITATIVE, DETERMINISTIC_PCM_TRANSPORT_VERIFIED,
     BOUNDED_FLAC_USB_TRANSPORT_VERIFIED, FLAC_SOURCE_FAILED, FLAC_INPUT_OPEN_FAILED, QUEUE_PRIME_FAILED,
-    SOURCE_EOF_BEFORE_DURATION, QUEUE_UNDERRUN, USB_CONFIGURATION_FAILED, USB_TRANSPORT_FAILED, RESOURCE_CLEANUP_FAILED, CANCELLED }
+    SOURCE_EOF_BEFORE_DURATION, QUEUE_UNDERRUN, USB_CONFIGURATION_FAILED, USB_TRANSPORT_FAILED, RESOURCE_CLEANUP_FAILED, CANCELLED, FULL_FLAC_USB_TRANSPORT_VERIFIED, FLAC_MD5_UNAVAILABLE, FLAC_MD5_MISMATCH,
+    STREAMINFO_TOTAL_MISMATCH, TERMINAL_TAIL_ACCOUNTING_FAILED, OUT_POOL_STALL, SOURCE_VERIFICATION_STALLED }
 internal data class UsbIsoFeedbackEvidence(val raw: Long, val length: Long, val packetStatus: Int, val elapsedUs: Long,
     val validity: UsbFeedbackValidity, val conservativeAgeUs: Long) {
     val bytes get() = (0 until minOf(length, 4L).toInt()).map { ((raw shr (it * 8)) and 0xff).toInt() }
@@ -32,7 +33,7 @@ internal data class UsbIsoTransportResult(val generation: Long, val streamGenera
     val shutdownAccounted get() = workerStopped && count("outstandingUrbsFinal") == 0L
     val state get() = counters["state"]?.let { UsbIsoNativeStats.states.getOrNull(it.toInt()) } ?: "UNAVAILABLE"
     val stopReason get() = counters["stopReason"]?.let { UsbIsoNativeStats.stops.getOrNull(it.toInt()) } ?: "UNAVAILABLE"
-    val verified get() = valid && shutdownAccounted && count("started") == 1L && stopReason == "DURATION_COMPLETE" &&
+    val verified get() = if (count("sourceMode")==3L) fullVerified else valid && shutdownAccounted && count("started") == 1L && stopReason == "DURATION_COMPLETE" &&
         count("durationUs") >= (if (count("sourceMode")==2L) 5000000L else UsbIsoTiming.DURATION_MS * 1000) && count("framesCompleted") > 0 &&
         count("outUrbsSubmitted") > 0 && count("feedbackPacketsValid") > 0 && count("feedbackScheduledPackets") > 0 &&
         count("sourceFramesGenerated") == count("framesScheduled") && count("framesScheduled") == count("framesSubmitted") &&
@@ -61,12 +62,37 @@ internal data class UsbIsoTransportResult(val generation: Long, val streamGenera
             count("outPoolStallEvents")==0L && count("prefixSourceFramesConsumed")==count("framesSubmitted") && count("prefixInitialPrimedFrames")>=8192L &&
             count("prefixSourceIntegrityMask")==0L && count("prefixProducerStopped")==1L && count("prefixProducerJoined")==1L &&
             counters.containsKey("sourcePcmHash") && counters.containsKey("submittedPcmHash") && count("sourcePcmHash")==count("submittedPcmHash")
+        3L -> fullVerified
         else -> false
     }
+    private val fullVerified get() = valid && shutdownAccounted && count("started")==1L && stopReason=="NATURAL_EOF_COMPLETE" &&
+        count("transportDurationTargetUs")==0L && count("streamInfoTotalSamples") in 1L..(Long.MAX_VALUE/4L) &&
+        count("feedbackPacketsValid")>0L && count("feedbackScheduledPackets")>0L &&
+        listOf("sourceFramesGenerated","framesScheduled","framesSubmitted","framesCompleted","prefixSourceFramesConsumed")
+            .all { counters[it]==count("streamInfoTotalSamples") } &&
+        listOf("outPacketErrors","outUrbErrors","queueUnderruns","framesCancelled","framesNotSubmitted","feedbackUrbErrors",
+            "feedbackTimeouts","shutdownIncomplete","unknownCompletions","duplicateCompletions","outCancelledUrbs",
+            "outPoolStallEvents","sourceVerificationStalls","eofPaddingFrames","queueFramesAtNaturalCompletion",
+            "prefetchedFramesDiscardedAtNaturalCompletion").all { counters[it]==0L } &&
+        listOf("trueEofReached","producerFinishedNaturally","md5VerificationPass","prefixProducerStopped","prefixProducerJoined")
+            .all { counters[it]==1L } && count("prefixSourceIntegrityMask")==0L &&
+        count("finalSubmittedSourceFrame")==count("streamInfoTotalSamples")-1 &&
+        count("finalCompletedSourceFrame")==count("streamInfoTotalSamples")-1 &&
+        count("outUrbsSubmitted")>0L && count("outUrbsSubmitted")==count("outUrbsCompleted") &&
+        count("outPacketsSubmitted")==count("outPacketsCompleted") && count("feedbackUrbsSubmitted")==count("feedbackUrbsCompleted") &&
+        count("outBytesSubmitted")==count("streamInfoTotalSamples")*4 && count("kernelOutActualBytes")==count("outBytesSubmitted") &&
+        count("terminalTailOutUrbs")==1L && count("terminalTailPackets") in 1L..8L &&
+        count("prefixInitialPrimedFrames") in minOf(8192L,count("streamInfoTotalSamples"))..16384L &&
+        count("terminalTailFrames") in 1L..count("streamInfoTotalSamples") &&
+        count("remainingFramesAtTerminalTransition")==count("terminalTailFrames") &&
+        count("terminalTailPacketCompletions")==count("terminalTailPackets") && count("terminalTailFrameCompletions")==count("terminalTailFrames") &&
+        count("outPacketsSubmitted")== (count("outUrbsSubmitted")-1)*8+count("terminalTailPackets") &&
+        listOf("wholeDecodedPcmHash","allEnqueuedPcmHash","sourcePcmHash","submittedPcmHash")
+            .all { counters.containsKey(it) && counters[it]==counters["submittedPcmHash"] }
 }
 
 internal object UsbIsoNativeStats {
-    const val VERSION = 4
+    const val VERSION = 5
     val fields = listOf("version", "generation", "streamGeneration", "started", "state", "integrityMask", "stopReason", "durationUs",
         "sourceFramesGenerated", "framesScheduled", "framesSubmitted", "framesCompleted", "outUrbsSubmitted", "outUrbsCompleted",
         "outPacketsSubmitted", "outPacketsCompleted", "outBytesSubmitted", "kernelOutActualBytes", "outPacketErrors", "outUrbErrors",
@@ -83,22 +109,26 @@ internal object UsbIsoNativeStats {
         "maxPositiveSample", "minNegativeSample", "peakAbsoluteSample", "referenceActivePerCycle",
         "prefixSourceFramesConsumed", "prefixInitialPrimedFrames", "prefixSourceIntegrityMask", "prefixProducerStopped", "prefixProducerJoined",
         "outPoolEmptyAfterReapEvents", "outPoolStallEvents", "outPoolOutstandingAtStall", "outCompletionAgeUsAtStall",
-        "transportDurationTargetUs", "activeTransportUsAtStop")
+        "transportDurationTargetUs", "activeTransportUsAtStop", "streamInfoTotalSamples", "trueEofReached", "producerFinishedNaturally",
+        "remainingFramesAtTerminalTransition", "terminalTailFrames", "terminalTailPackets", "terminalTailOutUrbs", "terminalTailPacketCompletions",
+        "terminalTailFrameCompletions", "eofPaddingFrames", "finalSubmittedSourceFrame", "finalCompletedSourceFrame",
+        "queueFramesAtNaturalCompletion", "prefetchedFramesDiscardedAtNaturalCompletion", "md5VerificationPass", "wholeDecodedPcmHash",
+        "allEnqueuedPcmHash", "sourceVerificationStalls")
     val states = listOf("IDLE", "CONFIGURED", "STARTING_TRANSPORT", "BOOTSTRAP", "FEEDBACK_LOCKED", "STOP_REQUESTED", "DRAINING_OR_CANCELLING", "TRANSPORT_STOPPED")
     val stops = listOf("DURATION_COMPLETE", "STOP_REQUESTED", "AUTHORITY_LOST", "DEVICE_DETACHED", "SUBMIT_FAILURE", "REAP_FAILURE",
-        "FEEDBACK_FAILURE", "QUEUE_UNDERRUN", "CAPACITY_EXCEEDED", "WORKER_FAILURE", "ACCOUNTING_FAILURE", "SOURCE_FAILURE", "SOURCE_EOF_BEFORE_DURATION", "OUT_POOL_STALL")
+        "FEEDBACK_FAILURE", "QUEUE_UNDERRUN", "CAPACITY_EXCEEDED", "WORKER_FAILURE", "ACCOUNTING_FAILURE", "SOURCE_FAILURE", "SOURCE_EOF_BEFORE_DURATION", "OUT_POOL_STALL", "NATURAL_EOF_COMPLETE", "SOURCE_VERIFICATION_STALLED")
     val reasons = listOf("SUBMIT_ERROR", "REAP_ERROR", "URB_ERROR", "PACKET_ERROR", "SHORT_PACKET", "MALFORMED_FEEDBACK",
         "PERSISTENT_INVALID_FEEDBACK", "FEEDBACK_TIMEOUT", "QUEUE_UNDERRUN", "CAPACITY_EXCEEDED", "UNKNOWN_COMPLETION", "DUPLICATE_COMPLETION",
         "GENERATION_MISMATCH", "DEVICE_DETACHED", "AUTHORITY_CHANGED", "WORKER_FAILURE", "SHUTDOWN_UNACCOUNTED", "FRAME_ACCOUNTING_MISMATCH",
         "NONZERO_PCM", "SCHEDULER_INVALID", "CANCEL_ERROR", "REFERENCE_PREFLIGHT_FAILED", "REFERENCE_TABLE_HASH_MISMATCH",
-        "PCM_PACKING_MISMATCH", "SOURCE_HASH_MISMATCH", "INACTIVE_CHANNEL_NONZERO", "NONZERO_OUTSIDE_SIGNAL_WINDOW", "REFERENCE_PEAK_VIOLATION", "FLAC_SOURCE_QUEUE_FAULT", "OUT_POOL_STALL")
+        "PCM_PACKING_MISMATCH", "SOURCE_HASH_MISMATCH", "INACTIVE_CHANNEL_NONZERO", "NONZERO_OUTSIDE_SIGNAL_WINDOW", "REFERENCE_PEAK_VIOLATION", "FLAC_SOURCE_QUEUE_FAULT", "OUT_POOL_STALL", "TERMINAL_TAIL_ACCOUNTING_FAILED")
     fun decode(packet: UsbIsoNativeSnapshot, generation: Long, stream: Long): UsbIsoTransportResult {
         require(packet.numbers.size == fields.size && packet.numbers[0] == VERSION.toLong() && packet.numbers[1] == generation &&
             packet.numbers[2] == stream && packet.feedback.size % 6 == 0 && packet.feedback.size <= 12 * 6 &&
             packet.packets.size % 7 == 0 && packet.packets.size <= 24 * 7)
         val counters = fields.zip(packet.numbers.toList()).toMap()
         require(counters.getValue("state") in states.indices.map { it.toLong() } && counters.getValue("stopReason") in stops.indices.map { it.toLong() })
-        require(counters.getValue("sourceMode") in 0L..2L)
+        require(counters.getValue("sourceMode") in 0L..3L)
         val feedback = packet.feedback.toList().chunked(6).map {
             require(it[0] in 0..0xffffffffL && it[1] in 0..0xffffffffL && it[3] >= 0 && it[4] in UsbFeedbackValidity.entries.indices.map { ordinal -> ordinal.toLong() })
             require(it[5] >= 0)
@@ -132,7 +162,9 @@ internal data class UsbSilentTransportExperimentResult(val generation: Long, val
     fun withFlacInputClosed(closed: Boolean, source: UsbFlacSourceResult?) = copy(
         originalFlacFdClosed = closed, flacSource = source ?: flacSource,
         status = if (status == UsbSilentStatus.BOUNDED_FLAC_USB_TRANSPORT_VERIFIED &&
-            (!closed || (source ?: flacSource)?.clean != true)) UsbSilentStatus.RESOURCE_CLEANUP_FAILED else status)
+            (!closed || (source ?: flacSource)?.clean != true)) UsbSilentStatus.RESOURCE_CLEANUP_FAILED
+        else if (status==UsbSilentStatus.FULL_FLAC_USB_TRANSPORT_VERIFIED && (!closed || (source ?: flacSource)?.fullComplete!=true))
+            UsbSilentStatus.RESOURCE_CLEANUP_FAILED else status)
     fun invalidate(failure: UsbClockQueryStatus) = copy(status = UsbSilentStatus.NON_AUTHORITATIVE,
         detail = "Attachment/permission authority changed; transaction evidence is historical only.",
         configuration = configuration?.invalidate(failure, "Session 7 authority changed."), transport = transport?.copy(authorityFailure = failure))

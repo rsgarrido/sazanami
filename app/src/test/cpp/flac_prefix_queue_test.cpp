@@ -107,4 +107,48 @@ static void preciseReservationStatesAndFullWrap() {
     assert(invalid.reserve(payload,44)==ReserveResult::InsufficientFrames && invalid.underruns==1 && invalid.emptyEvents==1);
     assert(invalid.reserve(payload,44)==ReserveResult::InsufficientFrames && invalid.underruns==1); // sticky event, not a second shortage
 }
-int main() { preciseReservationStatesAndFullWrap(); transactionalSubmission(); noConcealmentOrMutation(); absoluteIdentity(); backpressureAndWake(); contiguousRingWrapAndSerializer(); }
+static void verifiedEofQueueDrainsAcrossRingWrap() {
+    PrefixQueue q(true); q.expectedTotal=kPrefixCapacity+3;
+    for (size_t i=0;i<kPrefixCapacity;++i) assert(q.push(i,a));
+    uint8_t payload[kPrefixCapacity*4];
+    assert(available(q,payload,kPrefixCapacity-2) && q.validate(payload,(kPrefixCapacity-2)*4) && q.commit());
+    for (size_t i=kPrefixCapacity;i<kPrefixCapacity+3;++i) assert(q.push(i,b));
+    q.eofReached.store(true,std::memory_order_release); // successful producer is done; object/ring remains
+    assert(!q.stop.load() && q.depth()==5 && q.faults==0);
+    assert(available(q,payload,5) && q.validate(payload,20));
+    assert(std::memcmp(payload,a,4)==0 && std::memcmp(payload+4,a,4)==0);
+    for (size_t i=2;i<5;++i) assert(std::memcmp(payload+i*4,b,4)==0);
+    assert(q.commit() && q.depth()==0 && q.head==q.expectedTotal && q.consumedHash==q.enqueuedHash);
+    assert(q.underruns==0 && q.emptyEvents==0 && q.prepared==0);
+    assert(q.exampleCount<=5 && q.examples[4][0]==static_cast<int64_t>(kPrefixCapacity+2));
+    assert(q.requireFrames(1)==ReserveResult::InvalidState && q.underruns==0); // no extra source frame
+    assert(!q.push(kPrefixCapacity+3,a) && (q.faults & PrefixTotal));
+}
+static void fullSourceShortageAndTerminalMutation() {
+    PrefixQueue active(true); active.expectedTotal=2; assert(active.push(0,a)); uint8_t payload[8];
+    assert(active.reserve(payload,2)==ReserveResult::InsufficientFrames && active.underruns==1);
+    PrefixQueue terminal(true); terminal.expectedTotal=2; assert(terminal.push(0,a)); terminal.eofReached=true;
+    assert(terminal.reserve(payload,2)==ReserveResult::EndOfSource && terminal.underruns==0 && terminal.prepared==0);
+    // Inconsistent verified EOF never fabricates the missing PCM. Native natural gate rejects it.
+    PrefixQueue mutated(true); mutated.expectedTotal=2; assert(mutated.push(0,a) && mutated.push(1,b)); mutated.eofReached=true;
+    assert(available(mutated,payload,2)); payload[7]^=1;
+    assert(!mutated.validate(payload,8) && (mutated.faults & PrefixHash)); assert(mutated.head==0);
+    PrefixQueue reordered(true); reordered.expectedTotal=2; assert(reordered.push(0,a) && reordered.push(1,b));
+    reordered.indices[1]=0; assert(reordered.reserve(payload,2)==ReserveResult::SourceFault && reordered.duplicates==1);
+    PrefixQueue missingTotal(true); assert(!missingTotal.push(0,a) && (missingTotal.faults & PrefixTotal));
+}
+static void decoderTotalGatePrecedesCanonicalBytes() {
+    Verification v(OwnedFd(-1),[]{ return false; },true); v.accepted=true; v.enforceExpectedTotal=true;
+    v.facts[Total]=1; v.facts[MaxBlock]=2;
+    FLAC__Frame frame{}; frame.header.sample_rate=44100; frame.header.channels=2; frame.header.bits_per_sample=16;
+    frame.header.blocksize=2; frame.header.number_type=FLAC__FRAME_NUMBER_TYPE_SAMPLE_NUMBER;
+    FLAC__int32 left[2]{1,2},right[2]{-1,-2}; const FLAC__int32* channels[]{left,right};
+    uint64_t enqueued=0;
+    v.consumeCanonical=[&](uint64_t index,const uint8_t*) { assert(index==0); ++enqueued; return true; };
+    assert(Verification::write(nullptr,&frame,channels,&v)==FLAC__STREAM_DECODER_WRITE_STATUS_ABORT);
+    assert(v.failure==Outcome::FormatContradiction && v.pcm.frames==1 && v.pcm.bytes==4 && enqueued==1);
+    Verification bounded(OwnedFd(-1),[]{ return false; },false);
+    assert(!bounded.wholeFile && !bounded.enforceExpectedTotal); // Session 10 defaults retained
+    Verification whole(OwnedFd(-1),[]{ return false; }); assert(whole.wholeFile && !whole.enforceExpectedTotal); // Session 9
+}
+int main() { verifiedEofQueueDrainsAcrossRingWrap(); fullSourceShortageAndTerminalMutation(); decoderTotalGatePrecedesCanonicalBytes(); preciseReservationStatesAndFullWrap(); transactionalSubmission(); noConcealmentOrMutation(); absoluteIdentity(); backpressureAndWake(); contiguousRingWrapAndSerializer(); }

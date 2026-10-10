@@ -13,7 +13,7 @@ constexpr uint64_t kDrainUs = 100000, kCancelUs = 250000, kQueueWatchdogUs = 500
 constexpr unsigned kInvalidFeedbackLimit = 3, kPlausibilityPercent = 5;
 constexpr size_t kFeedbackExamples = 12, kPacketExamples = 24;
 enum class State : int { Idle, Configured, Starting, Bootstrap, FeedbackLocked, StopRequested, Draining, Stopped };
-enum class Stop : int { Duration, Requested, AuthorityLost, Detached, Submit, Reap, Feedback, Underrun, Capacity, Worker, Accounting, Source, SourceEof, OutPoolStall };
+enum class Stop : int { Duration, Requested, AuthorityLost, Detached, Submit, Reap, Feedback, Underrun, Capacity, Worker, Accounting, Source, SourceEof, OutPoolStall, NaturalEof, SourceVerificationStall };
 enum Reason : uint64_t { SubmitError = 1ULL << 0, ReapError = 1ULL << 1, UrbError = 1ULL << 2,
     PacketError = 1ULL << 3, ShortPacket = 1ULL << 4, MalformedFeedback = 1ULL << 5,
     InvalidFeedback = 1ULL << 6, FeedbackTimeout = 1ULL << 7, QueueUnderrun = 1ULL << 8,
@@ -24,7 +24,7 @@ enum Reason : uint64_t { SubmitError = 1ULL << 0, ReapError = 1ULL << 1, UrbErro
     ReferencePreflightFailed = 1ULL << 21, ReferenceTableHashMismatch = 1ULL << 22,
     PcmPackingMismatch = 1ULL << 23, SourceHashMismatch = 1ULL << 24,
     InactiveChannelNonzero = 1ULL << 25, NonzeroOutsideWindow = 1ULL << 26, ReferencePeakViolation = 1ULL << 27,
-    FlacSourceFault = 1ULL << 28, OutPoolStall = 1ULL << 29 };
+    FlacSourceFault = 1ULL << 28, OutPoolStall = 1ULL << 29, TerminalAccounting = 1ULL << 30 };
 
 struct Integrity {
     uint64_t reasons = 0;

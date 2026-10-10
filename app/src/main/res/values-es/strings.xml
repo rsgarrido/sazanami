@@ -323,4 +323,11 @@
     <string name="usb_flac_hashes">FNV de origen consumido=%1$s; FNV enviado por USB=%2$s</string>
     <string name="usb_flac_cleanup">Restauración=%1$s; AS liberada=%2$s; AC liberada=%3$s; fd original de FLAC cerrado=%4$s</string>
     <string name="usb_flac_scope">Solo FLAC nativo: 44100 Hz / estéreo / 16 bits, desde el fotograma 0. MD5 del archivo completo: NO APLICABLE — prefijo acotado. Se esperan unos cinco segundos de la pista seleccionada. La escucha, la pantalla del DAC y la recuperación de la reproducción normal requieren observación manual. La reproducción Bit-perfect de producción y la integración con el reproductor normal siguen sin implementarse.</string>
+    <string name="usb_full_flac_title">Transporte USB directo de FLAC completo — Sesión 11</string>
+    <string name="usb_full_flac_action">Reproducir FLAC completo directamente por USB</string>
+    <string name="usb_full_flac_stop">Detener la prueba USB de FLAC completo</string>
+    <string name="usb_full_flac_warning">Detén la reproducción normal primero. Mantén el volumen físico del KA15 en unos 15A–20A para la primera prueba. Se reproduce una pista completa compatible con su amplitud original. Deja que termine naturalmente o usa Detener para abortar con seguridad. No repitas inmediatamente; copia el informe completo antes de reconectar.</string>
+    <string name="usb_full_flac_scope">Solo FLAC nativo: 44100 Hz / estéreo / 16 bits, desde el fotograma 0 hasta EOF natural verificado. Deben verificarse el MD5 del archivo completo y todos los fotogramas de origen. Sin pausa, búsqueda, siguiente pista, integración con el reproductor normal ni modo Bit-perfect de producción. La escucha y recuperación requieren observación manual.</string>
+    <string name="usb_full_flac_result">Sesión 11: %1$s</string>
+    <string name="usb_full_flac_summary">Fotogramas totales=%1$s; consumidos=%2$s; MD5 completo=%3$s; FNV PCM decodificado completo=%4$s</string>
 </resources>

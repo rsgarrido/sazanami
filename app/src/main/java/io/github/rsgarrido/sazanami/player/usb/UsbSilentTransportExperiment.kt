@@ -36,7 +36,7 @@ internal object UsbSilentTransportExperiment {
         val reference = if (mode == UsbPcmDiagnosticMode.REFERENCE) preflight() else null
         val work = object : UsbConfiguredEndpointWork {
             override fun baselineIssue(configuration: UsbAudioConfigurationResult): String? {
-                if (mode == UsbPcmDiagnosticMode.FLAC_PREFIX && prefixSource?.healthy() != true)
+                if (mode.isFlac && prefixSource?.healthy() != true)
                     return "FLAC queue was not primed; no AC/AS ownership attempted."
                 if (mode == UsbPcmDiagnosticMode.REFERENCE && reference?.passed != true)
                     return "REFERENCE_PREFLIGHT_FAILED; no AC/AS ownership attempted."
@@ -62,7 +62,7 @@ internal object UsbSilentTransportExperiment {
                     onPhase(UsbSilentPhase.RESTORING_USB)
                 }
             }
-            override fun forwardIssue() = if (mode == UsbPcmDiagnosticMode.FLAC_PREFIX && !endpointStarted && prefixSource?.healthy() != true)
+            override fun forwardIssue() = if (mode.isFlac && !endpointStarted && prefixSource?.healthy() != true)
                 "FLAC source lost primed/healthy state before endpoint start; forward configuration stopped." else null
             override val usbCleanupSafe get() = backend?.usbCleanupSafe ?: true
             override suspend fun beforeRestoration() { prefixSource?.finish() }
@@ -73,6 +73,8 @@ internal object UsbSilentTransportExperiment {
         val configuration = UsbAudioConfigurationExperiment.runWithEndpointWork(configurationResolution, generation, connection, work, accessFailure)
         val status = when {
             configuration.accessFailure != null || native?.authorityFailure != null -> UsbSilentStatus.NON_AUTHORITATIVE
+            mode == UsbPcmDiagnosticMode.FLAC_FULL -> UsbFlacFullStatus.classify(configuration,native,prefixSource?.result,
+                !closeRequired && backend?.memoryReleased != false)
             mode == UsbPcmDiagnosticMode.FLAC_PREFIX -> UsbFlacExperimentStatus.classify(configuration,native,prefixSource?.result,
                 !closeRequired && backend?.memoryReleased != false)
             native?.verified == true && !closeRequired && backend?.memoryReleased != false && configuration.targetStatus == UsbTargetConfigurationStatus.TARGET_CONFIGURATION_VERIFIED ->

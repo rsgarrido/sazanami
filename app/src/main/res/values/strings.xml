@@ -368,4 +368,11 @@
     <string name="usb_flac_hashes">Consumed-source FNV=%1$s; submitted-USB FNV=%2$s</string>
     <string name="usb_flac_cleanup">Restoration=%1$s; AS release=%2$s; AC release=%3$s; original FLAC fd closed=%4$s</string>
     <string name="usb_flac_scope">Native FLAC only: 44100 Hz / stereo / 16-bit, starting at frame 0. Whole-file MD5: NOT APPLICABLE — bounded prefix. Expected: about five seconds of the selected track. Listening, DAC display and normal playback recovery require manual observation. Production Bit-perfect playback and normal player integration remain unimplemented.</string>
+    <string name="usb_full_flac_title">Full FLAC direct USB transport — Session 11</string>
+    <string name="usb_full_flac_action">Play full FLAC directly over USB</string>
+    <string name="usb_full_flac_stop">Stop full FLAC USB test</string>
+    <string name="usb_full_flac_warning">Stop normal playback first. Keep KA15 physical volume around 15A–20A for the first run. This plays one whole supported track at its original amplitude. Let it end naturally, or use Stop to abort safely. Do not immediately repeat; copy the complete report before reconnecting.</string>
+    <string name="usb_full_flac_scope">Native FLAC only: 44100 Hz / stereo / 16-bit, from frame 0 to verified natural EOF. Whole-file MD5 and every source frame must verify. No pause, seek, next track, normal-player integration or production Bit-perfect mode. Listening and recovery require manual observation.</string>
+    <string name="usb_full_flac_result">Session 11: %1$s</string>
+    <string name="usb_full_flac_summary">Total frames=%1$s; consumed=%2$s; whole-file MD5=%3$s; whole decoded PCM FNV=%4$s</string>
 </resources>

@@ -1,5 +1,6 @@
 #include "usb_pcm_reference.h"
 #include "usb_iso_stop.h"
+#include "usb_iso_tail.h"
 #include "flac/flac_prefix_queue.h"
 #include "flac/flac_snapshot.h"
 #include <jni.h>
@@ -34,8 +35,8 @@ enum Field : size_t { Api, Attachment, Stream, Started, StateCode, Reasons, Stop
     FeedbackInterval, DataInterval, EndpointCapacity, FeedbackHoldover, ShutdownIncomplete, FirstUrbErrorCount,
     FeedbackUrbErrors, LifecycleMask, SourceMode, PreflightPass, ReferenceTableHash, SourcePcmHash, SubmittedPcmHash,
     SilenceFrames, LeftToneFrames, RightToneFrames, LeftActiveSamples, RightActiveSamples,
-    UnexpectedNonzero, InactiveNonzero, OutsideNonzero, MaximumSample, MinimumSample, PeakSample, ActivePerCycle, PrefixConsumed, PrefixPrimed, PrefixFaults, PrefixStopped, PrefixJoined, EmptyAfterReap, PoolStalls, PoolAtStall, CompletionAgeAtStall, DurationTarget, ActiveAtStop, FieldCount };
-constexpr jint kSnapshotVersion = 4;
+    UnexpectedNonzero, InactiveNonzero, OutsideNonzero, MaximumSample, MinimumSample, PeakSample, ActivePerCycle, PrefixConsumed, PrefixPrimed, PrefixFaults, PrefixStopped, PrefixJoined, EmptyAfterReap, PoolStalls, PoolAtStall, CompletionAgeAtStall, DurationTarget, ActiveAtStop, FullExpected, FullEofReached, FullNaturalProducer, TailRemaining, TailFrames, TailPackets, TailUrbs, TailPacketCompletions, TailFrameCompletions, EofPadding, FullLastSubmitted, FullLastCompleted, FullQueueNatural, FullDiscardNatural, FullMd5Pass, FullDecodedHash, FullEnqueuedHash, SourceVerificationStalls, FieldCount };
+constexpr jint kSnapshotVersion = 5;
 // Preserve unsigned hash bits across JNI without an implementation-defined numeric cast.
 jlong hashBits(uint64_t value) { jlong result; static_assert(sizeof(result) == sizeof(value)); std::memcpy(&result, &value, sizeof(result)); return result; }
 using Clock = std::chrono::steady_clock;
@@ -50,7 +51,8 @@ struct Slot {
     Identity identity;
     bool feedback = false;
     unsigned packets = 0;
-    uint64_t submittedAt = 0;
+    uint64_t submittedAt = 0, firstSourceFrame = 0;
+    bool terminal = false;
     void allocate(bool isFeedback, unsigned count, unsigned capacityBytes) {
         if (count < 1 || count > kOutPackets || capacityBytes < 1 || capacityBytes > 3072) throw std::invalid_argument("URB bounds");
         const size_t bytes = allocationBytes(sizeof(usbdevfs_urb), sizeof(usbdevfs_iso_packet_desc), count);
@@ -80,6 +82,8 @@ struct Session {
     PcmTestSource source;
     std::shared_ptr<fv::PrefixSource> prefix;
     const uint64_t durationUs;
+    const bool fullTrack;
+    bool waitingForEof = false;
     uint64_t submittedPrefixHash = fv::kOffset;
     uint64_t started = 0, lastValid = 0, lastOutCompletion = 0, serial = 0;
     uint32_t acceptedFeedback = 0;
@@ -89,13 +93,14 @@ struct Session {
 
     Session(int borrowedFd, uint64_t a, uint64_t s, const std::array<jint, 17>& config, std::shared_ptr<fv::PrefixSource> prefixSource = nullptr)
         : fd(borrowedFd), attachment(a), stream(s), dataEndpoint(config[4]), feedbackEndpoint(config[8]),
-          dataInterval(config[7]), feedbackInterval(config[11]), payload(capacity(config[6])), source(config[16] == 2 ? PcmMode::Zero : static_cast<PcmMode>(config[16])),
-          prefix(std::move(prefixSource)), durationUs(prefix ? fv::kPrefixDurationUs : kDurationUs) {
+          dataInterval(config[7]), feedbackInterval(config[11]), payload(capacity(config[6])), source(config[16] >= 2 ? PcmMode::Zero : static_cast<PcmMode>(config[16])),
+          prefix(std::move(prefixSource)), durationUs(prefix && prefix->fullTrack ? 0 : prefix ? fv::kPrefixDurationUs : kDurationUs), fullTrack(prefix && prefix->fullTrack) {
         stats[Api] = kSnapshotVersion; stats[Attachment] = static_cast<jlong>(a); stats[Stream] = static_cast<jlong>(s);
         stats[DataInterval] = static_cast<jlong>(intervalUs(dataInterval));
         stats[FeedbackInterval] = static_cast<jlong>(intervalUs(feedbackInterval));
         stats[EndpointCapacity] = payload;
         stats[SourceMode] = config[16]; stats[DurationTarget] = static_cast<jlong>(durationUs);
+        if (fullTrack) { stats[FullExpected]=static_cast<jlong>(prefix->queue.expectedTotal.load()); stats[FullLastSubmitted]=stats[FullLastCompleted]=-1; }
         if (source.mode == PcmMode::Reference) {
             const ReferencePreflight preflight;
             stats[PreflightPass] = preflight.pass() ? 1 : 0; stats[ReferenceTableHash] = hashBits(preflight.actualHash);
@@ -125,6 +130,27 @@ struct Session {
         for (const auto& slot : slots) if (slot.feedback == feedback && slot.identity.outstanding) ++count;
         return count;
     }
+    bool fullSubmitted() const { return fullTrack && static_cast<uint64_t>(stats[SubmittedFrames])==prefix->queue.expectedTotal.load(); }
+    bool naturalComplete() {
+        if (!fullTrack || stopCause.chosen || requestedStop.load() || prefix->queue.faults.load()) return false;
+        const auto& q=prefix->queue;
+        if (!naturalOutComplete(q.eofReached.load(std::memory_order_acquire),q.expectedTotal.load(),q.tail.load(),q.head.load(),
+            static_cast<uint64_t>(stats[SubmittedFrames]),static_cast<uint64_t>(stats[CompletedFrames]),outstanding(false),q.prepared,integrity.valid())) return false;
+        const auto total=static_cast<jlong>(q.expectedTotal.load());
+        // EOF's acquire publication makes the producer's final decoder/hash evidence immutable here.
+        if (stats[ScheduledFrames]!=total || prefix->decoder.pcm.frames!=q.expectedTotal.load() ||
+            prefix->decoder.pcm.bytes!=q.expectedTotal.load()*kBytesPerFrame || prefix->decoder.facts[fv::Md5Verification]!=1 ||
+            prefix->decoder.pcm.hash!=q.enqueuedHash || q.enqueuedHash!=q.consumedHash || q.consumedHash!=submittedPrefixHash ||
+            stats[OutBytesSubmitted]!=total*kBytesPerFrame || stats[KernelOutActualBytes]!=stats[OutBytesSubmitted] ||
+            stats[FullLastSubmitted]!=total-1 || stats[FullLastCompleted]!=total-1 || stats[TailUrbs]!=1 ||
+            stats[TailPackets]<1 || stats[TailPackets]>static_cast<jlong>(kOutPackets) || stats[TailFrames]<1 ||
+            stats[TailRemaining]!=stats[TailFrames] || stats[TailPacketCompletions]!=stats[TailPackets] || stats[TailFrameCompletions]!=stats[TailFrames] ||
+            stats[OutSubmitted]!=stats[OutCompleted] || stats[OutPacketsSubmitted]!=stats[OutPacketsCompleted] ||
+            stats[OutPacketsSubmitted]!=(stats[OutSubmitted]-1)*kOutPackets+stats[TailPackets] || stats[OutCancelled] ||
+            stats[EofPadding] || q.depth()) { fail(TerminalAccounting,Stop::Accounting); return false; }
+        stats[FullQueueNatural]=static_cast<jlong>(q.depth()); stats[FullDiscardNatural]=0;
+        stopCause.choose(Stop::NaturalEof); return true;
+    }
     void beginStop() {
         if (stopping) return;
         stopCause.choose(Stop::Duration);
@@ -137,7 +163,10 @@ struct Session {
         if (stopping || stopCause.chosen || requestedStop.load() != 0 || !integrity.valid()) return false;
         if (prefix && prefix->queue.faults.load()) { failSource(); return false; }
         if (durationReached(started, monotonicUs(), durationUs)) { stopCause.choose(Stop::Duration); return false; }
+        if (fullTrack && !slot.feedback && fullSubmitted()) return false;
         if (slot.identity.outstanding) { fail(SchedulerInvalid, Stop::Accounting); return false; }
+        slot.packets=slot.feedback ? 1 : static_cast<unsigned>(kOutPackets); slot.terminal=false;
+        slot.firstSourceFrame=static_cast<uint64_t>(stats[SubmittedFrames]);
         auto* urb = slot.urb.get();
         std::memset(urb, 0, sizeof(usbdevfs_urb) + slot.packets * sizeof(usbdevfs_iso_packet_desc));
         urb->type = USBDEVFS_URB_TYPE_ISO;
@@ -165,6 +194,32 @@ struct Session {
                 slot.frames[i] = frames; frameCount += frames;
                 urb->iso_frame_desc[i].length = static_cast<unsigned>(bytes); length += static_cast<unsigned>(bytes);
                 ++stats[acceptedFeedback ? FeedbackScheduledPackets : BootstrapPackets];
+            }
+        }
+        if (fullTrack && !slot.feedback) {
+            const uint64_t total=prefix->queue.expectedTotal.load(), position=static_cast<uint64_t>(stats[SubmittedFrames]);
+            if (position>total) { fail(TerminalAccounting,Stop::Accounting); return false; }
+            const uint64_t remaining=total-position;
+            if (remaining<=frameCount && !prefix->queue.eofReached.load(std::memory_order_acquire)) {
+                // Total is a bound, not EOF proof. Keep the final candidate until complete decode/MD5 is authoritative.
+                const auto supply=prefix->queue.requireFrames(remaining);
+                scheduler=schedulerBefore; stats[ScheduledFrames]=scheduledBefore;
+                stats[BootstrapPackets]=bootstrapBefore; stats[FeedbackScheduledPackets]=feedbackBefore;
+                if (supply!=fv::ReserveResult::Available) { failSource(); if (integrity.valid()) fail(TerminalAccounting,Stop::Accounting); }
+                else waitingForEof=true;
+                return false;
+            }
+            if (remaining<=frameCount) {
+                const auto shape=terminalShape(slot.frames,remaining,true);
+                if (!shape.valid) { fail(TerminalAccounting,Stop::Accounting); return false; }
+                slot.terminal=true; slot.frames=shape.frames; slot.packets=shape.packets;
+                stats[ScheduledFrames]=scheduledBefore+static_cast<jlong>(shape.total);
+                stats[BootstrapPackets]=bootstrapBefore+(acceptedFeedback ? 0 : slot.packets);
+                stats[FeedbackScheduledPackets]=feedbackBefore+(acceptedFeedback ? slot.packets : 0);
+                frameCount=static_cast<uint32_t>(shape.total); length=frameCount*kBytesPerFrame;
+                urb->number_of_packets=static_cast<int>(slot.packets);
+                for (unsigned i=0;i<slot.packets;++i) urb->iso_frame_desc[i].length=slot.frames[i]*kBytesPerFrame;
+                stats[TailRemaining]=static_cast<jlong>(remaining);
             }
         }
         // Exact packed lengths only: stale/unused buffer capacity is never submitted.
@@ -217,6 +272,10 @@ struct Session {
                 if (!prefix->queue.commit()) fail(FlacSourceFault, Stop::Source);
                 if (prefix->queue.consumedHash != submittedPrefixHash) fail(SourceHashMismatch, Stop::Source);
             } else source.submitted(slot.buffer.data(), length);
+            if (fullTrack) {
+                stats[FullLastSubmitted]=static_cast<jlong>(slot.firstSourceFrame+frameCount-1);
+                if (slot.terminal) { stats[TailFrames]+=frameCount; stats[TailPackets]+=slot.packets; ++stats[TailUrbs]; }
+            }
             stats[SubmittedFrames] += frameCount; stats[OutBytesSubmitted] += length; stats[OutPacketsSubmitted] += slot.packets;
         }
         return true;
@@ -286,6 +345,7 @@ struct Session {
             ++stats[slot.feedback ? FeedbackUrbErrors : OutUrbErrors];
             fail(UrbError, Stop::Worker);
         }
+        uint64_t sourceOffset=0;
         for (unsigned i = 0; i < slot.packets; ++i) {
             const auto& packet = slot.urb->iso_frame_desc[i];
             packetExample(slot, i, status);
@@ -299,7 +359,14 @@ struct Session {
                     stats[FirstPacketLength] = packet.length; stats[FirstPacketActual] = packet.actual_length; }
             } else if (packet.actual_length != packet.length) {
                 ++stats[OutPacketErrors]; fail(ShortPacket, Stop::Worker); stats[FirstPacketLength] = packet.length; stats[FirstPacketActual] = packet.actual_length;
-            } else if (status == 0) stats[CompletedFrames] += slot.frames[i];
+            } else if (status == 0) {
+                stats[CompletedFrames] += slot.frames[i];
+                if (fullTrack) {
+                    stats[FullLastCompleted]=std::max(stats[FullLastCompleted],static_cast<jlong>(slot.firstSourceFrame+sourceOffset+slot.frames[i]-1));
+                    if (slot.terminal) { ++stats[TailPacketCompletions]; stats[TailFrameCompletions]+=slot.frames[i]; }
+                }
+            }
+            sourceOffset+=slot.frames[i];
         }
         if (!slot.feedback) lastOutCompletion = monotonicUs();
         if (slot.feedback && !cancelled) feedbackPacket(slot, status);
@@ -348,6 +415,11 @@ struct Session {
             stats[NotSubmittedFrames] = std::max(stats[NotSubmittedFrames], static_cast<jlong>(prefix->queue.prepared));
             source.exampleCount = prefix->queue.exampleCount;
             for (size_t i=0;i<source.exampleCount;++i) source.examples[i]=prefix->queue.examples[i];
+            if (fullTrack) {
+                stats[FullEofReached]=prefix->queue.eofReached.load(); stats[FullNaturalProducer]=stats[FullEofReached] && prefix->stopped.load();
+                stats[FullMd5Pass]=prefix->decoder.facts[fv::Md5Verification]==1;
+                stats[FullDecodedHash]=hashBits(prefix->decoder.pcm.hash); stats[FullEnqueuedHash]=hashBits(prefix->queue.enqueuedHash);
+            }
             if (stats[PrefixFaults]) integrity.compromise(FlacSourceFault);
             if (prefix->queue.consumedHash != submittedPrefixHash) integrity.compromise(SourceHashMismatch);
         } else stats[SourceFrames] = static_cast<jlong>(source.generated); stats[PcmByteOr] = source.zero.byteOr;
@@ -369,7 +441,7 @@ struct Session {
         if (stats[OutSubmitted] != stats[OutCompleted] || stats[FeedbackSubmitted] != stats[FeedbackCompleted] ||
             stats[OutPacketsSubmitted] != stats[OutPacketsCompleted]) integrity.compromise(ShutdownUnaccounted);
         if (stats[OutBytesSubmitted] != stats[SubmittedFrames] * kBytesPerFrame || stats[KernelOutActualBytes] != stats[OutBytesSubmitted] ||
-            stats[OutPacketsSubmitted] != stats[OutSubmitted] * static_cast<jlong>(kOutPackets)) integrity.compromise(FrameMismatch);
+            (!fullTrack && stats[OutPacketsSubmitted] != stats[OutSubmitted] * static_cast<jlong>(kOutPackets))) integrity.compromise(FrameMismatch);
         stats[LastFeedbackAge] = lastValid ? static_cast<jlong>(monotonicUs() - lastValid) : -1;
         stats[DurationUs] = static_cast<jlong>(monotonicUs() - started);
         move(State::Stopped); stats[WorkerStopped] = 1;
@@ -388,6 +460,7 @@ struct Session {
             for (size_t i = kOutPool; i < slots.size() && integrity.valid() && !stopCause.chosen; ++i) submit(slots[i]);
             for (size_t i = 0; i < kOutPool && integrity.valid() && !stopCause.chosen; ++i) submit(slots[i]);
             while (integrity.valid() && !stopCause.chosen) {
+                waitingForEof=false;
                 const uint64_t now = monotonicUs();
                 if (prefix && prefix->queue.faults.load()) { failSource(); break; }
                 if (requestedStop.load()) { fail(AuthorityChanged, requestedStop.load() == 2 ? Stop::AuthorityLost : Stop::Requested); break; }
@@ -397,6 +470,7 @@ struct Session {
                 }
                 for (unsigned i = 0; i < 64 && reapOne(); ++i) {}
                 if (!integrity.valid()) break;
+                if (naturalComplete()) break;
                 if (durationReached(started, monotonicUs(), durationUs)) { stopCause.choose(Stop::Duration); break; }
                 if (!prefix && (outstanding(false) == 0 || monotonicUs() - lastOutCompletion > kQueueWatchdogUs)) {
                     // Preserve Session 7/8's established watchdog and evidence semantics.
@@ -406,8 +480,13 @@ struct Session {
                 // A reaped slot is free capacity, not missing source PCM. Refill before judging OUT-pool progress.
                 for (auto& slot : slots) if (!slot.identity.outstanding && integrity.valid() && !stopCause.chosen) submit(slot);
                 if (!integrity.valid() || stopCause.chosen) break;
+                if (naturalComplete()) break;
                 if (durationReached(started, monotonicUs(), durationUs)) { stopCause.choose(Stop::Duration); break; }
-                if (prefix && outPoolStalled(outstanding(false), monotonicUs() - lastOutCompletion)) {
+                const bool terminalAwait=fullTrack && waitingForEof && outstanding(false)==0;
+                if (terminalAwait && monotonicUs()-lastOutCompletion>kQueueWatchdogUs) {
+                    ++stats[SourceVerificationStalls]; fail(TerminalAccounting,Stop::SourceVerificationStall); break;
+                }
+                if (prefix && !terminalAwait && outPoolStalled(outstanding(false), monotonicUs() - lastOutCompletion)) {
                     ++stats[PoolStalls]; stats[PoolAtStall] = static_cast<jlong>(outstanding(false));
                     stats[CompletionAgeAtStall] = static_cast<jlong>(monotonicUs() - lastOutCompletion);
                     fail(OutPoolStall, Stop::OutPoolStall); break;
@@ -482,16 +561,16 @@ Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeCreateSilent
         config[2] < 1 || config[2] > 255 || config[3] < 0 || config[3] > 255 || config[2] == config[3] ||
         config[4] < 1 || config[4] > 15 || config[5] != 5 || !capacity(config[6]) || config[7] < 1 || config[7] > 3 ||
         config[8] < 0x81 || config[8] > 0x8f || config[9] != 0x11 || config[10] != 4 || config[11] < 1 || config[11] > 7 ||
-        config[12] != static_cast<int>(kRate) || config[13] != 2 || config[14] != 2 || config[15] != 16 || config[16] < 0 || config[16] > 2) {
+        config[12] != static_cast<int>(kRate) || config[13] != 2 || config[14] != 2 || config[15] != 16 || config[16] < 0 || config[16] > 3) {
         error(env, "java/lang/IllegalArgumentException", "Unsupported bounded UAC2 silence target"); return 0;
     }
     std::shared_ptr<fv::PrefixSource> prefixSource;
     {
         std::lock_guard<std::mutex> lock(registryMutex);
-        if (config[16] == 2) {
+        if (config[16] >= 2) {
             auto found = prefixRegistry.find(prefixHandle);
             if (found == prefixRegistry.end() || found->second->attachment != static_cast<uint64_t>(attachment) ||
-                found->second->stream != static_cast<uint64_t>(stream) || found->second->primed.load() < fv::kPrefixPrebuffer ||
+                found->second->stream != static_cast<uint64_t>(stream) || found->second->fullTrack != (config[16]==3) || found->second->primed.load() < found->second->primeTarget() ||
                 found->second->queue.faults.load() || found->second->queue.stop.load()) {
                 error(env, "java/lang/IllegalStateException", "FLAC source not primed/current/healthy"); return 0;
             }
@@ -573,19 +652,19 @@ jobject prefixSnapshot(JNIEnv* env,const fv::PrefixSource& source,bool released)
         for (size_t j=0;j<7;++j) rows[i*7+j]=source.queue.examples[i][j];
     env->SetLongArrayRegion(numbers,0,fv::PrefixFieldCount,values.data());
     env->SetLongArrayRegion(examples,0,static_cast<jsize>(source.queue.exampleCount*7),rows.data());
-    jobject decoder=source.joined.load()?fv::snapshotFlac(env,source.decoder):nullptr;
+    jobject decoder=(source.joined.load() || source.queue.eofReached.load(std::memory_order_acquire))?fv::snapshotFlac(env,source.decoder):nullptr;
     if (env->ExceptionCheck()) return nullptr;
     return env->NewObject(cls,constructor,numbers,examples,decoder);
 }
 }
 extern "C" JNIEXPORT jlong JNICALL
-Java_io_github_rsgarrido_sazanami_player_usb_UsbFlacPrefixNative_nativeCreate(JNIEnv* env,jobject,jint borrowedFd,jlong attachment,jlong stream) {
+Java_io_github_rsgarrido_sazanami_player_usb_UsbFlacPrefixNative_nativeCreate(JNIEnv* env,jobject,jint borrowedFd,jlong attachment,jlong stream,jboolean fullTrack) {
     if (borrowedFd<0 || attachment<1 || stream<1) { error(env,"java/lang/IllegalArgumentException","Invalid FLAC prefix identity");return 0; }
     const int duplicate=::dup(borrowedFd);
     if (duplicate<0) return -static_cast<jlong>(errno);
     fv::OwnedFd pending(duplicate);
     try {
-        auto source=std::make_shared<fv::PrefixSource>(std::move(pending),attachment,stream);
+        auto source=std::make_shared<fv::PrefixSource>(std::move(pending),attachment,stream,fullTrack==JNI_TRUE);
         std::lock_guard<std::mutex> lock(registryMutex);
         if (!registry.empty() || !prefixRegistry.empty() || nextHandle==std::numeric_limits<jlong>::max())
             throw std::invalid_argument("Endpoint/source registry busy");
@@ -604,7 +683,7 @@ Java_io_github_rsgarrido_sazanami_player_usb_UsbFlacPrefixNative_nativePrime(JNI
 extern "C" JNIEXPORT jboolean JNICALL
 Java_io_github_rsgarrido_sazanami_player_usb_UsbFlacPrefixNative_nativeHealthy(JNIEnv*,jobject,jlong handle,jlong attachment,jlong stream) {
     auto source=lookupPrefix(handle,attachment,stream);
-    return source && source->primed.load()>=fv::kPrefixPrebuffer && source->metadataReady.load() &&
+    return source && source->primed.load()>=source->primeTarget() && source->metadataReady.load() &&
         !source->queue.faults.load() && !source->queue.stop.load() ? JNI_TRUE : JNI_FALSE;
 }
 extern "C" JNIEXPORT void JNICALL
