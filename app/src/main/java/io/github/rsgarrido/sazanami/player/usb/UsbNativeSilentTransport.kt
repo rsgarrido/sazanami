@@ -13,7 +13,8 @@ import kotlinx.coroutines.withContext
  * Its async child is ALWAYS awaited before restoration/close. Only the native worker submits/reaps.
  */
 internal class UsbNativeSilentTransport(private val borrowedFd: Int, private val plan: UsbSilentTransportPlan,
-    private val generation: Long, private val stream: Long, private val accessFailure: () -> UsbClockQueryStatus?) : UsbSilentTransportBackend {
+    private val generation: Long, private val stream: Long, private val accessFailure: () -> UsbClockQueryStatus?,
+    private val mode: UsbPcmDiagnosticMode = UsbPcmDiagnosticMode.ZERO) : UsbSilentTransportBackend {
     @Volatile private var handle = 0L
     @Volatile private var stopRequested = 0
     override var usbCleanupSafe = true; private set
@@ -31,7 +32,7 @@ internal class UsbNativeSilentTransport(private val borrowedFd: Int, private val
             try {
                 authority = accessFailure()
                 if (authority != null || !parent.isActive || stopRequested != 0) return@withContext
-                val created = UsbFsDiagnostics.createSilentTransport(borrowedFd, plan, generation, stream)
+                val created = UsbFsDiagnostics.createSilentTransport(borrowedFd, plan, generation, stream, mode)
                 if (created < 0) {
                     val errno = -created
                     authority = when (errno) { 19L -> UsbClockQueryStatus.DEVICE_DISCONNECTED; 1L, 13L -> UsbClockQueryStatus.PERMISSION_LOST

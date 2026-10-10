@@ -1,4 +1,4 @@
-#include "usb_iso_core.h"
+#include "usb_pcm_reference.h"
 #include <jni.h>
 #include <linux/usbdevice_fs.h>
 #include <sys/ioctl.h>
@@ -28,8 +28,12 @@ enum Field : size_t { Api, Attachment, Stream, Started, StateCode, Reasons, Stop
     Underruns, CancelledFrames, NotSubmittedFrames, PcmByteOr, SubmitErrno, ReapErrno, DiscardErrno,
     FirstUrbStatus, FirstPacketStatus, FirstPacketLength, FirstPacketActual, OutCancelled, FeedbackCancelled,
     FeedbackInterval, DataInterval, EndpointCapacity, FeedbackHoldover, ShutdownIncomplete, FirstUrbErrorCount,
-    FeedbackUrbErrors, LifecycleMask, FieldCount };
-constexpr jint kSnapshotVersion = 1;
+    FeedbackUrbErrors, LifecycleMask, SourceMode, PreflightPass, ReferenceTableHash, SourcePcmHash, SubmittedPcmHash,
+    SilenceFrames, LeftToneFrames, RightToneFrames, LeftActiveSamples, RightActiveSamples,
+    UnexpectedNonzero, InactiveNonzero, OutsideNonzero, MaximumSample, MinimumSample, PeakSample, ActivePerCycle, FieldCount };
+constexpr jint kSnapshotVersion = 2;
+// Preserve unsigned hash bits across JNI without an implementation-defined numeric cast.
+jlong hashBits(uint64_t value) { jlong result; static_assert(sizeof(result) == sizeof(value)); std::memcpy(&result, &value, sizeof(result)); return result; }
 using Clock = std::chrono::steady_clock;
 uint64_t monotonicUs() { return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(Clock::now().time_since_epoch()).count()); }
 
@@ -69,20 +73,27 @@ struct Session {
     State state = State::Idle;
     Integrity integrity;
     Scheduler scheduler;
-    ZeroSource source;
+    PcmTestSource source;
     uint64_t started = 0, lastValid = 0, lastOutCompletion = 0, serial = 0;
     uint32_t acceptedFeedback = 0;
     unsigned invalidStreak = 0;
     bool stopping = false, ran = false;
     Stop stopReason = Stop::Duration;
 
-    Session(int borrowedFd, uint64_t a, uint64_t s, const std::array<jint, 16>& config)
+    Session(int borrowedFd, uint64_t a, uint64_t s, const std::array<jint, 17>& config)
         : fd(borrowedFd), attachment(a), stream(s), dataEndpoint(config[4]), feedbackEndpoint(config[8]),
-          dataInterval(config[7]), feedbackInterval(config[11]), payload(capacity(config[6])) {
+          dataInterval(config[7]), feedbackInterval(config[11]), payload(capacity(config[6])), source(static_cast<PcmMode>(config[16])) {
         stats[Api] = kSnapshotVersion; stats[Attachment] = static_cast<jlong>(a); stats[Stream] = static_cast<jlong>(s);
         stats[DataInterval] = static_cast<jlong>(intervalUs(dataInterval));
         stats[FeedbackInterval] = static_cast<jlong>(intervalUs(feedbackInterval));
         stats[EndpointCapacity] = payload;
+        stats[SourceMode] = config[16];
+        if (source.mode == PcmMode::Reference) {
+            const ReferencePreflight preflight;
+            stats[PreflightPass] = preflight.pass() ? 1 : 0; stats[ReferenceTableHash] = hashBits(preflight.actualHash);
+            stats[ActivePerCycle] = activePerCycle();
+            if (!preflight.pass()) throw std::invalid_argument("Reference preflight failed");
+        }
         stats[FeedbackHoldover] = static_cast<jlong>(std::max<uint64_t>(20000, intervalUs(feedbackInterval) * 4));
         for (size_t i = 0; i < slots.size(); ++i) slots[i].allocate(i >= kOutPool,
             i >= kOutPool ? 1 : static_cast<unsigned>(kOutPackets), i >= kOutPool ? 4 : payload);
@@ -128,8 +139,8 @@ struct Session {
                 stats[ScheduledFrames] += frames;
                 const uint64_t bytes = static_cast<uint64_t>(frames) * kBytesPerFrame;
                 if (!packetFits(frames, payload) || length + bytes > slot.buffer.size()) { fail(CapacityExceeded, Stop::Capacity); return false; }
-                source.fill(slot.buffer.data() + length, frames);
-                if (!source.inspect(slot.buffer.data() + length, static_cast<size_t>(bytes))) { fail(NonzeroPcm, Stop::Worker); return false; }
+                source.fill(slot.buffer.data() + length, static_cast<uint64_t>(stats[SubmittedFrames]) + frameCount, frames);
+                // Validate the entire exact packed region once, immediately before submission.
                 slot.frames[i] = frames; frameCount += frames;
                 urb->iso_frame_desc[i].length = static_cast<unsigned>(bytes); length += static_cast<unsigned>(bytes);
                 ++stats[acceptedFeedback ? FeedbackScheduledPackets : BootstrapPackets];
@@ -137,6 +148,9 @@ struct Session {
         }
         // Exact packed lengths only: stale/unused buffer capacity is never submitted.
         urb->buffer_length = static_cast<int>(length);
+        if (!slot.feedback && !source.inspect(slot.buffer.data(), length, static_cast<uint64_t>(stats[SubmittedFrames]), frameCount)) {
+            fail(source.mode == PcmMode::Zero ? NonzeroPcm : source.reasons, Stop::Accounting); return false;
+        }
         if (requestedStop.load() != 0) { fail(AuthorityChanged, Stop::Requested); return false; }
         slot.submittedAt = monotonicUs();
         const int returned = ::ioctl(fd, USBDEVFS_SUBMITURB, urb);
@@ -147,7 +161,7 @@ struct Session {
         }
         if (!slot.identity.submit(attachment, stream, ++serial)) { fail(SchedulerInvalid, Stop::Accounting); return false; }
         ++stats[slot.feedback ? FeedbackSubmitted : OutSubmitted];
-        if (!slot.feedback) { stats[SubmittedFrames] += frameCount; stats[OutBytesSubmitted] += length; stats[OutPacketsSubmitted] += slot.packets; }
+        if (!slot.feedback) { source.submitted(slot.buffer.data(), length); stats[SubmittedFrames] += frameCount; stats[OutBytesSubmitted] += length; stats[OutPacketsSubmitted] += slot.packets; }
         return true;
     }
     void packetExample(const Slot& slot, unsigned i, int urbStatus) {
@@ -266,7 +280,18 @@ struct Session {
         }
         stats[OutstandingFinal] = static_cast<jlong>(outstanding(false) + outstanding(true));
         if (stats[OutstandingFinal]) { integrity.compromise(ShutdownUnaccounted); stats[ShutdownIncomplete] = 1; }
-        stats[SourceFrames] = static_cast<jlong>(source.generated); stats[PcmByteOr] = source.byteOr;
+        stats[SourceFrames] = static_cast<jlong>(source.generated); stats[PcmByteOr] = source.zero.byteOr;
+        if (source.mode == PcmMode::Reference) {
+            stats[SourcePcmHash] = hashBits(source.sourceHash); stats[SubmittedPcmHash] = hashBits(source.submittedHash);
+            stats[SilenceFrames] = static_cast<jlong>(source.silence);
+            stats[LeftToneFrames] = static_cast<jlong>(source.leftFrames); stats[RightToneFrames] = static_cast<jlong>(source.rightFrames);
+            stats[LeftActiveSamples] = static_cast<jlong>(source.leftActive); stats[RightActiveSamples] = static_cast<jlong>(source.rightActive);
+            stats[UnexpectedNonzero] = static_cast<jlong>(source.unexpected); stats[InactiveNonzero] = static_cast<jlong>(source.inactive);
+            stats[OutsideNonzero] = static_cast<jlong>(source.outside);
+            stats[MaximumSample] = source.maximum; stats[MinimumSample] = source.minimum; stats[PeakSample] = source.peak;
+            integrity.compromise(source.reasons);
+            if (source.sourceHash != source.submittedHash) integrity.compromise(SourceHashMismatch);
+        }
         stats[NotSubmittedFrames] = std::max(stats[NotSubmittedFrames], stats[SourceFrames] - stats[SubmittedFrames]);
         stats[Remainder] = static_cast<jlong>(scheduler.remainder);
         if (stats[SourceFrames] != stats[ScheduledFrames] || stats[ScheduledFrames] != stats[SubmittedFrames] ||
@@ -328,33 +353,51 @@ std::shared_ptr<Session> lookup(jlong handle, jlong attachment, jlong stream) {
 jobject snapshot(JNIEnv* env, const Session& session) {
     jclass cls = env->FindClass("io/github/rsgarrido/sazanami/player/usb/UsbIsoNativeSnapshot");
     if (!cls) return nullptr;
-    jmethodID constructor = env->GetMethodID(cls, "<init>", "([J[J[J)V");
+    jmethodID constructor = env->GetMethodID(cls, "<init>", "([J[J[J[J)V");
     if (!constructor) return nullptr;
     jlongArray numbers = env->NewLongArray(FieldCount);
     jlongArray feedback = env->NewLongArray(static_cast<jsize>(session.feedbackExampleCount * 6));
     jlongArray packets = env->NewLongArray(static_cast<jsize>(session.packetExampleCount * 7));
-    if (!numbers || !feedback || !packets) return nullptr;
+    jlongArray pcm = env->NewLongArray(static_cast<jsize>(session.source.exampleCount * 7));
+    if (!numbers || !feedback || !packets || !pcm) return nullptr;
+    std::array<jlong, 13 * 7> examples{};
+    for (size_t row = 0; row < session.source.exampleCount; ++row)
+        for (size_t column = 0; column < 7; ++column) examples[row * 7 + column] = session.source.examples[row][column];
+    env->SetLongArrayRegion(pcm, 0, static_cast<jsize>(session.source.exampleCount * 7), examples.data());
     env->SetLongArrayRegion(numbers, 0, FieldCount, session.stats.data());
     env->SetLongArrayRegion(feedback, 0, static_cast<jsize>(session.feedbackExampleCount * 6), session.feedbackExamples.data());
     env->SetLongArrayRegion(packets, 0, static_cast<jsize>(session.packetExampleCount * 7), session.packetExamples.data());
     if (env->ExceptionCheck()) return nullptr;
-    return env->NewObject(cls, constructor, numbers, feedback, packets);
+    return env->NewObject(cls, constructor, numbers, feedback, packets, pcm);
 }
 } // namespace
+
+// Pure CPU preflight: no fd, USB ownership, or endpoint traffic.
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeReferencePreflight(JNIEnv* env, jobject) {
+    const ReferencePreflight p;
+    const std::array<jlong, 12> values{p.pass() ? 1 : 0, static_cast<jlong>(p.reasons),
+        static_cast<jlong>(kReferenceTone.size()), hashBits(kReferenceHash), hashBits(p.actualHash),
+        p.maximum, p.minimum, p.peak, p.packing ? 1 : 0, p.channels ? 1 : 0,
+        p.deterministic ? 1 : 0, activePerCycle()};
+    auto result = env->NewLongArray(values.size());
+    if (result) env->SetLongArrayRegion(result, 0, values.size(), values.data());
+    return result;
+}
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeCreateSilentTransport(
     JNIEnv* env, jobject, jint fd, jlong attachment, jlong stream, jintArray configuration) {
-    if (fd < 0 || attachment < 1 || stream < 1 || !configuration || env->GetArrayLength(configuration) != 16) {
+    if (fd < 0 || attachment < 1 || stream < 1 || !configuration || env->GetArrayLength(configuration) != 17) {
         error(env, "java/lang/IllegalArgumentException", "Invalid silent transport identity/configuration"); return 0;
     }
-    std::array<jint, 16> config{}; env->GetIntArrayRegion(configuration, 0, 16, config.data());
+    std::array<jint, 17> config{}; env->GetIntArrayRegion(configuration, 0, 17, config.data());
     if (env->ExceptionCheck()) return 0;
     if (config[0] < 0 || config[0] > 255 || config[1] < 0 || config[1] > 255 || config[0] == config[1] ||
         config[2] < 1 || config[2] > 255 || config[3] < 0 || config[3] > 255 || config[2] == config[3] ||
         config[4] < 1 || config[4] > 15 || config[5] != 5 || !capacity(config[6]) || config[7] < 1 || config[7] > 3 ||
         config[8] < 0x81 || config[8] > 0x8f || config[9] != 0x11 || config[10] != 4 || config[11] < 1 || config[11] > 7 ||
-        config[12] != static_cast<int>(kRate) || config[13] != 2 || config[14] != 2 || config[15] != 16) {
+        config[12] != static_cast<int>(kRate) || config[13] != 2 || config[14] != 2 || config[15] != 16 || config[16] < 0 || config[16] > 1) {
         error(env, "java/lang/IllegalArgumentException", "Unsupported bounded UAC2 silence target"); return 0;
     }
     const int speed = ::ioctl(fd, USBDEVFS_GET_SPEED);

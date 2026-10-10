@@ -3,8 +3,8 @@ package io.github.rsgarrido.sazanami.player.usb
 /** Offline, plain-text evidence. No serial strings, Android bus paths, music paths, or remote lookup. */
 internal object UsbAudioDiagnosticReport {
     fun format(state: UsbAudioDiagnosticState, includeRaw: Boolean = true): String = buildString {
-        appendLine("SAZANAMI USB AUDIO DIAGNOSTIC — SESSION 7")
-        appendLine("Descriptors, ownership, clock, configuration and bounded digital-silence transport diagnostics. Direct USB song playback is not implemented.")
+        appendLine("SAZANAMI USB AUDIO DIAGNOSTIC — SESSION 8")
+        appendLine("Descriptors, ownership, clock, configuration, silence and deterministic reference PCM diagnostics. Direct USB song playback is not implemented.")
         appendLine("Service: ${if (state.serviceAvailable) "available" else "unavailable"}")
         appendLine("Status: ${statusText(state.status)}")
         appendLine("Connection generation: ${state.generation}")
@@ -57,6 +57,8 @@ internal object UsbAudioDiagnosticReport {
         appendConfigurationExperiment(state.configurationExperiment, state.generation)
         section("Silent Direct USB Transport — Session 7")
         appendSilentTransport(state.silentExperiment, state.generation)
+        section("Deterministic Direct USB PCM — Session 8")
+        appendSilentTransport(state.referenceExperiment, state.generation, UsbPcmDiagnosticMode.REFERENCE)
         val model = state.descriptors
         if (model == null) {
             section("Raw descriptors")
@@ -147,7 +149,7 @@ internal object UsbAudioDiagnosticReport {
         appendLine("Clock selectors list possible input pins; selected clock is unknown.")
         appendLine("Sessions 3/4 use non-forced AC ownership. Explicit Session 5 force-owns only resolved AC through Android, then releases it.")
         appendLine("Session 6 may force-own resolved AC + AS, set only the Clock Source sampling frequency and select only the resolved PCM16 / idle alternates, then restore.")
-        appendLine("Session 7 alone adds bounded all-zero PCM OUT and explicit feedback IN on validated endpoints. No HID claim, reset or manual kernel detach/rebind.")
+        appendLine("Session 7 adds bounded all-zero PCM OUT and explicit feedback IN; Session 8 reuses it for a fixed low-level L/R reference on validated endpoints. No HID claim, reset or manual kernel detach/rebind.")
         section("Parser warnings / limitations")
         if (model.warnings.isEmpty()) appendLine("No structural parser warnings.")
         model.warnings.forEach { appendLine(it) }
@@ -298,12 +300,12 @@ internal object UsbAudioDiagnosticReport {
     }
 
     private fun StringBuilder.appendConfigurationExperiment(result: UsbAudioConfigurationResult?, generation: Long, endpointWork: Boolean = false) {
-        appendLine(if (endpointWork) "Configuration evidence from the reused Session 6 transaction; Session 7 transport is separate." else "Development configuration experiment only; no stream is exercised.")
+        appendLine(if (endpointWork) "Configuration evidence from the reused Session 6 transaction; endpoint transport is separate." else "Development configuration experiment only; no stream is exercised.")
         if (!endpointWork) {
             appendLine("Data endpoint used: NO")
             appendLine("Feedback endpoint used: NO")
             appendLine("Audio transmitted: NO")
-        } else appendLine("Endpoint activity is recorded by Session 7 submissions/completions; configuration evidence alone does not establish transport.")
+        } else appendLine("Endpoint activity is recorded by endpoint transport submissions/completions; configuration evidence alone does not establish transport.")
         appendLine("HID claimed: NO; Feature Unit writes: NO; reset/manual reconnect/rebind: NO")
         appendLine("Bit-perfect active: NO")
         appendLine("Functional USB audio recovery: NOT_VERIFIED")
@@ -323,7 +325,7 @@ internal object UsbAudioDiagnosticReport {
         appendLine("Resolved AS: ${plan.streaming.diagnosticName()}; idle=${plan.idle.diagnosticName()}")
         appendLine("Descriptor-declared AS alternates: ${plan.declaredAlternates.sorted().joinToString()}")
         appendLine("Successful host SETINTERFACE is primary alternate evidence. GET_INTERFACE is advisory; a different declared alternate contradicts selection and blocks clock mutation/target verification.")
-        appendLine("Descriptor data endpoint: 0x${usbHex(plan.dataEndpoint)} (${if (endpointWork) "Session 7 traffic reported separately" else "never opened/used"})")
+        appendLine("Descriptor data endpoint: 0x${usbHex(plan.dataEndpoint)} (${if (endpointWork) "endpoint traffic reported separately" else "never opened/used"})")
         appendLine("Forward configuration and restoration are independent; verified configuration is not audio or transport success.")
         if (result.accessFailure != null) appendLine("Authority: ${result.accessFailure}. The following bounded transaction records are historical only; no current device/configuration conclusion is asserted.")
         appendLine("Before ownership:")
@@ -379,14 +381,19 @@ internal object UsbAudioDiagnosticReport {
         appendLine("Driver rebinding, AudioDeviceInfo continuity, unchanged IDs/ALSA addresses/capabilities and HID controls do not establish functional audio routing or DAC playback.")
     }
 
-    private fun StringBuilder.appendSilentTransport(result: UsbSilentTransportExperimentResult?, generation: Long) {
-        appendLine("Development-only direct USB silence diagnostic; never starts automatically.")
+    private fun StringBuilder.appendSilentTransport(result: UsbSilentTransportExperimentResult?, generation: Long,
+        mode: UsbPcmDiagnosticMode = UsbPcmDiagnosticMode.ZERO) {
+        val reference = mode == UsbPcmDiagnosticMode.REFERENCE
+        if (result != null && result.generation != generation) {
+            appendLine("Stale attachment generation; previous Session ${if (reference) 8 else 7} evidence omitted."); return
+        }
+        appendLine("Development-only direct USB diagnostic; never starts automatically.")
         appendLine("Target: PCM stereo signed integer 16-bit little-endian / 44100 Hz; bytes/frame=4")
-        appendLine("Source: DIGITAL ZERO ONLY; duration target=${UsbIsoTiming.DURATION_MS} ms")
-        appendLine("Audible signal intentionally generated: NO; DSP/sample modification: NONE")
+        if (reference) appendReferenceSource(result) else appendLine("Source: DIGITAL ZERO ONLY")
+        appendLine("Duration target=${UsbIsoTiming.DURATION_MS} ms; duration stop, no EOF")
+        appendLine("Audible signal intentionally generated: ${if (reference) "YES, low-level fixed reference" else "NO"}; DSP/sample modification: NONE")
         appendLine("Functional normal USB playback: NOT_VERIFIED; Bit-perfect song playback: NOT IMPLEMENTED / NOT ASSERTED")
-        if (result == null) { appendLine("Not requested. Debug builds expose Stream silent USB 16/44.1 (1 s)."); return }
-        if (result.generation != generation) { appendLine("Stale attachment generation; previous Session 7 evidence omitted."); return }
+        if (result == null) { appendLine("Not requested. Debug action: ${if (reference) "Play USB L/R reference tone (1 s)" else "Stream silent USB 16/44.1 (1 s)"}"); return }
         appendLine("Attachment generation=${result.generation}; stream generation=${result.streamGeneration}; phase=${result.phase}; result=${result.status}")
         result.detail?.let { appendLine("Note: ${safeText(it, 400)}") }
         result.resolution.issues.forEach { appendLine("Resolution issue: ${safeText(it, 400)}") }
@@ -409,7 +416,17 @@ internal object UsbAudioDiagnosticReport {
             appendLine("Integrity: ${if (native.valid) "VALID" else "COMPROMISED"}; reasons=${native.integrityReasons.joinToString().ifEmpty { if (native.valid) "none" else "result/authority unavailable" }}")
             native.exceptionType?.let { appendLine("Native boundary exception type: ${safeText(it)}; private message omitted") }
             native.authorityFailure?.let { appendLine("Authority changed: $it; values are historical only") }
-            appendLine("PCM all-zero buffer validation: ${if (native.count("outBytesSubmitted") > 0 && native.count("pcmByteOr") == 0L) "PASS" else "UNAVAILABLE/FAIL"}; bytewise OR=${native.count("pcmByteOr")}")
+            if (!reference) appendLine("PCM all-zero buffer validation: ${if (native.count("outBytesSubmitted") > 0 && native.count("pcmByteOr") == 0L) "PASS" else "UNAVAILABLE/FAIL"}; bytewise OR=${native.count("pcmByteOr")}")
+            else {
+                appendLine("Source PCM hash: ${native.counters["sourcePcmHash"]?.let(::pcmHashHex) ?: "unavailable"}")
+                appendLine("Submitted PCM hash: ${native.counters["submittedPcmHash"]?.let(::pcmHashHex) ?: "unavailable"}")
+                val hashesPresent = native.counters.containsKey("sourcePcmHash") && native.counters.containsKey("submittedPcmHash")
+                appendLine("Source/submitted hash match: ${hashesPresent && native.count("sourcePcmHash") == native.count("submittedPcmHash")}; source integrity verified=${native.sourceVerified}")
+                appendLine("FNV-1a 64-bit over exact ordered PCM bytes, offset cbf29ce484222325, prime 100000001b3, modulo 2^64. Payload hash advances only after successful SUBMITURB; no padding or metadata.")
+                appendLine("Generated but unsubmitted frames remain explicit. No completion hash or DAC-internal consumed-data hash exists.")
+                appendLine("Bounded GENERATED PCM frame examples (index; L signed; R signed; LE packed L-low L-high R-low R-high):")
+                native.pcm.forEach { appendLine("  ${it.index}; ${it.left}; ${it.right}; ${it.bytes.joinToString(" ") { byte -> usbHex(byte) }}") }
+            }
             native.counters.forEach { (name, value) -> appendLine("  $name: $value") }
             appendLine("Kernel OUT actual bytes are raw ISO completion evidence, separately from submitted bytes. Successful frames require zero URB/packet status and exact packet length; no DAC-consumption inference.")
             appendLine("Feedback raw examples (bounded):")
@@ -425,7 +442,21 @@ internal object UsbAudioDiagnosticReport {
         appendLine("Reused Session 6 configuration/restoration transaction:")
         appendConfigurationExperiment(result.configuration, generation, endpointWork = true)
         appendLine("Kernel recovery=${result.kernelRecovery}; framework enumeration=${result.frameworkRecovery}; functional recovery=NOT_VERIFIED")
-        appendLine("Copy this complete report before reconnecting. Do not immediately repeat Session 7. A physical reconnect may be needed for normal playback afterward.")
+        appendLine("Copy this complete report before reconnecting. Do not immediately repeat this diagnostic. A physical reconnect may be needed for normal playback afterward.")
+    }
+
+    private fun StringBuilder.appendReferenceSource(result: UsbSilentTransportExperimentResult?) {
+        appendLine("Reference: 441 Hz; 100 samples/cycle; immutable signed int16 table; intrinsic peak +/-1024 (about -30 dBFS). No runtime sin, float oscillator, software volume, or DSP.")
+        appendLine("Absolute source windows: 0..4409 silence; 4410..13209 LEFT only (8800 frames, 88 cycles); 13210..17619 silence; 17620..26419 RIGHT only (8800 frames, 88 cycles); >=26420 silence, including frames beyond 44100.")
+        appendLine("Expected manual observation: silence -> LEFT tone -> gap -> RIGHT tone -> silence. Listening/channel identity: NOT AUTOMATICALLY VERIFIED.")
+        appendLine("Generated source bytes -> identical submitted payload bytes -> successful exact-length kernel ISO completions. DAC internal reconstruction is not measured; no song/file/FLAC/Media3 claim.")
+        val p = result?.preflight
+        appendLine("Reference preflight: ${if (p == null) "NOT ATTEMPTED" else if (p.passed) "PASS" else "FAIL"}; before AC/AS ownership")
+        appendLine("Table length=${p?.value(2) ?: "unavailable"}; expected FNV-1a=${pcmHashHex(UsbReferencePreflight.EXPECTED_HASH)}; actual=${p?.value(4)?.let(::pcmHashHex) ?: "unavailable"}; checksum match=${p?.value(4) == UsbReferencePreflight.EXPECTED_HASH}")
+        appendLine("Table positive peak=${p?.value(5) ?: "unavailable"}; negative peak=${p?.value(6) ?: "unavailable"}; max abs=${p?.value(7) ?: "unavailable"}")
+        appendLine("Packing checks=${p?.value(8) ?: "unavailable"}; channel-plan validation=${p?.value(9) ?: "unavailable"}; deterministic=${p?.value(10) ?: "unavailable"}; active samples/cycle=${p?.value(11) ?: "unavailable"}")
+        appendLine("Preflight reason mask=${p?.value(1) ?: "unavailable"}; boundary exception=${p?.exceptionType ?: "none"}")
+        if (p != null && !p.passed) appendLine("Reference preflight prevented AC/AS ownership; no reference transport attempted.")
     }
 
     private fun StringBuilder.appendConfigurationOwnership(ownership: UsbConfigurationAndroidOwnership) {
@@ -655,7 +686,7 @@ internal object UsbAudioDiagnosticReport {
             UsbAudioClaimComparison.CLAIM_DID_NOT_RESOLVE -> "The previously rejected/failed requests also failed while AC was claimed; claiming AC alone did not resolve those failures."
             UsbAudioClaimComparison.INDETERMINATE -> "Evidence is incomplete or mixed; inspect the per-stage request results."
         })
-        appendLine("This is temporary diagnostic ownership and read-only clock evidence. Direct USB song playback is not implemented; Session 7 transport has separate evidence.")
+        appendLine("This is temporary diagnostic ownership and read-only clock evidence. Direct USB song playback is not implemented; Sessions 7/8 transport has separate evidence.")
     }
 
     fun statusText(status: UsbAudioDiagnosticStatus): String = when (status) {

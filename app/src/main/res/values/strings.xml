@@ -341,4 +341,13 @@
     <string name="app_appearance_light">Light</string>
     <string name="app_appearance_dark">Dark</string>
     <string name="app_appearance_close">Close</string>
+    <string name="usb_diagnostics_reference">Play USB L/R reference tone (1 s)</string>
+    <string name="usb_diagnostics_reference_running">Running USB L/R reference diagnostic…</string>
+    <string name="usb_diagnostics_reference_note">Session 8 development diagnostic: intentional AUDIBLE direct-USB PCM with a LOW-LEVEL signal. Stop normal Sazanami playback completely. LOWER DAC volume substantially before the first test; do not use normal/high listening volume. Expected: brief LEFT tone, pause, brief RIGHT tone. Automatic stop after approximately one second. A physical DAC reconnect may be required afterward. Copy the complete report before reconnecting; do not immediately repeat. This is not normal music playback.</string>
+    <string name="usb_diagnostics_reference_result">Session 8 deterministic PCM transport: %1$s</string>
+    <string name="usb_diagnostics_reference_target">PCM16 signed LE stereo, 44100 Hz; fixed 441 Hz reference, peak ±1024; LEFT → silence → RIGHT</string>
+    <string name="usb_diagnostics_reference_preflight">Reference preflight PASS: %1$s; boundary exception: %2$s. Failure prevents AC/AS ownership.</string>
+    <string name="usb_diagnostics_reference_manual">Expected listening: LEFT tone → gap → RIGHT tone. Physical channels and normal playback recovery: NOT AUTOMATICALLY VERIFIED.</string>
+    <string name="usb_diagnostics_reference_content">Generated silence/LEFT/RIGHT frames: %1$s/%2$s/%3$s; absolute PCM peak: %4$s</string>
+    <string name="usb_diagnostics_reference_hashes">Generated PCM FNV-1a: %1$s; submitted payload FNV-1a: %2$s; source integrity verified: %3$s</string>
 </resources>

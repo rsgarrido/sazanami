@@ -35,6 +35,8 @@ import io.github.rsgarrido.sazanami.player.usb.UsbFrameworkEnumerationRecovery
 import io.github.rsgarrido.sazanami.player.usb.UsbConfigurationPhase
 import io.github.rsgarrido.sazanami.player.usb.UsbConfigurationRestorationStatus
 import io.github.rsgarrido.sazanami.player.usb.UsbSilentPhase
+import io.github.rsgarrido.sazanami.player.usb.UsbPcmDiagnosticMode
+import io.github.rsgarrido.sazanami.player.usb.pcmHashHex
 import io.github.rsgarrido.sazanami.player.usb.usbHex
 
 /** Presentation only. Receivers, connection ownership, parsing and commands live in player/usb. */
@@ -142,11 +144,39 @@ internal fun UsbAudioDiagnosticsSection() {
                     Text(stringResource(if (state.silentExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true)
                         R.string.usb_diagnostics_silent_running else R.string.usb_diagnostics_silent))
                 }
+                Text(stringResource(R.string.usb_diagnostics_reference_note), style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error)
+                OutlinedButton(onClick = { UsbAudioDiagnosticBridge.playReferencePcm16(selected.identity) },
+                    enabled = state.serviceAvailable && selected.hasPermission && state.descriptors != null && !state.diagnosticOperationRunning,
+                    modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(if (state.referenceExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true)
+                        R.string.usb_diagnostics_reference_running else R.string.usb_diagnostics_reference))
+                }
             }
         }
-        state.silentExperiment?.takeIf { it.generation == state.generation && it.phase == UsbSilentPhase.FINISHED }?.let { result ->
-            Text(stringResource(R.string.usb_diagnostics_silent_result, result.status.name), style = MaterialTheme.typography.titleSmall)
-            Text(stringResource(R.string.usb_diagnostics_silent_target), style = MaterialTheme.typography.bodySmall)
+        listOfNotNull(state.silentExperiment, state.referenceExperiment)
+            .filter { it.generation == state.generation && it.phase == UsbSilentPhase.FINISHED }.forEach { result ->
+            val reference = result.mode == UsbPcmDiagnosticMode.REFERENCE
+            Text(stringResource(if (reference) R.string.usb_diagnostics_reference_result else R.string.usb_diagnostics_silent_result,
+                result.status.name), style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(if (reference) R.string.usb_diagnostics_reference_target else R.string.usb_diagnostics_silent_target),
+                style = MaterialTheme.typography.bodySmall)
+            if (reference) {
+                Text(stringResource(R.string.usb_diagnostics_reference_preflight,
+                    result.preflight?.passed?.toString() ?: "—", result.preflight?.exceptionType ?: "—"),
+                    style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.usb_diagnostics_reference_manual), style = MaterialTheme.typography.bodySmall)
+                result.transport?.let { native ->
+                    Text(stringResource(R.string.usb_diagnostics_reference_content,
+                        native.count("silenceFramesGenerated").toString(), native.count("leftToneFramesGenerated").toString(),
+                        native.count("rightToneFramesGenerated").toString(), native.count("peakAbsoluteSample").toString()),
+                        style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.usb_diagnostics_reference_hashes,
+                        native.counters["sourcePcmHash"]?.let(::pcmHashHex) ?: "—",
+                        native.counters["submittedPcmHash"]?.let(::pcmHashHex) ?: "—", native.sourceVerified.toString()),
+                        style = MaterialTheme.typography.bodySmall)
+                }
+            }
             val config = result.configuration
             Text(stringResource(R.string.usb_diagnostics_silent_configuration,
                 config?.acClaim?.returned?.toString() ?: "—", config?.asClaim?.returned?.toString() ?: "—",

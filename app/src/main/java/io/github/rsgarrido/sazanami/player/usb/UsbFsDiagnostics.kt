@@ -71,13 +71,20 @@ internal object UsbFsDiagnostics {
     private external fun nativeApiVersion(): Int
     fun silentTransportIdle(): Boolean = available && runCatching { nativeSilentTransportIdle() }.getOrDefault(false)
     private external fun nativeSilentTransportIdle(): Boolean
-    fun createSilentTransport(borrowedFd: Int, target: UsbSilentTransportPlan, generation: Long, stream: Long): Long {
+    fun referencePreflight(): UsbReferencePreflight = try {
+        check(available)
+        UsbReferencePreflight(nativeReferencePreflight().toList())
+    } catch (error: Exception) { UsbReferencePreflight(exceptionType = error.javaClass.simpleName) }
+    catch (error: LinkageError) { UsbReferencePreflight(exceptionType = error.javaClass.simpleName) }
+    private external fun nativeReferencePreflight(): LongArray
+    fun createSilentTransport(borrowedFd: Int, target: UsbSilentTransportPlan, generation: Long, stream: Long,
+        mode: UsbPcmDiagnosticMode = UsbPcmDiagnosticMode.ZERO): Long {
         check(available)
         val plan = target.configurationPlan
         return nativeCreateSilentTransport(borrowedFd, generation, stream, intArrayOf(plan.clock.audioControl.number,
             plan.streaming.number, plan.streaming.alternate, plan.idle.alternate, target.data.address, target.data.attributes,
             target.data.maxPacketSizeRaw, target.data.interval, target.feedback.address, target.feedback.attributes,
-            target.feedback.maxPacketSizeRaw, target.feedback.interval, 44100, 2, 2, 16))
+            target.feedback.maxPacketSizeRaw, target.feedback.interval, 44100, 2, 2, 16, mode.ordinal))
     }
     fun runSilentTransport(handle: Long, generation: Long, stream: Long): UsbIsoTransportResult =
         UsbIsoNativeStats.decode(nativeRunSilentTransport(handle, generation, stream), generation, stream)

@@ -20,7 +20,10 @@ enum Reason : uint64_t { SubmitError = 1ULL << 0, ReapError = 1ULL << 1, UrbErro
     CapacityExceeded = 1ULL << 9, UnknownCompletion = 1ULL << 10, DuplicateCompletion = 1ULL << 11,
     GenerationMismatch = 1ULL << 12, DeviceDetached = 1ULL << 13, AuthorityChanged = 1ULL << 14,
     WorkerFailure = 1ULL << 15, ShutdownUnaccounted = 1ULL << 16, FrameMismatch = 1ULL << 17,
-    NonzeroPcm = 1ULL << 18, SchedulerInvalid = 1ULL << 19, CancelError = 1ULL << 20 };
+    NonzeroPcm = 1ULL << 18, SchedulerInvalid = 1ULL << 19, CancelError = 1ULL << 20,
+    ReferencePreflightFailed = 1ULL << 21, ReferenceTableHashMismatch = 1ULL << 22,
+    PcmPackingMismatch = 1ULL << 23, SourceHashMismatch = 1ULL << 24,
+    InactiveChannelNonzero = 1ULL << 25, NonzeroOutsideWindow = 1ULL << 26, ReferencePeakViolation = 1ULL << 27 };
 
 struct Integrity {
     uint64_t reasons = 0;

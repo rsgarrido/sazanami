@@ -296,4 +296,13 @@
     <string name="widget_configure_save">Guardar</string>
     <string name="widget_configure_cancel">Cancelar</string>
     <string name="widget_configure_save_failed">No se pudo guardar la apariencia de este widget. Intenta de nuevo.</string>
+    <string name="usb_diagnostics_reference">Reproducir tono USB I/D de referencia (1 s)</string>
+    <string name="usb_diagnostics_reference_running">Ejecutando diagnóstico USB I/D…</string>
+    <string name="usb_diagnostics_reference_note">Diagnóstico de desarrollo de la sesión 8: PCM USB directo AUDIBLE con una señal de NIVEL BAJO. Detén por completo la reproducción normal de Sazanami. BAJA considerablemente el volumen del DAC antes de la primera prueba; no uses volumen normal ni alto. Sonido esperado: tono breve IZQUIERDO, pausa, tono breve DERECHO. Parada automática tras aproximadamente un segundo. Puede ser necesario reconectar físicamente el DAC después. Copia el informe completo antes de reconectar; no repitas inmediatamente. No es reproducción normal de música.</string>
+    <string name="usb_diagnostics_reference_result">Sesión 8, transporte PCM determinista: %1$s</string>
+    <string name="usb_diagnostics_reference_target">PCM16 con signo LE estéreo, 44100 Hz; referencia fija de 441 Hz, pico ±1024; IZQUIERDO → silencio → DERECHO</string>
+    <string name="usb_diagnostics_reference_preflight">Prevalidación de referencia PASS: %1$s; excepción de interfaz: %2$s. Un fallo impide adquirir AC/AS.</string>
+    <string name="usb_diagnostics_reference_manual">Escucha esperada: tono IZQUIERDO → pausa → tono DERECHO. Canales físicos y recuperación de reproducción normal: NO VERIFICADOS AUTOMÁTICAMENTE.</string>
+    <string name="usb_diagnostics_reference_content">Tramas generadas de silencio/IZQUIERDO/DERECHO: %1$s/%2$s/%3$s; pico PCM absoluto: %4$s</string>
+    <string name="usb_diagnostics_reference_hashes">PCM generado FNV-1a: %1$s; carga enviada FNV-1a: %2$s; integridad de fuente verificada: %3$s</string>
 </resources>

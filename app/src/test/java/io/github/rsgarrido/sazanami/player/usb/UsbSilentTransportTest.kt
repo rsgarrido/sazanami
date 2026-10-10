@@ -199,7 +199,7 @@ class UsbSilentTransportTest {
         UsbSilentTransportExperiment.run(selected, 17, 23, connection, { _, _ -> backend })
     }
     private fun snapshot(vararg changed: Pair<String, Long>): UsbIsoNativeSnapshot {
-        val values = mutableMapOf("version" to 1L, "generation" to 17L, "streamGeneration" to 23L, "started" to 1L, "state" to 7L,
+        val values = mutableMapOf("version" to UsbIsoNativeStats.VERSION.toLong(), "generation" to 17L, "streamGeneration" to 23L, "started" to 1L, "state" to 7L,
             "workerStopped" to 1L, "durationUs" to 1008000L, "sourceFramesGenerated" to 1000L, "framesScheduled" to 1000L, "framesSubmitted" to 1000L, "framesCompleted" to 1000L,
             "outUrbsSubmitted" to 25L, "outUrbsCompleted" to 25L, "outPacketsSubmitted" to 200L, "outPacketsCompleted" to 200L,
             "feedbackUrbsSubmitted" to 100L, "feedbackUrbsCompleted" to 100L, "feedbackPacketsValid" to 98L, "feedbackScheduledPackets" to 190L, "outBytesSubmitted" to 4000L, "kernelOutActualBytes" to 4000L)
@@ -207,6 +207,152 @@ class UsbSilentTransportTest {
         return UsbIsoNativeSnapshot(UsbIsoNativeStats.fields.map { values[it] ?: 0L }.toLongArray(), longArrayOf(), longArrayOf())
     }
     private fun native(vararg changed: Pair<String, Long>) = UsbIsoNativeStats.decode(snapshot(*changed), 17, 23)
+    private fun referencePreflight() = UsbReferencePreflight(listOf(1,0,100,UsbReferencePreflight.EXPECTED_HASH,
+        UsbReferencePreflight.EXPECTED_HASH,1024,-1024,1024,1,1,1,98))
+    private fun referenceNative(vararg changed: Pair<String, Long>): UsbIsoTransportResult {
+        val values = mapOf("sourceMode" to 1L, "referencePreflightPass" to 1L, "referenceTableHash" to UsbReferencePreflight.EXPECTED_HASH,
+            "sourcePcmHash" to 0xe397ae906a35c025uL.toLong(), "submittedPcmHash" to 0xe397ae906a35c025uL.toLong(),
+            "sourceFramesGenerated" to 44100L, "framesScheduled" to 44100L, "framesSubmitted" to 44100L, "framesCompleted" to 44100L,
+            "outUrbsSubmitted" to 1000L, "outUrbsCompleted" to 1000L, "outPacketsSubmitted" to 8000L, "outPacketsCompleted" to 8000L,
+            "outBytesSubmitted" to 176400L, "kernelOutActualBytes" to 176400L, "silenceFramesGenerated" to 26500L,
+            "leftToneFramesGenerated" to 8800L, "rightToneFramesGenerated" to 8800L, "referenceActivePerCycle" to 98L,
+            "leftToneActiveSamples" to 8624L, "rightToneActiveSamples" to 8624L, "maxPositiveSample" to 1024L,
+            "minNegativeSample" to -1024L, "peakAbsoluteSample" to 1024L)
+        return native(*(values + changed.toMap()).toList().toTypedArray())
+    }
+    private fun referenceExperiment(fake: ConfigurationFake, backend: BackendFake,
+        preflight: UsbReferencePreflight = referencePreflight()) = runBlocking {
+        UsbSilentTransportExperiment.run(resolution, 17, 23, fake, { _, _ -> backend },
+            mode = UsbPcmDiagnosticMode.REFERENCE, preflight = { preflight })
+    }
+    @Test fun referencePreflightFailurePreventsBothClaimsAndEndpointWork() {
+        val fake = ConfigurationFake()
+        val result = referenceExperiment(fake, BackendFake(fake.events), referencePreflight().copy(values = listOf(0)))
+        assertEquals(UsbSilentStatus.BLOCKED, result.status)
+        assertFalse(fake.events.contains("claimAC")); assertFalse(fake.events.contains("claimAS")); assertFalse(fake.events.contains("native"))
+        assertTrue(fake.events.contains("close")); assertFalse(result.preflight!!.passed)
+        val report = UsbAudioDiagnosticReport.format(UsbAudioDiagnosticState(generation = 17, referenceExperiment = result))
+        assertTrue(report.contains("Reference preflight prevented AC/AS ownership"))
+    }
+    @Test fun referencePreflightValidatesExpectedHashPackingChannelsAndPeaks() {
+        assertTrue(referencePreflight().passed)
+        for (index in listOf(0,2,3,4,5,6,7,8,9,10,11)) {
+            val changed = referencePreflight().values.toMutableList(); changed[index] = 0
+            assertFalse(UsbReferencePreflight(changed).passed)
+        }
+        assertFalse(referencePreflight().copy(exceptionType = "LinkageError").passed)
+        assertEquals("bbd1384f8c503ee1", pcmHashHex(UsbReferencePreflight.EXPECTED_HASH))
+    }
+    @Test fun deterministicSuccessUsesSharedLifecycleWithoutListeningEvidence() {
+        val fake = ConfigurationFake(); val result = referenceExperiment(fake, BackendFake(fake.events).apply { this.result = referenceNative() })
+        assertEquals(UsbSilentStatus.DETERMINISTIC_PCM_TRANSPORT_VERIFIED, result.status)
+        assertEquals(UsbFunctionalAudioRecovery.NOT_VERIFIED, result.functionalRecovery)
+        assertTrue(fake.events.lastIndexOf("setAlt:0") > fake.events.indexOf("nativeStopped"))
+        assertTrue(fake.events.indexOf("restoreClock") > fake.events.indexOf("nativeStopped"))
+        assertTrue(fake.events.indexOf("releaseAS") < fake.events.indexOf("releaseAC"))
+    }
+    @Test fun referenceRequiresCompleteContentAndAllOriginalTransportAccounting() {
+        assertTrue(referenceNative().verified)
+        for (name in listOf("referencePreflightPass", "leftToneFramesGenerated", "rightToneFramesGenerated",
+            "leftToneActiveSamples", "rightToneActiveSamples", "peakAbsoluteSample", "maxPositiveSample",
+            "minNegativeSample", "framesCompleted", "feedbackPacketsValid", "feedbackScheduledPackets", "workerStopped"))
+            assertFalse(referenceNative(name to 0).verified)
+        for (name in listOf("outstandingUrbsFinal", "queueUnderruns", "outPacketErrors", "outUrbErrors",
+            "framesCancelled", "framesNotSubmitted", "unexpectedNonZeroSamples", "inactiveChannelNonZeroSamples",
+            "nonZeroSamplesOutsideToneWindows", "shutdownIncomplete", "duplicateCompletions"))
+            assertFalse(referenceNative(name to 1).verified)
+        assertFalse(referenceNative("submittedPcmHash" to 1).verified)
+        assertFalse(referenceNative("integrityMask" to (1L shl 25)).verified)
+    }
+    @Test fun wrongSourceModeCannotBecomeReferenceSuccess() {
+        val fake = ConfigurationFake(); val result = referenceExperiment(fake, BackendFake(fake.events))
+        assertEquals(UsbSilentStatus.FAILED, result.status)
+        assertEquals("SourceModeMismatch", result.transport!!.exceptionType)
+    }
+    @Test fun failedReferenceKeepsPartialHashesCountersAndRestorationEvidence() {
+        val fake = ConfigurationFake()
+        val partial = referenceNative("submittedPcmHash" to 1, "integrityMask" to (1L shl 24), "framesCompleted" to 20000)
+        val result = referenceExperiment(fake, BackendFake(fake.events).apply { this.result = partial })
+        assertEquals(UsbSilentStatus.FAILED, result.status)
+        assertEquals(partial.count("sourcePcmHash"), result.transport!!.count("sourcePcmHash"))
+        assertEquals(20000L, result.transport!!.count("framesCompleted"))
+        assertTrue(fake.events.contains("restoreClock"))
+    }
+    @Test fun referenceReportSeparatesZeroAndReferenceAndNeverHashesDacConsumption() {
+        val zeroFake = ConfigurationFake()
+        val zero = experiment(zeroFake, BackendFake(zeroFake.events))
+        val referenceFake = ConfigurationFake()
+        val reference = referenceExperiment(referenceFake, BackendFake(referenceFake.events).apply { result = referenceNative() })
+        val report = UsbAudioDiagnosticReport.format(UsbAudioDiagnosticState(generation = 17,
+            silentExperiment = zero, referenceExperiment = reference))
+        val zeroTitle = "Silent Direct USB Transport — Session 7"
+        val referenceTitle = "Deterministic Direct USB PCM — Session 8"
+        assertTrue("Missing ZERO section", report.contains(zeroTitle))
+        assertTrue("Missing REFERENCE section", report.contains(referenceTitle))
+        val zeroSection = report.substringAfter(zeroTitle).substringBefore(referenceTitle)
+        val referenceSection = report.substringAfter(referenceTitle).substringBefore("Raw descriptors")
+        fun contains(section: String, expected: String) =
+            assertTrue("Missing report evidence: $expected", section.contains(expected))
+        fun field(section: String, label: String): String {
+            val lines = section.lineSequence().map { it.trim() }.filter { it.startsWith("$label:") }.toList()
+            assertEquals("Expected exactly one $label field", 1, lines.size)
+            return lines.single().substringAfter(':').trim()
+        }
+
+        contains(zeroSection, "Source: DIGITAL ZERO ONLY")
+        contains(zeroSection, "PCM all-zero buffer validation: PASS")
+        contains(zeroSection, "result=SILENT_TRANSPORT_VERIFIED")
+        assertFalse("ZERO must not describe reference-tone content", zeroSection.contains("Reference: 441 Hz"))
+        assertFalse("ZERO must not label a generated PCM hash", zeroSection.contains("Source PCM hash:"))
+        assertFalse("ZERO must not label a submitted PCM hash", zeroSection.contains("Submitted PCM hash:"))
+        assertFalse("REFERENCE must not claim all-zero content", referenceSection.contains("DIGITAL ZERO ONLY"))
+        assertFalse("REFERENCE must not show all-zero validation", referenceSection.contains("PCM all-zero buffer validation:"))
+        listOf("Reference: 441 Hz", "4410..13209 LEFT", "17620..26419 RIGHT", "bbd1384f8c503ee1",
+            "NOT AUTOMATICALLY VERIFIED", "leftToneFramesGenerated: 8800",
+            "result=DETERMINISTIC_PCM_TRANSPORT_VERIFIED").forEach { contains(referenceSection, it) }
+        assertEquals("e397ae906a35c025", field(referenceSection, "Source PCM hash"))
+        assertEquals("e397ae906a35c025", field(referenceSection, "Submitted PCM hash"))
+        assertEquals("true", field(referenceSection, "Source/submitted hash match").substringBefore(';'))
+        contains(referenceSection, "Payload hash advances only after successful SUBMITURB")
+        // A denial is required; mere absence of a hash label does not prove the evidence boundary.
+        contains(referenceSection, "No completion hash")
+        contains(referenceSection, "or DAC-internal consumed-data hash")
+        contains(referenceSection, "DAC internal reconstruction is not measured")
+        val inventedPcmHash = Regex("""(?i)\b(?:completion|DAC)\b[^:\r\n]*hash:\s*(?:0x)?[0-9a-f]{16}\b""")
+        assertFalse("Must not report a completion or DAC-consumed PCM hash value", inventedPcmHash.containsMatchIn(report))
+        for (section in listOf(zeroSection, referenceSection)) {
+            contains(section, "Kernel OUT actual bytes are raw ISO completion evidence")
+            contains(section, "zero URB/packet status and exact packet length")
+            contains(section, "no DAC-consumption inference")
+            assertFalse("Must not assert verified DAC consumption", section.contains("PCM consumed internally by DAC"))
+            assertFalse("Must not assert verified DAC consumption", section.contains("PCM consumed by DAC verified"))
+        }
+    }
+    @Test fun referenceSnapshotRejectsOversizedOrMalformedPcmExamples() {
+        rejects(snapshot().copy(pcm = LongArray(14 * 7)))
+        rejects(snapshot().copy(pcm = longArrayOf(4411,64,0,256,0,0,0)))
+        rejects(snapshot().copy(pcm = longArrayOf(4411,32768,0,0,0,0,0)))
+    }
+    @Test fun separateReferenceStateParticipatesInBusyGateAndRetainsSilenceEvidence() {
+        val resolution = this.resolution
+        val silence = UsbSilentTransportExperimentResult(17, 22, resolution)
+        val reference = UsbSilentTransportExperimentResult(17, 23, resolution, phase = UsbSilentPhase.CONFIGURING, mode = UsbPcmDiagnosticMode.REFERENCE)
+        val state = UsbAudioDiagnosticState(silentExperiment = silence).withEndpointExperiment(UsbPcmDiagnosticMode.REFERENCE, reference)
+        assertTrue(state.diagnosticOperationRunning); assertEquals(silence, state.silentExperiment)
+        assertEquals(reference, state.endpointExperiment(UsbPcmDiagnosticMode.REFERENCE))
+    }
+    @Test fun referenceRuntimeIsNativeClosedIntegerVectorWithoutAudioOrFileInputs() {
+        val reference = source("cpp/usb_pcm_reference.h").lineSequence().filterNot { it.trimStart().startsWith("//") }.joinToString("\n")
+        val runtime = reference + source("cpp/usb_iso_transport.cpp")
+        listOf("sin(", "cos(", "float ", "double ", "AudioTrack", "AudioSink", "ReplayGain", "libusb", "InputStream",
+            "ByteBuffer", "ifstream", "fopen(", "USBDEVFS_RESET", "setPreferredMixerAttributes").forEach { assertFalse(runtime.contains(it)) }
+        assertTrue(reference.contains("inline constexpr std::array<int16_t, 100>"))
+        assertTrue(reference.contains("index - kLeftStart")); assertTrue(reference.contains("index - kRightStart"))
+        val jni = source("java/io/github/rsgarrido/sazanami/player/usb/UsbFsDiagnostics.kt")
+        assertFalse(jni.contains("pcm: ByteArray")); assertTrue(jni.contains("mode.ordinal"))
+        val controller = source("java/io/github/rsgarrido/sazanami/player/usb/UsbAudioController.kt")
+        assertTrue(controller.contains("if (BuildConfig.DEBUG) runConfigurationDiagnostic(identity, silentRun = true, mode = UsbPcmDiagnosticMode.REFERENCE)"))
+    }
     private fun rejects(packet: UsbIsoNativeSnapshot) { try { UsbIsoNativeStats.decode(packet, 17, 23); fail("Malformed evidence accepted") } catch (_: IllegalArgumentException) {} }
     private inner class BackendFake(private val events: MutableList<String>) : UsbSilentTransportBackend {
         var result = native(); var safe = true

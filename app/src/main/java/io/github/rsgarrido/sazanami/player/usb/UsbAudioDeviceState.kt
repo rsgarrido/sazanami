@@ -52,7 +52,8 @@ internal data class UsbAudioDiagnosticState(
     val usbFsDiagnostics: UsbFsOwnershipDiagnostics? = null,
     val forcedExperiment: UsbAudioForcedExperimentResult? = null,
     val configurationExperiment: UsbAudioConfigurationResult? = null,
-    val silentExperiment: UsbSilentTransportExperimentResult? = null
+    val silentExperiment: UsbSilentTransportExperimentResult? = null,
+    val referenceExperiment: UsbSilentTransportExperimentResult? = null
 ) {
     val selectedDevice: UsbAudioDeviceSnapshot?
         get() = devices.firstOrNull { it.identity == selectedIdentity }
@@ -60,7 +61,12 @@ internal data class UsbAudioDiagnosticState(
         get() = status == UsbAudioDiagnosticStatus.OPENING ||
             clockDiagnostics?.phase == UsbClockDiagnosticPhase.QUERYING || usbFsDiagnostics?.status == UsbFsProbeStatus.QUERYING ||
             forcedExperiment?.phase == UsbForcedPhase.QUERYING || configurationExperiment?.phase == UsbConfigurationPhase.QUERYING ||
-            silentExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true
+            silentExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true ||
+            referenceExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true
+    fun endpointExperiment(mode: UsbPcmDiagnosticMode) =
+        if (mode == UsbPcmDiagnosticMode.ZERO) silentExperiment else referenceExperiment
+    fun withEndpointExperiment(mode: UsbPcmDiagnosticMode, result: UsbSilentTransportExperimentResult?) =
+        if (mode == UsbPcmDiagnosticMode.ZERO) copy(silentExperiment = result) else copy(referenceExperiment = result)
 }
 
 internal data class UsbAudioInspectionToken(val identity: UsbAudioDeviceIdentity, val generation: Long)
