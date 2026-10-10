@@ -1,4 +1,7 @@
 #include "usb_pcm_reference.h"
+#include "usb_iso_stop.h"
+#include "flac/flac_prefix_queue.h"
+#include "flac/flac_snapshot.h"
 #include <jni.h>
 #include <linux/usbdevice_fs.h>
 #include <sys/ioctl.h>
@@ -17,6 +20,7 @@
 
 namespace {
 using namespace sazanami::usbiso;
+namespace fv = sazanami::flacverify;
 // Versioned immutable result schema; mirrored by UsbIsoNativeStats.fields, not a pointer packet.
 enum Field : size_t { Api, Attachment, Stream, Started, StateCode, Reasons, StopCode, DurationUs,
     SourceFrames, ScheduledFrames, SubmittedFrames, CompletedFrames, OutSubmitted, OutCompleted,
@@ -30,8 +34,8 @@ enum Field : size_t { Api, Attachment, Stream, Started, StateCode, Reasons, Stop
     FeedbackInterval, DataInterval, EndpointCapacity, FeedbackHoldover, ShutdownIncomplete, FirstUrbErrorCount,
     FeedbackUrbErrors, LifecycleMask, SourceMode, PreflightPass, ReferenceTableHash, SourcePcmHash, SubmittedPcmHash,
     SilenceFrames, LeftToneFrames, RightToneFrames, LeftActiveSamples, RightActiveSamples,
-    UnexpectedNonzero, InactiveNonzero, OutsideNonzero, MaximumSample, MinimumSample, PeakSample, ActivePerCycle, FieldCount };
-constexpr jint kSnapshotVersion = 2;
+    UnexpectedNonzero, InactiveNonzero, OutsideNonzero, MaximumSample, MinimumSample, PeakSample, ActivePerCycle, PrefixConsumed, PrefixPrimed, PrefixFaults, PrefixStopped, PrefixJoined, EmptyAfterReap, PoolStalls, PoolAtStall, CompletionAgeAtStall, DurationTarget, ActiveAtStop, FieldCount };
+constexpr jint kSnapshotVersion = 4;
 // Preserve unsigned hash bits across JNI without an implementation-defined numeric cast.
 jlong hashBits(uint64_t value) { jlong result; static_assert(sizeof(result) == sizeof(value)); std::memcpy(&result, &value, sizeof(result)); return result; }
 using Clock = std::chrono::steady_clock;
@@ -74,20 +78,24 @@ struct Session {
     Integrity integrity;
     Scheduler scheduler;
     PcmTestSource source;
+    std::shared_ptr<fv::PrefixSource> prefix;
+    const uint64_t durationUs;
+    uint64_t submittedPrefixHash = fv::kOffset;
     uint64_t started = 0, lastValid = 0, lastOutCompletion = 0, serial = 0;
     uint32_t acceptedFeedback = 0;
     unsigned invalidStreak = 0;
     bool stopping = false, ran = false;
-    Stop stopReason = Stop::Duration;
+    StopCause stopCause;
 
-    Session(int borrowedFd, uint64_t a, uint64_t s, const std::array<jint, 17>& config)
+    Session(int borrowedFd, uint64_t a, uint64_t s, const std::array<jint, 17>& config, std::shared_ptr<fv::PrefixSource> prefixSource = nullptr)
         : fd(borrowedFd), attachment(a), stream(s), dataEndpoint(config[4]), feedbackEndpoint(config[8]),
-          dataInterval(config[7]), feedbackInterval(config[11]), payload(capacity(config[6])), source(static_cast<PcmMode>(config[16])) {
+          dataInterval(config[7]), feedbackInterval(config[11]), payload(capacity(config[6])), source(config[16] == 2 ? PcmMode::Zero : static_cast<PcmMode>(config[16])),
+          prefix(std::move(prefixSource)), durationUs(prefix ? fv::kPrefixDurationUs : kDurationUs) {
         stats[Api] = kSnapshotVersion; stats[Attachment] = static_cast<jlong>(a); stats[Stream] = static_cast<jlong>(s);
         stats[DataInterval] = static_cast<jlong>(intervalUs(dataInterval));
         stats[FeedbackInterval] = static_cast<jlong>(intervalUs(feedbackInterval));
         stats[EndpointCapacity] = payload;
-        stats[SourceMode] = config[16];
+        stats[SourceMode] = config[16]; stats[DurationTarget] = static_cast<jlong>(durationUs);
         if (source.mode == PcmMode::Reference) {
             const ReferencePreflight preflight;
             stats[PreflightPass] = preflight.pass() ? 1 : 0; stats[ReferenceTableHash] = hashBits(preflight.actualHash);
@@ -104,7 +112,14 @@ struct Session {
         stats[StateCode] = static_cast<int>(state);
         stats[LifecycleMask] |= 1LL << static_cast<int>(state);
     }
-    void fail(uint64_t reason, Stop stop) { integrity.compromise(reason); if (!stopping) stopReason = stop; }
+    void fail(uint64_t reason, Stop stop) { integrity.compromise(reason); if (!stopping) stopCause.choose(stop); }
+    void failSource() {
+        const auto faults = prefix->queue.faults.load();
+        if (faults & fv::PrefixUnderrun) fail(QueueUnderrun | FlacSourceFault, Stop::Underrun);
+        else if (faults & fv::PrefixEof) fail(FlacSourceFault, Stop::SourceEof);
+        else if (faults == fv::PrefixCancelled) fail(AuthorityChanged, Stop::Requested);
+        else fail(FlacSourceFault, Stop::Source);
+    }
     size_t outstanding(bool feedback) const {
         size_t count = 0;
         for (const auto& slot : slots) if (slot.feedback == feedback && slot.identity.outstanding) ++count;
@@ -112,12 +127,16 @@ struct Session {
     }
     void beginStop() {
         if (stopping) return;
+        stopCause.choose(Stop::Duration);
+        stats[ActiveAtStop] = static_cast<jlong>(monotonicUs() - started);
         stopping = true; stats[OutAtStop] = static_cast<jlong>(outstanding(false)); stats[FeedbackAtStop] = static_cast<jlong>(outstanding(true));
         move(State::StopRequested); move(State::Draining);
+        if (prefix) prefix->finish(); // Wake/join producer before restoration; no detached decode worker.
     }
     bool submit(Slot& slot) {
-        if (stopping || requestedStop.load() != 0 || !integrity.valid()) return false;
-        if (monotonicUs() - started >= kDurationUs) return false;
+        if (stopping || stopCause.chosen || requestedStop.load() != 0 || !integrity.valid()) return false;
+        if (prefix && prefix->queue.faults.load()) { failSource(); return false; }
+        if (durationReached(started, monotonicUs(), durationUs)) { stopCause.choose(Stop::Duration); return false; }
         if (slot.identity.outstanding) { fail(SchedulerInvalid, Stop::Accounting); return false; }
         auto* urb = slot.urb.get();
         std::memset(urb, 0, sizeof(usbdevfs_urb) + slot.packets * sizeof(usbdevfs_iso_packet_desc));
@@ -126,6 +145,8 @@ struct Session {
         urb->flags = USBDEVFS_URB_ISO_ASAP; // Kernel derives interval from the active endpoint descriptor.
         urb->number_of_packets = static_cast<int>(slot.packets); urb->buffer = slot.buffer.data();
         urb->usercontext = &slot.identity;
+        const auto schedulerBefore = scheduler;
+        const auto scheduledBefore = stats[ScheduledFrames], bootstrapBefore = stats[BootstrapPackets], feedbackBefore = stats[FeedbackScheduledPackets];
         uint32_t length = 0, frameCount = 0;
         if (slot.feedback) {
             std::fill(slot.buffer.begin(), slot.buffer.end(), 0);
@@ -139,7 +160,7 @@ struct Session {
                 stats[ScheduledFrames] += frames;
                 const uint64_t bytes = static_cast<uint64_t>(frames) * kBytesPerFrame;
                 if (!packetFits(frames, payload) || length + bytes > slot.buffer.size()) { fail(CapacityExceeded, Stop::Capacity); return false; }
-                source.fill(slot.buffer.data() + length, static_cast<uint64_t>(stats[SubmittedFrames]) + frameCount, frames);
+                if (!prefix) source.fill(slot.buffer.data() + length, static_cast<uint64_t>(stats[SubmittedFrames]) + frameCount, frames);
                 // Validate the entire exact packed region once, immediately before submission.
                 slot.frames[i] = frames; frameCount += frames;
                 urb->iso_frame_desc[i].length = static_cast<unsigned>(bytes); length += static_cast<unsigned>(bytes);
@@ -148,7 +169,36 @@ struct Session {
         }
         // Exact packed lengths only: stale/unused buffer capacity is never submitted.
         urb->buffer_length = static_cast<int>(length);
-        if (!slot.feedback && !source.inspect(slot.buffer.data(), length, static_cast<uint64_t>(stats[SubmittedFrames]), frameCount)) {
+        if (prefix && !slot.feedback) {
+            if (prefix->queue.faults.load()) { failSource(); return false; }
+            if (durationReached(started, monotonicUs(), durationUs)) {
+                // Deadline crossed while preparing headers: this candidate was never reserved or submitted.
+                scheduler = schedulerBefore; stats[ScheduledFrames] = scheduledBefore;
+                stats[BootstrapPackets] = bootstrapBefore; stats[FeedbackScheduledPackets] = feedbackBefore;
+                stopCause.choose(Stop::Duration); return false;
+            }
+            const auto reservation = prefix->queue.reserve(slot.buffer.data(), frameCount);
+            if (reservation != fv::ReserveResult::Available) {
+                switch (reservation) {
+                    case fv::ReserveResult::InsufficientFrames: fail(QueueUnderrun | FlacSourceFault, Stop::Underrun); break;
+                    case fv::ReserveResult::SourceEof: fail(FlacSourceFault, Stop::SourceEof); break;
+                    case fv::ReserveResult::Cancelled:
+                    case fv::ReserveResult::StopRequested: fail(AuthorityChanged, Stop::Requested); break;
+                    case fv::ReserveResult::InvalidState: fail(SchedulerInvalid | FlacSourceFault, Stop::Accounting); break;
+                    default: fail(FlacSourceFault, Stop::Source); break;
+                }
+                return false;
+            }
+            if (!prefix->queue.validate(slot.buffer.data(), length)) {
+                // A producer fault during copying is not evidence that the copied bytes were mutated.
+                const auto faults = prefix->queue.faults.load();
+                if (!faults || (faults & fv::PrefixHash)) fail(SourceHashMismatch, Stop::Source);
+                else failSource();
+                return false;
+            }
+        }
+        if (prefix && prefix->queue.faults.load()) { failSource(); return false; }
+        if (!slot.feedback && !prefix && !source.inspect(slot.buffer.data(), length, static_cast<uint64_t>(stats[SubmittedFrames]), frameCount)) {
             fail(source.mode == PcmMode::Zero ? NonzeroPcm : source.reasons, Stop::Accounting); return false;
         }
         if (requestedStop.load() != 0) { fail(AuthorityChanged, Stop::Requested); return false; }
@@ -161,7 +211,14 @@ struct Session {
         }
         if (!slot.identity.submit(attachment, stream, ++serial)) { fail(SchedulerInvalid, Stop::Accounting); return false; }
         ++stats[slot.feedback ? FeedbackSubmitted : OutSubmitted];
-        if (!slot.feedback) { source.submitted(slot.buffer.data(), length); stats[SubmittedFrames] += frameCount; stats[OutBytesSubmitted] += length; stats[OutPacketsSubmitted] += slot.packets; }
+        if (!slot.feedback) {
+            if (prefix) {
+                submittedPrefixHash = fv::hashBytes(submittedPrefixHash, slot.buffer.data(), length);
+                if (!prefix->queue.commit()) fail(FlacSourceFault, Stop::Source);
+                if (prefix->queue.consumedHash != submittedPrefixHash) fail(SourceHashMismatch, Stop::Source);
+            } else source.submitted(slot.buffer.data(), length);
+            stats[SubmittedFrames] += frameCount; stats[OutBytesSubmitted] += length; stats[OutPacketsSubmitted] += slot.packets;
+        }
         return true;
     }
     void packetExample(const Slot& slot, unsigned i, int urbStatus) {
@@ -280,7 +337,20 @@ struct Session {
         }
         stats[OutstandingFinal] = static_cast<jlong>(outstanding(false) + outstanding(true));
         if (stats[OutstandingFinal]) { integrity.compromise(ShutdownUnaccounted); stats[ShutdownIncomplete] = 1; }
-        stats[SourceFrames] = static_cast<jlong>(source.generated); stats[PcmByteOr] = source.zero.byteOr;
+        if (prefix) {
+            stats[SourceFrames] = static_cast<jlong>(prefix->queue.head.load());
+            stats[PrefixConsumed] = stats[SourceFrames]; stats[PrefixPrimed] = prefix->primed.load();
+            stats[PrefixFaults] = static_cast<jlong>(prefix->queue.faults.load()); stats[PrefixStopped] = prefix->stopped.load();
+            stats[PrefixJoined] = prefix->joined.load(); stats[SourcePcmHash] = hashBits(prefix->queue.consumedHash);
+            stats[Underruns] = static_cast<jlong>(prefix->queue.underruns.load());
+            if (prefix->queue.underruns.load()) integrity.compromise(QueueUnderrun);
+            stats[SubmittedPcmHash] = hashBits(submittedPrefixHash);
+            stats[NotSubmittedFrames] = std::max(stats[NotSubmittedFrames], static_cast<jlong>(prefix->queue.prepared));
+            source.exampleCount = prefix->queue.exampleCount;
+            for (size_t i=0;i<source.exampleCount;++i) source.examples[i]=prefix->queue.examples[i];
+            if (stats[PrefixFaults]) integrity.compromise(FlacSourceFault);
+            if (prefix->queue.consumedHash != submittedPrefixHash) integrity.compromise(SourceHashMismatch);
+        } else stats[SourceFrames] = static_cast<jlong>(source.generated); stats[PcmByteOr] = source.zero.byteOr;
         if (source.mode == PcmMode::Reference) {
             stats[SourcePcmHash] = hashBits(source.sourceHash); stats[SubmittedPcmHash] = hashBits(source.submittedHash);
             stats[SilenceFrames] = static_cast<jlong>(source.silence);
@@ -303,7 +373,7 @@ struct Session {
         stats[LastFeedbackAge] = lastValid ? static_cast<jlong>(monotonicUs() - lastValid) : -1;
         stats[DurationUs] = static_cast<jlong>(monotonicUs() - started);
         move(State::Stopped); stats[WorkerStopped] = 1;
-        stats[Reasons] = static_cast<jlong>(integrity.reasons); stats[StopCode] = static_cast<int>(stopReason);
+        stats[Reasons] = static_cast<jlong>(integrity.reasons); stats[StopCode] = static_cast<int>(stopCause.value);
     }
     void run() {
         if (executing.exchange(true)) throw std::invalid_argument("Transport already executing");
@@ -312,33 +382,48 @@ struct Session {
         ran = true;
         started = monotonicUs(); lastOutCompletion = started; stats[Started] = 1;
         move(State::Starting); move(State::Bootstrap);
+        if (prefix) prefix->beginStreaming();
         try {
             // Receive feedback immediately, before priming a modest nominal OUT queue.
-            for (size_t i = kOutPool; i < slots.size() && integrity.valid(); ++i) submit(slots[i]);
-            for (size_t i = 0; i < kOutPool && integrity.valid(); ++i) submit(slots[i]);
-            while (integrity.valid()) {
+            for (size_t i = kOutPool; i < slots.size() && integrity.valid() && !stopCause.chosen; ++i) submit(slots[i]);
+            for (size_t i = 0; i < kOutPool && integrity.valid() && !stopCause.chosen; ++i) submit(slots[i]);
+            while (integrity.valid() && !stopCause.chosen) {
                 const uint64_t now = monotonicUs();
+                if (prefix && prefix->queue.faults.load()) { failSource(); break; }
                 if (requestedStop.load()) { fail(AuthorityChanged, requestedStop.load() == 2 ? Stop::AuthorityLost : Stop::Requested); break; }
-                if (now - started >= kDurationUs) break;
+                if (durationReached(started, now, durationUs)) { stopCause.choose(Stop::Duration); break; }
                 if (feedbackExpired(started, lastValid, now, static_cast<uint64_t>(stats[FeedbackHoldover]))) {
                     ++stats[FeedbackTimeouts]; fail(FeedbackTimeout, Stop::Feedback); break;
                 }
                 for (unsigned i = 0; i < 64 && reapOne(); ++i) {}
                 if (!integrity.valid()) break;
-                if (monotonicUs() - started >= kDurationUs) break;
-                if (outstanding(false) == 0 || monotonicUs() - lastOutCompletion > kQueueWatchdogUs) {
+                if (durationReached(started, monotonicUs(), durationUs)) { stopCause.choose(Stop::Duration); break; }
+                if (!prefix && (outstanding(false) == 0 || monotonicUs() - lastOutCompletion > kQueueWatchdogUs)) {
+                    // Preserve Session 7/8's established watchdog and evidence semantics.
                     ++stats[Underruns]; fail(QueueUnderrun, Stop::Underrun); break;
                 }
-                for (auto& slot : slots) if (!slot.identity.outstanding && integrity.valid()) submit(slot);
+                if (prefix && outstanding(false) == 0) ++stats[EmptyAfterReap];
+                // A reaped slot is free capacity, not missing source PCM. Refill before judging OUT-pool progress.
+                for (auto& slot : slots) if (!slot.identity.outstanding && integrity.valid() && !stopCause.chosen) submit(slot);
+                if (!integrity.valid() || stopCause.chosen) break;
+                if (durationReached(started, monotonicUs(), durationUs)) { stopCause.choose(Stop::Duration); break; }
+                if (prefix && outPoolStalled(outstanding(false), monotonicUs() - lastOutCompletion)) {
+                    ++stats[PoolStalls]; stats[PoolAtStall] = static_cast<jlong>(outstanding(false));
+                    stats[CompletionAgeAtStall] = static_cast<jlong>(monotonicUs() - lastOutCompletion);
+                    fail(OutPoolStall, Stop::OutPoolStall); break;
+                }
                 pollCompletion();
             }
         } catch (...) { fail(WorkerFailure, Stop::Worker); }
-        shutdown(); // No execution context returns while continuing to submit/reap in the background.
+        shutdown();
+        prefix.reset(); // Queue no longer needed by copied URB buffers; owner retains final source evidence.
+        // No execution context returns while continuing to submit/reap in the background.
     }
 };
 
 std::mutex registryMutex;
 std::unordered_map<jlong, std::shared_ptr<Session>> registry;
+std::unordered_map<jlong, std::shared_ptr<fv::PrefixSource>> prefixRegistry;
 jlong nextHandle = 1;
 void error(JNIEnv* env, const char* type, const char* message) {
     jclass cls = env->FindClass(type);
@@ -387,7 +472,7 @@ Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeReferencePre
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeCreateSilentTransport(
-    JNIEnv* env, jobject, jint fd, jlong attachment, jlong stream, jintArray configuration) {
+    JNIEnv* env, jobject, jint fd, jlong attachment, jlong stream, jintArray configuration, jlong prefixHandle) {
     if (fd < 0 || attachment < 1 || stream < 1 || !configuration || env->GetArrayLength(configuration) != 17) {
         error(env, "java/lang/IllegalArgumentException", "Invalid silent transport identity/configuration"); return 0;
     }
@@ -397,8 +482,23 @@ Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeCreateSilent
         config[2] < 1 || config[2] > 255 || config[3] < 0 || config[3] > 255 || config[2] == config[3] ||
         config[4] < 1 || config[4] > 15 || config[5] != 5 || !capacity(config[6]) || config[7] < 1 || config[7] > 3 ||
         config[8] < 0x81 || config[8] > 0x8f || config[9] != 0x11 || config[10] != 4 || config[11] < 1 || config[11] > 7 ||
-        config[12] != static_cast<int>(kRate) || config[13] != 2 || config[14] != 2 || config[15] != 16 || config[16] < 0 || config[16] > 1) {
+        config[12] != static_cast<int>(kRate) || config[13] != 2 || config[14] != 2 || config[15] != 16 || config[16] < 0 || config[16] > 2) {
         error(env, "java/lang/IllegalArgumentException", "Unsupported bounded UAC2 silence target"); return 0;
+    }
+    std::shared_ptr<fv::PrefixSource> prefixSource;
+    {
+        std::lock_guard<std::mutex> lock(registryMutex);
+        if (config[16] == 2) {
+            auto found = prefixRegistry.find(prefixHandle);
+            if (found == prefixRegistry.end() || found->second->attachment != static_cast<uint64_t>(attachment) ||
+                found->second->stream != static_cast<uint64_t>(stream) || found->second->primed.load() < fv::kPrefixPrebuffer ||
+                found->second->queue.faults.load() || found->second->queue.stop.load()) {
+                error(env, "java/lang/IllegalStateException", "FLAC source not primed/current/healthy"); return 0;
+            }
+            prefixSource=found->second;
+        } else if (prefixHandle || !prefixRegistry.empty()) {
+            error(env, "java/lang/IllegalStateException", "FLAC source registry busy"); return 0;
+        }
     }
     const int speed = ::ioctl(fd, USBDEVFS_GET_SPEED);
     const int saved = speed < 0 ? errno : 0;
@@ -410,7 +510,7 @@ Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeCreateSilent
         error(env, "java/lang/IllegalArgumentException", "Insufficient/invalid service-interval capacity"); return 0;
     }
     try {
-        auto session = std::make_shared<Session>(fd, static_cast<uint64_t>(attachment), static_cast<uint64_t>(stream), config);
+        auto session = std::make_shared<Session>(fd, static_cast<uint64_t>(attachment), static_cast<uint64_t>(stream), config, prefixSource);
         std::lock_guard<std::mutex> lock(registryMutex);
         if (!registry.empty() || nextHandle == std::numeric_limits<jlong>::max()) throw std::invalid_argument("Transport registry busy/exhausted");
         const jlong handle = nextHandle++; registry.emplace(handle, std::move(session)); return handle;
@@ -434,7 +534,7 @@ Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeStopSilentTr
 extern "C" JNIEXPORT jboolean JNICALL
 Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeSilentTransportIdle(JNIEnv*, jobject) {
     std::lock_guard<std::mutex> lock(registryMutex);
-    return registry.empty() ? JNI_TRUE : JNI_FALSE;
+    return registry.empty() && prefixRegistry.empty() ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -447,4 +547,84 @@ Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeDestroySilen
     if (!connectionClosed && session->outstanding(false) + session->outstanding(true) != 0) return JNI_FALSE;
     // Close has synchronously destroyed all usbfs async work; only then may unreaped pools be freed.
     session->fd = -1; registry.erase(found); return JNI_TRUE;
+}
+
+namespace {
+std::shared_ptr<fv::PrefixSource> lookupPrefix(jlong handle,jlong attachment,jlong stream) {
+    std::lock_guard<std::mutex> lock(registryMutex);
+    auto found=prefixRegistry.find(handle);
+    if (found==prefixRegistry.end() || found->second->attachment!=static_cast<uint64_t>(attachment) ||
+        found->second->stream!=static_cast<uint64_t>(stream)) return nullptr;
+    return found->second;
+}
+jobject prefixSnapshot(JNIEnv* env,const fv::PrefixSource& source,bool released) {
+    jclass cls=env->FindClass("io/github/rsgarrido/sazanami/player/usb/UsbFlacSourceSnapshot");
+    if (!cls) return nullptr;
+    auto constructor=env->GetMethodID(cls,"<init>","([J[JLjava/lang/Object;)V");
+    if (!constructor) return nullptr;
+    const auto evidence=source.evidence(released);
+    std::array<jlong,fv::PrefixFieldCount> values{};
+    std::copy(evidence.begin(),evidence.end(),values.begin());
+    auto numbers=env->NewLongArray(fv::PrefixFieldCount);
+    auto examples=env->NewLongArray(static_cast<jsize>(source.queue.exampleCount*7));
+    if (!numbers || !examples) return nullptr;
+    std::array<jlong,5*7> rows{};
+    for (size_t i=0;i<source.queue.exampleCount;++i)
+        for (size_t j=0;j<7;++j) rows[i*7+j]=source.queue.examples[i][j];
+    env->SetLongArrayRegion(numbers,0,fv::PrefixFieldCount,values.data());
+    env->SetLongArrayRegion(examples,0,static_cast<jsize>(source.queue.exampleCount*7),rows.data());
+    jobject decoder=source.joined.load()?fv::snapshotFlac(env,source.decoder):nullptr;
+    if (env->ExceptionCheck()) return nullptr;
+    return env->NewObject(cls,constructor,numbers,examples,decoder);
+}
+}
+extern "C" JNIEXPORT jlong JNICALL
+Java_io_github_rsgarrido_sazanami_player_usb_UsbFlacPrefixNative_nativeCreate(JNIEnv* env,jobject,jint borrowedFd,jlong attachment,jlong stream) {
+    if (borrowedFd<0 || attachment<1 || stream<1) { error(env,"java/lang/IllegalArgumentException","Invalid FLAC prefix identity");return 0; }
+    const int duplicate=::dup(borrowedFd);
+    if (duplicate<0) return -static_cast<jlong>(errno);
+    fv::OwnedFd pending(duplicate);
+    try {
+        auto source=std::make_shared<fv::PrefixSource>(std::move(pending),attachment,stream);
+        std::lock_guard<std::mutex> lock(registryMutex);
+        if (!registry.empty() || !prefixRegistry.empty() || nextHandle==std::numeric_limits<jlong>::max())
+            throw std::invalid_argument("Endpoint/source registry busy");
+        const jlong handle=nextHandle++;
+        source->start();prefixRegistry.emplace(handle,std::move(source));
+        return handle;
+    } catch (...) { error(env,"java/lang/IllegalStateException","FLAC prefix allocation/start unavailable");return 0; }
+}
+extern "C" JNIEXPORT jobject JNICALL
+Java_io_github_rsgarrido_sazanami_player_usb_UsbFlacPrefixNative_nativePrime(JNIEnv* env,jobject,jlong handle,jlong attachment,jlong stream) {
+    auto source=lookupPrefix(handle,attachment,stream);
+    if (!source) { error(env,"java/lang/IllegalArgumentException","Stale FLAC prefix");return nullptr; }
+    source->prime();
+    return prefixSnapshot(env,*source,false);
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_io_github_rsgarrido_sazanami_player_usb_UsbFlacPrefixNative_nativeHealthy(JNIEnv*,jobject,jlong handle,jlong attachment,jlong stream) {
+    auto source=lookupPrefix(handle,attachment,stream);
+    return source && source->primed.load()>=fv::kPrefixPrebuffer && source->metadataReady.load() &&
+        !source->queue.faults.load() && !source->queue.stop.load() ? JNI_TRUE : JNI_FALSE;
+}
+extern "C" JNIEXPORT void JNICALL
+Java_io_github_rsgarrido_sazanami_player_usb_UsbFlacPrefixNative_nativeStop(JNIEnv*,jobject,jlong handle,jlong attachment,jlong stream) {
+    auto source=lookupPrefix(handle,attachment,stream);
+    if (source && !source->queue.stop.load()) source->queue.fail(fv::PrefixCancelled);
+}
+extern "C" JNIEXPORT jobject JNICALL
+Java_io_github_rsgarrido_sazanami_player_usb_UsbFlacPrefixNative_nativeFinish(JNIEnv* env,jobject,jlong handle,jlong attachment,jlong stream) {
+    auto source=lookupPrefix(handle,attachment,stream);
+    if (!source) { error(env,"java/lang/IllegalArgumentException","Stale FLAC prefix");return nullptr; }
+    source->finish();
+    {
+        std::lock_guard<std::mutex> lock(registryMutex);
+        // Inactive sessions own only copied URB payloads; discard any source reference on failed-start paths.
+        for (auto& entry : registry) {
+            if (entry.second->prefix == source && !entry.second->executing.load()) entry.second->prefix.reset();
+        }
+        prefixRegistry.erase(handle);
+    }
+    // Queue is only held here; USB run released its source reference after copying final evidence.
+    return prefixSnapshot(env,*source,true);
 }

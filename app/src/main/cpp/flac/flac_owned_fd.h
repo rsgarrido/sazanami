@@ -4,6 +4,7 @@ namespace sazanami::flacverify {
 struct OwnedFd {
     int value;
     explicit OwnedFd(int duplicate) : value(duplicate) {}
+    OwnedFd(OwnedFd&& other) noexcept : value(other.value) { other.value=-1; }
     OwnedFd(const OwnedFd&) = delete;
     OwnedFd& operator=(const OwnedFd&) = delete;
     bool closeNow() noexcept {

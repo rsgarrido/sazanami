@@ -42,13 +42,14 @@ struct Pcm {
         examples[slot] = {static_cast<int64_t>(frames), left, right, packed[0], packed[1], packed[2], packed[3]};
         exampleUsed[slot] = true;
     }
-    bool append(int32_t left, int32_t right) noexcept {
+    bool append(int32_t left, int32_t right, uint8_t* canonical = nullptr) noexcept {
         if (failure != Outcome::Pending) return false;
         if (!inRange(left) || !inRange(right)) {
             rangeErrors += !inRange(left) + !inRange(right); failure = Outcome::SampleRange; return false;
         }
         if (!canAdd(frames, 1) || !canAdd(bytes, 4)) { failure = Outcome::CounterOverflow; return false; }
         uint8_t packed[4]; pack16(packed, left); pack16(packed + 2, right);
+        if (canonical) std::memcpy(canonical, packed, 4);
         const int32_t low = left < right ? left : right, high = left > right ? left : right;
         if (frames == 0 || low < minimum) { minimum = low; example(4, left, right, packed); }
         if (frames == 0 || high > maximum) { maximum = high; example(5, left, right, packed); }

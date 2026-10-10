@@ -9,7 +9,7 @@
 // Uses the installed NDK Linux UAPI directly. No driver implementation, local
 // ioctl declarations, fd owner, persistent session, or streaming transport.
 namespace {
-constexpr jint kApiVersion = 6;
+constexpr jint kApiVersion = 7;
 constexpr int kMaxInterfaces = 256;
 constexpr int kMaxRecords = 10 + 3 * kMaxInterfaces;
 static_assert(sizeof(unsigned int) == 4, "usbfs interface argument must be a UAPI unsigned int");

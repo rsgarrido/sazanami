@@ -14,13 +14,15 @@ import kotlinx.coroutines.withContext
  */
 internal class UsbNativeSilentTransport(private val borrowedFd: Int, private val plan: UsbSilentTransportPlan,
     private val generation: Long, private val stream: Long, private val accessFailure: () -> UsbClockQueryStatus?,
-    private val mode: UsbPcmDiagnosticMode = UsbPcmDiagnosticMode.ZERO) : UsbSilentTransportBackend {
+    private val mode: UsbPcmDiagnosticMode = UsbPcmDiagnosticMode.ZERO,
+    private val prefixSource: UsbFlacSourceLifecycle? = null) : UsbSilentTransportBackend {
     @Volatile private var handle = 0L
     @Volatile private var stopRequested = 0
     override var usbCleanupSafe = true; private set
     override var memoryReleased = true; private set
     fun requestStop(authority: Boolean = true) {
         stopRequested = if (authority) 2 else 1
+        prefixSource?.requestStop()
         val current = handle
         if (current != 0L) runCatching { UsbFsDiagnostics.stopSilentTransport(current, generation, stream, stopRequested) }
     }
@@ -32,7 +34,7 @@ internal class UsbNativeSilentTransport(private val borrowedFd: Int, private val
             try {
                 authority = accessFailure()
                 if (authority != null || !parent.isActive || stopRequested != 0) return@withContext
-                val created = UsbFsDiagnostics.createSilentTransport(borrowedFd, plan, generation, stream, mode)
+                val created = UsbFsDiagnostics.createSilentTransport(borrowedFd, plan, generation, stream, mode, prefixSource?.handle ?: 0L)
                 if (created < 0) {
                     val errno = -created
                     authority = when (errno) { 19L -> UsbClockQueryStatus.DEVICE_DISCONNECTED; 1L, 13L -> UsbClockQueryStatus.PERMISSION_LOST
@@ -68,6 +70,7 @@ internal class UsbNativeSilentTransport(private val borrowedFd: Int, private val
                     usbCleanupSafe = memoryReleased
                     if (memoryReleased) handle = 0
                 }
+                prefixSource?.finish()
             }
         }
         if ((result.count("integrityMask") and (1L shl 13)) != 0L || result.count("submitErrno") == 19L || result.count("reapErrno") == 19L)

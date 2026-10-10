@@ -53,7 +53,8 @@ internal data class UsbAudioDiagnosticState(
     val forcedExperiment: UsbAudioForcedExperimentResult? = null,
     val configurationExperiment: UsbAudioConfigurationResult? = null,
     val silentExperiment: UsbSilentTransportExperimentResult? = null,
-    val referenceExperiment: UsbSilentTransportExperimentResult? = null
+    val referenceExperiment: UsbSilentTransportExperimentResult? = null,
+    val flacUsbExperiment: UsbSilentTransportExperimentResult? = null
 ) {
     val selectedDevice: UsbAudioDeviceSnapshot?
         get() = devices.firstOrNull { it.identity == selectedIdentity }
@@ -62,11 +63,20 @@ internal data class UsbAudioDiagnosticState(
             clockDiagnostics?.phase == UsbClockDiagnosticPhase.QUERYING || usbFsDiagnostics?.status == UsbFsProbeStatus.QUERYING ||
             forcedExperiment?.phase == UsbForcedPhase.QUERYING || configurationExperiment?.phase == UsbConfigurationPhase.QUERYING ||
             silentExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true ||
-            referenceExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true
+            referenceExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true ||
+            flacUsbExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true
     fun endpointExperiment(mode: UsbPcmDiagnosticMode) =
-        if (mode == UsbPcmDiagnosticMode.ZERO) silentExperiment else referenceExperiment
+        when (mode) {
+            UsbPcmDiagnosticMode.ZERO -> silentExperiment
+            UsbPcmDiagnosticMode.REFERENCE -> referenceExperiment
+            UsbPcmDiagnosticMode.FLAC_PREFIX -> flacUsbExperiment
+        }
     fun withEndpointExperiment(mode: UsbPcmDiagnosticMode, result: UsbSilentTransportExperimentResult?) =
-        if (mode == UsbPcmDiagnosticMode.ZERO) copy(silentExperiment = result) else copy(referenceExperiment = result)
+        when (mode) {
+            UsbPcmDiagnosticMode.ZERO -> copy(silentExperiment = result)
+            UsbPcmDiagnosticMode.REFERENCE -> copy(referenceExperiment = result)
+            UsbPcmDiagnosticMode.FLAC_PREFIX -> copy(flacUsbExperiment = result)
+        }
 }
 
 internal data class UsbAudioInspectionToken(val identity: UsbAudioDeviceIdentity, val generation: Long)

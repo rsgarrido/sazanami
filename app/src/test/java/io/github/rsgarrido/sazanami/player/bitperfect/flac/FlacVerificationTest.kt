@@ -126,7 +126,7 @@ class FlacVerificationTest {
         assertFalse(controller.contains("getDisplayName")); assertFalse(controller.contains("takePersistableUriPermission"))
     }
     @Test fun newSourceHasNoPlaybackUsbFilePathOrFloatApi() {
-        val native = source("cpp/flac/flac_verifier.cpp") + source("cpp/flac/flac_pcm_core.h")
+        val native = source("cpp/flac/flac_verifier.cpp") + source("cpp/flac/flac_decode_core.h") + source("cpp/flac/flac_pcm_core.h")
         val kotlin = source("java/io/github/rsgarrido/sazanami/player/bitperfect/flac/FlacNativeVerifier.kt") +
             source("java/io/github/rsgarrido/sazanami/player/bitperfect/flac/FlacVerificationController.kt")
         for (forbidden in listOf("AudioTrack","ExoPlayer","MediaCodec","AudioSink","UsbFsDiagnostics",
@@ -135,8 +135,12 @@ class FlacVerificationTest {
         assertFalse(kotlin.contains("File(uri")); assertFalse(native.contains("init_ogg_stream("))
     }
     @Test fun libFlacMd5ApiAndErrorStopsAreExplicit() {
-        val native = source("cpp/flac/flac_verifier.cpp")
-        assertTrue(native.indexOf("set_md5_checking(decoder.get(), true)") < native.indexOf("init_stream(decoder.get()"))
+        val native = source("cpp/flac/flac_decode_core.h")
+        assertTrue(native.contains("bool whole = true"))
+        assertTrue(source("cpp/flac/flac_verifier.cpp").contains("Verification verification(std::move(pending), [=]"))
+        assertFalse(source("cpp/flac/flac_verifier.cpp").contains(", false)"))
+        assertTrue(native.contains("set_md5_checking(decoder.get(), wholeFile)"))
+        assertTrue(native.indexOf("set_md5_checking(decoder.get(), wholeFile)") < native.indexOf("init_stream(decoder.get()"))
         assertTrue(native.indexOf("facts[DecoderState] = FLAC__stream_decoder_get_state") < native.indexOf("facts[FinishOk] = FLAC__stream_decoder_finish"))
         assertTrue(native.contains("v.failure != Outcome::Pending"))
         assertFalse(native.contains("stream_decoder_seek_absolute(")); assertFalse(native.contains("stream_decoder_flush("))
@@ -145,7 +149,7 @@ class FlacVerificationTest {
         val native = source("cpp/flac/flac_verifier.cpp")
         val kotlin = source("java/io/github/rsgarrido/sazanami/player/bitperfect/flac/FlacVerificationController.kt")
         assertTrue(native.contains("::dup(borrowedFd)")); assertFalse(native.contains("::close(borrowedFd)"))
-        assertTrue(native.indexOf("verification.finalize()") < native.indexOf("return snapshot(env, verification)"))
+        assertTrue(native.indexOf("verification.finalize()") < native.indexOf("return snapshotFlac(env, verification)"))
         assertTrue(kotlin.contains("withContext(NonCancellable)")); assertTrue(kotlin.contains("worker.await()"))
         assertTrue(kotlin.contains("generation == request && parent.isActive && !flag.cancelled"))
         assertTrue(kotlin.contains("descriptor.close()")); assertFalse(native.contains(".detach("))

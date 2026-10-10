@@ -63,7 +63,10 @@ internal fun UsbAudioDiagnosticsSection() {
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        if (BuildConfig.DEBUG) FlacVerificationDiagnosticsSection(flacController, flacState)
+        if (BuildConfig.DEBUG) {
+            FlacVerificationDiagnosticsSection(flacController, flacState)
+            UsbFlacPlaybackDiagnosticsSection(state)
+        }
         Text(diagnosticsTitle, style = MaterialTheme.typography.titleMedium)
         Text(stringResource(R.string.usb_diagnostics_note), style = MaterialTheme.typography.bodySmall)
         if (!state.serviceAvailable) {

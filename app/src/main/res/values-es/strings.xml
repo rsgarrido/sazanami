@@ -315,4 +315,12 @@
     <string name="flac_verification_md5">MD5 STREAMINFO disponible: %1$s (1 disponible, 0 no disponible)</string>
     <string name="flac_verification_pcm">Bytes PCM16 LE canónicos: %1$s; FNV-1a: %2$s</string>
     <string name="flac_verification_scope">Salida de audio: NINGUNA · USB usado: NO · Reproducción de canciones Bit-perfect: NO IMPLEMENTADA</string>
+    <string name="usb_flac_title">Transporte USB directo de FLAC acotado — Sesión 10</string>
+    <string name="usb_flac_action">Reproducir FLAC directamente por USB (5 s)</string>
+    <string name="usb_flac_warning">Detén la reproducción normal primero. La música real puede alcanzar el nivel máximo: baja el volumen del KA15 de los 60A habituales a unos 15A–20A para la primera prueba. No subas el volumen durante esa prueba, aunque se escuche bajo. Espera la parada automática; no repitas inmediatamente. Copia el informe completo antes de reconectar.</string>
+    <string name="usb_flac_result">Sesión 10: %1$s</string>
+    <string name="usb_flac_queue">Cola: %1$s precargados / 8192 objetivo / 16384 capacidad; consumidos=%2$s; agotamientos=%3$s</string>
+    <string name="usb_flac_hashes">FNV de origen consumido=%1$s; FNV enviado por USB=%2$s</string>
+    <string name="usb_flac_cleanup">Restauración=%1$s; AS liberada=%2$s; AC liberada=%3$s; fd original de FLAC cerrado=%4$s</string>
+    <string name="usb_flac_scope">Solo FLAC nativo: 44100 Hz / estéreo / 16 bits, desde el fotograma 0. MD5 del archivo completo: NO APLICABLE — prefijo acotado. Se esperan unos cinco segundos de la pista seleccionada. La escucha, la pantalla del DAC y la recuperación de la reproducción normal requieren observación manual. La reproducción Bit-perfect de producción y la integración con el reproductor normal siguen sin implementarse.</string>
 </resources>

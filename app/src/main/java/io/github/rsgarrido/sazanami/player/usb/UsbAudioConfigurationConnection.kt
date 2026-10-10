@@ -22,9 +22,10 @@ internal class UsbAudioConfigurationConnection private constructor(
     @Volatile private var silent: UsbNativeSilentTransport? = null
     fun stopSilentTransport() { silent?.requestStop() }
     fun silentBackend(target: UsbSilentTransportPlan, generation: Long, stream: Long,
-        mode: UsbPcmDiagnosticMode = UsbPcmDiagnosticMode.ZERO, accessFailure: () -> UsbClockQueryStatus?): UsbNativeSilentTransport {
+        mode: UsbPcmDiagnosticMode = UsbPcmDiagnosticMode.ZERO, prefixSource: UsbFlacSourceLifecycle? = null,
+        accessFailure: () -> UsbClockQueryStatus?): UsbNativeSilentTransport {
         require(acOwned && asOwned && target.configurationPlan === plan && silent == null)
-        return UsbNativeSilentTransport(connection.fileDescriptor, target, generation, stream, accessFailure, mode).also { silent = it }
+        return UsbNativeSilentTransport(connection.fileDescriptor, target, generation, stream, accessFailure, mode, prefixSource).also { silent = it }
     }
     private val streamingHandle = device.getInterface(plan.asClaim.audioStreaming.position).also {
         require(it.id == plan.streaming.number && it.alternateSetting == plan.idle.alternate && it.interfaceClass == 1 &&

@@ -1,5 +1,6 @@
 package io.github.rsgarrido.sazanami.player.usb
 
+import android.net.Uri
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,6 +35,7 @@ internal object UsbAudioDiagnosticBridge {
     @Synchronized fun configurePcm16(identity: UsbAudioDeviceIdentity) { owner?.configurePcm16(identity) }
     @Synchronized fun streamSilentPcm16(identity: UsbAudioDeviceIdentity) { owner?.streamSilentPcm16(identity) }
     @Synchronized fun playReferencePcm16(identity: UsbAudioDeviceIdentity) { owner?.playReferencePcm16(identity) }
+    @Synchronized fun playFlacPrefix(identity: UsbAudioDeviceIdentity, generation: Long, uri: Uri) { owner?.playFlacPrefix(identity, generation, uri) }
     @Synchronized fun permissionResult(requestId: String, identity: UsbAudioDeviceIdentity?, granted: Boolean) {
         owner?.permissionResult(requestId, identity, granted)
     }

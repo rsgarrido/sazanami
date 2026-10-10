@@ -360,4 +360,12 @@
     <string name="flac_verification_md5">STREAMINFO MD5 available: %1$s (1 available, 0 unavailable)</string>
     <string name="flac_verification_pcm">Canonical PCM16 LE bytes: %1$s; FNV-1a: %2$s</string>
     <string name="flac_verification_scope">Audio output: NONE · USB used: NO · Bit-perfect song playback: NOT IMPLEMENTED</string>
+    <string name="usb_flac_title">Bounded FLAC direct USB transport — Session 10</string>
+    <string name="usb_flac_action">Play FLAC directly over USB (5 s)</string>
+    <string name="usb_flac_warning">Stop normal playback first. Real music can reach full scale: lower KA15 volume from your usual 60A to about 15A–20A for the first run. Do not raise volume during that run, even if quiet. Wait for automatic stop; do not immediately repeat. Copy the complete report before reconnecting.</string>
+    <string name="usb_flac_result">Session 10: %1$s</string>
+    <string name="usb_flac_queue">Queue: %1$s primed / 8192 target / 16384 capacity; consumed=%2$s; underruns=%3$s</string>
+    <string name="usb_flac_hashes">Consumed-source FNV=%1$s; submitted-USB FNV=%2$s</string>
+    <string name="usb_flac_cleanup">Restoration=%1$s; AS release=%2$s; AC release=%3$s; original FLAC fd closed=%4$s</string>
+    <string name="usb_flac_scope">Native FLAC only: 44100 Hz / stereo / 16-bit, starting at frame 0. Whole-file MD5: NOT APPLICABLE — bounded prefix. Expected: about five seconds of the selected track. Listening, DAC display and normal playback recovery require manual observation. Production Bit-perfect playback and normal player integration remain unimplemented.</string>
 </resources>

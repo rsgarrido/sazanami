@@ -78,20 +78,20 @@ internal object UsbFsDiagnostics {
     catch (error: LinkageError) { UsbReferencePreflight(exceptionType = error.javaClass.simpleName) }
     private external fun nativeReferencePreflight(): LongArray
     fun createSilentTransport(borrowedFd: Int, target: UsbSilentTransportPlan, generation: Long, stream: Long,
-        mode: UsbPcmDiagnosticMode = UsbPcmDiagnosticMode.ZERO): Long {
+        mode: UsbPcmDiagnosticMode = UsbPcmDiagnosticMode.ZERO, prefixHandle: Long = 0): Long {
         check(available)
         val plan = target.configurationPlan
         return nativeCreateSilentTransport(borrowedFd, generation, stream, intArrayOf(plan.clock.audioControl.number,
             plan.streaming.number, plan.streaming.alternate, plan.idle.alternate, target.data.address, target.data.attributes,
             target.data.maxPacketSizeRaw, target.data.interval, target.feedback.address, target.feedback.attributes,
-            target.feedback.maxPacketSizeRaw, target.feedback.interval, 44100, 2, 2, 16, mode.ordinal))
+            target.feedback.maxPacketSizeRaw, target.feedback.interval, 44100, 2, 2, 16, mode.ordinal), prefixHandle)
     }
     fun runSilentTransport(handle: Long, generation: Long, stream: Long): UsbIsoTransportResult =
         UsbIsoNativeStats.decode(nativeRunSilentTransport(handle, generation, stream), generation, stream)
     fun stopSilentTransport(handle: Long, generation: Long, stream: Long, reason: Int) = nativeStopSilentTransport(handle, generation, stream, reason)
     fun destroySilentTransport(handle: Long, generation: Long, stream: Long, connectionClosed: Boolean) =
         nativeDestroySilentTransport(handle, generation, stream, connectionClosed)
-    private external fun nativeCreateSilentTransport(borrowedFd: Int, generation: Long, stream: Long, configuration: IntArray): Long
+    private external fun nativeCreateSilentTransport(borrowedFd: Int, generation: Long, stream: Long, configuration: IntArray, prefixHandle: Long): Long
     private external fun nativeRunSilentTransport(handle: Long, generation: Long, stream: Long): UsbIsoNativeSnapshot
     private external fun nativeStopSilentTransport(handle: Long, generation: Long, stream: Long, reason: Int)
     private external fun nativeDestroySilentTransport(handle: Long, generation: Long, stream: Long, connectionClosed: Boolean): Boolean

@@ -4,6 +4,7 @@
 #include <cassert>
 #include <fcntl.h>
 #include <cerrno>
+#include <utility>
 using namespace sazanami::flacverify;
 static void packingAndRange() {
     const int32_t values[]{0,1,-1,1024,-1024,32767,-32768};
@@ -90,4 +91,23 @@ static void duplicateFdLifetime() {
     assert(::read(sequential.value,bytes,4) == 0); assert(sequential.closeNow()); assert(::fcntl(original,F_GETFD) >= 0);
     ::close(original);
 }
-int main() { packingAndRange(); metadataGate(); orderedHashAndChunks(); boundedExamplesAndCounters(); overflow(); classification(); duplicateFdLifetime(); }
+static void moveTransfersDuplicateOwnership() {
+    int pipes[2]; assert(::pipe(pipes)==0);
+    const int duplicate=::dup(pipes[0]); assert(duplicate>=0);
+    { OwnedFd pending(duplicate); OwnedFd decoder(std::move(pending));
+      assert(pending.value==-1 && decoder.value==duplicate); assert(decoder.closeNow()); }
+    assert(::fcntl(duplicate,F_GETFD)<0 && errno==EBADF);
+    assert(::fcntl(pipes[0],F_GETFD)>=0); ::close(pipes[0]); ::close(pipes[1]);
+}
+static void sharedCanonicalConsumerPreservesWholeVerification() {
+    Pcm verifier, producer; uint64_t queueHash=kOffset;
+    for (int32_t value : {0,1,-1,1024,-1024,32767,-32768}) {
+        uint8_t canonical[4];
+        assert(verifier.append(value, -value == 32768 ? 32767 : -value));
+        assert(producer.append(value, -value == 32768 ? 32767 : -value, canonical));
+        queueHash=hashBytes(queueHash,canonical,4);
+        assert(verifier.hash==producer.hash && queueHash==producer.hash);
+        assert(verifier.frames==producer.frames && verifier.bytes==producer.bytes);
+    }
+}
+int main() { moveTransfersDuplicateOwnership(); sharedCanonicalConsumerPreservesWholeVerification(); packingAndRange(); metadataGate(); orderedHashAndChunks(); boundedExamplesAndCounters(); overflow(); classification(); duplicateFdLifetime(); }

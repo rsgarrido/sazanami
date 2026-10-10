@@ -4,7 +4,7 @@ package io.github.rsgarrido.sazanami.player.usb
 internal object UsbAudioDiagnosticReport {
     fun format(state: UsbAudioDiagnosticState, includeRaw: Boolean = true): String = buildString {
         appendLine("SAZANAMI USB AUDIO DIAGNOSTIC — SESSION 8")
-        appendLine("Descriptors, ownership, clock, configuration, silence and deterministic reference PCM diagnostics. Direct USB song playback is not implemented.")
+        appendLine("Descriptors, ownership, clock, configuration and independent debug PCM diagnostics. Normal-player direct USB integration is not implemented.")
         appendLine("Service: ${if (state.serviceAvailable) "available" else "unavailable"}")
         appendLine("Status: ${statusText(state.status)}")
         appendLine("Connection generation: ${state.generation}")
@@ -59,6 +59,8 @@ internal object UsbAudioDiagnosticReport {
         appendSilentTransport(state.silentExperiment, state.generation)
         section("Deterministic Direct USB PCM — Session 8")
         appendSilentTransport(state.referenceExperiment, state.generation, UsbPcmDiagnosticMode.REFERENCE)
+        section("Bounded FLAC Direct USB Transport — Session 10")
+        appendSilentTransport(state.flacUsbExperiment, state.generation, UsbPcmDiagnosticMode.FLAC_PREFIX)
         val model = state.descriptors
         if (model == null) {
             section("Raw descriptors")
@@ -384,16 +386,17 @@ internal object UsbAudioDiagnosticReport {
     private fun StringBuilder.appendSilentTransport(result: UsbSilentTransportExperimentResult?, generation: Long,
         mode: UsbPcmDiagnosticMode = UsbPcmDiagnosticMode.ZERO) {
         val reference = mode == UsbPcmDiagnosticMode.REFERENCE
+        val flac = mode == UsbPcmDiagnosticMode.FLAC_PREFIX
         if (result != null && result.generation != generation) {
-            appendLine("Stale attachment generation; previous Session ${if (reference) 8 else 7} evidence omitted."); return
+            appendLine("Stale attachment generation; previous Session ${if (flac) 10 else if (reference) 8 else 7} evidence omitted."); return
         }
         appendLine("Development-only direct USB diagnostic; never starts automatically.")
         appendLine("Target: PCM stereo signed integer 16-bit little-endian / 44100 Hz; bytes/frame=4")
-        if (reference) appendReferenceSource(result) else appendLine("Source: DIGITAL ZERO ONLY")
-        appendLine("Duration target=${UsbIsoTiming.DURATION_MS} ms; duration stop, no EOF")
-        appendLine("Audible signal intentionally generated: ${if (reference) "YES, low-level fixed reference" else "NO"}; DSP/sample modification: NONE")
+        if (flac) appendFlacSource(result) else if (reference) appendReferenceSource(result) else appendLine("Source: DIGITAL ZERO ONLY")
+        appendLine("Duration target=${if (flac) 5000 else UsbIsoTiming.DURATION_MS} ms; duration stop, no successful natural EOF")
+        appendLine("Audible signal intentionally generated: ${if (flac) "YES, selected real FLAC at its original amplitude" else if (reference) "YES, low-level fixed reference" else "NO"}; DSP/sample modification: NONE")
         appendLine("Functional normal USB playback: NOT_VERIFIED; Bit-perfect song playback: NOT IMPLEMENTED / NOT ASSERTED")
-        if (result == null) { appendLine("Not requested. Debug action: ${if (reference) "Play USB L/R reference tone (1 s)" else "Stream silent USB 16/44.1 (1 s)"}"); return }
+        if (result == null) { appendLine("Not requested. Debug action: ${if (flac) "Play FLAC directly over USB (5 s)" else if (reference) "Play USB L/R reference tone (1 s)" else "Stream silent USB 16/44.1 (1 s)"}"); return }
         appendLine("Attachment generation=${result.generation}; stream generation=${result.streamGeneration}; phase=${result.phase}; result=${result.status}")
         result.detail?.let { appendLine("Note: ${safeText(it, 400)}") }
         result.resolution.issues.forEach { appendLine("Resolution issue: ${safeText(it, 400)}") }
@@ -416,15 +419,15 @@ internal object UsbAudioDiagnosticReport {
             appendLine("Integrity: ${if (native.valid) "VALID" else "COMPROMISED"}; reasons=${native.integrityReasons.joinToString().ifEmpty { if (native.valid) "none" else "result/authority unavailable" }}")
             native.exceptionType?.let { appendLine("Native boundary exception type: ${safeText(it)}; private message omitted") }
             native.authorityFailure?.let { appendLine("Authority changed: $it; values are historical only") }
-            if (!reference) appendLine("PCM all-zero buffer validation: ${if (native.count("outBytesSubmitted") > 0 && native.count("pcmByteOr") == 0L) "PASS" else "UNAVAILABLE/FAIL"}; bytewise OR=${native.count("pcmByteOr")}")
+            if (!reference && !flac) appendLine("PCM all-zero buffer validation: ${if (native.count("outBytesSubmitted") > 0 && native.count("pcmByteOr") == 0L) "PASS" else "UNAVAILABLE/FAIL"}; bytewise OR=${native.count("pcmByteOr")}")
             else {
-                appendLine("Source PCM hash: ${native.counters["sourcePcmHash"]?.let(::pcmHashHex) ?: "unavailable"}")
+                appendLine("${if (flac) "Committed consumed-source" else "Source"} PCM hash: ${native.counters["sourcePcmHash"]?.let(::pcmHashHex) ?: "unavailable"}")
                 appendLine("Submitted PCM hash: ${native.counters["submittedPcmHash"]?.let(::pcmHashHex) ?: "unavailable"}")
                 val hashesPresent = native.counters.containsKey("sourcePcmHash") && native.counters.containsKey("submittedPcmHash")
                 appendLine("Source/submitted hash match: ${hashesPresent && native.count("sourcePcmHash") == native.count("submittedPcmHash")}; source integrity verified=${native.sourceVerified}")
                 appendLine("FNV-1a 64-bit over exact ordered PCM bytes, offset cbf29ce484222325, prime 100000001b3, modulo 2^64. Payload hash advances only after successful SUBMITURB; no padding or metadata.")
-                appendLine("Generated but unsubmitted frames remain explicit. No completion hash or DAC-internal consumed-data hash exists.")
-                appendLine("Bounded GENERATED PCM frame examples (index; L signed; R signed; LE packed L-low L-high R-low R-high):")
+                appendLine("Prepared but unsubmitted frames remain explicit. No completion hash or DAC-internal consumed-data hash exists.")
+                appendLine("Bounded ${if (flac) "COMMITTED" else "GENERATED"} PCM frame examples (index; L signed; R signed; LE packed L-low L-high R-low R-high):")
                 native.pcm.forEach { appendLine("  ${it.index}; ${it.left}; ${it.right}; ${it.bytes.joinToString(" ") { byte -> usbHex(byte) }}") }
             }
             native.counters.forEach { (name, value) -> appendLine("  $name: $value") }
@@ -443,6 +446,40 @@ internal object UsbAudioDiagnosticReport {
         appendConfigurationExperiment(result.configuration, generation, endpointWork = true)
         appendLine("Kernel recovery=${result.kernelRecovery}; framework enumeration=${result.frameworkRecovery}; functional recovery=NOT_VERIFIED")
         appendLine("Copy this complete report before reconnecting. Do not immediately repeat this diagnostic. A physical reconnect may be needed for normal playback afterward.")
+    }
+
+    private fun StringBuilder.appendFlacSource(result: UsbSilentTransportExperimentResult?) {
+        appendLine("Scope: debug-only bounded direct USB playback; target=5000 ms; normal player integration=NONE")
+        appendLine("Input: native FLAC; source start frame=0; accepted format ONLY 44100 Hz / stereo / 16-bit integer PCM")
+        appendLine("libFLAC version=1.5.0; integer-only decode=YES; whole-file FLAC MD5 verification: NOT APPLICABLE — bounded prefix playback (checking disabled before init)")
+        appendLine("Queue capacity frames=16384 (65536 canonical PCM bytes); prebuffer target frames=8192; source must prime before AC/AS ownership")
+        appendLine("Duration clock starts inside the native USB run, immediately before endpoint submission; FLAC open/priming/configuration are excluded. activeTransportUsAtStop excludes teardown; durationUs includes reconciliation.")
+        appendLine("Session 10 queueUnderruns is the source insufficient-depth event count. outPoolEmptyAfterReapEvents counts refillable completions, not underruns; OUT_POOL_STALL separately records post-refill OUT transport failure and its outstanding-count/completion-age evidence.")
+        appendLine("Producer-full waits are normal backpressure. Consumer requires exact frames immediately; no silence/repeat/interpolation concealment.")
+        appendLine("Expected manual observation: approximately five seconds of the selected FLAC through the USB DAC; manual listening: NOT AUTOMATICALLY VERIFIED")
+        appendLine("Source/queue -> copied exact payload -> successful kernel submission/completion. DAC-internal PCM is not measured.")
+        appendLine("Bit-perfect production playback: NOT IMPLEMENTED; full-track playback: NOT IMPLEMENTED; no Media3/AudioTrack fallback")
+        val source = result?.flacSource
+        if (source == null) { appendLine("FLAC source evidence unavailable / not requested"); return }
+        appendLine("Source integrity: ${if (source.primed && source.count("sourceIntegrityMask")==0L && source.exceptionType==null) "VALID" else "COMPROMISED"}; reasons=${source.reasons.joinToString().ifEmpty { "none / boundary evidence unavailable" }}")
+        source.exceptionType?.let { appendLine("Source boundary exception=${safeText(it)}; private message omitted") }
+        source.counters.forEach { (name,value) ->
+            if (name.endsWith("Hash")) appendLine("  $name: ${pcmHashHex(value)}") else appendLine("  $name: $value")
+        }
+        source.decoder?.let { decoder ->
+            appendLine("Decoder observed native FLAC=${decoder.count("nativeFlacRecognized")}; init status=${decoder.count("initStatus")}; STREAMINFO=${decoder.count("streamInfoReceived")}; rate=${decoder.count("sampleRate")}; channels=${decoder.count("channels")}; bits/sample=${decoder.count("bitsPerSample")}; format accepted=${source.count("metadataAccepted")}")
+            appendLine("Decoder errors during prefix=${decoder.count("decoderErrors")}; range errors=${decoder.count("outOfRangeSamples")}; format contradictions=${decoder.count("formatContradictions")}; frame order errors=${decoder.count("frameOrderErrors")}")
+            appendLine("Bounded decoder error codes=${decoder.errors.joinToString().ifEmpty { "none" }}; read errno=${decoder.count("readErrno")}")
+            appendLine("Decoder prefix stop outcome=${decoder.status}; not a whole-file verification result; MD5 checking enabled=${decoder.count("md5CheckingEnabled")}")
+            appendLine("pcmBytesDecoded/serialized=${decoder.count("canonicalPcmBytesHashed")}")
+        }
+        appendLine("pcmBytesEnqueued=${source.count("framesEnqueued")*4}; pcmBytesConsumed=${source.count("framesConsumedFromQueue")*4}; pcmBytesSubmitted=${result.transport?.count("outBytesSubmitted") ?: "unavailable"}; kernelOutActualBytes=${result.transport?.count("kernelOutActualBytes") ?: "unavailable"}")
+        appendLine("framesSubmitted=${result.transport?.count("framesSubmitted") ?: "unavailable"}; framesCompleted=${result.transport?.count("framesCompleted") ?: "unavailable"}")
+        appendLine("consumedSourcePcmHash=${source.counters["consumedSourcePcmHash"]?.let(::pcmHashHex) ?: "unavailable"}; submittedUsbPcmHash=${result.transport?.counters?.get("submittedPcmHash")?.let(::pcmHashHex) ?: "unavailable"}")
+        val usbHash = result.transport?.counters?.get("submittedPcmHash")
+        appendLine("Bridge hash match=${usbHash != null && source.counters["consumedSourcePcmHash"] == usbHash}")
+        appendLine("allEnqueuedPrefetchPcmHash covers prefetched frames too; it is NOT compared with USB hash. Unconsumed prefetch discarded at host stop is not USB frame loss.")
+        appendLine("Original Kotlin FLAC fd closed=${result.originalFlacFdClosed ?: "unavailable"}; native duplicate/decoder/producer/queue release recorded above")
     }
 
     private fun StringBuilder.appendReferenceSource(result: UsbSilentTransportExperimentResult?) {

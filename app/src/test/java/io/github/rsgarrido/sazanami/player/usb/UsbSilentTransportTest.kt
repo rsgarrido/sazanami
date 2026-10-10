@@ -26,6 +26,25 @@ class UsbSilentTransportTest {
     private fun decode(raw: Long) = UsbExplicitFeedback.decode(bytes(raw))
     private fun source(relative: String) = listOf(Paths.get("src/main", relative), Paths.get("app/src/main", relative))
         .first { Files.isRegularFile(it) }.toFile().readText(Charsets.UTF_8)
+    /** Bounds a C++ definition by balanced braces, excluding comments/literals from source inspection. */
+    private fun cppBody(text: String, declaration: Regex): String {
+        val nonCode = Regex("""(?s)//[^\r\n]*|/\*.*?\*/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'""")
+        val code = nonCode.replace(text) { " ".repeat(it.value.length) }
+        val match = declaration.find(code) ?: throw AssertionError("C++ definition missing: $declaration")
+        val opening = match.range.last
+        require(code[opening] == '{')
+        var depth = 0
+        for (position in opening until code.length) {
+            when (code[position]) {
+                '{' -> depth++
+                '}' -> {
+                    depth--
+                    if (depth == 0) return code.substring(opening + 1, position)
+                }
+            }
+        }
+        throw AssertionError("Unterminated C++ definition: $declaration")
+    }
     private val nominalFeedback = 361267L
 
     @Test fun acceptsOnlyStereoPcm16And44100() {
@@ -352,6 +371,249 @@ class UsbSilentTransportTest {
         assertFalse(jni.contains("pcm: ByteArray")); assertTrue(jni.contains("mode.ordinal"))
         val controller = source("java/io/github/rsgarrido/sazanami/player/usb/UsbAudioController.kt")
         assertTrue(controller.contains("if (BuildConfig.DEBUG) runConfigurationDiagnostic(identity, silentRun = true, mode = UsbPcmDiagnosticMode.REFERENCE)"))
+    }
+    private fun prefixEvidence(vararg changes: Pair<String,Long>): UsbFlacSourceResult {
+        val values = mutableMapOf("version" to 1L,"generation" to 17L,"streamGeneration" to 23L,
+            "initialPrimedFrames" to 8192L,"metadataAccepted" to 1L,"sampleRate" to 44100L,"channels" to 2L,"bitsPerSample" to 16L,
+            "framesDecoded" to 17385L,"framesEnqueued" to 17384L,"framesConsumedFromQueue" to 1000L,
+            "queueFramesAtStop" to 16384L,"prefetchedFramesDiscardedAtStop" to 16384L,
+            "minimumQueueDepthDuringStreaming" to 7800L,"maximumQueueDepthDuringStreaming" to 16384L,
+            "producerFullWaitCount" to 20L,"lastSourceFrameEnqueued" to 17383L,"lastSourceFrameConsumed" to 999L,
+            "expectedNextEnqueueFrame" to 17384L,"expectedNextConsumeFrame" to 1000L,
+            "consumedSourcePcmHash" to 123L,"allEnqueuedPrefetchPcmHash" to 456L,
+            "producerStopped" to 1L,"producerJoined" to 1L,"decoderReleased" to 1L,"nativeFlacFdClosed" to 1L,"queueReleased" to 1L)
+        values.putAll(changes)
+        val decoder = io.github.rsgarrido.sazanami.player.bitperfect.flac.FlacVerificationResult(
+            nativeStatus = io.github.rsgarrido.sazanami.player.bitperfect.flac.FlacVerificationStatus.CANCELLED,
+            counters = mapOf("nativeFlacRecognized" to 1L,"initStatus" to 0L,"metadataProcessed" to 1L,"streamInfoReceived" to 1L,
+                "canonicalPcmBytesHashed" to 69540L,"nativeDuplicateClosed" to 1L,"decoderDeleted" to 1L,"finishCalled" to 1L), decoderVersion = "1.5.0")
+        return UsbFlacSourceResult(UsbFlacSourceEvidence.fields.associateWith { values[it] ?: 0L },decoder)
+    }
+    private fun prefixNative(vararg changes: Pair<String,Long>) = native(*(mapOf("sourceMode" to 2L,
+        "durationUs" to 5008000L,"transportDurationTargetUs" to 5000000L,"activeTransportUsAtStop" to 5000000L,"prefixSourceFramesConsumed" to 1000L,"prefixInitialPrimedFrames" to 8192L,
+        "prefixProducerStopped" to 1L,"prefixProducerJoined" to 1L,"sourcePcmHash" to 123L,"submittedPcmHash" to 123L) +
+        changes.toMap()).toList().toTypedArray())
+    private class PrefixFake(override var result: UsbFlacSourceResult, private val events: MutableList<String>) : UsbFlacSourceLifecycle {
+        override val handle = 1L
+        override fun requestStop() { events += "sourceStop" }
+        override fun healthy() = result.primed
+        override suspend fun prepare(access: () -> UsbClockQueryStatus?) = result.primed
+        override suspend fun finish() { events += "sourceJoined" }
+    }
+    private fun prefixExperiment(fake: ConfigurationFake, source: UsbFlacSourceResult=prefixEvidence(), usb: UsbIsoTransportResult=prefixNative()) = runBlocking {
+        UsbSilentTransportExperiment.run(resolution,17,23,fake,{ _,_ -> BackendFake(fake.events).apply { result=usb } },
+            mode=UsbPcmDiagnosticMode.FLAC_PREFIX,prefixSource=PrefixFake(source,fake.events))
+    }
+    @Test fun flacPrimeFailuresPreventAcAsOwnershipAndUsbWorker() {
+        for (fault in listOf(1L,2L,4L,16L,32L,8192L,16384L,32768L)) {
+            val fake=ConfigurationFake(); val result=prefixExperiment(fake,prefixEvidence("sourceIntegrityMask" to fault,"initialPrimedFrames" to 0))
+            assertFalse(fake.events.contains("claimAC")); assertFalse(fake.events.contains("claimAS")); assertFalse(fake.events.contains("native"))
+            assertTrue(fake.events.contains("sourceJoined")); assertTrue(fake.events.contains("close"))
+            assertNotEquals(UsbSilentStatus.BOUNDED_FLAC_USB_TRANSPORT_VERIFIED,result.status)
+        }
+        assertFalse(prefixEvidence("sampleRate" to 48000).primed)
+        assertFalse(prefixEvidence("channels" to 1).primed)
+        assertFalse(prefixEvidence("bitsPerSample" to 24).primed)
+        assertFalse(prefixEvidence("metadataAccepted" to 0).primed)
+        assertFalse(prefixEvidence("initialPrimedFrames" to 8191).primed)
+    }
+    @Test fun flacUsesFiveSecondDurationAndSameOrderedRestorationTransaction() {
+        val fake=ConfigurationFake(); val result=prefixExperiment(fake)
+        assertEquals(UsbSilentStatus.BOUNDED_FLAC_USB_TRANSPORT_VERIFIED,result.status)
+        assertTrue(fake.events.indexOf("sourceJoined")<fake.events.lastIndexOf("setAlt:0"))
+        assertTrue(fake.events.lastIndexOf("setAlt:0")<fake.events.indexOf("restoreClock"))
+        assertTrue(fake.events.indexOf("restoreClock")<fake.events.indexOf("releaseAS"))
+        assertTrue(fake.events.indexOf("releaseAS")<fake.events.indexOf("releaseAC"))
+        assertTrue(fake.events.indexOf("releaseAC")<fake.events.indexOf("close"))
+        assertFalse(prefixNative("durationUs" to 1008000).verified)
+        assertTrue(native().verified); assertTrue(referenceNative().verified)
+    }
+    @Test fun flacSuccessRequiresCommittedCountsBytesHashesAndCleanTransport() {
+        for ((name,value) in listOf("framesCompleted" to 999L,"framesSubmitted" to 999L,"kernelOutActualBytes" to 3999L,
+            "outBytesSubmitted" to 3999L,"outPacketErrors" to 1L,"outUrbErrors" to 1L,"outstandingUrbsFinal" to 1L,
+            "workerStopped" to 0L,"prefixProducerJoined" to 0L,"queueUnderruns" to 1L,"prefixSourceIntegrityMask" to 1L,
+            "sourcePcmHash" to 124L,"submittedPcmHash" to 124L,"framesNotSubmitted" to 1L,"stopReason" to 12L)) {
+            assertFalse("Accepted $name",prefixNative(name to value).verified)
+            assertNotEquals(UsbSilentStatus.BOUNDED_FLAC_USB_TRANSPORT_VERIFIED,prefixExperiment(ConfigurationFake(),usb=prefixNative(name to value)).status)
+        }
+    }
+    @Test fun flacCleanupAndOrderingEvidenceCannotBeMissing() {
+        for (name in listOf("producerStopped","producerJoined","decoderReleased","nativeFlacFdClosed","queueReleased"))
+            assertFalse(prefixEvidence(name to 0).clean)
+        for (name in listOf("preparedButUnsubmittedFrames","sourceFrameGapCount","sourceFrameDuplicateCount","sourceFrameOrderErrors","queueUnderruns"))
+            assertFalse(prefixEvidence(name to 1).clean)
+        assertFalse(prefixEvidence("framesDecoded" to 999).clean)
+        assertFalse(prefixEvidence("prefetchedFramesDiscardedAtStop" to 0).clean)
+        assertFalse(prefixEvidence("expectedNextConsumeFrame" to 999).clean)
+        assertTrue(prefixEvidence().clean) // prefetched frames > consumed and full waits are expected
+        val fake=ConfigurationFake().apply { restoreFails=true }
+        assertEquals(UsbSilentStatus.USB_CONFIGURATION_FAILED,prefixExperiment(fake).status)
+    }
+    @Test fun flacSourceFailuresHaveDistinctTaxonomyAndStickyReasons() {
+        for ((fault,status) in listOf(16L to UsbSilentStatus.SOURCE_EOF_BEFORE_DURATION,64L to UsbSilentStatus.QUEUE_UNDERRUN,
+            2048L to UsbSilentStatus.CANCELLED,128L to UsbSilentStatus.FLAC_SOURCE_FAILED,256L to UsbSilentStatus.FLAC_SOURCE_FAILED,
+            1024L to UsbSilentStatus.FLAC_SOURCE_FAILED)) {
+            val evidence=prefixEvidence("sourceIntegrityMask" to fault)
+            assertFalse(evidence.clean); assertTrue(evidence.reasons.isNotEmpty())
+            assertEquals(status,prefixExperiment(ConfigurationFake(),evidence).status)
+        }
+        assertFalse(prefixNative().copy(authorityFailure=UsbClockQueryStatus.STALE_GENERATION).verified)
+    }
+    @Test fun threeUsbDiagnosticsKeepIndependentResultsAndBusyStates() {
+        val silence=UsbSilentTransportExperimentResult(17,21,resolution)
+        val reference=UsbSilentTransportExperimentResult(17,22,resolution,mode=UsbPcmDiagnosticMode.REFERENCE)
+        val flac=UsbSilentTransportExperimentResult(17,23,resolution,phase=UsbSilentPhase.PRIMING_SOURCE,mode=UsbPcmDiagnosticMode.FLAC_PREFIX)
+        val state=UsbAudioDiagnosticState(silentExperiment=silence,referenceExperiment=reference).withEndpointExperiment(UsbPcmDiagnosticMode.FLAC_PREFIX,flac)
+        assertEquals(silence,state.endpointExperiment(UsbPcmDiagnosticMode.ZERO))
+        assertEquals(reference,state.endpointExperiment(UsbPcmDiagnosticMode.REFERENCE))
+        assertEquals(flac,state.endpointExperiment(UsbPcmDiagnosticMode.FLAC_PREFIX)); assertTrue(state.diagnosticOperationRunning)
+    }
+    @Test fun flacReportSeparatesPrefixHashesMd5AndManualEvidence() {
+        val result=prefixExperiment(ConfigurationFake()).copy(originalFlacFdClosed=true)
+        val report=UsbAudioDiagnosticReport.format(UsbAudioDiagnosticState(generation=17,flacUsbExperiment=result))
+        listOf("Bounded FLAC Direct USB Transport — Session 10","NOT APPLICABLE — bounded prefix","target=5000 ms",
+            "source start frame=0","capacity frames=16384","prebuffer target frames=8192","producerFullWaitCount: 20",
+            "prefetchedFramesDiscardedAtStop: 16384","Bridge hash match=true","NOT AUTOMATICALLY VERIFIED",
+            "nativeFlacFdClosed: 1","original amplitude","full-track playback: NOT IMPLEMENTED").forEach { assertTrue("Missing $it",report.contains(it)) }
+        assertFalse(report.contains("Bit-perfect ACTIVE")); assertFalse(report.contains("content://"))
+        assertTrue(report.contains("allEnqueuedPrefetchPcmHash covers prefetched frames too; it is NOT compared"))
+        val stale=UsbAudioDiagnosticReport.format(UsbAudioDiagnosticState(generation=18,flacUsbExperiment=result))
+        assertTrue(stale.contains("previous Session 10 evidence omitted")); assertFalse(stale.contains("prefetchedFramesDiscardedAtStop: 16384"))
+    }
+    @Test fun flacNativeEvidenceRejectsStaleIdentityAndUnboundedExamples() {
+        val snapshot=UsbFlacSourceSnapshot(UsbFlacSourceEvidence.fields.map { prefixEvidence().count(it) }.toLongArray(),longArrayOf(),null)
+        assertTrue(UsbFlacSourceEvidence.decode(snapshot,17,23).primed)
+        for (bad in listOf(snapshot.copy(numbers=longArrayOf(1)),snapshot.copy(examples=LongArray(6*7)),
+            snapshot.copy(numbers=snapshot.numbers.copyOf().also { it[2]=22 }))) {
+            try { UsbFlacSourceEvidence.decode(bad,17,23); fail("Invalid source evidence accepted") } catch (_: IllegalArgumentException) {}
+        }
+    }
+    @Test fun flacDebugPickerAndPrimingPrecedeUsbOpenAndNoApplicationPcmApiExists() {
+        val ui=source("java/io/github/rsgarrido/sazanami/ui/settings/UsbFlacPlaybackDiagnosticsSection.kt")
+        val controller=source("java/io/github/rsgarrido/sazanami/player/usb/UsbAudioController.kt").substringAfter("private fun runConfigurationDiagnostic")
+        assertTrue(ui.contains("if (!BuildConfig.DEBUG) return")); assertTrue(ui.contains("ActivityResultContracts.OpenDocument()"))
+        assertTrue(ui.contains("token.generation")); assertTrue(ui.contains("uri != null && token != null"))
+        assertTrue(controller.indexOf("source.prepare")<controller.indexOf("usb.openDevice(live)"))
+        assertTrue(controller.contains("openFileDescriptor(requireNotNull(flacUri), \"r\")")); assertTrue(controller.contains("input.close()"))
+        assertTrue(controller.contains("gate.accepts(token)")); assertTrue(controller.contains("originalFlacFdClosed"))
+        val core=source("cpp/flac/flac_decode_core.h")+source("cpp/flac/flac_prefix_queue.h")+ui+
+            source("java/io/github/rsgarrido/sazanami/player/usb/UsbFlacPrefixSource.kt")
+        listOf("AudioTrack(","ExoPlayer","MediaCodec","AudioSink","ReplayGain","resample(","sin(","float ","double ",
+            ".detach(","playPcmOverUsb","sendPcm(","nativeInitOgg","takePersistableUriPermission").forEach { assertFalse("Unexpected $it",core.contains(it)) }
+        val native=source("cpp/usb_iso_transport.cpp")
+        val submit=native.substringAfter("bool submit(Slot& slot)").substringBefore("void packetExample")
+        assertTrue(submit.indexOf("queue.reserve")<submit.indexOf("USBDEVFS_SUBMITURB"))
+        assertTrue(submit.indexOf("USBDEVFS_SUBMITURB")<submit.indexOf("submittedPrefixHash ="))
+        assertTrue(submit.indexOf("submittedPrefixHash =")<submit.indexOf("queue.commit"))
+        assertFalse(core.contains("acceptedFeedback")); assertFalse(core.contains("Scheduler"))
+    }
+    @Test fun flacOriginalSafDescriptorMustCloseBeforeVerifiedPublication() {
+        val candidate=prefixExperiment(ConfigurationFake())
+        assertEquals(UsbSilentStatus.RESOURCE_CLEANUP_FAILED,candidate.withFlacInputClosed(false,prefixEvidence()).status)
+        assertEquals(UsbSilentStatus.RESOURCE_CLEANUP_FAILED,candidate.withFlacInputClosed(true,prefixEvidence("queueReleased" to 0)).status)
+        assertEquals(UsbSilentStatus.BOUNDED_FLAC_USB_TRANSPORT_VERIFIED,candidate.withFlacInputClosed(true,prefixEvidence()).status)
+    }
+    @Test fun flacSourceHealthIsRecheckedImmediatelyBeforeAcClaim() = runBlocking {
+        val fake=ConfigurationFake(); var checks=0
+        val source=object : UsbFlacSourceLifecycle {
+            override val handle=1L
+            override val result=prefixEvidence()
+            override fun requestStop() {}
+            override fun healthy() = ++checks<4
+            override suspend fun prepare(access: () -> UsbClockQueryStatus?) = true
+            override suspend fun finish() { fake.events += "sourceJoined" }
+        }
+        val result=UsbSilentTransportExperiment.run(resolution,17,23,fake,{ _,_ -> error("Worker must not start") },
+            mode=UsbPcmDiagnosticMode.FLAC_PREFIX,prefixSource=source)
+        assertFalse(fake.events.contains("claimAC")); assertFalse(fake.events.contains("claimAS"))
+        assertTrue(fake.events.contains("sourceJoined")); assertNotEquals(UsbSilentStatus.BOUNDED_FLAC_USB_TRANSPORT_VERIFIED,result.status)
+    }
+    @Test fun sessionEightReferenceTimingAndSessionNineClassificationRemainPinned() {
+        fun digest(text: String) = java.security.MessageDigest.getInstance("SHA-256").digest(text.replace("\r\n","\n").toByteArray(Charsets.UTF_8))
+            .joinToString("") { (it.toInt() and 255).toString(16).padStart(2,'0') }
+        assertEquals("e5dfbace7f00de7d4c963a4c53766023a2a4d53cd7761f33dd3496bc98242d71",digest(source("cpp/usb_pcm_reference.h")))
+        val core=source("cpp/usb_iso_core.h")
+        val algorithms="struct Integrity {"+core.substringAfter("struct Integrity {").substringBefore("} // namespace")
+        assertEquals("a20e06d1d8ed93edfc3449ab86195a61c7cd7619befeab78c9e8781b4369eb15",digest(algorithms))
+        val native=source("cpp/usb_iso_transport.cpp")
+        val slots="struct Slot {"+native.substringAfter("struct Slot {").substringBefore("struct Session {")
+        assertEquals("37c4cad2f7779241dfd5dbee271ce7096dd2eed467fdb1251c7cb15e594efae1",digest(slots))
+        val feedback="    void feedbackPacket("+native.substringAfter("    void feedbackPacket(").substringBefore("    void shutdown()")
+        assertEquals("75c3e10f27588ee79490f54fb15a995f5b11b4533b2660c51e6ae989d232e45b",digest(feedback))
+        val pcm=source("cpp/flac/flac_pcm_core.h")
+        val classifier="inline Outcome classify("+pcm.substringAfter("inline Outcome classify(").substringBefore("} // namespace")
+        assertEquals("500287e078b63ba6fa562cc9842058f1fd0e2eb1d586e8d99187669a8beb2ceb",digest(classifier))
+        assertTrue(core.contains("kOutPool = 8, kOutPackets = 8, kFeedbackPool = 2"))
+        assertTrue(core.contains("kDurationUs = 1000000, kBootstrapUs = 100000"))
+    }
+    @Test fun flacProducerCleanupIsStructuredAndPrecedesUsbRestoration() {
+        val prefix=source("cpp/flac/flac_prefix_queue.h")
+        val native=source("cpp/usb_iso_transport.cpp")
+        val owner=source("java/io/github/rsgarrido/sazanami/player/usb/UsbFlacPrefixSource.kt")
+        val configuration=source("java/io/github/rsgarrido/sazanami/player/usb/UsbAudioConfigurationExperiment.kt")
+        assertTrue(prefix.contains("producer=std::thread(")); assertFalse(prefix.contains(".detach("))
+        assertTrue(prefix.contains("changed.notify_all()")); assertTrue(prefix.contains("while (!stop.load() && depth() == kPrefixCapacity)"))
+        val finish=prefix.substringAfter("    void finish() {").substringBefore("    std::array<int64_t,PrefixFieldCount>")
+        assertTrue(finish.indexOf("queue.requestStop()")<finish.indexOf("producer.join()"))
+        assertTrue(finish.indexOf("producer.join()")<finish.indexOf("atStop=queue.depth()"))
+        assertTrue(native.contains("prefix->finish()")); assertTrue(native.contains("::dup(borrowedFd)"))
+        assertTrue(prefix.contains("decoder.finalize()")); assertTrue(prefix.contains("facts[FdClosed]"))
+        assertTrue(owner.contains("withContext(NonCancellable")); assertTrue(owner.contains("worker.await()"))
+        val cleanup=configuration.substringAfter("withContext(NonCancellable)")
+        assertTrue(cleanup.indexOf("beforeRestoration()")<cleanup.indexOf("UsbStreamingAlternateRequest.idle(plan)"))
+        assertTrue(cleanup.indexOf("releaseStreaming(plan.asClaim)")<cleanup.indexOf("transport.release(plan.acClaim)"))
+        assertTrue(cleanup.indexOf("transport.release(plan.acClaim)")<cleanup.indexOf("transport.close()"))
+        val core=source("cpp/flac/flac_decode_core.h")
+        assertTrue(prefix.contains("stream(s),decoder(std::move(duplicate)")); assertTrue(prefix.contains("},false)"))
+        assertTrue(core.indexOf("set_md5_checking(decoder.get(), wholeFile)")<core.indexOf("init_stream(decoder.get()"))
+        assertTrue(core.contains("failure == Outcome::Pending && wholeFile"))
+        assertTrue(source("cpp/flac/flac_pcm_core.h").contains("if (!process || !eos"))
+    }
+    @Test fun flacRefillsReapedSlotsBeforeItsDistinctOutPoolWatchdog() {
+        val native=source("cpp/usb_iso_transport.cpp")
+        val session=cppBody(native,Regex("""\bstruct\s+Session\s*\{"""))
+        val run=cppBody(session,Regex("""\bvoid\s+run\s*\(\s*\)\s*\{"""))
+        val loop=cppBody(run,Regex("""\bwhile\s*\(\s*integrity\.valid\(\)\s*&&\s*!stopCause\.chosen\s*\)\s*\{"""))
+        assertTrue(loop.indexOf("reapOne()")<loop.indexOf("for (auto& slot : slots)"))
+        assertTrue(loop.indexOf("for (auto& slot : slots)")<loop.indexOf("outPoolStalled("))
+        assertTrue(loop.contains("if (!prefix && (outstanding(false) == 0")) // legacy 7/8 unchanged
+        assertTrue(native.contains("stats[Underruns] = static_cast<jlong>(prefix->queue.underruns.load())"))
+        assertTrue(native.contains("fail(OutPoolStall, Stop::OutPoolStall)"))
+        assertTrue(native.contains("case fv::ReserveResult::InsufficientFrames: fail(QueueUnderrun"))
+        assertTrue(native.contains("case fv::ReserveResult::StopRequested: fail(AuthorityChanged, Stop::Requested)"))
+        val submit=native.substringAfter("bool submit(Slot& slot)").substringBefore("void packetExample")
+        assertTrue(submit.indexOf("scheduler = schedulerBefore")<submit.indexOf("queue.reserve("))
+        assertTrue(submit.contains("stats[ScheduledFrames] = scheduledBefore"))
+        assertTrue(run.indexOf("started = monotonicUs()")<run.indexOf("submit(slots[i])"))
+        assertFalse(run.contains("prime()")); assertFalse(run.contains("openFileDescriptor")); assertFalse(run.contains("claimInterface"))
+    }
+    @Test fun cppRunInspectionExcludesSeparatePrimingAndHandlesNestedScopes() {
+        val text="""
+            struct Session {
+                void run ( ) {
+                    // prime() and an unmatched } in a comment are not executable code.
+                    const char* label = "prime() }";
+                    if (ready) { submit(slot); }
+                }
+                void prepare() { prime(); }
+            };
+            void nativePrime() { source->prime(); }
+        """.trimIndent()
+        val session=cppBody(text,Regex("""\bstruct\s+Session\s*\{"""))
+        val signature=Regex("""\bvoid\s+run\s*\(\s*\)\s*\{""")
+        val run=cppBody(session,signature)
+        assertTrue(run.contains("submit(slot)")); assertFalse(run.contains("prime()"))
+        val withActualPrime=text.replace("submit(slot);","prime(); submit(slot);")
+        assertTrue(cppBody(cppBody(withActualPrime,Regex("""\bstruct\s+Session\s*\{""")),signature).contains("prime()"))
+    }
+    @Test fun flacActiveTimeAndTargetCannotBeInferredFromCleanupDuration() {
+        assertTrue(prefixNative().verified)
+        assertFalse(prefixNative("activeTransportUsAtStop" to 3483383,"durationUs" to 5100000).verified)
+        assertFalse(prefixNative("transportDurationTargetUs" to 1000000).verified)
+        val stalled=prefixNative("stopReason" to 13,"outPoolStallEvents" to 1,"integrityMask" to (1L shl 29))
+        assertFalse(stalled.verified); assertEquals("OUT_POOL_STALL",stalled.stopReason)
+        assertEquals(0L,stalled.count("queueUnderruns")); assertTrue(stalled.integrityReasons.contains("OUT_POOL_STALL"))
+        assertTrue(native().verified); assertTrue(referenceNative().verified)
     }
     private fun rejects(packet: UsbIsoNativeSnapshot) { try { UsbIsoNativeStats.decode(packet, 17, 23); fail("Malformed evidence accepted") } catch (_: IllegalArgumentException) {} }
     private inner class BackendFake(private val events: MutableList<String>) : UsbSilentTransportBackend {

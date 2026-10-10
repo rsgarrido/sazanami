@@ -127,6 +127,7 @@ internal object UsbAudioConfigurationExperiment {
         suspend fun guard() {
             currentCoroutineContext().ensureActive()
             if (live() != null) throw Stop(step, "USB authority is no longer current.")
+            endpointWork?.forwardIssue()?.let { throw Stop(step, it) }
         }
         fun requireStage(condition: Boolean, message: String) { if (!condition) throw Stop(step, message) }
         fun readAccess(): UsbClockQueryStatus? { if (!restoring) coroutine.ensureActive(); return live() }
@@ -305,6 +306,10 @@ internal object UsbAudioConfigurationExperiment {
             withContext(NonCancellable) {
                 restoring = true
                 try {
+                    // Source teardown precedes restoration; releases/close remain in the outer finally even if it throws.
+                    try { endpointWork?.beforeRestoration() }
+                    catch (error: Exception) { result = result.copy(restorationNotes = result.restorationNotes +
+                        "Source teardown failed (${error.javaClass.simpleName}); cleanup evidence remains unavailable.") }
                     if (plan != null && result.asClaim.returned == true && (result.idleSelectionAttempted || result.clockWriteAttempted || result.alternateSelectionAttempted)) {
                         if (endpointWork?.usbCleanupSafe == false) {
                             result = result.copy(restorationNotes = result.restorationNotes +
