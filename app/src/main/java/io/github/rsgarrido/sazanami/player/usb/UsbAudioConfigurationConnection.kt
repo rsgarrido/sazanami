@@ -4,8 +4,8 @@ import android.content.Context
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
 
-/** One Android connection. Reuses Session 5 AC ownership/reads/snapshots; adds only AS ownership
- * and the three operation-specific native configuration calls. No endpoint transport.
+/** One Android connection. Reuses Session 5 AC ownership/reads/snapshots and Session 6 configuration.
+ * Session 7 can obtain its typed silence backend only while both resolved interfaces are owned.
  */
 internal class UsbAudioConfigurationConnection private constructor(
     private val connection: UsbDeviceConnection,
@@ -19,6 +19,13 @@ internal class UsbAudioConfigurationConnection private constructor(
 
     private var acOwned = false
     private var asOwned = false
+    @Volatile private var silent: UsbNativeSilentTransport? = null
+    fun stopSilentTransport() { silent?.requestStop() }
+    fun silentBackend(target: UsbSilentTransportPlan, generation: Long, stream: Long,
+        accessFailure: () -> UsbClockQueryStatus?): UsbNativeSilentTransport {
+        require(acOwned && asOwned && target.configurationPlan === plan && silent == null)
+        return UsbNativeSilentTransport(connection.fileDescriptor, target, generation, stream, accessFailure).also { silent = it }
+    }
     private val streamingHandle = device.getInterface(plan.asClaim.audioStreaming.position).also {
         require(it.id == plan.streaming.number && it.alternateSetting == plan.idle.alternate && it.interfaceClass == 1 &&
             it.interfaceSubclass == 2 && it.interfaceProtocol == 0x20)

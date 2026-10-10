@@ -82,7 +82,7 @@ class UsbAudioClaimReportTest {
         assertFalse(report.contains("BitPerfectActive"))
         assertFalse(report.contains("BitPerfectEnabled"))
         assertFalse(report.contains("USB_STREAM_ACTIVE"))
-        assertTrue(report.contains("Direct USB playback is not implemented."))
+        assertTrue(report.contains("Direct USB song playback is not implemented"))
     }
 
     private fun success(): UsbAudioClaimExperimentResult {

@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.rsgarrido.sazanami.R
+import io.github.rsgarrido.sazanami.BuildConfig
 import io.github.rsgarrido.sazanami.player.usb.UsbAudioDiagnosticBridge
 import io.github.rsgarrido.sazanami.player.usb.UsbAudioDiagnosticReport
 import io.github.rsgarrido.sazanami.player.usb.UsbAudioDiagnosticStatus
@@ -33,6 +34,7 @@ import io.github.rsgarrido.sazanami.player.usb.UsbKernelBindingRecovery
 import io.github.rsgarrido.sazanami.player.usb.UsbFrameworkEnumerationRecovery
 import io.github.rsgarrido.sazanami.player.usb.UsbConfigurationPhase
 import io.github.rsgarrido.sazanami.player.usb.UsbConfigurationRestorationStatus
+import io.github.rsgarrido.sazanami.player.usb.UsbSilentPhase
 import io.github.rsgarrido.sazanami.player.usb.usbHex
 
 /** Presentation only. Receivers, connection ownership, parsing and commands live in player/usb. */
@@ -54,14 +56,14 @@ internal fun UsbAudioDiagnosticsSection() {
             Text(stringResource(R.string.usb_diagnostics_service_unavailable))
         }
         OutlinedButton(onClick = UsbAudioDiagnosticBridge::refresh,
-            enabled = state.serviceAvailable && state.configurationExperiment?.phase != UsbConfigurationPhase.QUERYING) {
+            enabled = state.serviceAvailable && !state.diagnosticOperationRunning) {
             Text(stringResource(R.string.usb_diagnostics_refresh))
         }
         state.devices.forEach { device ->
             val selected = device.identity == state.selectedIdentity
             OutlinedButton(
                 onClick = { UsbAudioDiagnosticBridge.select(device.identity) },
-                enabled = state.serviceAvailable && !selected && state.configurationExperiment?.phase != UsbConfigurationPhase.QUERYING,
+                enabled = state.serviceAvailable && !selected && !state.diagnosticOperationRunning,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("${device.product ?: stringResource(R.string.usb_diagnostics_unnamed)} " +
@@ -131,6 +133,52 @@ internal fun UsbAudioDiagnosticsSection() {
                 Text(stringResource(if (state.configurationExperiment?.phase == UsbConfigurationPhase.QUERYING)
                     R.string.usb_diagnostics_configuring else R.string.usb_diagnostics_configure))
             }
+            if (BuildConfig.DEBUG) {
+                Text(stringResource(R.string.usb_diagnostics_silent_note), style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error)
+                OutlinedButton(onClick = { UsbAudioDiagnosticBridge.streamSilentPcm16(selected.identity) },
+                    enabled = state.serviceAvailable && selected.hasPermission && state.descriptors != null && !state.diagnosticOperationRunning,
+                    modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(if (state.silentExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true)
+                        R.string.usb_diagnostics_silent_running else R.string.usb_diagnostics_silent))
+                }
+            }
+        }
+        state.silentExperiment?.takeIf { it.generation == state.generation && it.phase == UsbSilentPhase.FINISHED }?.let { result ->
+            Text(stringResource(R.string.usb_diagnostics_silent_result, result.status.name), style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.usb_diagnostics_silent_target), style = MaterialTheme.typography.bodySmall)
+            val config = result.configuration
+            Text(stringResource(R.string.usb_diagnostics_silent_configuration,
+                config?.acClaim?.returned?.toString() ?: "—", config?.asClaim?.returned?.toString() ?: "—",
+                config?.targetStatus?.name ?: "—", config?.restorationStatus?.name ?: "—"), style = MaterialTheme.typography.bodySmall)
+            result.resolution.plan?.let { plan ->
+                Text(stringResource(R.string.usb_diagnostics_silent_endpoints, usbHex(plan.data.address), usbHex(plan.feedback.address),
+                    result.timing?.dataIntervalUs?.toString() ?: "—", result.timing?.feedbackIntervalUs?.toString() ?: "—",
+                    result.timing?.capacity?.toString() ?: "—"), style = MaterialTheme.typography.bodySmall)
+            }
+            result.transport?.let { native ->
+                Text(stringResource(R.string.usb_diagnostics_silent_transport, native.state, native.stopReason,
+                    (native.count("durationUs") / 1000).toString(), native.count("feedbackPacketsValid").toString(),
+                    native.count("feedbackPacketsInvalid").toString()), style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.usb_diagnostics_silent_counts, native.count("outUrbsSubmitted").toString(),
+                    native.count("outUrbsCompleted").toString(), native.count("outPacketsSubmitted").toString(), native.count("outPacketsCompleted").toString(),
+                    native.count("framesSubmitted").toString(), native.count("framesCompleted").toString(), native.count("outPacketErrors").toString(),
+                    native.count("outUrbErrors").toString()), style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.usb_diagnostics_silent_integrity, if (native.valid) "VALID" else "COMPROMISED",
+                    native.integrityReasons.joinToString().ifEmpty { native.exceptionType ?: "—" }), color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.usb_diagnostics_silent_shutdown, native.count("outOutstandingAtStop").toString(),
+                    native.count("feedbackOutstandingAtStop").toString(), native.count("discardedUrbs").toString(),
+                    native.count("outstandingUrbsFinal").toString(), native.workerStopped.toString(), result.nativeMemoryReleased.toString()),
+                    style = MaterialTheme.typography.bodySmall)
+            }
+            Text(stringResource(R.string.usb_diagnostics_silent_close_disposal,
+                result.connectionCloseDisposedUrbs?.toString() ?: "—", result.outstandingAfterConnectionClose?.toString() ?: "—"),
+                style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.usb_diagnostics_silent_releases, config?.asRelease?.returned?.toString() ?: "—",
+                config?.acRelease?.returned?.toString() ?: "—"), style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.usb_diagnostics_kernel_result, result.kernelRecovery.name))
+            Text(stringResource(R.string.usb_diagnostics_framework_result, result.frameworkRecovery.name))
+            Text(stringResource(R.string.usb_diagnostics_functional_not_verified), color = MaterialTheme.colorScheme.error)
         }
         state.configurationExperiment?.takeIf { it.generation == state.generation && it.phase == UsbConfigurationPhase.FINISHED }?.let { result ->
             Text(stringResource(R.string.usb_diagnostics_configuration_result, result.targetStatus.name),

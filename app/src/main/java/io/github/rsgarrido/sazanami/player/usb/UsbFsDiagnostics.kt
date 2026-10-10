@@ -69,6 +69,25 @@ internal object UsbFsDiagnostics {
     }
 
     private external fun nativeApiVersion(): Int
+    fun silentTransportIdle(): Boolean = available && runCatching { nativeSilentTransportIdle() }.getOrDefault(false)
+    private external fun nativeSilentTransportIdle(): Boolean
+    fun createSilentTransport(borrowedFd: Int, target: UsbSilentTransportPlan, generation: Long, stream: Long): Long {
+        check(available)
+        val plan = target.configurationPlan
+        return nativeCreateSilentTransport(borrowedFd, generation, stream, intArrayOf(plan.clock.audioControl.number,
+            plan.streaming.number, plan.streaming.alternate, plan.idle.alternate, target.data.address, target.data.attributes,
+            target.data.maxPacketSizeRaw, target.data.interval, target.feedback.address, target.feedback.attributes,
+            target.feedback.maxPacketSizeRaw, target.feedback.interval, 44100, 2, 2, 16))
+    }
+    fun runSilentTransport(handle: Long, generation: Long, stream: Long): UsbIsoTransportResult =
+        UsbIsoNativeStats.decode(nativeRunSilentTransport(handle, generation, stream), generation, stream)
+    fun stopSilentTransport(handle: Long, generation: Long, stream: Long, reason: Int) = nativeStopSilentTransport(handle, generation, stream, reason)
+    fun destroySilentTransport(handle: Long, generation: Long, stream: Long, connectionClosed: Boolean) =
+        nativeDestroySilentTransport(handle, generation, stream, connectionClosed)
+    private external fun nativeCreateSilentTransport(borrowedFd: Int, generation: Long, stream: Long, configuration: IntArray): Long
+    private external fun nativeRunSilentTransport(handle: Long, generation: Long, stream: Long): UsbIsoNativeSnapshot
+    private external fun nativeStopSilentTransport(handle: Long, generation: Long, stream: Long, reason: Int)
+    private external fun nativeDestroySilentTransport(handle: Long, generation: Long, stream: Long, connectionClosed: Boolean): Boolean
     private external fun nativeInspect(borrowedFd: Int, interfaceNumbers: IntArray, audioControlNumber: Int): UsbFsNativeResult
     private external fun nativeReadClock(borrowedFd: Int, requestType: Int, request: Int,
         value: Int, index: Int, length: Int): UsbFsNativeControlResult

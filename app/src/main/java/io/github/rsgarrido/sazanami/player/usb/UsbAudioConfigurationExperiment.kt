@@ -84,7 +84,17 @@ internal object UsbAudioConfigurationExperiment {
     private class Stop(val step: UsbConfigurationStep, message: String) : Exception(message)
 
     suspend fun run(resolution: UsbAudioConfigurationResolution, generation: Long, transport: UsbAudioConfigurationTransport,
-        accessFailure: () -> UsbClockQueryStatus? = { null }): UsbAudioConfigurationResult {
+        accessFailure: () -> UsbClockQueryStatus? = { null }): UsbAudioConfigurationResult =
+        runTransaction(resolution, generation, transport, accessFailure, null)
+
+    suspend fun runWithEndpointWork(resolution: UsbAudioConfigurationResolution, generation: Long,
+        transport: UsbAudioConfigurationTransport, endpointWork: UsbConfiguredEndpointWork,
+        accessFailure: () -> UsbClockQueryStatus? = { null }): UsbAudioConfigurationResult =
+        runTransaction(resolution, generation, transport, accessFailure, endpointWork)
+
+    private suspend fun runTransaction(resolution: UsbAudioConfigurationResolution, generation: Long,
+        transport: UsbAudioConfigurationTransport, accessFailure: () -> UsbClockQueryStatus?,
+        endpointWork: UsbConfiguredEndpointWork?): UsbAudioConfigurationResult {
         val plan = resolution.plan
         var result = UsbAudioConfigurationResult(generation, resolution)
         var permit: UsbConfigurationMutationPermit? = null
@@ -199,6 +209,7 @@ internal object UsbAudioConfigurationExperiment {
             guard()
             requireStage(result.before?.status == UsbFsProbeStatus.RECORDED && result.before?.speed?.result?.succeeded == true,
                 "Native baseline/API unavailable; no forced ownership attempted.")
+            endpointWork?.baselineIssue(result)?.let { throw Stop(step, it) }
             step = UsbConfigurationStep.AC_CLAIM
             guard()
             result = result.copy(acClaim = ownership { transport.claim(target.acClaim) })
@@ -269,7 +280,14 @@ internal object UsbAudioConfigurationExperiment {
             requireStage(result.configuredClockValidity?.status == UsbClockQueryStatus.SUCCESS && result.configuredClockValidity?.clockValid == true,
                 "Configured Clock Validity is not true.")
             result = result.copy(targetStatus = UsbTargetConfigurationStatus.TARGET_CONFIGURATION_VERIFIED,
-                detail = "PCM16 stereo / 44100 configuration verified by successful SETINTERFACE and clock readbacks; advisory alternate queries are reported separately. No endpoint I/O; restoration begins immediately.")
+                detail = "PCM16 stereo / 44100 configuration verified by successful SETINTERFACE and clock readbacks; advisory alternate queries are reported separately." +
+                    if (endpointWork == null) " No endpoint I/O; restoration begins immediately." else " Session 7 endpoint work precedes restoration.")
+            if (endpointWork != null) {
+                guard()
+                endpointWork.runConfigured(result)
+                endpointWork.authorityFailure?.let { terminalFailure = it }
+                guard()
+            }
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (stopped: Stop) {
             result = result.copy(failedStep = stopped.step)
@@ -288,7 +306,10 @@ internal object UsbAudioConfigurationExperiment {
                 restoring = true
                 try {
                     if (plan != null && result.asClaim.returned == true && (result.idleSelectionAttempted || result.clockWriteAttempted || result.alternateSelectionAttempted)) {
-                        if (live() == null) {
+                        if (endpointWork?.usbCleanupSafe == false) {
+                            result = result.copy(restorationNotes = result.restorationNotes +
+                                "Endpoint URBs are not fully accounted; alt/clock restoration and explicit releases skipped. Owning connection must close before native buffers can be freed.")
+                        } else if (live() == null) {
                             // Always establish idle again, including uncertain initial/target mutations.
                             result = result.copy(idleAlternateRestore = alternate(UsbStreamingAlternateRequest.idle(plan)))
                             if (live() == null) result = result.copy(idleRestorationReadback = control(UsbConfigurationControlRequest.getInterface(plan)))
@@ -307,14 +328,14 @@ internal object UsbAudioConfigurationExperiment {
                     result = result.copy(restorationNotes = result.restorationNotes + "Restoration interrupted by ${error.javaClass.simpleName}; release/close still required.")
                 } finally {
                     // Reverse acquisition order. Never resolves new Android handles in cleanup.
-                    if (plan != null && result.asClaim.returned == true) result = result.copy(asRelease =
+                    if (plan != null && result.asClaim.returned == true && endpointWork?.usbCleanupSafe != false) result = result.copy(asRelease =
                         if (connectionValid()) release { transport.releaseStreaming(plan.asClaim) }
                         else UsbConfigurationAndroidOwnership(note = "Invalid fd; AS release not meaningful. Connection close still attempted."))
-                    if (plan != null && result.acClaim.returned == true) result = result.copy(acRelease =
+                    if (plan != null && result.acClaim.returned == true && endpointWork?.usbCleanupSafe != false) result = result.copy(acRelease =
                         if (connectionValid()) release { transport.release(plan.acClaim) }
                         else UsbConfigurationAndroidOwnership(note = "Invalid fd; AC release not meaningful. Connection close still attempted."))
                     try {
-                        if (plan != null && result.acClaim.returned == true && live() == null) {
+                        if (plan != null && result.acClaim.returned == true && live() == null && endpointWork?.usbCleanupSafe != false) {
                             val releasesSucceeded = result.acRelease.returned == true && (result.asClaim.returned != true || result.asRelease.returned == true)
                             val baseline = UsbAudioForcedExperimentResult(generation, plan.probe, before = result.before,
                                 claimReturned = true, releaseReturned = releasesSucceeded,
@@ -328,6 +349,8 @@ internal object UsbAudioConfigurationExperiment {
                     } finally {
                         try { transport.close(); result = result.copy(closeStatus = UsbAudioCleanupStatus.SUCCEEDED) }
                         catch (_: Exception) { result = result.copy(closeStatus = UsbAudioCleanupStatus.EXCEPTION) }
+                        try { endpointWork?.connectionClosed(result.closeStatus == UsbAudioCleanupStatus.SUCCEEDED) }
+                        catch (_: Exception) { result = result.copy(restorationNotes = result.restorationNotes + "Native pool release after connection close failed; no safe teardown inferred.") }
                         val audio = try { transport.frameworkSnapshot() }
                         catch (_: Exception) { UsbAndroidAudioDiagnostics(detail = "Final Android audio query unavailable.", querySucceeded = false) }
                         result = result.copy(afterAndroidAudio = audio)

@@ -28,6 +28,6 @@ target_link_libraries(
 )
 
 # Independent USB diagnostic JNI boundary; no waveform/MediaCodec dependency.
-add_library(sazanami_usb_diagnostics SHARED src/main/cpp/usb_fs_diagnostics.cpp)
+add_library(sazanami_usb_diagnostics SHARED src/main/cpp/usb_fs_diagnostics.cpp src/main/cpp/usb_iso_transport.cpp)
 target_compile_features(sazanami_usb_diagnostics PRIVATE cxx_std_17)
 target_compile_options(sazanami_usb_diagnostics PRIVATE -Wall -Wextra -Wpedantic)

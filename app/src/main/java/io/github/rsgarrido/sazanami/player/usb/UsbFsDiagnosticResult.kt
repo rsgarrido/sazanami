@@ -80,7 +80,7 @@ internal data class UsbAndroidAudioOutput(
 internal data class UsbAndroidAudioDiagnostics(val outputs: List<UsbAndroidAudioOutput> = emptyList(),
     val detail: String? = null, val querySucceeded: Boolean = true)
 
-/** Stable, bounded JNI packet, API version 4. Numbers: version, interface count, then
+/** Stable, bounded JNI packet, API version 5. Numbers: version, interface count, then
  * [interface, return, errno] per driver; speed [return, errno]; claim and release
  * [attempted 0/1, return, errno]. Names have count drivers / count+3 errno labels.
  * Names are supplementary; numeric ioctl results and errno remain separate evidence.
@@ -91,7 +91,7 @@ internal data class UsbFsNativeResult(val numbers: IntArray, val driverNames: Ar
 
 /** Pure interpretation and packet validation. Never infers rates, speed, or kernel ownership from descriptors. */
 internal object UsbFsEvidence {
-    const val NATIVE_API_VERSION = 4
+    const val NATIVE_API_VERSION = 5
     const val MAX_INTERFACES = 256
 
     // Values from linux/usb/ch9.h enum usb_device_speed. Native code also uses the actual NDK enum.

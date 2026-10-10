@@ -32,6 +32,7 @@ internal object UsbAudioDiagnosticBridge {
     @Synchronized fun inspectKernelOwnership(identity: UsbAudioDeviceIdentity) { owner?.inspectKernelOwnership(identity) }
     @Synchronized fun forceOwnAudioControl(identity: UsbAudioDeviceIdentity) { owner?.forceOwnAudioControl(identity) }
     @Synchronized fun configurePcm16(identity: UsbAudioDeviceIdentity) { owner?.configurePcm16(identity) }
+    @Synchronized fun streamSilentPcm16(identity: UsbAudioDeviceIdentity) { owner?.streamSilentPcm16(identity) }
     @Synchronized fun permissionResult(requestId: String, identity: UsbAudioDeviceIdentity?, granted: Boolean) {
         owner?.permissionResult(requestId, identity, granted)
     }
