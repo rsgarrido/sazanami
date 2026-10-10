@@ -108,6 +108,16 @@
     <string name="usb_diagnostics_title">Diagnóstico de audio USB / Bit-perfect</string>
     <string name="usb_diagnostics_note">Diagnósticos USB de desarrollo. La reproducción USB directa aún no está implementada. Detén la música antes del experimento de adquisición forzada de la sesión 5.</string>
     <string name="usb_diagnostics_force">Adquirir AudioControl por la fuerza + leer reloj</string>
+    <string name="usb_diagnostics_configure">Configurar USB 16/44,1 (sin audio)</string>
+    <string name="usb_diagnostics_configuring">Configurando y restaurando USB 16/44,1…</string>
+    <string name="usb_diagnostics_configuration_result">Configuración objetivo de la sesión 6: %1$s</string>
+    <string name="usb_diagnostics_alternate_probe">GET_INTERFACE inicial informó: %1$s; validez según descriptores: %2$s; consulta autoritativa: %3$s</string>
+    <string name="usb_diagnostics_idle_alternate">Alternativa inactiva solicitada: %1$s; SETINTERFACE: %2$s; corroboración GET_INTERFACE: %3$s</string>
+    <string name="usb_diagnostics_target_alternate">Alternativa objetivo solicitada: %1$s; SETINTERFACE: %2$s; corroboración GET_INTERFACE: %3$s</string>
+    <string name="usb_diagnostics_restored_alternate">Alternativa inactiva restaurada solicitada: %1$s; SETINTERFACE: %2$s; corroboración GET_INTERFACE: %3$s</string>
+    <string name="usb_diagnostics_restoration_result">Restauración de la configuración: %1$s</string>
+    <string name="usb_diagnostics_configure_note">Prueba de desarrollo de la sesión 6: detén toda la reproducción de Sazanami primero. Adquiere temporalmente AudioControl y AudioStreaming de Android, programa el reloj del DAC a 44,1 kHz y selecciona PCM16 estéreo. NO envía música ni datos de audio. Establece y restaura la alternativa inactiva resuelta por los descriptores y el reloj original y libera AS antes de AC. Las rutas USB de Android pueden dejar de funcionar después; el entorno KA15/Samsung probado ha necesitado una reconexión física tras la adquisición forzada.</string>
+    <string name="usb_diagnostics_configuration_reconnect">Después de este experimento, desconecta y vuelve a conectar físicamente el DAC si Android envía el audio a una salida incorrecta o el DAC se comporta de forma anormal. Las vinculaciones del kernel y la enumeración de Android no verifican la recuperación funcional del audio USB.</string>
     <string name="usb_diagnostics_forcing">Probando adquisición forzada de AC y recuperación…</string>
     <string name="usb_diagnostics_kernel_result">Vinculaciones del kernel: %1$s</string>
     <string name="usb_diagnostics_framework_result">Enumeración de audio USB de Android: %1$s</string>

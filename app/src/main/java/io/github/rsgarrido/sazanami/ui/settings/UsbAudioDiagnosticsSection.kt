@@ -31,6 +31,8 @@ import io.github.rsgarrido.sazanami.player.usb.UsbFsProbeStatus
 import io.github.rsgarrido.sazanami.player.usb.UsbForcedPhase
 import io.github.rsgarrido.sazanami.player.usb.UsbKernelBindingRecovery
 import io.github.rsgarrido.sazanami.player.usb.UsbFrameworkEnumerationRecovery
+import io.github.rsgarrido.sazanami.player.usb.UsbConfigurationPhase
+import io.github.rsgarrido.sazanami.player.usb.UsbConfigurationRestorationStatus
 import io.github.rsgarrido.sazanami.player.usb.usbHex
 
 /** Presentation only. Receivers, connection ownership, parsing and commands live in player/usb. */
@@ -51,14 +53,15 @@ internal fun UsbAudioDiagnosticsSection() {
         if (!state.serviceAvailable) {
             Text(stringResource(R.string.usb_diagnostics_service_unavailable))
         }
-        OutlinedButton(onClick = UsbAudioDiagnosticBridge::refresh, enabled = state.serviceAvailable) {
+        OutlinedButton(onClick = UsbAudioDiagnosticBridge::refresh,
+            enabled = state.serviceAvailable && state.configurationExperiment?.phase != UsbConfigurationPhase.QUERYING) {
             Text(stringResource(R.string.usb_diagnostics_refresh))
         }
         state.devices.forEach { device ->
             val selected = device.identity == state.selectedIdentity
             OutlinedButton(
                 onClick = { UsbAudioDiagnosticBridge.select(device.identity) },
-                enabled = state.serviceAvailable && !selected,
+                enabled = state.serviceAvailable && !selected && state.configurationExperiment?.phase != UsbConfigurationPhase.QUERYING,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("${device.product ?: stringResource(R.string.usb_diagnostics_unnamed)} " +
@@ -118,6 +121,41 @@ internal fun UsbAudioDiagnosticsSection() {
                 Text(stringResource(if (state.forcedExperiment?.phase == UsbForcedPhase.QUERYING)
                     R.string.usb_diagnostics_forcing else R.string.usb_diagnostics_force))
             }
+            Text(stringResource(R.string.usb_diagnostics_configure_note), style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error)
+            OutlinedButton(
+                onClick = { UsbAudioDiagnosticBridge.configurePcm16(selected.identity) },
+                enabled = state.serviceAvailable && selected.hasPermission && state.descriptors != null && !state.diagnosticOperationRunning,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(if (state.configurationExperiment?.phase == UsbConfigurationPhase.QUERYING)
+                    R.string.usb_diagnostics_configuring else R.string.usb_diagnostics_configure))
+            }
+        }
+        state.configurationExperiment?.takeIf { it.generation == state.generation && it.phase == UsbConfigurationPhase.FINISHED }?.let { result ->
+            Text(stringResource(R.string.usb_diagnostics_configuration_result, result.targetStatus.name),
+                style = MaterialTheme.typography.titleSmall)
+            result.originalAlternate?.let { query ->
+                Text(stringResource(R.string.usb_diagnostics_alternate_probe,
+                    query.alternate?.toString() ?: "—", query.descriptorValidation.name,
+                    (query.authoritative && result.accessFailure == null).toString()),
+                    style = MaterialTheme.typography.bodySmall)
+            }
+            listOf(R.string.usb_diagnostics_idle_alternate to result.idleMutation,
+                R.string.usb_diagnostics_target_alternate to result.targetMutation,
+                R.string.usb_diagnostics_restored_alternate to result.restorationMutation).forEach { (label, evidence) ->
+                Text(stringResource(label, evidence.mutation?.request?.alternate?.toString() ?: "—",
+                    evidence.mutation?.status?.name ?: "—", evidence.corroboration.name),
+                    style = MaterialTheme.typography.bodySmall)
+            }
+            val restorationComplete = result.restorationStatus in setOf(UsbConfigurationRestorationStatus.RESTORED, UsbConfigurationRestorationStatus.NOT_NEEDED)
+            Text(stringResource(R.string.usb_diagnostics_restoration_result, result.restorationStatus.name),
+                color = if (restorationComplete) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error)
+            Text(stringResource(R.string.usb_diagnostics_kernel_result, result.kernelRecovery.name))
+            Text(stringResource(R.string.usb_diagnostics_framework_result, result.frameworkRecovery.name))
+            Text(stringResource(R.string.usb_diagnostics_functional_not_verified), color = MaterialTheme.colorScheme.error)
+            Text(stringResource(R.string.usb_diagnostics_configuration_reconnect),
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
         }
         state.forcedExperiment?.takeIf {
             it.generation == state.generation && it.phase == UsbForcedPhase.FINISHED

@@ -45,7 +45,7 @@ internal enum class UsbFsProbeStatus {
     QUERYING, RECORDED, NATIVE_UNAVAILABLE, INVALID_FD, MALFORMED_NATIVE_RESULT,
     DEVICE_DISCONNECTED, STALE_GENERATION, PERMISSION_LOST, TRANSPORT_ERROR, EXCEPTION
 }
-internal enum class UsbFsIoctlOperation { GETDRIVER, GET_SPEED, CLAIMINTERFACE, RELEASEINTERFACE }
+internal enum class UsbFsIoctlOperation { GETDRIVER, GET_SPEED, CLAIMINTERFACE, RELEASEINTERFACE, SETINTERFACE }
 internal enum class UsbFsSpeed { UNKNOWN, LOW, FULL, HIGH, WIRELESS, SUPER, SUPER_PLUS }
 internal data class UsbFsIoctlResult(val operation: UsbFsIoctlOperation, val returnValue: Int,
     val errno: Int, val errnoName: String?) {
@@ -80,7 +80,7 @@ internal data class UsbAndroidAudioOutput(
 internal data class UsbAndroidAudioDiagnostics(val outputs: List<UsbAndroidAudioOutput> = emptyList(),
     val detail: String? = null, val querySucceeded: Boolean = true)
 
-/** Stable, bounded JNI packet, API version 2. Numbers: version, interface count, then
+/** Stable, bounded JNI packet, API version 4. Numbers: version, interface count, then
  * [interface, return, errno] per driver; speed [return, errno]; claim and release
  * [attempted 0/1, return, errno]. Names have count drivers / count+3 errno labels.
  * Names are supplementary; numeric ioctl results and errno remain separate evidence.
@@ -91,7 +91,7 @@ internal data class UsbFsNativeResult(val numbers: IntArray, val driverNames: Ar
 
 /** Pure interpretation and packet validation. Never infers rates, speed, or kernel ownership from descriptors. */
 internal object UsbFsEvidence {
-    const val NATIVE_API_VERSION = 2
+    const val NATIVE_API_VERSION = 4
     const val MAX_INTERFACES = 256
 
     // Values from linux/usb/ch9.h enum usb_device_speed. Native code also uses the actual NDK enum.

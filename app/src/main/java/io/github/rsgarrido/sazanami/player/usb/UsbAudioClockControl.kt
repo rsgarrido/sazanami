@@ -22,7 +22,7 @@ internal enum class UsbClockQueryStatus {
     STALL_LIKE, INTERFACE_BUSY, INVALID_REQUEST
 }
 internal enum class UsbClockDiagnosticPhase { QUERYING, COMPLETE, PARTIAL, UNAVAILABLE }
-internal enum class UsbClockClaimMode { NOT_ATTEMPTED, UNCLAIMED, AUDIOCONTROL_NON_FORCED, AUDIOCONTROL_FORCED_NATIVE }
+internal enum class UsbClockClaimMode { NOT_ATTEMPTED, UNCLAIMED, AUDIOCONTROL_NON_FORCED, AUDIOCONTROL_FORCED_NATIVE, USB_CONFIGURATION_NATIVE }
 internal enum class UsbClockRateSupport { REPRESENTED, NOT_REPRESENTED, INDETERMINATE }
 
 internal data class UsbSamplingFrequencyRange(val minimumHz: Long, val maximumHz: Long, val resolutionHz: Long)
@@ -114,32 +114,36 @@ internal object UsbAudioClockControl {
         val target = resolution.target ?: return unavailable(generation, resolution,
             UsbClockQueryStatus.AMBIGUOUS_TARGET, "No unambiguous playback Clock Source target; no reads issued.")
         require(queryOrder.size == UsbClockQuery.entries.size && queryOrder.toSet() == UsbClockQuery.entries.toSet())
-        val results = queryOrder.map { kind ->
-            val selector = if (kind == UsbClockQuery.CLOCK_VALIDITY) 2 else 1
-            val pair = ((target.controls shr ((selector - 1) * 2)) and 3L).toInt()
-            when {
-                pair == 0 -> UsbClockQueryResult(kind, UsbClockQueryStatus.UNSUPPORTED,
-                    detail = "Clock descriptor does not advertise this readable control; no request issued.")
-                pair == 2 -> UsbClockQueryResult(kind, UsbClockQueryStatus.MALFORMED_RESPONSE,
-                    detail = "Clock descriptor uses a reserved control bit pair; no request issued.")
-                kind == UsbClockQuery.FREQUENCY_RANGE -> queryRange(target, transport, accessFailure)
-                else -> {
-                    val request = if (kind == UsbClockQuery.CURRENT_FREQUENCY)
-                        UsbClockReadRequest.currentFrequency(target) else UsbClockReadRequest.clockValidity(target)
-                    val attempt = read(request, transport, accessFailure)
-                    val decoded = decode(kind, attempt.rawBytes.toByteArray(), attempt.returnedByteCount ?: -1)
-                    if (attempt.status != UsbClockQueryStatus.SUCCESS) UsbClockQueryResult(kind, attempt.status,
-                        listOf(attempt), detail = attempt.detail)
-                    else decoded.copy(attempts = listOf(attempt.copy(status = decoded.status, detail = decoded.detail)))
-                }
-            }
-        }
+        val results = queryOrder.map { kind -> queryOne(target, kind, transport, accessFailure) }
         val successes = results.count { it.status == UsbClockQueryStatus.SUCCESS }
         return UsbAudioClockDiagnostics(generation, resolution, when (successes) {
             results.size -> UsbClockDiagnosticPhase.COMPLETE
             0 -> UsbClockDiagnosticPhase.UNAVAILABLE
             else -> UsbClockDiagnosticPhase.PARTIAL
         }, UsbClockClaimMode.UNCLAIMED, results)
+    }
+
+    /** The same decoder/control bitmap checks for bounded Session 6 readbacks. */
+    fun queryOne(target: UsbAudioClockTarget, kind: UsbClockQuery, transport: UsbClockReadTransport,
+        accessFailure: () -> UsbClockQueryStatus? = { null }): UsbClockQueryResult {
+        val selector = if (kind == UsbClockQuery.CLOCK_VALIDITY) 2 else 1
+        val pair = ((target.controls shr ((selector - 1) * 2)) and 3L).toInt()
+        return when {
+            pair == 0 -> UsbClockQueryResult(kind, UsbClockQueryStatus.UNSUPPORTED,
+                detail = "Clock descriptor does not advertise this readable control; no request issued.")
+            pair == 2 -> UsbClockQueryResult(kind, UsbClockQueryStatus.MALFORMED_RESPONSE,
+                detail = "Clock descriptor uses a reserved control bit pair; no request issued.")
+            kind == UsbClockQuery.FREQUENCY_RANGE -> queryRange(target, transport, accessFailure)
+            else -> {
+                val request = if (kind == UsbClockQuery.CURRENT_FREQUENCY)
+                    UsbClockReadRequest.currentFrequency(target) else UsbClockReadRequest.clockValidity(target)
+                val attempt = read(request, transport, accessFailure)
+                val decoded = decode(kind, attempt.rawBytes.toByteArray(), attempt.returnedByteCount ?: -1)
+                if (attempt.status != UsbClockQueryStatus.SUCCESS) UsbClockQueryResult(kind, attempt.status,
+                    listOf(attempt), detail = attempt.detail)
+                else decoded.copy(attempts = listOf(attempt.copy(status = decoded.status, detail = decoded.detail)))
+            }
+        }
     }
 
     fun unavailable(generation: Long, resolution: UsbAudioClockResolution, status: UsbClockQueryStatus, detail: String) =

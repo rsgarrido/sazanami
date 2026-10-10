@@ -4,10 +4,15 @@ import androidx.annotation.Keep
 
 @Keep
 internal data class UsbFsNativeControlResult(val requestedLength: Int, val returnValue: Int,
-    val errno: Int, val errnoName: String, val rawBytes: ByteArray)
+    val errno: Int, val errnoName: String, val rawBytes: ByteArray,
+    val apiVersion: Int = UsbFsEvidence.NATIVE_API_VERSION,
+    val operation: Int = UsbFsControlEvidence.CLOCK_READ,
+    val actualLength: Int = rawBytes.size)
 
 internal data class UsbFsControlEvidence(val requestedLength: Int, val returnValue: Int,
-    val errno: Int, val errnoName: String?, val rawBytes: List<Int>) {
+    val errno: Int, val errnoName: String?, val rawBytes: List<Int>,
+    val apiVersion: Int = UsbFsEvidence.NATIVE_API_VERSION, val operation: Int = CLOCK_READ,
+    val actualLength: Int = rawBytes.size) {
     fun failureStatus(): UsbClockQueryStatus = when (errnoName) {
         "EPIPE" -> UsbClockQueryStatus.STALL_LIKE
         "ENODEV" -> UsbClockQueryStatus.DEVICE_DISCONNECTED
@@ -28,14 +33,24 @@ internal data class UsbFsControlEvidence(val requestedLength: Int, val returnVal
         }
 
     companion object {
-        fun decode(packet: UsbFsNativeControlResult, request: UsbClockReadRequest): UsbFsControlEvidence {
-            require(packet.requestedLength == request.length &&
-                packet.rawBytes.size == packet.returnValue.coerceIn(0, request.length) &&
+        const val CLOCK_READ = 1
+        const val GET_INTERFACE = 2
+        const val CLOCK_SET = 3
+        fun decode(packet: UsbFsNativeControlResult, request: UsbClockReadRequest): UsbFsControlEvidence = decode(packet, request.length)
+
+        fun decode(packet: UsbFsNativeControlResult, requestedLength: Int, expectedOperation: Int = CLOCK_READ): UsbFsControlEvidence {
+            // A one-byte GET_INTERFACE response is serialized only for an exact one-byte return.
+            val expectedActual = if (expectedOperation == GET_INTERFACE && packet.returnValue != 1) 0
+                else packet.returnValue.coerceIn(0, requestedLength)
+            require(packet.apiVersion == UsbFsEvidence.NATIVE_API_VERSION && packet.operation == expectedOperation &&
+                packet.requestedLength == requestedLength && packet.actualLength == expectedActual &&
+                packet.rawBytes.size == packet.actualLength &&
                 (if (packet.returnValue < 0) packet.errno > 0 else packet.errno == 0)) {
-                "Malformed native clock-read evidence"
+                "Malformed native control evidence"
             }
             return UsbFsControlEvidence(packet.requestedLength, packet.returnValue, packet.errno,
-                UsbFsEvidence.errnoName(packet.errno, packet.errnoName), packet.rawBytes.map { it.toInt() and 0xff })
+                UsbFsEvidence.errnoName(packet.errno, packet.errnoName), packet.rawBytes.map { it.toInt() and 0xff },
+                packet.apiVersion, packet.operation, packet.actualLength)
         }
     }
 }

@@ -9,7 +9,7 @@
 // Uses the installed NDK Linux UAPI directly. No driver implementation, local
 // ioctl declarations, fd owner, persistent session, or streaming transport.
 namespace {
-constexpr jint kApiVersion = 2;
+constexpr jint kApiVersion = 4;
 constexpr int kMaxInterfaces = 256;
 constexpr int kMaxRecords = 10 + 3 * kMaxInterfaces;
 static_assert(sizeof(unsigned int) == 4, "usbfs interface argument must be a UAPI unsigned int");
@@ -109,6 +109,28 @@ void invalidArguments(JNIEnv* env) {
         env->ThrowNew(exception, "Invalid bounded USB diagnostic plan or borrowed fd");
         env->DeleteLocalRef(exception);
     }
+}
+
+bool validAudioPair(jint ac, jint as) noexcept {
+    return ac >= 0 && ac <= 255 && as >= 0 && as <= 255 && ac != as;
+}
+
+jobject controlPacket(JNIEnv* env, int length, int returned, int savedError, const jbyte* bytes, int operation = 1) {
+    // Operation 2 is GET_INTERFACE: never read its response storage for a non-exact return.
+    const int actual = operation == 2 ? (returned == 1 ? 1 : 0) :
+        (returned > 0 ? (returned < length ? returned : length) : 0);
+    jclass resultClass = env->FindClass("io/github/rsgarrido/sazanami/player/usb/UsbFsNativeControlResult");
+    if (resultClass == nullptr) return nullptr;
+    jmethodID constructor = env->GetMethodID(resultClass, "<init>", "(IIILjava/lang/String;[BIII)V");
+    if (constructor == nullptr) return nullptr;
+    jstring errorName = env->NewStringUTF(errnoName(savedError));
+    if (errorName == nullptr) return nullptr;
+    jbyteArray raw = env->NewByteArray(actual);
+    if (raw == nullptr) return nullptr;
+    if (actual > 0) env->SetByteArrayRegion(raw, 0, actual, bytes);
+    if (env->ExceptionCheck()) return nullptr;
+    return env->NewObject(resultClass, constructor, length, returned, savedError, errorName, raw,
+        kApiVersion, operation, actual);
 }
 } // namespace
 
@@ -239,17 +261,72 @@ Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeReadClock(
     control.data = bytes.data();
     const int returned = ::ioctl(borrowedFd, USBDEVFS_CONTROL, &control);
     const int savedError = returned < 0 ? errno : 0; // Immediately, before JNI/allocation.
-    const int actual = returned > 0 ? (returned < length ? returned : length) : 0;
-    jclass resultClass = env->FindClass("io/github/rsgarrido/sazanami/player/usb/UsbFsNativeControlResult");
+    // Never closes, duplicates or retains borrowedFd. Android owns its lifetime.
+    return controlPacket(env, length, returned, savedError, bytes.data());
+}
+
+// Session 6 standard GET_INTERFACE. No arbitrary standard request API.
+extern "C" JNIEXPORT jobject JNICALL
+Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeGetAudioStreamingInterface(
+        JNIEnv* env, jobject, jint borrowedFd, jint acNumber, jint asNumber) {
+    if (borrowedFd < 0 || !validAudioPair(acNumber, asNumber)) { invalidArguments(env); return nullptr; }
+    std::array<jbyte, 1> bytes{};
+    usbdevfs_ctrltransfer control{};
+    control.bRequestType = 0x81;
+    control.bRequest = 0x0A;
+    control.wValue = 0;
+    control.wIndex = static_cast<__u16>(asNumber);
+    control.wLength = 1;
+    control.timeout = 1000;
+    control.data = bytes.data();
+    const int returned = ::ioctl(borrowedFd, USBDEVFS_CONTROL, &control);
+    const int savedError = returned < 0 ? errno : 0;
+    return controlPacket(env, 1, returned, savedError, bytes.data(), 2);
+}
+
+// Only Sampling Frequency CUR, channel zero, target 44100 or fresh original rate.
+// Entity/interface/original are supplied solely through Kotlin's validated permit.
+extern "C" JNIEXPORT jobject JNICALL
+Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeSetClockFrequency(
+        JNIEnv* env, jobject, jint borrowedFd, jint acNumber, jint asNumber, jint entityId,
+        jlong originalRateHz, jlong requestedRateHz) {
+    if (borrowedFd < 0 || !validAudioPair(acNumber, asNumber) || entityId < 1 || entityId > 255 ||
+        originalRateHz < 1 || originalRateHz > 0xffffffffLL ||
+        (requestedRateHz != 44100 && requestedRateHz != originalRateHz)) { invalidArguments(env); return nullptr; }
+    std::array<jbyte, 4> bytes{};
+    for (int i = 0; i < 4; ++i) bytes[i] = static_cast<jbyte>((requestedRateHz >> (8 * i)) & 0xff);
+    usbdevfs_ctrltransfer control{};
+    control.bRequestType = 0x21;
+    control.bRequest = 0x01;
+    control.wValue = 0x0100;
+    control.wIndex = static_cast<__u16>((entityId << 8) | acNumber);
+    control.wLength = 4;
+    control.timeout = 1000;
+    control.data = bytes.data();
+    const int returned = ::ioctl(borrowedFd, USBDEVFS_CONTROL, &control);
+    const int savedError = returned < 0 ? errno : 0;
+    return controlPacket(env, 4, returned, savedError, bytes.data(), 3);
+}
+
+// No detach/reset operation: Android already owns AS on this borrowed fd.
+// Only the descriptor-resolved idle or PCM16 target alternate is accepted.
+extern "C" JNIEXPORT jobject JNICALL
+Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeSetAudioStreamingAlternate(
+        JNIEnv* env, jobject, jint borrowedFd, jint acNumber, jint asNumber,
+        jint targetAlternate, jint idleAlternate, jint requestedAlternate) {
+    if (borrowedFd < 0 || !validAudioPair(acNumber, asNumber) || targetAlternate < 1 || targetAlternate > 255 ||
+        idleAlternate < 0 || idleAlternate > 255 || idleAlternate == targetAlternate ||
+        (requestedAlternate != idleAlternate && requestedAlternate != targetAlternate)) { invalidArguments(env); return nullptr; }
+    usbdevfs_setinterface selection{};
+    selection.interface = static_cast<unsigned int>(asNumber);
+    selection.altsetting = static_cast<unsigned int>(requestedAlternate);
+    const int returned = ::ioctl(borrowedFd, USBDEVFS_SETINTERFACE, &selection);
+    const int savedError = returned < 0 ? errno : 0;
+    jclass resultClass = env->FindClass("io/github/rsgarrido/sazanami/player/usb/UsbFsNativeIoctlResult");
     if (resultClass == nullptr) return nullptr;
-    jmethodID constructor = env->GetMethodID(resultClass, "<init>", "(IIILjava/lang/String;[B)V");
+    jmethodID constructor = env->GetMethodID(resultClass, "<init>", "(IILjava/lang/String;)V");
     if (constructor == nullptr) return nullptr;
     jstring errorName = env->NewStringUTF(errnoName(savedError));
     if (errorName == nullptr) return nullptr;
-    jbyteArray raw = env->NewByteArray(actual);
-    if (raw == nullptr) return nullptr;
-    if (actual > 0) env->SetByteArrayRegion(raw, 0, actual, bytes.data());
-    if (env->ExceptionCheck()) return nullptr;
-    // Never closes, duplicates or retains borrowedFd. Android owns its lifetime.
-    return env->NewObject(resultClass, constructor, length, returned, savedError, errorName, raw);
+    return env->NewObject(resultClass, constructor, returned, savedError, errorName);
 }

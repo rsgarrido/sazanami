@@ -110,7 +110,7 @@ internal class UsbAudioController(context: Context) {
                         readJob = null
                         val token = gate.select(current.identity)
                         inspectionToken = token
-                        publish(state.copy(descriptors = null, clockDiagnostics = null, usbFsDiagnostics = null, forcedExperiment = null, generation = gate.generation,
+                        publish(state.copy(descriptors = null, clockDiagnostics = null, usbFsDiagnostics = null, forcedExperiment = null, configurationExperiment = null, generation = gate.generation,
                             status = if (state.status == UsbAudioDiagnosticStatus.PERMISSION_DENIED)
                                 UsbAudioDiagnosticStatus.PERMISSION_DENIED else UsbAudioDiagnosticStatus.PERMISSION_REQUIRED))
                     }
@@ -124,7 +124,7 @@ internal class UsbAudioController(context: Context) {
             val audio = snapshots.filter { it.hasAudioInterface }
             if (audio.size == 1) selectOnMain(audio.single().identity)
             else publish(state.copy(selectedIdentity = null, descriptors = null,
-                generation = gate.generation, clockDiagnostics = null, usbFsDiagnostics = null, forcedExperiment = null,
+                generation = gate.generation, clockDiagnostics = null, usbFsDiagnostics = null, forcedExperiment = null, configurationExperiment = null,
                 status = if (snapshots.isEmpty()) UsbAudioDiagnosticStatus.NO_DEVICE else UsbAudioDiagnosticStatus.SELECT_DEVICE,
                 message = if (snapshots.isEmpty()) null else "Select a device to inspect; ${audio.size} devices expose audio interfaces."))
         } catch (_: RuntimeException) {
@@ -141,7 +141,7 @@ internal class UsbAudioController(context: Context) {
         val token = gate.select(identity) ?: return
         inspectionToken = token
         publish(state.copy(selectedIdentity = identity, generation = token.generation,
-            descriptors = null, clockDiagnostics = null, usbFsDiagnostics = null, forcedExperiment = null, message = null, status = UsbAudioDiagnosticStatus.PERMISSION_REQUIRED))
+            descriptors = null, clockDiagnostics = null, usbFsDiagnostics = null, forcedExperiment = null, configurationExperiment = null, message = null, status = UsbAudioDiagnosticStatus.PERMISSION_REQUIRED))
         if (manager?.hasPermission(device) == true) inspect(token)
     }
 
@@ -164,7 +164,7 @@ internal class UsbAudioController(context: Context) {
                 (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
             permissionIntent = PendingIntent.getBroadcast(appContext, 0, intent, flags)
             pending = request
-            publish(state.copy(status = UsbAudioDiagnosticStatus.REQUESTING_PERMISSION, message = null, descriptors = null, clockDiagnostics = null, usbFsDiagnostics = null, forcedExperiment = null))
+            publish(state.copy(status = UsbAudioDiagnosticStatus.REQUESTING_PERMISSION, message = null, descriptors = null, clockDiagnostics = null, usbFsDiagnostics = null, forcedExperiment = null, configurationExperiment = null))
             usb.requestPermission(device, permissionIntent)
             permissionTimeout = Runnable {
                 if (pending == request && gate.accepts(token)) {
@@ -189,8 +189,8 @@ internal class UsbAudioController(context: Context) {
         val actualPermission = runCatching { manager?.hasPermission(device) == true }.getOrDefault(false)
         state = state.copy(devices = state.devices.map { if (it.identity == identity) it.copy(hasPermission = actualPermission) else it })
         if (!actualPermission) publish(state.copy(status = UsbAudioDiagnosticStatus.PERMISSION_DENIED,
-            descriptors = null, clockDiagnostics = null, usbFsDiagnostics = null, forcedExperiment = null, message = "USB access was not granted. No device configuration was changed."))
-        else if (!granted) publish(state.copy(status = UsbAudioDiagnosticStatus.ERROR, descriptors = null, clockDiagnostics = null, usbFsDiagnostics = null, forcedExperiment = null,
+            descriptors = null, clockDiagnostics = null, usbFsDiagnostics = null, forcedExperiment = null, configurationExperiment = null, message = "USB access was not granted. No device configuration was changed."))
+        else if (!granted) publish(state.copy(status = UsbAudioDiagnosticStatus.ERROR, descriptors = null, clockDiagnostics = null, usbFsDiagnostics = null, forcedExperiment = null, configurationExperiment = null,
             message = "Permission result disagrees with current Android access. Refresh to recheck."))
         else inspect(request.token)
     }
@@ -204,7 +204,7 @@ internal class UsbAudioController(context: Context) {
         inspectionToken = token
         closeConnection()
         publish(state.copy(status = UsbAudioDiagnosticStatus.OPENING, generation = token.generation,
-            descriptors = null, clockDiagnostics = null, usbFsDiagnostics = null, forcedExperiment = null, message = null))
+            descriptors = null, clockDiagnostics = null, usbFsDiagnostics = null, forcedExperiment = null, configurationExperiment = null, message = null))
         readJob = scope.launch {
             val result = try {
                 withContext(Dispatchers.IO) {
@@ -266,7 +266,7 @@ internal class UsbAudioController(context: Context) {
         val token = gate.select(identity) ?: return
         inspectionToken = token
         closeConnection()
-        publish(state.copy(generation = token.generation, usbFsDiagnostics = null, forcedExperiment = null,
+        publish(state.copy(generation = token.generation, usbFsDiagnostics = null, forcedExperiment = null, configurationExperiment = null,
             clockDiagnostics = UsbAudioClockDiagnostics(token.generation, resolution, UsbClockDiagnosticPhase.QUERYING,
                 claimExperiment = if (withClaimExperiment) UsbAudioClaimExperimentResult(token.generation, resolution) else null)))
         readJob = scope.launch {
@@ -328,7 +328,7 @@ internal class UsbAudioController(context: Context) {
                 when (publicationFailure) {
                     UsbClockQueryStatus.DEVICE_DISCONNECTED -> { invalidate(); refreshOnMain(excluded = identity) }
                     UsbClockQueryStatus.PERMISSION_LOST -> publish(state.copy(status = UsbAudioDiagnosticStatus.PERMISSION_REQUIRED,
-                        descriptors = null, usbFsDiagnostics = null, forcedExperiment = null, devices = state.devices.map { if (it.identity == identity) it.copy(hasPermission = false) else it },
+                        descriptors = null, usbFsDiagnostics = null, forcedExperiment = null, configurationExperiment = null, devices = state.devices.map { if (it.identity == identity) it.copy(hasPermission = false) else it },
                         clockDiagnostics = invalidateClockDiagnostics(result, UsbClockQueryStatus.PERMISSION_LOST,
                             "Permission lost; returned values are not authoritative.")))
                     UsbClockQueryStatus.TRANSPORT_ERROR -> publish(state.copy(
@@ -409,7 +409,7 @@ internal class UsbAudioController(context: Context) {
                 when (val failure = usbAccessFailure(token)) {
                     UsbClockQueryStatus.DEVICE_DISCONNECTED -> { invalidate(); refreshOnMain(excluded = identity) }
                     UsbClockQueryStatus.PERMISSION_LOST -> publish(state.copy(status = UsbAudioDiagnosticStatus.PERMISSION_REQUIRED,
-                        descriptors = null, clockDiagnostics = null, forcedExperiment = null,
+                        descriptors = null, clockDiagnostics = null, forcedExperiment = null, configurationExperiment = null,
                         devices = state.devices.map { if (it.identity == identity) it.copy(hasPermission = false) else it },
                         usbFsDiagnostics = result.invalidate(failure, "Permission lost before publication; native evidence omitted.")))
                     null -> publish(state.copy(usbFsDiagnostics = result))
@@ -492,11 +492,90 @@ internal class UsbAudioController(context: Context) {
                     UsbClockQueryStatus.DEVICE_DISCONNECTED -> { invalidate(); refreshOnMain(excluded = identity) }
                     UsbClockQueryStatus.STALE_GENERATION -> Unit
                     UsbClockQueryStatus.PERMISSION_LOST -> publish(state.copy(status = UsbAudioDiagnosticStatus.PERMISSION_REQUIRED,
-                        descriptors = null, clockDiagnostics = null, usbFsDiagnostics = null,
+                        descriptors = null, clockDiagnostics = null, usbFsDiagnostics = null, configurationExperiment = null,
                         devices = state.devices.map { if (it.identity == identity) it.copy(hasPermission = false) else it },
                         forcedExperiment = result.invalidate(failure, "Permission lost before publication; device values omitted.")))
                     null -> publish(state.copy(forcedExperiment = result))
                     else -> publish(state.copy(forcedExperiment = result.invalidate(failure, "USB access could not be revalidated before publication.")))
+                }
+            }
+        }
+    }
+
+    fun configurePcm16(identity: UsbAudioDeviceIdentity) = onMain {
+        val token = gate.current ?: return@onMain
+        val model = state.descriptors ?: return@onMain
+        val selected = state.selectedDevice ?: return@onMain
+        if (token.identity != identity || selected.identity != identity || pending != null || state.diagnosticOperationRunning) return@onMain
+        val resolution = UsbAudioConfigurationPlan.resolve(model, selected.interfaces)
+        val plan = resolution.plan
+        if (plan == null) {
+            publish(state.copy(configurationExperiment = UsbAudioConfigurationResult(token.generation, resolution,
+                targetStatus = UsbTargetConfigurationStatus.BLOCKED, failedStep = UsbConfigurationStep.TARGET,
+                detail = "Configuration topology is ambiguous/unsupported; no forced ownership or configuration issued.")))
+            return@onMain
+        }
+        readJob?.cancel()
+        inspectionToken = token
+        closeConnection()
+        publish(state.copy(configurationExperiment = UsbAudioConfigurationResult(token.generation, resolution, UsbConfigurationPhase.QUERYING)))
+        readJob = scope.launch {
+            val result = try {
+                withContext(Dispatchers.IO) {
+                    ioMutex.withLock {
+                        currentCoroutineContext().ensureActive()
+                        fun unavailable(failure: UsbClockQueryStatus, detail: String) =
+                            UsbAudioConfigurationResult(token.generation, resolution).invalidate(failure, detail)
+                        usbAccessFailure(token)?.let { return@withLock unavailable(it, "Access check failed before Session 6 open.") }
+                        val usb = manager ?: return@withLock unavailable(UsbClockQueryStatus.TRANSPORT_ERROR, "USB host API unavailable.")
+                        val live = usb.deviceList.values.firstOrNull { it.diagnosticIdentity() == identity }
+                            ?: return@withLock unavailable(UsbClockQueryStatus.DEVICE_DISCONNECTED, "Device disappeared before configuration open.")
+                        val opened = usb.openDevice(live) ?: return@withLock unavailable(
+                            usbAccessFailure(token) ?: UsbClockQueryStatus.TRANSPORT_ERROR, "Android could not open the configuration connection.")
+                        var runnerOwnsClose = false
+                        try {
+                            val accepted = synchronized(connectionLock) {
+                                if (closed || inspectionToken != token) false else {
+                                    connection = opened
+                                    workerOwnedConnection = opened
+                                    true
+                                }
+                            }
+                            if (!accepted) return@withLock unavailable(UsbClockQueryStatus.STALE_GENERATION, "Generation changed before Session 6 registration.")
+                            currentCoroutineContext().ensureActive()
+                            usbAccessFailure(token)?.let { return@withLock unavailable(it, "Access changed before configuration setup.") }
+                            val transport = UsbAudioConfigurationConnection(opened, live, appContext, plan, token.generation)
+                            runnerOwnsClose = true
+                            // Runner checks cancellation on forward steps and uses this cancellation-free
+                            // attachment check for best-effort restoration on the original connection.
+                            UsbAudioConfigurationExperiment.run(resolution, token.generation, transport) { usbAccessFailure(token) }
+                        } finally {
+                            synchronized(connectionLock) {
+                                if (connection === opened) connection = null
+                                if (workerOwnedConnection === opened) workerOwnedConnection = null
+                            }
+                            if (!runnerOwnsClose) runCatching { opened.close() }
+                        }
+                    }
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: SecurityException) { UsbAudioConfigurationResult(token.generation, resolution).invalidate(
+                UsbClockQueryStatus.PERMISSION_LOST, "USB access denied during configuration setup.") }
+            catch (_: Exception) { UsbAudioConfigurationResult(token.generation, resolution,
+                targetStatus = UsbTargetConfigurationStatus.EXCEPTION, detail = "Configuration setup failed; no successful configuration inferred.") }
+            if (!closed && gate.accepts(token)) {
+                if (result.accessFailure == UsbClockQueryStatus.DEVICE_DISCONNECTED) {
+                    invalidate(); refreshOnMain(excluded = identity); return@launch
+                }
+                when (val failure = usbAccessFailure(token)) {
+                    UsbClockQueryStatus.DEVICE_DISCONNECTED -> { invalidate(); refreshOnMain(excluded = identity) }
+                    UsbClockQueryStatus.STALE_GENERATION -> Unit
+                    UsbClockQueryStatus.PERMISSION_LOST -> publish(state.copy(status = UsbAudioDiagnosticStatus.PERMISSION_REQUIRED,
+                        descriptors = null, clockDiagnostics = null, usbFsDiagnostics = null, forcedExperiment = null,
+                        devices = state.devices.map { if (it.identity == identity) it.copy(hasPermission = false) else it },
+                        configurationExperiment = result.invalidate(failure, "Permission lost before Session 6 publication.")))
+                    null -> publish(state.copy(configurationExperiment = result))
+                    else -> publish(state.copy(configurationExperiment = result.invalidate(failure, "USB access could not be revalidated before publication.")))
                 }
             }
         }

@@ -79,6 +79,16 @@
     <string name="usb_diagnostics_title">USB Audio / Bit-perfect diagnostics</string>
     <string name="usb_diagnostics_note">Development USB diagnostics. Direct USB playback is not implemented. Stop music before the Session 5 forced ownership experiment.</string>
     <string name="usb_diagnostics_force">Force-own AudioControl + read clock</string>
+    <string name="usb_diagnostics_configure">Configure USB 16/44.1 (no audio)</string>
+    <string name="usb_diagnostics_configuring">Configuring and restoring USB 16/44.1…</string>
+    <string name="usb_diagnostics_configuration_result">Session 6 target configuration: %1$s</string>
+    <string name="usb_diagnostics_alternate_probe">Initial GET_INTERFACE reported: %1$s; descriptor validity: %2$s; authoritative query evidence: %3$s</string>
+    <string name="usb_diagnostics_idle_alternate">Idle alternate requested: %1$s; SETINTERFACE: %2$s; GET_INTERFACE corroboration: %3$s</string>
+    <string name="usb_diagnostics_target_alternate">Target alternate requested: %1$s; SETINTERFACE: %2$s; GET_INTERFACE corroboration: %3$s</string>
+    <string name="usb_diagnostics_restored_alternate">Restored idle alternate requested: %1$s; SETINTERFACE: %2$s; GET_INTERFACE corroboration: %3$s</string>
+    <string name="usb_diagnostics_restoration_result">Configuration restoration: %1$s</string>
+    <string name="usb_diagnostics_configure_note">Session 6 development test: stop all Sazanami playback first. This temporarily takes AudioControl and AudioStreaming from Android, programs the DAC clock to 44.1 kHz and selects stereo PCM16. NO music or audio data is sent. It establishes and restores the descriptor-resolved idle alternate and the original clock, then releases AS before AC. Normal Android USB routing may stop working afterward; the tested KA15/Samsung environment has required physical reconnect after forced ownership.</string>
+    <string name="usb_diagnostics_configuration_reconnect">After this configuration experiment, physically disconnect/reconnect the DAC if normal Android playback routes incorrectly or the DAC behaves abnormally. Kernel bindings and framework enumeration do not verify functional USB audio recovery.</string>
     <string name="usb_diagnostics_forcing">Testing forced AC ownership and recovery…</string>
     <string name="usb_diagnostics_kernel_result">Kernel bindings: %1$s</string>
     <string name="usb_diagnostics_framework_result">Android USB audio enumeration: %1$s</string>

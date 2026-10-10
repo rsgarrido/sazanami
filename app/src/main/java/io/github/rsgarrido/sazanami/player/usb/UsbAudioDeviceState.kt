@@ -50,14 +50,15 @@ internal data class UsbAudioDiagnosticState(
     val message: String? = null,
     val clockDiagnostics: UsbAudioClockDiagnostics? = null,
     val usbFsDiagnostics: UsbFsOwnershipDiagnostics? = null,
-    val forcedExperiment: UsbAudioForcedExperimentResult? = null
+    val forcedExperiment: UsbAudioForcedExperimentResult? = null,
+    val configurationExperiment: UsbAudioConfigurationResult? = null
 ) {
     val selectedDevice: UsbAudioDeviceSnapshot?
         get() = devices.firstOrNull { it.identity == selectedIdentity }
     val diagnosticOperationRunning: Boolean
         get() = status == UsbAudioDiagnosticStatus.OPENING ||
             clockDiagnostics?.phase == UsbClockDiagnosticPhase.QUERYING || usbFsDiagnostics?.status == UsbFsProbeStatus.QUERYING ||
-            forcedExperiment?.phase == UsbForcedPhase.QUERYING
+            forcedExperiment?.phase == UsbForcedPhase.QUERYING || configurationExperiment?.phase == UsbConfigurationPhase.QUERYING
 }
 
 internal data class UsbAudioInspectionToken(val identity: UsbAudioDeviceIdentity, val generation: Long)

@@ -24,7 +24,7 @@ internal enum class UsbRecoveryStatus {
 }
 internal enum class UsbKernelBindingRecovery { RESTORED, NOT_RESTORED, INDETERMINATE }
 internal enum class UsbFrameworkEnumerationRecovery { CANDIDATE_PRESENT, CANDIDATE_MISSING, AMBIGUOUS, INDETERMINATE }
-/** Session 5 never exercises a playback stream, so no successful functional state exists. */
+/** Configuration diagnostics never exercise a playback stream; no successful functional state exists. */
 internal enum class UsbFunctionalAudioRecovery { NOT_VERIFIED }
 internal data class UsbForcedRecoveryObservation(val elapsedMs: Long, val snapshot: UsbFsOwnershipDiagnostics)
 internal data class UsbAudioForcedExperimentResult(
@@ -153,30 +153,7 @@ internal object UsbAudioForcedExperiment {
                         }
                         access()?.let { result = result.invalidate(it, "Access changed; release/close facts retained, device values omitted.") }
                         if (result.claimReturned == true && result.accessFailure == null) {
-                            val started = transport.monotonicMs()
-                            fun record() {
-                                val snapshot = observe()
-                                result = result.copy(recoveryObservations = result.recoveryObservations +
-                                    UsbForcedRecoveryObservation((transport.monotonicMs() - started).coerceAtLeast(0), snapshot))
-                                result = result.copy(recoveryStatus = classify(result))
-                            }
-                            record() // Immediate post-release snapshot, before any delay/close.
-                            var polls = 0
-                            while (result.recoveryStatus != UsbRecoveryStatus.ENUMERATION_RECOVERED &&
-                                result.releaseReturned == true && polls < MAX_RECOVERY_POLLS && access() == null) {
-                                val remaining = RECOVERY_WINDOW_MS - (transport.monotonicMs() - started)
-                                if (remaining <= 0) break
-                                transport.pause(minOf(RECOVERY_INTERVAL_MS, remaining))
-                                access()?.let { result = result.invalidate(it, "Access changed during recovery observation.") }
-                                if (result.accessFailure != null || transport.monotonicMs() - started > RECOVERY_WINDOW_MS) break
-                                record()
-                                polls++
-                            }
-                            access()?.let { result = result.invalidate(it, "Access changed after recovery observation.") }
-                            if (result.accessFailure == null) result = result.copy(recoveryStatus = classify(result),
-                                recoveryWindowExpired = result.releaseReturned == true &&
-                                    result.recoveryStatus != UsbRecoveryStatus.ENUMERATION_RECOVERED &&
-                                    (polls == MAX_RECOVERY_POLLS || transport.monotonicMs() - started >= RECOVERY_WINDOW_MS))
+                            result = observeEnumerationRecovery(result, transport, ::access)
                         } else if (result.claimReturned == false) result = result.copy(detail =
                             "Android force claim returned false; no native clock reads or release issued. Cause unavailable.")
                     } else if (result.accessFailure == null) result = result.copy(detail =
@@ -199,6 +176,39 @@ internal object UsbAudioForcedExperiment {
             }
         }
         return result.copy(recoveryStatus = classify(result))
+    }
+
+    /** Shared Session 5/6 bounded observation. Only enumeration, never routing repair or playback. */
+    suspend fun observeEnumerationRecovery(baseline: UsbAudioForcedExperimentResult, transport: UsbAudioForcedTransport,
+        accessFailure: () -> UsbClockQueryStatus?): UsbAudioForcedExperimentResult {
+        var result = baseline
+        val started = transport.monotonicMs()
+        fun record() {
+            val snapshot = transport.snapshot()
+            require(snapshot.generation == baseline.generation && snapshot.plan === baseline.plan && snapshot.claim == null && snapshot.release == null)
+            result = if (snapshot.status == UsbFsProbeStatus.DEVICE_DISCONNECTED) result.invalidate(
+                UsbClockQueryStatus.DEVICE_DISCONNECTED, "Device disconnected during enumeration recovery.")
+            else result.copy(recoveryObservations = result.recoveryObservations +
+                UsbForcedRecoveryObservation((transport.monotonicMs() - started).coerceAtLeast(0), snapshot))
+            result = result.copy(recoveryStatus = classify(result))
+        }
+        accessFailure()?.let { return result.invalidate(it, "Access changed before enumeration recovery.") }
+        record()
+        var polls = 0
+        while (result.accessFailure == null && result.recoveryStatus != UsbRecoveryStatus.ENUMERATION_RECOVERED &&
+            result.releaseReturned == true && polls < MAX_RECOVERY_POLLS && accessFailure() == null) {
+            val remaining = RECOVERY_WINDOW_MS - (transport.monotonicMs() - started)
+            if (remaining <= 0) break
+            transport.pause(minOf(RECOVERY_INTERVAL_MS, remaining))
+            accessFailure()?.let { result = result.invalidate(it, "Access changed during enumeration recovery.") }
+            if (result.accessFailure != null || transport.monotonicMs() - started > RECOVERY_WINDOW_MS) break
+            record()
+            polls++
+        }
+        accessFailure()?.let { result = result.invalidate(it, "Access changed after enumeration recovery.") }
+        return if (result.accessFailure != null) result else result.copy(recoveryStatus = classify(result),
+            recoveryWindowExpired = result.releaseReturned == true && result.recoveryStatus != UsbRecoveryStatus.ENUMERATION_RECOVERED &&
+                (polls == MAX_RECOVERY_POLLS || transport.monotonicMs() - started >= RECOVERY_WINDOW_MS))
     }
 
     fun recoveryFailure(failure: UsbClockQueryStatus): UsbRecoveryStatus = when (failure) {
