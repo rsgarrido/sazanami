@@ -3,7 +3,7 @@ package io.github.rsgarrido.sazanami.player.usb
 internal data class UsbAudioConfigurationResolution(val plan: UsbAudioConfigurationPlan? = null,
     val issues: List<String> = emptyList())
 
-/** Session 6's only format. Keys and entities are always descriptor-derived. */
+/** Shared descriptor-selected format; Session 6 defaults to PCM16/44.1. Keys/entities are descriptor-derived. */
 internal class UsbAudioConfigurationPlan private constructor(
     val probe: UsbFsProbePlan,
     val clock: UsbAudioClockTarget,
@@ -13,16 +13,19 @@ internal class UsbAudioConfigurationPlan private constructor(
     val acClaim: UsbAudioForcedClaimRequest,
     val asClaim: UsbAudioStreamingClaimRequest,
     val declaredAlternates: Set<Int>,
-    val sampleRateHz: Long
+    val pcmFormat: UsbDirectFormat
 ) {
-    val channels: Int get() = 2
-    val subslotBytes: Int get() = 2
-    val validBits: Int get() = 16
+    val selectedFormat=UsbSelectedPcmFormat(pcmFormat,streaming)
+    val sampleRateHz get()=pcmFormat.sampleRateHz
+    val channels get()=pcmFormat.channelCount
+    val subslotBytes get()=pcmFormat.subslotBytes
+    val validBits get()=pcmFormat.validBits
 
     companion object {
         fun resolve(model: UsbAudioDescriptorModel, android: List<UsbAndroidInterfaceSnapshot>,
-            sampleRateHz: Long = UsbDirectPcmFormat.REFERENCE_RATE_HZ): UsbAudioConfigurationResolution {
-            if (!UsbDirectPcmFormat.supportsRate(sampleRateHz)) return UsbAudioConfigurationResolution(issues = listOf("Unsupported PCM16 direct sample rate."))
+            sampleRateHz: Long = UsbDirectPcmFormat.REFERENCE_RATE_HZ, bitsPerSample: Long = 16, channelCount: Long = 2): UsbAudioConfigurationResolution {
+            val pcmFormat=UsbDirectPcmFormat.resolve(sampleRateHz,channelCount,bitsPerSample)
+                ?: return UsbAudioConfigurationResolution(issues = listOf("Unsupported direct PCM format."))
             val probe = UsbFsProbePlan.create(model, android)
             val clock = probe.resolution.target ?: return UsbAudioConfigurationResolution(issues = probe.warnings)
             fun blocked(detail: String) = UsbAudioConfigurationResolution(issues = probe.warnings + detail)
@@ -36,12 +39,12 @@ internal class UsbAudioConfigurationPlan private constructor(
                 val format = iface.audioFormat
                 iface.isAudioStreaming && iface.protocol == 0x20 && iface.key.alternate in 1..255 &&
                     iface.key in clock.playbackPaths && general?.formatType == 1 &&
-                    general.formats == 1L && general.channelCount == 2 && // PCM only; no unresolved format selector.
-                    format?.type == 1 && format.subslotBytes == 2 && format.validBits == 16 &&
+                    general.formats == 1L && general.channelCount == pcmFormat.channelCount && // PCM only; no unresolved format selector.
+                    format?.type == 1 && format.subslotBytes == pcmFormat.subslotBytes && format.validBits == pcmFormat.validBits &&
                     iface.endpoints.count { !it.isIn && it.transferType == 1 && it.usageType == 0 } == 1
             }
             val stream = matches.singleOrNull() ?: return blocked(
-                "Expected one unambiguous stereo PCM Type I / 2-byte / 16-valid-bit alternate; found ${matches.size}.")
+                "Expected one unambiguous stereo PCM Type I / ${pcmFormat.subslotBytes}-byte / ${pcmFormat.validBits}-valid-bit alternate; found ${matches.size}.")
             val association = model.associations.singleOrNull { it.configurationOffset == stream.key.configurationOffset &&
                 it.functionClass == 1 && stream.key.number in it.firstInterface until (it.firstInterface + it.interfaceCount) }
                 ?: return blocked("No unique Audio function association for configuration ownership.")
@@ -69,7 +72,7 @@ internal class UsbAudioConfigurationPlan private constructor(
             val data = stream.endpoints.single { !it.isIn && it.transferType == 1 && it.usageType == 0 }
             if (data.address !in 1..15 || data.packetPayloadBytes == 0) return blocked("Playback data endpoint descriptor is invalid.")
             return UsbAudioConfigurationResolution(UsbAudioConfigurationPlan(probe, clock, stream.key, idle.key,
-                data.address, ac, UsbAudioStreamingClaimRequest.fromIdle(idleHandle), alternates.map { it.key.alternate }.toSet(), sampleRateHz))
+                data.address, ac, UsbAudioStreamingClaimRequest.fromIdle(idleHandle), alternates.map { it.key.alternate }.toSet(), pcmFormat))
         }
     }
 

@@ -16,14 +16,14 @@ class UsbDirectSampleRateTest {
         val selected=controller.indexOf("val sourceRateHz = source.result.count(\"sampleRate\")")
         assertTrue(selected>controller.indexOf("source.prepare"))
         assertTrue(selected<controller.indexOf("usb.openDevice(live)"))
-        assertTrue(controller.contains("UsbSilentTransportPlan.resolve(model, selected.interfaces, sourceRateHz)"))
+        assertTrue(controller.contains("UsbSilentTransportPlan.resolve(model, selected.interfaces, sourceRateHz, source.result.count(\"bitsPerSample\"), source.result.count(\"channels\"))"))
         val endpoint=source("java/io/github/rsgarrido/sazanami/player/usb/UsbSilentTransportExperiment.kt")
-        assertTrue(endpoint.indexOf("require(configuration.selectedRateMatches(sourceRate))")<endpoint.indexOf("backend = factory"))
+        assertTrue(endpoint.indexOf("require(configuration.selectedFormatMatches(sourceRate,sourceChannels,sourceBits))")<endpoint.indexOf("backend = factory"))
         val native=source("cpp/usb_iso_transport.cpp")
         for (field in listOf("Rate", "Channels", "Bits")) assertTrue(native.contains("metadataFacts[fv::$field] != config["))
         assertTrue(native.contains("scheduler(sampleRateHz)"))
         assertTrue(native.contains("scheduler.nominalRate"))
-        assertTrue(native.contains("config[16] < 2 && config[12] != static_cast<int>(kRate)"))
+        assertTrue(native.contains("config[16] < 2 && (config[12] != static_cast<int>(kRate) || config[15] != 16)"))
         val queue=source("cpp/flac/flac_prefix_queue.h")
         assertTrue(queue.contains("kPrefixCapacity = 16384"));assertTrue(queue.contains("kPrefixPrebuffer = 8192"))
         assertTrue(queue.contains("kPrefixDurationUs = 5000000"))
@@ -37,10 +37,10 @@ class UsbDirectSampleRateTest {
         for (rate in listOf(44100L,48000L)) {
             assertTrue(UsbDirectPcmFormat.supports(rate,2,16))
             for (channels in listOf(0L,1L,3L,8L)) assertFalse(UsbDirectPcmFormat.supports(rate,channels,16))
-            for (bits in listOf(8L,24L,32L)) assertFalse(UsbDirectPcmFormat.supports(rate,2,bits))
+            for (bits in listOf(8L,32L)) assertFalse(UsbDirectPcmFormat.supports(rate,2,bits))
         }
         for (rate in listOf(0L,88200L,96000L,176400L,192000L)) assertFalse(UsbDirectPcmFormat.supports(rate,2,16))
-        assertFalse(UsbDirectPcmFormat.supports(48000,2,24))
+        assertTrue(UsbDirectPcmFormat.supports(48000,2,24));assertFalse(UsbDirectPcmFormat.supports(44100,2,24))
     }
     @Test fun feedbackEnvelopeMovesWithSelectedRateWithoutChangingEncodingOrTolerance() {
         for (rate in listOf(44100L,48000L)) {

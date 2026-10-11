@@ -21,6 +21,9 @@ internal fun UsbAudioConfigurationResult.selectedRateMatches(sourceRateHz: Long)
         targetClockReadback?.status == UsbClockQueryStatus.SUCCESS && targetClockReadback.currentFrequencyHz == sourceRateHz &&
         configuredClockReadback?.status == UsbClockQueryStatus.SUCCESS && configuredClockReadback.currentFrequencyHz == sourceRateHz
 
+internal fun UsbAudioConfigurationResult.selectedFormatMatches(rateHz: Long, channels: Long, bits: Long): Boolean =
+    selectedRateMatches(rateHz) && resolution.plan?.pcmFormat == UsbDirectPcmFormat.resolve(rateHz,channels,bits)
+
 internal data class UsbAudioConfigurationResult(
     val generation: Long,
     val resolution: UsbAudioConfigurationResolution,
@@ -208,7 +211,7 @@ internal object UsbAudioConfigurationExperiment {
         } catch (error: Exception) { UsbConfigurationAndroidOwnership(attempted = true, exceptionType = error.javaClass.simpleName) }
 
         try {
-            requireStage(plan != null, "No unambiguous PCM16 configuration target; no USB action issued.")
+            requireStage(plan != null, "No unambiguous PCM configuration target; no USB action issued.")
             val target = requireNotNull(plan)
             guard()
             requireStage(target.acClaim.audioControl in transport.interfaces() && target.asClaim.audioStreaming in transport.interfaces(),
@@ -289,7 +292,7 @@ internal object UsbAudioConfigurationExperiment {
             requireStage(result.configuredClockValidity?.status == UsbClockQueryStatus.SUCCESS && result.configuredClockValidity?.clockValid == true,
                 "Configured Clock Validity is not true.")
             result = result.copy(targetStatus = UsbTargetConfigurationStatus.TARGET_CONFIGURATION_VERIFIED,
-                detail = "PCM16 stereo / ${target.sampleRateHz} configuration verified by successful SETINTERFACE and clock readbacks; advisory alternate queries are reported separately." +
+                detail = "PCM${target.validBits} stereo / ${target.sampleRateHz} configuration verified by successful SETINTERFACE and clock readbacks; advisory alternate queries are reported separately." +
                     if (endpointWork == null) " No endpoint I/O; restoration begins immediately." else " Session 7 endpoint work precedes restoration.")
             if (endpointWork != null) {
                 guard()

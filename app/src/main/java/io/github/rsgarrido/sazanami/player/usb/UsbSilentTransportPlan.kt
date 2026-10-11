@@ -2,14 +2,14 @@ package io.github.rsgarrido.sazanami.player.usb
 
 internal data class UsbSilentTransportResolution(val plan: UsbSilentTransportPlan? = null, val issues: List<String> = emptyList())
 
-/** Session 7 accepts only the existing PCM16 configuration and a unique explicit-feedback pair. */
+/** Shared format/explicit-feedback resolution. Legacy silence/reference callers retain PCM16/44.1 defaults. */
 internal class UsbSilentTransportPlan private constructor(val configuration: UsbAudioConfigurationResolution,
     val data: UsbEndpointDescriptor, val feedback: UsbEndpointDescriptor) {
     val configurationPlan get() = requireNotNull(configuration.plan)
     companion object {
         fun resolve(model: UsbAudioDescriptorModel, android: List<UsbAndroidInterfaceSnapshot>,
-            sampleRateHz: Long = UsbDirectPcmFormat.REFERENCE_RATE_HZ): UsbSilentTransportResolution {
-            val configuration = UsbAudioConfigurationPlan.resolve(model, android, sampleRateHz)
+            sampleRateHz: Long = UsbDirectPcmFormat.REFERENCE_RATE_HZ, bitsPerSample: Long = 16, channelCount: Long = 2): UsbSilentTransportResolution {
+            val configuration = UsbAudioConfigurationPlan.resolve(model, android, sampleRateHz, bitsPerSample, channelCount)
             val plan = configuration.plan ?: return UsbSilentTransportResolution(issues = configuration.issues)
             fun blocked(message: String) = UsbSilentTransportResolution(issues = configuration.issues + message)
             val target = model.interfaces.singleOrNull { it.key == plan.streaming } ?: return blocked("Target AS descriptor missing.")
@@ -35,7 +35,7 @@ internal class UsbSilentTransportPlan private constructor(val configuration: Usb
             return UsbSilentTransportResolution(UsbSilentTransportPlan(configuration, data, feedback))
         }
     }
-    fun timing(speed: UsbFsSpeed?): UsbIsoTiming? = UsbIsoTiming.resolve(speed, data, feedback, configurationPlan.sampleRateHz)
+    fun timing(speed: UsbFsSpeed?): UsbIsoTiming? = UsbIsoTiming.resolve(speed, data, feedback, configurationPlan.sampleRateHz, configurationPlan.pcmFormat.bytesPerFrame)
 }
 
 internal data class UsbIsoTiming(val dataIntervalUs: Long, val feedbackIntervalUs: Long, val capacity: Int,
@@ -77,15 +77,15 @@ internal data class UsbIsoTiming(val dataIntervalUs: Long, val feedbackIntervalU
                 bytes * (extra + 1) else null
         }
         fun resolve(speed: UsbFsSpeed?, data: UsbEndpointDescriptor, feedback: UsbEndpointDescriptor,
-            sampleRateHz: Long = UsbDirectPcmFormat.REFERENCE_RATE_HZ): UsbIsoTiming? {
-            if (!UsbDirectPcmFormat.supportsRate(sampleRateHz)) return null
+            sampleRateHz: Long = UsbDirectPcmFormat.REFERENCE_RATE_HZ, bytesPerFrame: Int = BYTES_PER_FRAME): UsbIsoTiming? {
+            if (!UsbDirectPcmFormat.supportsRate(sampleRateHz) || bytesPerFrame !in listOf(4,6) || (bytesPerFrame==6 && sampleRateHz!=48000L)) return null
             val dataUs = serviceIntervalUs(speed, data.interval) ?: return null
             val feedbackUs = serviceIntervalUs(speed, feedback.interval) ?: return null
             val capacity = highSpeedCapacity(data.maxPacketSizeRaw) ?: return null
             if (dataUs > 500 || feedbackUs > 8000 || feedback.maxPacketSizeRaw != 4) return null
             val scaledSecond = 100L * 1_000_000L
             val worstFrames = (sampleRateHz * dataUs * (100 + UsbExplicitFeedback.PLAUSIBILITY_PERCENT) + scaledSecond - 1) / scaledSecond
-            if (capacity < worstFrames * BYTES_PER_FRAME || (data.additionalTransactions > 0 && data.interval != 1)) return null
+            if (capacity < worstFrames * bytesPerFrame || (data.additionalTransactions > 0 && data.interval != 1)) return null
             return UsbIsoTiming(dataUs, feedbackUs, capacity)
         }
     }

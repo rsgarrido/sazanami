@@ -47,7 +47,9 @@ internal object UsbSilentTransportExperiment {
                 require(configuration.targetStatus == UsbTargetConfigurationStatus.TARGET_CONFIGURATION_VERIFIED)
                 val selectedRate = requireNotNull(plan).configurationPlan.sampleRateHz
                 val sourceRate = if (mode.isFlac) requireNotNull(prefixSource).result.count("sampleRate") else selectedRate
-                require(configuration.selectedRateMatches(sourceRate)) { "Source/request/readback rate mismatch; no PCM streaming." }
+                val sourceChannels=if(mode.isFlac) requireNotNull(prefixSource).result.count("channels") else 2L
+                val sourceBits=if(mode.isFlac) requireNotNull(prefixSource).result.count("bitsPerSample") else 16L
+                require(configuration.selectedFormatMatches(sourceRate,sourceChannels,sourceBits)) { "Source/configuration rate or width mismatch; no PCM streaming." }
                 endpointStarted = true
                 try {
                     onPhase(UsbSilentPhase.STARTING_TRANSPORT)
@@ -57,7 +59,8 @@ internal object UsbSilentTransportExperiment {
                         native = UsbIsoTransportResult(generation, stream, exceptionType = "StaleStreamResult", authorityFailure = UsbClockQueryStatus.STALE_GENERATION)
                     else if (native?.exceptionType == null && native?.count("sourceMode") != mode.ordinal.toLong())
                         native = native?.copy(exceptionType = "SourceModeMismatch")
-                    else if (native?.exceptionType == null && native?.count("schedulerNominalRateHz") != selectedRate)
+                    else if (native?.exceptionType == null && (native?.count("schedulerNominalRateHz") != selectedRate || native?.pcmFormat!=plan.configurationPlan.pcmFormat ||
+                        native?.count("formatAlternate")!=plan.configurationPlan.streaming.alternate.toLong()))
                         native = native?.copy(exceptionType = "SelectedRateMismatch")
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (error: Exception) { native = UsbIsoTransportResult(generation, stream, exceptionType = error.javaClass.simpleName) }

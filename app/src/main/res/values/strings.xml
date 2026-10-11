@@ -351,9 +351,9 @@
     <string name="usb_diagnostics_reference_content">Generated silence/LEFT/RIGHT frames: %1$s/%2$s/%3$s; absolute PCM peak: %4$s</string>
     <string name="usb_diagnostics_reference_hashes">Generated PCM FNV-1a: %1$s; submitted payload FNV-1a: %2$s; source integrity verified: %3$s</string>
     <string name="flac_verification_title">Exact FLAC Decode Verification — Session 9</string>
-    <string name="flac_verification_action">Verify FLAC exact PCM (16-bit / 44.1 or 48 kHz)</string>
+    <string name="flac_verification_action">Verify FLAC exact PCM (16/44.1, 16/48, 24/48)</string>
     <string name="flac_verification_running">Verifying FLAC…</string>
-    <string name="flac_verification_note">Select a FLAC using the document picker. This verifies the entire file silently; no DAC is required. Only native FLAC, 44100 / 48000 Hz, stereo, 16-bit is accepted. No format conversion. Keep normal playback stopped to avoid confusion. Copy the complete diagnostic report below after verification.</string>
+    <string name="flac_verification_note">Select a FLAC using the document picker. This verifies the entire file silently; no DAC is required. Only native FLAC, stereo 16-bit at 44100/48000 Hz or packed 24-bit at 48000 Hz is accepted. No format conversion. Keep normal playback stopped to avoid confusion. Copy the complete diagnostic report below after verification.</string>
     <string name="flac_verification_result">Result: %1$s</string>
     <string name="flac_verification_format">Format: FLAC / %1$s Hz / %2$s channels / %3$s bits</string>
     <string name="flac_verification_counts">STREAMINFO total frames: %1$s; decoded frames: %2$s; clean EOF: %3$s; libFLAC MD5: %4$s</string>
@@ -367,21 +367,21 @@
     <string name="usb_flac_queue">Queue: %1$s primed / 8192 target / 16384 capacity; consumed=%2$s; underruns=%3$s</string>
     <string name="usb_flac_hashes">Consumed-source FNV=%1$s; submitted-USB FNV=%2$s</string>
     <string name="usb_flac_cleanup">Restoration=%1$s; AS release=%2$s; AC release=%3$s; original FLAC fd closed=%4$s</string>
-    <string name="usb_flac_scope">Native FLAC only: 44100 / 48000 Hz / stereo / 16-bit, starting at frame 0. Whole-file MD5: NOT APPLICABLE — bounded prefix. Expected: about five seconds of the selected track. Listening, DAC display and normal playback recovery require manual observation. Production Bit-perfect playback and normal player integration remain unimplemented.</string>
+    <string name="usb_flac_scope">Native FLAC only: stereo 16/44100, 16/48000 or packed 24/48000, starting at frame 0. Whole-file MD5: NOT APPLICABLE — bounded prefix. Expected: about five seconds of the selected track. Listening, DAC display and normal playback recovery require manual observation. Production Bit-perfect playback and normal player integration remain unimplemented.</string>
     <string name="usb_full_flac_title">Full FLAC direct USB transport — Session 11</string>
     <string name="usb_full_flac_action">Play full FLAC directly over USB</string>
     <string name="usb_full_flac_stop">Stop full FLAC USB test</string>
     <string name="usb_full_flac_warning">Stop normal playback first. Keep KA15 physical volume around 15A–20A for the first run. This plays one whole supported track at its original amplitude. Let it end naturally, or use Stop to abort safely. Do not immediately repeat; copy the complete report before reconnecting.</string>
-    <string name="usb_full_flac_scope">Native FLAC only: 44100 / 48000 Hz / stereo / 16-bit, from frame 0 to verified natural EOF. Whole-file MD5 and every source frame must verify. No pause, seek, next track, normal-player integration or production Bit-perfect mode. Listening and recovery require manual observation.</string>
+    <string name="usb_full_flac_scope">Native FLAC only: stereo 16/44100, 16/48000 or packed 24/48000, from frame 0 to verified natural EOF. Whole-file MD5 and every source frame must verify. No pause, seek, next track, normal-player integration or production Bit-perfect mode. Listening and recovery require manual observation.</string>
     <string name="usb_full_flac_result">Session 11: %1$s</string>
     <string name="usb_full_flac_summary">Total frames=%1$s; consumed=%2$s; whole-file MD5=%3$s; whole decoded PCM FNV=%4$s</string>
-    <string name="usb_integrated_title">Experimental library direct USB — Session 13</string>
-    <string name="usb_integrated_copy_report">Copy Session 13 report</string>
-    <string name="usb_integrated_latest_attempt">Latest Session 13 attempt (retained report)</string>
+    <string name="usb_integrated_title">Experimental library direct USB — Session 14</string>
+    <string name="usb_integrated_copy_report">Copy Session 14 report</string>
+    <string name="usb_integrated_latest_attempt">Latest Session 14 attempt (retained report)</string>
     <string name="usb_integrated_enable">Enable experimental integrated direct USB</string>
     <string name="usb_integrated_disable">Disable direct mode after USB cleanup</string>
     <string name="usb_integrated_stop">Stop direct USB playback</string>
     <string name="usb_integrated_restart">Restart selected track from frame 0</string>
-    <string name="usb_integrated_warning">Development only. Stop ordinary playback and grant USB access in the USB diagnostics below first. Enabling releases both normal audio engines without starting a song. Select one native 44.1 / 48 kHz stereo 16-bit FLAC in the normal library. Keep KA15 physical volume around 15A–20A. Direct failures never fall back to normal audio.</string>
+    <string name="usb_integrated_warning">Development only. Stop ordinary playback and grant USB access in the USB diagnostics below first. Enabling releases both normal audio engines without starting a song. Select one native stereo FLAC: 16-bit at 44.1/48 kHz or 24-bit at 48 kHz in the normal library. Keep KA15 physical volume around 15A–20A. Direct failures never fall back to normal audio.</string>
     <string name="usb_integrated_commands">Use Stop to abort safely. Pause, seek, next, previous, repeat and shuffle are unavailable. The normal controls reject these commands. Disable direct mode only after restoration; normal playback does not restart automatically.</string>
 </resources>

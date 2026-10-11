@@ -12,6 +12,8 @@ import kotlinx.coroutines.*
 internal data class UsbFlacSourceResult(val counters: Map<String,Long> = emptyMap(),
     val decoder: FlacVerificationResult? = null, val examples: List<UsbPcmFrameEvidence> = emptyList(), val exceptionType: String? = null) {
     fun count(name: String)=counters[name] ?: 0L
+    val pcmFormat get()=UsbDirectPcmFormat.resolve(count("sampleRate"),count("channels"),count("bitsPerSample"))
+    val bytesPerFrame get()=pcmFormat?.bytesPerFrame?.toLong() ?: 0L
     val reasons get() = UsbFlacSourceEvidence.reasons.filterIndexed { i,_ -> count("sourceIntegrityMask") and (1L shl i) != 0L }
     val primed get() = exceptionType == null && count("sourceIntegrityMask")==0L && count("metadataAccepted")==1L &&
         count("initialPrimedFrames") in (if (count("fullTrackMode")==1L) minOf(8192L,count("totalSamples")) else 8192L)..16384L &&
@@ -21,7 +23,7 @@ internal data class UsbFlacSourceResult(val counters: Map<String,Long> = emptyMa
         count("decoderReleased")==1L && count("nativeFlacFdClosed")==1L && count("queueReleased")==1L &&
         count("queueUnderruns")==0L && count("sourceFrameGapCount")==0L && count("sourceFrameDuplicateCount")==0L &&
         count("sourceFrameOrderErrors")==0L && count("preparedButUnsubmittedFrames")==0L &&
-        count("framesConsumedFromQueue")>0L && count("framesDecoded")<=Long.MAX_VALUE/4L && count("framesDecoded")>=count("framesEnqueued") &&
+        count("framesConsumedFromQueue")>0L && bytesPerFrame>0 && count("framesDecoded")<=Long.MAX_VALUE/bytesPerFrame && count("framesDecoded")>=count("framesEnqueued") &&
         count("framesEnqueued")>=count("framesConsumedFromQueue") &&
         count("queueFramesAtStop")==count("framesEnqueued")-count("framesConsumedFromQueue") &&
         count("prefetchedFramesDiscardedAtStop")==count("queueFramesAtStop") &&
@@ -30,8 +32,8 @@ internal data class UsbFlacSourceResult(val counters: Map<String,Long> = emptyMa
         count("initialPrimedFrames")<=16384L && count("queueFramesAtStop") in 0L..16384L &&
         count("minimumQueueDepthDuringStreaming") in 0L..count("maximumQueueDepthDuringStreaming") &&
         count("maximumQueueDepthDuringStreaming")<=16384L && count("firstSourceFrameConsumed")==0L && count("lastSourceFrameConsumed")==count("framesConsumedFromQueue")-1L &&
-        (decoder?.let { it.nativeStatus==FlacVerificationStatus.CANCELLED && it.decoderVersion=="1.5.0" && it.errors.isEmpty() && it.exceptionType==null &&
-            it.count("canonicalPcmBytesHashed")==count("framesDecoded")*4L &&
+        (decoder?.let { it.pcmFormat==pcmFormat && it.nativeStatus==FlacVerificationStatus.CANCELLED && it.decoderVersion=="1.5.0" && it.errors.isEmpty() && it.exceptionType==null &&
+            it.count("canonicalPcmBytesHashed")==count("framesDecoded")*bytesPerFrame &&
             it.count("nativeDuplicateClosed")==1L && it.count("decoderDeleted")==1L && it.count("resourceErrors")==0L &&
             it.count("finishCalled")==1L && it.count("nativeFlacRecognized")==1L && it.count("initStatus")==0L &&
             it.count("metadataProcessed")==1L && it.count("streamInfoReceived")==1L && it.count("md5Verification")==0L &&
@@ -41,7 +43,7 @@ internal data class UsbFlacSourceResult(val counters: Map<String,Long> = emptyMa
         count("producerFinishedNaturally")==1L && count("producerStopped")==1L && count("producerJoined")==1L &&
         count("decoderReleased")==1L && count("nativeFlacFdClosed")==1L && count("queueReleased")==1L &&
         count("md5VerificationPass")==1L && count("decodedTotalMatchesStreamInfo")==1L &&
-        count("totalSamples") in 1L..(Long.MAX_VALUE/4L) &&
+        bytesPerFrame>0 && count("totalSamples") in 1L..(Long.MAX_VALUE/bytesPerFrame) &&
         listOf("framesDecoded","framesEnqueued","framesConsumedFromQueue","expectedNextEnqueueFrame","expectedNextConsumeFrame")
             .all { counters[it]==count("totalSamples") } &&
         listOf("queueFramesAtStop","prefetchedFramesDiscardedAtStop","preparedButUnsubmittedFrames","queueUnderruns",
@@ -51,7 +53,7 @@ internal data class UsbFlacSourceResult(val counters: Map<String,Long> = emptyMa
         count("minimumQueueDepthDuringStreaming") in 0L..count("maximumQueueDepthDuringStreaming") &&
         count("maximumQueueDepthDuringStreaming")<=16384L &&
         count("allEnqueuedPrefetchPcmHash")==count("consumedSourcePcmHash") &&
-        decoder?.let { it.count("totalSamples")==count("totalSamples") && it.nativeStatus==FlacVerificationStatus.EXACT_FLAC_DECODE_VERIFIED && it.copy(originalFdClosed=true).strongEvidence &&
+        decoder?.let { it.pcmFormat==pcmFormat && it.count("totalSamples")==count("totalSamples") && it.nativeStatus==FlacVerificationStatus.EXACT_FLAC_DECODE_VERIFIED && it.copy(originalFdClosed=true).strongEvidence &&
             it.count("pcmFnv1a")==count("consumedSourcePcmHash") }==true
 }
 internal object UsbFlacSourceEvidence {
@@ -66,20 +68,18 @@ internal object UsbFlacSourceEvidence {
         "SOURCE_EOF_BEFORE_DURATION","QUEUE_PRIME_FAILED","QUEUE_UNDERRUN","SOURCE_FRAME_GAP","SOURCE_FRAME_DUPLICATE",
         "SOURCE_FRAME_ORDER_ERROR","SOURCE_SUBMITTED_HASH_MISMATCH","CANCELLED","RESOURCE_CLEANUP_FAILED","FLAC_INPUT_OPEN_FAILED","NOT_NATIVE_FLAC","FLAC_METADATA_INVALID","SOURCE_FORMAT_CONTRADICTION","FLAC_MD5_UNAVAILABLE","FLAC_MD5_MISMATCH","STREAMINFO_TOTAL_MISMATCH_OR_UNAVAILABLE","TERMINAL_TAIL_ACCOUNTING_FAILED")
     fun decode(value: UsbFlacSourceSnapshot,generation: Long,stream: Long): UsbFlacSourceResult {
-        require(value.numbers.size==fields.size && value.numbers[0]==2L && value.numbers[1]==generation && value.numbers[2]==stream &&
-            value.examples.size%7==0 && value.examples.size<=5*7)
+        require(value.numbers.size==fields.size && value.numbers[0]==3L && value.numbers[1]==generation && value.numbers[2]==stream &&
+            value.examples.size%9==0 && value.examples.size<=5*9)
         val counters=fields.zip(value.numbers.toList()).toMap()
         val signed=setOf("consumedSourcePcmHash","allEnqueuedPrefetchPcmHash")
         val indices=setOf("firstSourceFrameEnqueued","lastSourceFrameEnqueued","firstSourceFrameConsumed","lastSourceFrameConsumed")
         require(counters.all { (name,number) -> name in signed || if (name in indices) number>=-1L else number>=0L })
         require(countBooleanFields.all { counters.getValue(it) in 0L..1L } &&
             counters.getValue("sourceIntegrityMask") in 0L..2097151L && counters.getValue("initialPrimedFrames")<=16384L)
-        val examples=value.examples.toList().chunked(7).map {
-            require(it[0]>=0 && it[0]<counters.getValue("framesConsumedFromQueue") &&
-                it[1] in -32768L..32767L && it[2] in -32768L..32767L && it.drop(3).all { b->b in 0L..255L })
-            require(it[3]==(it[1] and 255L) && it[4]==((it[1] ushr 8) and 255L) &&
-                it[5]==(it[2] and 255L) && it[6]==((it[2] ushr 8) and 255L))
-            UsbPcmFrameEvidence(it[0],it[1].toInt(),it[2].toInt(),it.drop(3).map { b->b.toInt() })
+        val format=UsbDirectPcmFormat.resolve(counters.getValue("sampleRate"),counters.getValue("channels"),counters.getValue("bitsPerSample"))
+        val examples=value.examples.toList().chunked(9).map {
+            require(it[0]<counters.getValue("framesConsumedFromQueue"))
+            decodeDirectPcmExample(it,requireNotNull(format))
         }
         require(value.decoder == null || value.decoder is FlacNativeSnapshot)
         val decoder=(value.decoder as? FlacNativeSnapshot)?.let(FlacNativeEvidence::decode)

@@ -11,15 +11,15 @@ import org.junit.Test
 class OutContinuityInstrumentationTest {
     private fun source(path: String)=listOf(Paths.get("src/main",path),Paths.get("app/src/main",path))
         .first { Files.isRegularFile(it) }.toFile().readText().replace("\r\n","\n")
-    private fun digest(text: String)=MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8))
+    private fun digest(text: String)=MessageDigest.getInstance("SHA-256").digest(pcm16WidthSourceEquivalent(text).toByteArray(Charsets.UTF_8))
         .joinToString("") { (it.toInt() and 255).toString(16).padStart(2,'0') }
     private fun packet(changes: Map<String,Long> = emptyMap()): UsbIsoNativeSnapshot {
         val values=mapOf("version" to UsbIsoNativeStats.VERSION.toLong(),"generation" to 1L,"streamGeneration" to 2L,
-            "schedulerNominalRateHz" to 44100L,"state" to 7L,"sourceMode" to 3L,"stopReason" to 14L) + changes
+            "formatChannels" to 2L,"formatBitsPerSample" to 16L,"formatBytesPerSample" to 2L,"formatBytesPerFrame" to 4L,"formatSubslotBytes" to 2L,"formatValidBits" to 16L,"formatAlternate" to 9L,"schedulerNominalRateHz" to 44100L,"state" to 7L,"sourceMode" to 3L,"stopReason" to 14L) + changes
         return UsbIsoNativeSnapshot(UsbIsoNativeStats.fields.map { values[it] ?: 0L }.toLongArray(),longArrayOf(),longArrayOf())
     }
     @Test fun schemaAppendsContinuityWithoutMovingWorkingFeedbackFields() {
-        assertEquals(9,UsbIsoNativeStats.VERSION);assertEquals(175,UsbIsoNativeStats.fields.size)
+        assertEquals(10,UsbIsoNativeStats.VERSION);assertEquals(182,UsbIsoNativeStats.fields.size)
         assertEquals(111,UsbIsoNativeStats.fields.indexOf("configuredFeedbackUrbs"))
         assertEquals(131,UsbIsoNativeStats.fields.indexOf("feedbackFailureReapAttempted"))
         assertEquals(140,UsbIsoNativeStats.fields.indexOf("configuredOutUrbs"))

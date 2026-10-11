@@ -12,9 +12,9 @@ internal object UsbFlacExperimentStatus {
         if (source == null || !source.primed) return UsbSilentStatus.QUEUE_PRIME_FAILED
         if (configuration.targetStatus != UsbTargetConfigurationStatus.TARGET_CONFIGURATION_VERIFIED)
             return UsbSilentStatus.USB_CONFIGURATION_FAILED
-        if (!configuration.selectedRateMatches(source.count("sampleRate"))) return UsbSilentStatus.USB_CONFIGURATION_FAILED
+        if (!configuration.selectedFormatMatches(source.count("sampleRate"),source.count("channels"),source.count("bitsPerSample"))) return UsbSilentStatus.USB_CONFIGURATION_FAILED
         if (usb == null || !usb.verified) return UsbSilentStatus.USB_TRANSPORT_FAILED
-        if (usb.count("schedulerNominalRateHz")!=source.count("sampleRate")) return UsbSilentStatus.USB_TRANSPORT_FAILED
+        if (usb.count("schedulerNominalRateHz")!=source.count("sampleRate") || usb.pcmFormat!=source.pcmFormat || usb.count("formatAlternate")!=configuration.resolution.plan?.streaming?.alternate?.toLong()) return UsbSilentStatus.USB_TRANSPORT_FAILED
         if (!source.clean || !memoryReleased) return UsbSilentStatus.RESOURCE_CLEANUP_FAILED
         if (source.count("framesConsumedFromQueue") != usb.count("framesSubmitted") ||
             source.count("consumedSourcePcmHash") != usb.count("submittedPcmHash")) return UsbSilentStatus.FLAC_SOURCE_FAILED

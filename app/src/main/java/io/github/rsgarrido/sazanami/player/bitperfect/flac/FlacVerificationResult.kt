@@ -2,6 +2,7 @@ package io.github.rsgarrido.sazanami.player.bitperfect.flac
 
 import androidx.annotation.Keep
 import io.github.rsgarrido.sazanami.player.usb.UsbDirectPcmFormat
+import io.github.rsgarrido.sazanami.player.usb.decodeDirectPcmExample
 
 internal enum class FlacVerificationStatus {
     NOT_ATTEMPTED, EXACT_FLAC_DECODE_VERIFIED, UNSUPPORTED_FLAC_FORMAT,
@@ -24,6 +25,9 @@ internal data class FlacVerificationResult(
 ) {
     fun count(field: String) = counters[field] ?: 0L
     val canonicalHash get() = counters["pcmFnv1a"]?.toULong()?.toString(16)?.padStart(16, '0')
+    val pcmFormat get()=UsbDirectPcmFormat.resolve(count("sampleRate"),count("channels"),count("bitsPerSample"))
+    val bytesPerFrame get()=pcmFormat?.bytesPerFrame?.toLong() ?: 0L
+    private val sampleLimit get()=pcmFormat?.let { 1L shl (it.bitsPerSample-1) } ?: 0L
     val strongEvidence get() = decoderVersion == "1.5.0" && exceptionType == null &&
         count("nativeFlacRecognized") == 1L && count("decoderCreated") == 1L && count("initStatus") == 0L &&
         count("streamInfoReceived") == 1L && UsbDirectPcmFormat.supports(count("sampleRate"), count("channels"), count("bitsPerSample")) && count("metadataProcessed") == 1L &&
@@ -35,12 +39,12 @@ internal data class FlacVerificationResult(
         count("decoderErrors") == 0L && errors.isEmpty() && count("formatContradictions") == 0L &&
         count("frameOrderErrors") == 0L && count("outOfRangeSamples") == 0L &&
         count("totalSamples") > 0L && count("decodedStereoFrames") == count("totalSamples") &&
-        count("decodedStereoFrames") <= Long.MAX_VALUE / 4L &&
+        bytesPerFrame>0 && count("decodedStereoFrames") <= Long.MAX_VALUE / bytesPerFrame &&
         count("decodedSamplesPerChannel") == count("decodedStereoFrames") &&
-        count("canonicalPcmBytesHashed") == count("decodedStereoFrames") * 4L && canonicalHash != null &&
+        count("canonicalPcmBytesHashed") == count("decodedStereoFrames") * bytesPerFrame && canonicalHash != null &&
         count("decoderCallbacks") > 0L && count("decodedBlocks") == count("decoderCallbacks") &&
         listOf("minLeftSample", "maxLeftSample", "minRightSample", "maxRightSample", "minObservedSample", "maxObservedSample")
-            .all { count(it) in -32768L..32767L } &&
+            .all { count(it) in -sampleLimit until sampleLimit } &&
         count("nativeDuplicateClosed") == 1L && count("decoderDeleted") == 1L &&
         count("resourceErrors") == 0L && originalFdClosed == true
     val status get() = when {
@@ -60,8 +64,8 @@ internal object FlacNativeEvidence {
         "maxObservedSample", "outOfRangeSamples", "formatContradictions", "decoderErrors", "readErrno", "seekable",
         "fileSize", "nativeDuplicateClosed", "decoderDeleted", "resourceErrors", "frameOrderErrors", "decoderState", "dupErrno")
     fun decode(value: FlacNativeSnapshot): FlacVerificationResult {
-        require(value.numbers.size == fields.size && value.numbers[0] == 1L && value.numbers[1] in 1L..14L &&
-            value.md5.size == 16 && value.examples.size % 7 == 0 && value.examples.size <= 7 * 7 && value.errors.size <= 8)
+        require(value.numbers.size == fields.size && value.numbers[0] == 2L && value.numbers[1] in 1L..14L &&
+            value.md5.size == 16 && value.examples.size % 9 == 0 && value.examples.size <= 7 * 9 && value.errors.size <= 8)
         require(value.decoderVersion == "1.5.0")
         val numbers = fields.zip(value.numbers.toList()).toMap()
         val allowedSigned = setOf("pcmFnv1a", "initStatus", "decoderState", "seekable", "fileSize",
@@ -69,13 +73,11 @@ internal object FlacNativeEvidence {
         require(numbers.all { (name, number) -> name in allowedSigned || number >= 0L })
         require(numbers.getValue("seekable") in -1L..1L && numbers.getValue("md5Verification") in 0L..2L &&
             numbers.getValue("fileSize") >= -1L)
-        val pcm = value.examples.toList().chunked(7).map { row ->
-            require(row[0] >= 0 && row[0] < numbers.getValue("decodedStereoFrames") &&
-                row[1] in -32768L..32767L && row[2] in -32768L..32767L && row.drop(3).all { it in 0L..255L })
-            val packed = row.drop(3).map { it.toInt() }
-            require(packed[0] == (row[1].toInt() and 255) && packed[1] == ((row[1].toInt() ushr 8) and 255) &&
-                packed[2] == (row[2].toInt() and 255) && packed[3] == ((row[2].toInt() ushr 8) and 255))
-            FlacPcmExample(row[0], row[1].toInt(), row[2].toInt(), packed)
+        val format=UsbDirectPcmFormat.resolve(numbers.getValue("sampleRate"),numbers.getValue("channels"),numbers.getValue("bitsPerSample"))
+        val pcm = value.examples.toList().chunked(9).map { row ->
+            require(row[0]<numbers.getValue("decodedStereoFrames"))
+            val example=decodeDirectPcmExample(row,requireNotNull(format))
+            FlacPcmExample(example.index,example.left,example.right,example.bytes)
         }
         require(value.errors.all { it in 0L..6L })
         return FlacVerificationResult(FlacVerificationStatus.entries[value.numbers[1].toInt()], numbers,

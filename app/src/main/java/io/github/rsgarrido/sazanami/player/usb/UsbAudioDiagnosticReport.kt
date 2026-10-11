@@ -394,7 +394,7 @@ internal object UsbAudioDiagnosticReport {
             appendLine("Stale attachment generation; previous Session ${if (full) 11 else if (flac) 10 else if (reference) 8 else 7} evidence omitted."); return
         }
         appendLine("Development-only direct USB diagnostic; never starts automatically.")
-        appendLine("Target: PCM stereo signed integer 16-bit little-endian / ${result?.resolution?.plan?.configurationPlan?.sampleRateHz ?: "source-selected for FLAC"} Hz; bytes/frame=4")
+        appendLine("Target: PCM stereo signed integer ${result?.resolution?.plan?.configurationPlan?.validBits ?: 16}-bit little-endian / ${result?.resolution?.plan?.configurationPlan?.sampleRateHz ?: "source-selected for FLAC"} Hz; bytes/frame=${result?.resolution?.plan?.configurationPlan?.pcmFormat?.bytesPerFrame ?: 4}")
         if (full) appendFullFlacSource(result) else if (flac) appendFlacSource(result) else if (reference) appendReferenceSource(result) else appendLine("Source: DIGITAL ZERO ONLY")
         if (full) appendLine("Duration target=NONE; successful stop only at verified natural EOF after every source-bearing OUT completion. Progress watchdogs fail; no successful duration timer.")
         else appendLine("Duration target=${if (flac) 5000 else UsbIsoTiming.DURATION_MS} ms; duration stop, no successful natural EOF")
@@ -456,7 +456,7 @@ internal object UsbAudioDiagnosticReport {
 
     private fun StringBuilder.appendFullFlacSource(result: UsbSilentTransportExperimentResult?) {
         appendLine("Scope: debug-only one-track full direct USB playback; source start frame=0; no duration-success timer")
-        appendLine("Input: native FLAC; accepted format ONLY 44100 or 48000 Hz / stereo / 16-bit integer PCM; original amplitude")
+        appendLine("Input: native FLAC; accepted formats ONLY stereo 16/44100, 16/48000, 24/48000 integer packed PCM; original amplitude")
         appendLine("libFLAC version=1.5.0; Session 9 whole-file verifier reused; MD5 checking enabled before init; nonzero STREAMINFO reference and true physical EOS required")
         appendLine("Queue capacity frames=16384; prebuffer target frames=8192; shorter complete tracks prime min(total,8192) only after verified EOF/MD5. Prime before AC/AS ownership.")
         appendLine("Producer EOF preserves queued PCM. Consumer drains through totalSamples-1; exact terminal tail; no zero padding, repetition, interpolation or truncation.")
@@ -479,7 +479,7 @@ internal object UsbAudioDiagnosticReport {
         val native=result.transport
         val total=source.count("totalSamples")
         appendLine("Whole-track frames: decoded=${source.count("framesDecoded")}; enqueued=${source.count("framesEnqueued")}; consumed=${source.count("framesConsumedFromQueue")}; submitted=${native?.count("framesSubmitted")}; completed=${native?.count("framesCompleted")}; total=$total")
-        appendLine("Whole-track bytes: decoded=${decoder?.count("canonicalPcmBytesHashed")}; enqueued=${source.count("framesEnqueued")*4}; consumed=${source.count("framesConsumedFromQueue")*4}; submitted=${native?.count("outBytesSubmitted")}; kernel exact actual=${native?.count("kernelOutActualBytes")}")
+        appendLine("Whole-track bytes: decoded=${decoder?.count("canonicalPcmBytesHashed")}; enqueued=${source.count("framesEnqueued")*source.bytesPerFrame}; consumed=${source.count("framesConsumedFromQueue")*source.bytesPerFrame}; submitted=${native?.count("outBytesSubmitted")}; kernel exact actual=${native?.count("kernelOutActualBytes")}")
         appendLine("Decoded first/last index=${if (source.count("framesDecoded")>0) "0/${source.count("framesDecoded")-1}" else "unavailable"}; submitted first index=${if ((native?.count("framesSubmitted") ?: 0)>0) "0" else "unavailable"}; completed first index=${if (native?.verified==true) "0" else "unavailable"}; expected final index=${if (total>0) total-1 else "unavailable"}; actual final indices recorded below")
         val hashes=listOf(decoder?.counters?.get("pcmFnv1a"),source.counters["allEnqueuedPrefetchPcmHash"],source.counters["consumedSourcePcmHash"],native?.counters?.get("submittedPcmHash"))
         listOf("wholeDecodedPcmFNV","wholeEnqueuedPcmFNV","consumedPcmFNV","submittedUsbPcmFNV").zip(hashes).forEach { (name,value) -> appendLine("$name=${value?.let(::pcmHashHex) ?: "unavailable"}") }
@@ -493,9 +493,9 @@ internal object UsbAudioDiagnosticReport {
 
     private fun StringBuilder.appendFlacSource(result: UsbSilentTransportExperimentResult?) {
         appendLine("Scope: debug-only bounded direct USB playback; target=5000 ms; normal player integration=NONE")
-        appendLine("Input: native FLAC; source start frame=0; accepted format ONLY 44100 or 48000 Hz / stereo / 16-bit integer PCM")
+        appendLine("Input: native FLAC; source start frame=0; accepted formats ONLY stereo 16/44100, 16/48000, 24/48000 integer packed PCM")
         appendLine("libFLAC version=1.5.0; integer-only decode=YES; whole-file FLAC MD5 verification: NOT APPLICABLE — bounded prefix playback (checking disabled before init)")
-        appendLine("Queue capacity frames=16384 (65536 canonical PCM bytes); prebuffer target frames=8192; source must prime before AC/AS ownership")
+        appendLine("Queue capacity frames=16384 (${result?.flacSource?.bytesPerFrame?.times(16384) ?: "unavailable"} canonical PCM bytes); prebuffer target frames=8192; source must prime before AC/AS ownership")
         appendLine("Duration clock starts inside the native USB run, immediately before endpoint submission; FLAC open/priming/configuration are excluded. activeTransportUsAtStop excludes teardown; durationUs includes reconciliation.")
         appendLine("Session 10 queueUnderruns is the source insufficient-depth event count. outPoolEmptyAfterReapEvents counts refillable completions, not underruns; OUT_POOL_STALL separately records post-refill OUT transport failure and its outstanding-count/completion-age evidence.")
         appendLine("Producer-full waits are normal backpressure. Consumer requires exact frames immediately; no silence/repeat/interpolation concealment.")
@@ -516,7 +516,7 @@ internal object UsbAudioDiagnosticReport {
             appendLine("Decoder prefix stop outcome=${decoder.status}; not a whole-file verification result; MD5 checking enabled=${decoder.count("md5CheckingEnabled")}")
             appendLine("pcmBytesDecoded/serialized=${decoder.count("canonicalPcmBytesHashed")}")
         }
-        appendLine("pcmBytesEnqueued=${source.count("framesEnqueued")*4}; pcmBytesConsumed=${source.count("framesConsumedFromQueue")*4}; pcmBytesSubmitted=${result.transport?.count("outBytesSubmitted") ?: "unavailable"}; kernelOutActualBytes=${result.transport?.count("kernelOutActualBytes") ?: "unavailable"}")
+        appendLine("pcmBytesEnqueued=${source.count("framesEnqueued")*source.bytesPerFrame}; pcmBytesConsumed=${source.count("framesConsumedFromQueue")*source.bytesPerFrame}; pcmBytesSubmitted=${result.transport?.count("outBytesSubmitted") ?: "unavailable"}; kernelOutActualBytes=${result.transport?.count("kernelOutActualBytes") ?: "unavailable"}")
         appendLine("framesSubmitted=${result.transport?.count("framesSubmitted") ?: "unavailable"}; framesCompleted=${result.transport?.count("framesCompleted") ?: "unavailable"}")
         appendLine("consumedSourcePcmHash=${source.counters["consumedSourcePcmHash"]?.let(::pcmHashHex) ?: "unavailable"}; submittedUsbPcmHash=${result.transport?.counters?.get("submittedPcmHash")?.let(::pcmHashHex) ?: "unavailable"}")
         val usbHash = result.transport?.counters?.get("submittedPcmHash")

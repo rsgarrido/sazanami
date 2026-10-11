@@ -5,6 +5,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <chrono>
+#include <vector>
 
 namespace sazanami::flacverify {
 constexpr size_t kPrefixCapacity = 16384, kPrefixPrebuffer = 8192;
@@ -23,8 +24,14 @@ struct PrefixQueue {
     const bool fullTrack;
     std::atomic<uint64_t> expectedTotal{0};
     std::atomic<bool> eofReached{false};
-    explicit PrefixQueue(bool full=false) : fullTrack(full) {}
-    std::array<std::array<uint8_t,4>, kPrefixCapacity> bytes{};
+    std::shared_ptr<const sazanami::directpcm::Format> format;
+    std::vector<uint8_t> bytes;
+    explicit PrefixQueue(bool full=false,std::shared_ptr<const sazanami::directpcm::Format> selected=sazanami::directpcm::referenceFormat()) : fullTrack(full) { if(selected) configure(std::move(selected)); }
+    bool configure(std::shared_ptr<const sazanami::directpcm::Format> selected) {
+        if(format || !selected || head.load() || tail.load() || kPrefixCapacity>SIZE_MAX/selected->bytesPerFrame) return false;
+        bytes.resize(kPrefixCapacity*selected->bytesPerFrame); format=std::move(selected);return true;
+    }
+    uint32_t frameBytes() const { return format ? format->bytesPerFrame : 0; }
     std::array<uint64_t, kPrefixCapacity> indices{};
     std::atomic<uint64_t> head{0}, tail{0}, faults{0}, decoded{0}, fullWaits{0}, emptyEvents{0}, underruns{0};
     std::atomic<uint64_t> gaps{0}, duplicates{0}, orderErrors{0}, minDepth{kPrefixCapacity}, maxDepth{0};
@@ -32,7 +39,7 @@ struct PrefixQueue {
     std::mutex waitMutex;
     std::condition_variable changed;
     uint64_t consumedHash = kOffset, enqueuedHash = kOffset, prepared = 0, reservedStart = 0;
-    std::array<std::array<int64_t,7>,5> examples{};
+    std::array<std::array<int64_t,9>,5> examples{};
     size_t exampleCount = 0;
     uint64_t depth() const { return tail.load(std::memory_order_acquire) - head.load(std::memory_order_acquire); }
     void fail(uint64_t reason) { faults.fetch_or(reason); requestStop(); }
@@ -50,10 +57,11 @@ struct PrefixQueue {
         return false;
     }
     bool push(uint64_t index, const uint8_t* canonical) {
+        if (!format || !canonical) { fail(PrefixFormat);return false; }
         if (fullTrack && (!expectedTotal.load() || index>=expectedTotal.load())) { fail(PrefixTotal); return false; }
         decoded.store(index + 1);
         const uint64_t position = tail.load(std::memory_order_relaxed);
-        if (!identity(index, position) || position >= kCounterMax / 4) { fail(PrefixOrder); return false; }
+        if (!identity(index, position) || position >= kCounterMax / frameBytes()) { fail(PrefixOrder); return false; }
         if (depth() == kPrefixCapacity && !stop.load()) {
             ++fullWaits;
             std::unique_lock<std::mutex> lock(waitMutex);
@@ -62,8 +70,8 @@ struct PrefixQueue {
         }
         if (stop.load() || faults.load()) return false;
         const size_t slot = position % kPrefixCapacity;
-        std::memcpy(bytes[slot].data(), canonical, 4); indices[slot] = index;
-        enqueuedHash = hashBytes(enqueuedHash, canonical, 4);
+        std::memcpy(bytes.data()+slot*frameBytes(), canonical, frameBytes()); indices[slot] = index;
+        enqueuedHash = hashBytes(enqueuedHash, canonical, frameBytes());
         tail.store(position + 1, std::memory_order_release);
         trackDepth(depth()); changed.notify_all();
         return true;
@@ -90,7 +98,7 @@ struct PrefixQueue {
     ReserveResult reserve(uint8_t* payload, uint64_t count) {
         const auto state = availability();
         if (state != ReserveResult::Available) return state;
-        if (!payload || prepared || !count || count > kPrefixCapacity) return ReserveResult::InvalidState;
+        if (!format || !payload || prepared || !count || count > kPrefixCapacity) return ReserveResult::InvalidState;
         const uint64_t position = head.load(std::memory_order_relaxed);
         const auto available=requireFrames(count);
         if (available!=ReserveResult::Available) return available;
@@ -98,27 +106,29 @@ struct PrefixQueue {
         for (uint64_t i = 0; i < count; ++i) {
             const size_t slot = (position + i) % kPrefixCapacity;
             if (!identity(indices[slot], position + i)) return ReserveResult::SourceFault;
-            std::memcpy(payload + i*4, bytes[slot].data(), 4);
+            std::memcpy(payload + i*frameBytes(), bytes.data()+slot*frameBytes(), frameBytes());
         }
         return ReserveResult::Available;
     }
     bool validate(const uint8_t* payload, size_t length) {
-        if (length != prepared * 4 || reservedStart != head.load() || faults.load()) return false;
+        if (!format || length != prepared * frameBytes() || reservedStart != head.load() || faults.load()) return false;
         for (uint64_t i = 0; i < prepared; ++i)
-            if (std::memcmp(payload + i*4, bytes[(reservedStart+i)%kPrefixCapacity].data(), 4)) { fail(PrefixHash); return false; }
+            if (std::memcmp(payload + i*frameBytes(), bytes.data()+((reservedStart+i)%kPrefixCapacity)*frameBytes(), frameBytes())) { fail(PrefixHash); return false; }
         return true;
     }
     // Called ONLY after successful USBDEVFS_SUBMITURB; failed submission leaves head/hash untouched.
     bool commit() {
-        if (!prepared || reservedStart != head.load()) { fail(PrefixOrder); return false; }
+        if (!format || !prepared || reservedStart != head.load()) { fail(PrefixOrder); return false; }
         for (uint64_t i = 0; i < prepared; ++i) {
-            const auto& frame = bytes[(reservedStart+i)%kPrefixCapacity];
-            consumedHash = hashBytes(consumedHash, frame.data(), 4);
+            const auto* frame = bytes.data()+((reservedStart+i)%kPrefixCapacity)*frameBytes();
+            consumedHash = hashBytes(consumedHash, frame, frameBytes());
             const uint64_t index = reservedStart+i;
             if (index < 4 || i == prepared-1) {
                 const size_t slot = index < 4 ? static_cast<size_t>(index) : 4;
-                const auto decode = [](const uint8_t* b) { int value=b[0]+(b[1]<<8); return value>=32768 ? value-65536 : value; };
-                examples[slot] = {static_cast<int64_t>(index),decode(frame.data()),decode(frame.data()+2),frame[0],frame[1],frame[2],frame[3]};
+                examples[slot]={};examples[slot][0]=static_cast<int64_t>(index);
+                examples[slot][1]=sazanami::directpcm::unpackSample(frame,format->bytesPerSample);
+                examples[slot][2]=sazanami::directpcm::unpackSample(frame+format->bytesPerSample,format->bytesPerSample);
+                for(uint32_t b=0;b<frameBytes();++b) examples[slot][3+b]=frame[b];
                 exampleCount = std::max(exampleCount,slot+1);
             }
         }
@@ -138,12 +148,13 @@ struct PrefixSource {
     std::mutex finishMutex;
     uint64_t atStop=0, discarded=0;
     PrefixSource(OwnedFd duplicate,uint64_t a,uint64_t s,bool full=false)
-        : attachment(a),stream(s),fullTrack(full),queue(full),decoder(std::move(duplicate),[this]{return queue.stop.load();},full) {
+        : attachment(a),stream(s),fullTrack(full),queue(full,nullptr),decoder(std::move(duplicate),[this]{return queue.stop.load();},full) {
         decoder.enforceExpectedTotal=fullTrack;
         duplicate.value=-1; // Decoder owns it now; constructor/allocate exceptions cannot leak or double-close.
         decoder.metadataAccepted=[this](const Verification& v) {
+            if(!queue.configure(v.pcm.format)) { queue.fail(PrefixFormat);return; }
             if (fullTrack) {
-                if (!v.facts[Total] || static_cast<uint64_t>(v.facts[Total])>kCounterMax/4) { queue.fail(PrefixTotal); return; }
+                if (!v.facts[Total] || static_cast<uint64_t>(v.facts[Total])>kCounterMax/queue.frameBytes()) { queue.fail(PrefixTotal); return; }
                 if (!v.facts[Md5Available]) { queue.fail(PrefixMd5Unavailable); return; }
                 queue.expectedTotal.store(static_cast<uint64_t>(v.facts[Total]));
             }
@@ -155,6 +166,7 @@ struct PrefixSource {
             uint64_t reason=value==Outcome::NotNativeFlac ? PrefixNotNative :
                 value==Outcome::Unsupported ? PrefixFormat : value==Outcome::SampleRange ? PrefixRange :
                 value==Outcome::InputOpenFailed ? PrefixInput :
+                value==Outcome::CleanupFailed ? PrefixCleanup :
                 value==Outcome::FormatContradiction ? PrefixContradiction :
                 decoder.facts[Recognized] && decoder.facts[InitStatus]!=0 ? PrefixInit :
                 !decoder.accepted ? PrefixMetadata : PrefixDecode;
@@ -214,7 +226,7 @@ struct PrefixSource {
     std::array<int64_t,PrefixFieldCount> evidence(bool released=false) const {
         const uint64_t enqueued=queue.tail.load(),consumed=queue.head.load();
         std::array<int64_t,PrefixFieldCount> facts{};
-        facts[PApi]=2;facts[PAttachment]=attachment;facts[PStream]=stream;facts[PFault]=queue.faults.load();
+        facts[PApi]=3;facts[PAttachment]=attachment;facts[PStream]=stream;facts[PFault]=queue.faults.load();
         facts[PPrimed]=primed.load();facts[PMetadata]=metadataReady.load();
         if (facts[PMetadata]) { facts[PRate]=metadataFacts[Rate];facts[PChannels]=metadataFacts[Channels];facts[PBits]=metadataFacts[Bits];facts[PTotal]=metadataFacts[Total]; }
         facts[PDecoded]=queue.decoded.load();facts[PEnqueued]=enqueued;facts[PConsumed]=consumed;facts[PPrepared]=queue.prepared;

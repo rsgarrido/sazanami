@@ -14,7 +14,7 @@ static Feedback feedback(uint32_t raw, uint32_t rate) {
 }
 int main() {
     for (uint32_t rate : {44100,48000}) {
-        assert(fv::supported(rate,2,16));assert(!fv::supported(rate,2,24));
+        assert(fv::supported(rate,2,16));assert(fv::supported(rate,2,24)==(rate==48000));
         assert(!fv::supported(rate,1,16));assert(!fv::supported(rate,8,16));
         Scheduler nominal(rate);uint32_t frames=0;
         for (unsigned packet=0;packet<8000;++packet) {

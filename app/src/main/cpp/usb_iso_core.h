@@ -53,8 +53,8 @@ inline size_t allocationBytes(size_t base, size_t descriptor, unsigned count) no
     const size_t extra = descriptor * count;
     return extra <= SIZE_MAX - base ? base + extra : 0;
 }
-inline bool packetFits(uint32_t frames, uint32_t payload) noexcept {
-    return static_cast<uint64_t>(frames) * kBytesPerFrame <= payload;
+inline bool packetFits(uint32_t frames, uint32_t payload, uint32_t bytesPerFrame = kBytesPerFrame) noexcept {
+    return (bytesPerFrame==4 || bytesPerFrame==6) && static_cast<uint64_t>(frames) * bytesPerFrame <= payload;
 }
 inline uint64_t outPacketProblem(int urbStatus, int packetStatus, uint32_t requested, uint32_t actual, bool cancelled) noexcept {
     if (cancelled) return 0;

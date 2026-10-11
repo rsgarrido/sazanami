@@ -17,7 +17,7 @@ static void packingAndRange() {
     assert(!low.append(1,1) && low.hash == kOffset);
 }
 static void metadataGate() {
-    assert(supported(44100,2,16)); assert(supported(48000,2,16)); assert(!supported(48000,2,24));
+    assert(supported(44100,2,16)); assert(supported(48000,2,16)); assert(supported(48000,2,24)); assert(!supported(44100,2,24));
     for (uint32_t rate : {88200,96000,176400,192000}) assert(!supported(rate,2,16));
     for (uint32_t channels : {1,3,8}) assert(!supported(44100,channels,16));
     for (uint32_t bits : {8,24,32}) assert(!supported(44100,2,bits));

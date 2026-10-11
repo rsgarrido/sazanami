@@ -14,9 +14,9 @@ internal object FlacVerificationReport {
         appendLine("Input access: Storage Access Framework, read-only ParcelFileDescriptor; native dup owns only its duplicate; Kotlin owns/closes original")
         appendLine("Sequential decode; no seek/flush/reset. Non-seekable providers supported; file length is unavailable unless reported by a regular seekable fd.")
         appendLine("Cancellation: cooperative read/block checks; a blocking provider read may delay cleanup. No detached native worker; stale screen results are suppressed.")
-        appendLine("Supported subset only: native FLAC / 44100 or 48000 Hz / 2 channels / 16 bits; no conversion")
+        appendLine("Supported subset only: native FLAC / stereo / 16-bit at 44100 or 48000 Hz, or packed 24-bit at 48000 Hz; no conversion")
         if (running) { appendLine("Lifecycle: verification running; final evidence pending"); return@buildString }
-        if (result == null) { appendLine("Result: NOT_ATTEMPTED; debug action: Verify FLAC exact PCM (stereo 16-bit / 44.1 or 48 kHz)"); return@buildString }
+        if (result == null) { appendLine("Result: NOT_ATTEMPTED; debug action: Verify FLAC exact PCM (stereo 16/44.1, 16/48 or 24/48)"); return@buildString }
         appendLine("Result: ${result.status}")
         appendLine("Runtime libFLAC version: ${result.decoderVersion ?: "unavailable"}")
         if (result.counters.isEmpty()) {
@@ -41,7 +41,7 @@ internal object FlacVerificationReport {
         appendLine("Callbacks: ${value("decoderCallbacks")}; complete decoded blocks: ${value("decodedBlocks")}; decoded stereo frames: ${value("decodedStereoFrames")}; samples/channel: ${value("decodedSamplesPerChannel")}")
         appendLine("Process succeeded: ${value("processSucceeded")}; clean end-of-stream: ${value("cleanEndOfStream")}; actual input EOF: ${value("physicalInputEof")}")
         appendLine("Decoder errors: ${value("decoderErrors")}; bounded error codes: ${result.errors.joinToString().ifEmpty { "none" }} (0 LOST_SYNC, 1 BAD_HEADER, 2 FRAME_CRC_MISMATCH, 3 UNPARSEABLE_STREAM, 4 BAD_METADATA, 5 OUT_OF_BOUNDS, 6 MISSING_FRAME)")
-        appendLine("Canonical PCM: signed stereo PCM16 LE; L-low L-high R-low R-high; bytes hashed: ${value("canonicalPcmBytesHashed")}; FNV-1a 64: ${result.canonicalHash ?: "unavailable"}")
+        appendLine("Canonical PCM: signed stereo PCM${result.count("bitsPerSample")}LE packed; L bytes then R bytes, little-endian; bytes/frame=${result.bytesPerFrame}; bytes hashed: ${value("canonicalPcmBytesHashed")}; FNV-1a 64: ${result.canonicalHash ?: "unavailable"}")
         appendLine("FNV-1a: offset cbf29ce484222325; prime 100000001b3; modulo 2^64; only ordered serialized PCM bytes, no metadata/compressed bytes/padding")
         appendLine("FLAC MD5 is libFLAC's original-audio reference check. Sazanami FNV is the identity of serialized PCM; it is not the STREAMINFO MD5 or a DAC/USB hash.")
         if (result.count("decodedStereoFrames") > 0L)

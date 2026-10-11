@@ -17,6 +17,20 @@ import org.junit.Test
  * Source checks constrain the narrow Android/native boundary; real ABI/DAC behavior needs manual verification.
  */
 class UsbAudioConfigurationExperimentTest {
+    @Test fun pcm24SelectionIsDescriptorResolvedAndFourByteSubslotsAreRejected() {
+        val selected=UsbAudioConfigurationPlan.resolve(model,android,48000,24)
+        assertEquals(6,selected.plan!!.streaming.alternate);assertEquals(3,selected.plan!!.subslotBytes)
+        assertEquals(24,selected.plan!!.validBits);assertEquals(6,selected.plan!!.pcmFormat.bytesPerFrame)
+        val result=run(Fake(selected.plan!!).apply { rate=192000 },selected)
+        assertTrue(result.selectedFormatMatches(48000,2,24))
+        assertEquals(UsbConfigurationRestorationStatus.RESTORED,result.restorationStatus)
+        assertEquals(192000L,result.originalClockReadback!!.currentFrequencyHz)
+        assertFalse(result.selectedFormatMatches(48000,2,16))
+        val wrong=model.copy(interfaces=model.interfaces.map { if(it.audioFormat?.validBits==24)
+            it.copy(audioFormat=UsbAudioFormatDescriptor(1,4,24)) else it })
+        assertNull(UsbAudioConfigurationPlan.resolve(wrong,androidFacts(wrong),48000,24).plan)
+        assertNull(UsbAudioConfigurationPlan.resolve(model,android,44100,24).plan)
+    }
     @Test fun selected48000UsesSamePcm16AlternateAndRestoresArbitraryCapturedRate() {
         val selected=UsbAudioConfigurationPlan.resolve(model,android,48000)
         assertEquals(plan.streaming,selected.plan!!.streaming)

@@ -21,13 +21,13 @@ class IntegratedDirectPlaybackTest {
         assertEquals(IntegratedDirectPhase.ERROR,integratedTerminalState(IntegratedDirectPlaybackState(),
             result.copy(transport=fixture.transport)).phase)
         val unsupported=fullResult(UsbSilentStatus.FLAC_SOURCE_FAILED).copy(flacSource=UsbFlacSourceResult(mapOf(
-            "sampleRate" to 48000L,"channels" to 2L,"bitsPerSample" to 24L,"sourceIntegrityMask" to 4L)))
+            "sampleRate" to 44100L,"channels" to 2L,"bitsPerSample" to 24L,"sourceIntegrityMask" to 4L)))
         assertEquals("UNSUPPORTED_TRACK",integratedTerminalState(IntegratedDirectPlaybackState(enabled=true),unsupported).error)
     }
     private fun source(path: String)=listOf(Paths.get("src/main",path),Paths.get("app/src/main",path)).first { Files.isRegularFile(it) }.toFile().readText()
     private fun fullResult(status: UsbSilentStatus=UsbSilentStatus.FULL_FLAC_USB_TRANSPORT_VERIFIED): UsbSilentTransportExperimentResult {
         val values=UsbIsoNativeStats.fields.associateWith { 0L }.toMutableMap().apply { putAll(mapOf(
-            "schedulerNominalRateHz" to 44100L,"sourceMode" to 3L,"stopReason" to 14L,"started" to 1L,"workerStopped" to 1L,"state" to 7L,
+            "formatChannels" to 2L,"formatBitsPerSample" to 16L,"formatBytesPerSample" to 2L,"formatBytesPerFrame" to 4L,"formatSubslotBytes" to 2L,"formatValidBits" to 16L,"formatAlternate" to 9L,"schedulerNominalRateHz" to 44100L,"sourceMode" to 3L,"stopReason" to 14L,"started" to 1L,"workerStopped" to 1L,"state" to 7L,
             "streamInfoTotalSamples" to 10001L,"sourceFramesGenerated" to 10001L,"framesScheduled" to 10001L,"framesSubmitted" to 10001L,
             "framesCompleted" to 10001L,"prefixSourceFramesConsumed" to 10001L,"feedbackPacketsValid" to 1L,"feedbackScheduledPackets" to 1L,
             "trueEofReached" to 1L,"producerFinishedNaturally" to 1L,"md5VerificationPass" to 1L,"prefixProducerStopped" to 1L,"prefixProducerJoined" to 1L,

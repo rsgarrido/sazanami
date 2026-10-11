@@ -84,7 +84,7 @@ internal object UsbFsDiagnostics {
         return nativeCreateSilentTransport(borrowedFd, generation, stream, intArrayOf(plan.clock.audioControl.number,
             plan.streaming.number, plan.streaming.alternate, plan.idle.alternate, target.data.address, target.data.attributes,
             target.data.maxPacketSizeRaw, target.data.interval, target.feedback.address, target.feedback.attributes,
-            target.feedback.maxPacketSizeRaw, target.feedback.interval, plan.sampleRateHz.toInt(), 2, 2, 16, mode.ordinal), prefixHandle)
+            target.feedback.maxPacketSizeRaw, target.feedback.interval, plan.sampleRateHz.toInt(), plan.channels, plan.subslotBytes, plan.validBits, mode.ordinal), prefixHandle)
     }
     fun runSilentTransport(handle: Long, generation: Long, stream: Long): UsbIsoTransportResult =
         UsbIsoNativeStats.decode(nativeRunSilentTransport(handle, generation, stream), generation, stream)

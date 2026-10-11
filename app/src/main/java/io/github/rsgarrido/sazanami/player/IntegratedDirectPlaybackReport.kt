@@ -2,13 +2,14 @@ package io.github.rsgarrido.sazanami.player
 
 import io.github.rsgarrido.sazanami.player.usb.pcmHashHex
 import io.github.rsgarrido.sazanami.player.usb.selectedRateMatches
+import io.github.rsgarrido.sazanami.player.usb.selectedFormatMatches
 import io.github.rsgarrido.sazanami.player.usb.UsbDirectPcmFormat
 import io.github.rsgarrido.sazanami.player.usb.UsbIsoNativeStats
 import io.github.rsgarrido.sazanami.player.usb.UsbIsoTiming
 import java.util.Locale
 
 internal fun formatIntegratedDirectPlayback(state: IntegratedDirectPlaybackState): String=buildString {
-    appendLine("Integrated Direct USB Playback — Session 13")
+    appendLine("Integrated Direct USB Playback — Session 14")
     appendLine("experimental direct USB enabled=${state.enabled}; requested backend=${if(state.enabled) "DIRECT_USB" else "NORMAL"}; authoritative backend=${if(state.enabled && !state.normalReleased) "NONE_BLOCKED" else if(state.enabled) "DIRECT_USB" else "NORMAL"}")
     appendLine("safe library ID=${state.libraryId ?: "none"}; request generation=${state.generation}; frame 0 only; no raw URI/path")
     appendLine("normal pipelines synchronously released=${state.normalReleased}; standby/preload inactive=${state.normalReleased}; crossfade inactive=${state.normalReleased}")
@@ -23,7 +24,11 @@ internal fun formatIntegratedDirectPlayback(state: IntegratedDirectPlaybackState
             appendLine("decoded=${source.count("framesDecoded")}; enqueued=${source.count("framesEnqueued")}; consumed=${source.count("framesConsumedFromQueue")}; prepared=${source.count("preparedButUnsubmittedFrames")}; discarded=${source.count("prefetchedFramesDiscardedAtStop")}")
             appendLine("source faults=${source.reasons.joinToString()}; source released=${source.count("queueReleased")}; producer joined=${source.count("producerJoined")}")
         }
-        val selectedRate=result.resolution.plan?.configurationPlan?.sampleRateHz
+        val plan=result.resolution.plan?.configurationPlan
+        val selectedRate=plan?.sampleRateHz
+        val format=plan?.pcmFormat
+        appendLine("USB target=${format?.label}; subslot bytes=${format?.subslotBytes}; valid bits=${format?.validBits}; bytes per frame=${format?.bytesPerFrame}; descriptor-resolved AS=${plan?.streaming?.number} alternate=${plan?.streaming?.alternate}; endpoint capacity bytes=${result.timing?.capacity}")
+        appendLine("source/configuration agreement=${result.configuration?.selectedFormatMatches(result.flacSource?.count("sampleRate") ?: 0L,result.flacSource?.count("channels") ?: 0L,result.flacSource?.count("bitsPerSample") ?: 0L)==true && result.transport?.pcmFormat==result.flacSource?.pcmFormat && result.transport?.count("formatAlternate")==plan?.streaming?.alternate?.toLong()}; source PCM bytes=${result.flacSource?.decoder?.count("canonicalPcmBytesHashed")}")
         appendLine("requested USB clock Hz=$selectedRate; verified USB clock Hz=${result.configuration?.configuredClockReadback?.currentFrequencyHz}; scheduler nominal/source rate Hz=${result.transport?.counters?.get("schedulerNominalRateHz")}; source/request/both readbacks/scheduler agree=${result.configuration?.selectedRateMatches(result.flacSource?.count("sampleRate") ?: 0L)==true && result.transport?.counters?.get("schedulerNominalRateHz")==result.flacSource?.count("sampleRate")}")
         result.transport?.let { native ->
             appendLine("stop cause=${native.stopReason}; integrity=${native.valid}; transport reasons=${native.integrityReasons.joinToString()}; worker stopped=${native.workerStopped}")

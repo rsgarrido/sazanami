@@ -23,14 +23,14 @@ struct Verification {
     std::array<int64_t, 8> errors{};
     size_t errorCount = 0, prefixOffset = 0;
     std::array<uint8_t, 4> prefix{};
-    Pcm pcm;
+    Pcm pcm{nullptr}; // Only accepted STREAMINFO establishes the immutable source format.
     Outcome failure = Outcome::Pending;
     OwnedFd input;
     bool physicalEof = false, accepted = false;
     uint64_t fed = 0;
     Verification(OwnedFd duplicate, std::function<bool()> stop, bool whole = true)
         : stopRequested(std::move(stop)), wholeFile(whole), input(std::move(duplicate)) {
-        facts[Version] = 1; facts[InitStatus] = -1; facts[DecoderState] = -1;
+        facts[Version] = 2; facts[InitStatus] = -1; facts[DecoderState] = -1;
         facts[Seekable] = -1; facts[FileSize] = -1; phase(Phase::Idle);
     }
     void phase(Phase value) { facts[Lifecycle] |= 1LL << static_cast<int>(value); }
@@ -96,7 +96,12 @@ struct Verification {
         }
         v.accepted = supported(s.sample_rate, s.channels, s.bits_per_sample);
         if (!v.accepted) v.fail(Outcome::Unsupported);
-        else { v.phase(Phase::FormatAccepted); if (v.metadataAccepted) v.metadataAccepted(v); }
+        else {
+            try {
+                v.pcm.format=sazanami::directpcm::Format::create(s.sample_rate,s.channels,s.bits_per_sample);
+                v.phase(Phase::FormatAccepted); if (v.metadataAccepted) v.metadataAccepted(v);
+            } catch (...) { v.fail(Outcome::CleanupFailed); } // Never unwind a format/queue allocation through libFLAC C callbacks.
+        }
     }
     static void error(const FLAC__StreamDecoder*, FLAC__StreamDecoderErrorStatus status, void* context) {
         auto& v = *static_cast<Verification*>(context);
@@ -112,6 +117,7 @@ struct Verification {
         ++v.pcm.callbacks;
         if (!v.accepted || !frame ||
             !supported(frame->header.sample_rate, frame->header.channels, frame->header.bits_per_sample) ||
+            frame->header.sample_rate!=v.facts[Rate] || frame->header.channels!=v.facts[Channels] || frame->header.bits_per_sample!=v.facts[Bits] ||
             !channels || !channels[0] || !channels[1] ||
             !frame->header.blocksize || frame->header.blocksize > static_cast<uint32_t>(v.facts[MaxBlock])) {
             ++v.facts[Contradictions]; v.fail(Outcome::FormatContradiction); return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
@@ -120,7 +126,7 @@ struct Verification {
         const bool ordered = h.number_type == FLAC__FRAME_NUMBER_TYPE_SAMPLE_NUMBER ? h.number.sample_number == v.pcm.frames :
             h.number_type == FLAC__FRAME_NUMBER_TYPE_FRAME_NUMBER && h.number.frame_number == v.pcm.blocks;
         if (!ordered) { ++v.facts[FrameOrderErrors]; ++v.facts[Contradictions]; v.fail(Outcome::FormatContradiction); return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT; }
-        if (!canAdd(v.pcm.frames, h.blocksize) || !canAdd(v.pcm.bytes, static_cast<uint64_t>(h.blocksize) * 4) || !canAdd(v.pcm.blocks, 1)) {
+        if (!canAdd(v.pcm.frames, h.blocksize) || !canAdd(v.pcm.bytes, static_cast<uint64_t>(h.blocksize) * v.pcm.frameBytes()) || !canAdd(v.pcm.blocks, 1)) {
             v.fail(Outcome::CounterOverflow); return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
         }
         v.phase(Phase::Decoding);
@@ -129,7 +135,7 @@ struct Verification {
                 ++v.facts[Contradictions]; v.fail(Outcome::FormatContradiction);
                 return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT; // Never serialize a frame beyond STREAMINFO.
             }
-            uint8_t canonical[4];
+            uint8_t canonical[6]{};
             if ((i % 1024 == 0 && v.cancelled()) || !v.pcm.append(channels[0][i], channels[1][i], v.consumeCanonical ? canonical : nullptr)) {
                 if (v.pcm.failure != Outcome::Pending) v.fail(v.pcm.failure);
                 return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;

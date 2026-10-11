@@ -11,7 +11,7 @@ import org.junit.Test
 class DirectOutQueueDepthTest {
     private fun source(path: String)=listOf(Paths.get("src/main",path),Paths.get("app/src/main",path))
         .first { Files.isRegularFile(it) }.toFile().readText().replace("\r\n","\n")
-    private fun digest(text: String)=MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8))
+    private fun digest(text: String)=MessageDigest.getInstance("SHA-256").digest(pcm16WidthSourceEquivalent(text).toByteArray(Charsets.UTF_8))
         .joinToString("") { (it.toInt() and 255).toString(16).padStart(2,'0') }
     @Test fun measuredBudgetDerivesBoundedKa15DepthWithoutChangingPacketShape() {
         val ka15=UsbIsoTiming(125,1000,28)

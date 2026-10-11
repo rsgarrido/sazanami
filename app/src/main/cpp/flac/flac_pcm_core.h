@@ -6,6 +6,7 @@
 #include <limits>
 #include <cstring>
 #include <initializer_list>
+#include <utility>
 
 namespace sazanami::flacverify {
 constexpr uint64_t kOffset = 14695981039346656037ULL, kPrime = 1099511628211ULL;
@@ -34,23 +35,30 @@ inline bool supported(uint32_t rate, uint32_t channels, uint32_t bits) noexcept 
 inline bool inRange(int32_t sample) noexcept { return sample >= -32768 && sample <= 32767; }
 inline bool canAdd(uint64_t current, uint64_t amount) noexcept { return current <= kCounterMax && amount <= kCounterMax - current; }
 struct Pcm {
+    std::shared_ptr<const sazanami::directpcm::Format> format;
+    explicit Pcm(std::shared_ptr<const sazanami::directpcm::Format> selected=sazanami::directpcm::referenceFormat()) : format(std::move(selected)) {}
+    uint32_t frameBytes() const noexcept { return format ? format->bytesPerFrame : 0; }
     uint64_t frames = 0, bytes = 0, hash = kOffset, blocks = 0, callbacks = 0, rangeErrors = 0;
     int32_t minL = 0, maxL = 0, minR = 0, maxR = 0, minimum = 0, maximum = 0;
-    std::array<std::array<int64_t, 7>, 7> examples{};
+    std::array<std::array<int64_t, 9>, 7> examples{};
     std::array<bool, 7> exampleUsed{};
     Outcome failure = Outcome::Pending;
     void example(size_t slot, int32_t left, int32_t right, const uint8_t* packed) noexcept {
-        examples[slot] = {static_cast<int64_t>(frames), left, right, packed[0], packed[1], packed[2], packed[3]};
+        examples[slot] = {}; examples[slot][0]=static_cast<int64_t>(frames);examples[slot][1]=left;examples[slot][2]=right;
+        for(uint32_t i=0;i<frameBytes();++i) examples[slot][3+i]=packed[i];
         exampleUsed[slot] = true;
     }
     bool append(int32_t left, int32_t right, uint8_t* canonical = nullptr) noexcept {
         if (failure != Outcome::Pending) return false;
-        if (!inRange(left) || !inRange(right)) {
-            rangeErrors += !inRange(left) + !inRange(right); failure = Outcome::SampleRange; return false;
+        if (!format) { failure=Outcome::FormatContradiction;return false; }
+        if (!sazanami::directpcm::sampleInRange(left,format->bitsPerSample) || !sazanami::directpcm::sampleInRange(right,format->bitsPerSample)) {
+            rangeErrors += !sazanami::directpcm::sampleInRange(left,format->bitsPerSample) + !sazanami::directpcm::sampleInRange(right,format->bitsPerSample); failure = Outcome::SampleRange; return false;
         }
-        if (!canAdd(frames, 1) || !canAdd(bytes, 4)) { failure = Outcome::CounterOverflow; return false; }
-        uint8_t packed[4]; pack16(packed, left); pack16(packed + 2, right);
-        if (canonical) std::memcpy(canonical, packed, 4);
+        if (!canAdd(frames, 1) || !canAdd(bytes, frameBytes())) { failure = Outcome::CounterOverflow; return false; }
+        uint8_t packed[6]{};
+        sazanami::directpcm::packSample(packed,left,format->bytesPerSample);
+        sazanami::directpcm::packSample(packed+format->bytesPerSample,right,format->bytesPerSample);
+        if (canonical) std::memcpy(canonical, packed, frameBytes());
         const int32_t low = left < right ? left : right, high = left > right ? left : right;
         if (frames == 0 || low < minimum) { minimum = low; example(4, left, right, packed); }
         if (frames == 0 || high > maximum) { maximum = high; example(5, left, right, packed); }
@@ -60,7 +68,7 @@ struct Pcm {
         if (frames == 0 || left > maxL) maxL = left;
         if (frames == 0 || right < minR) minR = right;
         if (frames == 0 || right > maxR) maxR = right;
-        hash = hashBytes(hash, packed, 4); ++frames; bytes += 4;
+        hash = hashBytes(hash, packed, frameBytes()); ++frames; bytes += frameBytes();
         return true;
     }
 };
@@ -75,7 +83,7 @@ inline Outcome classify(bool recognized, bool initialized, bool metadata, bool a
     if (contradictions) return Outcome::FormatContradiction;
     if (errors) return Outcome::DecoderError;
     if (!process || !eos || pcm.frames == 0 || (total && total != pcm.frames)) return Outcome::Truncated;
-    if (pcm.frames > kCounterMax / 4 || pcm.bytes != pcm.frames * 4) return Outcome::CounterOverflow;
+    if (!pcm.frameBytes() || pcm.frames > kCounterMax / pcm.frameBytes() || pcm.bytes != pcm.frames * pcm.frameBytes()) return Outcome::CounterOverflow;
     if (!md5Enabled) return Outcome::DecoderError;
     if (md5Present && !finish) return Outcome::Md5Mismatch;
     if (!md5Present) return Outcome::Md5Unavailable;

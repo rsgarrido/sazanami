@@ -27,23 +27,30 @@ internal data class UsbIsoTransportResult(val generation: Long, val streamGenera
     val packets: List<UsbIsoPacketEvidence> = emptyList(), val exceptionType: String? = null,
     val authorityFailure: UsbClockQueryStatus? = null, val pcm: List<UsbPcmFrameEvidence> = emptyList()) {
     fun count(name: String) = counters[name] ?: 0L
+    val pcmFormat get()=UsbDirectPcmFormat.resolve(count("schedulerNominalRateHz"),count("formatChannels"),count("formatBitsPerSample"))
+    val bytesPerFrame get()=pcmFormat?.bytesPerFrame?.toLong() ?: 0L
+    val formatEvidenceValid get()=pcmFormat?.let { count("formatBytesPerFrame")==it.bytesPerFrame.toLong() &&
+        count("formatBytesPerSample")==it.bytesPerSample.toLong() && count("formatSubslotBytes")==it.subslotBytes.toLong() &&
+        count("formatValidBits")==it.validBits.toLong() && count("formatAlternate") in 1L..255L }==true
     val integrityReasons get() = UsbIsoNativeStats.reasons.filterIndexed { index, _ -> (count("integrityMask") and (1L shl index)) != 0L }
     val valid get() = exceptionType == null && authorityFailure == null && counters.isNotEmpty() && count("integrityMask") == 0L
     val workerStopped get() = count("workerStopped") == 1L
     val shutdownAccounted get() = workerStopped && count("outstandingUrbsFinal") == 0L
     val state get() = counters["state"]?.let { UsbIsoNativeStats.states.getOrNull(it.toInt()) } ?: "UNAVAILABLE"
     val stopReason get() = counters["stopReason"]?.let { UsbIsoNativeStats.stops.getOrNull(it.toInt()) } ?: "UNAVAILABLE"
-    val verified get() = if (count("sourceMode")==3L) fullVerified else valid && shutdownAccounted && count("started") == 1L && stopReason == "DURATION_COMPLETE" &&
+    val verified get() = if (count("sourceMode")==3L) fullVerified else valid && formatEvidenceValid && shutdownAccounted && count("started") == 1L && stopReason == "DURATION_COMPLETE" &&
         count("durationUs") >= (if (count("sourceMode")==2L) 5000000L else UsbIsoTiming.DURATION_MS * 1000) && count("framesCompleted") > 0 &&
         count("outUrbsSubmitted") > 0 && count("feedbackPacketsValid") > 0 && count("feedbackScheduledPackets") > 0 &&
         count("sourceFramesGenerated") == count("framesScheduled") && count("framesScheduled") == count("framesSubmitted") &&
         count("framesSubmitted") == count("framesCompleted") && count("outUrbsSubmitted") == count("outUrbsCompleted") &&
         count("feedbackUrbsSubmitted") == count("feedbackUrbsCompleted") && count("outPacketsSubmitted") == count("outPacketsCompleted") &&
         count("outPacketErrors") == 0L && count("outUrbErrors") == 0L && count("queueUnderruns") == 0L &&
+        bytesPerFrame>0 && count("framesSubmitted")<=Long.MAX_VALUE/bytesPerFrame &&
+        (count("sourceMode")>=2 || (pcmFormat?.bitsPerSample==16 && pcmFormat?.sampleRateHz==44100L)) &&
         sourceVerified && count("framesCancelled") == 0L && count("framesNotSubmitted") == 0L &&
         count("feedbackUrbErrors") == 0L && count("feedbackTimeouts") == 0L && count("shutdownIncomplete") == 0L &&
         count("unknownCompletions") == 0L && count("duplicateCompletions") == 0L && count("outBytesSubmitted") == count("kernelOutActualBytes") &&
-        count("outBytesSubmitted") == count("framesSubmitted") * UsbIsoTiming.BYTES_PER_FRAME &&
+        count("outBytesSubmitted") == count("framesSubmitted") * bytesPerFrame &&
         count("outPacketsSubmitted") == count("outUrbsSubmitted") * UsbIsoTiming.OUT_PACKETS
     val sourceVerified get() = when (count("sourceMode")) {
         0L -> count("pcmByteOr") == 0L
@@ -65,8 +72,8 @@ internal data class UsbIsoTransportResult(val generation: Long, val streamGenera
         3L -> fullVerified
         else -> false
     }
-    private val fullVerified get() = valid && shutdownAccounted && count("started")==1L && stopReason=="NATURAL_EOF_COMPLETE" &&
-        count("transportDurationTargetUs")==0L && count("streamInfoTotalSamples") in 1L..(Long.MAX_VALUE/4L) &&
+    private val fullVerified get() = valid && formatEvidenceValid && shutdownAccounted && count("started")==1L && stopReason=="NATURAL_EOF_COMPLETE" &&
+        count("transportDurationTargetUs")==0L && bytesPerFrame>0 && count("streamInfoTotalSamples") in 1L..(Long.MAX_VALUE/bytesPerFrame) &&
         count("feedbackPacketsValid")>0L && count("feedbackScheduledPackets")>0L &&
         listOf("sourceFramesGenerated","framesScheduled","framesSubmitted","framesCompleted","prefixSourceFramesConsumed")
             .all { counters[it]==count("streamInfoTotalSamples") } &&
@@ -80,7 +87,7 @@ internal data class UsbIsoTransportResult(val generation: Long, val streamGenera
         count("finalCompletedSourceFrame")==count("streamInfoTotalSamples")-1 &&
         count("outUrbsSubmitted")>0L && count("outUrbsSubmitted")==count("outUrbsCompleted") &&
         count("outPacketsSubmitted")==count("outPacketsCompleted") && count("feedbackUrbsSubmitted")==count("feedbackUrbsCompleted") &&
-        count("outBytesSubmitted")==count("streamInfoTotalSamples")*4 && count("kernelOutActualBytes")==count("outBytesSubmitted") &&
+        count("outBytesSubmitted")==count("streamInfoTotalSamples")*bytesPerFrame && count("kernelOutActualBytes")==count("outBytesSubmitted") &&
         count("terminalTailOutUrbs")==1L && count("terminalTailPackets") in 1L..8L &&
         count("prefixInitialPrimedFrames") in minOf(8192L,count("streamInfoTotalSamples"))..16384L &&
         count("terminalTailFrames") in 1L..count("streamInfoTotalSamples") &&
@@ -92,7 +99,7 @@ internal data class UsbIsoTransportResult(val generation: Long, val streamGenera
 }
 
 internal object UsbIsoNativeStats {
-    const val VERSION = 9
+    const val VERSION = 10
     val fields = listOf("version", "generation", "streamGeneration", "started", "state", "integrityMask", "stopReason", "durationUs",
         "sourceFramesGenerated", "framesScheduled", "framesSubmitted", "framesCompleted", "outUrbsSubmitted", "outUrbsCompleted",
         "outPacketsSubmitted", "outPacketsCompleted", "outBytesSubmitted", "kernelOutActualBytes", "outPacketErrors", "outUrbErrors",
@@ -129,7 +136,7 @@ internal object UsbIsoNativeStats {
         "minEstimatedOutCoverageUs", "worstOutCoverageAtUs", "outCoverageBelowOneUrbObservations", "outCoverageBelowTwoUrbsObservations",
         "maxOutSubmissionBatchGapUs", "maxOutSubmissionGapUs", "maxOutCompletionObservedGapUs", "maxOutRefillOpportunityGapUs", "maxOutRefillLatencyUs",
         "outContinuityRiskEvents", "firstOutRiskAtUs", "firstOutRiskMask", "firstOutRiskStage", "firstOutRiskOutstanding", "firstOutRiskFeedbackOutstanding",
-        "firstOutRiskWorkerGapUs", "firstOutRiskEstimatedCoverageUs", "firstOutRiskCompletedFrames", "schedulerNominalRateHz")
+        "firstOutRiskWorkerGapUs", "firstOutRiskEstimatedCoverageUs", "firstOutRiskCompletedFrames", "schedulerNominalRateHz", "formatChannels", "formatBitsPerSample", "formatBytesPerSample", "formatBytesPerFrame", "formatSubslotBytes", "formatValidBits", "formatAlternate")
     val outRiskStages=listOf("WORKER_WAKE","BEFORE_REFILL","AFTER_REFILL")
     val outRiskReasons=listOf("WORKER_GAP_BEYOND_NOMINAL_COVERAGE","NO_APPLICATION_OUT","ESTIMATED_COVERAGE_BELOW_ONE_URB","REFILL_LATENCY_BEYOND_NOMINAL_COVERAGE")
     val feedbackTimeoutSubtypes=listOf("NONE","BOOTSTRAP_TIMEOUT","LAST_VALID_WATCHDOG_TIMEOUT","VALID_OBSERVATION_GAP_AT_REAP")
@@ -159,11 +166,9 @@ internal object UsbIsoNativeStats {
             require(it[5] == stream && it[6] > 0 && it[0] in 1..255 && it[3] in 0..0xffffffffL && it[4] in 0..0xffffffffL)
             UsbIsoPacketEvidence(it[0].toInt(), it[1].toInt(), it[2].toInt(), it[3], it[4], it[5], it[6])
         }
-        require(packet.pcm.size % 7 == 0 && packet.pcm.size <= 13 * 7)
-        val pcm = packet.pcm.toList().chunked(7).map {
-            require(it[0] >= 0 && it[1] in -32768L..32767L && it[2] in -32768L..32767L && it.drop(3).all { byte -> byte in 0L..255L })
-            UsbPcmFrameEvidence(it[0], it[1].toInt(), it[2].toInt(), it.drop(3).map(Long::toInt))
-        }
+        require(packet.pcm.size % 9 == 0 && packet.pcm.size <= 13 * 9)
+        val format=UsbDirectPcmFormat.resolve(counters.getValue("schedulerNominalRateHz"),counters.getValue("formatChannels"),counters.getValue("formatBitsPerSample"))
+        val pcm=packet.pcm.toList().chunked(9).map { decodeDirectPcmExample(it,requireNotNull(format)) }
         return UsbIsoTransportResult(generation, stream, counters, feedback, packets, pcm = pcm)
     }
 }

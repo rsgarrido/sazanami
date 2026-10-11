@@ -4,13 +4,14 @@ import java.nio.file.Files
 import java.nio.file.Paths
 import org.junit.Assert.*
 import org.junit.Test
+import io.github.rsgarrido.sazanami.player.usb.UsbDirectPcmFormat
 
 /** Synthetic JNI evidence/source boundaries only. No claimed FLAC file or hardware validation. */
 class FlacVerificationTest {
     private fun source(relative: String) = listOf(Paths.get("src/main", relative), Paths.get("app/src/main", relative))
         .first { Files.isRegularFile(it) }.toFile().readText(Charsets.UTF_8)
     private fun snapshot(vararg changes: Pair<String, Long>): FlacNativeSnapshot {
-        val facts = mutableMapOf("version" to 1L, "result" to 1L, "lifecycleMask" to 511L,
+        val facts = mutableMapOf("version" to 2L, "result" to 1L, "lifecycleMask" to 511L,
             "nativeFlacRecognized" to 1L, "decoderCreated" to 1L, "initStatus" to 0L,
             "md5CheckingEnabled" to 1L, "streamInfoReceived" to 1L, "sampleRate" to 44100L,
             "channels" to 2L, "bitsPerSample" to 16L, "totalSamples" to 6L,
@@ -23,7 +24,9 @@ class FlacVerificationTest {
             "seekable" to 1L, "fileSize" to 100L, "decoderState" to 4L)
         facts.putAll(changes)
         return FlacNativeSnapshot(FlacNativeEvidence.fields.map { facts[it] ?: 0L }.toLongArray(),
-            ByteArray(16) { (it+1).toByte() }, longArrayOf(0,0,0,0,0,0,0), longArrayOf(), "1.5.0")
+            ByteArray(16) { (it+1).toByte() },
+            if(UsbDirectPcmFormat.supports(facts.getValue("sampleRate"),facts.getValue("channels"),facts.getValue("bitsPerSample")))
+                longArrayOf(0,0,0,0,0,0,0,0,0) else longArrayOf(), longArrayOf(), "1.5.0")
     }
     private fun result(vararg changes: Pair<String, Long>) = FlacNativeEvidence.decode(snapshot(*changes)).copy(originalFdClosed = true)
     private fun rejects(snapshot: FlacNativeSnapshot) {
@@ -42,8 +45,19 @@ class FlacVerificationTest {
     }
     @Test fun exact48000UsesSameStrongMd5AndPackingEvidence() {
         assertTrue(result("sampleRate" to 48000L).strongEvidence)
-        assertFalse(result("sampleRate" to 48000L,"bitsPerSample" to 24L).strongEvidence)
+        assertTrue(result("sampleRate" to 48000L,"bitsPerSample" to 24L,"canonicalPcmBytesHashed" to 36L).strongEvidence)
         assertFalse(result("sampleRate" to 48000L,"md5Verification" to 0L).strongEvidence)
+    }
+    @Test fun pcm24StrongEvidenceAcceptsFullSignedRangeAndRequiresSixByteCountsAndMd5() {
+        val exact=result("sampleRate" to 48000,"bitsPerSample" to 24,"canonicalPcmBytesHashed" to 36,
+            "minLeftSample" to -8388608,"maxRightSample" to 8388607,"minObservedSample" to -8388608,"maxObservedSample" to 8388607)
+        assertTrue(exact.strongEvidence);assertEquals(6L,exact.bytesPerFrame)
+        assertFalse(exact.copy(counters=exact.counters+("canonicalPcmBytesHashed" to 24L)).strongEvidence)
+        assertFalse(exact.copy(counters=exact.counters+("maxObservedSample" to 8388608L)).strongEvidence)
+        assertFalse(exact.copy(counters=exact.counters+("md5Verification" to 0L)).strongEvidence)
+        val snapshot24=snapshot("sampleRate" to 48000,"bitsPerSample" to 24,"canonicalPcmBytesHashed" to 36)
+            .copy(examples=longArrayOf(0,-8388608,8388607,0,0,128,255,255,127))
+        assertEquals(listOf(0,0,128,255,255,127),FlacNativeEvidence.decode(snapshot24).examples.single().bytes)
     }
     @Test fun formatGateNeverAcceptsDownconversion() {
         for ((name, value) in listOf("sampleRate" to 88200L, "sampleRate" to 96000L, "sampleRate" to 192000L,
@@ -76,16 +90,34 @@ class FlacVerificationTest {
         assertFalse(result("decodedStereoFrames" to Long.MAX_VALUE, "totalSamples" to Long.MAX_VALUE).strongEvidence)
     }
     @Test fun malformedSchemaAndExcessExamplesAreRejected() {
-        rejects(snapshot().copy(numbers = LongArray(2)))
-        rejects(snapshot("version" to 2)); rejects(snapshot("result" to 99))
-        rejects(snapshot().copy(md5 = ByteArray(15))); rejects(snapshot().copy(examples = LongArray(8*7)))
-        rejects(snapshot().copy(examples = longArrayOf(6,0,0,0,0,0,0)))
-        rejects(snapshot().copy(examples = longArrayOf(0,32768,0,0,0,0,0)))
-        rejects(snapshot().copy(examples = longArrayOf(0,1024,-1024,0,4,0,4)))
+        val pcm16 = snapshot().copy(examples = longArrayOf(0,-32768,32767,0,128,255,127,0,0))
+        val pcm24 = snapshot("sampleRate" to 48000,"bitsPerSample" to 24,"canonicalPcmBytesHashed" to 36)
+            .copy(examples = longArrayOf(0,-8388608,8388607,0,0,128,255,255,127))
+        assertEquals(48, pcm16.numbers.size)
+        assertEquals(listOf(0,128,255,127), FlacNativeEvidence.decode(pcm16).examples.single().bytes)
+        assertEquals(listOf(0,0,128,255,255,127), FlacNativeEvidence.decode(pcm24).examples.single().bytes)
+        for (valid in listOf(pcm16, pcm24)) {
+            rejects(valid.copy(numbers = valid.numbers.copyOf(47)))
+            rejects(valid.copy(numbers = valid.numbers.copyOf(49)))
+            rejects(valid.copy(examples = valid.examples.copyOf(8))) // Truncated current row.
+            rejects(valid.copy(examples = valid.examples.copyOf(7))) // Historical row width.
+            rejects(valid.copy(examples = LongArray(8*9))) // Eight complete rows; maximum is seven.
+            rejects(valid.copy(examples = valid.examples.copyOf().also { it[3] = 256 }))
+        }
+        for (version in listOf(0L, 1L, 3L, Long.MAX_VALUE)) rejects(snapshot("version" to version))
+        rejects(snapshot("result" to 99))
+        rejects(snapshot().copy(md5 = ByteArray(15)))
+        rejects(snapshot().copy(examples = longArrayOf(6,0,0,0,0,0,0,0,0)))
+        rejects(snapshot().copy(examples = longArrayOf(0,32768,0,0,0,0,0,0,0)))
+        rejects(snapshot().copy(examples = longArrayOf(0,1024,-1024,0,4,0,4,0,0)))
+        rejects(pcm16.copy(examples = pcm16.examples.copyOf().also { it[7] = 1 })) // No PCM16 padding data.
+        for (sample in listOf(-8388609L, 8388608L))
+            rejects(pcm24.copy(examples = pcm24.examples.copyOf().also { it[1] = sample }))
+        rejects(pcm24.copy(examples = pcm24.examples.copyOf().also { it[8] = 128 })) // Wrong high byte.
         rejects(snapshot().copy(errors = LongArray(9))); rejects(snapshot().copy(decoderVersion = "unknown"))
     }
     @Test fun resultCopiesNativeArraysAndPreservesSignedPackedExamples() {
-        val input = snapshot().copy(examples = longArrayOf(0,-32768,32767,0,128,255,127))
+        val input = snapshot().copy(examples = longArrayOf(0,-32768,32767,0,128,255,127,0,0))
         val decoded = FlacNativeEvidence.decode(input)
         input.numbers.fill(99); input.md5.fill(0); input.examples.fill(0)
         assertEquals(6L, decoded.count("decodedStereoFrames"))

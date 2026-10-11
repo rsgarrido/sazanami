@@ -55,7 +55,7 @@ static void backpressureAndWake() {
     auto blocked=std::async(std::launch::async,[&]{return q.push(kPrefixCapacity,b);});
     while (q.fullWaits.load()==0) std::this_thread::yield();
     assert(blocked.wait_for(std::chrono::milliseconds(1))==std::future_status::timeout);
-    assert(q.depth()==kPrefixCapacity && q.bytes[0][0]==a[0] && q.faults==0);
+    assert(q.depth()==kPrefixCapacity && q.bytes[0]==a[0] && q.faults==0);
     uint8_t payload[4]; assert(available(q,payload,1) && q.commit());
     assert(blocked.get()); assert(q.depth()==kPrefixCapacity && q.faults==0);
     assert(q.minDepth.load()>=kPrefixCapacity-1 && q.maxDepth.load()==kPrefixCapacity);
@@ -139,7 +139,7 @@ static void fullSourceShortageAndTerminalMutation() {
 }
 static void decoderTotalGatePrecedesCanonicalBytes() {
     Verification v(OwnedFd(-1),[]{ return false; },true); v.accepted=true; v.enforceExpectedTotal=true;
-    v.facts[Total]=1; v.facts[MaxBlock]=2;
+    v.facts[Total]=1; v.facts[MaxBlock]=2;v.facts[Rate]=44100;v.facts[Channels]=2;v.facts[Bits]=16;v.pcm.format=sazanami::directpcm::referenceFormat();
     FLAC__Frame frame{}; frame.header.sample_rate=44100; frame.header.channels=2; frame.header.bits_per_sample=16;
     frame.header.blocksize=2; frame.header.number_type=FLAC__FRAME_NUMBER_TYPE_SAMPLE_NUMBER;
     FLAC__int32 left[2]{1,2},right[2]{-1,-2}; const FLAC__int32* channels[]{left,right};

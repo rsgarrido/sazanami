@@ -641,9 +641,9 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
                                 return@withLock sourceBlocked(status, "FLAC validation/prebuffer failed; no USB ownership attempted.")
                             }
                             val sourceRateHz = source.result.count("sampleRate")
-                            silentResolution = UsbSilentTransportPlan.resolve(model, selected.interfaces, sourceRateHz)
+                            silentResolution = UsbSilentTransportPlan.resolve(model, selected.interfaces, sourceRateHz, source.result.count("bitsPerSample"), source.result.count("channels"))
                             resolution = silentResolution?.plan?.configuration ?: UsbAudioConfigurationResolution(issues = silentResolution?.issues.orEmpty())
-                            if (resolution.plan == null) return@withLock sourceBlocked(UsbSilentStatus.USB_CONFIGURATION_FAILED, "Source-selected PCM16 transport configuration unavailable; no USB ownership attempted.")
+                            if (resolution.plan == null) return@withLock sourceBlocked(UsbSilentStatus.USB_CONFIGURATION_FAILED, "Source-selected PCM transport configuration unavailable; no USB ownership attempted.")
                             currentCoroutineContext().ensureActive()
                             usbAccessFailure(token)?.let { return@withLock unavailable(it, "Access changed after FLAC priming; no USB ownership attempted.") }
                             withContext(Dispatchers.Main.immediate) {
