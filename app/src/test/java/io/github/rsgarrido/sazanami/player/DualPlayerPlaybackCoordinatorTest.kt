@@ -6,10 +6,12 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.ExoTimeoutException
 import io.github.rsgarrido.sazanami.player.equalizer.EqualizerAudioProcessor
 import io.github.rsgarrido.sazanami.player.equalizer.EqualizerRuntimeBridge
 import org.junit.After
@@ -1362,6 +1364,41 @@ class DualPlayerPlaybackCoordinatorTest {
         assertEquals(0.75f, pipelineA.baselineVolume, 0.0001f)
         assertFalse(pipelineA.hasExactBaselineFor(oldKey))
         coordinator.release()
+    }
+
+    @Test fun directOwnershipStopsAndReleasesBothPipelinesAndSuppressesPreload() {
+        val a=mock(ExoPlayer::class.java);val b=mock(ExoPlayer::class.java)
+        val coordinator=DualPlayerPlaybackCoordinator(pipeline(PhysicalPlayerRole.ACTIVE,a),pipeline(PhysicalPlayerRole.STANDBY,b),
+            initialCrossfadeConfiguration=CrossfadeRuntimeConfiguration.DISABLED)
+        assertTrue(coordinator.releaseForDirect())
+        verify(a).stop();verify(b).stop();verify(a).release();verify(b).release()
+        coordinator.synchronizeStandby();coordinator.updateActiveBaseline(1f)
+        var visited=0;coordinator.forEachPipeline { visited++ };assertEquals(0,visited)
+        verify(a,never()).prepare();verify(b,never()).prepare()
+    }
+    @Test fun releaseTimeoutEventBlocksDirectEvenWhenCachedPlayerErrorIsNull() {
+        val a=mock(ExoPlayer::class.java);val b=mock(ExoPlayer::class.java)
+        val listeners=mutableListOf<Player.Listener>()
+        // The public constructor reads Android's clock. Supply a timestamp through the
+        // protected constructor so this JVM fixture can deliver the real timeout signal.
+        val releaseTimeout=object : PlaybackException("release timeout",
+            ExoTimeoutException(ExoTimeoutException.TIMEOUT_OPERATION_RELEASE),
+            PlaybackException.ERROR_CODE_TIMEOUT,mock(Bundle::class.java),0L) {}
+        var deliveredTimeouts=0
+        org.mockito.Mockito.doAnswer { invocation -> listeners+=invocation.getArgument<Player.Listener>(0);null }
+            .`when`(a).addListener(org.mockito.ArgumentMatchers.any(Player.Listener::class.java))
+        org.mockito.Mockito.doAnswer { invocation -> listeners.remove(invocation.getArgument<Player.Listener>(0));null }
+            .`when`(a).removeListener(org.mockito.ArgumentMatchers.any(Player.Listener::class.java))
+        org.mockito.Mockito.doAnswer { _ ->
+            listeners.toList().forEach { it.onPlayerError(releaseTimeout);deliveredTimeouts++ };null
+        }.`when`(a).release()
+        val active=pipeline(PhysicalPlayerRole.ACTIVE,a);val standby=pipeline(PhysicalPlayerRole.STANDBY,b)
+        val coordinator=DualPlayerPlaybackCoordinator(active,standby,
+            initialCrossfadeConfiguration=CrossfadeRuntimeConfiguration.DISABLED)
+        assertNull(a.playerError);assertFalse(coordinator.releaseForDirect())
+        assertEquals(1,deliveredTimeouts);assertTrue(listeners.isEmpty());assertNull(a.playerError)
+        assertFalse(active.releasedForDirectSafely);assertTrue(standby.releasedForDirectSafely)
+        verify(a).release();verify(b).release()
     }
 
     private fun pipeline(

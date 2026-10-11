@@ -55,7 +55,8 @@ internal data class UsbAudioDiagnosticState(
     val silentExperiment: UsbSilentTransportExperimentResult? = null,
     val referenceExperiment: UsbSilentTransportExperimentResult? = null,
     val flacUsbExperiment: UsbSilentTransportExperimentResult? = null,
-    val fullFlacUsbExperiment: UsbSilentTransportExperimentResult? = null
+    val fullFlacUsbExperiment: UsbSilentTransportExperimentResult? = null,
+    val integratedFlacUsbExperiment: UsbSilentTransportExperimentResult? = null
 ) {
     val selectedDevice: UsbAudioDeviceSnapshot?
         get() = devices.firstOrNull { it.identity == selectedIdentity }
@@ -66,7 +67,8 @@ internal data class UsbAudioDiagnosticState(
             silentExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true ||
             referenceExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true ||
             flacUsbExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true ||
-            fullFlacUsbExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true
+            fullFlacUsbExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true ||
+            integratedFlacUsbExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true
     fun endpointExperiment(mode: UsbPcmDiagnosticMode) =
         when (mode) {
             UsbPcmDiagnosticMode.ZERO -> silentExperiment

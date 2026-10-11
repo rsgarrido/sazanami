@@ -101,7 +101,14 @@ class UsbSilentTransportTest {
     @Test fun latestFeedbackGovernsPacketizationWithoutSourceChanges() { val slow = UsbIsoFrameAccumulator(); val fast = UsbIsoFrameAccumulator(); repeat(8000) { slow.next(1, nominalFeedback * 96 / 100); fast.next(1, nominalFeedback * 104 / 100) }; assertTrue(slow.frames < fast.frames) }
     @Test fun frameCountersAreMonotonic() { val scheduler = UsbIsoFrameAccumulator(); repeat(1000) { val before = scheduler.frames; val count = scheduler.next(1); assertEquals(before + count, scheduler.frames); assertTrue(count in 5..6) } }
     @Test fun bytesPerFrameIsExactlyFour() { assertEquals(4, UsbIsoTiming.BYTES_PER_FRAME) }
-    @Test fun poolDepthIsModestAndBounded() { val timing = plan.timing(UsbFsSpeed.HIGH)!!; assertTrue(UsbIsoTiming.OUT_POOL * UsbIsoTiming.OUT_PACKETS * timing.dataIntervalUs <= 32000); assertEquals(2, UsbIsoTiming.FEEDBACK_POOL) }
+    @Test fun poolDepthIsModestAndBounded() {
+        val timing = plan.timing(UsbFsSpeed.HIGH)!!
+        assertTrue(UsbIsoTiming.OUT_POOL * UsbIsoTiming.OUT_PACKETS * timing.dataIntervalUs <= 32000)
+        assertEquals(21,timing.feedbackUrbCount);assertEquals(1,UsbIsoTiming.FEEDBACK_PACKETS)
+        assertEquals(21000L,timing.feedbackCoverageUs)
+        assertTrue(timing.feedbackUrbCount<=UsbIsoTiming.MAX_FEEDBACK_POOL)
+        assertTrue(timing.feedbackCoverageUs>timing.feedbackHoldoverMs*1000)
+    }
     @Test fun bootstrapAndHoldoverAreFinite() { assertEquals(100L, UsbIsoTiming.BOOTSTRAP_MS); assertEquals(20L, plan.timing(UsbFsSpeed.HIGH)!!.feedbackHoldoverMs); assertTrue(UsbIsoTiming.DURATION_MS > UsbIsoTiming.BOOTSTRAP_MS) }
     @Test fun unsupportedAccumulatorIntervalIsRejected() { try { UsbIsoFrameAccumulator().next(32768); fail() } catch (_: IllegalArgumentException) {} }
     @Test fun verifiedResultRequiresCleanAccounting() { assertTrue(native().verified); assertFalse(native("framesCompleted" to 999).verified); assertFalse(native("framesSubmitted" to 999).verified) }
@@ -145,7 +152,16 @@ class UsbSilentTransportTest {
     @Test fun nativeHasNoPerPacketAllocations() { val submit = source("cpp/usb_iso_transport.cpp").substringAfter("bool submit(Slot& slot)").substringBefore("void packetExample"); listOf("resize(", "malloc(", "calloc(", "new ").forEach { assertFalse(submit.contains(it)) } }
     @Test fun nativeQueueUnderrunIsFailureNotDroppedWork() { val native = source("cpp/usb_iso_transport.cpp"); assertTrue(native.contains("outstanding(false) == 0")); assertTrue(native.contains("fail(QueueUnderrun, Stop::Underrun)")) }
     @Test fun nativePreservesFractionAndNeverHardcodesPacketPattern() { val core = source("cpp/usb_iso_core.h"); assertTrue(core.contains("remainder %= denominator")); assertTrue(core.contains("static_cast<uint64_t>(feedback) * 8000")); assertFalse(core.contains("resample")) }
-    @Test fun feedbackStalenessIncludesDelayedReaping() { val native = source("cpp/usb_iso_transport.cpp"); assertTrue(native.contains("lastValid = slot.submittedAt")); assertTrue(native.contains("if (stale)")); assertTrue(native.contains("feedbackExpired(")) }
+    @Test fun feedbackRequestResidenceIsSeparateFromTheBoundedObservationDeadline() {
+        val native = source("cpp/usb_iso_transport.cpp")
+        assertTrue(native.contains("FeedbackObservationClock::requestAge(slot.submittedAt,observed)"))
+        assertTrue(native.contains("feedbackClock.accept(slot.submittedAt,observed)"))
+        assertTrue(native.contains("feedbackReapPass=reapBeforeFeedbackWatchdog(feedbackClock,"))
+        assertTrue(source("cpp/usb_feedback_policy.h").contains("clock.expired(pass.evaluatedAt,holdover)"))
+        assertFalse(native.substringAfter("void feedbackPacket(").substringBefore("bool reapOne()").contains(".expired("))
+        assertTrue(native.contains("++stats[RequestsOverHoldover]"))
+        assertFalse(native.contains("if (stale)"))
+    }
     @Test fun knownIdentityIsRequiredForDiscardAndCompletion() { val native = source("cpp/usb_iso_transport.cpp"); assertTrue(native.contains("!slot.identity.outstanding || slot.identity.discardRequested")); assertTrue(native.contains("slot.urb.get() == completed")); assertTrue(native.contains("fail(UnknownCompletion")); assertTrue(native.contains("fail(DuplicateCompletion")) }
     @Test fun nativeInspectsEveryPacketAndShortActualLength() { val native = source("cpp/usb_iso_transport.cpp"); assertTrue(native.contains("for (unsigned i = 0; i < slot.packets; ++i)")); assertTrue(native.contains("packet.actual_length != packet.length")); assertTrue(native.contains("packet.status != 0")); assertTrue(native.contains("slot.urb->error_count != 0")) }
     @Test fun nativeUsesRealUapiVariableSizedUrbs() { val native = source("cpp/usb_iso_transport.cpp"); assertTrue(native.contains("allocationBytes(sizeof(usbdevfs_urb), sizeof(usbdevfs_iso_packet_desc), count)")); assertTrue(source("cpp/usb_iso_core.h").contains("extra <= SIZE_MAX - base")); assertTrue(native.contains("USBDEVFS_SUBMITURB")); assertTrue(native.contains("USBDEVFS_REAPURBNDELAY")); assertTrue(native.contains("USBDEVFS_DISCARDURB")) }
@@ -537,13 +553,20 @@ class UsbSilentTransportTest {
         assertEquals("a20e06d1d8ed93edfc3449ab86195a61c7cd7619befeab78c9e8781b4369eb15",digest(algorithms))
         val native=source("cpp/usb_iso_transport.cpp")
         // Session 11 adds Slot metadata and completion accounting. Pin the unchanged allocation,
-        // feedback parser, cancellation and polling implementations independently to baseline HEAD.
+        // cancellation and polling implementations independently to baseline HEAD. Session 12
+        // intentionally changes feedback freshness; pin that audited function to its new version,
+        // and exercise its policy separately in usb_feedback_policy_test.cpp.
         val allocation="    void allocate("+native.substringAfter("    void allocate(").substringBefore("struct Session {")
         assertEquals("6d1fc92fd7ab7430fedb5840f3550d965cfed3bdcf1b45c909be58ff33808513",digest(allocation))
         val feedback="    void feedbackPacket("+native.substringAfter("    void feedbackPacket(").substringBefore("    bool reapOne()")
-        assertEquals("688e3c3d92072e707836a6b08bad6828afa56fb411b70027a07b0ff8b23a046a",digest(feedback))
+        assertEquals("f0e661e06e2a2770e6d32bd7c5e15ec3035754d68ee17369788dec680802794d",digest(feedback))
         val normalReap=("    bool reapOne()"+native.substringAfter("    bool reapOne()").substringBefore("    void cancel("))
             .replace("\r\n","\n")
+            // Remove only the new diagnostic hook; all identity/error/PCM accounting remains pinned.
+            .replace("        if (!slot.feedback && !stopping && !stopCause.chosen && !requestedStop.load()) {\n" +
+                "            slot.outReapedAt=monotonicUs();\n" +
+                "            outContinuity.completed(slot.outReapedAt,slot.packets);\n" +
+                "        }\n", "")
             .replace("        uint64_t sourceOffset=0;\n","")
             .replace("            sourceOffset+=slot.frames[i];\n","")
             .replace("""                if (fullTrack) {
@@ -557,7 +580,7 @@ class UsbSilentTransportTest {
                 "                stats[CompletedFrames] += slot.frames[i];\n" +
                 "            }\n", "            } else if (status == 0) stats[CompletedFrames] += slot.frames[i];\n")
         assertEquals("b06af3644ac591207308751667b053befa96651974e16a747e9bbb23ccdab879",digest(normalReap))
-        val reconciliation="    void cancel("+native.substringAfter("    void cancel(").substringBefore("    void shutdown()")
+        val reconciliation="    void cancel("+native.substringAfter("    void cancel(").substringBefore("    void captureOutContinuity()")
         assertEquals("965936723c3ba623c4dae5fcb73c743b67009a80c2789d91a4406656c5c5bc00",digest(reconciliation))
         val pcm=source("cpp/flac/flac_pcm_core.h")
         val classifier="inline Outcome classify("+pcm.substringAfter("inline Outcome classify(").substringBefore("} // namespace")
@@ -670,6 +693,16 @@ class UsbSilentTransportTest {
     private fun fullExperiment(fake: ConfigurationFake,source: UsbFlacSourceResult=fullSource(),usb: UsbIsoTransportResult=fullNative(),safe: Boolean=true) = runBlocking {
         UsbSilentTransportExperiment.run(resolution,17,23,fake,{ _,_ -> BackendFake(fake.events).apply { result=usb;this.safe=safe } },
             mode=UsbPcmDiagnosticMode.FLAC_FULL,prefixSource=PrefixFake(source,fake.events))
+    }
+    @Test fun fullAccountingSuccessDoesNotCertifyWireContinuity() {
+        val result=fullNative("outContinuityRiskEvents" to 1L,"maxWorkerLoopGapUs" to 9001L,
+            "outZeroOutstandingObservations" to 1L,"minEstimatedOutCoverageUs" to 0L)
+        assertTrue(result.verified) // Diagnostic risk cannot change the proven Session 11 classifier.
+        assertEquals(0L,result.count("outPoolStallEvents"))
+        assertEquals(1L,result.count("outContinuityRiskEvents"))
+        assertTrue(result.integrityReasons.isEmpty())
+        assertEquals(result.count("framesSubmitted"),result.count("framesCompleted"))
+        assertEquals(result.count("sourcePcmHash"),result.count("submittedPcmHash"))
     }
     @Test fun wholeTrackNaturalSuccessHasNoDurationCeilingAndClosesOriginalFd() {
         assertTrue(fullSource().fullComplete); assertTrue(fullNative().verified)

@@ -151,16 +151,14 @@ class MusicPlayer(private val context: Context) {
             PlaybackQueueRuntimeBridge.prepareNewPlaybackContext(canonicalBaseEntryIds)
         }
 
-        playerController.setMediaItems(
-            mediaItems,
-            startIndex,
-            startPosition.toLong()
-        )
-
-        playerController.prepare()
-
-        if (shouldStart) {
-            playerController.play()
+        if (IntegratedDirectPlaybackBridge.directSelected) {
+            // One session item; the surrounding normal queue stays stored separately.
+            playerController.setMediaItem(mediaItems[startIndex],0L)
+            if (shouldStart) playerController.prepare()
+        } else {
+            playerController.setMediaItems(mediaItems,startIndex,startPosition.toLong())
+            playerController.prepare()
+            if (shouldStart) playerController.play()
         }
     }
 
@@ -190,7 +188,8 @@ class MusicPlayer(private val context: Context) {
         currentSong = liveCurrentSong
 
         val playerDuration = playerController.duration
-        val liveDuration = if (playerDuration > 0L) {
+        val direct=IntegratedDirectPlaybackBridge.state.value
+        val liveDuration = if(direct.enabled) direct.durationMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt() else if (playerDuration > 0L) {
             playerDuration.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         } else {
             liveCurrentSong.duration.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
@@ -205,11 +204,11 @@ class MusicPlayer(private val context: Context) {
             currentSong = liveCurrentSong,
             playlist = livePlaylist,
             currentPlaylistIndex = liveCurrentIndex,
-            currentPosition = playerController.currentPosition
+            currentPosition = (if(direct.enabled) direct.positionMs else playerController.currentPosition)
                 .coerceIn(0L, Int.MAX_VALUE.toLong())
                 .toInt(),
             duration = liveDuration,
-            isPlaying = playerController.isPlaying,
+            isPlaying = if(direct.enabled) direct.phase==IntegratedDirectPhase.PLAYING else playerController.isPlaying,
             repeatMode = liveRepeatMode
         )
     }
@@ -270,14 +269,17 @@ class MusicPlayer(private val context: Context) {
     }
 
     fun pause() {
+        if (IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.reject("Pause");return }
         controller?.pause()
     }
 
     fun resume() {
+        if (IntegratedDirectPlaybackBridge.directSelected) { controller?.prepare();return }
         controller?.play()
     }
 
     fun stop() {
+        if (IntegratedDirectPlaybackBridge.directSelected) { controller?.stop();return }
         controller?.stop()
         controller?.volume = 1f
         currentSong = null
@@ -298,10 +300,12 @@ class MusicPlayer(private val context: Context) {
     }
 
     fun setShuffleEnabled(enabled: Boolean) {
+        if (IntegratedDirectPlaybackBridge.directSelected) return
         controller?.shuffleModeEnabled = false
     }
 
     fun setRepeatMode(repeatMode: RepeatMode) {
+        if (IntegratedDirectPlaybackBridge.directSelected) return
         controller?.repeatMode = repeatMode.toPlayerRepeatMode()
     }
 
@@ -494,10 +498,12 @@ class MusicPlayer(private val context: Context) {
     }
 
     fun getCurrentPosition(): Int {
+        if (IntegratedDirectPlaybackBridge.directSelected) return IntegratedDirectPlaybackBridge.state.value.positionMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         return controller?.currentPosition?.toInt() ?: 0
     }
 
     fun getDuration(): Int {
+        if (IntegratedDirectPlaybackBridge.directSelected) return IntegratedDirectPlaybackBridge.state.value.durationMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         val playerDuration = controller?.duration ?: 0L
 
         return if (playerDuration > 0) {
@@ -512,6 +518,7 @@ class MusicPlayer(private val context: Context) {
     }
 
     fun setVolume(volumeMultiplier: Float) {
+        if (IntegratedDirectPlaybackBridge.directSelected) return
         controller?.volume = volumeMultiplier.coerceIn(
             minimumValue = 0f,
             maximumValue = 1f

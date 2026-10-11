@@ -93,12 +93,18 @@ import kotlinx.coroutines.withContext
 class PlaybackService : MediaLibraryService() {
 
     private var mediaSession: MediaLibrarySession? = null
+    private val normalControllerCommands=mutableMapOf<MediaSession.ControllerInfo,Pair<androidx.media3.session.SessionCommands,Player.Commands>>()
     private var usbAudioController: UsbAudioController? = null
     private lateinit var physicalPlayers: DualPlayerPlaybackCoordinator
     private lateinit var fragmentedMp4ExtractorsFactory: FragmentedMp4SeekExtractorsFactory
     private val player: ExoPlayer
         get() = physicalPlayers.logicalPhysicalPlayer
-    private lateinit var sessionPlayer: SmoothPlaybackPlayer
+    private lateinit var sessionPlayer: ExperimentalUsbPlaybackPlayer
+    private lateinit var normalSessionPlayer: SmoothPlaybackPlayer
+    private var lastAudioRuntime: PlaybackAudioRuntimePreferences?=null
+    private var directFocusRequest: android.media.AudioFocusRequest?=null
+    private var shutdownJob: Job?=null
+    private val previousDirectTeardown=DirectPlaybackTeardown.latest
     private lateinit var playerStateStorage: PlayerStateStorage
     private lateinit var listeningAdapter: PlaybackServiceListeningAdapter
     private lateinit var playbackQueueCoordinator: PlaybackQueueCoordinator
@@ -406,9 +412,10 @@ class PlaybackService : MediaLibraryService() {
                         "notification=$isMediaNotificationController auto=$isAutoCompanionController " +
                         "timeline=${playerCommands.contains(Player.COMMAND_GET_TIMELINE)}"
             )
+            normalControllerCommands[controller]=commands to playerCommands
             return MediaSession.ConnectionResult.accept(
-                commands,
-                playerCommands
+                if(IntegratedDirectPlaybackBridge.directSelected) commands.buildUpon().remove(AUTO_TOGGLE_SHUFFLE_COMMAND).remove(AUTO_TOGGLE_REPEAT_ALL_COMMAND).build() else commands,
+                if(IntegratedDirectPlaybackBridge.directSelected) directControllerCommands(controller,playerCommands) else playerCommands
             )
         }
 
@@ -425,6 +432,9 @@ class PlaybackService : MediaLibraryService() {
                         SAZANAMI_INTERNAL_CONTROLLER_HINT,
                         false
                     )
+            if (IntegratedDirectPlaybackBridge.directSelected && !isInternalSazanamiController &&
+                playerCommand!=Player.COMMAND_STOP && playerCommand !in setOf(Player.COMMAND_GET_CURRENT_MEDIA_ITEM,Player.COMMAND_GET_METADATA,Player.COMMAND_GET_TIMELINE))
+                return SessionError.ERROR_NOT_SUPPORTED
             if (
                 playerCommand == Player.COMMAND_SET_SHUFFLE_MODE &&
                 result == SessionResult.RESULT_SUCCESS &&
@@ -537,6 +547,7 @@ class PlaybackService : MediaLibraryService() {
             customCommand: SessionCommand,
             args: Bundle
         ): ListenableFuture<SessionResult> {
+            if (IntegratedDirectPlaybackBridge.directSelected) return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
             return when (customCommand.customAction) {
                 AUTO_TOGGLE_SHUFFLE_ACTION -> serviceFuture {
                     toggleAndroidAutoShuffle()
@@ -588,6 +599,8 @@ class PlaybackService : MediaLibraryService() {
             startIndex: Int,
             startPositionMs: Long
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            if(IntegratedDirectPlaybackBridge.directSelected && !(controller.packageName==packageName && controller.connectionHints.getBoolean(SAZANAMI_INTERNAL_CONTROLLER_HINT,false)))
+                return Futures.immediateFailedFuture(IllegalStateException("DIRECT_EXTERNAL_PLAYBACK_UNSUPPORTED"))
             if (mediaItems.all { it.localConfiguration != null }) {
                 return super.onSetMediaItems(
                     mediaSession,
@@ -631,35 +644,8 @@ class PlaybackService : MediaLibraryService() {
             )
         )
 
-        val activePipeline = createPhysicalPlayerPipeline(
-            role = PhysicalPlayerRole.ACTIVE,
-            audioAttributes = audioAttributes
-        )
-        val standbyPipeline = try {
-            createPhysicalPlayerPipeline(
-                role = PhysicalPlayerRole.STANDBY,
-                audioAttributes = audioAttributes
-            )
-        } catch (error: RuntimeException) {
-            activePipeline.release()
-            throw error
-        }
-        physicalPlayers = DualPlayerPlaybackCoordinator(
-            initialActive = activePipeline,
-            initialStandby = standbyPipeline,
-            standbyBaselinePreparer = StandbyBaselinePreparer { mediaItem, result ->
-                PlaybackLibraryBridge.prepareReplayGainBaseline(
-                    mediaId = mediaItem.mediaId,
-                    onPrepared = result
-                )
-            },
-            crossfadeScheduler = HandlerCrossfadeScheduler(
-                Handler(activePipeline.player.applicationLooper)
-            ),
-            initialCrossfadeConfiguration = CrossfadeRuntimeConfiguration.DISABLED
-        )
-        physicalPlayers.start(serviceScope)
-        sessionPlayer = SmoothPlaybackPlayer(
+        physicalPlayers = createNormalCoordinator(audioAttributes)
+        normalSessionPlayer = SmoothPlaybackPlayer(
             initialPhysicalPlayer = player,
             onBaselineVolumeChanged = physicalPlayers::updateActiveBaseline,
             onLogicalCommand = { event ->
@@ -671,8 +657,23 @@ class PlaybackService : MediaLibraryService() {
                 }
             }
         )
+        sessionPlayer=ExperimentalUsbPlaybackPlayer(normalSessionPlayer,serviceScope,requireNotNull(usbAudioController),
+            releaseNormal={
+                playbackQueueRestorationJob?.cancel() // no cold prepare may compete with a selected direct route
+                playbackQueueRestorationJob?.join()
+                checkpointHandler.removeCallbacks(checkpointRunnable)
+                physicalPlayers.releaseForDirect()
+            },recreateNormal={
+                physicalPlayers=createNormalCoordinator(audioAttributes)
+                physicalPlayers.attachLogicalPlayer(normalSessionPlayer,activePlayerIntegration)
+                bindActivePipeline(physicalPlayers.active,transition=null)
+                lastAudioRuntime?.let { runtime -> physicalPlayers.updateCrossfadeConfiguration(runtime.crossfade);applyAudioProcessingPolicy(runtime,runtime.crossfade.enabled) }
+                physicalPlayers.logicalPhysicalPlayer
+            },acquireFocus=::acquireDirectFocus,releaseFocus=::releaseDirectFocus,
+            predecessorReleased={ previousDirectTeardown==null || previousDirectTeardown.safe==true })
+        IntegratedDirectPlaybackBridge.attach(sessionPlayer)
         physicalPlayers.attachLogicalPlayer(
-            player = sessionPlayer,
+            player = normalSessionPlayer,
             integration = activePlayerIntegration
         )
         appPreferencesRepository = AppPreferencesRepository.getInstance(this)
@@ -743,6 +744,7 @@ class PlaybackService : MediaLibraryService() {
         PlaybackQueueRuntimeBridge.register(playbackQueueCoordinator)
         playbackQueueRestorationJob = serviceScope.launch {
             try {
+                if(previousDirectTeardown!=null && !previousDirectTeardown.awaitSafe()) return@launch
                 playbackQueueCoordinator.initialize()
                 playbackQueueRestorationComplete = true
                 nowPlayingWidgetPublisher?.onQueueRestorationCompleted()
@@ -753,7 +755,7 @@ class PlaybackService : MediaLibraryService() {
                 AndroidAutoDiagnostics.log("queue restore unavailable type=${error.javaClass.simpleName}")
             }
         }
-        bindActivePipeline(activePipeline, transition = null)
+        bindActivePipeline(physicalPlayers.active, transition = null)
         audioManager.registerAudioDeviceCallback(audioDeviceCallback, checkpointHandler)
         applyAudioOffloadPreference(AudioOffloadPreference.DISABLED)
         AdvancedAudioRuntimeBridge.onPlayerConnected(AudioOffloadPreference.DISABLED)
@@ -783,6 +785,18 @@ class PlaybackService : MediaLibraryService() {
                 )
             )
             .build()
+        serviceScope.launch {
+            var wasDirect=false
+            IntegratedDirectPlaybackBridge.state.collect { direct ->
+                if(direct.enabled!=wasDirect) {
+                    updateDirectControllerCommands(direct.enabled)
+                    // Preferences change with the backend, not on every completed-frame update.
+                    if(direct.enabled) mediaSession?.setMediaButtonPreferences(emptyList())
+                    else if(wasDirect) updateAndroidAutoMediaButtonPreferences(PlaybackLibraryBridge.currentShuffleEnabled() ?: playerStateStorage.getShuffleMode().isEnabled,PlaybackLibraryBridge.currentRepeatMode() ?: playerStateStorage.getRepeatMode())
+                }
+                wasDirect=direct.enabled
+            }
+        }
         nowPlayingWidgetPublisher = NowPlayingWidgetPublisher(
             context = this,
             player = sessionPlayer,
@@ -815,8 +829,10 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
-        usbAudioController?.close()
-        usbAudioController = null
+        val teardownLease=if(IntegratedDirectPlaybackBridge.directSelected) DirectPlaybackTeardown.begin() else null
+        sessionPlayer.stopDirect()
+        saveServicePlaybackState()
+        IntegratedDirectPlaybackBridge.detach(sessionPlayer)
         checkpointHandler.removeCallbacks(checkpointRunnable)
         saveServicePlaybackState()
         activeServiceBinding?.release()
@@ -830,15 +846,83 @@ class PlaybackService : MediaLibraryService() {
         nowPlayingWidgetPublisher = null
         mediaSession?.release()
         mediaSession = null
-        sessionPlayer.releaseTransitionResources()
-        physicalPlayers.release()
-        EqualizerRuntimeBridge.release()
-        SpectrumAnalyzerRuntimeBridge.detach(spectrumAnalyzerRuntime)
-        spectrumAnalyzerRuntime.close()
-        serviceScope.cancel()
-        AdvancedAudioRuntimeBridge.disconnect()
+        shutdownJob=serviceScope.launch {
+            val safe=sessionPlayer.shutdown()
+            usbAudioController?.close()
+            usbAudioController?.awaitIdle()
+            usbAudioController=null
+            teardownLease?.complete(safe)
+            releaseDirectFocus()
+            sessionPlayer.releaseTransitionResources()
+            physicalPlayers.release()
+            EqualizerRuntimeBridge.release()
+            SpectrumAnalyzerRuntimeBridge.detach(spectrumAnalyzerRuntime)
+            spectrumAnalyzerRuntime.close()
+            AdvancedAudioRuntimeBridge.disconnect()
+            serviceScope.cancel()
+        }
         super.onDestroy()
     }
+
+    private fun createNormalCoordinator(audioAttributes: AudioAttributes): DualPlayerPlaybackCoordinator {
+        val activePipeline = createPhysicalPlayerPipeline(
+            role = PhysicalPlayerRole.ACTIVE,
+            audioAttributes = audioAttributes
+        )
+        val standbyPipeline = try {
+            createPhysicalPlayerPipeline(
+                role = PhysicalPlayerRole.STANDBY,
+                audioAttributes = audioAttributes
+            )
+        } catch (error: RuntimeException) {
+            activePipeline.release()
+            throw error
+        }
+        val coordinator = DualPlayerPlaybackCoordinator(
+            initialActive = activePipeline,
+            initialStandby = standbyPipeline,
+            standbyBaselinePreparer = StandbyBaselinePreparer { mediaItem, result ->
+                PlaybackLibraryBridge.prepareReplayGainBaseline(
+                    mediaId = mediaItem.mediaId,
+                    onPrepared = result
+                )
+            },
+            crossfadeScheduler = HandlerCrossfadeScheduler(
+                Handler(activePipeline.player.applicationLooper)
+            ),
+            initialCrossfadeConfiguration = CrossfadeRuntimeConfiguration.DISABLED
+        )
+        coordinator.start(serviceScope)
+        return coordinator
+    }
+    private fun directControllerCommands(controller: MediaSession.ControllerInfo,base: Player.Commands): Player.Commands {
+        val internal=controller.packageName==packageName && controller.connectionHints.getBoolean(SAZANAMI_INTERNAL_CONTROLLER_HINT,false)
+        val allowed=if(internal) integratedDirectCommands.toSet() else setOf(Player.COMMAND_GET_CURRENT_MEDIA_ITEM,Player.COMMAND_GET_METADATA,Player.COMMAND_GET_TIMELINE,Player.COMMAND_STOP)
+        val builder=Player.Commands.Builder()
+        for(i in 0 until base.size()) { val command=base.get(i);if(command in allowed) builder.add(command) }
+        return builder.build()
+    }
+    private fun updateDirectControllerCommands(enabled: Boolean) {
+        val session=mediaSession ?: return
+        session.connectedControllers.forEach { controller -> normalControllerCommands[controller]?.let { (commands,playerCommands) ->
+            session.setAvailableCommands(controller,
+                if(enabled) commands.buildUpon().remove(AUTO_TOGGLE_SHUFFLE_COMMAND).remove(AUTO_TOGGLE_REPEAT_ALL_COMMAND).build() else commands,
+                if(enabled) directControllerCommands(controller,playerCommands) else playerCommands)
+        } }
+    }
+
+    private fun acquireDirectFocus(): Boolean {
+        releaseDirectFocus()
+        val request=android.media.AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA).setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC).build())
+            .setWillPauseWhenDucked(true)
+            .setOnAudioFocusChangeListener({ change -> if(change!=AudioManager.AUDIOFOCUS_GAIN) sessionPlayer.stopDirect() },checkpointHandler).build()
+        directFocusRequest=request
+        val granted=audioManager.requestAudioFocus(request)==AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        if(!granted) releaseDirectFocus()
+        return granted
+    }
+    private fun releaseDirectFocus() { directFocusRequest?.let(audioManager::abandonAudioFocusRequest);directFocusRequest=null }
 
     private fun observePlaybackAudioPreferences() {
         serviceScope.launch {
@@ -871,6 +955,7 @@ class PlaybackService : MediaLibraryService() {
             }
                 .distinctUntilChanged()
                 .collectLatest { runtime ->
+                    lastAudioRuntime=runtime
                     CrossfadeTrace.log(
                         "PREFERENCES enabled=${runtime.crossfade.enabled} " +
                                 "durationMs=${runtime.crossfade.durationMillis} " +
@@ -1112,6 +1197,7 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private fun saveServicePlaybackState() {
+        if (IntegratedDirectPlaybackBridge.directSelected) return
         if (
             !::physicalPlayers.isInitialized ||
             !::playerStateStorage.isInitialized
@@ -1662,7 +1748,7 @@ class PlaybackService : MediaLibraryService() {
         repeatMode: RepeatMode
     ) {
         mediaSession?.setMediaButtonPreferences(
-            buildAndroidAutoMediaButtonPreferences(shuffleEnabled, repeatMode)
+            if(IntegratedDirectPlaybackBridge.directSelected) emptyList() else buildAndroidAutoMediaButtonPreferences(shuffleEnabled, repeatMode)
         )
     }
 

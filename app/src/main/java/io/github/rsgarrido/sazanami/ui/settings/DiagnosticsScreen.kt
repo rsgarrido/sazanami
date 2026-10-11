@@ -391,6 +391,7 @@ internal fun DiagnosticsScreen(
         }
 
         DiagnosticValue(stringResource(R.string.diagnostics_app_version), "${version.first} (${version.second})")
+        IntegratedDirectPlaybackSection()
         UsbAudioDiagnosticsSection()
         DiagnosticValue(
             stringResource(R.string.diagnostics_library),
@@ -729,7 +730,7 @@ internal fun DiagnosticsScreen(
             ) { Text(stringResource(R.string.diagnostics_refresh)) }
             OutlinedButton(
                 onClick = {
-                    context.copyToClipboard(formatDiagnosticsSummary(snapshot))
+                    context.copyToClipboard(formatDiagnosticsSummary(snapshot) + if(BuildConfig.DEBUG) "\n"+io.github.rsgarrido.sazanami.player.formatIntegratedDirectPlayback(io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackBridge.reportState) else "")
                     statusMessage = copiedMessage
                 },
                 modifier = Modifier.weight(1f)

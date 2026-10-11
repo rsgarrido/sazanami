@@ -93,6 +93,12 @@ internal object UsbFsDiagnostics {
         nativeDestroySilentTransport(handle, generation, stream, connectionClosed)
     private external fun nativeCreateSilentTransport(borrowedFd: Int, generation: Long, stream: Long, configuration: IntArray, prefixHandle: Long): Long
     private external fun nativeRunSilentTransport(handle: Long, generation: Long, stream: Long): UsbIsoNativeSnapshot
+    fun fullProgress(handle: Long,generation: Long,stream: Long): UsbFullProgress {
+        val values=nativeFullProgress(handle,generation,stream)
+        require(values.size==2)
+        return UsbFullProgress(values[0],values[1])
+    }
+    private external fun nativeFullProgress(handle: Long,generation: Long,stream: Long): LongArray
     private external fun nativeStopSilentTransport(handle: Long, generation: Long, stream: Long, reason: Int)
     private external fun nativeDestroySilentTransport(handle: Long, generation: Long, stream: Long, connectionClosed: Boolean): Boolean
     private external fun nativeInspect(borrowedFd: Int, interfaceNumbers: IntArray, audioControlNumber: Int): UsbFsNativeResult

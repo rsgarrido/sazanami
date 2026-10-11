@@ -12,6 +12,11 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +25,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -1370,13 +1376,25 @@ internal fun MusicScreen(
             }
         )
     ) {
-        PlayerMorphHost(
-            morphState = playerMorphState,
-            modifier = modifier
-                .fillMaxSize()
-                .appShellBackground()
-        ) { playerEndpointBounds ->
-            playerPresentation(playerEndpointBounds)
+        val directStatusVisible = if (io.github.rsgarrido.sazanami.BuildConfig.DEBUG) {
+            val direct by io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackBridge.state.collectAsState()
+            direct.enabled
+        } else false
+        Column(modifier = modifier.fillMaxSize().appShellBackground()) {
+            if (directStatusVisible) {
+                io.github.rsgarrido.sazanami.ui.settings.IntegratedDirectPlaybackBanner(
+                    modifier = Modifier.statusBarsPadding()
+                )
+            }
+            PlayerMorphHost(
+                morphState = playerMorphState,
+                modifier = Modifier.weight(1f).fillMaxWidth().then(
+                    if (directStatusVisible) Modifier.consumeWindowInsets(WindowInsets.statusBars)
+                    else Modifier
+                )
+            ) { playerEndpointBounds ->
+                playerPresentation(playerEndpointBounds)
+            }
         }
     }
 }

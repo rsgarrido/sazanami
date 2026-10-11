@@ -92,7 +92,7 @@ internal data class UsbIsoTransportResult(val generation: Long, val streamGenera
 }
 
 internal object UsbIsoNativeStats {
-    const val VERSION = 5
+    const val VERSION = 8
     val fields = listOf("version", "generation", "streamGeneration", "started", "state", "integrityMask", "stopReason", "durationUs",
         "sourceFramesGenerated", "framesScheduled", "framesSubmitted", "framesCompleted", "outUrbsSubmitted", "outUrbsCompleted",
         "outPacketsSubmitted", "outPacketsCompleted", "outBytesSubmitted", "kernelOutActualBytes", "outPacketErrors", "outUrbErrors",
@@ -113,7 +113,26 @@ internal object UsbIsoNativeStats {
         "remainingFramesAtTerminalTransition", "terminalTailFrames", "terminalTailPackets", "terminalTailOutUrbs", "terminalTailPacketCompletions",
         "terminalTailFrameCompletions", "eofPaddingFrames", "finalSubmittedSourceFrame", "finalCompletedSourceFrame",
         "queueFramesAtNaturalCompletion", "prefetchedFramesDiscardedAtNaturalCompletion", "md5VerificationPass", "wholeDecodedPcmHash",
-        "allEnqueuedPcmHash", "sourceVerificationStalls")
+        "allEnqueuedPcmHash", "sourceVerificationStalls",
+        "configuredFeedbackUrbs", "feedbackPacketsPerUrb", "feedbackCoverageUs",
+        "feedbackBootstrapTimeouts", "feedbackLastValidWatchdogTimeouts", "feedbackStaleReapedTimeouts",
+        "feedbackTimeoutSubtype", "feedbackFailureObservedUs", "feedbackFailureLastValidObservedUs", "feedbackFailureLastValidSubmittedUs",
+        "feedbackFailureOffendingSubmittedUs", "feedbackFailureAgeUs", "feedbackFailureOutstandingUrbs", "feedbackFailureReapedNotRearmedUrbs", "feedbackFailureAcceptedRaw",
+        "feedbackRequestsOverHoldover", "feedbackMaxRequestAgeUs", "lastAcceptedFeedbackSubmittedUs", "lastAcceptedFeedbackObservedUs", "lastAcceptedFeedbackRequestAgeUs",
+        "feedbackFailureReapAttempted", "feedbackFailureReapCount", "feedbackFailureReapFeedbackCount", "feedbackFailureReapRefreshed",
+        "feedbackFailureAgeBeforeReapUs", "feedbackFailureAgeAfterReapUs", "feedbackFailureWatchdogEvaluated", "feedbackFailureWatchdogFired",
+        "feedbackRecoveredObservationGaps",
+        "configuredOutUrbs", "outPacketsPerUrb", "outUrbDurationUs", "outNominalCoverageUs",
+        "maxWorkerLoopGapUs", "maxGapObservedAtUs", "outOutstandingAtMaxGap", "feedbackOutstandingAtMaxGap",
+        "outRefilledAfterMaxGap", "outRefillNeededAtMaxGap", "workerGapsBeyondOutCoverage",
+        "outContinuityObservations", "minOutOutstanding", "outZeroOutstandingObservations", "outOneOutstandingObservations", "outTwoOutstandingObservations",
+        "minEstimatedOutCoverageUs", "worstOutCoverageAtUs", "outCoverageBelowOneUrbObservations", "outCoverageBelowTwoUrbsObservations",
+        "maxOutSubmissionBatchGapUs", "maxOutSubmissionGapUs", "maxOutCompletionObservedGapUs", "maxOutRefillOpportunityGapUs", "maxOutRefillLatencyUs",
+        "outContinuityRiskEvents", "firstOutRiskAtUs", "firstOutRiskMask", "firstOutRiskStage", "firstOutRiskOutstanding", "firstOutRiskFeedbackOutstanding",
+        "firstOutRiskWorkerGapUs", "firstOutRiskEstimatedCoverageUs", "firstOutRiskCompletedFrames")
+    val outRiskStages=listOf("WORKER_WAKE","BEFORE_REFILL","AFTER_REFILL")
+    val outRiskReasons=listOf("WORKER_GAP_BEYOND_NOMINAL_COVERAGE","NO_APPLICATION_OUT","ESTIMATED_COVERAGE_BELOW_ONE_URB","REFILL_LATENCY_BEYOND_NOMINAL_COVERAGE")
+    val feedbackTimeoutSubtypes=listOf("NONE","BOOTSTRAP_TIMEOUT","LAST_VALID_WATCHDOG_TIMEOUT","VALID_OBSERVATION_GAP_AT_REAP")
     val states = listOf("IDLE", "CONFIGURED", "STARTING_TRANSPORT", "BOOTSTRAP", "FEEDBACK_LOCKED", "STOP_REQUESTED", "DRAINING_OR_CANCELLING", "TRANSPORT_STOPPED")
     val stops = listOf("DURATION_COMPLETE", "STOP_REQUESTED", "AUTHORITY_LOST", "DEVICE_DETACHED", "SUBMIT_FAILURE", "REAP_FAILURE",
         "FEEDBACK_FAILURE", "QUEUE_UNDERRUN", "CAPACITY_EXCEEDED", "WORKER_FAILURE", "ACCOUNTING_FAILURE", "SOURCE_FAILURE", "SOURCE_EOF_BEFORE_DURATION", "OUT_POOL_STALL", "NATURAL_EOF_COMPLETE", "SOURCE_VERIFICATION_STALLED")
@@ -127,6 +146,8 @@ internal object UsbIsoNativeStats {
             packet.numbers[2] == stream && packet.feedback.size % 6 == 0 && packet.feedback.size <= 12 * 6 &&
             packet.packets.size % 7 == 0 && packet.packets.size <= 24 * 7)
         val counters = fields.zip(packet.numbers.toList()).toMap()
+        require(counters.getValue("feedbackTimeoutSubtype") in feedbackTimeoutSubtypes.indices.map { it.toLong() })
+        require(counters.getValue("firstOutRiskStage") in outRiskStages.indices.map { it.toLong() })
         require(counters.getValue("state") in states.indices.map { it.toLong() } && counters.getValue("stopReason") in stops.indices.map { it.toLong() })
         require(counters.getValue("sourceMode") in 0L..3L)
         val feedback = packet.feedback.toList().chunked(6).map {

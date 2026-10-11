@@ -416,7 +416,7 @@ internal object UsbAudioDiagnosticReport {
             appendLine("Nominal bootstrap <=${UsbIsoTiming.BOOTSTRAP_MS} ms; last-valid feedback holdover <=${it.feedbackHoldoverMs} ms; invalid consecutive limit=${UsbIsoTiming.INVALID_FEEDBACK_LIMIT}")
         }
         if (full) appendLine("Terminal OUT: 1..8 source-bearing ISO packets; shortened final packet allowed; no zero-length trailing descriptors or PCM padding. Each actual length must equal its requested length.")
-        appendLine("OUT pool=${UsbIsoTiming.OUT_POOL}; packets/OUT URB=${UsbIsoTiming.OUT_PACKETS}; feedback pool=${UsbIsoTiming.FEEDBACK_POOL}; packets/feedback URB=1")
+        appendLine("OUT pool=${result.transport?.counters?.get("configuredOutUrbs") ?: result.timing?.outUrbCount(result.mode) ?: "unavailable"}; packets/OUT URB=${UsbIsoTiming.OUT_PACKETS}; feedback pool=${result.timing?.feedbackUrbCount ?: "unavailable"}; packets/feedback URB=${UsbIsoTiming.FEEDBACK_PACKETS}; feedback coverage us=${result.timing?.feedbackCoverageUs ?: "unavailable"}")
         appendLine("Scheduler: exact common denominator 8000*65536; nominal numerator 44100*65536, feedback numerator raw16.16*8000; remainder preserved across feedback lock. Feedback changes packetization only.")
         val native = result.transport
         if (native == null) appendLine("Native transport not started / result unavailable.") else {

@@ -386,6 +386,7 @@ internal class PlaybackQueueCoordinator(
         runtime.captureSnapshot()?.withAuthoritativeBaseOrder()
 
     fun prepareNewPlaybackContext(baseEntryIds: List<String>) {
+        if (IntegratedDirectPlaybackBridge.directSelected) return
         if (backupRestoreInProgress) return
         require(baseEntryIds.isNotEmpty()) { "A new playback context must not be empty" }
         require(baseEntryIds.none(String::isBlank)) { "Queue entry IDs must not be blank" }
@@ -685,6 +686,7 @@ internal class PlaybackQueueCoordinator(
         suppliedSnapshot: LivePlaybackQueueSnapshot? = null,
         useSuppliedBaseOrder: Boolean = false
     ): String? {
+        if (IntegratedDirectPlaybackBridge.directSelected) return activeQueueId
         if (backupRestoreInProgress) return null
         val captured = suppliedSnapshot ?: runtime.captureSnapshot() ?: return activeQueueId
         val pendingCanonicalBase = captured.matchingPendingCanonicalBaseOrder()

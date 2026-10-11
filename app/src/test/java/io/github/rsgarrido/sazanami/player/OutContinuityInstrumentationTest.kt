@@ -1,0 +1,95 @@
+package io.github.rsgarrido.sazanami.player
+
+import io.github.rsgarrido.sazanami.player.usb.*
+import java.nio.file.Files
+import java.nio.file.Paths
+import java.security.MessageDigest
+import org.junit.Assert.*
+import org.junit.Test
+
+/** Pure immutable-schema/report tests and unchanged production boundaries; no USB execution. */
+class OutContinuityInstrumentationTest {
+    private fun source(path: String)=listOf(Paths.get("src/main",path),Paths.get("app/src/main",path))
+        .first { Files.isRegularFile(it) }.toFile().readText().replace("\r\n","\n")
+    private fun digest(text: String)=MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8))
+        .joinToString("") { (it.toInt() and 255).toString(16).padStart(2,'0') }
+    private fun packet(changes: Map<String,Long> = emptyMap()): UsbIsoNativeSnapshot {
+        val values=mapOf("version" to UsbIsoNativeStats.VERSION.toLong(),"generation" to 1L,"streamGeneration" to 2L,
+            "state" to 7L,"sourceMode" to 3L,"stopReason" to 14L) + changes
+        return UsbIsoNativeSnapshot(UsbIsoNativeStats.fields.map { values[it] ?: 0L }.toLongArray(),longArrayOf(),longArrayOf())
+    }
+    @Test fun schemaAppendsContinuityWithoutMovingWorkingFeedbackFields() {
+        assertEquals(8,UsbIsoNativeStats.VERSION);assertEquals(174,UsbIsoNativeStats.fields.size)
+        assertEquals(111,UsbIsoNativeStats.fields.indexOf("configuredFeedbackUrbs"))
+        assertEquals(131,UsbIsoNativeStats.fields.indexOf("feedbackFailureReapAttempted"))
+        assertEquals(140,UsbIsoNativeStats.fields.indexOf("configuredOutUrbs"))
+        assertEquals(173,UsbIsoNativeStats.fields.indexOf("firstOutRiskCompletedFrames"))
+        for (stage in 0L..2L) assertEquals(stage,UsbIsoNativeStats.decode(packet(mapOf("firstOutRiskStage" to stage)),1,2).count("firstOutRiskStage"))
+        for (bad in listOf(packet(mapOf("version" to 7L)),packet(mapOf("firstOutRiskStage" to 3L)))) {
+            try { UsbIsoNativeStats.decode(bad,1,2);fail("Old/malformed evidence was accepted") }
+            catch (_: IllegalArgumentException) { }
+        }
+    }
+    @Test fun reportMakesRiskAndKernelUncertaintyExplicitWithCorrelationTimes() {
+        val metrics=mapOf("configuredOutUrbs" to 8L,"outPacketsPerUrb" to 8L,"dataIntervalUs" to 125L,
+            "outUrbDurationUs" to 1000L,"outNominalCoverageUs" to 8000L,
+            "maxWorkerLoopGapUs" to 9001L,"maxGapObservedAtUs" to 1250000L,
+            "outOutstandingAtMaxGap" to 8L,"feedbackOutstandingAtMaxGap" to 21L,
+            "outRefillNeededAtMaxGap" to 1L,"outRefilledAfterMaxGap" to 1L,"workerGapsBeyondOutCoverage" to 1L,
+            "outContinuityObservations" to 17L,"minOutOutstanding" to 0L,
+            "outZeroOutstandingObservations" to 1L,"outOneOutstandingObservations" to 2L,"outTwoOutstandingObservations" to 3L,
+            "minEstimatedOutCoverageUs" to 0L,"worstOutCoverageAtUs" to 1250000L,
+            "maxOutSubmissionBatchGapUs" to 9200L,"maxOutSubmissionGapUs" to 9100L,
+            "maxOutCompletionObservedGapUs" to 9005L,"maxOutRefillOpportunityGapUs" to 9105L,"maxOutRefillLatencyUs" to 105L,
+            "outContinuityRiskEvents" to 1L,"firstOutRiskAtUs" to 1250000L,"firstOutRiskMask" to 7L,"firstOutRiskStage" to 1L,
+            "firstOutRiskOutstanding" to 0L,"firstOutRiskFeedbackOutstanding" to 21L,
+            "firstOutRiskWorkerGapUs" to 9001L,"firstOutRiskEstimatedCoverageUs" to 0L,"firstOutRiskCompletedFrames" to 44100L)
+        val result=UsbIsoNativeStats.decode(packet(metrics),1,2)
+        val engine=UsbSilentTransportExperimentResult(1,2,UsbSilentTransportResolution(),transport=result)
+        val report=formatIntegratedDirectPlayback(IntegratedDirectPlaybackState(engine=engine))
+        for (text in listOf("OUT continuity: configured URBs=8","packets/URB=8","packet interval us=125",
+            "nominal queued coverage us=8000","maxWorkerLoopGapUs=9001","maxGapObservedAtUs=1250000",
+            "successful OUT refill that iteration=1","min outstanding=0","zero=1; one=2; two=3",
+            "max submission batch gap=9200","max successful submission gap=9100","max completion observed gap=9005",
+            "max refill opportunity gap=9105","max refill latency=105","minimum us=0","ideal FIFO time model",
+            "OUT_CONTINUITY_RISK: events=1","first elapsed us=1250000","first completed-frame position ms=1000",
+            "stage=BEFORE_REFILL","NO_APPLICATION_OUT","first event frozen","wire underrun confirmed? UNKNOWN",
+            "kernel completed-unreaped OUT count=UNKNOWN","do not prove uninterrupted wire service")) assertTrue(text,report.contains(text))
+        assertFalse(report.contains("wire underrun confirmed? YES"));assertFalse(report.contains("wire underrun confirmed? NO"))
+        assertTrue(report.lines().size<70)
+        val missing=formatIntegratedDirectPlayback(IntegratedDirectPlaybackState(engine=engine.copy(
+            transport=UsbIsoTransportResult(1,2,mapOf("minOutOutstanding" to -1L,"minEstimatedOutCoverageUs" to -1L)))))
+        assertTrue(missing.contains("min outstanding=unavailable"));assertTrue(missing.contains("minimum us=unavailable"))
+        assertTrue(missing.contains("maxWorkerLoopGapUs=unavailable"))
+    }
+    @Test fun hooksPreserveSourceTransactionErrorAccountingEofAndCleanup() {
+        val native=source("cpp/usb_iso_transport.cpp")
+        val submit="    bool submit("+native.substringAfter("    bool submit(").substringBefore("    void packetExample(")
+        val submissionHook="        if (!slot.feedback) outContinuity.submitted(monotonicUs(),slot.packets,slot.outReapedAt);\n"
+        assertTrue(submit.contains(submissionHook))
+        assertEquals("bf565b4d38f31e1bb7e8ba7b8dc36b82e6752cd51ed5989d1c2c82e73dd5d5b8",digest(submit.replace(submissionHook,"")))
+        assertTrue(submit.indexOf("queue.reserve(")<submit.indexOf("queue.validate("))
+        assertTrue(submit.indexOf("queue.validate(")<submit.indexOf("USBDEVFS_SUBMITURB"))
+        assertTrue(submit.indexOf("if (returned != 0)")<submit.indexOf("outContinuity.submitted("))
+        assertTrue(submit.indexOf("outContinuity.submitted(")<submit.indexOf("queue.commit()"))
+        val shutdown="    void shutdown()"+native.substringAfter("    void shutdown()").substringBefore("    void run()")
+        assertEquals("c9c5cb2e0ee36a66708c0ac4a17483a6a98764538e77a8962678551968242461",digest(shutdown.replace(
+            "        captureOutContinuity(); // Freeze active telemetry before any stop/drain completions.\n","")))
+        val natural="    bool naturalComplete()"+native.substringAfter("    bool naturalComplete()").substringBefore("    void beginStop()")
+        assertEquals("a7f2ab508d5298558e106f1a0d25da534ea3c2ca163ecf8e2e66a93e16e72195",digest(natural))
+        val feedback="    void feedbackPacket("+native.substringAfter("    void feedbackPacket(").substringBefore("    bool reapOne()")
+        assertEquals("f0e661e06e2a2770e6d32bd7c5e15ec3035754d68ee17369788dec680802794d",digest(feedback))
+        val worker=native.substringAfter("    void run() {").substringBefore("std::mutex registryMutex;")
+        assertTrue(worker.indexOf("outContinuity.wake(")<worker.indexOf("reapBeforeFeedbackWatchdog("))
+        assertTrue(worker.indexOf("reapBeforeFeedbackWatchdog(")<worker.indexOf("feedbackTimeout(feedbackReapPass.timeout,"))
+        assertTrue(worker.contains("!fullTrack || !fullSubmitted()"))
+        assertTrue(worker.contains("OutObservationStage::BeforeRefill"));assertTrue(worker.contains("OutObservationStage::AfterRefill"))
+        val policy=source("cpp/usb_out_continuity.h")
+        for (forbidden in listOf("ioctl(","fail(","scheduler.","queue.","hashBytes(","new ","malloc(","vector<"))
+            assertFalse(forbidden,policy.contains(forbidden))
+        assertTrue(native.contains("stats[OutstandingFinal] = static_cast<jlong>(outstanding(false) + outstanding(true))"))
+        for (fatal in listOf("fail(UrbError, Stop::Worker)","fail(PacketError, Stop::Worker)",
+            "saved == ENODEV ? DeviceDetached : SubmitError","fail(QueueUnderrun | FlacSourceFault, Stop::Underrun)"))
+            assertTrue(fatal,native.contains(fatal))
+    }
+}

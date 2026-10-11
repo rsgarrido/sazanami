@@ -16,6 +16,7 @@ internal class UsbNativeSilentTransport(private val borrowedFd: Int, private val
     private val generation: Long, private val stream: Long, private val accessFailure: () -> UsbClockQueryStatus?,
     private val mode: UsbPcmDiagnosticMode = UsbPcmDiagnosticMode.ZERO,
     private val prefixSource: UsbFlacSourceLifecycle? = null) : UsbSilentTransportBackend {
+    var progressListener: ((UsbFullProgress)->Unit)?=null
     @Volatile private var handle = 0L
     @Volatile private var stopRequested = 0
     override var usbCleanupSafe = true; private set
@@ -48,11 +49,19 @@ internal class UsbNativeSilentTransport(private val borrowedFd: Int, private val
                 if (stopRequested != 0) requestStop(stopRequested == 2)
                 coroutineScope {
                     val worker = async(Dispatchers.IO) { UsbFsDiagnostics.runSilentTransport(handle, generation, stream) }
+                    var nextProgressAt=0L
                     try {
                         while (!worker.isCompleted) {
                             val failure = accessFailure()
                             if (failure != null) { authority = failure; requestStop() }
                             else if (!parent.isActive) requestStop(authority = false)
+                            val listener=progressListener
+                            val now=android.os.SystemClock.elapsedRealtime()
+                            if (listener!=null && authority==null && mode==UsbPcmDiagnosticMode.FLAC_FULL && now>=nextProgressAt) {
+                                nextProgressAt=now+250L
+                                val progress=UsbFsDiagnostics.fullProgress(handle,generation,stream)
+                                withContext(Dispatchers.Main.immediate) { listener(progress) }
+                            }
                             delay(5) // Authority observation only. No packet scheduling on Kotlin.
                         }
                         result = worker.await()

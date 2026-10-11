@@ -39,14 +39,32 @@ internal class UsbSilentTransportPlan private constructor(val configuration: Usb
 
 internal data class UsbIsoTiming(val dataIntervalUs: Long, val feedbackIntervalUs: Long, val capacity: Int,
     val feedbackFormat: String = "UAC2 HIGH speed: unsigned little-endian 16.16 frames/microframe") {
-    val feedbackHoldoverMs get() = maxOf(20L, feedbackIntervalUs * 4 / 1000)
+    val feedbackHoldoverUs get() = maxOf(20000L, feedbackIntervalUs * 4)
+    val feedbackHoldoverMs get() = feedbackHoldoverUs/1000
+    val feedbackUrbCount get() = if(feedbackIntervalUs !in 125L..8000L) 0 else
+        ((feedbackHoldoverUs+feedbackIntervalUs-1)/feedbackIntervalUs+1).toInt()
+    val feedbackCoverageUs get() = feedbackUrbCount*feedbackIntervalUs
+    val outUrbDurationUs get() = OUT_PACKETS*dataIntervalUs
+    val directOutUrbCount get() = if (dataIntervalUs !in listOf(125L,250L,500L)) 0 else
+        ((REQUIRED_DIRECT_OUT_COVERAGE_US+outUrbDurationUs-1)/outUrbDurationUs+OUT_PHASE_MARGIN_URBS).toInt()
+    fun outUrbCount(mode: UsbPcmDiagnosticMode) = when(mode) {
+        UsbPcmDiagnosticMode.FLAC_PREFIX, UsbPcmDiagnosticMode.FLAC_FULL -> directOutUrbCount
+        else -> OUT_POOL
+    }
+    fun outCoverageUs(mode: UsbPcmDiagnosticMode) = outUrbCount(mode)*outUrbDurationUs
     companion object {
         const val BYTES_PER_FRAME = 4
         const val DURATION_MS = 1000L
         const val BOOTSTRAP_MS = 100L
         const val OUT_POOL = 8
         const val OUT_PACKETS = 8
-        const val FEEDBACK_POOL = 2
+        const val REQUIRED_DIRECT_OUT_COVERAGE_US = 20000L
+        const val OUT_PHASE_MARGIN_URBS = 1
+        const val MAX_DIRECT_OUT_POOL =
+            (REQUIRED_DIRECT_OUT_COVERAGE_US+OUT_PACKETS*125-1)/(OUT_PACKETS*125)+OUT_PHASE_MARGIN_URBS
+        const val FEEDBACK_PACKETS = 1
+        const val MAX_FEEDBACK_POOL = 161
+        const val MAX_READY_REAPS = MAX_DIRECT_OUT_POOL+MAX_FEEDBACK_POOL
         const val INVALID_FEEDBACK_LIMIT = 3
         // USB 2.0 §§5.12.4.2 / 9.6.6; UAC2 §3.16.2.2 references these rules.
         fun serviceIntervalUs(speed: UsbFsSpeed?, interval: Int): Long? =

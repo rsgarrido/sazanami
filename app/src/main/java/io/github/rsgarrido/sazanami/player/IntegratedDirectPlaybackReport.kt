@@ -1,0 +1,72 @@
+package io.github.rsgarrido.sazanami.player
+
+import io.github.rsgarrido.sazanami.player.usb.pcmHashHex
+import io.github.rsgarrido.sazanami.player.usb.UsbIsoNativeStats
+import io.github.rsgarrido.sazanami.player.usb.UsbIsoTiming
+import java.util.Locale
+
+internal fun formatIntegratedDirectPlayback(state: IntegratedDirectPlaybackState): String=buildString {
+    appendLine("Integrated Direct USB Playback — Session 12")
+    appendLine("experimental direct USB enabled=${state.enabled}; requested backend=${if(state.enabled) "DIRECT_USB" else "NORMAL"}; authoritative backend=${if(state.enabled && !state.normalReleased) "NONE_BLOCKED" else if(state.enabled) "DIRECT_USB" else "NORMAL"}")
+    appendLine("safe library ID=${state.libraryId ?: "none"}; request generation=${state.generation}; frame 0 only; no raw URI/path")
+    appendLine("normal pipelines synchronously released=${state.normalReleased}; standby/preload inactive=${state.normalReleased}; crossfade inactive=${state.normalReleased}")
+    appendLine("integrated state=${state.phase}; completed frames=${state.completedFrames}; position ms=${state.positionMs}; duration ms=${state.durationMs}; STREAMINFO total=${state.totalFrames}")
+    appendLine("error=${state.error ?: "none"}; command notice=${state.notice ?: "none"}")
+    appendLine("direct resources/restoration safe=${state.cleanupSafe}; production Bit-perfect: NOT YET COMPLETE")
+    appendLine("Single track; no pause/seek/next/previous/repeat/shuffle, DSP/gain, Android audio sink or mixer; physical KA15 volume only")
+    state.engine?.let { result ->
+        appendLine("underlying Session 11 engine result=${result.status}; original descriptor closed=${result.originalFlacFdClosed}; native memory released=${result.nativeMemoryReleased}")
+        result.flacSource?.let { source ->
+            appendLine("format=${source.count("sampleRate")}/${source.count("channels")}/${source.count("bitsPerSample")}; accepted=${source.count("metadataAccepted")}; MD5=${source.decoder?.md5Verification}; true EOF=${source.count("trueEofReached")}")
+            appendLine("decoded=${source.count("framesDecoded")}; enqueued=${source.count("framesEnqueued")}; consumed=${source.count("framesConsumedFromQueue")}; prepared=${source.count("preparedButUnsubmittedFrames")}; discarded=${source.count("prefetchedFramesDiscardedAtStop")}")
+            appendLine("source faults=${source.reasons.joinToString()}; source released=${source.count("queueReleased")}; producer joined=${source.count("producerJoined")}")
+        }
+        result.transport?.let { native ->
+            appendLine("stop cause=${native.stopReason}; integrity=${native.valid}; transport reasons=${native.integrityReasons.joinToString()}; worker stopped=${native.workerStopped}")
+            listOf("framesSubmitted","framesCompleted","outBytesSubmitted","kernelOutActualBytes","terminalTailFrames","terminalTailPackets",
+                "terminalTailPacketCompletions","terminalTailFrameCompletions","eofPaddingFrames","outCancelledUrbs","outstandingUrbsFinal",
+                "feedbackPacketsValid","feedbackTimeouts","queueUnderruns","outPoolStallEvents").forEach { appendLine("$it=${native.count(it)}") }
+            // Existing immutable snapshot only. Do not query/format diagnostics on the USB worker.
+            fun field(name: String)=native.counters[name]?.toString() ?: "unavailable"
+            appendLine("feedback queue: configured URBs=${field("configuredFeedbackUrbs")}; packets/URB=${field("feedbackPacketsPerUrb")}; nominal coverage us=${field("feedbackCoverageUs")}; OUT geometry=${field("configuredOutUrbs")}x${field("outPacketsPerUrb")}; dataIntervalUs=${field("dataIntervalUs")}")
+            appendLine("feedback timing: feedbackIntervalUs=${field("feedbackIntervalUs")}; feedbackHoldoverUs=${field("feedbackHoldoverUs")}; lastValidFeedbackAgeUs=${field("lastValidFeedbackAgeUs")} (post-shutdown, not failure-time)")
+            appendLine("feedback URBs: submitted=${field("feedbackUrbsSubmitted")}; completed=${field("feedbackUrbsCompleted")}; outstandingAtStop=${field("feedbackOutstandingAtStop")}; cancelled=${field("feedbackCancelledUrbs")}; errors=${field("feedbackUrbErrors")}")
+            appendLine("feedback samples: completed=${field("feedbackPacketsCompleted")}; invalid=${field("feedbackPacketsInvalid")}; invalidStreak=${field("invalidStreak")}; minRaw=${field("minFeedbackRaw")}; maxRaw=${field("maxFeedbackRaw")}")
+            val samples=native.counters["feedbackSamples"]
+            val sum=native.counters["sumFeedbackRaw"]
+            val meanHz=if(samples!=null && samples>0 && sum!=null) sum.toDouble()/samples*8000.0/65536.0 else null
+            appendLine("valid feedback mean Hz=${meanHz?.let { String.format(Locale.ROOT,"%.6f",it) } ?: "unavailable"}; mean drift ppm=${meanHz?.let { String.format(Locale.ROOT,"%.3f",(it/44100.0-1.0)*1000000.0) } ?: "unavailable"} (whole-run mean, not last sample)")
+            native.feedback.lastOrNull()?.let { sample ->
+                appendLine("last recorded feedback: raw=${sample.raw}; length=${sample.length}; status=${sample.packetStatus}; validity=${sample.validity}; elapsedUs=${sample.elapsedUs}; submissionAgeUs=${sample.conservativeAgeUs}; Hz=${sample.rateHz?.let { String.format(Locale.ROOT,"%.6f",it) } ?: "unavailable"} (may be drain-time)")
+            }
+            appendLine("OUT at stop=${field("outOutstandingAtStop")}; OUT completion age at pool stall=${field("outCompletionAgeUsAtStall")} (only recorded for OUT_POOL_STALL); submitErrno=${field("submitErrno")}; reapErrno=${field("reapErrno")}; firstUrbStatus=${field("firstUrbStatus")}; firstPacketStatus=${field("firstPacketStatus")}")
+            val timeoutSubtype=native.counters["feedbackTimeoutSubtype"]?.let { UsbIsoNativeStats.feedbackTimeoutSubtypes.getOrNull(it.toInt()) } ?: "unavailable"
+            appendLine("feedback timeout subtype=$timeoutSubtype; bootstrap=${field("feedbackBootstrapTimeouts")}; last-valid watchdog=${field("feedbackLastValidWatchdogTimeouts")}; at-reap observation gap=${field("feedbackStaleReapedTimeouts")}")
+            if("FEEDBACK_TIMEOUT" in native.integrityReasons) {
+                appendLine("first feedback timeout: observedUs=${field("feedbackFailureObservedUs")}; lastValidObservedUs=${field("feedbackFailureLastValidObservedUs")}; lastValidSubmittedUs=${field("feedbackFailureLastValidSubmittedUs")}; offendingSubmittedUs=${field("feedbackFailureOffendingSubmittedUs")}; observationAgeUs=${field("feedbackFailureAgeUs")} (frozen before drain; 0=no accepted/offending request)")
+                val acceptedRaw=native.counters["feedbackFailureAcceptedRaw"]
+                appendLine("feedback at fault: application outstanding=${field("feedbackFailureOutstandingUrbs")}; reaped-not-rearmed=${field("feedbackFailureReapedNotRearmedUrbs")}; kernel completed-unreaped count=unknown; accepted raw=${field("feedbackFailureAcceptedRaw")}; accepted Hz=${acceptedRaw?.takeIf { it>0 }?.let { String.format(Locale.ROOT,"%.6f",it*8000.0/65536.0) } ?: "unavailable"}")
+                appendLine("pre-watchdog reap at fault: attempted=${field("feedbackFailureReapAttempted")}; URBs reaped=${field("feedbackFailureReapCount")}; feedback completions=${field("feedbackFailureReapFeedbackCount")}; valid refresh=${field("feedbackFailureReapRefreshed")}; age before us=${field("feedbackFailureAgeBeforeReapUs")}; age after us=${field("feedbackFailureAgeAfterReapUs")}; watchdog evaluated=${field("feedbackFailureWatchdogEvaluated")}; fired=${field("feedbackFailureWatchdogFired")} (frozen before drain)")
+            }
+            appendLine("feedback observation gaps recovered before watchdog=${field("feedbackRecoveredObservationGaps")}; ready reap bound=configured OUT + feedback URBs, maximum ${UsbIsoTiming.MAX_READY_REAPS}; no rearm within pass")
+            fun measured(name: String)=native.counters[name]?.takeIf { it>=0 }?.toString() ?: "unavailable"
+            appendLine("OUT continuity: configured URBs=${field("configuredOutUrbs")}; packets/URB=${field("outPacketsPerUrb")}; packet interval us=${field("dataIntervalUs")}; nominal URB duration us=${field("outUrbDurationUs")}; nominal queued coverage us=${field("outNominalCoverageUs")}")
+            appendLine("OUT worker timing: maxWorkerLoopGapUs=${field("maxWorkerLoopGapUs")}; maxGapObservedAtUs=${field("maxGapObservedAtUs")} (elapsed steady-clock); application OUT outstanding=${field("outOutstandingAtMaxGap")}; feedback outstanding=${field("feedbackOutstandingAtMaxGap")}; further OUT needed=${field("outRefillNeededAtMaxGap")}; successful OUT refill that iteration=${field("outRefilledAfterMaxGap")}; gaps beyond nominal coverage=${field("workerGapsBeyondOutCoverage")}")
+            appendLine("OUT refill-demand observations: samples=${field("outContinuityObservations")}; min outstanding=${measured("minOutOutstanding")}; zero=${field("outZeroOutstandingObservations")}; one=${field("outOneOutstandingObservations")}; two=${field("outTwoOutstandingObservations")} (wake, before/after refill; excludes normal EOF depletion and shutdown)")
+            appendLine("OUT estimated nominal coverage: minimum us=${measured("minEstimatedOutCoverageUs")}; worst elapsed us=${field("worstOutCoverageAtUs")}; observations below one URB=${field("outCoverageBelowOneUrbObservations")}; below two URBs=${field("outCoverageBelowTwoUrbsObservations")} (ideal FIFO time model; thresholds are one/two nominal URB durations)")
+            appendLine("OUT intervals us: max submission batch gap=${field("maxOutSubmissionBatchGapUs")}; max successful submission gap=${field("maxOutSubmissionGapUs")}; max completion observed gap=${field("maxOutCompletionObservedGapUs")}; max refill opportunity gap=${field("maxOutRefillOpportunityGapUs")}; max refill latency=${field("maxOutRefillLatencyUs")} (reap observation to successful resubmit)")
+            val riskMask=native.counters["firstOutRiskMask"]
+            val riskReasons=riskMask?.let { mask -> UsbIsoNativeStats.outRiskReasons.filterIndexed { i, _ -> (mask and (1L shl i))!=0L }.joinToString().ifEmpty { "NONE" } } ?: "unavailable"
+            val riskStage=native.counters["firstOutRiskStage"]?.let { UsbIsoNativeStats.outRiskStages.getOrNull(it.toInt()) } ?: "unavailable"
+            val riskPosition=native.counters["firstOutRiskCompletedFrames"]?.takeIf { it>=0 }?.let(::completedFramePositionMs)?.toString() ?: "unavailable"
+            appendLine("OUT_CONTINUITY_RISK: events=${field("outContinuityRiskEvents")}; first elapsed us=${field("firstOutRiskAtUs")}; first completed-frame position ms=$riskPosition; reasons=$riskReasons; stage=$riskStage; application OUT=${field("firstOutRiskOutstanding")}; feedback=${field("firstOutRiskFeedbackOutstanding")}; worker gap us=${field("firstOutRiskWorkerGapUs")}; estimated coverage us=${field("firstOutRiskEstimatedCoverageUs")} (first event frozen; 0 events=no first event; diagnostic only, at most one event per iteration)")
+            appendLine("OUT wire underrun confirmed? UNKNOWN; kernel completed-unreaped OUT count=UNKNOWN; application outstanding includes completed-unreaped URBs; timing estimates and final frame/byte/hash agreement do not prove uninterrupted wire service")
+            appendLine("feedback observations: submittedUs=${field("lastAcceptedFeedbackSubmittedUs")}; acceptedUs=${field("lastAcceptedFeedbackObservedUs")}; requestAgeUs=${field("lastAcceptedFeedbackRequestAgeUs")}; requests over holdover=${field("feedbackRequestsOverHoldover")}; max request age us=${field("feedbackMaxRequestAgeUs")} (request age is not DAC sample age)")
+            val hashes=listOf("wholeDecodedPcmHash","allEnqueuedPcmHash","sourcePcmHash","submittedPcmHash")
+            hashes.forEach { appendLine("$it=${native.counters[it]?.let(::pcmHashHex) ?: "unavailable"}") }
+            appendLine("hash agreement=${hashes.all { native.counters.containsKey(it) && native.counters[it]==native.counters["submittedPcmHash"] }}")
+        }
+        result.configuration?.let { appendLine("USB configuration=${it.targetStatus}; restoration=${it.restorationStatus}; AS release=${it.asRelease.returned}; AC release=${it.acRelease.returned}; connection close=${it.closeStatus}") }
+    }
+    appendLine("Completed frames are host USB evidence; DAC-internal reconstruction and listening are not measured.")
+}

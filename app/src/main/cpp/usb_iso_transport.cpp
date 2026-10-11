@@ -1,6 +1,9 @@
 #include "usb_pcm_reference.h"
 #include "usb_iso_stop.h"
 #include "usb_iso_tail.h"
+#include "usb_feedback_policy.h"
+#include "usb_out_queue_policy.h"
+#include "usb_out_continuity.h"
 #include "flac/flac_prefix_queue.h"
 #include "flac/flac_snapshot.h"
 #include <jni.h>
@@ -35,8 +38,22 @@ enum Field : size_t { Api, Attachment, Stream, Started, StateCode, Reasons, Stop
     FeedbackInterval, DataInterval, EndpointCapacity, FeedbackHoldover, ShutdownIncomplete, FirstUrbErrorCount,
     FeedbackUrbErrors, LifecycleMask, SourceMode, PreflightPass, ReferenceTableHash, SourcePcmHash, SubmittedPcmHash,
     SilenceFrames, LeftToneFrames, RightToneFrames, LeftActiveSamples, RightActiveSamples,
-    UnexpectedNonzero, InactiveNonzero, OutsideNonzero, MaximumSample, MinimumSample, PeakSample, ActivePerCycle, PrefixConsumed, PrefixPrimed, PrefixFaults, PrefixStopped, PrefixJoined, EmptyAfterReap, PoolStalls, PoolAtStall, CompletionAgeAtStall, DurationTarget, ActiveAtStop, FullExpected, FullEofReached, FullNaturalProducer, TailRemaining, TailFrames, TailPackets, TailUrbs, TailPacketCompletions, TailFrameCompletions, EofPadding, FullLastSubmitted, FullLastCompleted, FullQueueNatural, FullDiscardNatural, FullMd5Pass, FullDecodedHash, FullEnqueuedHash, SourceVerificationStalls, FieldCount };
-constexpr jint kSnapshotVersion = 5;
+    UnexpectedNonzero, InactiveNonzero, OutsideNonzero, MaximumSample, MinimumSample, PeakSample, ActivePerCycle, PrefixConsumed, PrefixPrimed, PrefixFaults, PrefixStopped, PrefixJoined, EmptyAfterReap, PoolStalls, PoolAtStall, CompletionAgeAtStall, DurationTarget, ActiveAtStop, FullExpected, FullEofReached, FullNaturalProducer, TailRemaining, TailFrames, TailPackets, TailUrbs, TailPacketCompletions, TailFrameCompletions, EofPadding, FullLastSubmitted, FullLastCompleted, FullQueueNatural, FullDiscardNatural, FullMd5Pass, FullDecodedHash, FullEnqueuedHash, SourceVerificationStalls,
+    ConfiguredFeedbackUrbs, FeedbackPacketsPerUrb, FeedbackCoverageUs, BootstrapTimeouts, WatchdogTimeouts, ReapedTimeouts,
+    TimeoutSubtype, TimeoutObservedUs, TimeoutLastObservedUs, TimeoutLastSubmittedUs, TimeoutOffendingSubmittedUs,
+    TimeoutAgeUs, TimeoutOutstanding, TimeoutReapedNotRearmed, TimeoutAcceptedRaw,
+    RequestsOverHoldover, MaxRequestAgeUs, LastAcceptedSubmittedUs, LastAcceptedObservedUs, LastAcceptedRequestAgeUs,
+    TimeoutReapAttempted, TimeoutReapCount, TimeoutReapFeedbackCount, TimeoutReapRefreshed,
+    TimeoutAgeBeforeReap, TimeoutAgeAfterReap, TimeoutWatchdogEvaluated, TimeoutWatchdogFired,
+    FeedbackRecoveredGaps,
+    ConfiguredOutUrbs, OutPacketsPerUrb, OutUrbDurationUs, OutNominalCoverageUs,
+    MaxWorkerLoopGapUs, MaxGapObservedAtUs, OutAtMaxGap, FeedbackAtMaxGap, MaxGapOutRefilled, MaxGapNeedsOut, WorkerGapsBeyondOutCoverage,
+    OutContinuityObservations, MinOutOutstanding, OutZeroObservations, OutOneObservations, OutTwoObservations,
+    MinEstimatedOutCoverageUs, WorstOutCoverageAtUs, OutCoverageBelowOneUrb, OutCoverageBelowTwoUrbs,
+    MaxOutSubmissionBatchGapUs, MaxOutSubmissionGapUs, MaxOutCompletionGapUs, MaxOutRefillOpportunityGapUs, MaxOutRefillLatencyUs,
+    OutContinuityRisks, FirstOutRiskAtUs, FirstOutRiskMask, FirstOutRiskStage, FirstOutRiskOut, FirstOutRiskFeedback,
+    FirstOutRiskGapUs, FirstOutRiskCoverageUs, FirstOutRiskCompletedFrames, FieldCount };
+constexpr jint kSnapshotVersion = 8;
 // Preserve unsigned hash bits across JNI without an implementation-defined numeric cast.
 jlong hashBits(uint64_t value) { jlong result; static_assert(sizeof(result) == sizeof(value)); std::memcpy(&result, &value, sizeof(result)); return result; }
 using Clock = std::chrono::steady_clock;
@@ -52,6 +69,7 @@ struct Slot {
     bool feedback = false;
     unsigned packets = 0;
     uint64_t submittedAt = 0, firstSourceFrame = 0;
+    uint64_t outReapedAt = 0; // Diagnostic observation time; not a USB service timestamp.
     bool terminal = false;
     void allocate(bool isFeedback, unsigned count, unsigned capacityBytes) {
         if (count < 1 || count > kOutPackets || capacityBytes < 1 || capacityBytes > 3072) throw std::invalid_argument("URB bounds");
@@ -71,7 +89,8 @@ struct Session {
     const uint32_t payload;
     std::atomic<int> requestedStop{0};
     std::atomic<bool> executing{false};
-    std::array<Slot, kOutPool + kFeedbackPool> slots;
+    const size_t outUrbs, feedbackUrbs;
+    std::vector<Slot> slots; // Fixed once before streaming; eight packets per full OUT URB.
     std::array<jlong, FieldCount> stats{};
     std::array<jlong, kFeedbackExamples * 6> feedbackExamples{};
     std::array<jlong, kPacketExamples * 7> packetExamples{};
@@ -84,8 +103,13 @@ struct Session {
     const uint64_t durationUs;
     const bool fullTrack;
     bool waitingForEof = false;
+    std::atomic<uint64_t> completedProgress{0}; // One writer; sampled without reading mutable stats.
+    const uint64_t totalProgress;
     uint64_t submittedPrefixHash = fv::kOffset;
-    uint64_t started = 0, lastValid = 0, lastOutCompletion = 0, serial = 0;
+    uint64_t started = 0, lastOutCompletion = 0, serial = 0;
+    FeedbackObservationClock feedbackClock;
+    FeedbackReapPass feedbackReapPass; // Copied to first-timeout evidence before shutdown.
+    OutContinuity outContinuity;
     uint32_t acceptedFeedback = 0;
     unsigned invalidStreak = 0;
     bool stopping = false, ran = false;
@@ -93,8 +117,12 @@ struct Session {
 
     Session(int borrowedFd, uint64_t a, uint64_t s, const std::array<jint, 17>& config, std::shared_ptr<fv::PrefixSource> prefixSource = nullptr)
         : fd(borrowedFd), attachment(a), stream(s), dataEndpoint(config[4]), feedbackEndpoint(config[8]),
-          dataInterval(config[7]), feedbackInterval(config[11]), payload(capacity(config[6])), source(config[16] >= 2 ? PcmMode::Zero : static_cast<PcmMode>(config[16])),
-          prefix(std::move(prefixSource)), durationUs(prefix && prefix->fullTrack ? 0 : prefix ? fv::kPrefixDurationUs : kDurationUs), fullTrack(prefix && prefix->fullTrack) {
+          dataInterval(config[7]), feedbackInterval(config[11]), payload(capacity(config[6])),
+          outUrbs(outUrbCount(intervalUs(dataInterval),config[16])),
+          feedbackUrbs(feedbackUrbCount(intervalUs(feedbackInterval))), slots(outUrbs+feedbackUrbs),
+          source(config[16] >= 2 ? PcmMode::Zero : static_cast<PcmMode>(config[16])),
+          prefix(std::move(prefixSource)), durationUs(prefix && prefix->fullTrack ? 0 : prefix ? fv::kPrefixDurationUs : kDurationUs), fullTrack(prefix && prefix->fullTrack), totalProgress(fullTrack ? prefix->queue.expectedTotal.load() : 0),
+          outContinuity(outUrbs,kOutPackets,intervalUs(dataInterval)) {
         stats[Api] = kSnapshotVersion; stats[Attachment] = static_cast<jlong>(a); stats[Stream] = static_cast<jlong>(s);
         stats[DataInterval] = static_cast<jlong>(intervalUs(dataInterval));
         stats[FeedbackInterval] = static_cast<jlong>(intervalUs(feedbackInterval));
@@ -107,9 +135,13 @@ struct Session {
             stats[ActivePerCycle] = activePerCycle();
             if (!preflight.pass()) throw std::invalid_argument("Reference preflight failed");
         }
-        stats[FeedbackHoldover] = static_cast<jlong>(std::max<uint64_t>(20000, intervalUs(feedbackInterval) * 4));
-        for (size_t i = 0; i < slots.size(); ++i) slots[i].allocate(i >= kOutPool,
-            i >= kOutPool ? 1 : static_cast<unsigned>(kOutPackets), i >= kOutPool ? 4 : payload);
+        if (!outUrbs) throw std::invalid_argument("OUT interval/mode bounds");
+        if (!feedbackUrbs) throw std::invalid_argument("Feedback interval bounds");
+        stats[FeedbackHoldover] = static_cast<jlong>(feedbackHoldoverUs(intervalUs(feedbackInterval)));
+        stats[ConfiguredFeedbackUrbs]=static_cast<jlong>(feedbackUrbs); stats[FeedbackPacketsPerUrb]=1;
+        stats[FeedbackCoverageUs]=static_cast<jlong>(feedbackUrbs*intervalUs(feedbackInterval));
+        for (size_t i = 0; i < slots.size(); ++i) slots[i].allocate(i >= outUrbs,
+            i >= outUrbs ? 1 : static_cast<unsigned>(kOutPackets), i >= outUrbs ? 4 : payload);
         move(State::Configured);
     }
     void move(State next) {
@@ -146,7 +178,7 @@ struct Session {
             stats[TailPackets]<1 || stats[TailPackets]>static_cast<jlong>(kOutPackets) || stats[TailFrames]<1 ||
             stats[TailRemaining]!=stats[TailFrames] || stats[TailPacketCompletions]!=stats[TailPackets] || stats[TailFrameCompletions]!=stats[TailFrames] ||
             stats[OutSubmitted]!=stats[OutCompleted] || stats[OutPacketsSubmitted]!=stats[OutPacketsCompleted] ||
-            stats[OutPacketsSubmitted]!=(stats[OutSubmitted]-1)*kOutPackets+stats[TailPackets] || stats[OutCancelled] ||
+            stats[OutPacketsSubmitted]!=(stats[OutSubmitted]-1)*static_cast<jlong>(kOutPackets)+stats[TailPackets] || stats[OutCancelled] ||
             stats[EofPadding] || q.depth()) { fail(TerminalAccounting,Stop::Accounting); return false; }
         stats[FullQueueNatural]=static_cast<jlong>(q.depth()); stats[FullDiscardNatural]=0;
         stopCause.choose(Stop::NaturalEof); return true;
@@ -266,6 +298,7 @@ struct Session {
         }
         if (!slot.identity.submit(attachment, stream, ++serial)) { fail(SchedulerInvalid, Stop::Accounting); return false; }
         ++stats[slot.feedback ? FeedbackSubmitted : OutSubmitted];
+        if (!slot.feedback) outContinuity.submitted(monotonicUs(),slot.packets,slot.outReapedAt);
         if (!slot.feedback) {
             if (prefix) {
                 submittedPrefixHash = fv::hashBytes(submittedPrefixHash, slot.buffer.data(), length);
@@ -289,19 +322,45 @@ struct Session {
             packet.actual_length, static_cast<jlong>(stream), static_cast<jlong>(slot.identity.submission)};
         std::copy(row.begin(), row.end(), packetExamples.begin() + index * row.size());
     }
+    void feedbackTimeout(FeedbackTimeoutKind kind,uint64_t observed,uint64_t offendingSubmitted=0) {
+        if (stopping || kind==FeedbackTimeoutKind::None) return;
+        ++stats[FeedbackTimeouts];
+        ++stats[kind==FeedbackTimeoutKind::Bootstrap ? BootstrapTimeouts :
+            kind==FeedbackTimeoutKind::LastValidWatchdog ? WatchdogTimeouts : ReapedTimeouts];
+        if (!stats[TimeoutSubtype]) {
+            stats[TimeoutSubtype]=static_cast<jlong>(kind); stats[TimeoutObservedUs]=static_cast<jlong>(observed);
+            stats[TimeoutLastObservedUs]=static_cast<jlong>(feedbackClock.lastObserved);
+            stats[TimeoutLastSubmittedUs]=static_cast<jlong>(feedbackClock.lastSubmitted);
+            stats[TimeoutOffendingSubmittedUs]=static_cast<jlong>(offendingSubmitted);
+            stats[TimeoutAgeUs]=static_cast<jlong>(observed-(feedbackClock.lastObserved ? feedbackClock.lastObserved : started));
+            stats[TimeoutOutstanding]=static_cast<jlong>(outstanding(true));
+            size_t reaped=0;
+            for (const auto& slot : slots) if (slot.feedback && !slot.identity.outstanding && slot.identity.submission) ++reaped;
+            stats[TimeoutReapedNotRearmed]=static_cast<jlong>(reaped); stats[TimeoutAcceptedRaw]=acceptedFeedback;
+            stats[TimeoutReapAttempted]=feedbackReapPass.attempted;
+            stats[TimeoutReapCount]=static_cast<jlong>(feedbackReapPass.reaped);
+            stats[TimeoutReapFeedbackCount]=static_cast<jlong>(feedbackReapPass.feedbackCompletions);
+            stats[TimeoutReapRefreshed]=feedbackReapPass.refreshed;
+            stats[TimeoutAgeBeforeReap]=static_cast<jlong>(feedbackReapPass.ageBefore);
+            stats[TimeoutAgeAfterReap]=static_cast<jlong>(feedbackReapPass.ageAfter);
+            stats[TimeoutWatchdogEvaluated]=feedbackReapPass.watchdogEvaluated;
+            stats[TimeoutWatchdogFired]=feedbackReapPass.timeout!=FeedbackTimeoutKind::None;
+        }
+        fail(FeedbackTimeout,Stop::Feedback);
+    }
     void feedbackPacket(Slot& slot, int urbStatus) {
         const auto& packet = slot.urb->iso_frame_desc[0];
         const auto decoded = decodeFeedback(slot.buffer.data(), packet.actual_length, static_cast<int>(packet.status));
         const size_t index = feedbackExampleCount < kFeedbackExamples ? feedbackExampleCount++ : kFeedbackExamples - 1;
         uint32_t raw = 0;
         for (unsigned i = 0; i < std::min<unsigned>(4, packet.actual_length); ++i) raw |= static_cast<uint32_t>(slot.buffer[i]) << (8 * i);
-        const uint64_t observed = monotonicUs(), age = observed - slot.submittedAt;
-        const bool stale = age > static_cast<uint64_t>(stats[FeedbackHoldover]);
+        const uint64_t observed = monotonicUs(), age = FeedbackObservationClock::requestAge(slot.submittedAt,observed);
+        stats[MaxRequestAgeUs]=std::max(stats[MaxRequestAgeUs],static_cast<jlong>(age));
+        if (age>static_cast<uint64_t>(stats[FeedbackHoldover])) ++stats[RequestsOverHoldover];
         const std::array<jlong, 6> row{raw, packet.actual_length, static_cast<int>(packet.status),
-            static_cast<jlong>(observed - started), static_cast<int>(stale ? FeedbackValidity::Stale : decoded.validity), static_cast<jlong>(age)};
+            static_cast<jlong>(observed - started), static_cast<int>(decoded.validity), static_cast<jlong>(age)};
         std::copy(row.begin(), row.end(), feedbackExamples.begin() + index * row.size());
         ++stats[FeedbackPacketsCompleted];
-        if (stale) { ++stats[FeedbackInvalid]; ++stats[FeedbackTimeouts]; fail(FeedbackTimeout, Stop::Feedback); return; }
         if (urbStatus != 0 || packet.status != 0 || packet.actual_length > 4 || decoded.validity == FeedbackValidity::Length || decoded.validity == FeedbackValidity::Reserved) {
             ++stats[FeedbackInvalid]; fail(MalformedFeedback, Stop::Feedback); return;
         }
@@ -313,9 +372,14 @@ struct Session {
         ++stats[FeedbackValid]; ++stats[FeedbackSamples]; stats[SumFeedback] += decoded.raw;
         if (!stats[MinFeedback] || decoded.raw < static_cast<uint64_t>(stats[MinFeedback])) stats[MinFeedback] = decoded.raw;
         if (decoded.raw > static_cast<uint64_t>(stats[MaxFeedback])) stats[MaxFeedback] = decoded.raw;
-        // Conservative age bound: kernel supplies no feedback timestamp, so use submission time,
-        // never pretend a delayed reap makes an old sample fresh.
-        invalidStreak = 0; stats[InvalidStreak] = 0; acceptedFeedback = decoded.raw; lastValid = slot.submittedAt;
+        // A queued request can wait many intervals before its one transaction. Its
+        // submission age is not sample age. Accept ready valid feedback before the
+        // post-reap watchdog decision; do not refresh clocks during drain/failure.
+        if (stopping || stopCause.chosen) return;
+        invalidStreak = 0; stats[InvalidStreak] = 0; acceptedFeedback = decoded.raw;
+        feedbackClock.accept(slot.submittedAt,observed);
+        stats[LastAcceptedSubmittedUs]=static_cast<jlong>(slot.submittedAt);
+        stats[LastAcceptedObservedUs]=static_cast<jlong>(observed); stats[LastAcceptedRequestAgeUs]=static_cast<jlong>(age);
         if (!stopping && state == State::Bootstrap) move(State::FeedbackLocked);
     }
     bool reapOne() {
@@ -332,6 +396,10 @@ struct Session {
         auto& slot = *found;
         if (!slot.identity.outstanding) { ++stats[DuplicateCompletions]; fail(DuplicateCompletion, Stop::Accounting); return true; }
         if (!slot.identity.complete(attachment, stream)) { fail(GenerationMismatch, Stop::Accounting); return true; }
+        if (!slot.feedback && !stopping && !stopCause.chosen && !requestedStop.load()) {
+            slot.outReapedAt=monotonicUs();
+            outContinuity.completed(slot.outReapedAt,slot.packets);
+        }
         if (stopping) ++stats[CompletionsAfterStop];
         ++stats[slot.feedback ? FeedbackCompleted : OutCompleted];
         const int status = slot.urb->status;
@@ -388,7 +456,32 @@ struct Session {
         if (returned < 0 && saved != EINTR) fail(ReapError, Stop::Reap);
         if (returned > 0 && (descriptor.revents & (POLLERR | POLLHUP | POLLNVAL))) fail(DeviceDetached, Stop::Detached);
     }
+    void captureOutContinuity() {
+        const auto& c=outContinuity;
+        stats[ConfiguredOutUrbs]=static_cast<jlong>(c.configuredUrbs); stats[OutPacketsPerUrb]=static_cast<jlong>(c.packetsPerUrb);
+        stats[OutUrbDurationUs]=static_cast<jlong>(c.urbDurationUs); stats[OutNominalCoverageUs]=static_cast<jlong>(c.nominalCoverageUs);
+        stats[MaxWorkerLoopGapUs]=static_cast<jlong>(c.maxWorkerLoopGapUs); stats[MaxGapObservedAtUs]=static_cast<jlong>(c.maxGapObservedAtUs);
+        stats[OutAtMaxGap]=static_cast<jlong>(c.outAtMaxGap); stats[FeedbackAtMaxGap]=static_cast<jlong>(c.feedbackAtMaxGap);
+        stats[MaxGapOutRefilled]=c.maxGapRefilled; stats[MaxGapNeedsOut]=c.maxGapNeedsOut;
+        stats[WorkerGapsBeyondOutCoverage]=static_cast<jlong>(c.gapsBeyondCoverage);
+        stats[OutContinuityObservations]=static_cast<jlong>(c.observations);
+        stats[MinOutOutstanding]=c.observations ? static_cast<jlong>(c.minOutstanding) : -1;
+        stats[OutZeroObservations]=static_cast<jlong>(c.zeroObservations); stats[OutOneObservations]=static_cast<jlong>(c.oneObservations);
+        stats[OutTwoObservations]=static_cast<jlong>(c.twoObservations);
+        stats[MinEstimatedOutCoverageUs]=c.observations ? static_cast<jlong>(c.minEstimatedCoverageUs) : -1;
+        stats[WorstOutCoverageAtUs]=static_cast<jlong>(c.worstCoverageAtUs);
+        stats[OutCoverageBelowOneUrb]=static_cast<jlong>(c.belowOneUrb); stats[OutCoverageBelowTwoUrbs]=static_cast<jlong>(c.belowTwoUrbs);
+        stats[MaxOutSubmissionBatchGapUs]=static_cast<jlong>(c.maxBatchGapUs); stats[MaxOutSubmissionGapUs]=static_cast<jlong>(c.maxSubmissionGapUs);
+        stats[MaxOutCompletionGapUs]=static_cast<jlong>(c.maxCompletionGapUs);
+        stats[MaxOutRefillOpportunityGapUs]=static_cast<jlong>(c.maxRefillOpportunityGapUs); stats[MaxOutRefillLatencyUs]=static_cast<jlong>(c.maxRefillLatencyUs);
+        stats[OutContinuityRisks]=static_cast<jlong>(c.riskCount); stats[FirstOutRiskAtUs]=static_cast<jlong>(c.firstRiskAtUs);
+        stats[FirstOutRiskMask]=static_cast<jlong>(c.firstRiskMask); stats[FirstOutRiskStage]=static_cast<jlong>(c.firstRiskStage);
+        stats[FirstOutRiskOut]=static_cast<jlong>(c.firstRiskOut); stats[FirstOutRiskFeedback]=static_cast<jlong>(c.firstRiskFeedback);
+        stats[FirstOutRiskGapUs]=static_cast<jlong>(c.firstRiskGapUs); stats[FirstOutRiskCoverageUs]=static_cast<jlong>(c.firstRiskCoverageUs);
+        stats[FirstOutRiskCompletedFrames]=static_cast<jlong>(c.firstRiskCompletedFrames);
+    }
     void shutdown() {
+        captureOutContinuity(); // Freeze active telemetry before any stop/drain completions.
         beginStop();
         for (auto& slot : slots) if (slot.feedback || !integrity.valid() || requestedStop.load()) cancel(slot);
         const uint64_t drainStarted = monotonicUs();
@@ -442,7 +535,7 @@ struct Session {
             stats[OutPacketsSubmitted] != stats[OutPacketsCompleted]) integrity.compromise(ShutdownUnaccounted);
         if (stats[OutBytesSubmitted] != stats[SubmittedFrames] * kBytesPerFrame || stats[KernelOutActualBytes] != stats[OutBytesSubmitted] ||
             (!fullTrack && stats[OutPacketsSubmitted] != stats[OutSubmitted] * static_cast<jlong>(kOutPackets))) integrity.compromise(FrameMismatch);
-        stats[LastFeedbackAge] = lastValid ? static_cast<jlong>(monotonicUs() - lastValid) : -1;
+        stats[LastFeedbackAge] = feedbackClock.lastObserved ? static_cast<jlong>(monotonicUs() - feedbackClock.lastObserved) : -1;
         stats[DurationUs] = static_cast<jlong>(monotonicUs() - started);
         move(State::Stopped); stats[WorkerStopped] = 1;
         stats[Reasons] = static_cast<jlong>(integrity.reasons); stats[StopCode] = static_cast<int>(stopCause.value);
@@ -453,23 +546,43 @@ struct Session {
         if (ran) throw std::invalid_argument("Transport already used");
         ran = true;
         started = monotonicUs(); lastOutCompletion = started; stats[Started] = 1;
+        feedbackClock.started=started;
+        outContinuity.start(started);
         move(State::Starting); move(State::Bootstrap);
         if (prefix) prefix->beginStreaming();
         try {
             // Receive feedback immediately, before priming a modest nominal OUT queue.
-            for (size_t i = kOutPool; i < slots.size() && integrity.valid() && !stopCause.chosen; ++i) submit(slots[i]);
-            for (size_t i = 0; i < kOutPool && integrity.valid() && !stopCause.chosen; ++i) submit(slots[i]);
+            for (size_t i = outUrbs; i < slots.size() && integrity.valid() && !stopCause.chosen; ++i) submit(slots[i]);
+            outContinuity.beginRefill(monotonicUs(),true);
+            for (size_t i = 0; i < outUrbs && integrity.valid() && !stopCause.chosen; ++i) submit(slots[i]);
             while (integrity.valid() && !stopCause.chosen) {
                 waitingForEof=false;
                 const uint64_t now = monotonicUs();
                 if (prefix && prefix->queue.faults.load()) { failSource(); break; }
                 if (requestedStop.load()) { fail(AuthorityChanged, requestedStop.load() == 2 ? Stop::AuthorityLost : Stop::Requested); break; }
                 if (durationReached(started, now, durationUs)) { stopCause.choose(Stop::Duration); break; }
-                if (feedbackExpired(started, lastValid, now, static_cast<uint64_t>(stats[FeedbackHoldover]))) {
-                    ++stats[FeedbackTimeouts]; fail(FeedbackTimeout, Stop::Feedback); break;
+                outContinuity.wake(now,outstanding(false),outstanding(true),!fullTrack || !fullSubmitted(),
+                    static_cast<uint64_t>(stats[CompletedFrames]));
+                const auto feedbackCompletedBefore=stats[FeedbackCompleted];
+                const bool hadValidFeedback=feedbackClock.lastObserved!=0;
+                feedbackReapPass=reapBeforeFeedbackWatchdog(feedbackClock,
+                    static_cast<uint64_t>(stats[FeedbackHoldover]),now,slots.size(),
+                    [this] { return reapOne(); }, [] { return monotonicUs(); },
+                    [this] { return integrity.valid() && !stopCause.chosen && !requestedStop.load() &&
+                        !(prefix && prefix->queue.faults.load()); });
+                feedbackReapPass.feedbackCompletions=static_cast<size_t>(stats[FeedbackCompleted]-feedbackCompletedBefore);
+                if (hadValidFeedback && feedbackReapPass.ageBefore>static_cast<uint64_t>(stats[FeedbackHoldover]) &&
+                    feedbackReapPass.refreshed && feedbackReapPass.watchdogEvaluated &&
+                    feedbackReapPass.timeout==FeedbackTimeoutKind::None &&
+                    feedbackReapPass.ageAfter<=static_cast<uint64_t>(stats[FeedbackHoldover]))
+                    ++stats[FeedbackRecoveredGaps];
+                completedProgress.store(static_cast<uint64_t>(stats[CompletedFrames]),std::memory_order_release);
+                if (!integrity.valid() || stopCause.chosen) break;
+                if (prefix && prefix->queue.faults.load()) { failSource(); break; }
+                if (requestedStop.load()) { fail(AuthorityChanged, requestedStop.load() == 2 ? Stop::AuthorityLost : Stop::Requested); break; }
+                if (feedbackReapPass.timeout!=FeedbackTimeoutKind::None) {
+                    feedbackTimeout(feedbackReapPass.timeout,feedbackReapPass.evaluatedAt); break;
                 }
-                for (unsigned i = 0; i < 64 && reapOne(); ++i) {}
-                if (!integrity.valid()) break;
                 if (naturalComplete()) break;
                 if (durationReached(started, monotonicUs(), durationUs)) { stopCause.choose(Stop::Duration); break; }
                 if (!prefix && (outstanding(false) == 0 || monotonicUs() - lastOutCompletion > kQueueWatchdogUs)) {
@@ -478,8 +591,13 @@ struct Session {
                 }
                 if (prefix && outstanding(false) == 0) ++stats[EmptyAfterReap];
                 // A reaped slot is free capacity, not missing source PCM. Refill before judging OUT-pool progress.
+                outContinuity.observe(monotonicUs(),outstanding(false),outstanding(true),!fullTrack || !fullSubmitted(),
+                    static_cast<uint64_t>(stats[CompletedFrames]),OutObservationStage::BeforeRefill);
+                outContinuity.beginRefill(monotonicUs());
                 for (auto& slot : slots) if (!slot.identity.outstanding && integrity.valid() && !stopCause.chosen) submit(slot);
                 if (!integrity.valid() || stopCause.chosen) break;
+                outContinuity.observe(monotonicUs(),outstanding(false),outstanding(true),!fullTrack || !fullSubmitted(),
+                    static_cast<uint64_t>(stats[CompletedFrames]),OutObservationStage::AfterRefill);
                 if (naturalComplete()) break;
                 if (durationReached(started, monotonicUs(), durationUs)) { stopCause.choose(Stop::Duration); break; }
                 const bool terminalAwait=fullTrack && waitingForEof && outstanding(false)==0;
@@ -495,6 +613,7 @@ struct Session {
             }
         } catch (...) { fail(WorkerFailure, Stop::Worker); }
         shutdown();
+        completedProgress.store(static_cast<uint64_t>(stats[CompletedFrames]),std::memory_order_release);
         prefix.reset(); // Queue no longer needed by copied URB buffers; owner retains final source evidence.
         // No execution context returns while continuing to submit/reap in the background.
     }
@@ -602,6 +721,17 @@ Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeRunSilentTra
     if (!session) { error(env, "java/lang/IllegalArgumentException", "Stale silent transport handle"); return nullptr; }
     try { session->run(); } catch (...) { error(env, "java/lang/IllegalStateException", "Silent transport execution rejected"); return nullptr; }
     return snapshot(env, *session);
+}
+
+// Snapshot only atomic progress and immutable total; no concurrent access to the mutable evidence arrays.
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeFullProgress(JNIEnv* env,jobject,jlong handle,jlong attachment,jlong stream) {
+    const auto session=lookup(handle,attachment,stream);
+    if (!session || !session->fullTrack) { error(env,"java/lang/IllegalArgumentException","Stale full playback progress"); return nullptr; }
+    const std::array<jlong,2> values{static_cast<jlong>(session->completedProgress.load(std::memory_order_acquire)),static_cast<jlong>(session->totalProgress)};
+    auto result=env->NewLongArray(values.size());
+    if (result) env->SetLongArrayRegion(result,0,values.size(),values.data());
+    return result;
 }
 
 extern "C" JNIEXPORT void JNICALL

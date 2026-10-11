@@ -158,6 +158,15 @@ class PlaybackController(
     }
 
     init {
+        coroutineScope.launch {
+            IntegratedDirectPlaybackBridge.state.collect { direct ->
+                if (direct.enabled) {
+                    isPlaying=direct.phase==IntegratedDirectPhase.PLAYING
+                    currentPosition=direct.positionMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                    duration=direct.durationMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                }
+            }
+        }
         PlaybackLibraryBridge.register(this)
         startAdvancedAudioRuntimeCollection()
     }
@@ -196,7 +205,7 @@ class PlaybackController(
         }
 
         musicPlayer.onSongCompleted = {
-            handleSongCompleted()
+            if (IntegratedDirectPlaybackBridge.directSelected) { isPlaying=false;currentPosition=duration } else handleSongCompleted()
         }
 
         musicPlayer.onPlaybackStateChanged = { playerIsPlaying ->
@@ -333,6 +342,10 @@ class PlaybackController(
         clearForwardHistory: Boolean = true,
         preserveSpecializedShuffleMode: Boolean = false
     ) {
+        val direct=IntegratedDirectPlaybackBridge.state.value
+        if (direct.enabled && (direct.busy || !direct.normalReleased || !direct.cleanupSafe)) {
+            IntegratedDirectPlaybackBridge.reject("Track replacement; Stop and wait for USB restoration first");return
+        }
         val previousSong = currentSong
 
         if (playbackContext != null) {
@@ -366,6 +379,7 @@ class PlaybackController(
     }
 
     fun togglePlayPause() {
+        if (IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.reject("Pause");return }
         if (musicPlayer.isPlayWhenReady()) {
             musicPlayer.pause()
             isPlaying = false
@@ -377,12 +391,14 @@ class PlaybackController(
     }
 
     fun pausePlayback() {
+        if (IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.reject("Pause");return }
         musicPlayer.pause()
         isPlaying = false
         savePlayerState()
     }
 
     fun skipToPrevious() {
+        if (IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.reject("Previous");return }
         if (hasAuthoritativeActiveQueueTimeline()) {
             musicPlayer.skipToPrevious()
             return
@@ -396,6 +412,7 @@ class PlaybackController(
     }
 
     fun skipToNext() {
+        if (IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.reject("Next");return }
         if (hasAuthoritativeActiveQueueTimeline()) {
             musicPlayer.skipToNext()
             return
@@ -404,6 +421,7 @@ class PlaybackController(
     }
 
     fun seekTo(position: Int) {
+        if (IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.reject("Seek");return }
         musicPlayer.seekTo(position)
         currentPosition = position
         savePlayerState()
@@ -531,6 +549,7 @@ class PlaybackController(
     }
 
     fun toggleShuffle() {
+        if (IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.reject("Shuffle");return }
         setSongShuffleEnabled(shuffleMode == PlaybackShuffleMode.OFF)
     }
 
@@ -615,6 +634,7 @@ class PlaybackController(
     }
 
     fun cycleRepeatMode() {
+        if (IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.reject("Repeat");return }
         setRepeatModeFromExternalController(
             when (repeatMode) {
                 RepeatMode.OFF -> RepeatMode.ALL
@@ -979,6 +999,7 @@ class PlaybackController(
     }
 
     private fun handleSongCompleted() {
+        if (IntegratedDirectPlaybackBridge.directSelected) return
         val playbackSourceSongs = getPlaybackSourceSongs()
 
         when (repeatMode) {
@@ -1211,7 +1232,7 @@ class PlaybackController(
         newPlaybackContextBaseSongs: List<Song>? = null
     ) {
         currentSong = song
-        isPlaying = true
+        isPlaying = !IntegratedDirectPlaybackBridge.directSelected
         currentPosition = 0
         duration = song.duration.toInt()
 
@@ -1288,6 +1309,7 @@ class PlaybackController(
     }
 
     private fun applyReplayGainForCurrentSong() {
+        if (IntegratedDirectPlaybackBridge.directSelected) { replayGainRequestId+=1;return }
         val song = currentSong
         val requestedMode = replayGainMode
 

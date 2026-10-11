@@ -7,6 +7,7 @@
 namespace sazanami::usbiso {
 using std::size_t;
 constexpr uint32_t kRate = 44100, kBytesPerFrame = 4;
+// kFeedbackPool is the minimum; usb_feedback_policy.h derives the runtime feedback pool.
 constexpr size_t kOutPool = 8, kOutPackets = 8, kFeedbackPool = 2;
 constexpr uint64_t kDurationUs = 1000000, kBootstrapUs = 100000;
 constexpr uint64_t kDrainUs = 100000, kCancelUs = 250000, kQueueWatchdogUs = 50000;
