@@ -12,15 +12,17 @@ internal class UsbAudioConfigurationPlan private constructor(
     val dataEndpoint: Int,
     val acClaim: UsbAudioForcedClaimRequest,
     val asClaim: UsbAudioStreamingClaimRequest,
-    val declaredAlternates: Set<Int>
+    val declaredAlternates: Set<Int>,
+    val sampleRateHz: Long
 ) {
-    val sampleRateHz: Long get() = 44_100L
     val channels: Int get() = 2
     val subslotBytes: Int get() = 2
     val validBits: Int get() = 16
 
     companion object {
-        fun resolve(model: UsbAudioDescriptorModel, android: List<UsbAndroidInterfaceSnapshot>): UsbAudioConfigurationResolution {
+        fun resolve(model: UsbAudioDescriptorModel, android: List<UsbAndroidInterfaceSnapshot>,
+            sampleRateHz: Long = UsbDirectPcmFormat.REFERENCE_RATE_HZ): UsbAudioConfigurationResolution {
+            if (!UsbDirectPcmFormat.supportsRate(sampleRateHz)) return UsbAudioConfigurationResolution(issues = listOf("Unsupported PCM16 direct sample rate."))
             val probe = UsbFsProbePlan.create(model, android)
             val clock = probe.resolution.target ?: return UsbAudioConfigurationResolution(issues = probe.warnings)
             fun blocked(detail: String) = UsbAudioConfigurationResolution(issues = probe.warnings + detail)
@@ -67,7 +69,7 @@ internal class UsbAudioConfigurationPlan private constructor(
             val data = stream.endpoints.single { !it.isIn && it.transferType == 1 && it.usageType == 0 }
             if (data.address !in 1..15 || data.packetPayloadBytes == 0) return blocked("Playback data endpoint descriptor is invalid.")
             return UsbAudioConfigurationResolution(UsbAudioConfigurationPlan(probe, clock, stream.key, idle.key,
-                data.address, ac, UsbAudioStreamingClaimRequest.fromIdle(idleHandle), alternates.map { it.key.alternate }.toSet()))
+                data.address, ac, UsbAudioStreamingClaimRequest.fromIdle(idleHandle), alternates.map { it.key.alternate }.toSet(), sampleRateHz))
         }
     }
 

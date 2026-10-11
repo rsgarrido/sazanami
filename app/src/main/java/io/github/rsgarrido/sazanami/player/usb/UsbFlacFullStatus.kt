@@ -20,13 +20,16 @@ internal object UsbFlacFullStatus {
         if (usb?.stopReason=="STOP_REQUESTED") return UsbSilentStatus.CANCELLED
         if (!source.primed) return UsbSilentStatus.QUEUE_PRIME_FAILED
         if (configuration.targetStatus!=UsbTargetConfigurationStatus.TARGET_CONFIGURATION_VERIFIED) return UsbSilentStatus.USB_CONFIGURATION_FAILED
+        if (!configuration.selectedRateMatches(source.count("sampleRate"))) return UsbSilentStatus.USB_CONFIGURATION_FAILED
         if (usb?.stopReason=="OUT_POOL_STALL") return UsbSilentStatus.OUT_POOL_STALL
         if (usb?.stopReason=="SOURCE_VERIFICATION_STALLED") return UsbSilentStatus.SOURCE_VERIFICATION_STALLED
         if (usb?.integrityReasons?.contains("TERMINAL_TAIL_ACCOUNTING_FAILED")==true) return UsbSilentStatus.TERMINAL_TAIL_ACCOUNTING_FAILED
         if (usb==null || !usb.verified) return UsbSilentStatus.USB_TRANSPORT_FAILED
+        if (usb.count("schedulerNominalRateHz")!=source.count("sampleRate")) return UsbSilentStatus.USB_TRANSPORT_FAILED
         if (!source.fullComplete || !memoryReleased) return UsbSilentStatus.RESOURCE_CLEANUP_FAILED
         // Both snapshots must describe the same entire source; independent internal consistency is insufficient.
-        if (source.count("totalSamples")!=usb.count("streamInfoTotalSamples") ||
+        if (source.decoder?.count("sampleRate")!=source.count("sampleRate") ||
+            source.count("totalSamples")!=usb.count("streamInfoTotalSamples") ||
             source.count("framesConsumedFromQueue")!=usb.count("framesSubmitted") ||
             source.decoder?.count("canonicalPcmBytesHashed")!=usb.count("outBytesSubmitted") ||
             source.decoder?.counters?.get("pcmFnv1a")!=usb.counters["wholeDecodedPcmHash"] ||

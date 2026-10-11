@@ -16,7 +16,7 @@ internal data class UsbFlacSourceResult(val counters: Map<String,Long> = emptyMa
     val primed get() = exceptionType == null && count("sourceIntegrityMask")==0L && count("metadataAccepted")==1L &&
         count("initialPrimedFrames") in (if (count("fullTrackMode")==1L) minOf(8192L,count("totalSamples")) else 8192L)..16384L &&
         (count("fullTrackMode")==0L || count("totalSamples")>0L) &&
-        (count("initialPrimedFrames")>=8192L || count("trueEofReached")==1L) && count("sampleRate")==44100L && count("channels")==2L && count("bitsPerSample")==16L
+        (count("initialPrimedFrames")>=8192L || count("trueEofReached")==1L) && UsbDirectPcmFormat.supports(count("sampleRate"),count("channels"),count("bitsPerSample"))
     val clean get() = counters.keys.containsAll(UsbFlacSourceEvidence.fields) && primed && count("producerStopped")==1L && count("producerJoined")==1L &&
         count("decoderReleased")==1L && count("nativeFlacFdClosed")==1L && count("queueReleased")==1L &&
         count("queueUnderruns")==0L && count("sourceFrameGapCount")==0L && count("sourceFrameDuplicateCount")==0L &&

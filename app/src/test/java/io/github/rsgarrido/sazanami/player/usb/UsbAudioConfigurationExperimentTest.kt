@@ -17,6 +17,24 @@ import org.junit.Test
  * Source checks constrain the narrow Android/native boundary; real ABI/DAC behavior needs manual verification.
  */
 class UsbAudioConfigurationExperimentTest {
+    @Test fun selected48000UsesSamePcm16AlternateAndRestoresArbitraryCapturedRate() {
+        val selected=UsbAudioConfigurationPlan.resolve(model,android,48000)
+        assertEquals(plan.streaming,selected.plan!!.streaming)
+        val fake=Fake(selected.plan!!).apply { rate=192000 }
+        val result=run(fake,selected)
+        assertTrue(result.selectedRateMatches(48000))
+        assertEquals(UsbConfigurationRestorationStatus.RESTORED,result.restorationStatus)
+        assertEquals(192000L,result.originalClockRateHz)
+        assertEquals(192000L,result.originalClockReadback!!.currentFrequencyHz)
+        assertEquals(listOf(48000L,192000L),fake.clockWrites)
+        assertTrue(fake.events.indexOf("setClock:192000")<fake.events.indexOf("releaseAS:8"))
+        assertTrue(fake.events.indexOf("releaseAS:8")<fake.events.indexOf("releaseAC:7"))
+        val ignored=Fake(selected.plan!!).apply { rate=44100;applyTargetRate=false }
+        val mismatch=run(ignored,selected)
+        assertFalse(mismatch.selectedRateMatches(48000))
+        assertEquals(UsbTargetConfigurationStatus.FAILED,mismatch.targetStatus)
+        assertEquals(UsbConfigurationRestorationStatus.RESTORED,mismatch.restorationStatus)
+    }
     private val model = descriptorModel()
     private val android = androidFacts(model)
     private val resolution = UsbAudioConfigurationPlan.resolve(model, android)
@@ -620,7 +638,8 @@ class UsbAudioConfigurationExperimentTest {
         assertTrue(clockWrite.contains("control.bRequest = 0x01"))
         assertTrue(clockWrite.contains("control.wValue = 0x0100"))
         assertTrue(clockWrite.contains("control.wLength = 4"))
-        assertTrue(clockWrite.contains("requestedRateHz != 44100 && requestedRateHz != originalRateHz"))
+        assertTrue(clockWrite.contains("!sazanami::directpcm::supportsRate(static_cast<uint32_t>(requestedRateHz)) && requestedRateHz != originalRateHz"))
+        assertTrue(clockWrite.contains("requestedRateHz < 1 || requestedRateHz > 0xffffffffLL"))
         val returned = clockWrite.substringAfter("const int returned = ::ioctl(borrowedFd, USBDEVFS_CONTROL, &control);")
         assertTrue(returned.trimStart().startsWith("const int savedError = returned < 0 ? errno : 0;"))
         val alt = native.substringAfter("UsbFsDiagnostics_nativeSetAudioStreamingAlternate(")
@@ -930,7 +949,7 @@ class UsbAudioConfigurationExperimentTest {
     private fun audio() = UsbAndroidAudioDiagnostics(listOf(UsbAndroidAudioOutput("Synthetic USB output", 22, 90,
         "card=3;device=0", listOf(48_000), listOf(2), listOf(2), listOf(3), listOf(3))))
 
-    private inner class Fake : UsbAudioConfigurationTransport {
+    private inner class Fake(private val selectedPlan: UsbAudioConfigurationPlan = plan) : UsbAudioConfigurationTransport {
         var acClaimResult = true; var asClaimResult = true
         var acClaimThrows = false; var asClaimThrows = false
         var asReleaseResult = true; var asReleaseThrows = false; var acReleaseThrows = false
@@ -967,7 +986,7 @@ class UsbAudioConfigurationExperimentTest {
         override fun connectionValid() = fdValid && !closed
         override fun snapshot(): UsbFsOwnershipDiagnostics {
             events += "snapshot"
-            val bindings = plan.probe.interfaces.map { iface ->
+            val bindings = selectedPlan.probe.interfaces.map { iface ->
                 val driver = when {
                     iface.number == 4 -> "test_hid_driver"
                     iface.number == 7 && acOwned -> "usbfs"
@@ -976,7 +995,7 @@ class UsbAudioConfigurationExperimentTest {
                 }
                 UsbFsDriverBinding(iface, UsbFsIoctlResult(UsbFsIoctlOperation.GETDRIVER, 0, 0, null), driver)
             }
-            return UsbFsOwnershipDiagnostics(3, plan.probe, if (snapshots.isEmpty()) baselineStatus else UsbFsProbeStatus.RECORDED,
+            return UsbFsOwnershipDiagnostics(3, selectedPlan.probe, if (snapshots.isEmpty()) baselineStatus else UsbFsProbeStatus.RECORDED,
                 bindings, UsbFsSpeedEvidence(UsbFsIoctlResult(UsbFsIoctlOperation.GET_SPEED, 3, 0, null), UsbFsSpeed.HIGH),
                 androidAudio = audio()).also { snapshots += it }
         }

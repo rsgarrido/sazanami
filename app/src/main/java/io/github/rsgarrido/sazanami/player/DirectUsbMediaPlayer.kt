@@ -29,7 +29,7 @@ internal class DirectUsbMediaPlayer(
     private var stopRequested=false
     private var nextGeneration=0L
     private fun update(value: IntegratedDirectPlaybackState) { evidence=value; changed(value); invalidateState() }
-    fun notice(command: String) { update(evidence.copy(notice="$command is unavailable in Session 12")) }
+    fun notice(command: String) { update(evidence.copy(notice="$command is unavailable in Session 13")) }
     override fun getState(): State {
         val playlist=items.mapIndexed { index,item -> MediaItemData.Builder(item.listeningEvidence()?.itemInstanceId ?: "${item.mediaId}:$index")
             .setMediaItem(item).setMediaMetadata(item.mediaMetadata).setIsSeekable(false)
@@ -66,12 +66,12 @@ internal class DirectUsbMediaPlayer(
         if(!acquireFocus()) { update(evidence.copy(phase=IntegratedDirectPhase.ERROR,error="DIRECT_AUDIO_FOCUS_DENIED",cleanupSafe=true));return Futures.immediateVoidFuture() }
         stopRequested=false
         val generation=++nextGeneration
-        update(evidence.copy(generation=generation,phase=IntegratedDirectPhase.PREPARING,completedFrames=0,totalFrames=0,error=null,notice=null,engine=null,cleanupSafe=false))
+        update(evidence.copy(generation=generation,phase=IntegratedDirectPhase.PREPARING,completedFrames=0,totalFrames=0,sampleRateHz=0,error=null,notice=null,engine=null,cleanupSafe=false))
         worker=scope.launch {
             try {
                 val result=usb.runIntegratedFull(song.uri) { progress ->
                     if(evidence.generation==generation && !stopRequested) update(evidence.copy(completedFrames=progress.completedFrames,
-                        totalFrames=progress.totalFrames,phase=if(progress.completedFrames>0) IntegratedDirectPhase.PLAYING else IntegratedDirectPhase.PREPARING))
+                        totalFrames=progress.totalFrames,sampleRateHz=progress.sampleRateHz,phase=if(progress.completedFrames>0) IntegratedDirectPhase.PLAYING else IntegratedDirectPhase.PREPARING))
                 }
                 if(evidence.generation!=generation) return@launch
                 update(integratedTerminalState(evidence,result))

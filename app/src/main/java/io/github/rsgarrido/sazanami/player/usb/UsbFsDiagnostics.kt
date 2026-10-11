@@ -84,7 +84,7 @@ internal object UsbFsDiagnostics {
         return nativeCreateSilentTransport(borrowedFd, generation, stream, intArrayOf(plan.clock.audioControl.number,
             plan.streaming.number, plan.streaming.alternate, plan.idle.alternate, target.data.address, target.data.attributes,
             target.data.maxPacketSizeRaw, target.data.interval, target.feedback.address, target.feedback.attributes,
-            target.feedback.maxPacketSizeRaw, target.feedback.interval, 44100, 2, 2, 16, mode.ordinal), prefixHandle)
+            target.feedback.maxPacketSizeRaw, target.feedback.interval, plan.sampleRateHz.toInt(), 2, 2, 16, mode.ordinal), prefixHandle)
     }
     fun runSilentTransport(handle: Long, generation: Long, stream: Long): UsbIsoTransportResult =
         UsbIsoNativeStats.decode(nativeRunSilentTransport(handle, generation, stream), generation, stream)
@@ -95,8 +95,8 @@ internal object UsbFsDiagnostics {
     private external fun nativeRunSilentTransport(handle: Long, generation: Long, stream: Long): UsbIsoNativeSnapshot
     fun fullProgress(handle: Long,generation: Long,stream: Long): UsbFullProgress {
         val values=nativeFullProgress(handle,generation,stream)
-        require(values.size==2)
-        return UsbFullProgress(values[0],values[1])
+        require(values.size==3)
+        return UsbFullProgress(values[0],values[1],values[2])
     }
     private external fun nativeFullProgress(handle: Long,generation: Long,stream: Long): LongArray
     private external fun nativeStopSilentTransport(handle: Long, generation: Long, stream: Long, reason: Int)

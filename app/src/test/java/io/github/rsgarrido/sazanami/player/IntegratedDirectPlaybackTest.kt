@@ -9,10 +9,25 @@ import java.nio.file.Paths
 
 /** Synthetic policy/evidence and source-boundary checks. Authored, never executed by Codex. */
 class IntegratedDirectPlaybackTest {
+    @Test fun synthetic48000FullEofUsesSameEndedPredicateAndSelectedDuration() {
+        val fixture=fullResult()
+        val rate=48000L
+        val result=fixture.copy(flacSource=fixture.flacSource!!.copy(counters=fixture.flacSource!!.counters+("sampleRate" to rate)),
+            transport=fixture.transport!!.copy(counters=fixture.transport!!.counters+("schedulerNominalRateHz" to rate)))
+        val ended=integratedTerminalState(IntegratedDirectPlaybackState(enabled=true),result)
+        assertEquals(IntegratedDirectPhase.ENDED,ended.phase);assertNull(ended.error)
+        assertEquals(rate,ended.sampleRateHz)
+        assertEquals(10001L*1000/rate,ended.durationMs);assertEquals(ended.durationMs,ended.positionMs)
+        assertEquals(IntegratedDirectPhase.ERROR,integratedTerminalState(IntegratedDirectPlaybackState(),
+            result.copy(transport=fixture.transport)).phase)
+        val unsupported=fullResult(UsbSilentStatus.FLAC_SOURCE_FAILED).copy(flacSource=UsbFlacSourceResult(mapOf(
+            "sampleRate" to 48000L,"channels" to 2L,"bitsPerSample" to 24L,"sourceIntegrityMask" to 4L)))
+        assertEquals("UNSUPPORTED_TRACK",integratedTerminalState(IntegratedDirectPlaybackState(enabled=true),unsupported).error)
+    }
     private fun source(path: String)=listOf(Paths.get("src/main",path),Paths.get("app/src/main",path)).first { Files.isRegularFile(it) }.toFile().readText()
     private fun fullResult(status: UsbSilentStatus=UsbSilentStatus.FULL_FLAC_USB_TRANSPORT_VERIFIED): UsbSilentTransportExperimentResult {
         val values=UsbIsoNativeStats.fields.associateWith { 0L }.toMutableMap().apply { putAll(mapOf(
-            "sourceMode" to 3L,"stopReason" to 14L,"started" to 1L,"workerStopped" to 1L,"state" to 7L,
+            "schedulerNominalRateHz" to 44100L,"sourceMode" to 3L,"stopReason" to 14L,"started" to 1L,"workerStopped" to 1L,"state" to 7L,
             "streamInfoTotalSamples" to 10001L,"sourceFramesGenerated" to 10001L,"framesScheduled" to 10001L,"framesSubmitted" to 10001L,
             "framesCompleted" to 10001L,"prefixSourceFramesConsumed" to 10001L,"feedbackPacketsValid" to 1L,"feedbackScheduledPackets" to 1L,
             "trueEofReached" to 1L,"producerFinishedNaturally" to 1L,"md5VerificationPass" to 1L,"prefixProducerStopped" to 1L,"prefixProducerJoined" to 1L,
@@ -27,13 +42,13 @@ class IntegratedDirectPlaybackTest {
                 restorationStatus=UsbConfigurationRestorationStatus.RESTORED,asRelease=UsbConfigurationAndroidOwnership(true,true),
                 acRelease=UsbConfigurationAndroidOwnership(true,true),closeStatus=UsbAudioCleanupStatus.SUCCEEDED),
             transport=UsbIsoTransportResult(1,2,values),originalFlacFdClosed=true,
-            flacSource=UsbFlacSourceResult(mapOf("totalSamples" to 10001L,"producerJoined" to 1L)))
+            flacSource=UsbFlacSourceResult(mapOf("sampleRate" to 44100L,"totalSamples" to 10001L,"producerJoined" to 1L)))
     }
     @Test fun positionUsesIntegerCompletedFramesAndIsBoundedWithoutClock() {
         assertEquals(0L,completedFramePositionMs(0));assertEquals(1000L,completedFramePositionMs(44100))
         assertEquals(1L,completedFramePositionMs(45));assertEquals(226L,completedFramePositionMs(10001))
         assertTrue(completedFramePositionMs(Long.MAX_VALUE)>0)
-        assertEquals(1000L,IntegratedDirectPlaybackState(completedFrames=88200,totalFrames=44100).positionMs)
+        assertEquals(1000L,IntegratedDirectPlaybackState(completedFrames=88200,totalFrames=44100,sampleRateHz=44100).positionMs)
         assertEquals(1200L,IntegratedDirectPlaybackState(metadataDurationMs=1200).durationMs)
         for(n in listOf(1L,44L,45L,44100L,1000000000L)) assertTrue(completedFramePositionMs(n)>=0)
     }

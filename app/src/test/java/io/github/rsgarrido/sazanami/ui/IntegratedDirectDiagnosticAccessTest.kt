@@ -90,7 +90,7 @@ class IntegratedDirectDiagnosticAccessTest {
         evidence.record(IntegratedDirectPlaybackState(enabled=true,phase=IntegratedDirectPhase.ERROR,generation=7,error="DIRECT_TRANSPORT_FAILED"))
         val preparing=IntegratedDirectPlaybackState(enabled=true,phase=IntegratedDirectPhase.PREPARING,generation=8,libraryId=88)
         evidence.record(preparing);assertSame(preparing,evidence.latest.value)
-        val playing=preparing.copy(phase=IntegratedDirectPhase.PLAYING,completedFrames=44100,totalFrames=88200)
+        val playing=preparing.copy(phase=IntegratedDirectPhase.PLAYING,completedFrames=44100,totalFrames=88200,sampleRateHz=44100)
         evidence.record(playing);assertEquals(1000L,evidence.latest.value?.positionMs)
         val ended=playing.copy(phase=IntegratedDirectPhase.ENDED,completedFrames=88200)
         evidence.record(ended);evidence.record(ended.copy(phase=IntegratedDirectPhase.STOPPED))

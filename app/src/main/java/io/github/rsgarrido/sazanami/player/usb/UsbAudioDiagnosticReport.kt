@@ -342,7 +342,7 @@ internal object UsbAudioDiagnosticReport {
         appendClockQueries(result.preflight, generation)
         appendLine("Original clock captured: ${result.originalClockRateHz ?: "unavailable"} Hz")
         val range = result.preflight?.results?.firstOrNull { it.query == UsbClockQuery.FREQUENCY_RANGE }
-        appendLine("Fresh 44100 support: ${UsbAudioClockControl.assessRate(plan.sampleRateHz, range)}")
+        appendLine("Fresh ${plan.sampleRateHz} support: ${UsbAudioClockControl.assessRate(plan.sampleRateHz, range)}")
         appendLine("AS force=true claim:")
         appendConfigurationOwnership(result.asClaim)
         appendLine("Bindings while both audio interfaces owned (all interfaces; no assumed driver name):")
@@ -394,7 +394,7 @@ internal object UsbAudioDiagnosticReport {
             appendLine("Stale attachment generation; previous Session ${if (full) 11 else if (flac) 10 else if (reference) 8 else 7} evidence omitted."); return
         }
         appendLine("Development-only direct USB diagnostic; never starts automatically.")
-        appendLine("Target: PCM stereo signed integer 16-bit little-endian / 44100 Hz; bytes/frame=4")
+        appendLine("Target: PCM stereo signed integer 16-bit little-endian / ${result?.resolution?.plan?.configurationPlan?.sampleRateHz ?: "source-selected for FLAC"} Hz; bytes/frame=4")
         if (full) appendFullFlacSource(result) else if (flac) appendFlacSource(result) else if (reference) appendReferenceSource(result) else appendLine("Source: DIGITAL ZERO ONLY")
         if (full) appendLine("Duration target=NONE; successful stop only at verified natural EOF after every source-bearing OUT completion. Progress watchdogs fail; no successful duration timer.")
         else appendLine("Duration target=${if (flac) 5000 else UsbIsoTiming.DURATION_MS} ms; duration stop, no successful natural EOF")
@@ -412,12 +412,13 @@ internal object UsbAudioDiagnosticReport {
         }
         result.timing?.let {
             appendLine("Actual USB speed: HIGH (fresh usbfs evidence); data service interval=${it.dataIntervalUs} us; feedback interval=${it.feedbackIntervalUs} us; endpoint capacity=${it.capacity} bytes/service interval")
-            appendLine("Feedback format: ${it.feedbackFormat}; plausibility=44100 Hz +/-${UsbExplicitFeedback.PLAUSIBILITY_PERCENT}%")
+            appendLine("Feedback format: ${it.feedbackFormat}; plausibility=${result.resolution.plan?.configurationPlan?.sampleRateHz} Hz +/-${UsbExplicitFeedback.PLAUSIBILITY_PERCENT}%")
             appendLine("Nominal bootstrap <=${UsbIsoTiming.BOOTSTRAP_MS} ms; last-valid feedback holdover <=${it.feedbackHoldoverMs} ms; invalid consecutive limit=${UsbIsoTiming.INVALID_FEEDBACK_LIMIT}")
         }
         if (full) appendLine("Terminal OUT: 1..8 source-bearing ISO packets; shortened final packet allowed; no zero-length trailing descriptors or PCM padding. Each actual length must equal its requested length.")
         appendLine("OUT pool=${result.transport?.counters?.get("configuredOutUrbs") ?: result.timing?.outUrbCount(result.mode) ?: "unavailable"}; packets/OUT URB=${UsbIsoTiming.OUT_PACKETS}; feedback pool=${result.timing?.feedbackUrbCount ?: "unavailable"}; packets/feedback URB=${UsbIsoTiming.FEEDBACK_PACKETS}; feedback coverage us=${result.timing?.feedbackCoverageUs ?: "unavailable"}")
-        appendLine("Scheduler: exact common denominator 8000*65536; nominal numerator 44100*65536, feedback numerator raw16.16*8000; remainder preserved across feedback lock. Feedback changes packetization only.")
+        appendLine("selected-rate evidence: source=${result.flacSource?.count("sampleRate")}; requested clock=${result.resolution.plan?.configurationPlan?.sampleRateHz}; verified clock=${result.configuration?.configuredClockReadback?.currentFrequencyHz}; scheduler nominal=${result.transport?.counters?.get("schedulerNominalRateHz")}")
+        appendLine("Scheduler: exact common denominator 8000*65536; nominal numerator ${result.resolution.plan?.configurationPlan?.sampleRateHz}*65536, feedback numerator raw16.16*8000; remainder preserved across feedback lock. Feedback changes packetization only.")
         val native = result.transport
         if (native == null) appendLine("Native transport not started / result unavailable.") else {
             appendLine("Transport lifecycle: ${native.state}; stop reason=${native.stopReason}; worker stopped=${native.workerStopped}")
@@ -455,7 +456,7 @@ internal object UsbAudioDiagnosticReport {
 
     private fun StringBuilder.appendFullFlacSource(result: UsbSilentTransportExperimentResult?) {
         appendLine("Scope: debug-only one-track full direct USB playback; source start frame=0; no duration-success timer")
-        appendLine("Input: native FLAC; accepted format ONLY 44100 Hz / stereo / 16-bit integer PCM; original amplitude")
+        appendLine("Input: native FLAC; accepted format ONLY 44100 or 48000 Hz / stereo / 16-bit integer PCM; original amplitude")
         appendLine("libFLAC version=1.5.0; Session 9 whole-file verifier reused; MD5 checking enabled before init; nonzero STREAMINFO reference and true physical EOS required")
         appendLine("Queue capacity frames=16384; prebuffer target frames=8192; shorter complete tracks prime min(total,8192) only after verified EOF/MD5. Prime before AC/AS ownership.")
         appendLine("Producer EOF preserves queued PCM. Consumer drains through totalSamples-1; exact terminal tail; no zero padding, repetition, interpolation or truncation.")
@@ -492,7 +493,7 @@ internal object UsbAudioDiagnosticReport {
 
     private fun StringBuilder.appendFlacSource(result: UsbSilentTransportExperimentResult?) {
         appendLine("Scope: debug-only bounded direct USB playback; target=5000 ms; normal player integration=NONE")
-        appendLine("Input: native FLAC; source start frame=0; accepted format ONLY 44100 Hz / stereo / 16-bit integer PCM")
+        appendLine("Input: native FLAC; source start frame=0; accepted format ONLY 44100 or 48000 Hz / stereo / 16-bit integer PCM")
         appendLine("libFLAC version=1.5.0; integer-only decode=YES; whole-file FLAC MD5 verification: NOT APPLICABLE — bounded prefix playback (checking disabled before init)")
         appendLine("Queue capacity frames=16384 (65536 canonical PCM bytes); prebuffer target frames=8192; source must prime before AC/AS ownership")
         appendLine("Duration clock starts inside the native USB run, immediately before endpoint submission; FLAC open/priming/configuration are excluded. activeTransportUsAtStop excludes teardown; durationUs includes reconciliation.")

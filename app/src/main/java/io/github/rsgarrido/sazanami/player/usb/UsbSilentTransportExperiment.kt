@@ -45,6 +45,9 @@ internal object UsbSilentTransportExperiment {
             }
             override suspend fun runConfigured(configuration: UsbAudioConfigurationResult) {
                 require(configuration.targetStatus == UsbTargetConfigurationStatus.TARGET_CONFIGURATION_VERIFIED)
+                val selectedRate = requireNotNull(plan).configurationPlan.sampleRateHz
+                val sourceRate = if (mode.isFlac) requireNotNull(prefixSource).result.count("sampleRate") else selectedRate
+                require(configuration.selectedRateMatches(sourceRate)) { "Source/request/readback rate mismatch; no PCM streaming." }
                 endpointStarted = true
                 try {
                     onPhase(UsbSilentPhase.STARTING_TRANSPORT)
@@ -54,6 +57,8 @@ internal object UsbSilentTransportExperiment {
                         native = UsbIsoTransportResult(generation, stream, exceptionType = "StaleStreamResult", authorityFailure = UsbClockQueryStatus.STALE_GENERATION)
                     else if (native?.exceptionType == null && native?.count("sourceMode") != mode.ordinal.toLong())
                         native = native?.copy(exceptionType = "SourceModeMismatch")
+                    else if (native?.exceptionType == null && native?.count("schedulerNominalRateHz") != selectedRate)
+                        native = native?.copy(exceptionType = "SelectedRateMismatch")
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (error: Exception) { native = UsbIsoTransportResult(generation, stream, exceptionType = error.javaClass.simpleName) }
                 finally {

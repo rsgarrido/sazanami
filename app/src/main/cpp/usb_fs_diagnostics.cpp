@@ -1,4 +1,5 @@
 #include <jni.h>
+#include "direct_pcm_format.h"
 #include <sys/ioctl.h>
 #include <linux/usbdevice_fs.h>
 #include <linux/usb/ch9.h>
@@ -9,7 +10,7 @@
 // Uses the installed NDK Linux UAPI directly. No driver implementation, local
 // ioctl declarations, fd owner, persistent session, or streaming transport.
 namespace {
-constexpr jint kApiVersion = 12;
+constexpr jint kApiVersion = 13;
 constexpr int kMaxInterfaces = 256;
 constexpr int kMaxRecords = 10 + 3 * kMaxInterfaces;
 static_assert(sizeof(unsigned int) == 4, "usbfs interface argument must be a UAPI unsigned int");
@@ -284,7 +285,7 @@ Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeGetAudioStre
     return controlPacket(env, 1, returned, savedError, bytes.data(), 2);
 }
 
-// Only Sampling Frequency CUR, channel zero, target 44100 or fresh original rate.
+// Only Sampling Frequency CUR, channel zero, target 44100/48000 or fresh original rate.
 // Entity/interface/original are supplied solely through Kotlin's validated permit.
 extern "C" JNIEXPORT jobject JNICALL
 Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeSetClockFrequency(
@@ -292,7 +293,8 @@ Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeSetClockFreq
         jlong originalRateHz, jlong requestedRateHz) {
     if (borrowedFd < 0 || !validAudioPair(acNumber, asNumber) || entityId < 1 || entityId > 255 ||
         originalRateHz < 1 || originalRateHz > 0xffffffffLL ||
-        (requestedRateHz != 44100 && requestedRateHz != originalRateHz)) { invalidArguments(env); return nullptr; }
+        requestedRateHz < 1 || requestedRateHz > 0xffffffffLL ||
+        (!sazanami::directpcm::supportsRate(static_cast<uint32_t>(requestedRateHz)) && requestedRateHz != originalRateHz)) { invalidArguments(env); return nullptr; }
     std::array<jbyte, 4> bytes{};
     for (int i = 0; i < 4; ++i) bytes[i] = static_cast<jbyte>((requestedRateHz >> (8 * i)) & 0xff);
     usbdevfs_ctrltransfer control{};

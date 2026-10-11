@@ -40,8 +40,13 @@ class FlacVerificationTest {
         assertEquals(FlacVerificationStatus.RESOURCE_CLEANUP_FAILED, result().copy(originalFdClosed = false).status)
         assertFalse(result().copy(originalFdClosed = null).strongEvidence)
     }
+    @Test fun exact48000UsesSameStrongMd5AndPackingEvidence() {
+        assertTrue(result("sampleRate" to 48000L).strongEvidence)
+        assertFalse(result("sampleRate" to 48000L,"bitsPerSample" to 24L).strongEvidence)
+        assertFalse(result("sampleRate" to 48000L,"md5Verification" to 0L).strongEvidence)
+    }
     @Test fun formatGateNeverAcceptsDownconversion() {
-        for ((name, value) in listOf("sampleRate" to 48000L, "sampleRate" to 96000L, "sampleRate" to 192000L,
+        for ((name, value) in listOf("sampleRate" to 88200L, "sampleRate" to 96000L, "sampleRate" to 192000L,
             "channels" to 1L, "channels" to 6L, "bitsPerSample" to 24L, "bitsPerSample" to 32L))
             assertFalse(result(name to value).strongEvidence)
         val unsupported = result("result" to 2, "sampleRate" to 96000, "bitsPerSample" to 24)

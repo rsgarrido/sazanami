@@ -8,16 +8,22 @@ internal data class IntegratedDirectPlaybackState(
     val generation: Long=0, val libraryId: Long?=null, val completedFrames: Long=0, val totalFrames: Long=0,
     val metadataDurationMs: Long=0, val error: String?=null, val notice: String?=null,
     val normalReleased: Boolean=false, val cleanupSafe: Boolean=true,
-    val engine: UsbSilentTransportExperimentResult?=null
+    val engine: UsbSilentTransportExperimentResult?=null,
+    val sampleRateHz: Long=0 // Unknown until accepted STREAMINFO; never infer it from library duration.
 ) {
-    val positionMs get()=completedFramePositionMs(completedFrames).coerceAtMost(durationMs)
-    val durationMs get()=if (totalFrames>0) completedFramePositionMs(totalFrames) else metadataDurationMs.coerceAtLeast(0)
+    val positionMs get()=(if (UsbDirectPcmFormat.supportsRate(sampleRateHz)) completedFramePositionMs(completedFrames,sampleRateHz) else 0L).coerceAtMost(durationMs)
+    val durationMs get()=if (totalFrames>0) {
+        if (UsbDirectPcmFormat.supportsRate(sampleRateHz)) completedFramePositionMs(totalFrames,sampleRateHz) else 0L
+    } else metadataDurationMs.coerceAtLeast(0)
     val busy get()=phase in setOf(IntegratedDirectPhase.PREPARING,IntegratedDirectPhase.PLAYING,IntegratedDirectPhase.STOPPING)
 }
-internal fun completedFramePositionMs(frames: Long): Long {
-    require(frames>=0)
-    val seconds=frames/44100L
-    return if (seconds>Long.MAX_VALUE/1000) Long.MAX_VALUE else seconds*1000+(frames%44100)*1000/44100
+internal fun completedFramePositionMs(frames: Long, sampleRateHz: Long = UsbDirectPcmFormat.REFERENCE_RATE_HZ): Long {
+    require(frames>=0 && UsbDirectPcmFormat.supportsRate(sampleRateHz))
+    val seconds=frames/sampleRateHz
+    val fraction=(frames%sampleRateHz)*1000/sampleRateHz
+    if (seconds>Long.MAX_VALUE/1000) return Long.MAX_VALUE
+    val whole=seconds*1000
+    return if (whole>Long.MAX_VALUE-fraction) Long.MAX_VALUE else whole+fraction
 }
 internal fun integratedDirectFailure(result: UsbSilentTransportExperimentResult): String = when {
     result.status==UsbSilentStatus.CANCELLED -> "DIRECT_STOPPED"
@@ -35,9 +41,11 @@ internal fun integratedTerminalState(previous: IntegratedDirectPlaybackState,res
     val safe=result.integratedCleanupSafe()
     val total=(result.flacSource?.count("totalSamples") ?: previous.totalFrames).coerceAtLeast(0)
     val completed=(result.transport?.count("framesCompleted") ?: previous.completedFrames).coerceIn(0,total)
-    val success=result.status==UsbSilentStatus.FULL_FLAC_USB_TRANSPORT_VERIFIED && result.transport?.verified==true && safe && total>0 && completed==total
+    val sourceRate=result.flacSource?.count("sampleRate") ?: previous.sampleRateHz
+    val rateVerified=UsbDirectPcmFormat.supportsRate(sourceRate) && result.transport?.count("schedulerNominalRateHz")==sourceRate
+    val success=rateVerified && result.status==UsbSilentStatus.FULL_FLAC_USB_TRANSPORT_VERIFIED && result.transport?.verified==true && safe && total>0 && completed==total
     val stopped=result.status==UsbSilentStatus.CANCELLED && safe
-    return previous.copy(engine=result,totalFrames=total,completedFrames=completed,cleanupSafe=safe,
+    return previous.copy(engine=result,sampleRateHz=sourceRate,totalFrames=total,completedFrames=completed,cleanupSafe=safe,
         phase=if(success) IntegratedDirectPhase.ENDED else if(stopped) IntegratedDirectPhase.STOPPED else IntegratedDirectPhase.ERROR,
         error=if(success || stopped) null else integratedDirectFailure(result))
 }

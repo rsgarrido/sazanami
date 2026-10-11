@@ -13,6 +13,14 @@ internal enum class UsbConfigurationStep { TARGET, BASELINE, AC_CLAIM, PREFLIGHT
     CLOCK_SET, CLOCK_READBACK, CLOCK_VALIDITY, ALTERNATE_SET, ALTERNATE_READBACK, CONFIGURED_CLOCK, CONFIGURED_VALIDITY }
 internal data class UsbConfigurationValidityObservation(val elapsedMs: Long, val result: UsbClockQueryResult)
 
+/** Both existing readbacks are required; SET_CUR success alone never permits PCM. */
+internal fun UsbAudioConfigurationResult.selectedRateMatches(sourceRateHz: Long): Boolean =
+    UsbDirectPcmFormat.supportsRate(sourceRateHz) &&
+        targetStatus == UsbTargetConfigurationStatus.TARGET_CONFIGURATION_VERIFIED &&
+        resolution.plan?.sampleRateHz == sourceRateHz &&
+        targetClockReadback?.status == UsbClockQueryStatus.SUCCESS && targetClockReadback.currentFrequencyHz == sourceRateHz &&
+        configuredClockReadback?.status == UsbClockQueryStatus.SUCCESS && configuredClockReadback.currentFrequencyHz == sourceRateHz
+
 internal data class UsbAudioConfigurationResult(
     val generation: Long,
     val resolution: UsbAudioConfigurationResolution,
@@ -224,7 +232,7 @@ internal object UsbAudioConfigurationExperiment {
             result = result.copy(preflight = preflight)
             guard()
             permit = UsbConfigurationMutationPermit.fromPreflight(target, generation, preflight)
-            requireStage(permit != null, "Fresh RANGE/CUR/validity must be well formed, 44100 represented, and original rate safely restorable; no AS claim/write.")
+            requireStage(permit != null, "Fresh RANGE/CUR/validity must be well formed, ${target.sampleRateHz} represented, and original rate safely restorable; no AS claim/write.")
             result = result.copy(originalClockRateHz = requireNotNull(permit).originalRateHz)
             step = UsbConfigurationStep.AS_CLAIM
             guard()
@@ -254,7 +262,7 @@ internal object UsbAudioConfigurationExperiment {
             result = result.copy(targetClockReadback = clock(UsbClockQuery.CURRENT_FREQUENCY))
             guard()
             requireStage(result.targetClockReadback?.status == UsbClockQueryStatus.SUCCESS && result.targetClockReadback?.currentFrequencyHz == target.sampleRateHz,
-                "Target GET_CUR did not verify 44100 Hz.")
+                "Target GET_CUR did not verify ${target.sampleRateHz} Hz.")
             step = UsbConfigurationStep.CLOCK_VALIDITY
             result = result.copy(targetValidity = validity())
             guard()
@@ -281,7 +289,7 @@ internal object UsbAudioConfigurationExperiment {
             requireStage(result.configuredClockValidity?.status == UsbClockQueryStatus.SUCCESS && result.configuredClockValidity?.clockValid == true,
                 "Configured Clock Validity is not true.")
             result = result.copy(targetStatus = UsbTargetConfigurationStatus.TARGET_CONFIGURATION_VERIFIED,
-                detail = "PCM16 stereo / 44100 configuration verified by successful SETINTERFACE and clock readbacks; advisory alternate queries are reported separately." +
+                detail = "PCM16 stereo / ${target.sampleRateHz} configuration verified by successful SETINTERFACE and clock readbacks; advisory alternate queries are reported separately." +
                     if (endpointWork == null) " No endpoint I/O; restoration begins immediately." else " Session 7 endpoint work precedes restoration.")
             if (endpointWork != null) {
                 guard()
@@ -323,7 +331,7 @@ internal object UsbAudioConfigurationExperiment {
                                 val restorationPermit = requireNotNull(permit)
                                 if (restorationPermit.originalRateHz != plan.sampleRateHz) result = result.copy(
                                     originalClockRestore = control(UsbConfigurationControlRequest.restoreClock(restorationPermit)))
-                                else result = result.copy(restorationNotes = result.restorationNotes + "Original clock was already 44100 Hz; redundant restore SET_CUR skipped.")
+                                else result = result.copy(restorationNotes = result.restorationNotes + "Original clock was already ${plan.sampleRateHz} Hz; redundant restore SET_CUR skipped.")
                                 if (live() == null) result = result.copy(originalClockReadback = clock(UsbClockQuery.CURRENT_FREQUENCY))
                                 if (live() == null) result = result.copy(originalClockValidity = validity())
                             } else if (result.clockWriteAttempted) result = result.copy(restorationNotes = result.restorationNotes + "Idle SETINTERFACE failed or declared alternate evidence contradicts idle; original clock write skipped to avoid changing a potentially active stream.")

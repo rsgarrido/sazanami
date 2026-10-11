@@ -52,8 +52,8 @@ enum Field : size_t { Api, Attachment, Stream, Started, StateCode, Reasons, Stop
     MinEstimatedOutCoverageUs, WorstOutCoverageAtUs, OutCoverageBelowOneUrb, OutCoverageBelowTwoUrbs,
     MaxOutSubmissionBatchGapUs, MaxOutSubmissionGapUs, MaxOutCompletionGapUs, MaxOutRefillOpportunityGapUs, MaxOutRefillLatencyUs,
     OutContinuityRisks, FirstOutRiskAtUs, FirstOutRiskMask, FirstOutRiskStage, FirstOutRiskOut, FirstOutRiskFeedback,
-    FirstOutRiskGapUs, FirstOutRiskCoverageUs, FirstOutRiskCompletedFrames, FieldCount };
-constexpr jint kSnapshotVersion = 8;
+    FirstOutRiskGapUs, FirstOutRiskCoverageUs, FirstOutRiskCompletedFrames, SchedulerNominalRate, FieldCount };
+constexpr jint kSnapshotVersion = 9;
 // Preserve unsigned hash bits across JNI without an implementation-defined numeric cast.
 jlong hashBits(uint64_t value) { jlong result; static_assert(sizeof(result) == sizeof(value)); std::memcpy(&result, &value, sizeof(result)); return result; }
 using Clock = std::chrono::steady_clock;
@@ -86,7 +86,7 @@ struct Session {
     int fd; // Borrowed; Java closes, only after this execution context returns.
     const uint64_t attachment, stream;
     const int dataEndpoint, feedbackEndpoint, dataInterval, feedbackInterval;
-    const uint32_t payload;
+    const uint32_t payload, sampleRateHz; // Immutable progress rate; never read mutable scheduler off-worker.
     std::atomic<int> requestedStop{0};
     std::atomic<bool> executing{false};
     const size_t outUrbs, feedbackUrbs;
@@ -117,9 +117,10 @@ struct Session {
 
     Session(int borrowedFd, uint64_t a, uint64_t s, const std::array<jint, 17>& config, std::shared_ptr<fv::PrefixSource> prefixSource = nullptr)
         : fd(borrowedFd), attachment(a), stream(s), dataEndpoint(config[4]), feedbackEndpoint(config[8]),
-          dataInterval(config[7]), feedbackInterval(config[11]), payload(capacity(config[6])),
+          dataInterval(config[7]), feedbackInterval(config[11]), payload(capacity(config[6])), sampleRateHz(static_cast<uint32_t>(config[12])),
           outUrbs(outUrbCount(intervalUs(dataInterval),config[16])),
           feedbackUrbs(feedbackUrbCount(intervalUs(feedbackInterval))), slots(outUrbs+feedbackUrbs),
+          scheduler(sampleRateHz),
           source(config[16] >= 2 ? PcmMode::Zero : static_cast<PcmMode>(config[16])),
           prefix(std::move(prefixSource)), durationUs(prefix && prefix->fullTrack ? 0 : prefix ? fv::kPrefixDurationUs : kDurationUs), fullTrack(prefix && prefix->fullTrack), totalProgress(fullTrack ? prefix->queue.expectedTotal.load() : 0),
           outContinuity(outUrbs,kOutPackets,intervalUs(dataInterval)) {
@@ -127,6 +128,7 @@ struct Session {
         stats[DataInterval] = static_cast<jlong>(intervalUs(dataInterval));
         stats[FeedbackInterval] = static_cast<jlong>(intervalUs(feedbackInterval));
         stats[EndpointCapacity] = payload;
+        stats[SchedulerNominalRate] = scheduler.nominalRate;
         stats[SourceMode] = config[16]; stats[DurationTarget] = static_cast<jlong>(durationUs);
         if (fullTrack) { stats[FullExpected]=static_cast<jlong>(prefix->queue.expectedTotal.load()); stats[FullLastSubmitted]=stats[FullLastCompleted]=-1; }
         if (source.mode == PcmMode::Reference) {
@@ -350,7 +352,7 @@ struct Session {
     }
     void feedbackPacket(Slot& slot, int urbStatus) {
         const auto& packet = slot.urb->iso_frame_desc[0];
-        const auto decoded = decodeFeedback(slot.buffer.data(), packet.actual_length, static_cast<int>(packet.status));
+        const auto decoded = decodeFeedback(slot.buffer.data(), packet.actual_length, static_cast<int>(packet.status), scheduler.nominalRate);
         const size_t index = feedbackExampleCount < kFeedbackExamples ? feedbackExampleCount++ : kFeedbackExamples - 1;
         uint32_t raw = 0;
         for (unsigned i = 0; i < std::min<unsigned>(4, packet.actual_length); ++i) raw |= static_cast<uint32_t>(slot.buffer[i]) << (8 * i);
@@ -680,7 +682,8 @@ Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeCreateSilent
         config[2] < 1 || config[2] > 255 || config[3] < 0 || config[3] > 255 || config[2] == config[3] ||
         config[4] < 1 || config[4] > 15 || config[5] != 5 || !capacity(config[6]) || config[7] < 1 || config[7] > 3 ||
         config[8] < 0x81 || config[8] > 0x8f || config[9] != 0x11 || config[10] != 4 || config[11] < 1 || config[11] > 7 ||
-        config[12] != static_cast<int>(kRate) || config[13] != 2 || config[14] != 2 || config[15] != 16 || config[16] < 0 || config[16] > 3) {
+        !sazanami::directpcm::supportsRate(static_cast<uint32_t>(config[12])) ||
+        (config[16] < 2 && config[12] != static_cast<int>(kRate)) || config[13] != 2 || config[14] != 2 || config[15] != 16 || config[16] < 0 || config[16] > 3) {
         error(env, "java/lang/IllegalArgumentException", "Unsupported bounded UAC2 silence target"); return 0;
     }
     std::shared_ptr<fv::PrefixSource> prefixSource;
@@ -690,6 +693,10 @@ Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeCreateSilent
             auto found = prefixRegistry.find(prefixHandle);
             if (found == prefixRegistry.end() || found->second->attachment != static_cast<uint64_t>(attachment) ||
                 found->second->stream != static_cast<uint64_t>(stream) || found->second->fullTrack != (config[16]==3) || found->second->primed.load() < found->second->primeTarget() ||
+                !found->second->metadataReady.load(std::memory_order_acquire) ||
+                found->second->metadataFacts[fv::Rate] != config[12] ||
+                found->second->metadataFacts[fv::Channels] != config[13] ||
+                found->second->metadataFacts[fv::Bits] != config[15] ||
                 found->second->queue.faults.load() || found->second->queue.stop.load()) {
                 error(env, "java/lang/IllegalStateException", "FLAC source not primed/current/healthy"); return 0;
             }
@@ -703,7 +710,7 @@ Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeCreateSilent
     if (speed < 0) return -static_cast<jlong>(saved);
     if (speed != 3) { error(env, "java/lang/IllegalStateException", "Actual USB High Speed required"); return 0; }
     constexpr uint64_t scaledSecond = 100 * kDurationUs;
-    const uint64_t worstFrames = (static_cast<uint64_t>(kRate) * intervalUs(config[7]) * (100 + kPlausibilityPercent) + scaledSecond - 1) / scaledSecond;
+    const uint64_t worstFrames = (static_cast<uint64_t>(config[12]) * intervalUs(config[7]) * (100 + kPlausibilityPercent) + scaledSecond - 1) / scaledSecond;
     if (((config[6] & 0x1800) != 0 && config[7] != 1) || capacity(config[6]) < worstFrames * kBytesPerFrame) {
         error(env, "java/lang/IllegalArgumentException", "Insufficient/invalid service-interval capacity"); return 0;
     }
@@ -728,7 +735,7 @@ extern "C" JNIEXPORT jlongArray JNICALL
 Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeFullProgress(JNIEnv* env,jobject,jlong handle,jlong attachment,jlong stream) {
     const auto session=lookup(handle,attachment,stream);
     if (!session || !session->fullTrack) { error(env,"java/lang/IllegalArgumentException","Stale full playback progress"); return nullptr; }
-    const std::array<jlong,2> values{static_cast<jlong>(session->completedProgress.load(std::memory_order_acquire)),static_cast<jlong>(session->totalProgress)};
+    const std::array<jlong,3> values{static_cast<jlong>(session->completedProgress.load(std::memory_order_acquire)),static_cast<jlong>(session->totalProgress),static_cast<jlong>(session->sampleRateHz)};
     auto result=env->NewLongArray(values.size());
     if (result) env->SetLongArrayRegion(result,0,values.size(),values.data());
     return result;

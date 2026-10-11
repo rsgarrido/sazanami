@@ -1,4 +1,5 @@
 #pragma once
+#include "../direct_pcm_format.h"
 #include <array>
 #include <cstdint>
 #include <cstddef>
@@ -29,7 +30,7 @@ inline uint64_t hashBytes(uint64_t hash, const uint8_t* bytes, size_t count) noe
     return hash;
 }
 inline int64_t hashBits(uint64_t hash) noexcept { int64_t result; std::memcpy(&result, &hash, 8); return result; }
-inline bool supported(uint32_t rate, uint32_t channels, uint32_t bits) noexcept { return rate == 44100 && channels == 2 && bits == 16; }
+inline bool supported(uint32_t rate, uint32_t channels, uint32_t bits) noexcept { return sazanami::directpcm::supports(rate, channels, bits); }
 inline bool inRange(int32_t sample) noexcept { return sample >= -32768 && sample <= 32767; }
 inline bool canAdd(uint64_t current, uint64_t amount) noexcept { return current <= kCounterMax && amount <= kCounterMax - current; }
 struct Pcm {

@@ -1,5 +1,7 @@
 package io.github.rsgarrido.sazanami.player.bitperfect.flac
 
+import io.github.rsgarrido.sazanami.player.usb.UsbDirectPcmFormat
+
 internal object FlacVerificationReport {
     fun format(result: FlacVerificationResult?, running: Boolean = false): String = buildString {
         appendLine()
@@ -12,9 +14,9 @@ internal object FlacVerificationReport {
         appendLine("Input access: Storage Access Framework, read-only ParcelFileDescriptor; native dup owns only its duplicate; Kotlin owns/closes original")
         appendLine("Sequential decode; no seek/flush/reset. Non-seekable providers supported; file length is unavailable unless reported by a regular seekable fd.")
         appendLine("Cancellation: cooperative read/block checks; a blocking provider read may delay cleanup. No detached native worker; stale screen results are suppressed.")
-        appendLine("Supported subset only: native FLAC / 44100 Hz / 2 channels / 16 bits; no conversion")
+        appendLine("Supported subset only: native FLAC / 44100 or 48000 Hz / 2 channels / 16 bits; no conversion")
         if (running) { appendLine("Lifecycle: verification running; final evidence pending"); return@buildString }
-        if (result == null) { appendLine("Result: NOT_ATTEMPTED; debug action: Verify FLAC exact PCM (16/44.1)"); return@buildString }
+        if (result == null) { appendLine("Result: NOT_ATTEMPTED; debug action: Verify FLAC exact PCM (stereo 16-bit / 44.1 or 48 kHz)"); return@buildString }
         appendLine("Result: ${result.status}")
         appendLine("Runtime libFLAC version: ${result.decoderVersion ?: "unavailable"}")
         if (result.counters.isEmpty()) {
@@ -31,7 +33,7 @@ internal object FlacVerificationReport {
         appendLine("STREAMINFO received: ${value("streamInfoReceived")}; sample rate: ${value("sampleRate")}; channels: ${value("channels")}; bits/sample: ${value("bitsPerSample")}")
         appendLine("STREAMINFO total samples/channel: ${value("totalSamples")} ${if (result.count("totalSamples") == 0L) "(UNKNOWN)" else ""}")
         appendLine("Block-size range: ${value("minBlockSize")}..${value("maxBlockSize")}; encoded frame-size range: ${value("minFrameSize")}..${value("maxFrameSize")} (0 means unspecified)")
-        appendLine("Format accepted: ${result.count("streamInfoReceived") == 1L && result.count("sampleRate") == 44100L && result.count("channels") == 2L && result.count("bitsPerSample") == 16L}")
+        appendLine("Format accepted: ${result.count("streamInfoReceived") == 1L && UsbDirectPcmFormat.supports(result.count("sampleRate"), result.count("channels"), result.count("bitsPerSample"))}")
         appendLine("FLAC MD5: checking enabled=${value("md5CheckingEnabled")}; reference available=${value("md5ReferenceAvailable")}; verification=${result.md5Verification}")
         appendLine("STREAMINFO MD5 reference: ${result.streamInfoMd5 ?: "unavailable"}")
         appendLine("API evidence: set_md5_checking(true) + get_md5_checking before init_stream; captured decoder state=${value("decoderState")} before finish resets it; finish called=${value("finishCalled")}; finish returned=${value("finishReturned")}")

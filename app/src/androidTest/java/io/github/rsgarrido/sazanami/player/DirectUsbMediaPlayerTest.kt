@@ -15,6 +15,26 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class DirectUsbMediaPlayerTest {
+    @Test fun media3Uses48000CompletedFramesForPositionAndDuration() {
+        val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate);val engine=Engine()
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        lateinit var player: DirectUsbMediaPlayer
+        instrumentation.runOnMainSync {
+            player=DirectUsbMediaPlayer(scope,engine,changed={},librarySong={ song })
+            player.setMediaItem(song.toPlayableMediaItem());player.prepare()
+            engine.progress!!.invoke(UsbFullProgress(48000,96000,48000))
+            assertEquals(48000L,player.evidence.sampleRateHz)
+            assertEquals(1000L,player.currentPosition);assertEquals(2000L,player.duration)
+            assertEquals(IntegratedDirectPhase.PLAYING,player.evidence.phase)
+        }
+        instrumentation.waitForIdleSync()
+        instrumentation.runOnMainSync {
+            assertEquals(1000L,player.currentPosition) // No extrapolation while completed frames remain fixed.
+            player.stop();engine.terminal.complete(stopped())
+        }
+        instrumentation.waitForIdleSync()
+        instrumentation.runOnMainSync { scope.cancel() }
+    }
     private class Engine : FullUsbPlaybackEngineClient {
         var starts=0;var stops=0;var uri: Uri?=null
         var progress: ((UsbFullProgress)->Unit)?=null
@@ -43,7 +63,7 @@ class DirectUsbMediaPlayerTest {
             assertEquals("Library title",player.currentMediaItem?.mediaMetadata?.title.toString())
             player.prepare();assertEquals(1,engine.starts);assertEquals(song.uri,engine.uri)
             assertEquals(IntegratedDirectPhase.PREPARING,player.evidence.phase);assertFalse(player.isPlaying)
-            engine.progress!!.invoke(UsbFullProgress(100,44100))
+            engine.progress!!.invoke(UsbFullProgress(100,44100,44100))
             assertEquals(IntegratedDirectPhase.PLAYING,player.evidence.phase);assertEquals(2L,player.currentPosition)
             assertFalse(player.availableCommands.contains(Player.COMMAND_PLAY_PAUSE))
             assertFalse(player.availableCommands.contains(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM))

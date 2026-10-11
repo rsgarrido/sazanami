@@ -1,6 +1,7 @@
 package io.github.rsgarrido.sazanami.player.bitperfect.flac
 
 import androidx.annotation.Keep
+import io.github.rsgarrido.sazanami.player.usb.UsbDirectPcmFormat
 
 internal enum class FlacVerificationStatus {
     NOT_ATTEMPTED, EXACT_FLAC_DECODE_VERIFIED, UNSUPPORTED_FLAC_FORMAT,
@@ -25,8 +26,7 @@ internal data class FlacVerificationResult(
     val canonicalHash get() = counters["pcmFnv1a"]?.toULong()?.toString(16)?.padStart(16, '0')
     val strongEvidence get() = decoderVersion == "1.5.0" && exceptionType == null &&
         count("nativeFlacRecognized") == 1L && count("decoderCreated") == 1L && count("initStatus") == 0L &&
-        count("streamInfoReceived") == 1L && count("sampleRate") == 44100L && count("channels") == 2L &&
-        count("bitsPerSample") == 16L && count("metadataProcessed") == 1L &&
+        count("streamInfoReceived") == 1L && UsbDirectPcmFormat.supports(count("sampleRate"), count("channels"), count("bitsPerSample")) && count("metadataProcessed") == 1L &&
         count("md5CheckingEnabled") == 1L && count("md5ReferenceAvailable") == 1L &&
         streamInfoMd5 != null && streamInfoMd5 != "0".repeat(32) && count("md5Verification") == 1L &&
         count("processSucceeded") == 1L && count("cleanEndOfStream") == 1L && count("physicalInputEof") == 1L &&

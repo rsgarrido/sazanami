@@ -34,7 +34,7 @@ class FeedbackQueueCorrectionTest {
         return UsbIsoNativeSnapshot(UsbIsoNativeStats.fields.map { values[it] ?: 0L }.toLongArray(),longArrayOf(),longArrayOf())
     }
     @Test fun schemaHasThreeDistinctTimeoutOriginsAndRejectsOldOrInvalidData() {
-        assertEquals(8,UsbIsoNativeStats.VERSION);assertEquals(174,UsbIsoNativeStats.fields.size)
+        assertEquals(9,UsbIsoNativeStats.VERSION);assertEquals(175,UsbIsoNativeStats.fields.size)
         assertEquals(111,UsbIsoNativeStats.fields.indexOf("configuredFeedbackUrbs"))
         for(kind in 0L..3L) assertEquals(kind,UsbIsoNativeStats.decode(packet(mapOf("feedbackTimeoutSubtype" to kind)),1,2).count("feedbackTimeoutSubtype"))
         assertEquals(listOf("NONE","BOOTSTRAP_TIMEOUT","LAST_VALID_WATCHDOG_TIMEOUT","VALID_OBSERVATION_GAP_AT_REAP"),UsbIsoNativeStats.feedbackTimeoutSubtypes)
@@ -77,7 +77,9 @@ class FeedbackQueueCorrectionTest {
         assertTrue(fault.contains("if (stopping || kind==FeedbackTimeoutKind::None) return"))
         assertTrue(fault.contains("TimeoutReapedNotRearmed"));assertTrue(fault.contains("TimeoutAcceptedRaw"))
         val parser=native.substringAfter("void feedbackPacket(").substringBefore("bool reapOne()")
-        assertTrue(parser.contains("decodeFeedback(slot.buffer.data(), packet.actual_length, static_cast<int>(packet.status))"))
+        // Session 13 preserves parsing while centering plausibility on the selected scheduler rate.
+        assertTrue("Feedback parsing must use the selected scheduler rate", parser.contains(
+            "const auto decoded = decodeFeedback(slot.buffer.data(), packet.actual_length, static_cast<int>(packet.status), scheduler.nominalRate);"))
         assertTrue(parser.contains("++stats[RequestsOverHoldover]"));assertFalse(parser.contains("if (stale)"))
         assertTrue(parser.contains("feedbackClock.accept(slot.submittedAt,observed)"))
         assertTrue(parser.contains("if (stopping || stopCause.chosen) return"))

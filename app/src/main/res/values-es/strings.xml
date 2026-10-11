@@ -306,9 +306,9 @@
     <string name="usb_diagnostics_reference_content">Tramas generadas de silencio/IZQUIERDO/DERECHO: %1$s/%2$s/%3$s; pico PCM absoluto: %4$s</string>
     <string name="usb_diagnostics_reference_hashes">PCM generado FNV-1a: %1$s; carga enviada FNV-1a: %2$s; integridad de fuente verificada: %3$s</string>
     <string name="flac_verification_title">Verificación de decodificación FLAC exacta — Sesión 9</string>
-    <string name="flac_verification_action">Verificar PCM exacto FLAC (16/44.1)</string>
+    <string name="flac_verification_action">Verificar PCM exacto FLAC (16 bits / 44.1 o 48 kHz)</string>
     <string name="flac_verification_running">Verificando FLAC…</string>
-    <string name="flac_verification_note">Selecciona un FLAC con el selector de documentos. Verifica el archivo completo en silencio; no se necesita DAC. Solo acepta FLAC nativo, 44100 Hz, estéreo y 16 bits. Sin conversión de formato. Mantén detenida la reproducción normal para evitar confusión. Copia el informe completo de diagnóstico de abajo después de verificar.</string>
+    <string name="flac_verification_note">Selecciona un FLAC con el selector de documentos. Verifica el archivo completo en silencio; no se necesita DAC. Solo acepta FLAC nativo, 44100 / 48000 Hz, estéreo y 16 bits. Sin conversión de formato. Mantén detenida la reproducción normal para evitar confusión. Copia el informe completo de diagnóstico de abajo después de verificar.</string>
     <string name="flac_verification_result">Resultado: %1$s</string>
     <string name="flac_verification_format">Formato: FLAC / %1$s Hz / %2$s canales / %3$s bits</string>
     <string name="flac_verification_counts">Total de tramas STREAMINFO: %1$s; tramas decodificadas: %2$s; EOF limpio: %3$s; MD5 libFLAC: %4$s</string>
@@ -322,21 +322,21 @@
     <string name="usb_flac_queue">Cola: %1$s precargados / 8192 objetivo / 16384 capacidad; consumidos=%2$s; agotamientos=%3$s</string>
     <string name="usb_flac_hashes">FNV de origen consumido=%1$s; FNV enviado por USB=%2$s</string>
     <string name="usb_flac_cleanup">Restauración=%1$s; AS liberada=%2$s; AC liberada=%3$s; fd original de FLAC cerrado=%4$s</string>
-    <string name="usb_flac_scope">Solo FLAC nativo: 44100 Hz / estéreo / 16 bits, desde el fotograma 0. MD5 del archivo completo: NO APLICABLE — prefijo acotado. Se esperan unos cinco segundos de la pista seleccionada. La escucha, la pantalla del DAC y la recuperación de la reproducción normal requieren observación manual. La reproducción Bit-perfect de producción y la integración con el reproductor normal siguen sin implementarse.</string>
+    <string name="usb_flac_scope">Solo FLAC nativo: 44100 / 48000 Hz / estéreo / 16 bits, desde el fotograma 0. MD5 del archivo completo: NO APLICABLE — prefijo acotado. Se esperan unos cinco segundos de la pista seleccionada. La escucha, la pantalla del DAC y la recuperación de la reproducción normal requieren observación manual. La reproducción Bit-perfect de producción y la integración con el reproductor normal siguen sin implementarse.</string>
     <string name="usb_full_flac_title">Transporte USB directo de FLAC completo — Sesión 11</string>
     <string name="usb_full_flac_action">Reproducir FLAC completo directamente por USB</string>
     <string name="usb_full_flac_stop">Detener la prueba USB de FLAC completo</string>
     <string name="usb_full_flac_warning">Detén la reproducción normal primero. Mantén el volumen físico del KA15 en unos 15A–20A para la primera prueba. Se reproduce una pista completa compatible con su amplitud original. Deja que termine naturalmente o usa Detener para abortar con seguridad. No repitas inmediatamente; copia el informe completo antes de reconectar.</string>
-    <string name="usb_full_flac_scope">Solo FLAC nativo: 44100 Hz / estéreo / 16 bits, desde el fotograma 0 hasta EOF natural verificado. Deben verificarse el MD5 del archivo completo y todos los fotogramas de origen. Sin pausa, búsqueda, siguiente pista, integración con el reproductor normal ni modo Bit-perfect de producción. La escucha y recuperación requieren observación manual.</string>
+    <string name="usb_full_flac_scope">Solo FLAC nativo: 44100 / 48000 Hz / estéreo / 16 bits, desde el fotograma 0 hasta EOF natural verificado. Deben verificarse el MD5 del archivo completo y todos los fotogramas de origen. Sin pausa, búsqueda, siguiente pista, integración con el reproductor normal ni modo Bit-perfect de producción. La escucha y recuperación requieren observación manual.</string>
     <string name="usb_full_flac_result">Sesión 11: %1$s</string>
     <string name="usb_full_flac_summary">Fotogramas totales=%1$s; consumidos=%2$s; MD5 completo=%3$s; FNV PCM decodificado completo=%4$s</string>
-    <string name="usb_integrated_title">USB directo desde la biblioteca experimental — Sesión 12</string>
-    <string name="usb_integrated_copy_report">Copiar informe de Sesión 12</string>
-    <string name="usb_integrated_latest_attempt">Último intento de Sesión 12 (informe conservado)</string>
+    <string name="usb_integrated_title">USB directo desde la biblioteca experimental — Sesión 13</string>
+    <string name="usb_integrated_copy_report">Copiar informe de Sesión 13</string>
+    <string name="usb_integrated_latest_attempt">Último intento de Sesión 13 (informe conservado)</string>
     <string name="usb_integrated_enable">Activar USB directo integrado experimental</string>
     <string name="usb_integrated_disable">Desactivar el modo directo tras liberar USB</string>
     <string name="usb_integrated_stop">Detener reproducción USB directa</string>
     <string name="usb_integrated_restart">Reiniciar la pista desde el fotograma 0</string>
-    <string name="usb_integrated_warning">Solo desarrollo. Detén la reproducción normal y concede acceso USB en el diagnóstico de abajo. Activar libera ambos motores normales sin iniciar una canción. Selecciona un FLAC nativo de 44.1 kHz, estéreo y 16 bits en la biblioteca. Usa un volumen físico de KA15 de unos 15A–20A. Un fallo directo nunca activa audio normal.</string>
+    <string name="usb_integrated_warning">Solo desarrollo. Detén la reproducción normal y concede acceso USB en el diagnóstico de abajo. Activar libera ambos motores normales sin iniciar una canción. Selecciona un FLAC nativo de 44.1 / 48 kHz, estéreo y 16 bits en la biblioteca. Usa un volumen físico de KA15 de unos 15A–20A. Un fallo directo nunca activa audio normal.</string>
     <string name="usb_integrated_commands">Usa Detener para abortar con seguridad. Pausa, búsqueda, siguiente, anterior, repetición y mezcla no están disponibles. Los controles normales rechazan estas órdenes. Desactiva el modo tras la restauración; la reproducción normal no se reinicia automáticamente.</string>
 </resources>

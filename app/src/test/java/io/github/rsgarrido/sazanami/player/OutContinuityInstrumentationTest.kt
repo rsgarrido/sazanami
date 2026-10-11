@@ -15,11 +15,11 @@ class OutContinuityInstrumentationTest {
         .joinToString("") { (it.toInt() and 255).toString(16).padStart(2,'0') }
     private fun packet(changes: Map<String,Long> = emptyMap()): UsbIsoNativeSnapshot {
         val values=mapOf("version" to UsbIsoNativeStats.VERSION.toLong(),"generation" to 1L,"streamGeneration" to 2L,
-            "state" to 7L,"sourceMode" to 3L,"stopReason" to 14L) + changes
+            "schedulerNominalRateHz" to 44100L,"state" to 7L,"sourceMode" to 3L,"stopReason" to 14L) + changes
         return UsbIsoNativeSnapshot(UsbIsoNativeStats.fields.map { values[it] ?: 0L }.toLongArray(),longArrayOf(),longArrayOf())
     }
     @Test fun schemaAppendsContinuityWithoutMovingWorkingFeedbackFields() {
-        assertEquals(8,UsbIsoNativeStats.VERSION);assertEquals(174,UsbIsoNativeStats.fields.size)
+        assertEquals(9,UsbIsoNativeStats.VERSION);assertEquals(175,UsbIsoNativeStats.fields.size)
         assertEquals(111,UsbIsoNativeStats.fields.indexOf("configuredFeedbackUrbs"))
         assertEquals(131,UsbIsoNativeStats.fields.indexOf("feedbackFailureReapAttempted"))
         assertEquals(140,UsbIsoNativeStats.fields.indexOf("configuredOutUrbs"))
@@ -78,7 +78,7 @@ class OutContinuityInstrumentationTest {
         val natural="    bool naturalComplete()"+native.substringAfter("    bool naturalComplete()").substringBefore("    void beginStop()")
         assertEquals("a7f2ab508d5298558e106f1a0d25da534ea3c2ca163ecf8e2e66a93e16e72195",digest(natural))
         val feedback="    void feedbackPacket("+native.substringAfter("    void feedbackPacket(").substringBefore("    bool reapOne()")
-        assertEquals("f0e661e06e2a2770e6d32bd7c5e15ec3035754d68ee17369788dec680802794d",digest(feedback))
+        assertEquals("78b404608e4266de52ade3fcb483e5b71ffaecd9fd51cb42ccd166859319af8a",digest(feedback))
         val worker=native.substringAfter("    void run() {").substringBefore("std::mutex registryMutex;")
         assertTrue(worker.indexOf("outContinuity.wake(")<worker.indexOf("reapBeforeFeedbackWatchdog("))
         assertTrue(worker.indexOf("reapBeforeFeedbackWatchdog(")<worker.indexOf("feedbackTimeout(feedbackReapPass.timeout,"))

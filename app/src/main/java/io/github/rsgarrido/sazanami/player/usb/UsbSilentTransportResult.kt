@@ -92,7 +92,7 @@ internal data class UsbIsoTransportResult(val generation: Long, val streamGenera
 }
 
 internal object UsbIsoNativeStats {
-    const val VERSION = 8
+    const val VERSION = 9
     val fields = listOf("version", "generation", "streamGeneration", "started", "state", "integrityMask", "stopReason", "durationUs",
         "sourceFramesGenerated", "framesScheduled", "framesSubmitted", "framesCompleted", "outUrbsSubmitted", "outUrbsCompleted",
         "outPacketsSubmitted", "outPacketsCompleted", "outBytesSubmitted", "kernelOutActualBytes", "outPacketErrors", "outUrbErrors",
@@ -129,7 +129,7 @@ internal object UsbIsoNativeStats {
         "minEstimatedOutCoverageUs", "worstOutCoverageAtUs", "outCoverageBelowOneUrbObservations", "outCoverageBelowTwoUrbsObservations",
         "maxOutSubmissionBatchGapUs", "maxOutSubmissionGapUs", "maxOutCompletionObservedGapUs", "maxOutRefillOpportunityGapUs", "maxOutRefillLatencyUs",
         "outContinuityRiskEvents", "firstOutRiskAtUs", "firstOutRiskMask", "firstOutRiskStage", "firstOutRiskOutstanding", "firstOutRiskFeedbackOutstanding",
-        "firstOutRiskWorkerGapUs", "firstOutRiskEstimatedCoverageUs", "firstOutRiskCompletedFrames")
+        "firstOutRiskWorkerGapUs", "firstOutRiskEstimatedCoverageUs", "firstOutRiskCompletedFrames", "schedulerNominalRateHz")
     val outRiskStages=listOf("WORKER_WAKE","BEFORE_REFILL","AFTER_REFILL")
     val outRiskReasons=listOf("WORKER_GAP_BEYOND_NOMINAL_COVERAGE","NO_APPLICATION_OUT","ESTIMATED_COVERAGE_BELOW_ONE_URB","REFILL_LATENCY_BEYOND_NOMINAL_COVERAGE")
     val feedbackTimeoutSubtypes=listOf("NONE","BOOTSTRAP_TIMEOUT","LAST_VALID_WATCHDOG_TIMEOUT","VALID_OBSERVATION_GAP_AT_REAP")

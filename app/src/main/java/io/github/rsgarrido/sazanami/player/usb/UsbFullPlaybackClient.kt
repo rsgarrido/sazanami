@@ -1,8 +1,8 @@
 package io.github.rsgarrido.sazanami.player.usb
 
 /** Immutable low-frequency view of completed PCM, never decoded-ahead or elapsed-clock position. */
-internal data class UsbFullProgress(val completedFrames: Long, val totalFrames: Long) {
-    init { require(completedFrames>=0 && totalFrames>=0 && completedFrames<=totalFrames) }
+internal data class UsbFullProgress(val completedFrames: Long, val totalFrames: Long, val sampleRateHz: Long) {
+    init { require(UsbDirectPcmFormat.supportsRate(sampleRateHz)); require(completedFrames>=0 && totalFrames>=0 && completedFrames<=totalFrames) }
 }
 internal interface FullUsbPlaybackEngineClient {
     suspend fun runIntegratedFull(uri: android.net.Uri,progress: (UsbFullProgress)->Unit): UsbSilentTransportExperimentResult

@@ -1,4 +1,5 @@
 #pragma once
+#include "direct_pcm_format.h"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -69,7 +70,7 @@ inline bool feedbackExpired(uint64_t started, uint64_t lastValid, uint64_t now, 
 struct Feedback { uint32_t raw = 0; FeedbackValidity validity = FeedbackValidity::Length; };
 // USB 2.0 §5.12.4.2: HS unsigned 12.13 aligned on the wire as LE 16.16, per microframe.
 // UAC2 §3.16.2.2 references this format. No empirical format shifting or device quirks.
-inline Feedback decodeFeedback(const uint8_t* bytes, size_t length, int packetStatus) noexcept {
+inline Feedback decodeFeedback(const uint8_t* bytes, size_t length, int packetStatus, uint32_t nominalRate = kRate) noexcept {
     Feedback result;
     if (packetStatus != 0) { result.validity = FeedbackValidity::CompletionError; return result; }
     if (length != 4) return result;
@@ -78,7 +79,7 @@ inline Feedback decodeFeedback(const uint8_t* bytes, size_t length, int packetSt
     else if (result.raw & 0xf0000000U) result.validity = FeedbackValidity::Reserved;
     else {
         const uint64_t scaled = static_cast<uint64_t>(result.raw) * 8000 * 100;
-        const uint64_t nominal = static_cast<uint64_t>(kRate) * 65536;
+        const uint64_t nominal = static_cast<uint64_t>(nominalRate) * 65536;
         result.validity = scaled >= nominal * (100 - kPlausibilityPercent) && scaled <= nominal * (100 + kPlausibilityPercent)
             ? FeedbackValidity::Valid : FeedbackValidity::Implausible;
     }
@@ -86,10 +87,12 @@ inline Feedback decodeFeedback(const uint8_t* bytes, size_t length, int packetSt
 }
 struct Scheduler {
     static constexpr uint64_t denominator = 8000ULL * 65536;
+    uint32_t nominalRate; // Copied with the rational phase on source transaction rollback.
+    explicit Scheduler(uint32_t rate = kRate) noexcept : nominalRate(rate) {}
     uint64_t remainder = 0, frames = 0;
     bool next(unsigned microframes, uint32_t feedback, uint32_t& count) noexcept {
-        if (microframes < 1 || microframes > 4) return false;
-        const uint64_t increment = (feedback ? static_cast<uint64_t>(feedback) * 8000 : static_cast<uint64_t>(kRate) * 65536) * microframes;
+        if (!sazanami::directpcm::supportsRate(nominalRate) || microframes < 1 || microframes > 4) return false;
+        const uint64_t increment = (feedback ? static_cast<uint64_t>(feedback) * 8000 : static_cast<uint64_t>(nominalRate) * 65536) * microframes;
         if (increment > std::numeric_limits<uint64_t>::max() - remainder) return false;
         remainder += increment;
         const uint64_t scheduled = remainder / denominator;

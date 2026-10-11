@@ -1,12 +1,14 @@
 package io.github.rsgarrido.sazanami.player
 
 import io.github.rsgarrido.sazanami.player.usb.pcmHashHex
+import io.github.rsgarrido.sazanami.player.usb.selectedRateMatches
+import io.github.rsgarrido.sazanami.player.usb.UsbDirectPcmFormat
 import io.github.rsgarrido.sazanami.player.usb.UsbIsoNativeStats
 import io.github.rsgarrido.sazanami.player.usb.UsbIsoTiming
 import java.util.Locale
 
 internal fun formatIntegratedDirectPlayback(state: IntegratedDirectPlaybackState): String=buildString {
-    appendLine("Integrated Direct USB Playback — Session 12")
+    appendLine("Integrated Direct USB Playback — Session 13")
     appendLine("experimental direct USB enabled=${state.enabled}; requested backend=${if(state.enabled) "DIRECT_USB" else "NORMAL"}; authoritative backend=${if(state.enabled && !state.normalReleased) "NONE_BLOCKED" else if(state.enabled) "DIRECT_USB" else "NORMAL"}")
     appendLine("safe library ID=${state.libraryId ?: "none"}; request generation=${state.generation}; frame 0 only; no raw URI/path")
     appendLine("normal pipelines synchronously released=${state.normalReleased}; standby/preload inactive=${state.normalReleased}; crossfade inactive=${state.normalReleased}")
@@ -21,6 +23,8 @@ internal fun formatIntegratedDirectPlayback(state: IntegratedDirectPlaybackState
             appendLine("decoded=${source.count("framesDecoded")}; enqueued=${source.count("framesEnqueued")}; consumed=${source.count("framesConsumedFromQueue")}; prepared=${source.count("preparedButUnsubmittedFrames")}; discarded=${source.count("prefetchedFramesDiscardedAtStop")}")
             appendLine("source faults=${source.reasons.joinToString()}; source released=${source.count("queueReleased")}; producer joined=${source.count("producerJoined")}")
         }
+        val selectedRate=result.resolution.plan?.configurationPlan?.sampleRateHz
+        appendLine("requested USB clock Hz=$selectedRate; verified USB clock Hz=${result.configuration?.configuredClockReadback?.currentFrequencyHz}; scheduler nominal/source rate Hz=${result.transport?.counters?.get("schedulerNominalRateHz")}; source/request/both readbacks/scheduler agree=${result.configuration?.selectedRateMatches(result.flacSource?.count("sampleRate") ?: 0L)==true && result.transport?.counters?.get("schedulerNominalRateHz")==result.flacSource?.count("sampleRate")}")
         result.transport?.let { native ->
             appendLine("stop cause=${native.stopReason}; integrity=${native.valid}; transport reasons=${native.integrityReasons.joinToString()}; worker stopped=${native.workerStopped}")
             listOf("framesSubmitted","framesCompleted","outBytesSubmitted","kernelOutActualBytes","terminalTailFrames","terminalTailPackets",
@@ -34,8 +38,9 @@ internal fun formatIntegratedDirectPlayback(state: IntegratedDirectPlaybackState
             appendLine("feedback samples: completed=${field("feedbackPacketsCompleted")}; invalid=${field("feedbackPacketsInvalid")}; invalidStreak=${field("invalidStreak")}; minRaw=${field("minFeedbackRaw")}; maxRaw=${field("maxFeedbackRaw")}")
             val samples=native.counters["feedbackSamples"]
             val sum=native.counters["sumFeedbackRaw"]
+            val nominalRate=native.counters["schedulerNominalRateHz"]?.takeIf { UsbDirectPcmFormat.supportsRate(it) }
             val meanHz=if(samples!=null && samples>0 && sum!=null) sum.toDouble()/samples*8000.0/65536.0 else null
-            appendLine("valid feedback mean Hz=${meanHz?.let { String.format(Locale.ROOT,"%.6f",it) } ?: "unavailable"}; mean drift ppm=${meanHz?.let { String.format(Locale.ROOT,"%.3f",(it/44100.0-1.0)*1000000.0) } ?: "unavailable"} (whole-run mean, not last sample)")
+            appendLine("valid feedback mean Hz=${meanHz?.let { String.format(Locale.ROOT,"%.6f",it) } ?: "unavailable"}; mean drift ppm=${meanHz?.takeIf { nominalRate!=null }?.let { String.format(Locale.ROOT,"%.3f",(it/requireNotNull(nominalRate).toDouble()-1.0)*1000000.0) } ?: "unavailable"} (whole-run mean, not last sample)")
             native.feedback.lastOrNull()?.let { sample ->
                 appendLine("last recorded feedback: raw=${sample.raw}; length=${sample.length}; status=${sample.packetStatus}; validity=${sample.validity}; elapsedUs=${sample.elapsedUs}; submissionAgeUs=${sample.conservativeAgeUs}; Hz=${sample.rateHz?.let { String.format(Locale.ROOT,"%.6f",it) } ?: "unavailable"} (may be drain-time)")
             }
@@ -58,7 +63,7 @@ internal fun formatIntegratedDirectPlayback(state: IntegratedDirectPlaybackState
             val riskMask=native.counters["firstOutRiskMask"]
             val riskReasons=riskMask?.let { mask -> UsbIsoNativeStats.outRiskReasons.filterIndexed { i, _ -> (mask and (1L shl i))!=0L }.joinToString().ifEmpty { "NONE" } } ?: "unavailable"
             val riskStage=native.counters["firstOutRiskStage"]?.let { UsbIsoNativeStats.outRiskStages.getOrNull(it.toInt()) } ?: "unavailable"
-            val riskPosition=native.counters["firstOutRiskCompletedFrames"]?.takeIf { it>=0 }?.let(::completedFramePositionMs)?.toString() ?: "unavailable"
+            val riskPosition=native.counters["firstOutRiskCompletedFrames"]?.takeIf { it>=0 }?.takeIf { nominalRate!=null }?.let { completedFramePositionMs(it,requireNotNull(nominalRate)) }?.toString() ?: "unavailable"
             appendLine("OUT_CONTINUITY_RISK: events=${field("outContinuityRiskEvents")}; first elapsed us=${field("firstOutRiskAtUs")}; first completed-frame position ms=$riskPosition; reasons=$riskReasons; stage=$riskStage; application OUT=${field("firstOutRiskOutstanding")}; feedback=${field("firstOutRiskFeedbackOutstanding")}; worker gap us=${field("firstOutRiskWorkerGapUs")}; estimated coverage us=${field("firstOutRiskEstimatedCoverageUs")} (first event frozen; 0 events=no first event; diagnostic only, at most one event per iteration)")
             appendLine("OUT wire underrun confirmed? UNKNOWN; kernel completed-unreaped OUT count=UNKNOWN; application outstanding includes completed-unreaped URBs; timing estimates and final frame/byte/hash agreement do not prove uninterrupted wire service")
             appendLine("feedback observations: submittedUs=${field("lastAcceptedFeedbackSubmittedUs")}; acceptedUs=${field("lastAcceptedFeedbackObservedUs")}; requestAgeUs=${field("lastAcceptedFeedbackRequestAgeUs")}; requests over holdover=${field("feedbackRequestsOverHoldover")}; max request age us=${field("feedbackMaxRequestAgeUs")} (request age is not DAC sample age)")

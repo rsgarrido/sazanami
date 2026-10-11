@@ -562,14 +562,14 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
         val model = state.descriptors ?: return@onMain
         val selected = state.selectedDevice ?: return@onMain
         if (token.identity != identity || selected.identity != identity || pending != null || state.diagnosticOperationRunning) return@onMain
-        val silentResolution = if (silentRun) UsbSilentTransportPlan.resolve(model, selected.interfaces) else null
+        var silentResolution = if (silentRun) UsbSilentTransportPlan.resolve(model, selected.interfaces) else null
         val stream = if (silentRun) streamGenerations.incrementAndGet() else 0L
         if (mode==UsbPcmDiagnosticMode.FLAC_FULL) userStoppedStream=0L
-        val resolution = if (silentRun) silentResolution?.plan?.configuration ?: UsbAudioConfigurationResolution(issues = silentResolution?.issues.orEmpty())
+        var resolution = if (silentRun) silentResolution?.plan?.configuration ?: UsbAudioConfigurationResolution(issues = silentResolution?.issues.orEmpty())
             else UsbAudioConfigurationPlan.resolve(model, selected.interfaces)
-        val plan = resolution.plan
+        val initialPlan = resolution.plan
         val nativeIdle = UsbFsDiagnostics.silentTransportIdle()
-        if (plan == null || !nativeIdle) {
+        if (initialPlan == null || !nativeIdle) {
             val blockedResolution = if (nativeIdle) resolution else resolution.copy(issues = resolution.issues +
                 "Native library unavailable or a prior endpoint session is retained; no further configuration/ownership allowed.")
             val blocked = UsbAudioConfigurationResult(token.generation, blockedResolution,
@@ -640,11 +640,17 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
                                 }
                                 return@withLock sourceBlocked(status, "FLAC validation/prebuffer failed; no USB ownership attempted.")
                             }
+                            val sourceRateHz = source.result.count("sampleRate")
+                            silentResolution = UsbSilentTransportPlan.resolve(model, selected.interfaces, sourceRateHz)
+                            resolution = silentResolution?.plan?.configuration ?: UsbAudioConfigurationResolution(issues = silentResolution?.issues.orEmpty())
+                            if (resolution.plan == null) return@withLock sourceBlocked(UsbSilentStatus.USB_CONFIGURATION_FAILED, "Source-selected PCM16 transport configuration unavailable; no USB ownership attempted.")
                             currentCoroutineContext().ensureActive()
                             usbAccessFailure(token)?.let { return@withLock unavailable(it, "Access changed after FLAC priming; no USB ownership attempted.") }
                             withContext(Dispatchers.Main.immediate) {
-                                if (!closed && gate.accepts(token)) publish(withExperiment(state,
-                                    currentExperiment()?.copy(phase = UsbSilentPhase.CONFIGURING)))
+                                if (!closed && gate.accepts(token)) {
+                                    client?.progress?.invoke(UsbFullProgress(0,source.result.count("totalSamples"),sourceRateHz))
+                                    publish(withExperiment(state, currentExperiment()?.copy(phase = UsbSilentPhase.CONFIGURING)))
+                                }
                             }
                         }
                         val opened = usb.openDevice(live) ?: return@withLock unavailable(
@@ -661,7 +667,7 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
                             if (!accepted) return@withLock unavailable(UsbClockQueryStatus.STALE_GENERATION, "Generation changed before Session 6 registration.")
                             currentCoroutineContext().ensureActive()
                             usbAccessFailure(token)?.let { return@withLock unavailable(it, "Access changed before configuration setup.") }
-                            val transport = UsbAudioConfigurationConnection(opened, live, appContext, plan, token.generation)
+                            val transport = UsbAudioConfigurationConnection(opened, live, appContext, requireNotNull(resolution.plan), token.generation)
                             if (silentRun) synchronized(connectionLock) {
                                 endpointStop = { prefixSource?.requestStop(); transport.stopSilentTransport() }
                                 if (mode==UsbPcmDiagnosticMode.FLAC_FULL) fullStop={ prefixSource?.requestStop(); transport.stopSilentTransport(authority=false) }
