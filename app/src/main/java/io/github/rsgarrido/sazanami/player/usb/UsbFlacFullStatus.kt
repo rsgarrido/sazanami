@@ -16,6 +16,10 @@ internal object UsbFlacFullStatus {
     }
     fun classify(configuration: UsbAudioConfigurationResult,usb: UsbIsoTransportResult?,source: UsbFlacSourceResult?,memoryReleased: Boolean): UsbSilentStatus {
         if (source==null) return UsbSilentStatus.QUEUE_PRIME_FAILED
+        // A concurrent Stop may cancel the producer, but cannot hide a real pause/resume/USB fault.
+        if (usb!=null && (usb.count("pauseDrainFailures")>0L || usb.count("resumeFailure")>0L ||
+            (usb.stopReason=="STOP_REQUESTED" && usb.count("playbackTransportState")==UsbFullTransportPhase.FAILED.ordinal.toLong())))
+            return UsbSilentStatus.USB_TRANSPORT_FAILED
         if (source.count("sourceIntegrityMask") != 0L || source.exceptionType != null) return sourceFailure(source)
         if (usb?.stopReason=="STOP_REQUESTED") return UsbSilentStatus.CANCELLED
         if (!source.primed) return UsbSilentStatus.QUEUE_PRIME_FAILED

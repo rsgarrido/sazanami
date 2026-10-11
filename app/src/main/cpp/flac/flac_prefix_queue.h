@@ -6,6 +6,7 @@
 #include <condition_variable>
 #include <chrono>
 #include <vector>
+#include "../usb_wake_signal.h"
 
 namespace sazanami::flacverify {
 constexpr size_t kPrefixCapacity = 16384, kPrefixPrebuffer = 8192;
@@ -38,12 +39,16 @@ struct PrefixQueue {
     std::atomic<bool> stop{false}, streaming{false};
     std::mutex waitMutex;
     std::condition_variable changed;
+    std::shared_ptr<sazanami::usbiso::WakeSignal> workerWake;
+    void wakeWorker() { auto wake=std::atomic_load(&workerWake);if(wake) wake->notify(); }
     uint64_t consumedHash = kOffset, enqueuedHash = kOffset, prepared = 0, reservedStart = 0;
     std::array<std::array<int64_t,9>,5> examples{};
     size_t exampleCount = 0;
     uint64_t depth() const { return tail.load(std::memory_order_acquire) - head.load(std::memory_order_acquire); }
     void fail(uint64_t reason) { faults.fetch_or(reason); requestStop(); }
-    void requestStop() { stop.store(true); changed.notify_all(); }
+    void requestStop() { stop.store(true); changed.notify_all(); wakeWorker(); }
+    // Consumer-only rollback of an unsubmitted candidate. No source/hash advancement.
+    void abandonReservation() { prepared=0;reservedStart=head.load(); }
     void trackDepth(uint64_t depth) {
         if (!streaming.load()) return;
         auto low = minDepth.load(); while (depth < low && !minDepth.compare_exchange_weak(low, depth)) {}
@@ -73,7 +78,8 @@ struct PrefixQueue {
         std::memcpy(bytes.data()+slot*frameBytes(), canonical, frameBytes()); indices[slot] = index;
         enqueuedHash = hashBytes(enqueuedHash, canonical, frameBytes());
         tail.store(position + 1, std::memory_order_release);
-        trackDepth(depth()); changed.notify_all();
+        const auto publishedDepth=depth();trackDepth(publishedDepth);changed.notify_all();
+        if(publishedDepth==kPrefixPrebuffer) wakeWorker();
         return true;
     }
     ReserveResult availability() const {
@@ -196,7 +202,7 @@ struct PrefixSource {
                     decoder.failure==Outcome::Md5Unavailable ? PrefixMd5Unavailable :
                     decoder.pcm.frames!=static_cast<uint64_t>(decoder.facts[Total]) ? PrefixTotal : PrefixDecode);
             }
-            queue.changed.notify_all();
+            queue.changed.notify_all();queue.wakeWorker();
         });
     }
     uint64_t primeTarget() const { return fullTrack && queue.expectedTotal.load() ? std::min<uint64_t>(kPrefixPrebuffer,queue.expectedTotal.load()) : kPrefixPrebuffer; }

@@ -4,6 +4,7 @@
 #include "usb_feedback_policy.h"
 #include "usb_out_queue_policy.h"
 #include "usb_out_continuity.h"
+#include "usb_pause_control.h"
 #include "flac/flac_prefix_queue.h"
 #include "flac/flac_snapshot.h"
 #include <jni.h>
@@ -52,8 +53,13 @@ enum Field : size_t { Api, Attachment, Stream, Started, StateCode, Reasons, Stop
     MinEstimatedOutCoverageUs, WorstOutCoverageAtUs, OutCoverageBelowOneUrb, OutCoverageBelowTwoUrbs,
     MaxOutSubmissionBatchGapUs, MaxOutSubmissionGapUs, MaxOutCompletionGapUs, MaxOutRefillOpportunityGapUs, MaxOutRefillLatencyUs,
     OutContinuityRisks, FirstOutRiskAtUs, FirstOutRiskMask, FirstOutRiskStage, FirstOutRiskOut, FirstOutRiskFeedback,
-    FirstOutRiskGapUs, FirstOutRiskCoverageUs, FirstOutRiskCompletedFrames, SchedulerNominalRate, FormatChannels, FormatBits, FormatSampleBytes, FormatFrameBytes, FormatSubslot, FormatValidBits, FormatAlternate, FieldCount };
-constexpr jint kSnapshotVersion = 10;
+    FirstOutRiskGapUs, FirstOutRiskCoverageUs, FirstOutRiskCompletedFrames, SchedulerNominalRate, FormatChannels, FormatBits, FormatSampleBytes, FormatFrameBytes, FormatSubslot, FormatValidBits, FormatAlternate,
+    PlaybackPhaseField, PauseRequests, PauseConfirmed, ResumeRequests, ResumeConfirmed, LastPauseOutcome, LastResumeOutcome,
+    FirstPauseFrame, LastPauseFrame, PausedFrame, PausedDurationUs, PausePendingOut, PauseDrainOutcome, ResumeReadiness,
+    ResumeFailure, SourceContinuityAcrossPause, PauseDrainFailures, FieldCount };
+constexpr jint kSnapshotVersion = 11;
+constexpr size_t kControlFieldCount=FieldCount-PlaybackPhaseField;
+static_assert(kControlFieldCount==17);
 // Preserve unsigned hash bits across JNI without an implementation-defined numeric cast.
 jlong hashBits(uint64_t value) { jlong result; static_assert(sizeof(result) == sizeof(value)); std::memcpy(&result, &value, sizeof(result)); return result; }
 using Clock = std::chrono::steady_clock;
@@ -115,6 +121,48 @@ struct Session {
     unsigned invalidStreak = 0;
     bool stopping = false, ran = false;
     StopCause stopCause;
+    PauseMachine playback;
+    const std::shared_ptr<WakeSignal> controlWake;
+    struct Command { uint64_t serial=0,pauses=0,resumes=0,firstPause=0,lastPause=0,pauseAt=0;bool play=true; };
+    mutable std::mutex controlMutex;
+    Command command;
+    uint64_t seenPauses=0,seenResumes=0;
+    bool commandsClosed=false,resumePrepared=false,playbackFault=false;
+    std::array<uint64_t,2> livePlayback{0,static_cast<uint64_t>(PlaybackPhase::Starting)};
+    std::array<jlong,kControlFieldCount> liveControl{};
+    uint64_t livePausedStarted=0;
+    Command intent() const { std::lock_guard<std::mutex> lock(controlMutex);return command; }
+    bool pauseAdmission() const { return fullTrack && (!intent().play || playback.quiet()); }
+    void publishPlayback() {
+        std::lock_guard<std::mutex> lock(controlMutex);
+        livePlayback={static_cast<uint64_t>(stats[CompletedFrames]),static_cast<uint64_t>(playback.phase)};
+        liveControl={static_cast<jlong>(playback.phase),static_cast<jlong>(command.pauses),static_cast<jlong>(playback.pauses),
+            static_cast<jlong>(command.resumes),static_cast<jlong>(playback.resumes),static_cast<jlong>(playback.pauseOutcome),
+            static_cast<jlong>(playback.resumeOutcome),static_cast<jlong>(command.firstPause),static_cast<jlong>(command.lastPause),
+            static_cast<jlong>(playback.pausedFrame),static_cast<jlong>(playback.pausedUs),0,playback.drainOutcome,
+            playback.resumeReadiness,playback.resumeFailure,
+            integrity.valid() && !stats[PauseDrainFailures] && !playback.resumeFailure,stats[PauseDrainFailures]};
+        livePausedStarted=playback.phaseIs(PlaybackPhase::Paused) ? playback.pausedStarted : 0;
+        if(playback.terminal() || playback.phaseIs(PlaybackPhase::Stopping)) commandsClosed=true;
+    }
+    bool requestPlayback(bool play,uint64_t sequence,uint64_t pauses,uint64_t resumes) {
+        {
+            std::lock_guard<std::mutex> lock(controlMutex);
+            if(!fullTrack || commandsClosed || requestedStop.load()) return false;
+            if(sequence<command.serial || pauses<command.pauses || resumes<command.resumes ||
+                resumes>static_cast<uint64_t>(INT64_MAX) || pauses>static_cast<uint64_t>(INT64_MAX)-resumes || sequence!=pauses+resumes)
+                throw std::invalid_argument("Control sequence");
+            if(sequence==command.serial && play!=command.play) throw std::invalid_argument("Control intent");
+            if(pauses>command.pauses) {
+                const auto frame=completedProgress.load();
+                if(!command.pauses) command.firstPause=frame;
+                command.lastPause=frame;command.pauseAt=monotonicUs();
+            }
+            command.serial=sequence;command.pauses=pauses;command.resumes=resumes;command.play=play;
+        }
+        if(!controlWake->notify()) throw std::runtime_error("Control wake failed");
+        return true;
+    }
 
     Session(int borrowedFd, uint64_t a, uint64_t s, const std::array<jint, 17>& config, std::shared_ptr<fv::PrefixSource> prefixSource = nullptr)
         : fd(borrowedFd), attachment(a), stream(s), dataEndpoint(config[4]), feedbackEndpoint(config[8]),
@@ -125,7 +173,7 @@ struct Session {
           scheduler(sampleRateHz),
           source(config[16] >= 2 ? PcmMode::Zero : static_cast<PcmMode>(config[16])),
           prefix(std::move(prefixSource)), durationUs(prefix && prefix->fullTrack ? 0 : prefix ? fv::kPrefixDurationUs : kDurationUs), fullTrack(prefix && prefix->fullTrack), totalProgress(fullTrack ? prefix->queue.expectedTotal.load() : 0),
-          outContinuity(outUrbs,kOutPackets,intervalUs(dataInterval)) {
+          outContinuity(outUrbs,kOutPackets,intervalUs(dataInterval)),controlWake(fullTrack ? std::make_shared<WakeSignal>() : nullptr) {
         stats[Api] = kSnapshotVersion; stats[Attachment] = static_cast<jlong>(a); stats[Stream] = static_cast<jlong>(s);
         stats[DataInterval] = static_cast<jlong>(intervalUs(dataInterval));
         stats[FeedbackInterval] = static_cast<jlong>(intervalUs(feedbackInterval));
@@ -148,6 +196,7 @@ struct Session {
         stats[FeedbackCoverageUs]=static_cast<jlong>(feedbackUrbs*intervalUs(feedbackInterval));
         for (size_t i = 0; i < slots.size(); ++i) slots[i].allocate(i >= outUrbs,
             i >= outUrbs ? 1 : static_cast<unsigned>(kOutPackets), i >= outUrbs ? 4 : payload);
+        if(fullTrack) std::atomic_store(&prefix->queue.workerWake,controlWake);
         move(State::Configured);
     }
     void move(State next) {
@@ -156,7 +205,18 @@ struct Session {
         stats[LifecycleMask] |= 1LL << static_cast<int>(state);
     }
     uint32_t frameBytes() const { return format->bytesPerFrame; }
-    void fail(uint64_t reason, Stop stop) { integrity.compromise(reason); if (!stopping) stopCause.choose(stop); }
+    void fail(uint64_t reason, Stop stop) {
+        const bool fatal=stop!=Stop::Requested;
+        if(fullTrack && fatal) playbackFault=true;
+        if(fullTrack && fatal && playback.phaseIs(PlaybackPhase::Pausing)) {
+            playback.pauseOutcome=ControlOutcome::Failed;playback.drainOutcome=2;
+            if(!stats[PauseDrainFailures]) ++stats[PauseDrainFailures];
+        }
+        if(fullTrack && fatal && (playback.phaseIs(PlaybackPhase::Resuming) || (playback.resumes && playback.resumeReadiness==1))) {
+            if(!playback.resumeFailure) playback.resumeFailure=3;playback.resumeOutcome=ControlOutcome::Failed;
+        }
+        integrity.compromise(reason); if (!stopping) stopCause.choose(stop);
+    }
     void failSource() {
         const auto faults = prefix->queue.faults.load();
         if (faults & fv::PrefixUnderrun) fail(QueueUnderrun | FlacSourceFault, Stop::Underrun);
@@ -168,6 +228,84 @@ struct Session {
         size_t count = 0;
         for (const auto& slot : slots) if (slot.feedback == feedback && slot.identity.outstanding) ++count;
         return count;
+    }
+    void waitPlayback(int timeout,bool drain=false) {
+        pollfd descriptors[2]{{fd,static_cast<short>(drain ? POLLOUT : 0),0},{controlWake->fd,POLLIN,0}};
+        const auto returned=::poll(descriptors,2,timeout);
+        if(returned<0 && errno!=EINTR) fail(ReapError,Stop::Reap);
+        if(descriptors[0].revents&(POLLERR|POLLHUP|POLLNVAL)) fail(DeviceDetached,Stop::Detached);
+        if(descriptors[1].revents&(POLLERR|POLLHUP|POLLNVAL)) fail(WorkerFailure,Stop::Worker);
+        if(descriptors[1].revents&POLLIN) controlWake->consume();
+        if(controlWake->failed.load()) fail(WorkerFailure,Stop::Worker);
+    }
+    bool playbackStep(uint64_t now) {
+        if(!fullTrack) return false;
+        if(controlWake->failed.load()) { fail(WorkerFailure,Stop::Worker);return true; }
+        const auto wanted=intent();
+        if(wanted.pauses!=seenPauses) {
+            playback.pauseOutcome=playback.phaseIs(PlaybackPhase::Paused) ? ControlOutcome::Already :
+                wanted.play ? ControlOutcome::Superseded : ControlOutcome::Requested;seenPauses=wanted.pauses;
+        }
+        if(wanted.resumes!=seenResumes) {
+            playback.resumeOutcome=playback.phaseIs(PlaybackPhase::Playing) ? ControlOutcome::Already : ControlOutcome::Requested;
+            seenResumes=wanted.resumes;
+        }
+        publishPlayback();
+        if((playback.quiet() || playback.phaseIs(PlaybackPhase::Resuming) || !wanted.play) && naturalComplete()) return true;
+        if(!wanted.play && playback.admitsOut()) {
+            outContinuity.suspendSegment(wanted.pauseAt,outstanding(false),outstanding(true),!fullSubmitted(),static_cast<uint64_t>(stats[CompletedFrames]));
+            playback.pause(now);publishPlayback();
+        }
+        if(playback.phaseIs(PlaybackPhase::Pausing)) {
+            // No rearming or DISCARD. Previously admitted OUT and feedback must reconcile normally.
+            for(size_t i=0;i<slots.size() && integrity.valid() && !requestedStop.load() && reapOne();++i) {}
+            completedProgress.store(static_cast<uint64_t>(stats[CompletedFrames]),std::memory_order_release);publishPlayback();
+            if(!integrity.valid() || stopCause.chosen || requestedStop.load()) return true;
+            if(prefix->queue.faults.load()) { failSource();return true; }
+            if(naturalComplete()) return true;
+            if(!outstanding(false) && !outstanding(true)) {
+                const auto& q=prefix->queue;
+                const PauseBoundary boundary{0,0,static_cast<uint64_t>(stats[SubmittedFrames]),static_cast<uint64_t>(stats[CompletedFrames]),
+                    q.head.load(),q.prepared,static_cast<uint64_t>(stats[OutBytesSubmitted]),static_cast<uint64_t>(stats[KernelOutActualBytes]),
+                    q.consumedHash,submittedPrefixHash,integrity.valid() && stats[ScheduledFrames]==stats[SubmittedFrames] && !stats[OutCancelled]};
+                if(!playback.confirmPause(monotonicUs(),boundary)) {
+                    ++stats[PauseDrainFailures];playback.drainOutcome=2;fail(TerminalAccounting,Stop::Accounting);return true;
+                }
+                publishPlayback();return true;
+            }
+            if(playback.drainExpired(monotonicUs(),kDrainUs)) {
+                ++stats[PauseDrainFailures];playback.drainOutcome=2;fail(ShutdownUnaccounted,Stop::Accounting);return true;
+            }
+            waitPlayback(1,true);return true;
+        }
+        if(playback.phaseIs(PlaybackPhase::Paused)) {
+            if(wanted.play) { playback.resume(now);resumePrepared=false;publishPlayback(); }
+            else { waitPlayback(-1);return true; }
+        }
+        if(playback.phaseIs(PlaybackPhase::Resuming) && !resumePrepared) {
+            const auto head=prefix->queue.head.load(),total=prefix->queue.expectedTotal.load();
+            if(head>total) { playback.resumeFailure=2;fail(TerminalAccounting,Stop::Accounting);return true; }
+            const auto remaining=total-head,target=std::min<uint64_t>(fv::kPrefixPrebuffer,remaining);
+            if(!remaining || prefix->queue.depth()<target || (target<fv::kPrefixPrebuffer && !prefix->queue.eofReached.load(std::memory_order_acquire))) {
+                const auto elapsed=monotonicUs()-playback.resumeStarted;
+                if(elapsed>=5000000) {
+                    playback.resumeFailure=1;fail(FlacSourceFault,Stop::SourceVerificationStall);return true;
+                }
+                waitPlayback(static_cast<int>((5000000-elapsed+999)/1000));return true;
+            }
+            if(prefix->queue.frameBytes()!=frameBytes() || prefix->metadataFacts[fv::Rate]!=sampleRateHz) {
+                playback.resumeFailure=2;fail(SchedulerInvalid,Stop::Accounting);return true;
+            }
+            acceptedFeedback=0;invalidStreak=0;stats[InvalidStreak]=0;feedbackClock={};feedbackClock.started=monotonicUs();
+            lastOutCompletion=feedbackClock.started;outContinuity.resumeSegment();
+            for(auto& slot:slots) slot.outReapedAt=0;
+            resumePrepared=true;playback.resumeReadiness=1;
+            for(size_t i=outUrbs;i<slots.size() && integrity.valid() && !stopCause.chosen;++i) submit(slots[i]);
+            outContinuity.beginRefill(monotonicUs(),true);
+            for(size_t i=0;i<outUrbs && integrity.valid() && !stopCause.chosen;++i) submit(slots[i]);
+            publishPlayback();return true;
+        }
+        return false;
     }
     bool fullSubmitted() const { return fullTrack && static_cast<uint64_t>(stats[SubmittedFrames])==prefix->queue.expectedTotal.load(); }
     bool naturalComplete() {
@@ -199,6 +337,7 @@ struct Session {
         if (prefix) prefix->finish(); // Wake/join producer before restoration; no detached decode worker.
     }
     bool submit(Slot& slot) {
+        if(pauseAdmission()) return false;
         if (stopping || stopCause.chosen || requestedStop.load() != 0 || !integrity.valid()) return false;
         if (prefix && prefix->queue.faults.load()) { failSource(); return false; }
         if (durationReached(started, monotonicUs(), durationUs)) { stopCause.choose(Stop::Duration); return false; }
@@ -296,6 +435,11 @@ struct Session {
             fail(source.mode == PcmMode::Zero ? NonzeroPcm : source.reasons, Stop::Accounting); return false;
         }
         if (requestedStop.load() != 0) { fail(AuthorityChanged, Stop::Requested); return false; }
+        if(pauseAdmission()) {
+            scheduler=schedulerBefore;stats[ScheduledFrames]=scheduledBefore;stats[BootstrapPackets]=bootstrapBefore;stats[FeedbackScheduledPackets]=feedbackBefore;
+            if(prefix && !slot.feedback) prefix->queue.abandonReservation();
+            return false;
+        }
         slot.submittedAt = monotonicUs();
         const int returned = ::ioctl(fd, USBDEVFS_SUBMITURB, urb);
         const int saved = returned < 0 ? errno : 0;
@@ -317,6 +461,7 @@ struct Session {
                 if (slot.terminal) { stats[TailFrames]+=frameCount; stats[TailPackets]+=slot.packets; ++stats[TailUrbs]; }
             }
             stats[SubmittedFrames] += frameCount; stats[OutBytesSubmitted] += length; stats[OutPacketsSubmitted] += slot.packets;
+            if(fullTrack) { playback.submitted();publishPlayback(); }
         }
         return true;
     }
@@ -339,7 +484,7 @@ struct Session {
             stats[TimeoutLastObservedUs]=static_cast<jlong>(feedbackClock.lastObserved);
             stats[TimeoutLastSubmittedUs]=static_cast<jlong>(feedbackClock.lastSubmitted);
             stats[TimeoutOffendingSubmittedUs]=static_cast<jlong>(offendingSubmitted);
-            stats[TimeoutAgeUs]=static_cast<jlong>(observed-(feedbackClock.lastObserved ? feedbackClock.lastObserved : started));
+            stats[TimeoutAgeUs]=static_cast<jlong>(observed-(feedbackClock.lastObserved ? feedbackClock.lastObserved : feedbackClock.started));
             stats[TimeoutOutstanding]=static_cast<jlong>(outstanding(true));
             size_t reaped=0;
             for (const auto& slot : slots) if (slot.feedback && !slot.identity.outstanding && slot.identity.submission) ++reaped;
@@ -356,6 +501,16 @@ struct Session {
         fail(FeedbackTimeout,Stop::Feedback);
     }
     void feedbackPacket(Slot& slot, int urbStatus) {
+        if(fullTrack && playback.quiet()) {
+            const auto& packet=slot.urb->iso_frame_desc[0];++stats[FeedbackPacketsCompleted];
+            if(urbStatus || packet.status || packet.actual_length!=4) { ++stats[FeedbackUrbErrors];fail(UrbError,Stop::Feedback); }
+            else {
+                const auto decoded=decodeFeedback(slot.buffer.data(),packet.actual_length,0,sampleRateHz);
+                if(decoded.validity==FeedbackValidity::Reserved) { ++stats[FeedbackInvalid];fail(MalformedFeedback,Stop::Feedback); }
+                else if(decoded.validity!=FeedbackValidity::Valid) ++stats[FeedbackInvalid];
+            }
+            return;
+        }
         const auto& packet = slot.urb->iso_frame_desc[0];
         const auto decoded = decodeFeedback(slot.buffer.data(), packet.actual_length, static_cast<int>(packet.status), scheduler.nominalRate);
         const size_t index = feedbackExampleCount < kFeedbackExamples ? feedbackExampleCount++ : kFeedbackExamples - 1;
@@ -385,6 +540,7 @@ struct Session {
         if (stopping || stopCause.chosen) return;
         invalidStreak = 0; stats[InvalidStreak] = 0; acceptedFeedback = decoded.raw;
         feedbackClock.accept(slot.submittedAt,observed);
+        if(fullTrack && playback.resumeReadiness) playback.resumeReadiness=2;
         stats[LastAcceptedSubmittedUs]=static_cast<jlong>(slot.submittedAt);
         stats[LastAcceptedObservedUs]=static_cast<jlong>(observed); stats[LastAcceptedRequestAgeUs]=static_cast<jlong>(age);
         if (!stopping && state == State::Bootstrap) move(State::FeedbackLocked);
@@ -568,6 +724,7 @@ struct Session {
                 if (prefix && prefix->queue.faults.load()) { failSource(); break; }
                 if (requestedStop.load()) { fail(AuthorityChanged, requestedStop.load() == 2 ? Stop::AuthorityLost : Stop::Requested); break; }
                 if (durationReached(started, now, durationUs)) { stopCause.choose(Stop::Duration); break; }
+                if(playbackStep(now)) continue;
                 outContinuity.wake(now,outstanding(false),outstanding(true),!fullTrack || !fullSubmitted(),
                     static_cast<uint64_t>(stats[CompletedFrames]));
                 const auto feedbackCompletedBefore=stats[FeedbackCompleted];
@@ -584,9 +741,11 @@ struct Session {
                     feedbackReapPass.ageAfter<=static_cast<uint64_t>(stats[FeedbackHoldover]))
                     ++stats[FeedbackRecoveredGaps];
                 completedProgress.store(static_cast<uint64_t>(stats[CompletedFrames]),std::memory_order_release);
+                if(fullTrack) publishPlayback();
                 if (!integrity.valid() || stopCause.chosen) break;
                 if (prefix && prefix->queue.faults.load()) { failSource(); break; }
                 if (requestedStop.load()) { fail(AuthorityChanged, requestedStop.load() == 2 ? Stop::AuthorityLost : Stop::Requested); break; }
+                if(pauseAdmission()) continue; // Process a command arriving during reap before active watchdog evaluation.
                 if (feedbackReapPass.timeout!=FeedbackTimeoutKind::None) {
                     feedbackTimeout(feedbackReapPass.timeout,feedbackReapPass.evaluatedAt); break;
                 }
@@ -603,6 +762,7 @@ struct Session {
                 outContinuity.beginRefill(monotonicUs());
                 for (auto& slot : slots) if (!slot.identity.outstanding && integrity.valid() && !stopCause.chosen) submit(slot);
                 if (!integrity.valid() || stopCause.chosen) break;
+                if(pauseAdmission()) continue;
                 outContinuity.observe(monotonicUs(),outstanding(false),outstanding(true),!fullTrack || !fullSubmitted(),
                     static_cast<uint64_t>(stats[CompletedFrames]),OutObservationStage::AfterRefill);
                 if (naturalComplete()) break;
@@ -619,8 +779,24 @@ struct Session {
                 pollCompletion();
             }
         } catch (...) { fail(WorkerFailure, Stop::Worker); }
+        if(fullTrack) { playback.finish(monotonicUs(),PlaybackPhase::Stopping);publishPlayback(); }
         shutdown();
         completedProgress.store(static_cast<uint64_t>(stats[CompletedFrames]),std::memory_order_release);
+        if(fullTrack) {
+            playback.finish(monotonicUs(),integrity.valid() && stopCause.value==Stop::NaturalEof ? PlaybackPhase::Ended :
+                stopCause.value==Stop::Requested && !playbackFault && !stats[ShutdownIncomplete] && !(integrity.reasons&(CancelError|DeviceDetached)) ? PlaybackPhase::Stopped : PlaybackPhase::Failed);
+            const auto wanted=intent();
+            if(wanted.pauses>seenPauses) playback.pauseOutcome=playback.phaseIs(PlaybackPhase::Failed) ? ControlOutcome::Failed : ControlOutcome::Terminal;
+            if(wanted.resumes>seenResumes) playback.resumeOutcome=playback.phaseIs(PlaybackPhase::Failed) ? ControlOutcome::Failed : ControlOutcome::Terminal;
+            stats[PlaybackPhaseField]=static_cast<jlong>(playback.phase);
+            stats[PauseRequests]=wanted.pauses;stats[ResumeRequests]=wanted.resumes;stats[PauseConfirmed]=playback.pauses;stats[ResumeConfirmed]=playback.resumes;
+            stats[LastPauseOutcome]=static_cast<jlong>(playback.pauseOutcome);stats[LastResumeOutcome]=static_cast<jlong>(playback.resumeOutcome);
+            stats[FirstPauseFrame]=wanted.firstPause;stats[LastPauseFrame]=wanted.lastPause;stats[PausedFrame]=playback.pausedFrame;
+            stats[PausedDurationUs]=playback.pausedUs;stats[PausePendingOut]=0;stats[PauseDrainOutcome]=playback.drainOutcome;
+            stats[ResumeReadiness]=playback.resumeReadiness;stats[ResumeFailure]=playback.resumeFailure;
+            stats[SourceContinuityAcrossPause]=integrity.valid() && !stats[PauseDrainFailures] && !playback.resumeFailure;
+            publishPlayback();
+        }
         // No execution context returns while continuing to submit/reap in the background.
     }
 };
@@ -746,7 +922,12 @@ extern "C" JNIEXPORT jlongArray JNICALL
 Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeFullProgress(JNIEnv* env,jobject,jlong handle,jlong attachment,jlong stream) {
     const auto session=lookup(handle,attachment,stream);
     if (!session || !session->fullTrack) { error(env,"java/lang/IllegalArgumentException","Stale full playback progress"); return nullptr; }
-    const std::array<jlong,3> values{static_cast<jlong>(session->completedProgress.load(std::memory_order_acquire)),static_cast<jlong>(session->totalProgress),static_cast<jlong>(session->sampleRateHz)};
+    std::array<jlong,4+kControlFieldCount> values{};
+    { std::lock_guard<std::mutex> lock(session->controlMutex);
+      values[0]=static_cast<jlong>(session->livePlayback[0]);values[1]=static_cast<jlong>(session->totalProgress);
+      values[2]=static_cast<jlong>(session->sampleRateHz);values[3]=static_cast<jlong>(session->livePlayback[1]);
+      std::copy(session->liveControl.begin(),session->liveControl.end(),values.begin()+4);
+      if(session->livePausedStarted) values[4+PausedDurationUs-PlaybackPhaseField]+=static_cast<jlong>(monotonicUs()-session->livePausedStarted); }
     auto result=env->NewLongArray(values.size());
     if (result) env->SetLongArrayRegion(result,0,values.size(),values.data());
     return result;
@@ -755,7 +936,18 @@ Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeFullProgress
 extern "C" JNIEXPORT void JNICALL
 Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeStopSilentTransport(JNIEnv*, jobject, jlong handle, jlong attachment, jlong stream, jint reason) {
     const auto session = lookup(handle, attachment, stream);
-    if (session) session->requestedStop.store(reason == 2 ? 2 : 1);
+    if (session) { session->requestedStop.store(reason == 2 ? 2 : 1);if(session->controlWake) session->controlWake->notify(); }
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeSetFullPlayWhenReady(JNIEnv* env,jobject,jlong handle,jlong attachment,jlong stream,
+        jboolean play,jlong sequence,jlong pauses,jlong resumes) {
+    auto session=lookup(handle,attachment,stream);
+    if(!session || !session->fullTrack || sequence<0 || pauses<0 || resumes<0) {
+        error(env,"java/lang/IllegalArgumentException","Stale/invalid full playback control");return JNI_FALSE;
+    }
+    try { return session->requestPlayback(play,sequence,pauses,resumes) ? JNI_TRUE : JNI_FALSE; }
+    catch (...) { error(env,"java/lang/IllegalStateException","Full playback control failed");return JNI_FALSE; }
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

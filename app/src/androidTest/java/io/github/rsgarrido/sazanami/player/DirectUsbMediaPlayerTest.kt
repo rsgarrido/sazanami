@@ -59,9 +59,11 @@ class DirectUsbMediaPlayerTest {
     private class Engine : FullUsbPlaybackEngineClient {
         var starts=0;var stops=0;var uri: Uri?=null
         var progress: ((UsbFullProgress)->Unit)?=null
-        val terminal=CompletableDeferred<UsbSilentTransportExperimentResult>()
-        override suspend fun runIntegratedFull(uri: Uri,progress: (UsbFullProgress)->Unit): UsbSilentTransportExperimentResult {
-            starts++;this.uri=uri;this.progress=progress;return terminal.await()
+        var control: UsbFullPlaybackControl?=null
+        var terminal=CompletableDeferred<UsbSilentTransportExperimentResult>()
+        override suspend fun runIntegratedFull(uri: Uri,control: UsbFullPlaybackControl,progress: (UsbFullProgress)->Unit): UsbSilentTransportExperimentResult {
+            starts++;this.uri=uri;this.progress=progress;this.control=control;control.bind({true},{})
+            return terminal.await()
         }
         override fun stopIntegratedFull() { stops++ }
     }
@@ -86,10 +88,16 @@ class DirectUsbMediaPlayerTest {
             assertEquals(IntegratedDirectPhase.PREPARING,player.evidence.phase);assertFalse(player.isPlaying)
             engine.progress!!.invoke(UsbFullProgress(100,44100,44100))
             assertEquals(IntegratedDirectPhase.PLAYING,player.evidence.phase);assertEquals(2L,player.currentPosition)
-            assertFalse(player.availableCommands.contains(Player.COMMAND_PLAY_PAUSE))
+            assertTrue(player.availableCommands.contains(Player.COMMAND_PLAY_PAUSE))
             assertFalse(player.availableCommands.contains(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM))
             assertFalse(player.availableCommands.contains(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM))
-            player.pause();player.seekTo(700);assertTrue(player.isPlaying) // unavailable commands cannot fake a pause/seek
+            player.seekTo(700);assertTrue(player.isPlaying) // Seeking remains excluded.
+            player.pause();assertFalse(engine.control!!.playWhenReady);assertFalse(player.isPlaying)
+            engine.progress!!.invoke(UsbFullProgress(100,44100,44100,UsbFullTransportPhase.PAUSED))
+            assertEquals(IntegratedDirectPhase.PAUSED,player.evidence.phase)
+            player.play();assertTrue(engine.control!!.playWhenReady);assertFalse(player.isPlaying)
+            engine.progress!!.invoke(UsbFullProgress(100,44100,44100,UsbFullTransportPhase.PLAYING))
+            assertTrue(player.isPlaying);assertEquals(1,engine.starts)
             player.stop();assertEquals(1,engine.stops);assertEquals(IntegratedDirectPhase.STOPPING,player.evidence.phase)
             engine.terminal.complete(stopped())
         }
@@ -109,6 +117,52 @@ class DirectUsbMediaPlayerTest {
             assertEquals("UNSUPPORTED_TRACK",player.evidence.error);scope.cancel()
         }
     }
+    @Test fun pausedPositionMetadataAndRepeatedControlsUseOneWorkerAndIgnoreReplacedGeneration() {
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate);val engine=Engine()
+        lateinit var player: DirectUsbMediaPlayer;lateinit var oldProgress: (UsbFullProgress)->Unit
+        lateinit var oldControl: UsbFullPlaybackControl
+        instrumentation.runOnMainSync {
+            player=DirectUsbMediaPlayer(scope,engine,changed={},librarySong={song})
+            player.setMediaItem(song.toPlayableMediaItem());player.prepare()
+            oldProgress=engine.progress!!;oldControl=engine.control!!
+            engine.progress!!.invoke(UsbFullProgress(48000,240000,48000))
+            repeat(2) {
+                player.playWhenReady=false
+                engine.progress!!.invoke(UsbFullProgress(48100,240000,48000,UsbFullTransportPhase.PAUSED))
+                assertFalse(player.isPlaying);assertEquals(1002L,player.currentPosition)
+                assertEquals("Library title",player.currentMediaItem?.mediaMetadata?.title.toString())
+                assertEquals(5000L,player.duration)
+                player.pause();assertEquals(IntegratedDirectPhase.PAUSED,player.evidence.phase)
+                player.playWhenReady=true;assertFalse(player.isPlaying)
+                engine.progress!!.invoke(UsbFullProgress(48100,240000,48000,UsbFullTransportPhase.RESUMING))
+                assertFalse(player.isPlaying)
+                engine.progress!!.invoke(UsbFullProgress(48100,240000,48000,UsbFullTransportPhase.PLAYING))
+                assertTrue(player.isPlaying);assertEquals(1,engine.starts)
+            }
+            player.pause();engine.progress!!.invoke(UsbFullProgress(48100,240000,48000,UsbFullTransportPhase.PAUSED))
+        }
+        instrumentation.waitForIdleSync()
+        instrumentation.runOnMainSync {
+            assertEquals(1002L,player.currentPosition);assertFalse(player.isPlaying)
+            player.stop();assertFalse(oldControl.request(true))
+            oldProgress(UsbFullProgress(96000,240000,48000,UsbFullTransportPhase.PLAYING))
+            assertEquals(IntegratedDirectPhase.STOPPING,player.evidence.phase)
+            engine.terminal.complete(stopped())
+        }
+        instrumentation.waitForIdleSync()
+        instrumentation.runOnMainSync {
+            assertFalse(player.availableCommands.contains(Player.COMMAND_PLAY_PAUSE))
+            engine.terminal=CompletableDeferred()
+            player.setMediaItem(song.copy(id=13,title="Replacement").toPlayableMediaItem());player.prepare()
+            val current=player.evidence
+            oldProgress(UsbFullProgress(48100,240000,48000,UsbFullTransportPhase.PAUSED))
+            assertEquals(current,player.evidence);assertEquals(2,engine.starts)
+            assertFalse(oldControl.request(true));assertNotSame(oldControl,engine.control)
+            player.stop();engine.terminal.complete(stopped())
+        }
+        instrumentation.waitForIdleSync();scope.cancel()
+    }
     @Test fun activeReplacementIsRejectedWithoutChangingSourceOrGeneration() {
         val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate);val engine=Engine()
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
@@ -121,5 +175,22 @@ class DirectUsbMediaPlayerTest {
             player.stop();engine.terminal.complete(stopped())
         }
         InstrumentationRegistry.getInstrumentation().waitForIdleSync();scope.cancel()
+    }
+    @Test fun stopStillTerminatesWorkerAfterAnInvalidProgressProjection() {
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate);val engine=Engine()
+        lateinit var player: DirectUsbMediaPlayer
+        instrumentation.runOnMainSync {
+            player=DirectUsbMediaPlayer(scope,engine,changed={},librarySong={song})
+            player.setMediaItem(song.toPlayableMediaItem());player.prepare()
+            engine.progress!!.invoke(UsbFullProgress(48000,96000,48000))
+            engine.progress!!.invoke(UsbFullProgress(47999,96000,48000))
+            assertEquals(IntegratedDirectPhase.ERROR,player.evidence.phase)
+            assertNotNull(engine.control!!.failure);assertFalse(engine.control!!.request(true))
+            player.stop();assertEquals(1,engine.stops)
+            engine.terminal.complete(stopped().copy(status=UsbSilentStatus.FAILED))
+        }
+        instrumentation.waitForIdleSync()
+        instrumentation.runOnMainSync { assertEquals(IntegratedDirectPhase.ERROR,player.evidence.phase);scope.cancel() }
     }
 }

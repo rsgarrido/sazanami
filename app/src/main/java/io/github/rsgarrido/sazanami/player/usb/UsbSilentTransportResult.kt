@@ -72,7 +72,12 @@ internal data class UsbIsoTransportResult(val generation: Long, val streamGenera
         3L -> fullVerified
         else -> false
     }
-    private val fullVerified get() = valid && formatEvidenceValid && shutdownAccounted && count("started")==1L && stopReason=="NATURAL_EOF_COMPLETE" &&
+    val pauseEvidenceValid get() = counters.keys.containsAll(UsbIsoNativeStats.controlFields) &&
+        UsbIsoNativeStats.controlFields.all { count(it)>=0L } && count("playbackTransportState")==UsbFullTransportPhase.ENDED.ordinal.toLong() &&
+        count("pauseRequests")>=count("pauseConfirmed") && count("resumeRequests")>=count("resumeConfirmed") &&
+        count("pauseConfirmed")>=count("resumeConfirmed") && count("pauseDrainFailures")==0L && count("resumeFailure")==0L &&
+        (count("pauseConfirmed")==0L || (count("pauseSourceContinuity")==1L && count("pauseOutstandingOut")==0L && count("pauseDrainOutcome")==1L))
+    private val fullVerified get() = valid && formatEvidenceValid && pauseEvidenceValid && shutdownAccounted && count("started")==1L && stopReason=="NATURAL_EOF_COMPLETE" &&
         count("transportDurationTargetUs")==0L && bytesPerFrame>0 && count("streamInfoTotalSamples") in 1L..(Long.MAX_VALUE/bytesPerFrame) &&
         count("feedbackPacketsValid")>0L && count("feedbackScheduledPackets")>0L &&
         listOf("sourceFramesGenerated","framesScheduled","framesSubmitted","framesCompleted","prefixSourceFramesConsumed")
@@ -99,7 +104,7 @@ internal data class UsbIsoTransportResult(val generation: Long, val streamGenera
 }
 
 internal object UsbIsoNativeStats {
-    const val VERSION = 10
+    const val VERSION = 11
     val fields = listOf("version", "generation", "streamGeneration", "started", "state", "integrityMask", "stopReason", "durationUs",
         "sourceFramesGenerated", "framesScheduled", "framesSubmitted", "framesCompleted", "outUrbsSubmitted", "outUrbsCompleted",
         "outPacketsSubmitted", "outPacketsCompleted", "outBytesSubmitted", "kernelOutActualBytes", "outPacketErrors", "outUrbErrors",
@@ -136,10 +141,15 @@ internal object UsbIsoNativeStats {
         "minEstimatedOutCoverageUs", "worstOutCoverageAtUs", "outCoverageBelowOneUrbObservations", "outCoverageBelowTwoUrbsObservations",
         "maxOutSubmissionBatchGapUs", "maxOutSubmissionGapUs", "maxOutCompletionObservedGapUs", "maxOutRefillOpportunityGapUs", "maxOutRefillLatencyUs",
         "outContinuityRiskEvents", "firstOutRiskAtUs", "firstOutRiskMask", "firstOutRiskStage", "firstOutRiskOutstanding", "firstOutRiskFeedbackOutstanding",
-        "firstOutRiskWorkerGapUs", "firstOutRiskEstimatedCoverageUs", "firstOutRiskCompletedFrames", "schedulerNominalRateHz", "formatChannels", "formatBitsPerSample", "formatBytesPerSample", "formatBytesPerFrame", "formatSubslotBytes", "formatValidBits", "formatAlternate")
+        "firstOutRiskWorkerGapUs", "firstOutRiskEstimatedCoverageUs", "firstOutRiskCompletedFrames", "schedulerNominalRateHz", "formatChannels", "formatBitsPerSample", "formatBytesPerSample", "formatBytesPerFrame", "formatSubslotBytes", "formatValidBits", "formatAlternate",
+        "playbackTransportState", "pauseRequests", "pauseConfirmed", "resumeRequests", "resumeConfirmed", "lastPauseOutcome", "lastResumeOutcome",
+        "firstPauseSourceFrame", "lastPauseSourceFrame", "confirmedPausedFrame", "intentionalPausedUs", "pauseOutstandingOut",
+        "pauseDrainOutcome", "resumeReadiness", "resumeFailure", "pauseSourceContinuity", "pauseDrainFailures")
     val outRiskStages=listOf("WORKER_WAKE","BEFORE_REFILL","AFTER_REFILL")
     val outRiskReasons=listOf("WORKER_GAP_BEYOND_NOMINAL_COVERAGE","NO_APPLICATION_OUT","ESTIMATED_COVERAGE_BELOW_ONE_URB","REFILL_LATENCY_BEYOND_NOMINAL_COVERAGE")
     val feedbackTimeoutSubtypes=listOf("NONE","BOOTSTRAP_TIMEOUT","LAST_VALID_WATCHDOG_TIMEOUT","VALID_OBSERVATION_GAP_AT_REAP")
+    val controlFields=fields.takeLast(17)
+    val controlOutcomes=listOf("NONE","REQUESTED","ALREADY","CONFIRMED","SUPERSEDED","TERMINAL","FAILED")
     val states = listOf("IDLE", "CONFIGURED", "STARTING_TRANSPORT", "BOOTSTRAP", "FEEDBACK_LOCKED", "STOP_REQUESTED", "DRAINING_OR_CANCELLING", "TRANSPORT_STOPPED")
     val stops = listOf("DURATION_COMPLETE", "STOP_REQUESTED", "AUTHORITY_LOST", "DEVICE_DETACHED", "SUBMIT_FAILURE", "REAP_FAILURE",
         "FEEDBACK_FAILURE", "QUEUE_UNDERRUN", "CAPACITY_EXCEEDED", "WORKER_FAILURE", "ACCOUNTING_FAILURE", "SOURCE_FAILURE", "SOURCE_EOF_BEFORE_DURATION", "OUT_POOL_STALL", "NATURAL_EOF_COMPLETE", "SOURCE_VERIFICATION_STALLED")
@@ -148,11 +158,18 @@ internal object UsbIsoNativeStats {
         "GENERATION_MISMATCH", "DEVICE_DETACHED", "AUTHORITY_CHANGED", "WORKER_FAILURE", "SHUTDOWN_UNACCOUNTED", "FRAME_ACCOUNTING_MISMATCH",
         "NONZERO_PCM", "SCHEDULER_INVALID", "CANCEL_ERROR", "REFERENCE_PREFLIGHT_FAILED", "REFERENCE_TABLE_HASH_MISMATCH",
         "PCM_PACKING_MISMATCH", "SOURCE_HASH_MISMATCH", "INACTIVE_CHANNEL_NONZERO", "NONZERO_OUTSIDE_SIGNAL_WINDOW", "REFERENCE_PEAK_VIOLATION", "FLAC_SOURCE_QUEUE_FAULT", "OUT_POOL_STALL", "TERMINAL_TAIL_ACCOUNTING_FAILED")
+    fun validateControl(counters: Map<String,Long>) {
+        require(controlFields.all { counters.getValue(it)>=0L } && counters.getValue("playbackTransportState") in 0L..8L &&
+            counters.getValue("lastPauseOutcome") in 0L..6L && counters.getValue("lastResumeOutcome") in 0L..6L &&
+            counters.getValue("pauseDrainOutcome") in 0L..2L && counters.getValue("resumeReadiness") in 0L..2L &&
+            counters.getValue("resumeFailure") in 0L..3L && counters.getValue("pauseSourceContinuity") in 0L..1L)
+    }
     fun decode(packet: UsbIsoNativeSnapshot, generation: Long, stream: Long): UsbIsoTransportResult {
         require(packet.numbers.size == fields.size && packet.numbers[0] == VERSION.toLong() && packet.numbers[1] == generation &&
             packet.numbers[2] == stream && packet.feedback.size % 6 == 0 && packet.feedback.size <= 12 * 6 &&
             packet.packets.size % 7 == 0 && packet.packets.size <= 24 * 7)
         val counters = fields.zip(packet.numbers.toList()).toMap()
+        validateControl(counters)
         require(counters.getValue("feedbackTimeoutSubtype") in feedbackTimeoutSubtypes.indices.map { it.toLong() })
         require(counters.getValue("firstOutRiskStage") in outRiskStages.indices.map { it.toLong() })
         require(counters.getValue("state") in states.indices.map { it.toLong() } && counters.getValue("stopReason") in stops.indices.map { it.toLong() })

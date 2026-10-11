@@ -37,6 +37,16 @@ struct OutContinuity {
           nominalCoverageUs(nominalOutCoverageUs(urbs,packets,interval)) {}
 
     void start(uint64_t at) noexcept { started=at; }
+    void suspendSegment(uint64_t at,size_t out,size_t feedback,bool needsOut,uint64_t frames) noexcept {
+        // Preserve a real gap before the command, without charging request/drain/paused time to active scheduling.
+        if(haveLoop && at>lastLoop) wake(at,out,feedback,needsOut,frames);
+    }
+    // Called only with a fully reconciled pool. Keep maxima/risks; discard time baselines across an intentional gap.
+    void resumeSegment() noexcept {
+        haveLoop=haveSubmission=haveBatch=haveCompletion=haveRefillOpportunity=false;
+        batchHasOut=thisLoopIsMaxGap=riskCountedThisLoop=refillLateThisLoop=false;
+        currentGapUs=pendingNominalUs=estimatedTailUs=0;
+    }
     void beginRefill(uint64_t now,bool priming=false) noexcept {
         batchHasOut=false;
         if (!priming) {

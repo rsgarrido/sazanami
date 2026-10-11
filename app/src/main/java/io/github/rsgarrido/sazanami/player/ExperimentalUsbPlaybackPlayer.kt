@@ -69,6 +69,8 @@ internal class ExperimentalUsbPlaybackPlayer(
         return super.handlePrepare()
     }
     fun stopDirect() { if(selectedDirect) direct.requestStop() }
+    fun toggleDirectPlayback() { if(selectedDirect && normalReleaseSafe && direct.isCommandAvailable(Player.COMMAND_PLAY_PAUSE)) direct.playWhenReady=!direct.playWhenReady }
+    fun pauseDirectPlayback() { if(selectedDirect && normalReleaseSafe && direct.isCommandAvailable(Player.COMMAND_PLAY_PAUSE)) direct.pause() }
     fun rejectDirectCommand(command: String) { if(selectedDirect) direct.notice(command) }
     suspend fun shutdown(): Boolean { shuttingDown=true;val safe=direct.stopAndJoin();modeJob?.join();return safe }
     fun releaseTransitionResources()=normal.releaseTransitionResources()

@@ -9,6 +9,27 @@ import org.junit.Test
 
 /** Synthetic evidence and source-boundary tests, never claims about real kernel/DAC completions. */
 class UsbSilentTransportTest {
+    @Test fun stopCannotMaskDrainResumeOrTransportFailureAsCancellation() {
+        val cancelledSource=fullSource("sourceIntegrityMask" to 2048L)
+        val configuration=fullExperiment(ConfigurationFake()).configuration!!
+        assertEquals(UsbSilentStatus.CANCELLED,UsbFlacFullStatus.classify(configuration,fullNative("stopReason" to 1L,"playbackTransportState" to 6L),cancelledSource,true))
+        for(change in listOf("pauseDrainFailures" to 1L,"resumeFailure" to 3L,"playbackTransportState" to 8L)) {
+            val fault=fullNative("stopReason" to 1L,change)
+            assertEquals(UsbSilentStatus.USB_TRANSPORT_FAILED,UsbFlacFullStatus.classify(configuration,fault,cancelledSource,true))
+        }
+    }
+    @Test fun pauseEvidenceCannotWeakenFullTrackSuccessAndSchemaRejectsInvalidStates() {
+        val evidence=fullNative("pauseRequests" to 2,"pauseConfirmed" to 2,"resumeRequests" to 2,"resumeConfirmed" to 2,
+            "pauseSourceContinuity" to 1,"pauseDrainOutcome" to 1,"resumeReadiness" to 2,"intentionalPausedUs" to 20000000)
+        assertTrue(evidence.verified)
+        for (change in listOf("playbackTransportState" to 3L,"pauseRequests" to 1L,"resumeRequests" to 1L,
+            "resumeConfirmed" to 3L,"pauseSourceContinuity" to 0L,"pauseOutstandingOut" to 1L,"pauseDrainOutcome" to 2L,
+            "pauseDrainFailures" to 1L,"resumeFailure" to 1L,"md5VerificationPass" to 0L,"wholeDecodedPcmHash" to 999L))
+            assertFalse(change.first,evidence.copy(counters=evidence.counters+change).verified)
+        assertFalse(evidence.copy(counters=evidence.counters-"pauseRequests").verified)
+        for (change in listOf("playbackTransportState" to 9L,"lastPauseOutcome" to 7L,"resumeFailure" to 4L,"intentionalPausedUs" to -1L))
+            rejects(snapshot(change))
+    }
     // Synthetic 10001-frame track: 104 full 96-frame URBs and a 12+5-frame terminal tail.
     private fun native96(vararg changes: Pair<String,Long>)=native24(*(mapOf("schedulerNominalRateHz" to 96000L,
         "outUrbsSubmitted" to 105L,"outUrbsCompleted" to 105L,"outPacketsSubmitted" to 834L,"outPacketsCompleted" to 834L,
@@ -38,7 +59,7 @@ class UsbSilentTransportTest {
         assertEquals(io.github.rsgarrido.sazanami.player.IntegratedDirectPhase.ENDED,end.phase)
         assertEquals(10001L*1000/96000,end.durationMs);assertEquals(end.durationMs,end.positionMs)
         val report=io.github.rsgarrido.sazanami.player.formatIntegratedDirectPlayback(end)
-        for (text in listOf("Session 15","format=96000/2/24","PCM24LE packed","subslot bytes=3","valid bits=24",
+        for (text in listOf("Session 16","format=96000/2/24","PCM24LE packed","subslot bytes=3","valid bits=24",
             "bytes per frame=6","alternate=10","endpoint capacity bytes=776","requested USB clock Hz=96000",
             "verified USB clock Hz=96000","scheduler nominal/source rate Hz=96000","source/configuration agreement=true",
             "MD5=PASS","source PCM bytes=60006","outBytesSubmitted=60006","kernelOutActualBytes=60006",
@@ -123,7 +144,7 @@ class UsbSilentTransportTest {
             io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackState(enabled=true),run.copy(originalFlacFdClosed=true))
         assertEquals(io.github.rsgarrido.sazanami.player.IntegratedDirectPhase.ENDED,end.phase)
         val report=io.github.rsgarrido.sazanami.player.formatIntegratedDirectPlayback(end)
-        for(text in listOf("Session 15","format=48000/2/24","PCM24LE packed","subslot bytes=3","valid bits=24",
+        for(text in listOf("Session 16","format=48000/2/24","PCM24LE packed","subslot bytes=3","valid bits=24",
             "bytes per frame=6","alternate=10","source/configuration agreement=true","source PCM bytes=60006"))
             assertTrue(text,report.contains(text))
     }
@@ -181,7 +202,7 @@ class UsbSilentTransportTest {
             io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackState(enabled=true),full.copy(originalFlacFdClosed=true))
         assertEquals(io.github.rsgarrido.sazanami.player.IntegratedDirectPhase.ENDED,end.phase)
         val report=io.github.rsgarrido.sazanami.player.formatIntegratedDirectPlayback(end)
-        for (text in listOf("Session 15","format=48000/2/16","requested USB clock Hz=48000",
+        for (text in listOf("Session 16","format=48000/2/16","requested USB clock Hz=48000",
             "verified USB clock Hz=48000","scheduler nominal/source rate Hz=48000",
             "source/request/both readbacks/scheduler agree=true","production Bit-perfect: NOT YET COMPLETE"))
             assertTrue(text,report.contains(text))
@@ -946,7 +967,7 @@ class UsbSilentTransportTest {
             counters=counters,streamInfoMd5="1".repeat(32),decoderVersion="1.5.0")
         return UsbFlacSourceResult(values,decoder)
     }
-    private fun fullNative(vararg changes: Pair<String,Long>) = native(*(mapOf("sourceMode" to 3L,"stopReason" to 14L,
+    private fun fullNative(vararg changes: Pair<String,Long>) = native(*(mapOf("playbackTransportState" to 7L,"sourceMode" to 3L,"stopReason" to 14L,
         "transportDurationTargetUs" to 0L,"durationUs" to 240000000L,"activeTransportUsAtStop" to 239999000L,
         "streamInfoTotalSamples" to 10001L,"sourceFramesGenerated" to 10001L,"framesScheduled" to 10001L,
         "framesSubmitted" to 10001L,"framesCompleted" to 10001L,"prefixSourceFramesConsumed" to 10001L,

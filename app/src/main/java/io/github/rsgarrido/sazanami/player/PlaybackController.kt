@@ -379,7 +379,7 @@ class PlaybackController(
     }
 
     fun togglePlayPause() {
-        if (IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.reject("Pause");return }
+        if (IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.togglePlayPause();return }
         if (musicPlayer.isPlayWhenReady()) {
             musicPlayer.pause()
             isPlaying = false
@@ -391,7 +391,7 @@ class PlaybackController(
     }
 
     fun pausePlayback() {
-        if (IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.reject("Pause");return }
+        if (IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.pause();return }
         musicPlayer.pause()
         isPlaying = false
         savePlayerState()

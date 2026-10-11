@@ -27,7 +27,7 @@ class IntegratedDirectPlaybackTest {
     private fun source(path: String)=listOf(Paths.get("src/main",path),Paths.get("app/src/main",path)).first { Files.isRegularFile(it) }.toFile().readText()
     private fun fullResult(status: UsbSilentStatus=UsbSilentStatus.FULL_FLAC_USB_TRANSPORT_VERIFIED): UsbSilentTransportExperimentResult {
         val values=UsbIsoNativeStats.fields.associateWith { 0L }.toMutableMap().apply { putAll(mapOf(
-            "formatChannels" to 2L,"formatBitsPerSample" to 16L,"formatBytesPerSample" to 2L,"formatBytesPerFrame" to 4L,"formatSubslotBytes" to 2L,"formatValidBits" to 16L,"formatAlternate" to 9L,"schedulerNominalRateHz" to 44100L,"sourceMode" to 3L,"stopReason" to 14L,"started" to 1L,"workerStopped" to 1L,"state" to 7L,
+            "formatChannels" to 2L,"formatBitsPerSample" to 16L,"formatBytesPerSample" to 2L,"formatBytesPerFrame" to 4L,"formatSubslotBytes" to 2L,"formatValidBits" to 16L,"formatAlternate" to 9L,"schedulerNominalRateHz" to 44100L,"playbackTransportState" to 7L,"sourceMode" to 3L,"stopReason" to 14L,"started" to 1L,"workerStopped" to 1L,"state" to 7L,
             "streamInfoTotalSamples" to 10001L,"sourceFramesGenerated" to 10001L,"framesScheduled" to 10001L,"framesSubmitted" to 10001L,
             "framesCompleted" to 10001L,"prefixSourceFramesConsumed" to 10001L,"feedbackPacketsValid" to 1L,"feedbackScheduledPackets" to 1L,
             "trueEofReached" to 1L,"producerFinishedNaturally" to 1L,"md5VerificationPass" to 1L,"prefixProducerStopped" to 1L,"prefixProducerJoined" to 1L,
@@ -109,7 +109,7 @@ class IntegratedDirectPlaybackTest {
         val standalone=controllerMethod("fun playFullFlac(","override suspend fun runIntegratedFull(")
         val integrated=controllerMethod("override suspend fun runIntegratedFull(","override fun stopIntegratedFull(")
         val configuration=controllerMethod("private fun runConfigurationDiagnostic(","private fun usbAccessFailure(")
-        assertTrue(adapter.contains("usb.runIntegratedFull(song.uri)"));assertTrue(adapter.contains("PlaybackLibraryBridge.songs"))
+        assertTrue(adapter.contains("usb.runIntegratedFull(song.uri,commands)"));assertTrue(adapter.contains("PlaybackLibraryBridge.songs"))
         assertFalse(adapter.contains("OpenDocument"));assertFalse(adapter.contains("filePath"))
         assertTrue("Standalone full playback must reach the shared engine",standalone.contains("runConfigurationDiagnostic(identity,true,UsbPcmDiagnosticMode.FLAC_FULL,uri)"))
         assertTrue("Integrated full playback must pass its URI/client to the shared engine",integrated.contains("runConfigurationDiagnostic(selected.identity,true,UsbPcmDiagnosticMode.FLAC_FULL,uri,client)"))
@@ -137,19 +137,23 @@ class IntegratedDirectPlaybackTest {
     @Test fun directCapabilitiesAndUnsupportedCommandsAreHonest() {
         val adapter=source("java/io/github/rsgarrido/sazanami/player/DirectUsbMediaPlayer.kt")
         val commands=source("java/io/github/rsgarrido/sazanami/player/IntegratedDirectPlaybackState.kt").substringAfter("internal val integratedDirectCommands")
-        for(name in listOf("COMMAND_PREPARE","COMMAND_STOP","COMMAND_GET_METADATA","COMMAND_GET_TIMELINE")) assertTrue(commands.contains(name))
-        for(name in listOf("COMMAND_PLAY_PAUSE","COMMAND_SEEK","COMMAND_SET_REPEAT","COMMAND_SET_SHUFFLE","COMMAND_SET_VOLUME","COMMAND_SET_SPEED")) assertFalse(commands.contains(name))
+        for(name in listOf("COMMAND_PREPARE","COMMAND_STOP","COMMAND_PLAY_PAUSE","COMMAND_GET_METADATA","COMMAND_GET_TIMELINE")) assertTrue(commands.contains(name))
+        for(name in listOf("COMMAND_SEEK","COMMAND_SET_REPEAT","COMMAND_SET_SHUFFLE","COMMAND_SET_VOLUME","COMMAND_SET_SPEED")) assertFalse(commands.contains(name))
         assertTrue(adapter.contains("PositionSupplier { evidence.positionMs }"));assertTrue(adapter.contains("unsupported(\"Queue edit\")"))
         val app=source("java/io/github/rsgarrido/sazanami/player/PlaybackController.kt")
         assertTrue(app.contains("if (IntegratedDirectPlaybackBridge.directSelected) { isPlaying=false;currentPosition=duration } else handleSongCompleted()"))
         assertTrue(app.contains("isPlaying = !IntegratedDirectPlaybackBridge.directSelected"))
-        for(name in listOf("Pause","Seek","Next","Previous","Shuffle")) assertTrue(app.contains("reject(\"$name\")"))
+        for(name in listOf("Seek","Next","Previous","Shuffle")) assertTrue(app.contains("reject(\"$name\")"))
+        assertTrue(app.contains("IntegratedDirectPlaybackBridge.togglePlayPause()"));assertTrue(app.contains("IntegratedDirectPlaybackBridge.pause()"))
     }
     @Test fun progressAndShutdownStayServiceOwnedAndBounded() {
         val transport=source("java/io/github/rsgarrido/sazanami/player/usb/UsbNativeSilentTransport.kt")
         assertTrue(transport.contains("nextProgressAt=now+250L"));assertTrue(transport.contains("authority==null"))
         val native=source("cpp/usb_iso_transport.cpp")
-        assertTrue(native.contains("std::atomic<uint64_t> completedProgress"));assertTrue(native.contains("session->completedProgress.load(std::memory_order_acquire)"))
+        assertTrue(native.contains("std::atomic<uint64_t> completedProgress"))
+        val progress=native.substringAfter("UsbFsDiagnostics_nativeFullProgress(").substringBefore("UsbFsDiagnostics_nativeStopSilentTransport(")
+        assertTrue(progress.contains("lock(session->controlMutex)"));assertTrue(progress.contains("session->livePlayback[0]"));assertTrue(progress.contains("session->livePlayback[1]"))
+        assertFalse(progress.contains("session->stats[")) // No mutable native telemetry is read off-worker.
         val service=source("java/io/github/rsgarrido/sazanami/player/PlaybackService.kt")
         assertTrue(service.contains("shutdownJob=serviceScope.launch"));assertTrue(service.indexOf("usbAudioController?.awaitIdle()")<service.indexOf("serviceScope.cancel()"))
         assertTrue(service.contains("previousDirectTeardown.awaitSafe()"))

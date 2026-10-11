@@ -34,7 +34,7 @@ class FeedbackQueueCorrectionTest {
         return UsbIsoNativeSnapshot(UsbIsoNativeStats.fields.map { values[it] ?: 0L }.toLongArray(),longArrayOf(),longArrayOf())
     }
     @Test fun schemaHasThreeDistinctTimeoutOriginsAndRejectsOldOrInvalidData() {
-        assertEquals(10,UsbIsoNativeStats.VERSION);assertEquals(182,UsbIsoNativeStats.fields.size)
+        assertEquals(11,UsbIsoNativeStats.VERSION);assertEquals(199,UsbIsoNativeStats.fields.size)
         assertEquals(111,UsbIsoNativeStats.fields.indexOf("configuredFeedbackUrbs"))
         for(kind in 0L..3L) assertEquals(kind,UsbIsoNativeStats.decode(packet(mapOf("feedbackTimeoutSubtype" to kind)),1,2).count("feedbackTimeoutSubtype"))
         assertEquals(listOf("NONE","BOOTSTRAP_TIMEOUT","LAST_VALID_WATCHDOG_TIMEOUT","VALID_OBSERVATION_GAP_AT_REAP"),UsbIsoNativeStats.feedbackTimeoutSubtypes)

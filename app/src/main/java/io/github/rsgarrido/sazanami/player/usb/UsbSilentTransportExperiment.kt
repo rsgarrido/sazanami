@@ -80,6 +80,7 @@ internal object UsbSilentTransportExperiment {
         val configurationResolution = plan?.configuration ?: UsbAudioConfigurationResolution(issues = resolution.issues)
         val configuration = UsbAudioConfigurationExperiment.runWithEndpointWork(configurationResolution, generation, connection, work, accessFailure)
         val status = when {
+            native?.exceptionType=="DirectPlaybackControlFailure" -> UsbSilentStatus.FAILED
             configuration.accessFailure != null || native?.authorityFailure != null -> UsbSilentStatus.NON_AUTHORITATIVE
             mode == UsbPcmDiagnosticMode.FLAC_FULL -> UsbFlacFullStatus.classify(configuration,native,prefixSource?.result,
                 !closeRequired && backend?.memoryReleased != false)

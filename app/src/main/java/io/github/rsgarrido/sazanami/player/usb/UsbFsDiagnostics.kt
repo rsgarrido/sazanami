@@ -95,10 +95,16 @@ internal object UsbFsDiagnostics {
     private external fun nativeRunSilentTransport(handle: Long, generation: Long, stream: Long): UsbIsoNativeSnapshot
     fun fullProgress(handle: Long,generation: Long,stream: Long): UsbFullProgress {
         val values=nativeFullProgress(handle,generation,stream)
-        require(values.size==3)
-        return UsbFullProgress(values[0],values[1],values[2])
+        require(values.size==4+UsbIsoNativeStats.controlFields.size && values[3] in UsbFullTransportPhase.entries.indices.map(Int::toLong))
+        val control=UsbIsoNativeStats.controlFields.zip(values.drop(4)).toMap()
+        UsbIsoNativeStats.validateControl(control)
+        require(control.getValue("playbackTransportState")==values[3])
+        return UsbFullProgress(values[0],values[1],values[2],UsbFullTransportPhase.entries[values[3].toInt()],control)
     }
     private external fun nativeFullProgress(handle: Long,generation: Long,stream: Long): LongArray
+    fun setFullPlayWhenReady(handle: Long,generation: Long,stream: Long,intent: UsbFullControlIntent): Boolean =
+        nativeSetFullPlayWhenReady(handle,generation,stream,intent.play,intent.sequence,intent.pauses,intent.resumes)
+    private external fun nativeSetFullPlayWhenReady(handle: Long,generation: Long,stream: Long,play: Boolean,sequence: Long,pauses: Long,resumes: Long): Boolean
     private external fun nativeStopSilentTransport(handle: Long, generation: Long, stream: Long, reason: Int)
     private external fun nativeDestroySilentTransport(handle: Long, generation: Long, stream: Long, connectionClosed: Boolean): Boolean
     private external fun nativeInspect(borrowedFd: Int, interfaceNumbers: IntArray, audioControlNumber: Int): UsbFsNativeResult

@@ -86,7 +86,28 @@ static void directDepthUsesNewBudgetWithoutChangingRiskSemantics() {
     low.wake(1001,1,21,true,0);
     assert(low.belowOneUrb==1 && low.belowTwoUrbs==1); // Still 1 ms / 2 ms thresholds.
 }
+static void intentionalPauseRetainsRisksWithoutChargingTheGap() {
+    OutContinuity c(21,8,125);c.start(1000);c.beginRefill(1000,true);
+    for(unsigned i=0;i<21;++i)c.submitted(1000,8);
+    c.wake(1000,21,21,true,0);
+    c.suspendSegment(23001,21,21,true,480); // Real scheduling delay BEFORE user command remains visible.
+    assert(c.riskCount==1 && c.maxWorkerLoopGapUs==22001 && c.gapsBeyondCoverage==1);
+    const auto first=c.firstRiskAtUs,mask=c.firstRiskMask,maxGap=c.maxWorkerLoopGapUs,observations=c.observations;
+    for(unsigned i=0;i<21;++i)c.completed(24000,8);
+    c.resumeSegment(); // Called with both pools reconciled; preserve cumulative evidence.
+    const uint64_t resumed=15024000;
+    c.beginRefill(resumed,true);for(unsigned i=0;i<21;++i)c.submitted(resumed,8);
+    c.wake(resumed,21,21,true,1008);c.completed(resumed+1000,8);
+    c.beginRefill(resumed+1000);c.submitted(resumed+1000,8,resumed+1000);
+    assert(c.maxWorkerLoopGapUs==maxGap && c.gapsBeyondCoverage==1 && c.riskCount==1);
+    assert(c.firstRiskAtUs==first && c.firstRiskMask==mask && c.observations==observations+1);
+    assert(c.maxSubmissionGapUs==1000 && c.maxBatchGapUs==1000 && c.maxRefillLatencyUs==0);
+    assert(c.maxCompletionGapUs==0); // No comparison against a completion 15 seconds earlier.
+    c.wake(resumed+23001,21,21,true,1056);
+    assert(c.riskCount==2 && c.gapsBeyondCoverage==2 && c.firstRiskAtUs==first);
+}
 int main() {
     geometryAndShortTail();delayedWakeAndFrozenRisk();lowCountsAndIntervals();refillLatencyRiskWithoutWakeGap();
     directDepthUsesNewBudgetWithoutChangingRiskSemantics();
+    intentionalPauseRetainsRisksWithoutChargingTheGap();
 }

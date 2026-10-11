@@ -525,25 +525,27 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
             runConfigurationDiagnostic(identity,true,UsbPcmDiagnosticMode.FLAC_FULL,uri)
     }
     /** A second service-owned client of the same full decoder/configuration/transport/cleanup path. */
-    override suspend fun runIntegratedFull(uri: Uri,progress: (UsbFullProgress)->Unit): UsbSilentTransportExperimentResult = withContext(Dispatchers.Main.immediate) {
+    override suspend fun runIntegratedFull(uri: Uri,control: UsbFullPlaybackControl,progress: (UsbFullProgress)->Unit): UsbSilentTransportExperimentResult = withContext(Dispatchers.Main.immediate) {
         check(BuildConfig.DEBUG)
         val selected=state.selectedDevice ?: throw UsbIntegratedStartException("DIRECT_USB_DEVICE_UNAVAILABLE")
         if (!selected.hasPermission) throw UsbIntegratedStartException("DIRECT_USB_PERMISSION_FAILED")
         if (state.descriptors==null || state.diagnosticOperationRunning || integratedClient!=null)
             throw UsbIntegratedStartException("DIRECT_USB_CONFIGURATION_FAILED")
-        val client=UsbFullPlaybackClient(progress); integratedClient=client
+        val client=UsbFullPlaybackClient(progress,control); integratedClient=client
         try {
             runConfigurationDiagnostic(selected.identity,true,UsbPcmDiagnosticMode.FLAC_FULL,uri,client)
             client.result?.let { return@withContext it }
             val job=readJob ?: throw UsbIntegratedStartException("DIRECT_USB_CONFIGURATION_FAILED")
             withContext(NonCancellable) { job.join() }
             client.result ?: throw UsbIntegratedStartException("DIRECT_RESOURCE_CLEANUP_UNVERIFIED")
-        } finally { integratedClient=null }
+        } finally { control.finish();integratedClient=null }
     }
     override fun stopIntegratedFull() = onMain {
-        val running=state.integratedFlacUsbExperiment ?: return@onMain
-        userStoppedStream=running.streamGeneration
-        synchronized(connectionLock) { fullStop }?.invoke()
+        try { integratedClient?.control?.stop() }
+        finally {
+            state.integratedFlacUsbExperiment?.let { userStoppedStream=it.streamGeneration }
+            synchronized(connectionLock) { fullStop }?.invoke()
+        }
     }
     suspend fun awaitIdle() { withContext(NonCancellable) { readJob?.join() } }
     fun stopFullFlac(identity: UsbAudioDeviceIdentity,generation: Long,stream: Long) = onMain {
@@ -629,6 +631,7 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
                             val input = originalFlacFd ?: return@withLock sourceBlocked(UsbSilentStatus.FLAC_INPUT_OPEN_FAILED, "SAF provider returned no descriptor; no USB ownership attempted.")
                             val source = UsbFlacPrefixSource(input.fd, token.generation, stream,mode==UsbPcmDiagnosticMode.FLAC_FULL)
                             prefixSource = source
+                            if(client?.control?.stopped==true) source.requestStop()
                             synchronized(connectionLock) { endpointStop = source::requestStop; if (mode==UsbPcmDiagnosticMode.FLAC_FULL) fullStop=source::requestStop }
                             if (userStoppedStream==stream) source.requestStop()
                             if (!source.prepare { usbAccessFailure(token) } || !source.healthy()) {
@@ -648,7 +651,7 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
                             usbAccessFailure(token)?.let { return@withLock unavailable(it, "Access changed after FLAC priming; no USB ownership attempted.") }
                             withContext(Dispatchers.Main.immediate) {
                                 if (!closed && gate.accepts(token)) {
-                                    client?.progress?.invoke(UsbFullProgress(0,source.result.count("totalSamples"),sourceRateHz))
+                                    client?.progress?.invoke(UsbFullProgress(0,source.result.count("totalSamples"),sourceRateHz,UsbFullTransportPhase.STARTING))
                                     publish(withExperiment(state, currentExperiment()?.copy(phase = UsbSilentPhase.CONFIGURING)))
                                 }
                             }
@@ -677,7 +680,7 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
                             // attachment check for best-effort restoration on the original connection.
                             if (silentRun) {
                                 val value = UsbSilentTransportExperiment.run(requireNotNull(silentResolution), token.generation, stream, transport,
-                                    factory = { target, _ -> transport.silentBackend(target, token.generation, stream, mode, prefixSource) { usbAccessFailure(token) }.also { it.progressListener=client?.progress } },
+                                    factory = { target, _ -> transport.silentBackend(target, token.generation, stream, mode, prefixSource) { usbAccessFailure(token) }.also { it.progressListener=client?.progress;it.playbackControl=client?.control } },
                                     onPhase = { phase -> withContext(Dispatchers.Main.immediate) {
                                         if (!closed && gate.accepts(token) && currentExperiment()?.streamGeneration == stream)
                                             publish(withExperiment(state, currentExperiment()?.copy(phase = phase)))

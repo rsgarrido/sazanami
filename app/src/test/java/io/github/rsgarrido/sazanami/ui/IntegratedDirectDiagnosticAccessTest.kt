@@ -63,7 +63,7 @@ class IntegratedDirectDiagnosticAccessTest {
         val route=source("player/ExperimentalUsbPlaybackPlayer.kt")
         assertTrue(route.contains("selectedDirect && !normalReleaseSafe"))
         assertTrue(route.indexOf("direct.stopAndJoin()")<route.indexOf("recreateNormal()"))
-        assertTrue(source("player/DirectUsbMediaPlayer.kt").contains("usb.runIntegratedFull(song.uri)"))
+        assertTrue(source("player/DirectUsbMediaPlayer.kt").contains("usb.runIntegratedFull(song.uri,commands)"))
     }
 
     @Test fun failureEvidenceSurvivesStopModeDisableNormalRestoreAndBridgeDetach() {

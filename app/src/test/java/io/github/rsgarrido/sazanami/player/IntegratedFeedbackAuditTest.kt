@@ -10,6 +10,11 @@ import org.junit.Test
 class IntegratedFeedbackAuditTest {
     private fun source(path: String)=listOf(Paths.get("src/main",path),Paths.get("app/src/main",path))
         .first { Files.isRegularFile(it) }.toFile().readText()
+    private fun section(text: String,start: String,end: String): String {
+        val from=text.indexOf(start);assertTrue("Missing boundary: $start",from>=0)
+        val to=text.indexOf(end,from+start.length);assertTrue("Missing following boundary: $end",to>from)
+        return text.substring(from,to)
+    }
 
     @Test fun modePreferencesAreNotResentByCompletedFrameUpdates() {
         val service=source("java/io/github/rsgarrido/sazanami/player/PlaybackService.kt")
@@ -27,22 +32,66 @@ class IntegratedFeedbackAuditTest {
         assertTrue(controller.contains("runConfigurationDiagnostic(identity,true,UsbPcmDiagnosticMode.FLAC_FULL,uri)"))
         assertTrue(controller.contains("runConfigurationDiagnostic(selected.identity,true,UsbPcmDiagnosticMode.FLAC_FULL,uri,client)"))
         assertTrue(controller.contains("transport.silentBackend(target,token.generation,stream,mode,prefixSource)"))
+        assertEquals("Both clients must share one backend factory",1,Regex("transport\\.silentBackend\\(").findAll(controller).count())
         val native=source("cpp/usb_iso_transport.cpp")
-        val progress=native.substringAfter("UsbFsDiagnostics_nativeFullProgress(").substringBefore("extern \"C\" JNIEXPORT void")
+        val progress=section(native,"UsbFsDiagnostics_nativeFullProgress(","UsbFsDiagnostics_nativeStopSilentTransport(")
         assertTrue(progress.contains("lookup(handle,attachment,stream)"))
-        assertTrue(progress.contains("completedProgress.load(std::memory_order_acquire)"))
-        assertTrue(progress.contains("session->totalProgress"))
-        for (forbidden in listOf("ioctl(","reapOne(","submit(","scheduler.","requestedStop.store","queue.","CallVoidMethod","lock_guard"))
+        // Session 16 publishes completed frames and phase together; synchronization is required, not forbidden.
+        val lockedCopy=Regex("""\{\s*std::lock_guard<std::mutex>\s+lock\(session->controlMutex\);([\s\S]*?)\}""").find(progress)
+        assertNotNull("Progress values must be copied under the publication mutex",lockedCopy)
+        val copyMatch=requireNotNull(lockedCopy)
+        val copy=copyMatch.groupValues[1]
+        val outsideCopy=progress.removeRange(copyMatch.range)
+        for(read in listOf("session->livePlayback","session->liveControl","session->livePausedStarted"))
+            assertFalse("Published progress cannot be read outside its mutex: $read",outsideCopy.contains(read))
+        for (read in listOf("session->livePlayback[0]","session->totalProgress","session->sampleRateHz",
+            "session->livePlayback[1]","session->liveControl.begin()","session->liveControl.end()","session->livePausedStarted"))
+            assertTrue("Missing synchronized progress read: $read",copy.contains(read))
+        assertTrue(progress.contains("std::array<jlong,4+kControlFieldCount> values"))
+        assertTrue(native.contains("kControlFieldCount=FieldCount-PlaybackPhaseField"))
+        assertTrue(native.contains("static_assert(kControlFieldCount==17)"))
+        for (forbidden in listOf("ioctl(","reapOne(","submit(","scheduler.","requestedStop.store","queue.","CallVoidMethod",
+            "session->stats[","session->playback.","session->command","requestPlayback(","publishPlayback(","notify(","consume("))
             assertFalse(forbidden,progress.contains(forbidden))
+        val publication=section(native,"void publishPlayback()","bool requestPlayback(")
+        assertTrue(publication.contains("lock(controlMutex)"))
+        assertTrue(publication.contains("livePlayback={static_cast<uint64_t>(stats[CompletedFrames]),static_cast<uint64_t>(playback.phase)}"))
+        val completion=section(native,"bool reapOne()","void cancel(")
+        assertTrue(completion.contains("if (cancelled) continue"))
+        assertTrue(Regex("""else if \(status == 0\) \{\s*stats\[CompletedFrames\] \+= slot.frames\[i\];""").containsMatchIn(completion))
+        assertTrue(completion.indexOf("packet.actual_length != packet.length")<completion.indexOf("stats[CompletedFrames] +="))
+        // Control delivery is a separate bounded mailbox/wake path, never a second scheduling worker.
+        val command=section(native,"bool requestPlayback(","Session(int borrowedFd")
+        assertTrue(command.contains("lock(controlMutex)"));assertTrue(command.contains("commandsClosed || requestedStop.load()"))
+        assertTrue(command.contains("sequence!=pauses+resumes"));assertTrue(command.contains("controlWake->notify()"))
+        for (forbidden in listOf("ioctl(","reapOne(","submit(","scheduler.","queue.","stats[","playback."))
+            assertFalse(forbidden,command.contains(forbidden))
+        val controlEntry=section(native,"UsbFsDiagnostics_nativeSetFullPlayWhenReady(","UsbFsDiagnostics_nativeSilentTransportIdle(")
+        assertTrue(controlEntry.contains("lookup(handle,attachment,stream)"))
         val lookup=native.substringAfter("std::shared_ptr<Session> lookup(").substringBefore("jobject snapshot(")
         assertTrue(lookup.contains("lock(registryMutex)"));assertTrue(lookup.contains("return found->second;"))
+        assertTrue(lookup.contains("found->second->attachment != static_cast<uint64_t>(attachment)"))
+        assertTrue(lookup.contains("found->second->stream != static_cast<uint64_t>(stream)"))
         assertFalse(lookup.contains("session->run()"));assertFalse(lookup.contains("ioctl("))
         val worker=native.substringAfter("    void run() {").substringBefore("std::mutex registryMutex;")
         assertFalse(worker.contains("registryMutex"));assertFalse(worker.contains("CallVoidMethod"))
+        assertTrue(worker.contains("executing.exchange(true)"));assertTrue(worker.contains("if (ran) throw"))
         val wrapper=source("java/io/github/rsgarrido/sazanami/player/usb/UsbNativeSilentTransport.kt")
         assertTrue(wrapper.contains("async(Dispatchers.IO) { UsbFsDiagnostics.runSilentTransport"))
+        assertEquals(1,Regex("UsbFsDiagnostics\\.runSilentTransport\\(").findAll(wrapper).count())
         assertTrue(wrapper.contains("withContext(Dispatchers.Main.immediate) { listener(progress) }"))
         assertTrue(wrapper.contains("nextProgressAt=now+250L"));assertTrue(wrapper.contains("delay(5)"))
+        val observer=section(wrapper,"val progress=UsbFsDiagnostics.fullProgress(","delay(5)")
+        for(forbidden in listOf("runSilentTransport(","setFullPlayWhenReady(","stopSilentTransport(","submit(","reapOne(","scheduler.","queue."))
+            assertFalse(forbidden,observer.contains(forbidden))
+        val jni=source("java/io/github/rsgarrido/sazanami/player/usb/UsbFsDiagnostics.kt")
+        val decode=section(jni,"fun fullProgress(","private external fun nativeFullProgress(")
+        assertEquals(17,UsbIsoNativeStats.controlFields.size)
+        assertTrue(decode.contains("values.size==4+UsbIsoNativeStats.controlFields.size"))
+        assertTrue(decode.contains("UsbIsoNativeStats.validateControl(control)"))
+        assertTrue(decode.contains("control.getValue(\"playbackTransportState\")==values[3]"))
+        assertTrue(decode.contains("UsbFullProgress(values[0],values[1],values[2],UsbFullTransportPhase.entries[values[3].toInt()],control)"))
+        assertTrue(jni.contains("nativeApiVersion() == UsbFsEvidence.NATIVE_API_VERSION"))
     }
 
     @Test fun unchangedFeedbackFailuresAndSourceFailuresRemainDistinctAndFatal() {
@@ -67,7 +116,7 @@ class IntegratedFeedbackAuditTest {
         assertTrue(result.contains("transportDurationTargetUs\")==5000000L"))
         assertTrue(result.contains("\"wholeDecodedPcmHash\",\"allEnqueuedPcmHash\",\"sourcePcmHash\",\"submittedPcmHash\""))
         val adapter=source("java/io/github/rsgarrido/sazanami/player/DirectUsbMediaPlayer.kt")
-        assertTrue(adapter.contains("usb.runIntegratedFull(song.uri)"));assertFalse(adapter.contains("ExoPlayer"));assertFalse(adapter.contains("AudioTrack"))
+        assertTrue(adapter.contains("usb.runIntegratedFull(song.uri,commands)"));assertFalse(adapter.contains("ExoPlayer"));assertFalse(adapter.contains("AudioTrack"))
     }
 
     @Test fun retainedFailureReportAddsBoundedExistingTimingWithoutPretendingItIsFailureTime() {

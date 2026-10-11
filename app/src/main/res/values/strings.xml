@@ -375,13 +375,13 @@
     <string name="usb_full_flac_scope">Native FLAC only: stereo 16/44100, 16/48000, packed 24/48000 or packed 24/96000, from frame 0 to verified natural EOF. Whole-file MD5 and every source frame must verify. No pause, seek, next track, normal-player integration or production Bit-perfect mode. Listening and recovery require manual observation.</string>
     <string name="usb_full_flac_result">Session 11: %1$s</string>
     <string name="usb_full_flac_summary">Total frames=%1$s; consumed=%2$s; whole-file MD5=%3$s; whole decoded PCM FNV=%4$s</string>
-    <string name="usb_integrated_title">Experimental library direct USB — Session 15</string>
-    <string name="usb_integrated_copy_report">Copy Session 15 report</string>
-    <string name="usb_integrated_latest_attempt">Latest Session 15 attempt (retained report)</string>
+    <string name="usb_integrated_title">Experimental library direct USB — Session 16</string>
+    <string name="usb_integrated_copy_report">Copy Session 16 report</string>
+    <string name="usb_integrated_latest_attempt">Latest Session 16 attempt (retained report)</string>
     <string name="usb_integrated_enable">Enable experimental integrated direct USB</string>
     <string name="usb_integrated_disable">Disable direct mode after USB cleanup</string>
     <string name="usb_integrated_stop">Stop direct USB playback</string>
     <string name="usb_integrated_restart">Restart selected track from frame 0</string>
     <string name="usb_integrated_warning">Development only. Stop ordinary playback and grant USB access in the USB diagnostics below first. Enabling releases both normal audio engines without starting a song. Select one native stereo FLAC: 16-bit at 44.1/48 kHz or 24-bit at 48/96 kHz in the normal library. Keep KA15 physical volume around 15A–20A. Direct failures never fall back to normal audio.</string>
-    <string name="usb_integrated_commands">Use Stop to abort safely. Pause, seek, next, previous, repeat and shuffle are unavailable. The normal controls reject these commands. Disable direct mode only after restoration; normal playback does not restart automatically.</string>
+    <string name="usb_integrated_commands">Use Stop to abort safely. Pause and Play control this same direct session. Seek, next, previous, repeat and shuffle are unavailable. The normal controls reject these commands. Disable direct mode only after restoration; normal playback does not restart automatically.</string>
 </resources>

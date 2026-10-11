@@ -19,7 +19,7 @@ class OutContinuityInstrumentationTest {
         return UsbIsoNativeSnapshot(UsbIsoNativeStats.fields.map { values[it] ?: 0L }.toLongArray(),longArrayOf(),longArrayOf())
     }
     @Test fun schemaAppendsContinuityWithoutMovingWorkingFeedbackFields() {
-        assertEquals(10,UsbIsoNativeStats.VERSION);assertEquals(182,UsbIsoNativeStats.fields.size)
+        assertEquals(11,UsbIsoNativeStats.VERSION);assertEquals(199,UsbIsoNativeStats.fields.size)
         assertEquals(111,UsbIsoNativeStats.fields.indexOf("configuredFeedbackUrbs"))
         assertEquals(131,UsbIsoNativeStats.fields.indexOf("feedbackFailureReapAttempted"))
         assertEquals(140,UsbIsoNativeStats.fields.indexOf("configuredOutUrbs"))

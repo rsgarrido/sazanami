@@ -6,17 +6,28 @@ import io.github.rsgarrido.sazanami.player.usb.selectedFormatMatches
 import io.github.rsgarrido.sazanami.player.usb.UsbDirectPcmFormat
 import io.github.rsgarrido.sazanami.player.usb.UsbIsoNativeStats
 import io.github.rsgarrido.sazanami.player.usb.UsbIsoTiming
+import io.github.rsgarrido.sazanami.player.usb.UsbFullTransportPhase
 import java.util.Locale
 
 internal fun formatIntegratedDirectPlayback(state: IntegratedDirectPlaybackState): String=buildString {
-    appendLine("Integrated Direct USB Playback — Session 15")
+    appendLine("Integrated Direct USB Playback — Session 16")
     appendLine("experimental direct USB enabled=${state.enabled}; requested backend=${if(state.enabled) "DIRECT_USB" else "NORMAL"}; authoritative backend=${if(state.enabled && !state.normalReleased) "NONE_BLOCKED" else if(state.enabled) "DIRECT_USB" else "NORMAL"}")
     appendLine("safe library ID=${state.libraryId ?: "none"}; request generation=${state.generation}; frame 0 only; no raw URI/path")
     appendLine("normal pipelines synchronously released=${state.normalReleased}; standby/preload inactive=${state.normalReleased}; crossfade inactive=${state.normalReleased}")
     appendLine("integrated state=${state.phase}; completed frames=${state.completedFrames}; position ms=${state.positionMs}; duration ms=${state.durationMs}; STREAMINFO total=${state.totalFrames}")
+    appendLine("requested playWhenReady=${state.playWhenReady}; latest native lifecycle=${state.nativeTransportPhase}; app Pause/Resume requests=${state.pauseRequests}/${state.resumeRequests} (native confirmations below require snapshot evidence)")
     appendLine("error=${state.error ?: "none"}; command notice=${state.notice ?: "none"}")
     appendLine("direct resources/restoration safe=${state.cleanupSafe}; production Bit-perfect: NOT YET COMPLETE")
-    appendLine("Single track; no pause/seek/next/previous/repeat/shuffle, DSP/gain, Android audio sink or mixer; physical KA15 volume only")
+    appendLine("Single track; native Pause/Resume; no seek/next/previous/repeat/shuffle, DSP/gain, Android audio sink or mixer; physical KA15 volume only")
+    val controlCounters=state.engine?.transport?.counters ?: state.nativePauseCounters
+    fun control(name: String)=controlCounters[name]?.toString() ?: "unavailable"
+    val phase=controlCounters["playbackTransportState"]?.let { UsbFullTransportPhase.entries.getOrNull(it.toInt()) }
+    fun outcome(name: String)=controlCounters[name]?.let { UsbIsoNativeStats.controlOutcomes.getOrNull(it.toInt()) } ?: "unavailable"
+    appendLine("native transport state=${phase ?: "unavailable"}; Pause requests=${control("pauseRequests")}; confirmed=${control("pauseConfirmed")}; Resume requests=${control("resumeRequests")}; confirmed=${control("resumeConfirmed")}")
+    appendLine("last Pause outcome=${outcome("lastPauseOutcome")}; last Resume outcome=${outcome("lastResumeOutcome")}; first/last Pause source frames=${control("firstPauseSourceFrame")}/${control("lastPauseSourceFrame")}; confirmed paused frame=${control("confirmedPausedFrame")}")
+    appendLine("intentional paused duration us=${control("intentionalPausedUs")}; pending source-bearing OUT at confirmed pause=${control("pauseOutstandingOut")}; drain outcome=${control("pauseDrainOutcome")} (0=none,1=PASS,2=FAIL); drain failures=${control("pauseDrainFailures")}")
+    appendLine("Resume readiness=${control("resumeReadiness")} (0=none,1=nominal bootstrap,2=fresh valid feedback); failure=${control("resumeFailure")} (0=none,1=prebuffer deadline,2=format/accounting,3=transport); continuity exact=${control("pauseSourceContinuity")}; control exception=${state.engine?.transport?.exceptionType ?: "none"}")
+    appendLine("PAUSED preserves decoder/queue/clock/alternate; OUT and feedback pools drain without cancellation; resume uses a new feedback epoch and preserved rational/source phase; intentional gaps excluded from active continuity timing")
     state.engine?.let { result ->
         appendLine("underlying Session 11 engine result=${result.status}; original descriptor closed=${result.originalFlacFdClosed}; native memory released=${result.nativeMemoryReleased}")
         result.flacSource?.let { source ->

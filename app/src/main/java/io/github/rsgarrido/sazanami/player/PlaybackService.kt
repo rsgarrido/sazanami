@@ -432,8 +432,7 @@ class PlaybackService : MediaLibraryService() {
                         SAZANAMI_INTERNAL_CONTROLLER_HINT,
                         false
                     )
-            if (IntegratedDirectPlaybackBridge.directSelected && !isInternalSazanamiController &&
-                playerCommand!=Player.COMMAND_STOP && playerCommand !in setOf(Player.COMMAND_GET_CURRENT_MEDIA_ITEM,Player.COMMAND_GET_METADATA,Player.COMMAND_GET_TIMELINE))
+            if (IntegratedDirectPlaybackBridge.directSelected && !allowsDirectCommand(playerCommand,isInternalSazanamiController))
                 return SessionError.ERROR_NOT_SUPPORTED
             if (
                 playerCommand == Player.COMMAND_SET_SHUFFLE_MODE &&
@@ -897,9 +896,8 @@ class PlaybackService : MediaLibraryService() {
     }
     private fun directControllerCommands(controller: MediaSession.ControllerInfo,base: Player.Commands): Player.Commands {
         val internal=controller.packageName==packageName && controller.connectionHints.getBoolean(SAZANAMI_INTERNAL_CONTROLLER_HINT,false)
-        val allowed=if(internal) integratedDirectCommands.toSet() else setOf(Player.COMMAND_GET_CURRENT_MEDIA_ITEM,Player.COMMAND_GET_METADATA,Player.COMMAND_GET_TIMELINE,Player.COMMAND_STOP)
         val builder=Player.Commands.Builder()
-        for(i in 0 until base.size()) { val command=base.get(i);if(command in allowed) builder.add(command) }
+        for(i in 0 until base.size()) { val command=base.get(i);if(allowsDirectCommand(command,internal)) builder.add(command) }
         return builder.build()
     }
     private fun updateDirectControllerCommands(enabled: Boolean) {

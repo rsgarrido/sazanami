@@ -1,15 +1,17 @@
 package io.github.rsgarrido.sazanami.player.usb
 
 /** Immutable low-frequency view of completed PCM, never decoded-ahead or elapsed-clock position. */
-internal data class UsbFullProgress(val completedFrames: Long, val totalFrames: Long, val sampleRateHz: Long) {
+internal enum class UsbFullTransportPhase { STARTING, PLAYING, PAUSING, PAUSED, RESUMING, STOPPING, STOPPED, ENDED, FAILED }
+internal data class UsbFullProgress(val completedFrames: Long, val totalFrames: Long, val sampleRateHz: Long,
+    val transportPhase: UsbFullTransportPhase=UsbFullTransportPhase.PLAYING,val controlCounters: Map<String,Long> = emptyMap()) {
     init { require(UsbDirectPcmFormat.supportsRate(sampleRateHz)); require(completedFrames>=0 && totalFrames>=0 && completedFrames<=totalFrames) }
 }
 internal interface FullUsbPlaybackEngineClient {
-    suspend fun runIntegratedFull(uri: android.net.Uri,progress: (UsbFullProgress)->Unit): UsbSilentTransportExperimentResult
+    suspend fun runIntegratedFull(uri: android.net.Uri,control: UsbFullPlaybackControl=UsbFullPlaybackControl(),progress: (UsbFullProgress)->Unit): UsbSilentTransportExperimentResult
     fun stopIntegratedFull()
 }
 internal class UsbIntegratedStartException(val reason: String) : IllegalStateException(reason)
-internal class UsbFullPlaybackClient(val progress: (UsbFullProgress)->Unit) {
+internal class UsbFullPlaybackClient(val progress: (UsbFullProgress)->Unit,val control: UsbFullPlaybackControl) {
     var result: UsbSilentTransportExperimentResult?=null
 }
 internal fun UsbSilentTransportExperimentResult.integratedCleanupSafe(): Boolean {
