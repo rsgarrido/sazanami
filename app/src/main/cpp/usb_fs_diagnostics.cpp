@@ -285,7 +285,7 @@ Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeGetAudioStre
     return controlPacket(env, 1, returned, savedError, bytes.data(), 2);
 }
 
-// Only Sampling Frequency CUR, channel zero, target 44100/48000 or fresh original rate.
+// Only Sampling Frequency CUR, channel zero, selected target rate or fresh original rate.
 // Entity/interface/original are supplied solely through Kotlin's validated permit.
 extern "C" JNIEXPORT jobject JNICALL
 Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeSetClockFrequency(
@@ -311,7 +311,7 @@ Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeSetClockFreq
 }
 
 // No detach/reset operation: Android already owns AS on this borrowed fd.
-// Only the descriptor-resolved idle or PCM16 target alternate is accepted.
+// Only the descriptor-resolved idle or selected PCM target alternate is accepted.
 extern "C" JNIEXPORT jobject JNICALL
 Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeSetAudioStreamingAlternate(
         JNIEnv* env, jobject, jint borrowedFd, jint acNumber, jint asNumber,

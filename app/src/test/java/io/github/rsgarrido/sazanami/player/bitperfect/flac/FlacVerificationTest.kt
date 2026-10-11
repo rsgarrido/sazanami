@@ -59,13 +59,26 @@ class FlacVerificationTest {
             .copy(examples=longArrayOf(0,-8388608,8388607,0,0,128,255,255,127))
         assertEquals(listOf(0,0,128,255,255,127),FlacNativeEvidence.decode(snapshot24).examples.single().bytes)
     }
+    @Test fun pcm24At96UsesSameSchemaPackingAndStrongWholeFileRequirements() {
+        val snapshot96=snapshot("sampleRate" to 96000,"bitsPerSample" to 24,"canonicalPcmBytesHashed" to 36,
+            "minLeftSample" to -8388608,"maxRightSample" to 8388607,"minObservedSample" to -8388608,"maxObservedSample" to 8388607)
+            .copy(examples=longArrayOf(0,-8388608,8388607,0,0,128,255,255,127))
+        val good=FlacNativeEvidence.decode(snapshot96).copy(originalFdClosed=true)
+        assertTrue(good.strongEvidence);assertEquals(6L,good.bytesPerFrame)
+        assertEquals(listOf(0,0,128,255,255,127),good.examples.single().bytes)
+        for (change in listOf("canonicalPcmBytesHashed" to 24L,"md5Verification" to 0L,"cleanEndOfStream" to 0L,
+            "physicalInputEof" to 0L,"decodedStereoFrames" to 5L,"outOfRangeSamples" to 1L,"nativeDuplicateClosed" to 0L))
+            assertFalse(change.first,good.copy(counters=good.counters+change).strongEvidence)
+        assertFalse(good.copy(counters=good.counters+("totalSamples" to Long.MAX_VALUE)+
+            ("decodedStereoFrames" to Long.MAX_VALUE)).strongEvidence)
+    }
     @Test fun formatGateNeverAcceptsDownconversion() {
         for ((name, value) in listOf("sampleRate" to 88200L, "sampleRate" to 96000L, "sampleRate" to 192000L,
             "channels" to 1L, "channels" to 6L, "bitsPerSample" to 24L, "bitsPerSample" to 32L))
             assertFalse(result(name to value).strongEvidence)
-        val unsupported = result("result" to 2, "sampleRate" to 96000, "bitsPerSample" to 24)
+        val unsupported = result("result" to 2, "sampleRate" to 88200, "bitsPerSample" to 24)
         assertEquals(FlacVerificationStatus.UNSUPPORTED_FLAC_FORMAT, unsupported.status)
-        assertTrue(FlacVerificationReport.format(unsupported).contains("sample rate: 96000"))
+        assertTrue(FlacVerificationReport.format(unsupported).contains("sample rate: 88200"))
     }
     @Test fun unavailableMd5AndTotalRemainWeakerResults() {
         val unavailable = FlacNativeEvidence.decode(snapshot("result" to 3, "md5ReferenceAvailable" to 0,

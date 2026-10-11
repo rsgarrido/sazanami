@@ -9,6 +9,97 @@ import org.junit.Test
 
 /** Synthetic evidence and source-boundary tests, never claims about real kernel/DAC completions. */
 class UsbSilentTransportTest {
+    // Synthetic 10001-frame track: 104 full 96-frame URBs and a 12+5-frame terminal tail.
+    private fun native96(vararg changes: Pair<String,Long>)=native24(*(mapOf("schedulerNominalRateHz" to 96000L,
+        "outUrbsSubmitted" to 105L,"outUrbsCompleted" to 105L,"outPacketsSubmitted" to 834L,"outPacketsCompleted" to 834L,
+        "terminalTailFrames" to 17L,"terminalTailPackets" to 2L,"terminalTailPacketCompletions" to 2L,
+        "terminalTailFrameCompletions" to 17L,"remainingFramesAtTerminalTransition" to 17L)+changes.toMap()).toList().toTypedArray())
+    @Test fun sharedFull96RequiresExactClockFormatIntegrityAndRestorationAndReportsSelectedRate() {
+        val source=fullSource("sampleRate" to 96000,"bitsPerSample" to 24)
+        val fake=ConfigurationFake().apply { rate=192000;ranges=ranges+192000L }
+        val result=fullExperiment(fake,source,native96())
+        assertEquals(UsbSilentStatus.FULL_FLAC_USB_TRANSPORT_VERIFIED,result.status)
+        val configuration=result.configuration!!
+        assertTrue(configuration.selectedFormatMatches(96000,2,24))
+        assertEquals(96000L,configuration.targetClockSet!!.request.rateHz)
+        assertEquals(96000L,configuration.targetClockReadback!!.currentFrequencyHz)
+        assertEquals(96000L,configuration.configuredClockReadback!!.currentFrequencyHz)
+        assertEquals(192000L,configuration.originalClockReadback!!.currentFrequencyHz)
+        assertEquals(UsbConfigurationRestorationStatus.RESTORED,configuration.restorationStatus)
+        assertEquals(UsbSilentTransportPlan.resolve(model,android(model),48000,24).plan!!.configurationPlan.streaming,
+            result.resolution.plan!!.configurationPlan.streaming)
+        assertTrue(fake.events.indexOf("nativeStopped")<fake.events.indexOf("sourceJoined"))
+        assertTrue(fake.events.indexOf("sourceJoined")<fake.events.lastIndexOf("setAlt:0"))
+        assertTrue(fake.events.indexOf("restoreClock")<fake.events.indexOf("releaseAS"))
+        assertTrue(fake.events.indexOf("releaseAS")<fake.events.indexOf("releaseAC"))
+        assertTrue(fake.events.indexOf("releaseAC")<fake.events.indexOf("close"))
+        val end=io.github.rsgarrido.sazanami.player.integratedTerminalState(
+            io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackState(enabled=true,normalReleased=true),result.copy(originalFlacFdClosed=true))
+        assertEquals(io.github.rsgarrido.sazanami.player.IntegratedDirectPhase.ENDED,end.phase)
+        assertEquals(10001L*1000/96000,end.durationMs);assertEquals(end.durationMs,end.positionMs)
+        val report=io.github.rsgarrido.sazanami.player.formatIntegratedDirectPlayback(end)
+        for (text in listOf("Session 15","format=96000/2/24","PCM24LE packed","subslot bytes=3","valid bits=24",
+            "bytes per frame=6","alternate=10","endpoint capacity bytes=776","requested USB clock Hz=96000",
+            "verified USB clock Hz=96000","scheduler nominal/source rate Hz=96000","source/configuration agreement=true",
+            "MD5=PASS","source PCM bytes=60006","outBytesSubmitted=60006","kernelOutActualBytes=60006",
+            "hash agreement=true","eofPaddingFrames=0","restoration=RESTORED","production Bit-perfect: NOT YET COMPLETE"))
+            assertTrue(text,report.contains(text))
+        assertFalse(report.contains("content://"))
+        for (change in listOf("schedulerNominalRateHz" to 48000L,"formatBitsPerSample" to 16L,
+            "formatSubslotBytes" to 4L,"formatValidBits" to 16L,"formatAlternate" to 9L,
+            "framesCompleted" to 10000L,"kernelOutActualBytes" to 60000L,"outBytesSubmitted" to 40004L,
+            "trueEofReached" to 0L,"md5VerificationPass" to 0L,"eofPaddingFrames" to 1L,
+            "wholeDecodedPcmHash" to 999L,"allEnqueuedPcmHash" to 999L,"sourcePcmHash" to 999L,"submittedPcmHash" to 999L))
+            assertNotEquals(change.first,UsbSilentStatus.FULL_FLAC_USB_TRANSPORT_VERIFIED,
+                UsbFlacFullStatus.classify(configuration,native96(change),source,true))
+        val noMd5=source.copy(decoder=source.decoder!!.copy(counters=source.decoder!!.counters+("md5Verification" to 0L)))
+        assertNotEquals(UsbSilentStatus.FULL_FLAC_USB_TRANSPORT_VERIFIED,UsbFlacFullStatus.classify(configuration,native96(),noMd5,true))
+        assertFalse(native96("streamInfoTotalSamples" to Long.MAX_VALUE,"framesSubmitted" to Long.MAX_VALUE).verified)
+        assertFalse(source.copy(counters=source.counters+("totalSamples" to Long.MAX_VALUE)).fullComplete)
+        assertEquals(UsbSilentStatus.CANCELLED,fullExperiment(ConfigurationFake(),source,native96("stopReason" to 1L)).status)
+        assertNotEquals(UsbSilentStatus.FULL_FLAC_USB_TRANSPORT_VERIFIED,
+            UsbFlacFullStatus.classify(configuration.copy(restorationStatus=UsbConfigurationRestorationStatus.FAILED),native96(),source,true))
+    }
+    @Test fun ignored96ClockAndConfiguredClockMismatchPreventNativeFactory() {
+        val source=fullSource("sampleRate" to 96000,"bitsPerSample" to 24)
+        for (fake in listOf(ConfigurationFake().apply { rate=44100;ignoreTargetRate=true },
+            ConfigurationFake().apply { rateAfterTargetAlternate=48000 })) {
+            val result=fullExperiment(fake,source,native96())
+            assertEquals(UsbSilentStatus.USB_CONFIGURATION_FAILED,result.status)
+            assertFalse(fake.events.contains("native"))
+            assertEquals(UsbConfigurationRestorationStatus.RESTORED,result.configuration!!.restorationStatus)
+        }
+        val missing=ConfigurationFake().apply { ranges=ranges-96000L }
+        val blocked=fullExperiment(missing,source,native96())
+        assertFalse(missing.events.contains("claimAS"));assertFalse(missing.events.contains("native"))
+        assertNotEquals(UsbSilentStatus.FULL_FLAC_USB_TRANSPORT_VERIFIED,blocked.status)
+    }
+    @Test fun shared96PrefixRetainsFiveSecondWallClockGateAndNoWholeMd5Claim() {
+        val source=prefixEvidence("sampleRate" to 96000,"bitsPerSample" to 24)
+        val native=prefixNative("schedulerNominalRateHz" to 96000,"formatBitsPerSample" to 24,"formatBytesPerSample" to 3,
+            "formatBytesPerFrame" to 6,"formatSubslotBytes" to 3,"formatValidBits" to 24,"formatAlternate" to 10,
+            "outBytesSubmitted" to 6000,"kernelOutActualBytes" to 6000)
+        val result=prefixExperiment(ConfigurationFake(),source,native)
+        assertEquals(UsbSilentStatus.BOUNDED_FLAC_USB_TRANSPORT_VERIFIED,result.status)
+        assertEquals(5000000L,result.transport!!.count("transportDurationTargetUs"))
+        assertFalse(native.copy(counters=native.counters+("activeTransportUsAtStop" to 4999999L)).verified)
+        assertEquals(io.github.rsgarrido.sazanami.player.bitperfect.flac.FlacVerificationStatus.CANCELLED,source.decoder!!.nativeStatus)
+        val report=UsbAudioDiagnosticReport.format(UsbAudioDiagnosticState(generation=17,flacUsbExperiment=result))
+        assertTrue(report.contains("24/96000"));assertTrue(report.contains("whole-file FLAC MD5 verification: NOT APPLICABLE"))
+    }
+    @Test fun excluded96Pcm16AndOtherUnsupportedSourcesBlockOwnershipWithoutFallback() {
+        for ((rate,bits) in listOf(96000L to 16L,44100L to 24L,88200L to 24L,176400L to 24L,192000L to 24L,96000L to 32L)) {
+            val fake=ConfigurationFake()
+            val source=fullSource("sampleRate" to rate,"bitsPerSample" to bits,"sourceIntegrityMask" to 4L)
+            val result=fullExperiment(fake,source,native96())
+            assertFalse(fake.events.contains("claimAC"));assertFalse(fake.events.contains("native"))
+            val end=io.github.rsgarrido.sazanami.player.integratedTerminalState(
+                io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackState(enabled=true,normalReleased=true),result.copy(originalFlacFdClosed=true))
+            assertTrue(end.enabled);assertTrue(end.normalReleased)
+            assertEquals("UNSUPPORTED_TRACK",end.error)
+            assertEquals(io.github.rsgarrido.sazanami.player.IntegratedDirectPhase.ERROR,end.phase)
+        }
+    }
     private fun native24(vararg changes: Pair<String,Long>)=fullNative(*(mapOf("schedulerNominalRateHz" to 48000L,
         "formatBitsPerSample" to 24L,"formatBytesPerSample" to 3L,"formatBytesPerFrame" to 6L,
         "formatSubslotBytes" to 3L,"formatValidBits" to 24L,"formatAlternate" to 10L,
@@ -32,7 +123,7 @@ class UsbSilentTransportTest {
             io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackState(enabled=true),run.copy(originalFlacFdClosed=true))
         assertEquals(io.github.rsgarrido.sazanami.player.IntegratedDirectPhase.ENDED,end.phase)
         val report=io.github.rsgarrido.sazanami.player.formatIntegratedDirectPlayback(end)
-        for(text in listOf("Session 14","format=48000/2/24","PCM24LE packed","subslot bytes=3","valid bits=24",
+        for(text in listOf("Session 15","format=48000/2/24","PCM24LE packed","subslot bytes=3","valid bits=24",
             "bytes per frame=6","alternate=10","source/configuration agreement=true","source PCM bytes=60006"))
             assertTrue(text,report.contains(text))
     }
@@ -90,7 +181,7 @@ class UsbSilentTransportTest {
             io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackState(enabled=true),full.copy(originalFlacFdClosed=true))
         assertEquals(io.github.rsgarrido.sazanami.player.IntegratedDirectPhase.ENDED,end.phase)
         val report=io.github.rsgarrido.sazanami.player.formatIntegratedDirectPlayback(end)
-        for (text in listOf("Session 14","format=48000/2/16","requested USB clock Hz=48000",
+        for (text in listOf("Session 15","format=48000/2/16","requested USB clock Hz=48000",
             "verified USB clock Hz=48000","scheduler nominal/source rate Hz=48000",
             "source/request/both readbacks/scheduler agree=true","production Bit-perfect: NOT YET COMPLETE"))
             assertTrue(text,report.contains(text))
@@ -1067,6 +1158,8 @@ class UsbSilentTransportTest {
     private inner class ConfigurationFake : UsbAudioConfigurationTransport {
         var selectedPlan=configurationPlan
         var ignoreTargetRate=false
+        var ranges=listOf(44100L,48000L,96000L)
+        var rateAfterTargetAlternate: Long?=null
         val events = mutableListOf<String>(); var claimAs = true; var reportedAlternate: Int? = null; var rate = 48000L; var alt = 0
         var restoreFails = false; var speed = UsbFsSpeed.HIGH; var ac = false; var streaming = false; var closed = false; var now = 0L
         override fun interfaces() = android(model).mapIndexed { index, it -> UsbAudioClaimInterface(index, it.number, it.alternate, it.interfaceClass, it.subclass, it.protocol) }
@@ -1083,8 +1176,8 @@ class UsbSilentTransportTest {
         private fun u32(value: Long) = ByteArray(4) { (value shr (it * 8)).toByte() }
         override fun read(request: UsbClockReadRequest, buffer: ByteArray): Int {
             check(ac)
-            val data = when { request.rangeHeaderOnly -> byteArrayOf(3, 0)
-                request.query == UsbClockQuery.FREQUENCY_RANGE -> byteArrayOf(3, 0) + listOf(44100L, 48000L, 96000L).flatMap { (u32(it) + u32(it) + u32(0)).toList() }.toByteArray()
+            val data = when { request.rangeHeaderOnly -> byteArrayOf(ranges.size.toByte(), 0)
+                request.query == UsbClockQuery.FREQUENCY_RANGE -> byteArrayOf(ranges.size.toByte(), 0) + ranges.flatMap { (u32(it) + u32(it) + u32(0)).toList() }.toByteArray()
                 request.query == UsbClockQuery.CURRENT_FREQUENCY -> u32(rate)
                 else -> byteArrayOf(1) }
             data.copyInto(buffer); return data.size
@@ -1099,6 +1192,7 @@ class UsbSilentTransportTest {
             return UsbConfigurationControlEvidence.decode(request, evidence)
         }
         override fun setAlternate(request: UsbStreamingAlternateRequest): UsbStreamingAlternateEvidence { check(ac && streaming); events += "setAlt:${request.alternate}"; alt = request.alternate
+            if(request.alternate==selectedPlan.streaming.alternate) rateAfterTargetAlternate?.let { rate=it }
             return UsbStreamingAlternateEvidence(request, UsbFsIoctlResult(UsbFsIoctlOperation.SETINTERFACE, 0, 0, null), UsbClockQueryStatus.SUCCESS) }
         override fun close() { events += "close"; closed = true }
         override fun monotonicMs() = now

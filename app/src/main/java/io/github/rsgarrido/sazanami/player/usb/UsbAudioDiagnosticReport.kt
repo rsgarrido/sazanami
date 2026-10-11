@@ -456,7 +456,7 @@ internal object UsbAudioDiagnosticReport {
 
     private fun StringBuilder.appendFullFlacSource(result: UsbSilentTransportExperimentResult?) {
         appendLine("Scope: debug-only one-track full direct USB playback; source start frame=0; no duration-success timer")
-        appendLine("Input: native FLAC; accepted formats ONLY stereo 16/44100, 16/48000, 24/48000 integer packed PCM; original amplitude")
+        appendLine("Input: native FLAC; accepted formats ONLY stereo 16/44100, 16/48000, 24/48000, 24/96000 integer packed PCM; original amplitude")
         appendLine("libFLAC version=1.5.0; Session 9 whole-file verifier reused; MD5 checking enabled before init; nonzero STREAMINFO reference and true physical EOS required")
         appendLine("Queue capacity frames=16384; prebuffer target frames=8192; shorter complete tracks prime min(total,8192) only after verified EOF/MD5. Prime before AC/AS ownership.")
         appendLine("Producer EOF preserves queued PCM. Consumer drains through totalSamples-1; exact terminal tail; no zero padding, repetition, interpolation or truncation.")
@@ -493,7 +493,7 @@ internal object UsbAudioDiagnosticReport {
 
     private fun StringBuilder.appendFlacSource(result: UsbSilentTransportExperimentResult?) {
         appendLine("Scope: debug-only bounded direct USB playback; target=5000 ms; normal player integration=NONE")
-        appendLine("Input: native FLAC; source start frame=0; accepted formats ONLY stereo 16/44100, 16/48000, 24/48000 integer packed PCM")
+        appendLine("Input: native FLAC; source start frame=0; accepted formats ONLY stereo 16/44100, 16/48000, 24/48000, 24/96000 integer packed PCM")
         appendLine("libFLAC version=1.5.0; integer-only decode=YES; whole-file FLAC MD5 verification: NOT APPLICABLE — bounded prefix playback (checking disabled before init)")
         appendLine("Queue capacity frames=16384 (${result?.flacSource?.bytesPerFrame?.times(16384) ?: "unavailable"} canonical PCM bytes); prebuffer target frames=8192; source must prime before AC/AS ownership")
         appendLine("Duration clock starts inside the native USB run, immediately before endpoint submission; FLAC open/priming/configuration are excluded. activeTransportUsAtStop excludes teardown; durationUs includes reconciliation.")

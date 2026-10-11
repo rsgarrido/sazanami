@@ -15,6 +15,27 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class DirectUsbMediaPlayerTest {
+    @Test fun media3Uses96000CompletedFramesWithoutWallClockInterpolation() {
+        val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate);val engine=Engine()
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        lateinit var player: DirectUsbMediaPlayer
+        instrumentation.runOnMainSync {
+            player=DirectUsbMediaPlayer(scope,engine,changed={},librarySong={ song })
+            player.setMediaItem(song.toPlayableMediaItem());player.prepare()
+            engine.progress!!.invoke(UsbFullProgress(96000,192000,96000))
+            assertEquals(96000L,player.evidence.sampleRateHz)
+            assertEquals(1000L,player.currentPosition);assertEquals(2000L,player.duration)
+            assertEquals(IntegratedDirectPhase.PLAYING,player.evidence.phase)
+            assertEquals(1,engine.starts);assertEquals(song.uri,engine.uri)
+        }
+        instrumentation.waitForIdleSync()
+        instrumentation.runOnMainSync {
+            assertEquals(1000L,player.currentPosition)
+            player.stop();assertEquals(1,engine.stops);engine.terminal.complete(stopped())
+        }
+        instrumentation.waitForIdleSync()
+        instrumentation.runOnMainSync { scope.cancel() }
+    }
     @Test fun media3Uses48000CompletedFramesForPositionAndDuration() {
         val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate);val engine=Engine()
         val instrumentation=InstrumentationRegistry.getInstrumentation()

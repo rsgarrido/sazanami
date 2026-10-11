@@ -17,6 +17,41 @@ import org.junit.Test
  * Source checks constrain the narrow Android/native boundary; real ABI/DAC behavior needs manual verification.
  */
 class UsbAudioConfigurationExperimentTest {
+    @Test fun pcm24At96SharesAlternateRequiresFreshRangeAndBothReadbacksAndRestores192k() {
+        val selected=UsbAudioConfigurationPlan.resolve(model,android,96000,24)
+        val target=selected.plan!!
+        assertEquals(UsbAudioConfigurationPlan.resolve(model,android,48000,24).plan!!.streaming,target.streaming)
+        assertEquals(3,target.subslotBytes);assertEquals(24,target.validBits)
+        val fake=Fake(target).apply { rate=192000 }
+        val result=run(fake,selected)
+        assertTrue(result.selectedFormatMatches(96000,2,24))
+        assertFalse(result.selectedFormatMatches(96000,2,16))
+        assertEquals(96000L,result.targetClockSet!!.request.rateHz)
+        assertEquals(listOf(0,119,1,0),result.targetClockSet!!.request.payload)
+        assertEquals(96000L,result.targetClockReadback!!.currentFrequencyHz)
+        assertEquals(96000L,result.configuredClockReadback!!.currentFrequencyHz)
+        assertEquals(listOf(96000L,192000L),fake.clockWrites)
+        assertEquals(192000L,result.originalClockReadback!!.currentFrequencyHz)
+        assertEquals(UsbConfigurationRestorationStatus.RESTORED,result.restorationStatus)
+        assertTrue(fake.events.indexOf("setClock:192000")<fake.events.indexOf("releaseAS:8"))
+        assertTrue(fake.events.indexOf("releaseAS:8")<fake.events.indexOf("releaseAC:7"))
+        for (bad in listOf(Fake(target).apply { rate=44100;applyTargetRate=false },
+            Fake(target).apply { rateAfterTargetAlt=48000 })) {
+            val mismatch=run(bad,selected)
+            assertFalse(mismatch.selectedFormatMatches(96000,2,24))
+            assertEquals(UsbTargetConfigurationStatus.FAILED,mismatch.targetStatus)
+            assertEquals(UsbConfigurationRestorationStatus.RESTORED,mismatch.restorationStatus)
+        }
+        val excluded=Fake(target).apply { ranges=ranges.filter { it.minimumHz!=96000L } }
+        val blocked=run(excluded,selected)
+        assertEquals(UsbTargetConfigurationStatus.BLOCKED,blocked.targetStatus)
+        assertTrue(excluded.clockWrites.isEmpty());assertFalse(excluded.events.any { it.startsWith("claimAS:") })
+        for (format in listOf(UsbAudioFormatDescriptor(1,4,24),UsbAudioFormatDescriptor(1,3,16))) {
+            val wrong=model.copy(interfaces=model.interfaces.map { if(it.audioFormat?.validBits==24) it.copy(audioFormat=format) else it })
+            assertNull(UsbAudioConfigurationPlan.resolve(wrong,androidFacts(wrong),96000,24).plan)
+        }
+        assertNull(UsbAudioConfigurationPlan.resolve(model,android,96000,16).plan)
+    }
     @Test fun pcm24SelectionIsDescriptorResolvedAndFourByteSubslotsAreRejected() {
         val selected=UsbAudioConfigurationPlan.resolve(model,android,48000,24)
         assertEquals(6,selected.plan!!.streaming.alternate);assertEquals(3,selected.plan!!.subslotBytes)

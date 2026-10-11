@@ -78,7 +78,8 @@ internal data class UsbIsoTiming(val dataIntervalUs: Long, val feedbackIntervalU
         }
         fun resolve(speed: UsbFsSpeed?, data: UsbEndpointDescriptor, feedback: UsbEndpointDescriptor,
             sampleRateHz: Long = UsbDirectPcmFormat.REFERENCE_RATE_HZ, bytesPerFrame: Int = BYTES_PER_FRAME): UsbIsoTiming? {
-            if (!UsbDirectPcmFormat.supportsRate(sampleRateHz) || bytesPerFrame !in listOf(4,6) || (bytesPerFrame==6 && sampleRateHz!=48000L)) return null
+            val bits = when (bytesPerFrame) { 4 -> 16L; 6 -> 24L; else -> return null }
+            if (!UsbDirectPcmFormat.supports(sampleRateHz, 2L, bits)) return null
             val dataUs = serviceIntervalUs(speed, data.interval) ?: return null
             val feedbackUs = serviceIntervalUs(speed, feedback.interval) ?: return null
             val capacity = highSpeedCapacity(data.maxPacketSizeRaw) ?: return null

@@ -9,7 +9,7 @@ import io.github.rsgarrido.sazanami.player.usb.UsbIsoTiming
 import java.util.Locale
 
 internal fun formatIntegratedDirectPlayback(state: IntegratedDirectPlaybackState): String=buildString {
-    appendLine("Integrated Direct USB Playback — Session 14")
+    appendLine("Integrated Direct USB Playback — Session 15")
     appendLine("experimental direct USB enabled=${state.enabled}; requested backend=${if(state.enabled) "DIRECT_USB" else "NORMAL"}; authoritative backend=${if(state.enabled && !state.normalReleased) "NONE_BLOCKED" else if(state.enabled) "DIRECT_USB" else "NORMAL"}")
     appendLine("safe library ID=${state.libraryId ?: "none"}; request generation=${state.generation}; frame 0 only; no raw URI/path")
     appendLine("normal pipelines synchronously released=${state.normalReleased}; standby/preload inactive=${state.normalReleased}; crossfade inactive=${state.normalReleased}")

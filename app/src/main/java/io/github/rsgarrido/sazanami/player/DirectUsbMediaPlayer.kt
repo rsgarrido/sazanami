@@ -29,7 +29,7 @@ internal class DirectUsbMediaPlayer(
     private var stopRequested=false
     private var nextGeneration=0L
     private fun update(value: IntegratedDirectPlaybackState) { evidence=value; changed(value); invalidateState() }
-    fun notice(command: String) { update(evidence.copy(notice="$command is unavailable in Session 14")) }
+    fun notice(command: String) { update(evidence.copy(notice="$command is unavailable in Session 15")) }
     override fun getState(): State {
         val playlist=items.mapIndexed { index,item -> MediaItemData.Builder(item.listeningEvidence()?.itemInstanceId ?: "${item.mediaId}:$index")
             .setMediaItem(item).setMediaMetadata(item.mediaMetadata).setIsSeekable(false)

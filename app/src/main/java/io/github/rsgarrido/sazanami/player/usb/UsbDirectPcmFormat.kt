@@ -3,9 +3,11 @@ package io.github.rsgarrido.sazanami.player.usb
 /** Exact source policy; no coercion. Silence/reference diagnostics retain 16/44.1. */
 internal object UsbDirectPcmFormat {
     const val REFERENCE_RATE_HZ = 44100L
-    fun supportsRate(rateHz: Long) = rateHz == 44100L || rateHz == 48000L
+    // Clock/scheduler/progress only; source acceptance requires a complete tuple.
+    fun supportsRate(rateHz: Long) = rateHz == 44100L || rateHz == 48000L || rateHz == 96000L
     fun supports(rateHz: Long, channels: Long, bits: Long) = channels == 2L &&
-        ((supportsRate(rateHz) && bits == 16L) || (rateHz == 48000L && bits == 24L))
+        (((rateHz == 44100L || rateHz == 48000L) && bits == 16L) ||
+            ((rateHz == 48000L || rateHz == 96000L) && bits == 24L))
     fun resolve(rateHz: Long, channels: Long, bits: Long): UsbDirectFormat? =
         if (supports(rateHz,channels,bits)) UsbDirectFormat(rateHz,channels.toInt(),bits.toInt()) else null
 }

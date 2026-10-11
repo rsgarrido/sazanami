@@ -3,9 +3,11 @@
 #include <memory>
 
 namespace sazanami::directpcm {
-constexpr bool supportsRate(uint32_t rate) noexcept { return rate == 44100 || rate == 48000; }
+// Clock/scheduler/progress rates; source acceptance must use the complete tuple below.
+constexpr bool supportsRate(uint32_t rate) noexcept { return rate == 44100 || rate == 48000 || rate == 96000; }
 constexpr bool supports(uint32_t rate, uint32_t channels, uint32_t bits) noexcept {
-    return channels == 2 && ((supportsRate(rate) && bits == 16) || (rate == 48000 && bits == 24));
+    return channels == 2 && (((rate == 44100 || rate == 48000) && bits == 16) ||
+        ((rate == 48000 || rate == 96000) && bits == 24));
 }
 struct Format final {
     const uint32_t sampleRateHz, channels, bitsPerSample, bytesPerSample, bytesPerFrame, subslotBytes, validBits;

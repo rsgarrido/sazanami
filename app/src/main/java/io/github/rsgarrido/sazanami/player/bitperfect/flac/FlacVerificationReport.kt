@@ -14,7 +14,7 @@ internal object FlacVerificationReport {
         appendLine("Input access: Storage Access Framework, read-only ParcelFileDescriptor; native dup owns only its duplicate; Kotlin owns/closes original")
         appendLine("Sequential decode; no seek/flush/reset. Non-seekable providers supported; file length is unavailable unless reported by a regular seekable fd.")
         appendLine("Cancellation: cooperative read/block checks; a blocking provider read may delay cleanup. No detached native worker; stale screen results are suppressed.")
-        appendLine("Supported subset only: native FLAC / stereo / 16-bit at 44100 or 48000 Hz, or packed 24-bit at 48000 Hz; no conversion")
+        appendLine("Supported subset only: native FLAC / stereo / 16-bit at 44100 or 48000 Hz, or packed 24-bit at 48000 or 96000 Hz; no conversion")
         if (running) { appendLine("Lifecycle: verification running; final evidence pending"); return@buildString }
         if (result == null) { appendLine("Result: NOT_ATTEMPTED; debug action: Verify FLAC exact PCM (stereo 16/44.1, 16/48 or 24/48)"); return@buildString }
         appendLine("Result: ${result.status}")

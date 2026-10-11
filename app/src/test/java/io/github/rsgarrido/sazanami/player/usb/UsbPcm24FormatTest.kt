@@ -6,10 +6,11 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class UsbPcm24FormatTest {
-    @Test fun policyAcceptsExactlyThreeNativeFlacPcmFormats() {
+    @Test fun policyAcceptsExactlyFourNativeFlacPcmFormats() {
         for(rate in listOf(44100L,48000L)) assertTrue(UsbDirectPcmFormat.supports(rate,2,16))
         assertTrue(UsbDirectPcmFormat.supports(48000,2,24))
-        for(rate in listOf(44100L,88200L,96000L,176400L,192000L)) assertFalse(UsbDirectPcmFormat.supports(rate,2,24))
+        assertTrue(UsbDirectPcmFormat.supports(96000,2,24))
+        for(rate in listOf(44100L,88200L,176400L,192000L)) assertFalse(UsbDirectPcmFormat.supports(rate,2,24))
         for(rate in listOf(88200L,96000L,176400L,192000L)) assertFalse(UsbDirectPcmFormat.supports(rate,2,16))
         for(bits in listOf(16L,24L,32L)) {
             assertFalse(UsbDirectPcmFormat.supports(48000,1,bits));assertFalse(UsbDirectPcmFormat.supports(48000,8,bits))
