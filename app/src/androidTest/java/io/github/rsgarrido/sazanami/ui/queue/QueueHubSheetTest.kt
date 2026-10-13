@@ -6,7 +6,6 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -21,6 +20,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeLeft
+import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.controller.PlaybackQueueCardUiState
 import io.github.rsgarrido.sazanami.controller.PlaybackQueueEntryUiState
 import io.github.rsgarrido.sazanami.controller.PlaybackQueueHubUiState
@@ -406,7 +406,7 @@ class QueueHubSheetTest {
 
         composeRule.runOnIdle { assertEquals(1, dismissedCount) }
         composeRule.onAllNodesWithText("Undo").assertCountEquals(0)
-        composeRule.runOnIdle { hubState = hubState.copy(message = "Unrelated update") }
+        composeRule.runOnIdle { hubState = hubState.copy(message = R.string.queue_message_partial_load) }
         composeRule.onAllNodesWithText("Undo").assertCountEquals(0)
     }
 
