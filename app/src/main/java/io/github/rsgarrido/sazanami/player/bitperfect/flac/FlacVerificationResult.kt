@@ -9,7 +9,7 @@ internal enum class FlacVerificationStatus {
     FLAC_DECODE_COMPLETED_MD5_UNAVAILABLE, TOTAL_SAMPLE_COUNT_UNAVAILABLE, FLAC_MD5_MISMATCH,
     FLAC_DECODER_ERROR, TRUNCATED_OR_UNEXPECTED_EOF, PCM_SAMPLE_OUT_OF_RANGE, FORMAT_CONTRADICTION,
     INPUT_OPEN_FAILED, CANCELLED, NOT_NATIVE_FLAC, COUNTER_OVERFLOW, RESOURCE_CLEANUP_FAILED,
-    NATIVE_UNAVAILABLE, NATIVE_EVIDENCE_INVALID
+    SEEKED_SOURCE_EOF_NOT_WHOLE_FILE_VERIFIED, NATIVE_UNAVAILABLE, NATIVE_EVIDENCE_INVALID
 }
 internal enum class FlacVerificationPhase { IDLE, DOCUMENT_OPENED, DECODER_CREATED, METADATA_READING,
     FORMAT_ACCEPTED, DECODING, END_OF_STREAM, VERIFYING, FINISHED }
@@ -64,10 +64,12 @@ internal object FlacNativeEvidence {
         "maxObservedSample", "outOfRangeSamples", "formatContradictions", "decoderErrors", "readErrno", "seekable",
         "fileSize", "nativeDuplicateClosed", "decoderDeleted", "resourceErrors", "frameOrderErrors", "decoderState", "dupErrno")
     fun decode(value: FlacNativeSnapshot): FlacVerificationResult {
-        require(value.numbers.size == fields.size && value.numbers[0] == 2L && value.numbers[1] in 1L..14L &&
+        require(value.numbers.size == fields.size && value.numbers[0] == 2L && value.numbers[1] in 1L..15L &&
             value.md5.size == 16 && value.examples.size % 9 == 0 && value.examples.size <= 7 * 9 && value.errors.size <= 8)
         require(value.decoderVersion == "1.5.0")
         val numbers = fields.zip(value.numbers.toList()).toMap()
+        if(value.numbers[1]==15L) require(numbers.getValue("md5Verification")==0L && numbers.getValue("cleanEndOfStream")==1L &&
+            numbers.getValue("nativeDuplicateClosed")==1L && numbers.getValue("decoderDeleted")==1L)
         val allowedSigned = setOf("pcmFnv1a", "initStatus", "decoderState", "seekable", "fileSize",
             "minLeftSample", "maxLeftSample", "minRightSample", "maxRightSample", "minObservedSample", "maxObservedSample")
         require(numbers.all { (name, number) -> name in allowedSigned || number >= 0L })

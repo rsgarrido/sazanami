@@ -138,12 +138,14 @@ class IntegratedDirectPlaybackTest {
         val adapter=source("java/io/github/rsgarrido/sazanami/player/DirectUsbMediaPlayer.kt")
         val commands=source("java/io/github/rsgarrido/sazanami/player/IntegratedDirectPlaybackState.kt").substringAfter("internal val integratedDirectCommands")
         for(name in listOf("COMMAND_PREPARE","COMMAND_STOP","COMMAND_PLAY_PAUSE","COMMAND_GET_METADATA","COMMAND_GET_TIMELINE")) assertTrue(commands.contains(name))
-        for(name in listOf("COMMAND_SEEK","COMMAND_SET_REPEAT","COMMAND_SET_SHUFFLE","COMMAND_SET_VOLUME","COMMAND_SET_SPEED")) assertFalse(commands.contains(name))
+        for(name in listOf("COMMAND_SEEK_TO_NEXT_MEDIA_ITEM","COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM","COMMAND_SEEK_TO_MEDIA_ITEM","COMMAND_SET_REPEAT","COMMAND_SET_SHUFFLE","COMMAND_SET_VOLUME","COMMAND_SET_SPEED")) assertFalse(commands.contains(name))
         assertTrue(adapter.contains("PositionSupplier { evidence.positionMs }"));assertTrue(adapter.contains("unsupported(\"Queue edit\")"))
         val app=source("java/io/github/rsgarrido/sazanami/player/PlaybackController.kt")
         assertTrue(app.contains("if (IntegratedDirectPlaybackBridge.directSelected) { isPlaying=false;currentPosition=duration } else handleSongCompleted()"))
         assertTrue(app.contains("isPlaying = !IntegratedDirectPlaybackBridge.directSelected"))
-        for(name in listOf("Seek","Next","Previous","Shuffle")) assertTrue(app.contains("reject(\"$name\")"))
+        for(name in listOf("Next","Previous","Shuffle")) assertTrue(app.contains("reject(\"$name\")"))
+        assertTrue(app.contains("IntegratedDirectPlaybackBridge.seek(position.toLong())"));assertTrue(adapter.contains("handleSeek(mediaItemIndex"))
+        assertTrue(adapter.contains("commands.remove(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)"))
         assertTrue(app.contains("IntegratedDirectPlaybackBridge.togglePlayPause()"));assertTrue(app.contains("IntegratedDirectPlaybackBridge.pause()"))
     }
     @Test fun progressAndShutdownStayServiceOwnedAndBounded() {

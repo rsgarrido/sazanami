@@ -84,6 +84,6 @@ import io.github.rsgarrido.sazanami.player.*
 private fun Context.copyIntegratedDirectReport() {
     val clipboard=getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
     clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.usb_integrated_title),
-        formatIntegratedDirectPlayback(IntegratedDirectPlaybackBridge.reportState)))
+        formatIntegratedDirectPlayback(IntegratedDirectPlaybackBridge.reportState,resources.configuration.locales[0])))
     Toast.makeText(this,R.string.diagnostics_copied,Toast.LENGTH_SHORT).show()
 }

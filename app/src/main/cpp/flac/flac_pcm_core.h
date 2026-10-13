@@ -13,7 +13,7 @@ constexpr uint64_t kOffset = 14695981039346656037ULL, kPrime = 1099511628211ULL;
 constexpr uint64_t kCounterMax = static_cast<uint64_t>(INT64_MAX);
 enum class Outcome : int { Pending, Exact, Unsupported, Md5Unavailable, TotalUnavailable, Md5Mismatch,
     DecoderError, Truncated, SampleRange, FormatContradiction, InputOpenFailed, Cancelled,
-    NotNativeFlac, CounterOverflow, CleanupFailed };
+    NotNativeFlac, CounterOverflow, CleanupFailed, SeekedEof };
 enum class Phase : int { Idle, DocumentOpened, DecoderCreated, MetadataReading, FormatAccepted,
     Decoding, EndOfStream, Verifying, Finished };
 enum Field : size_t { Version, Result, Lifecycle, Recognized, Created, InitStatus, Md5Enabled, StreamInfo,

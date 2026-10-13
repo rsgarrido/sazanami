@@ -42,13 +42,13 @@ class IntegratedFeedbackAuditTest {
         val copyMatch=requireNotNull(lockedCopy)
         val copy=copyMatch.groupValues[1]
         val outsideCopy=progress.removeRange(copyMatch.range)
-        for(read in listOf("session->livePlayback","session->liveControl","session->livePausedStarted"))
+        for(read in listOf("session->livePlayback","session->liveControl","session->livePausedStarted","session->liveSeek"))
             assertFalse("Published progress cannot be read outside its mutex: $read",outsideCopy.contains(read))
         for (read in listOf("session->livePlayback[0]","session->totalProgress","session->sampleRateHz",
-            "session->livePlayback[1]","session->liveControl.begin()","session->liveControl.end()","session->livePausedStarted"))
+            "session->livePlayback[1]","session->liveControl.begin()","session->liveControl.end()","session->livePausedStarted","session->liveSeek"))
             assertTrue("Missing synchronized progress read: $read",copy.contains(read))
-        assertTrue(progress.contains("std::array<jlong,4+kControlFieldCount> values"))
-        assertTrue(native.contains("kControlFieldCount=FieldCount-PlaybackPhaseField"))
+        assertTrue(progress.contains("std::array<jlong,4+kControlFieldCount+kSeekFieldCount> values"))
+        assertTrue(native.contains("kControlFieldCount=SeekCapable-PlaybackPhaseField"))
         assertTrue(native.contains("static_assert(kControlFieldCount==17)"))
         for (forbidden in listOf("ioctl(","reapOne(","submit(","scheduler.","requestedStop.store","queue.","CallVoidMethod",
             "session->stats[","session->playback.","session->command","requestPlayback(","publishPlayback(","notify(","consume("))
@@ -58,7 +58,7 @@ class IntegratedFeedbackAuditTest {
         assertTrue(publication.contains("livePlayback={static_cast<uint64_t>(stats[CompletedFrames]),static_cast<uint64_t>(playback.phase)}"))
         val completion=section(native,"bool reapOne()","void cancel(")
         assertTrue(completion.contains("if (cancelled) continue"))
-        assertTrue(Regex("""else if \(status == 0\) \{\s*stats\[CompletedFrames\] \+= slot.frames\[i\];""").containsMatchIn(completion))
+        assertTrue(Regex("""else if \(status == 0\) \{\s*(?:if\(fullTrack && !fv::canAdd\(stats\[CompletedFrames\],slot.frames\[i\]\)\) \{fail\(TerminalAccounting,Stop::Accounting\);continue;\}\s*)?stats\[CompletedFrames\] \+= slot.frames\[i\];""").containsMatchIn(completion))
         assertTrue(completion.indexOf("packet.actual_length != packet.length")<completion.indexOf("stats[CompletedFrames] +="))
         // Control delivery is a separate bounded mailbox/wake path, never a second scheduling worker.
         val command=section(native,"bool requestPlayback(","Session(int borrowedFd")
@@ -87,6 +87,9 @@ class IntegratedFeedbackAuditTest {
         val jni=source("java/io/github/rsgarrido/sazanami/player/usb/UsbFsDiagnostics.kt")
         val decode=section(jni,"fun fullProgress(","private external fun nativeFullProgress(")
         assertEquals(17,UsbIsoNativeStats.controlFields.size)
+        assertEquals(37,UsbIsoNativeStats.seekFields.size)
+        assertTrue(copy.contains("session->liveSeek.begin()") && copy.contains("session->liveSeek.end()"))
+        assertTrue(decode.contains("UsbIsoNativeStats.validateSeek(control)"))
         assertTrue(decode.contains("values.size==4+UsbIsoNativeStats.controlFields.size"))
         assertTrue(decode.contains("UsbIsoNativeStats.validateControl(control)"))
         assertTrue(decode.contains("control.getValue(\"playbackTransportState\")==values[3]"))

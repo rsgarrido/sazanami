@@ -330,13 +330,13 @@
     <string name="usb_full_flac_scope">Solo FLAC nativo: estéreo 16/44100, 16/48000, 24/48000 o 24/96000 empaquetado, desde el fotograma 0 hasta EOF natural verificado. Deben verificarse el MD5 del archivo completo y todos los fotogramas de origen. Sin pausa, búsqueda, siguiente pista, integración con el reproductor normal ni modo Bit-perfect de producción. La escucha y recuperación requieren observación manual.</string>
     <string name="usb_full_flac_result">Sesión 11: %1$s</string>
     <string name="usb_full_flac_summary">Fotogramas totales=%1$s; consumidos=%2$s; MD5 completo=%3$s; FNV PCM decodificado completo=%4$s</string>
-    <string name="usb_integrated_title">USB directo desde la biblioteca experimental — Sesión 16</string>
-    <string name="usb_integrated_copy_report">Copiar informe de Sesión 16</string>
-    <string name="usb_integrated_latest_attempt">Último intento de Sesión 16 (informe conservado)</string>
+    <string name="usb_integrated_title">USB directo desde la biblioteca experimental — Sesión 17</string>
+    <string name="usb_integrated_copy_report">Copiar informe de Sesión 17</string>
+    <string name="usb_integrated_latest_attempt">Último intento de Sesión 17 (informe conservado)</string>
     <string name="usb_integrated_enable">Activar USB directo integrado experimental</string>
     <string name="usb_integrated_disable">Desactivar el modo directo tras liberar USB</string>
     <string name="usb_integrated_stop">Detener reproducción USB directa</string>
     <string name="usb_integrated_restart">Reiniciar la pista desde el fotograma 0</string>
     <string name="usb_integrated_warning">Solo desarrollo. Detén la reproducción normal y concede acceso USB en el diagnóstico de abajo. Activar libera ambos motores normales sin iniciar una canción. Selecciona un FLAC nativo estéreo de 16 bits a 44.1/48 kHz o 24 bits a 48/96 kHz en la biblioteca. Usa un volumen físico de KA15 de unos 15A–20A. Un fallo directo nunca activa audio normal.</string>
-    <string name="usb_integrated_commands">Usa Detener para abortar con seguridad. Pausa y Reproducir controlan esta misma sesión directa. Búsqueda, siguiente, anterior, repetición y mezcla no están disponibles. Los controles normales rechazan estas órdenes. Desactiva el modo tras la restauración; la reproducción normal no se reinicia automáticamente.</string>
+    <string name="usb_integrated_commands">Usa Detener para abortar con seguridad. Pausa, Reproducir y la búsqueda dentro de la pista controlan esta misma sesión directa. Arrastra la barra para previsualizar y suelta una vez para buscar si la fuente lo permite. Siguiente, anterior, repetición y mezcla siguen sin estar disponibles. Desactiva el modo tras la restauración; la reproducción normal no se reinicia automáticamente.</string>
 </resources>

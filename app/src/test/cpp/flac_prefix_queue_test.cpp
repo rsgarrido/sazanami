@@ -49,7 +49,14 @@ static void absoluteIdentity() {
 static void backpressureAndWake() {
     PrefixQueue q;
     static_assert(kPrefixCapacity==16384 && kPrefixPrebuffer==8192 && kPrefixDurationUs==5000000);
-    static_assert(sizeof(q.bytes)==65536);
+    assert(q.bytes.size()==kPrefixCapacity*q.frameBytes());
+    assert(q.frameBytes()==4 && q.bytes.size()==65536); // PCM16: frame capacity is not byte capacity.
+    {
+        const auto format24=sazanami::directpcm::Format::create(48000,2,24);assert(format24);
+        PrefixQueue pcm24(false,format24);
+        assert(pcm24.bytes.size()==kPrefixCapacity*pcm24.frameBytes());
+        assert(pcm24.frameBytes()==6 && pcm24.bytes.size()==98304); // Packed stereo PCM24.
+    }
     for (size_t i=0;i<kPrefixCapacity;++i) assert(q.push(i,a));
     q.streaming.store(true); q.trackDepth(q.depth());
     auto blocked=std::async(std::launch::async,[&]{return q.push(kPrefixCapacity,b);});
@@ -143,10 +150,20 @@ static void decoderTotalGatePrecedesCanonicalBytes() {
     FLAC__Frame frame{}; frame.header.sample_rate=44100; frame.header.channels=2; frame.header.bits_per_sample=16;
     frame.header.blocksize=2; frame.header.number_type=FLAC__FRAME_NUMBER_TYPE_SAMPLE_NUMBER;
     FLAC__int32 left[2]{1,2},right[2]{-1,-2}; const FLAC__int32* channels[]{left,right};
+    PrefixQueue queue(true);queue.expectedTotal=1;
+    const auto queueBytes=queue.bytes;
+    const auto queueIndices=queue.indices;
     uint64_t enqueued=0;
-    v.consumeCanonical=[&](uint64_t index,const uint8_t*) { assert(index==0); ++enqueued; return true; };
+    v.consumeCanonical=[&](uint64_t index,const uint8_t* canonical) { assert(index==0); ++enqueued; return queue.push(index,canonical); };
     assert(Verification::write(nullptr,&frame,channels,&v)==FLAC__STREAM_DECODER_WRITE_STATUS_ABORT);
-    assert(v.failure==Outcome::FormatContradiction && v.pcm.frames==1 && v.pcm.bytes==4 && enqueued==1);
+    assert(v.failure==Outcome::FormatContradiction && v.pcm.frames==0 && v.pcm.bytes==0 && enqueued==0);
+    assert(v.pcm.hash==kOffset && v.pcm.blocks==0 && v.originalNext==0);
+    assert(v.pcm.callbacks==1 && v.facts[Contradictions]==1); // The block is examined, but no PCM is accepted.
+    assert(queue.head==0 && queue.tail==0 && queue.depth()==0 && queue.prepared==0);
+    assert(queue.decoded==0 && queue.enqueuedTotal==0 && queue.consumedTotal==0);
+    assert(queue.bytes==queueBytes && queue.indices==queueIndices);
+    assert(queue.enqueuedHash==kOffset && queue.consumedHash==kOffset && queue.segmentConsumedHash==kOffset);
+    assert(queue.faults==0 && !queue.stop); // No canonical callback reached the queue.
     Verification bounded(OwnedFd(-1),[]{ return false; },false);
     assert(!bounded.wholeFile && !bounded.enforceExpectedTotal); // Session 10 defaults retained
     Verification whole(OwnedFd(-1),[]{ return false; }); assert(whole.wholeFile && !whole.enforceExpectedTotal); // Session 9

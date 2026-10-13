@@ -9,6 +9,34 @@ import org.junit.Test
 
 /** Synthetic evidence and source-boundary tests, never claims about real kernel/DAC completions. */
 class UsbSilentTransportTest {
+    @Test fun feedbackAbortKeepsRawBytesDistinctFromVerifiedFramesAndStillRestoresSafely() {
+        val (template,sourceTemplate)=UsbSeekEvidenceTest().fixture(44100,16)
+        val usb=template.copy(generation=17,streamGeneration=23,counters=template.counters+mapOf(
+            "generation" to 17L,"streamGeneration" to 23L,"stopReason" to 6L,"playbackTransportState" to 8L,
+            "integrityMask" to ((1L shl 6) or (1L shl 17)),"framesSubmitted" to 940158L,"framesScheduled" to 940158L,
+            "sourceFramesGenerated" to 940158L,"prefixSourceFramesConsumed" to 940158L,"framesCompleted" to 939279L,
+            "outBytesSubmitted" to 3760632L,"kernelOutActualBytes" to 3757352L,"framesCancelled" to 879L,
+            "outCancelledUrbs" to 19L,"trueEofReached" to 0L,"producerFinishedNaturally" to 0L,"invalidStreak" to 10L))
+        val source=sourceTemplate.copy(counters=sourceTemplate.counters+mapOf("generation" to 17L,"streamGeneration" to 23L,
+            "trueEofReached" to 0L,"producerFinishedNaturally" to 0L,"framesDecoded" to 1054853L,"framesEnqueued" to 1054846L,
+            "framesConsumedFromQueue" to 940158L,"queueFramesAtStop" to 16384L,"prefetchedFramesDiscardedAtStop" to 16384L),
+            decoder=sourceTemplate.decoder!!.copy(nativeStatus=io.github.rsgarrido.sazanami.player.bitperfect.flac.FlacVerificationStatus.CANCELLED,
+                counters=sourceTemplate.decoder!!.counters+mapOf("md5Verification" to 0L,"cleanEndOfStream" to 0L,"physicalInputEof" to 0L,
+                    "result" to io.github.rsgarrido.sazanami.player.bitperfect.flac.FlacVerificationStatus.CANCELLED.ordinal.toLong(),
+                    "decodedStereoFrames" to 1054853L,"decodedSamplesPerChannel" to 1054853L,"canonicalPcmBytesHashed" to 4219412L)))
+        val fake=ConfigurationFake();val result=fullExperiment(fake,source,usb).withFlacInputClosed(true,source)
+        assertEquals(UsbSilentStatus.USB_TRANSPORT_FAILED,result.status)
+        assertFalse(usb.verified);assertFalse(source.fullComplete);assertFalse(source.seekComplete);assertFalse(source.decoder!!.strongEvidence)
+        assertEquals(236L,usb.count("kernelOutActualBytes")-usb.count("framesCompleted")*4)
+        assertEquals(UsbConfigurationRestorationStatus.RESTORED,result.configuration!!.restorationStatus)
+        assertTrue(fake.events.indexOf("nativeStopped")<fake.events.indexOf("sourceJoined"))
+        assertTrue(fake.events.indexOf("sourceJoined")<fake.events.indexOf("restoreClock"))
+        assertTrue(fake.events.indexOf("releaseAS")<fake.events.indexOf("releaseAC"))
+        assertTrue(fake.events.indexOf("releaseAC")<fake.events.indexOf("close"))
+        assertTrue(result.integratedCleanupSafe()) // Safe cleanup is independent of failed playback evidence.
+        assertEquals(UsbSilentStatus.USB_TRANSPORT_FAILED,UsbFlacFullStatus.classify(result.configuration!!,
+            usb.copy(counters=usb.counters+("stopReason" to 1L)),source,true)) // Concurrent Stop cannot turn FAILED transport into cancellation.
+    }
     @Test fun stopCannotMaskDrainResumeOrTransportFailureAsCancellation() {
         val cancelledSource=fullSource("sourceIntegrityMask" to 2048L)
         val configuration=fullExperiment(ConfigurationFake()).configuration!!
@@ -27,7 +55,7 @@ class UsbSilentTransportTest {
             "pauseDrainFailures" to 1L,"resumeFailure" to 1L,"md5VerificationPass" to 0L,"wholeDecodedPcmHash" to 999L))
             assertFalse(change.first,evidence.copy(counters=evidence.counters+change).verified)
         assertFalse(evidence.copy(counters=evidence.counters-"pauseRequests").verified)
-        for (change in listOf("playbackTransportState" to 9L,"lastPauseOutcome" to 7L,"resumeFailure" to 4L,"intentionalPausedUs" to -1L))
+        for (change in listOf("playbackTransportState" to 12L,"lastPauseOutcome" to 7L,"resumeFailure" to 4L,"intentionalPausedUs" to -1L))
             rejects(snapshot(change))
     }
     // Synthetic 10001-frame track: 104 full 96-frame URBs and a 12+5-frame terminal tail.
@@ -59,7 +87,7 @@ class UsbSilentTransportTest {
         assertEquals(io.github.rsgarrido.sazanami.player.IntegratedDirectPhase.ENDED,end.phase)
         assertEquals(10001L*1000/96000,end.durationMs);assertEquals(end.durationMs,end.positionMs)
         val report=io.github.rsgarrido.sazanami.player.formatIntegratedDirectPlayback(end)
-        for (text in listOf("Session 16","format=96000/2/24","PCM24LE packed","subslot bytes=3","valid bits=24",
+        for (text in listOf("Integrated Direct USB Playback — Session 17","format=96000/2/24","PCM24LE packed","subslot bytes=3","valid bits=24",
             "bytes per frame=6","alternate=10","endpoint capacity bytes=776","requested USB clock Hz=96000",
             "verified USB clock Hz=96000","scheduler nominal/source rate Hz=96000","source/configuration agreement=true",
             "MD5=PASS","source PCM bytes=60006","outBytesSubmitted=60006","kernelOutActualBytes=60006",
@@ -144,7 +172,7 @@ class UsbSilentTransportTest {
             io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackState(enabled=true),run.copy(originalFlacFdClosed=true))
         assertEquals(io.github.rsgarrido.sazanami.player.IntegratedDirectPhase.ENDED,end.phase)
         val report=io.github.rsgarrido.sazanami.player.formatIntegratedDirectPlayback(end)
-        for(text in listOf("Session 16","format=48000/2/24","PCM24LE packed","subslot bytes=3","valid bits=24",
+        for(text in listOf("Integrated Direct USB Playback — Session 17","format=48000/2/24","PCM24LE packed","subslot bytes=3","valid bits=24",
             "bytes per frame=6","alternate=10","source/configuration agreement=true","source PCM bytes=60006"))
             assertTrue(text,report.contains(text))
     }
@@ -202,7 +230,7 @@ class UsbSilentTransportTest {
             io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackState(enabled=true),full.copy(originalFlacFdClosed=true))
         assertEquals(io.github.rsgarrido.sazanami.player.IntegratedDirectPhase.ENDED,end.phase)
         val report=io.github.rsgarrido.sazanami.player.formatIntegratedDirectPlayback(end)
-        for (text in listOf("Session 16","format=48000/2/16","requested USB clock Hz=48000",
+        for (text in listOf("Integrated Direct USB Playback — Session 17","format=48000/2/16","requested USB clock Hz=48000",
             "verified USB clock Hz=48000","scheduler nominal/source rate Hz=48000",
             "source/request/both readbacks/scheduler agree=true","production Bit-perfect: NOT YET COMPLETE"))
             assertTrue(text,report.contains(text))
@@ -648,7 +676,7 @@ class UsbSilentTransportTest {
         assertTrue(controller.contains("if (BuildConfig.DEBUG) runConfigurationDiagnostic(identity, silentRun = true, mode = UsbPcmDiagnosticMode.REFERENCE)"))
     }
     private fun prefixEvidence(vararg changes: Pair<String,Long>): UsbFlacSourceResult {
-        val values = mutableMapOf("version" to 3L,"generation" to 17L,"streamGeneration" to 23L,
+        val values = mutableMapOf("version" to 4L,"generation" to 17L,"streamGeneration" to 23L,
             "initialPrimedFrames" to 8192L,"metadataAccepted" to 1L,"sampleRate" to 44100L,"channels" to 2L,"bitsPerSample" to 16L,
             "framesDecoded" to 17385L,"framesEnqueued" to 17384L,"framesConsumedFromQueue" to 1000L,
             "queueFramesAtStop" to 16384L,"prefetchedFramesDiscardedAtStop" to 16384L,
@@ -822,7 +850,7 @@ class UsbSilentTransportTest {
         assertEquals("6d1fc92fd7ab7430fedb5840f3550d965cfed3bdcf1b45c909be58ff33808513",digest(allocation))
         val feedback="    void feedbackPacket("+native.substringAfter("    void feedbackPacket(").substringBefore("    bool reapOne()")
         assertEquals("78b404608e4266de52ade3fcb483e5b71ffaecd9fd51cb42ccd166859319af8a",digest(feedback))
-        val normalReap=("    bool reapOne()"+native.substringAfter("    bool reapOne()").substringBefore("    void cancel("))
+        val normalReap=io.github.rsgarrido.sazanami.player.session17NoSeekSourceEquivalent("    bool reapOne()"+native.substringAfter("    bool reapOne()").substringBefore("    void cancel("))
             .replace("\r\n","\n")
             // Remove only the new diagnostic hook; all identity/error/PCM accounting remains pinned.
             .replace("        if (!slot.feedback && !stopping && !stopCause.chosen && !requestedStop.load()) {\n" +
@@ -860,9 +888,16 @@ class UsbSilentTransportTest {
         val owner=source("java/io/github/rsgarrido/sazanami/player/usb/UsbFlacPrefixSource.kt")
         val configuration=source("java/io/github/rsgarrido/sazanami/player/usb/UsbAudioConfigurationExperiment.kt")
         assertTrue(prefix.contains("producer=std::thread(")); assertFalse(prefix.contains(".detach("))
-        assertTrue(prefix.contains("changed.notify_all()")); assertTrue(prefix.contains("while (!stop.load() && depth() == kPrefixCapacity)"))
+        assertTrue(prefix.contains("changed.notify_all()"))
+        val push=cppBody(prefix,Regex("""\bbool\s+push\s*\([^)]*\)\s*\{"""))
+        assertTrue(push.contains("while (!stop.load() && !quiesceRequested.load() && depth() == kPrefixCapacity)"))
+        precedes(push,"if (stop.load() || faults.load() || quiesceRequested.load()) return false","std::memcpy(bytes.data()")
+        val stopQueue=cppBody(prefix,Regex("""\bvoid\s+requestStop\s*\(\s*\)\s*\{"""))
+        precedes(stopQueue,"stop.store(true)","changed.notify_all()")
+        assertTrue(stopQueue.contains("wakeWorker()"))
         val finish=prefix.substringAfter("    void finish() {").substringBefore("    std::array<int64_t,PrefixFieldCount>")
         precedes(finish,"queue.requestStop()","producer.join()")
+        precedes(finish,"producer.join()","joined.store(true)")
         precedes(finish,"producer.join()","atStop=queue.depth()")
         assertTrue(native.contains("prefix->finish()")); assertTrue(native.contains("::dup(borrowedFd)"))
         assertTrue(prefix.contains("decoder.finalize()")); assertTrue(prefix.contains("facts[FdClosed]"))
@@ -872,6 +907,37 @@ class UsbSilentTransportTest {
         precedes(cleanup,"releaseStreaming(plan.asClaim)","transport.release(plan.acClaim)")
         precedes(cleanup,"transport.release(plan.acClaim)","transport.close()")
         val core=source("cpp/flac/flac_decode_core.h")
+        // EOF is a retained producer checkpoint. Final deletion/close still precede join completion.
+        val actor=cppBody(prefix,Regex("""\bvoid\s+processInteractive\s*\([^)]*\)\s*\{"""))
+        assertTrue(actor.contains("queue.stop.load() || queue.quiesceRequested.load()"))
+        assertTrue(actor.contains("queue.stop.load() || seekPhase.load(std::memory_order_acquire)==3"))
+        precedes(actor,"seekPhase.store(2,std::memory_order_release)","FLAC__stream_decoder_seek_absolute(native,seekTarget)")
+        assertTrue(actor.contains("FLAC__stream_decoder_finish(native)?1:0;initialized=false"))
+        assertFalse(actor.contains("stream_decoder_delete"));assertFalse(actor.contains("input.closeNow()"))
+        assertFalse(native.contains("FLAC__stream_decoder_seek_absolute")) // Decoder calls belong to the producer, never the USB worker.
+        val reload=actor.substringAfter("if(!initialized) {").substringBefore("decoder.stagingSeek=true")
+        precedes(reload,"decoder.reloadMetadata=true","FLAC__stream_decoder_init_stream(native")
+        assertTrue(reload.contains("FLAC__stream_decoder_set_md5_checking(native,false)"))
+        precedes(reload,"FLAC__stream_decoder_process_until_end_of_metadata(native)","decoder.reloadMetadata || decoder.failure!=Outcome::Pending")
+        assertFalse(reload.contains("process_until_end_of_stream"))
+        val metadataReload=core.substringAfter("block->type==FLAC__METADATA_TYPE_STREAMINFO && v.reloadMetadata")
+            .substringBefore("if (!block || block->type")
+        for(field in listOf("Rate","Channels","Bits","Total","MaxBlock","MinBlock","MinFrame","MaxFrame"))
+            assertTrue(field,metadataReload.contains("v.facts[$field]"))
+        assertTrue(metadataReload.contains("std::equal(v.md5.begin(),v.md5.end(),s.md5sum)"))
+        assertFalse(metadataReload.contains("v.metadataAccepted(v)")) // Validate the retained format; do not allocate a new queue.
+        val decode=cppBody(core,Regex("""\bvoid\s+decode\s*\(\s*\)\s*\{"""))
+        assertTrue(decode.indexOf("interactiveProcess(decoder.get())")>=0)
+        assertTrue(decode.lastIndexOf("decoder.reset(); facts[DecoderDeleted] = 1;")>decode.indexOf("interactiveProcess(decoder.get())"))
+        val start=cppBody(prefix,Regex("""\bvoid\s+start\s*\(\s*\)\s*\{"""))
+        precedes(start,"decoder.decode()","decoder.finalize()")
+        precedes(start,"decoder.finalize()","queue.fail(PrefixCleanup)")
+        precedes(start,"queue.fail(PrefixCleanup)","stopped.store(true)")
+        val finalize=cppBody(core,Regex("""\bvoid\s+finalize\s*\(\s*\)\s*\{"""))
+        assertTrue(finalize.contains("facts[FdClosed] = input.closeNow() ? 1 : 0"))
+        assertTrue(finalize.contains("if (!released) failure = Outcome::CleanupFailed"))
+        val sourceSnapshot=native.substringAfter("jobject prefixSnapshot(").substringBefore("extern \"C\"")
+        assertTrue(sourceSnapshot.contains("source.joined.load()?fv::snapshotFlac(env,source.decoder):nullptr"))
         assertTrue(prefix.contains("queue(full,nullptr),decoder(std::move(duplicate)")); assertTrue(prefix.contains("bool full=false") && prefix.contains("},full)"))
         val metadata=prefix.substringAfter("decoder.metadataAccepted=").substringBefore("decoder.consumeCanonical=")
         assertTrue(metadata.contains("queue.configure(v.pcm.format)"))
@@ -899,6 +965,8 @@ class UsbSilentTransportTest {
         precedes(core,"set_md5_checking(decoder.get(), wholeFile)","init_stream(decoder.get()")
         assertTrue(core.contains("failure == Outcome::Pending && wholeFile"))
         assertTrue(source("cpp/flac/flac_pcm_core.h").contains("if (!process || !eos"))
+        for(field in listOf("producerStopped","producerJoined","decoderReleased","nativeFlacFdClosed","queueReleased"))
+            assertEquals(field,UsbSilentStatus.RESOURCE_CLEANUP_FAILED,fullExperiment(ConfigurationFake(),fullSource(field to 0L)).status)
     }
     @Test fun flacRefillsReapedSlotsBeforeItsDistinctOutPoolWatchdog() {
         val native=source("cpp/usb_iso_transport.cpp")
@@ -994,6 +1062,36 @@ class UsbSilentTransportTest {
         assertTrue(result.integrityReasons.isEmpty())
         assertEquals(result.count("framesSubmitted"),result.count("framesCompleted"))
         assertEquals(result.count("sourcePcmHash"),result.count("submittedPcmHash"))
+    }
+    @Test fun seekSegmentsUseSharedFullEngineAndRequireCrossSnapshotProofAndRestoration() {
+        for(backward in listOf(false,true)) {
+            val (template,sourceTemplate)=UsbSeekEvidenceTest().fixture(44100,16,backward)
+            val usb=template.copy(generation=17,streamGeneration=23,counters=template.counters+mapOf("generation" to 17L,"streamGeneration" to 23L))
+            val source=sourceTemplate.copy(counters=sourceTemplate.counters+mapOf("generation" to 17L,"streamGeneration" to 23L))
+            val fake=ConfigurationFake()
+            val result=fullExperiment(fake,source,usb).withFlacInputClosed(true,source)
+            assertEquals(UsbSilentStatus.SEEKED_SEGMENTS_USB_TRANSPORT_VERIFIED,result.status)
+            assertTrue(fake.events.indexOf("nativeStopped")<fake.events.indexOf("sourceJoined"))
+            assertTrue(fake.events.indexOf("sourceJoined")<fake.events.indexOf("restoreClock"))
+            assertTrue(fake.events.indexOf("releaseAS")<fake.events.indexOf("releaseAC"))
+            assertEquals(UsbSilentStatus.RESOURCE_CLEANUP_FAILED,result.withFlacInputClosed(false,source).status)
+            val inconsistent=usb.copy(counters=usb.counters+mapOf("seekInvalidatedFrames" to 306L,"seekInvalidatedBytes" to 1224L))
+            assertTrue(inconsistent.seekVerified)
+            assertEquals(UsbSilentStatus.TERMINAL_TAIL_ACCOUNTING_FAILED,fullExperiment(ConfigurationFake(),source,inconsistent).status)
+            for(field in listOf("wholeDecodedPcmHash","allEnqueuedPcmHash")) {
+                val contradictory=usb.copy(counters=usb.counters+(field to (usb.count(field)+1)))
+                assertTrue(contradictory.seekVerified) // Prefetch hashes need not equal delivered hashes, but snapshots must agree.
+                assertEquals(UsbSilentStatus.TERMINAL_TAIL_ACCOUNTING_FAILED,fullExperiment(ConfigurationFake(),source,contradictory).status)
+            }
+            val wrongGeneration=source.copy(counters=source.counters+("generation" to 18L))
+            assertEquals(UsbSilentStatus.TERMINAL_TAIL_ACCOUNTING_FAILED,fullExperiment(ConfigurationFake(),wrongGeneration,usb).status)
+            assertEquals(UsbSilentStatus.USB_CONFIGURATION_FAILED,fullExperiment(ConfigurationFake().apply {restoreFails=true},source,usb).status)
+            assertEquals(UsbSilentStatus.CANCELLED,fullExperiment(ConfigurationFake(),source,usb.copy(counters=usb.counters+("stopReason" to 1L))).status)
+            val failed=usb.copy(counters=usb.counters+mapOf("stopReason" to 1L,"seekFailures" to 1L))
+            assertEquals(UsbSilentStatus.USB_TRANSPORT_FAILED,fullExperiment(ConfigurationFake(),source,failed).status)
+            assertNotEquals(UsbSilentStatus.SEEKED_SEGMENTS_USB_TRANSPORT_VERIFIED,
+                fullExperiment(ConfigurationFake(),source,usb.copy(counters=usb.counters+("outstandingUrbsFinal" to 1L)),safe=false).status)
+        }
     }
     @Test fun wholeTrackNaturalSuccessHasNoDurationCeilingAndClosesOriginalFd() {
         assertTrue(fullSource().fullComplete); assertTrue(fullNative().verified)
@@ -1118,17 +1216,66 @@ class UsbSilentTransportTest {
         val report=UsbAudioDiagnosticReport.format(UsbAudioDiagnosticState(generation=17,fullFlacUsbExperiment=result))
         listOf("Full FLAC Direct USB Transport — Session 11","FULL_FLAC_USB_TRANSPORT_VERIFIED","NATURAL_EOF_COMPLETE",
             "Duration target=NONE","verification=PASS","wholeDecodedPcmFNV","All whole-track FNVs equal=true",
-            "eofPaddingFrames=0","finalSubmittedSourceFrame: 10000","Terminal OUT: 1..8","Production Bit-perfect playback: NOT IMPLEMENTED",
+            "eofPaddingFrames=0","finalSubmittedSourceFrame: 10000","Terminal OUT: 1..8","production Bit-perfect: NOT YET COMPLETE",
             "DAC-internal reconstructed samples are not measured","Original Kotlin FLAC fd closed=true").forEach { assertTrue(it,report.contains(it)) }
         assertFalse(report.contains("content://")); assertFalse(report.contains("066098d12bfd5e3c"))
+        assertFalse(report.contains("WHOLE_FILE_MD5_NOT_VERIFIED_AFTER_SEEK"))
+        val uninterrupted=io.github.rsgarrido.sazanami.player.formatIntegratedDirectPlayback(
+            io.github.rsgarrido.sazanami.player.integratedTerminalState(
+                io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackState(enabled=true),result))
+        for(text in listOf("FULL_FLAC_USB_TRANSPORT_VERIFIED","MD5=PASS","hash agreement=true",
+            "OUT wire underrun confirmed? UNKNOWN","do not prove uninterrupted wire service",
+            "DAC-internal reconstruction and listening are not measured","production Bit-perfect: NOT YET COMPLETE"))
+            assertTrue(text,uninterrupted.contains(text))
+        // A seek has its own evidence contract, including on the same four formats/shared engine.
+        for((rate,bits) in listOf(44100L to 16L,48000L to 16L,48000L to 24L,96000L to 24L)) for(backward in listOf(false,true)) {
+            val (nativeTemplate,sourceTemplate)=UsbSeekEvidenceTest().fixture(rate,bits,backward)
+            val selected=UsbSilentTransportPlan.resolve(model,android(model),rate,bits).plan!!
+            val usb=nativeTemplate.copy(generation=17,streamGeneration=23,counters=nativeTemplate.counters+mapOf(
+                "generation" to 17L,"streamGeneration" to 23L,"formatAlternate" to selected.configurationPlan.streaming.alternate.toLong(),
+                "outContinuityRiskEvents" to 1L,"firstOutRiskAtUs" to 1234L,"firstOutRiskMask" to 2L))
+            val source=sourceTemplate.copy(counters=sourceTemplate.counters+mapOf("generation" to 17L,"streamGeneration" to 23L))
+            val seeked=fullExperiment(ConfigurationFake(),source,usb).withFlacInputClosed(true,source)
+            assertEquals(UsbSilentStatus.SEEKED_SEGMENTS_USB_TRANSPORT_VERIFIED,seeked.status)
+            assertFalse(source.fullComplete)
+            val integrated=io.github.rsgarrido.sazanami.player.formatIntegratedDirectPlayback(
+                io.github.rsgarrido.sazanami.player.integratedTerminalState(
+                    io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackState(enabled=true),seeked))
+            for(text in listOf("SEEKED_SEGMENTS_USB_TRANSPORT_VERIFIED","WHOLE_FILE_MD5_NOT_VERIFIED_AFTER_SEEK",
+                "exact target proven=1","OUT drain=1","pending source OUT=0","segments sealed=2","hash agreement=true","segment epoch=1",
+                "first 8 examples only, every segment verified online","OUT_CONTINUITY_RISK: events=1","first elapsed us=1234",
+                "OUT wire underrun confirmed? UNKNOWN","do not prove uninterrupted wire service",
+                "DAC-internal reconstruction and listening are not measured","production Bit-perfect: NOT YET COMPLETE"))
+                assertTrue(text,integrated.contains(text))
+            assertEquals(2,integrated.lines().count { it.startsWith("segment epoch=") })
+            val diagnostic=UsbAudioDiagnosticReport.format(UsbAudioDiagnosticState(generation=17,fullFlacUsbExperiment=seeked))
+            for(text in listOf("SEEKED_SEGMENTS_USB_TRANSPORT_VERIFIED","verification=WHOLE_FILE_MD5_NOT_VERIFIED_AFTER_SEEK",
+                "Seek-aware consumed/submitted FNVs equal=true","decoded/enqueued hashes include invalidated prefetch",
+                "Kernel exact completions establish host USB transport evidence","DAC-internal reconstructed samples are not measured",
+                "production Bit-perfect: NOT YET COMPLETE")) assertTrue(text,diagnostic.contains(text))
+            for(text in listOf(integrated,diagnostic)) {
+                assertFalse(text.contains("FULL_FLAC_USB_TRANSPORT_VERIFIED"))
+                assertFalse(text.contains("MD5=PASS"));assertFalse(text.contains("verification=PASS"))
+                assertFalse(text.contains("All whole-track FNVs equal=true"));assertFalse(text.contains("content://"))
+            }
+            assertNotEquals(UsbSilentStatus.FULL_FLAC_USB_TRANSPORT_VERIFIED,
+                UsbFlacFullStatus.classify(seeked.configuration!!,usb,source,true))
+        }
         val stale=UsbAudioDiagnosticReport.format(UsbAudioDiagnosticState(generation=18,fullFlacUsbExperiment=result))
         assertTrue(stale.contains("previous Session 11 evidence omitted")); assertFalse(stale.contains("finalSubmittedSourceFrame: 10000"))
+        // Each example is ten longs, capped at eight; malformed/oversized native evidence cannot reach a report.
+        for(size in listOf(81,90)) rejects(snapshot().copy(segments=LongArray(size)))
     }
     @Test fun fullSourceSchemaRejectsOldVersionStaleIdentityAndInvalidFlags() {
         val source=fullSource()
         val snapshot=UsbFlacSourceSnapshot(UsbFlacSourceEvidence.fields.map { source.count(it) }.toLongArray(),longArrayOf(),null)
         assertTrue(UsbFlacSourceEvidence.decode(snapshot,17,23).primed)
-        val flags=listOf("fullTrackMode","trueEofReached","producerFinishedNaturally","md5VerificationPass","decodedTotalMatchesStreamInfo")
+        for(size in listOf(0,42,52,54)) {
+            try { UsbFlacSourceEvidence.decode(snapshot.copy(numbers=snapshot.numbers.copyOf(size)),17,23);fail("Accepted source length $size") }
+            catch (_: IllegalArgumentException) {}
+        }
+        val flags=listOf("fullTrackMode","trueEofReached","producerFinishedNaturally","md5VerificationPass","decodedTotalMatchesStreamInfo",
+            "sourceSeekCapable","sourceFirstSeekFrameProven")
         for (name in flags) {
             val bad=snapshot.copy(numbers=snapshot.numbers.copyOf().also { it[UsbFlacSourceEvidence.fields.indexOf(name)]=2L })
             try { UsbFlacSourceEvidence.decode(bad,17,23); fail(name) } catch (_: IllegalArgumentException) {}

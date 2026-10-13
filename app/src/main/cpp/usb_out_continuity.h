@@ -39,10 +39,13 @@ struct OutContinuity {
     void start(uint64_t at) noexcept { started=at; }
     void suspendSegment(uint64_t at,size_t out,size_t feedback,bool needsOut,uint64_t frames) noexcept {
         // Preserve a real gap before the command, without charging request/drain/paused time to active scheduling.
-        if(haveLoop && at>lastLoop) wake(at,out,feedback,needsOut,frames);
+        // A seek from PAUSED, or another command during unprimed RESUMING, is already inside that gap.
+        if(!suspended && haveLoop && at>lastLoop) wake(at,out,feedback,needsOut,frames);
+        suspended=true;
     }
     // Called only with a fully reconciled pool. Keep maxima/risks; discard time baselines across an intentional gap.
     void resumeSegment() noexcept {
+        suspended=false;
         haveLoop=haveSubmission=haveBatch=haveCompletion=haveRefillOpportunity=false;
         batchHasOut=thisLoopIsMaxGap=riskCountedThisLoop=refillLateThisLoop=false;
         currentGapUs=pendingNominalUs=estimatedTailUs=0;
@@ -130,7 +133,7 @@ private:
     uint64_t pendingNominalUs=0, estimatedTailUs=0;
     uint64_t lastLoop=0, currentGapUs=0, lastSubmission=0, lastBatchFirstSubmission=0;
     uint64_t lastCompletion=0, lastRefillOpportunity=0;
-    bool haveLoop=false, haveSubmission=false, haveBatch=false, haveCompletion=false, haveRefillOpportunity=false;
+    bool suspended=false, haveLoop=false, haveSubmission=false, haveBatch=false, haveCompletion=false, haveRefillOpportunity=false;
     bool batchHasOut=false, thisLoopIsMaxGap=false, riskCountedThisLoop=false, refillLateThisLoop=false;
 };
 } // namespace sazanami::usbiso

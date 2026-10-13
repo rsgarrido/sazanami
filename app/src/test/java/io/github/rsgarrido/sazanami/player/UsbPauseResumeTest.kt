@@ -33,7 +33,7 @@ class UsbPauseResumeTest {
         val drain=step.substringAfter("if(playback.phaseIs(PlaybackPhase::Pausing))").substringBefore("if(playback.phaseIs(PlaybackPhase::Paused))")
         assertTrue(drain.indexOf("reapOne()")<drain.indexOf("confirmPause("))
         assertTrue(drain.indexOf("!outstanding(false) && !outstanding(true)")<drain.indexOf("confirmPause("))
-        assertTrue(drain.contains("q.head.load(),q.prepared"));assertTrue(drain.contains("q.consumedHash,submittedPrefixHash"))
+        assertTrue(drain.contains("q.consumedTotal.load(),q.prepared"));assertTrue(drain.contains("q.consumedHash,submittedPrefixHash"))
         assertFalse(drain.contains("submit("))
         for(forbidden in listOf("cancel(","prefix->finish(","prefix.reset(","queue.requestStop(")) assertFalse(forbidden,step.contains(forbidden))
         val paused=step.substringAfter("if(playback.phaseIs(PlaybackPhase::Paused))").substringBefore("if(playback.phaseIs(PlaybackPhase::Resuming)")
@@ -168,7 +168,8 @@ class UsbPauseResumeTest {
         for(internal in listOf(false,true)) {
             assertTrue(allowsDirectCommand(Player.COMMAND_PLAY_PAUSE,internal))
             assertTrue(allowsDirectCommand(Player.COMMAND_STOP,internal))
-            for(command in listOf(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+            assertTrue(allowsDirectCommand(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,internal)) // Active seekability is gated by the player.
+            for(command in listOf(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,Player.COMMAND_SEEK_TO_MEDIA_ITEM,
                 Player.COMMAND_SET_SHUFFLE_MODE,Player.COMMAND_SET_REPEAT_MODE,Player.COMMAND_SET_VOLUME,Player.COMMAND_SET_SPEED_AND_PITCH))
                 assertFalse(allowsDirectCommand(command,internal))
         }

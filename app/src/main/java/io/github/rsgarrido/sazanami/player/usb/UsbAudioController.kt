@@ -651,7 +651,8 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
                             usbAccessFailure(token)?.let { return@withLock unavailable(it, "Access changed after FLAC priming; no USB ownership attempted.") }
                             withContext(Dispatchers.Main.immediate) {
                                 if (!closed && gate.accepts(token)) {
-                                    client?.progress?.invoke(UsbFullProgress(0,source.result.count("totalSamples"),sourceRateHz,UsbFullTransportPhase.STARTING))
+                                    client?.progress?.invoke(UsbFullProgress(0,source.result.count("totalSamples"),sourceRateHz,UsbFullTransportPhase.STARTING,
+                                        mapOf("sourceSeekCapable" to source.result.count("sourceSeekCapable"),"sourcePositionFrame" to 0L)))
                                     publish(withExperiment(state, currentExperiment()?.copy(phase = UsbSilentPhase.CONFIGURING)))
                                 }
                             }

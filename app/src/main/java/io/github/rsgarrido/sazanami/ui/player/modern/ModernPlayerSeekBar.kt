@@ -13,16 +13,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SliderState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.CornerRadius
@@ -36,6 +40,12 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
+import io.github.rsgarrido.sazanami.ui.state.rememberDirectSeekGestureControl
 import io.github.rsgarrido.sazanami.player.waveform.WaveformData
 import io.github.rsgarrido.sazanami.player.waveform.mapWaveformAmplitudes
 import io.github.rsgarrido.sazanami.ui.formatDuration
@@ -368,6 +378,7 @@ private fun rememberAnimatedModernSeekbarColor(
 )
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun ClassicSeekbar(
     safePosition: Int,
     safeDuration: Int,
@@ -375,22 +386,27 @@ private fun ClassicSeekbar(
     activeColor: Color,
     style: ModernPlayerStyle
 ) {
+    val gesture=rememberDirectSeekGestureControl(onSeekChange)
+    gesture.sliderDuration=safeDuration
+    var thumbWidth by remember {mutableIntStateOf(0)}
+    val reverse=LocalLayoutDirection.current==LayoutDirection.Rtl
+    val sliderState=remember(safeDuration) {SliderState(safePosition.toFloat(),valueRange=0f..safeDuration.toFloat())}
+    sliderState.value=safePosition.toFloat()
+    sliderState.onValueChange={gesture.change(it.toInt())}
+    sliderState.onValueChangeFinished = gesture::finish
+    val interactions=remember(gesture,sliderState) {gesture.interactions(MutableInteractionSource()) {sliderState.isDragging}}
     val animatedActiveColor = rememberAnimatedModernSeekbarColor(
         activeColor,
         "modernClassicSeekbarColor"
     )
+    val colors=SliderDefaults.colors(thumbColor=animatedActiveColor.value,activeTrackColor=animatedActiveColor.value,inactiveTrackColor=style.inactiveTrackColor)
     Slider(
-        value = safePosition.toFloat(),
-        onValueChange = { newPosition ->
-            onSeekChange(newPosition.toInt())
-        },
-        valueRange = 0f..safeDuration.toFloat(),
-        colors = SliderDefaults.colors(
-            thumbColor = animatedActiveColor.value,
-            activeTrackColor = animatedActiveColor.value,
-            inactiveTrackColor = style.inactiveTrackColor
-        ),
-        modifier = Modifier.fillMaxWidth()
+        state = sliderState,
+        interactionSource = interactions,
+        colors = colors,
+        thumb = {SliderDefaults.Thumb(interactionSource=interactions,colors=colors,modifier=Modifier.onSizeChanged {thumbWidth=it.width})},
+        modifier = Modifier.fillMaxWidth().then(gesture.sliderPointerModifier({thumbWidth},reverse)).then(gesture.keyboardModifier())
+            .semantics {setProgress {gesture.immediate(it.coerceIn(0f,safeDuration.toFloat()).toInt());true}}
     )
 }
 
@@ -404,27 +420,35 @@ private fun VisualSeekbar(
     thumbColor: Color,
     track: @Composable (Float) -> Unit
 ) {
+    val gesture=rememberDirectSeekGestureControl(onSeekChange)
+    gesture.sliderDuration=safeDuration
+    var thumbWidth by remember {mutableIntStateOf(0)}
+    val reverse=LocalLayoutDirection.current==LayoutDirection.Rtl
+    val sliderState=remember(safeDuration) {SliderState(safePosition.toFloat(),valueRange=0f..safeDuration.toFloat())}
+    sliderState.value=safePosition.toFloat()
+    sliderState.onValueChange={gesture.change(it.toInt())}
+    sliderState.onValueChangeFinished = gesture::finish
+    val interactions=remember(gesture,sliderState) {gesture.interactions(MutableInteractionSource()) {sliderState.isDragging}}
     val animatedThumbColor = rememberAnimatedModernSeekbarColor(
         thumbColor,
         "modernVisualSeekbarThumbColor"
     )
     Slider(
-        value = safePosition.toFloat(),
-        onValueChange = { newPosition ->
-            onSeekChange(newPosition.toInt())
-        },
-        valueRange = 0f..safeDuration.toFloat(),
+        state = sliderState,
+        interactionSource = interactions,
         thumb = {
             Box(
                 modifier = Modifier
                     .size(thumbSize)
+                    .onSizeChanged {thumbWidth=it.width}
                     .background(animatedThumbColor.value, CircleShape)
             )
         },
         track = { sliderState ->
             track((sliderState.value / safeDuration).coerceIn(0f, 1f))
         },
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth().then(gesture.sliderPointerModifier({thumbWidth},reverse)).then(gesture.keyboardModifier())
+            .semantics {setProgress {gesture.immediate(it.coerceIn(0f,safeDuration.toFloat()).toInt());true}}
     )
 }
 

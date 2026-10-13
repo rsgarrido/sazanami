@@ -2,7 +2,7 @@
 #include <cstdint>
 
 namespace sazanami::usbiso {
-enum class PlaybackPhase : int { Starting, Playing, Pausing, Paused, Resuming, Stopping, Stopped, Ended, Failed };
+enum class PlaybackPhase : int { Starting, Playing, Pausing, Paused, Resuming, Stopping, Stopped, Ended, Failed, SeekDraining, SourceRepositioning, SeekPriming };
 enum class ControlOutcome : int { None, Requested, Already, Confirmed, Superseded, Terminal, Failed };
 struct PauseBoundary {
     uint64_t out, feedback, submitted, completed, consumed, prepared, bytes, actualBytes, sourceHash, submittedHash;
@@ -21,8 +21,10 @@ struct PauseMachine {
     bool phaseIs(PlaybackPhase value) const noexcept { return phase==value; }
     bool terminal() const noexcept { return phase==PlaybackPhase::Stopped || phase==PlaybackPhase::Ended || phase==PlaybackPhase::Failed; }
     bool admitsOut() const noexcept { return phase==PlaybackPhase::Starting || phase==PlaybackPhase::Playing || phase==PlaybackPhase::Resuming; }
-    bool quiet() const noexcept { return phase==PlaybackPhase::Pausing || phase==PlaybackPhase::Paused; }
-    bool drainExpired(uint64_t now,uint64_t limit) const noexcept { return phase==PlaybackPhase::Pausing && now-drainStarted>=limit; }
+    bool countResume=true;
+    bool seeking() const noexcept {return phase==PlaybackPhase::SeekDraining || phase==PlaybackPhase::SourceRepositioning || phase==PlaybackPhase::SeekPriming;}
+    bool quiet() const noexcept { return phase==PlaybackPhase::Pausing || phase==PlaybackPhase::Paused || seeking(); }
+    bool drainExpired(uint64_t now,uint64_t limit) const noexcept { return (phase==PlaybackPhase::Pausing || phase==PlaybackPhase::SeekDraining) && now-drainStarted>=limit; }
     void pause(uint64_t now) noexcept {
         if(terminal() || phase==PlaybackPhase::Stopping || quiet()) return;
         if(phase==PlaybackPhase::Resuming) resumeOutcome=ControlOutcome::Superseded;
@@ -35,11 +37,11 @@ struct PauseMachine {
     }
     void resume(uint64_t now) noexcept {
         if(phase!=PlaybackPhase::Paused) return;
-        pausedUs+=now-pausedStarted;pausedStarted=0;phase=PlaybackPhase::Resuming;resumeStarted=now;
+        pausedUs+=now-pausedStarted;pausedStarted=0;phase=PlaybackPhase::Resuming;resumeStarted=now;countResume=true;
         resumeReadiness=0;resumeOutcome=ControlOutcome::Requested;
     }
     void submitted() noexcept {
-        if(phase==PlaybackPhase::Resuming) { ++resumes;resumeOutcome=ControlOutcome::Confirmed; }
+        if(phase==PlaybackPhase::Resuming && countResume) { ++resumes;resumeOutcome=ControlOutcome::Confirmed; }
         if(admitsOut()) phase=PlaybackPhase::Playing;
     }
     void finish(uint64_t now,PlaybackPhase final) noexcept {

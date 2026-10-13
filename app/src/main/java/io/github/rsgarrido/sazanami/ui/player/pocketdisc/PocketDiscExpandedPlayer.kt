@@ -3,6 +3,7 @@ package io.github.rsgarrido.sazanami.ui.player.pocketdisc
 import android.R as AndroidR
 import io.github.rsgarrido.sazanami.R
 import androidx.compose.foundation.Canvas
+import io.github.rsgarrido.sazanami.ui.state.rememberDirectSeekGestureControl
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -519,6 +520,7 @@ private fun PocketDiscPositionPanel(
     compact: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val gesture=rememberDirectSeekGestureControl(onSeekChange)
     val colors = PocketDiscColors
     val transitionOwnsProgress = sharedOwner == PocketDiscSharedOwner.TRANSITION &&
             morphBounds?.sharedAvailability()?.progress == true
@@ -556,12 +558,13 @@ private fun PocketDiscPositionPanel(
                         morphBounds?.updateExpandedProgress(coordinates.pocketDiscBoundsInRoot())
                     }
                     .graphicsLayer { alpha = if (transitionOwnsProgress) 0f else 1f }
+                    .then(gesture.pointerModifier())
                     .pointerInput(duration, enabled) {
                         if (!enabled) return@pointerInput
                         detectTapGestures { offset ->
                             if (duration > 0 && size.width > 0) {
                                 val progress = (offset.x / size.width).coerceIn(0f, 1f)
-                                onSeekChange((duration * progress).toInt())
+                                gesture.change((duration * progress).toInt())
                             }
                         }
                     }

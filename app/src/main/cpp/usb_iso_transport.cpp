@@ -2,9 +2,11 @@
 #include "usb_iso_stop.h"
 #include "usb_iso_tail.h"
 #include "usb_feedback_policy.h"
+#include "usb_feedback_diagnostics.h"
 #include "usb_out_queue_policy.h"
 #include "usb_out_continuity.h"
 #include "usb_pause_control.h"
+#include "usb_seek_control.h"
 #include "flac/flac_prefix_queue.h"
 #include "flac/flac_snapshot.h"
 #include <jni.h>
@@ -56,10 +58,20 @@ enum Field : size_t { Api, Attachment, Stream, Started, StateCode, Reasons, Stop
     FirstOutRiskGapUs, FirstOutRiskCoverageUs, FirstOutRiskCompletedFrames, SchedulerNominalRate, FormatChannels, FormatBits, FormatSampleBytes, FormatFrameBytes, FormatSubslot, FormatValidBits, FormatAlternate,
     PlaybackPhaseField, PauseRequests, PauseConfirmed, ResumeRequests, ResumeConfirmed, LastPauseOutcome, LastResumeOutcome,
     FirstPauseFrame, LastPauseFrame, PausedFrame, PausedDurationUs, PausePendingOut, PauseDrainOutcome, ResumeReadiness,
-    ResumeFailure, SourceContinuityAcrossPause, PauseDrainFailures, FieldCount };
-constexpr jint kSnapshotVersion = 11;
-constexpr size_t kControlFieldCount=FieldCount-PlaybackPhaseField;
+    ResumeFailure, SourceContinuityAcrossPause, PauseDrainFailures,
+    SeekCapable, SeekRequests, SeekConfirmed, SeekFailures, SeekSuperseded, SeekOutcomeField, FirstSeekTarget, LastSeekTarget,
+    ConfirmedSeekTarget, SeekEpoch, SeekOldBoundary, SeekDrainOutcome, SeekPendingOut, SeekInvalidatedFrames, SeekInvalidatedBytes,
+    SeekSourceReady, SeekFirstFrame, SeekFirstProven, SeekSegmentCount, SeekSkipped, SeekRevisited, SeekSourcePosition,
+    SeekSegmentCompleted, SeekConfirmedSerial, SeekSegmentIntegrity, SeekChainHash, SeekTailUrbs, SeekTailPackets, SeekTailFrames,
+    SeekTailPacketCompletions, SeekTailFrameCompletions, SeekOriginalNext, SeekAttempts, SeekSegmentFrames, SeekSegmentBytes,
+    SeekWholeMd5AfterSeek, SeekStartedPaused, FieldCount };
+constexpr jint kSnapshotVersion = 13;
+constexpr size_t kSnapshotFieldCount=FieldCount+kFeedbackDiagnosticWords;
+static_assert(FieldCount==236 && kSnapshotFieldCount==508); // Historical/progress fields do not move.
+constexpr size_t kControlFieldCount=SeekCapable-PlaybackPhaseField;
+constexpr size_t kSeekFieldCount=FieldCount-SeekCapable;
 static_assert(kControlFieldCount==17);
+static_assert(kSeekFieldCount==37);
 // Preserve unsigned hash bits across JNI without an implementation-defined numeric cast.
 jlong hashBits(uint64_t value) { jlong result; static_assert(sizeof(result) == sizeof(value)); std::memcpy(&result, &value, sizeof(result)); return result; }
 using Clock = std::chrono::steady_clock;
@@ -77,6 +89,7 @@ struct Slot {
     uint64_t submittedAt = 0, firstSourceFrame = 0;
     uint64_t outReapedAt = 0; // Diagnostic observation time; not a USB service timestamp.
     bool terminal = false;
+    uint64_t sourceEpoch=0;
     void allocate(bool isFeedback, unsigned count, unsigned capacityBytes) {
         if (count < 1 || count > kOutPackets || capacityBytes < 1 || capacityBytes > 3072) throw std::invalid_argument("URB bounds");
         const size_t bytes = allocationBytes(sizeof(usbdevfs_urb), sizeof(usbdevfs_iso_packet_desc), count);
@@ -116,6 +129,9 @@ struct Session {
     uint64_t started = 0, lastOutCompletion = 0, serial = 0;
     FeedbackObservationClock feedbackClock;
     FeedbackReapPass feedbackReapPass; // Copied to first-timeout evidence before shutdown.
+    FeedbackDiagnostics feedbackDiagnostics; // Worker-owned; exported only after run/cleanup.
+    uint64_t diagnosticSeekConfirmed=0,diagnosticOutResumed=0,diagnosticFreshPrime=0;
+    uint64_t diagnosticAdmissionStopped=0,diagnosticPoolsDrained=0;
     OutContinuity outContinuity;
     uint32_t acceptedFeedback = 0;
     unsigned invalidStreak = 0;
@@ -123,16 +139,24 @@ struct Session {
     StopCause stopCause;
     PauseMachine playback;
     const std::shared_ptr<WakeSignal> controlWake;
-    struct Command { uint64_t serial=0,pauses=0,resumes=0,firstPause=0,lastPause=0,pauseAt=0;bool play=true; };
+    struct Command { uint64_t serial=0,pauses=0,resumes=0,firstPause=0,lastPause=0,pauseAt=0,seeks=0,seekSerial=0,target=0,seekAt=0,firstTarget=0;bool play=true; };
     mutable std::mutex controlMutex;
     Command command;
     uint64_t seenPauses=0,seenResumes=0;
     bool commandsClosed=false,resumePrepared=false,playbackFault=false;
+    uint64_t seenSeeks=0;
     std::array<uint64_t,2> livePlayback{0,static_cast<uint64_t>(PlaybackPhase::Starting)};
     std::array<jlong,kControlFieldCount> liveControl{};
     uint64_t livePausedStarted=0;
+    std::array<jlong,kSeekFieldCount> liveSeek{};
+    SeekSegments segments;
+    uint64_t activeSeekSerial=0,activeSeekTarget=0,seekStarted=0,confirmedSeekSerial=0,confirmedEpoch=0,frozenPosition=0;
+    bool seekSealed=false,seekAuthorized=false,seekWasPaused=false;
+    SeekOutcome seekOutcome=SeekOutcome::None;
+    uint64_t sourcePosition() const {return activeSeekSerial>confirmedSeekSerial?frozenPosition:segments.start+static_cast<uint64_t>(stats[CompletedFrames])-segments.completedBase;}
+    bool hasPendingSeek() const {return fullTrack && intent().seekSerial>activeSeekSerial;}
     Command intent() const { std::lock_guard<std::mutex> lock(controlMutex);return command; }
-    bool pauseAdmission() const { return fullTrack && (!intent().play || playback.quiet()); }
+    bool pauseAdmission() const { return fullTrack && (!intent().play || playback.quiet() || hasPendingSeek()); }
     void publishPlayback() {
         std::lock_guard<std::mutex> lock(controlMutex);
         livePlayback={static_cast<uint64_t>(stats[CompletedFrames]),static_cast<uint64_t>(playback.phase)};
@@ -143,22 +167,40 @@ struct Session {
             playback.resumeReadiness,playback.resumeFailure,
             integrity.valid() && !stats[PauseDrainFailures] && !playback.resumeFailure,stats[PauseDrainFailures]};
         livePausedStarted=playback.phaseIs(PlaybackPhase::Paused) ? playback.pausedStarted : 0;
+        if(fullTrack) {
+            stats[SeekCapable]=prefix->seekCapable();stats[SeekRequests]=command.seeks;stats[LastSeekTarget]=command.target;stats[FirstSeekTarget]=command.firstTarget;
+            stats[SeekOutcomeField]=static_cast<jlong>(seekOutcome);stats[SeekSourcePosition]=sourcePosition();
+            stats[SeekEpoch]=confirmedEpoch;stats[SeekSegmentCompleted]=stats[CompletedFrames]-segments.completedBase;
+            stats[SeekConfirmedSerial]=confirmedSeekSerial;stats[SeekSegmentCount]=segments.sealed;
+            stats[SeekSegmentIntegrity]=segments.valid;stats[SeekChainHash]=hashBits(segments.chain);
+            stats[SeekSegmentFrames]=segments.frames;stats[SeekSegmentBytes]=segments.bytes;
+            stats[SeekAttempts]=prefix->attempted.load();stats[SeekWholeMd5AfterSeek]=stats[SeekAttempts]>0;
+            std::copy(stats.begin()+SeekCapable,stats.end(),liveSeek.begin());
+        }
         if(playback.terminal() || playback.phaseIs(PlaybackPhase::Stopping)) commandsClosed=true;
     }
-    bool requestPlayback(bool play,uint64_t sequence,uint64_t pauses,uint64_t resumes) {
+    bool requestPlayback(bool play,uint64_t sequence,uint64_t pauses,uint64_t resumes,uint64_t seeks,uint64_t seekSerial,uint64_t target,uint64_t firstTarget) {
         {
             std::lock_guard<std::mutex> lock(controlMutex);
             if(!fullTrack || commandsClosed || requestedStop.load()) return false;
             if(sequence<command.serial || pauses<command.pauses || resumes<command.resumes ||
-                resumes>static_cast<uint64_t>(INT64_MAX) || pauses>static_cast<uint64_t>(INT64_MAX)-resumes || sequence!=pauses+resumes)
+                seeks<command.seeks || seekSerial<command.seekSerial || seekSerial>sequence ||
+                resumes>static_cast<uint64_t>(INT64_MAX) || pauses>static_cast<uint64_t>(INT64_MAX)-resumes ||
+                seeks>static_cast<uint64_t>(INT64_MAX)-pauses-resumes || sequence!=pauses+resumes+seeks)
                 throw std::invalid_argument("Control sequence");
             if(sequence==command.serial && play!=command.play) throw std::invalid_argument("Control intent");
+            if(seeks>command.seeks) {
+                if(!prefix->seekCapable() || target>=totalProgress || firstTarget>=totalProgress || seekSerial<=command.seekSerial) return false;
+                if(command.seeks && firstTarget!=command.firstTarget) throw std::invalid_argument("First seek target");
+                if(!command.seeks) command.firstTarget=firstTarget;
+                command.target=target;command.seekSerial=seekSerial;command.seekAt=monotonicUs();
+            } else if(seekSerial!=command.seekSerial || target!=command.target || firstTarget!=command.firstTarget) throw std::invalid_argument("Seek intent");
             if(pauses>command.pauses) {
                 const auto frame=completedProgress.load();
                 if(!command.pauses) command.firstPause=frame;
                 command.lastPause=frame;command.pauseAt=monotonicUs();
             }
-            command.serial=sequence;command.pauses=pauses;command.resumes=resumes;command.play=play;
+            command.serial=sequence;command.pauses=pauses;command.resumes=resumes;command.seeks=seeks;command.play=play;
         }
         if(!controlWake->notify()) throw std::runtime_error("Control wake failed");
         return true;
@@ -206,8 +248,14 @@ struct Session {
     }
     uint32_t frameBytes() const { return format->bytesPerFrame; }
     void fail(uint64_t reason, Stop stop) {
+        if(stop==Stop::Feedback && reason!=FeedbackTimeout) freezeFeedback(reason==InvalidFeedback?FeedbackFatalReason::PersistentInvalid:
+            reason==MalformedFeedback?FeedbackFatalReason::Malformed:FeedbackFatalReason::QuietCompletion,monotonicUs(),true);
         const bool fatal=stop!=Stop::Requested;
         if(fullTrack && fatal) playbackFault=true;
+        if(fullTrack && fatal && playback.seeking()) {
+            if(!stats[SeekFailures]) ++stats[SeekFailures];seekOutcome=SeekOutcome::Failed;segments.valid=false;
+            if(playback.phaseIs(PlaybackPhase::SeekDraining)) stats[SeekDrainOutcome]=2;
+        }
         if(fullTrack && fatal && playback.phaseIs(PlaybackPhase::Pausing)) {
             playback.pauseOutcome=ControlOutcome::Failed;playback.drainOutcome=2;
             if(!stats[PauseDrainFailures]) ++stats[PauseDrainFailures];
@@ -250,9 +298,13 @@ struct Session {
             playback.resumeOutcome=playback.phaseIs(PlaybackPhase::Playing) ? ControlOutcome::Already : ControlOutcome::Requested;
             seenResumes=wanted.resumes;
         }
+        // Decide and execute from one mailbox snapshot. A command arriving afterward blocks admission
+        // and wakes the next iteration; it must not dispatch an old intent through an old seek deadline.
+        if(wanted.seekSerial>activeSeekSerial || playback.seeking()) return seekStep(now,wanted);
         publishPlayback();
         if((playback.quiet() || playback.phaseIs(PlaybackPhase::Resuming) || !wanted.play) && naturalComplete()) return true;
         if(!wanted.play && playback.admitsOut()) {
+            diagnosticAdmissionStopped=now;
             outContinuity.suspendSegment(wanted.pauseAt,outstanding(false),outstanding(true),!fullSubmitted(),static_cast<uint64_t>(stats[CompletedFrames]));
             playback.pause(now);publishPlayback();
         }
@@ -266,11 +318,12 @@ struct Session {
             if(!outstanding(false) && !outstanding(true)) {
                 const auto& q=prefix->queue;
                 const PauseBoundary boundary{0,0,static_cast<uint64_t>(stats[SubmittedFrames]),static_cast<uint64_t>(stats[CompletedFrames]),
-                    q.head.load(),q.prepared,static_cast<uint64_t>(stats[OutBytesSubmitted]),static_cast<uint64_t>(stats[KernelOutActualBytes]),
+                    q.consumedTotal.load(),q.prepared,static_cast<uint64_t>(stats[OutBytesSubmitted]),static_cast<uint64_t>(stats[KernelOutActualBytes]),
                     q.consumedHash,submittedPrefixHash,integrity.valid() && stats[ScheduledFrames]==stats[SubmittedFrames] && !stats[OutCancelled]};
                 if(!playback.confirmPause(monotonicUs(),boundary)) {
                     ++stats[PauseDrainFailures];playback.drainOutcome=2;fail(TerminalAccounting,Stop::Accounting);return true;
                 }
+                diagnosticPoolsDrained=monotonicUs();
                 publishPlayback();return true;
             }
             if(playback.drainExpired(monotonicUs(),kDrainUs)) {
@@ -283,7 +336,7 @@ struct Session {
             else { waitPlayback(-1);return true; }
         }
         if(playback.phaseIs(PlaybackPhase::Resuming) && !resumePrepared) {
-            const auto head=prefix->queue.head.load(),total=prefix->queue.expectedTotal.load();
+            const auto head=prefix->queue.sourceHead(),total=prefix->queue.expectedTotal.load();
             if(head>total) { playback.resumeFailure=2;fail(TerminalAccounting,Stop::Accounting);return true; }
             const auto remaining=total-head,target=std::min<uint64_t>(fv::kPrefixPrebuffer,remaining);
             if(!remaining || prefix->queue.depth()<target || (target<fv::kPrefixPrebuffer && !prefix->queue.eofReached.load(std::memory_order_acquire))) {
@@ -297,6 +350,7 @@ struct Session {
                 playback.resumeFailure=2;fail(SchedulerInvalid,Stop::Accounting);return true;
             }
             acceptedFeedback=0;invalidStreak=0;stats[InvalidStreak]=0;feedbackClock={};feedbackClock.started=monotonicUs();
+            feedbackDiagnostics.recovered();diagnosticFreshPrime=feedbackClock.started;diagnosticOutResumed=0;
             lastOutCompletion=feedbackClock.started;outContinuity.resumeSegment();
             for(auto& slot:slots) slot.outReapedAt=0;
             resumePrepared=true;playback.resumeReadiness=1;
@@ -307,9 +361,113 @@ struct Session {
         }
         return false;
     }
-    bool fullSubmitted() const { return fullTrack && static_cast<uint64_t>(stats[SubmittedFrames])==prefix->queue.expectedTotal.load(); }
+    bool sealSegment(bool eof) {
+        return segments.seal(stats[SubmittedFrames],stats[CompletedFrames],prefix->queue.consumedTotal.load(),
+            stats[OutBytesSubmitted],stats[KernelOutActualBytes],prefix->queue.segmentConsumedHash,segments.submittedHash,frameBytes(),totalProgress,eof);
+    }
+    bool seekStep(uint64_t now,const Command& wanted) {
+        if(wanted.seekSerial>activeSeekSerial) {
+            const auto coalesced=wanted.seeks>seenSeeks?wanted.seeks-seenSeeks-1:0;
+            stats[SeekSuperseded]+=coalesced;seenSeeks=wanted.seeks;
+            if(playback.seeking()) ++stats[SeekSuperseded];
+            else {
+                frozenPosition=sourcePosition();seekWasPaused=playback.phaseIs(PlaybackPhase::Paused);
+                if(playback.admitsOut()) diagnosticAdmissionStopped=now;
+                if(seekWasPaused) {playback.pausedUs+=now-playback.pausedStarted;playback.pausedStarted=0;}
+                outContinuity.suspendSegment(wanted.seekAt,outstanding(false),outstanding(true),!fullSubmitted(),stats[CompletedFrames]);
+                playback.phase=PlaybackPhase::SeekDraining;playback.drainStarted=now;seekSealed=false;
+                stats[SeekDrainOutcome]=0;
+                stats[SeekOldBoundary]=frozenPosition;stats[SeekStartedPaused]=seekWasPaused;
+            }
+            activeSeekSerial=wanted.seekSerial;activeSeekTarget=wanted.target;seekStarted=now;seekAuthorized=false;
+            stats[SeekSourceReady]=0;stats[SeekFirstProven]=0;stats[SeekFirstFrame]=0;stats[SeekPendingOut]=outstanding(false);
+            seekOutcome=SeekOutcome::Draining;playback.resumeReadiness=0;
+            if(playback.phaseIs(PlaybackPhase::SourceRepositioning) || playback.phaseIs(PlaybackPhase::SeekPriming)) {
+                prefix->requestQuiescence();playback.phase=PlaybackPhase::SourceRepositioning;
+            }
+            publishPlayback();
+        }
+        if(playback.phaseIs(PlaybackPhase::SeekDraining)) {
+            for(size_t i=0;i<slots.size() && integrity.valid() && !requestedStop.load() && reapOne();++i) {}
+            completedProgress.store(stats[CompletedFrames]);frozenPosition=segments.start+stats[CompletedFrames]-segments.completedBase;
+            stats[SeekOldBoundary]=frozenPosition;stats[SeekPendingOut]=outstanding(false);publishPlayback();
+            if(!integrity.valid() || requestedStop.load() || prefix->queue.faults.load()) return true;
+            if(outstanding(false) || outstanding(true)) {
+                if(playback.drainExpired(monotonicUs(),kDrainUs)) {stats[SeekDrainOutcome]=2;fail(ShutdownUnaccounted,Stop::Accounting);return true;}
+                waitPlayback(1,true);return true;
+            }
+            if(!sealSegment(false) || stats[ScheduledFrames]!=stats[SubmittedFrames] || stats[OutCancelled]) {
+                stats[SeekDrainOutcome]=2;fail(TerminalAccounting,Stop::Accounting);return true;
+            }
+            seekSealed=true;stats[SeekDrainOutcome]=1;stats[SeekPendingOut]=0;
+            diagnosticPoolsDrained=monotonicUs();
+            prefix->requestQuiescence();playback.phase=PlaybackPhase::SourceRepositioning;seekOutcome=SeekOutcome::Repositioning;publishPlayback();
+        }
+        if(monotonicUs()-seekStarted>=5000000) {fail(FlacSourceFault,Stop::SourceVerificationStall);return true;}
+        const auto age=monotonicUs()-seekStarted;
+        const auto waitMs=static_cast<int>(age<5000000?(5000000-age+999)/1000:0);
+        if(playback.phaseIs(PlaybackPhase::SourceRepositioning)) {
+            if(!seekAuthorized && prefix->seekPhase.load(std::memory_order_acquire)==2) {
+                auto& q=prefix->queue;
+                if(!seekSealed || outstanding(false) || outstanding(true) || q.prepared) {fail(TerminalAccounting,Stop::Accounting);return true;}
+                if(!q.resetEpoch(activeSeekTarget,q.sourceEpoch.load()+1)) {fail(TerminalAccounting,Stop::Accounting);return true;}
+                uint64_t invalid=q.invalidatedQueued.load();
+                for(auto count:{prefix->decoder.unpublishedCanonical,prefix->decoder.unpublishedRaw,prefix->stagedDiscarded.load()}) {
+                    if(!fv::canAdd(invalid,count)) {fail(TerminalAccounting,Stop::Accounting);return true;}invalid+=count;
+                }
+                if(invalid>fv::kCounterMax/frameBytes()) {fail(TerminalAccounting,Stop::Accounting);return true;}
+                stats[SeekInvalidatedFrames]=invalid;stats[SeekInvalidatedBytes]=invalid*frameBytes();
+                segments.begin(q.sourceEpoch.load(),activeSeekTarget,stats[SubmittedFrames],stats[CompletedFrames],stats[OutBytesSubmitted],stats[KernelOutActualBytes]);
+                for(auto field:{SeekTailUrbs,SeekTailPackets,SeekTailFrames,SeekTailPacketCompletions,SeekTailFrameCompletions}) stats[field]=0;
+                if(!prefix->authorizeSeek(activeSeekSerial,activeSeekTarget)) {fail(FlacSourceFault,Stop::Source);return true;}
+                seekAuthorized=true;
+            }
+            if(seekAuthorized && prefix->seekPhase.load(std::memory_order_acquire)==4 && prefix->seekDoneSerial.load()==activeSeekSerial) {
+                if(!prefix->seekFirstProven.load() || prefix->seekFirst.load()!=activeSeekTarget) {fail(TerminalAccounting,Stop::Accounting);return true;}
+                segments.targetProven=true;stats[SeekFirstFrame]=prefix->seekFirst.load();stats[SeekFirstProven]=1;
+                playback.phase=PlaybackPhase::SeekPriming;seekOutcome=SeekOutcome::Priming;publishPlayback();
+            } else {waitPlayback(waitMs);return true;}
+        }
+        if(playback.phaseIs(PlaybackPhase::SeekPriming)) {
+            const auto remaining=totalProgress-activeSeekTarget,target=std::min<uint64_t>(fv::kPrefixPrebuffer,remaining);
+            if(prefix->queue.depth()<target || (target<fv::kPrefixPrebuffer && !prefix->queue.eofReached.load(std::memory_order_acquire))) {waitPlayback(waitMs);return true;}
+            // Linearize confirmation with acceptance of a newer target and the latest Play/Pause intent.
+            std::unique_lock<std::mutex> confirmation(controlMutex);
+            if(command.seekSerial!=activeSeekSerial || requestedStop.load() || commandsClosed) return true;
+            const auto current=command;const auto boundary=static_cast<uint64_t>(stats[SeekOldBoundary]);
+            auto& distance=stats[activeSeekTarget>=boundary?SeekSkipped:SeekRevisited];const auto delta=activeSeekTarget>=boundary?activeSeekTarget-boundary:boundary-activeSeekTarget;
+            if(!fv::canAdd(distance,delta)) {fail(TerminalAccounting,Stop::Accounting);return true;}distance+=delta;
+            ++stats[SeekConfirmed];stats[ConfirmedSeekTarget]=activeSeekTarget;stats[SeekSourceReady]=1;
+            diagnosticSeekConfirmed=monotonicUs();
+            prefix->beginStreaming();
+            confirmedSeekSerial=activeSeekSerial;confirmedEpoch=segments.epoch;seekOutcome=SeekOutcome::Confirmed;seekSealed=false;
+            if(current.play) {playback.phase=PlaybackPhase::Resuming;playback.resumeStarted=monotonicUs();playback.countResume=playback.resumeOutcome==ControlOutcome::Requested;resumePrepared=false;}
+            else {
+                playback.phase=PlaybackPhase::Paused;playback.pausedStarted=monotonicUs();playback.pausedFrame=stats[CompletedFrames];
+                if(playback.pauseOutcome==ControlOutcome::Requested) {++playback.pauses;playback.pauseOutcome=ControlOutcome::Confirmed;playback.drainOutcome=1;}
+            }
+            confirmation.unlock();publishPlayback();return true;
+        }
+        return true;
+    }
+    bool fullSubmitted() const { return fullTrack && prefix->queue.sourceHead()==prefix->queue.expectedTotal.load(); }
+    bool seekNaturalComplete() {
+        const auto& q=prefix->queue;
+        if(!q.eofReached.load(std::memory_order_acquire) || q.sourceHead()!=totalProgress || outstanding(false) || q.depth() || q.prepared) return false;
+        if(playback.resumeReadiness==1 && monotonicUs()-feedbackClock.started>=kBootstrapUs) {feedbackTimeout(FeedbackTimeoutKind::Bootstrap,monotonicUs());return false;}
+        if(!integrity.valid() || !segments.targetProven || !sealSegment(true) || stats[OutCancelled] || stats[ScheduledFrames]!=stats[SubmittedFrames] ||
+            q.consumedHash!=submittedPrefixHash || stats[SeekTailUrbs]!=1 || stats[SeekTailPackets]<1 || stats[SeekTailPackets]>8 ||
+            stats[SeekTailFrameCompletions]!=stats[SeekTailFrames] || stats[SeekTailPacketCompletions]!=stats[SeekTailPackets]) {
+            fail(TerminalAccounting,Stop::Accounting);return false;
+        }
+        stats[SeekOriginalNext]=prefix->decoder.originalNext;stats[FullQueueNatural]=0;stats[FullDiscardNatural]=0;
+        commandsClosed=true;stopCause.choose(Stop::NaturalEof);return true;
+    }
     bool naturalComplete() {
         if (!fullTrack || stopCause.chosen || requestedStop.load() || prefix->queue.faults.load()) return false;
+        std::unique_lock<std::mutex> eofBoundary(controlMutex);
+        if(command.seekSerial>activeSeekSerial || requestedStop.load()) return false;
+        if(stats[SeekConfirmed]) return seekNaturalComplete();
         const auto& q=prefix->queue;
         if (!naturalOutComplete(q.eofReached.load(std::memory_order_acquire),q.expectedTotal.load(),q.tail.load(),q.head.load(),
             static_cast<uint64_t>(stats[SubmittedFrames]),static_cast<uint64_t>(stats[CompletedFrames]),outstanding(false),q.prepared,integrity.valid())) return false;
@@ -326,7 +484,7 @@ struct Session {
             stats[OutPacketsSubmitted]!=(stats[OutSubmitted]-1)*static_cast<jlong>(kOutPackets)+stats[TailPackets] || stats[OutCancelled] ||
             stats[EofPadding] || q.depth()) { fail(TerminalAccounting,Stop::Accounting); return false; }
         stats[FullQueueNatural]=static_cast<jlong>(q.depth()); stats[FullDiscardNatural]=0;
-        stopCause.choose(Stop::NaturalEof); return true;
+        commandsClosed=true;stopCause.choose(Stop::NaturalEof); return true;
     }
     void beginStop() {
         if (stopping) return;
@@ -344,7 +502,8 @@ struct Session {
         if (fullTrack && !slot.feedback && fullSubmitted()) return false;
         if (slot.identity.outstanding) { fail(SchedulerInvalid, Stop::Accounting); return false; }
         slot.packets=slot.feedback ? 1 : static_cast<unsigned>(kOutPackets); slot.terminal=false;
-        slot.firstSourceFrame=static_cast<uint64_t>(stats[SubmittedFrames]);
+        slot.firstSourceFrame=fullTrack?prefix->queue.sourceHead():static_cast<uint64_t>(stats[SubmittedFrames]);
+        slot.sourceEpoch=fullTrack?prefix->queue.sourceEpoch.load():0;
         auto* urb = slot.urb.get();
         std::memset(urb, 0, sizeof(usbdevfs_urb) + slot.packets * sizeof(usbdevfs_iso_packet_desc));
         urb->type = USBDEVFS_URB_TYPE_ISO;
@@ -364,6 +523,7 @@ struct Session {
                 if (!scheduler.next(static_cast<unsigned>(intervalUs(dataInterval) / 125), acceptedFeedback, frames)) {
                     fail(SchedulerInvalid, Stop::Accounting); return false;
                 }
+                if(fullTrack && !fv::canAdd(stats[ScheduledFrames],frames)) {fail(TerminalAccounting,Stop::Accounting);return false;}
                 stats[ScheduledFrames] += frames;
                 const uint64_t bytes = static_cast<uint64_t>(frames) * frameBytes();
                 if (!packetFits(frames, payload, frameBytes()) || length + bytes > slot.buffer.size()) { fail(CapacityExceeded, Stop::Capacity); return false; }
@@ -375,7 +535,7 @@ struct Session {
             }
         }
         if (fullTrack && !slot.feedback) {
-            const uint64_t total=prefix->queue.expectedTotal.load(), position=static_cast<uint64_t>(stats[SubmittedFrames]);
+            const uint64_t total=prefix->queue.expectedTotal.load(), position=prefix->queue.sourceHead();
             if (position>total) { fail(TerminalAccounting,Stop::Accounting); return false; }
             const uint64_t remaining=total-position;
             if (remaining<=frameCount && !prefix->queue.eofReached.load(std::memory_order_acquire)) {
@@ -440,6 +600,9 @@ struct Session {
             if(prefix && !slot.feedback) prefix->queue.abandonReservation();
             return false;
         }
+        if(fullTrack && !slot.feedback && (!fv::canAdd(stats[SubmittedFrames],frameCount) || !fv::canAdd(stats[OutBytesSubmitted],length))) {
+            fail(TerminalAccounting,Stop::Accounting);return false;
+        }
         slot.submittedAt = monotonicUs();
         const int returned = ::ioctl(fd, USBDEVFS_SUBMITURB, urb);
         const int saved = returned < 0 ? errno : 0;
@@ -449,16 +612,19 @@ struct Session {
         }
         if (!slot.identity.submit(attachment, stream, ++serial)) { fail(SchedulerInvalid, Stop::Accounting); return false; }
         ++stats[slot.feedback ? FeedbackSubmitted : OutSubmitted];
+        if(prefix && !slot.feedback && frameCount && !diagnosticOutResumed) diagnosticOutResumed=slot.submittedAt;
         if (!slot.feedback) outContinuity.submitted(monotonicUs(),slot.packets,slot.outReapedAt);
         if (!slot.feedback) {
             if (prefix) {
                 submittedPrefixHash = fv::hashBytes(submittedPrefixHash, slot.buffer.data(), length);
+                if(fullTrack) segments.submittedHash=segments.epoch?fv::hashBytes(segments.submittedHash,slot.buffer.data(),length):submittedPrefixHash;
                 if (!prefix->queue.commit()) fail(FlacSourceFault, Stop::Source);
                 if (prefix->queue.consumedHash != submittedPrefixHash) fail(SourceHashMismatch, Stop::Source);
             } else source.submitted(slot.buffer.data(), length);
             if (fullTrack) {
                 stats[FullLastSubmitted]=static_cast<jlong>(slot.firstSourceFrame+frameCount-1);
                 if (slot.terminal) { stats[TailFrames]+=frameCount; stats[TailPackets]+=slot.packets; ++stats[TailUrbs]; }
+                if(slot.terminal && stats[SeekConfirmed]) {stats[SeekTailFrames]+=frameCount;stats[SeekTailPackets]+=slot.packets;++stats[SeekTailUrbs];}
             }
             stats[SubmittedFrames] += frameCount; stats[OutBytesSubmitted] += length; stats[OutPacketsSubmitted] += slot.packets;
             if(fullTrack) { playback.submitted();publishPlayback(); }
@@ -473,6 +639,55 @@ struct Session {
         const std::array<jlong, 7> row{slot.urb->endpoint, urbStatus, static_cast<int>(packet.status), packet.length,
             packet.actual_length, static_cast<jlong>(stream), static_cast<jlong>(slot.identity.submission)};
         std::copy(row.begin(), row.end(), packetExamples.begin() + index * row.size());
+    }
+    void observeFeedback(const Slot& slot,int urbStatus,uint64_t observed) {
+        if(feedbackDiagnostics.frozen()) return;
+        const auto& packet=slot.urb->iso_frame_desc[0];
+        const bool quiet=fullTrack && playback.quiet();
+        const auto decoded=decodeFeedback(slot.buffer.data(),packet.actual_length,static_cast<int>(packet.status),sampleRateHz);
+        auto validity=decoded.validity;
+        auto rejection=FeedbackRejection::None;
+        if(urbStatus || slot.urb->error_count) {validity=FeedbackValidity::CompletionError;rejection=FeedbackRejection::UrbStatus;}
+        else if(packet.status) rejection=FeedbackRejection::PacketStatus;
+        else if(validity==FeedbackValidity::Length) rejection=FeedbackRejection::Length;
+        else if(validity==FeedbackValidity::Zero) rejection=FeedbackRejection::Zero;
+        else if(validity==FeedbackValidity::Reserved) rejection=FeedbackRejection::Reserved;
+        else if(validity==FeedbackValidity::Implausible) rejection=FeedbackRejection::Implausible;
+        else if(quiet) rejection=FeedbackRejection::Quiet;
+        else if(stopping || stopCause.chosen) rejection=FeedbackRejection::Terminal;
+        int64_t raw=-1;
+        if(packet.actual_length==4) {uint32_t value=0;for(unsigned i=0;i<4;++i) value|=static_cast<uint32_t>(slot.buffer[i])<<(8*i);raw=value;}
+        feedbackDiagnostics.observe({0,diagnosticElapsed(started,observed),raw,static_cast<int>(validity),static_cast<int>(rejection),
+            packet.length,packet.actual_length,urbStatus,static_cast<int>(packet.status),rejection==FeedbackRejection::None,
+            diagnosticElapsed(slot.submittedAt,observed),fullTrack?static_cast<int>(playback.phase):-1,
+            fullTrack?static_cast<int64_t>(segments.epoch):-1,fullTrack?static_cast<int64_t>(confirmedSeekSerial):-1,slot.urb->error_count});
+    }
+    void freezeFeedback(FeedbackFatalReason reason,uint64_t observed,bool sample,int timeoutKind=0) {
+        // Called BEFORE fail() changes terminal/lifecycle state. An unrelated earlier failure is not relabelled.
+        if(feedbackDiagnostics.frozen() || stopping || stopCause.chosen) return;
+        FeedbackFatalContext context{};
+        const auto* row=sample?feedbackDiagnostics.latest():nullptr;
+        if(row && (*row)[DElapsed]>=0 && started<=UINT64_MAX-static_cast<uint64_t>((*row)[DElapsed]))
+            observed=started+static_cast<uint64_t>((*row)[DElapsed]); // The causal packet's observation, not a later clock read.
+        const bool streak=reason==FeedbackFatalReason::PersistentInvalid;
+        context[FReason]=static_cast<int>(reason);context[FSequence]=row?(*row)[DSequence]:-1;
+        context[FFirstRejectedSequence]=streak?feedbackDiagnostics.firstRejectedSequence:-1;
+        context[FFirstRejectedElapsed]=streak?feedbackDiagnostics.firstRejectedElapsed:-1;
+        context[FRaw]=row?(*row)[DRaw]:-1;context[FValidity]=row?(*row)[DValidity]:-1;context[FStreak]=invalidStreak;
+        context[FNominalRate]=sampleRateHz;context[FPhase]=fullTrack?static_cast<int>(playback.phase):-1;
+        context[FTransportState]=static_cast<int>(state);context[FEpoch]=fullTrack?static_cast<int64_t>(segments.epoch):-1;
+        context[FSeekSerial]=fullTrack?static_cast<int64_t>(confirmedSeekSerial):-1;
+        context[FSinceSeek]=diagnosticElapsed(diagnosticSeekConfirmed,observed);context[FSinceOut]=diagnosticElapsed(diagnosticOutResumed,observed);
+        context[FObserved]=diagnosticElapsed(started,observed);context[FRequestAge]=row?(*row)[DRequestAge]:-1;
+        context[FOut]=outstanding(false);context[FFeedback]=outstanding(true);context[FBootstrap]=feedbackClock.lastObserved==0;
+        // Worker phase/refill demand, not proof that a pending control command permits the next submission.
+        context[FRefill]=(!fullTrack || playback.admitsOut()) && (!fullTrack || !fullSubmitted());
+        context[FNominalCoverage]=outContinuity.nominalCoverageUs;context[FEstimatedCoverage]=outContinuity.estimatedCoverage(observed);
+        context[FBootstrapElapsed]=diagnosticElapsed(feedbackClock.started,observed);
+        context[FAdmissionStopped]=diagnosticElapsed(started,diagnosticAdmissionStopped);context[FPoolsDrained]=diagnosticElapsed(started,diagnosticPoolsDrained);
+        context[FSeekConfirmed]=diagnosticElapsed(started,diagnosticSeekConfirmed);context[FFreshPrime]=diagnosticElapsed(started,diagnosticFreshPrime);
+        context[FOutResumed]=diagnosticElapsed(started,diagnosticOutResumed);context[FAcceptedRaw]=acceptedFeedback;context[FTimeoutKind]=timeoutKind;
+        feedbackDiagnostics.freeze(context);
     }
     void feedbackTimeout(FeedbackTimeoutKind kind,uint64_t observed,uint64_t offendingSubmitted=0) {
         if (stopping || kind==FeedbackTimeoutKind::None) return;
@@ -498,10 +713,13 @@ struct Session {
             stats[TimeoutWatchdogEvaluated]=feedbackReapPass.watchdogEvaluated;
             stats[TimeoutWatchdogFired]=feedbackReapPass.timeout!=FeedbackTimeoutKind::None;
         }
+        freezeFeedback(kind==FeedbackTimeoutKind::Bootstrap?FeedbackFatalReason::BootstrapTimeout:
+            kind==FeedbackTimeoutKind::LastValidWatchdog?FeedbackFatalReason::WatchdogTimeout:FeedbackFatalReason::ReapedTimeout,observed,false,static_cast<int>(kind));
         fail(FeedbackTimeout,Stop::Feedback);
     }
     void feedbackPacket(Slot& slot, int urbStatus) {
         if(fullTrack && playback.quiet()) {
+            observeFeedback(slot,urbStatus,monotonicUs());
             const auto& packet=slot.urb->iso_frame_desc[0];++stats[FeedbackPacketsCompleted];
             if(urbStatus || packet.status || packet.actual_length!=4) { ++stats[FeedbackUrbErrors];fail(UrbError,Stop::Feedback); }
             else {
@@ -517,6 +735,7 @@ struct Session {
         uint32_t raw = 0;
         for (unsigned i = 0; i < std::min<unsigned>(4, packet.actual_length); ++i) raw |= static_cast<uint32_t>(slot.buffer[i]) << (8 * i);
         const uint64_t observed = monotonicUs(), age = FeedbackObservationClock::requestAge(slot.submittedAt,observed);
+        observeFeedback(slot,urbStatus,observed);
         stats[MaxRequestAgeUs]=std::max(stats[MaxRequestAgeUs],static_cast<jlong>(age));
         if (age>static_cast<uint64_t>(stats[FeedbackHoldover])) ++stats[RequestsOverHoldover];
         const std::array<jlong, 6> row{raw, packet.actual_length, static_cast<int>(packet.status),
@@ -528,6 +747,7 @@ struct Session {
         }
         if (decoded.validity != FeedbackValidity::Valid) {
             ++stats[FeedbackInvalid]; stats[InvalidStreak] = ++invalidStreak;
+            if(!stopping && !stopCause.chosen) feedbackDiagnostics.rejected(invalidStreak);
             if (invalidStreak >= kInvalidFeedbackLimit) fail(InvalidFeedback, Stop::Feedback);
             return;
         }
@@ -538,6 +758,7 @@ struct Session {
         // submission age is not sample age. Accept ready valid feedback before the
         // post-reap watchdog decision; do not refresh clocks during drain/failure.
         if (stopping || stopCause.chosen) return;
+        feedbackDiagnostics.recovered();
         invalidStreak = 0; stats[InvalidStreak] = 0; acceptedFeedback = decoded.raw;
         feedbackClock.accept(slot.submittedAt,observed);
         if(fullTrack && playback.resumeReadiness) playback.resumeReadiness=2;
@@ -559,6 +780,7 @@ struct Session {
         auto& slot = *found;
         if (!slot.identity.outstanding) { ++stats[DuplicateCompletions]; fail(DuplicateCompletion, Stop::Accounting); return true; }
         if (!slot.identity.complete(attachment, stream)) { fail(GenerationMismatch, Stop::Accounting); return true; }
+        if(fullTrack && !slot.feedback && slot.sourceEpoch!=segments.epoch) {fail(GenerationMismatch,Stop::Accounting);return true;}
         if (!slot.feedback && !stopping && !stopCause.chosen && !requestedStop.load()) {
             slot.outReapedAt=monotonicUs();
             outContinuity.completed(slot.outReapedAt,slot.packets);
@@ -574,6 +796,7 @@ struct Session {
             if (!stats[FirstUrbStatus]) stats[FirstUrbStatus] = status;
             if (!stats[FirstUrbErrorCount]) stats[FirstUrbErrorCount] = slot.urb->error_count;
             ++stats[slot.feedback ? FeedbackUrbErrors : OutUrbErrors];
+            if(slot.feedback) {const auto observed=monotonicUs();observeFeedback(slot,status,observed);freezeFeedback(FeedbackFatalReason::UrbCompletion,observed,true);}
             fail(UrbError, Stop::Worker);
         }
         uint64_t sourceOffset=0;
@@ -581,6 +804,9 @@ struct Session {
             const auto& packet = slot.urb->iso_frame_desc[i];
             packetExample(slot, i, status);
             if (slot.feedback) continue;
+            if(fullTrack && (!fv::canAdd(stats[OutPacketsCompleted],1) || !fv::canAdd(stats[KernelOutActualBytes],packet.actual_length))) {
+                fail(TerminalAccounting,Stop::Accounting);continue;
+            }
             ++stats[OutPacketsCompleted]; stats[KernelOutActualBytes] += packet.actual_length;
             integrity.compromise(outPacketProblem(status, static_cast<int>(packet.status), packet.length, packet.actual_length, cancelled));
             if (cancelled) continue; // Cancelled frames are explicitly distinct from successful completion frames.
@@ -591,11 +817,13 @@ struct Session {
             } else if (packet.actual_length != packet.length) {
                 ++stats[OutPacketErrors]; fail(ShortPacket, Stop::Worker); stats[FirstPacketLength] = packet.length; stats[FirstPacketActual] = packet.actual_length;
             } else if (status == 0) {
+                if(fullTrack && !fv::canAdd(stats[CompletedFrames],slot.frames[i])) {fail(TerminalAccounting,Stop::Accounting);continue;}
                 stats[CompletedFrames] += slot.frames[i];
                 if (fullTrack) {
                     stats[FullLastCompleted]=std::max(stats[FullLastCompleted],static_cast<jlong>(slot.firstSourceFrame+sourceOffset+slot.frames[i]-1));
                     if (slot.terminal) { ++stats[TailPacketCompletions]; stats[TailFrameCompletions]+=slot.frames[i]; }
                 }
+                if(fullTrack && slot.terminal && stats[SeekConfirmed]) {++stats[SeekTailPacketCompletions];stats[SeekTailFrameCompletions]+=slot.frames[i];}
             }
             sourceOffset+=slot.frames[i];
         }
@@ -661,7 +889,7 @@ struct Session {
         stats[OutstandingFinal] = static_cast<jlong>(outstanding(false) + outstanding(true));
         if (stats[OutstandingFinal]) { integrity.compromise(ShutdownUnaccounted); stats[ShutdownIncomplete] = 1; }
         if (prefix) {
-            stats[SourceFrames] = static_cast<jlong>(prefix->queue.head.load());
+            stats[SourceFrames] = static_cast<jlong>(prefix->queue.consumedTotal.load());
             stats[PrefixConsumed] = stats[SourceFrames]; stats[PrefixPrimed] = prefix->primed.load();
             stats[PrefixFaults] = static_cast<jlong>(prefix->queue.faults.load()); stats[PrefixStopped] = prefix->stopped.load();
             stats[PrefixJoined] = prefix->joined.load(); stats[SourcePcmHash] = hashBits(prefix->queue.consumedHash);
@@ -675,6 +903,7 @@ struct Session {
                 stats[FullEofReached]=prefix->queue.eofReached.load(); stats[FullNaturalProducer]=stats[FullEofReached] && prefix->stopped.load();
                 stats[FullMd5Pass]=prefix->decoder.facts[fv::Md5Verification]==1;
                 stats[FullDecodedHash]=hashBits(prefix->decoder.pcm.hash); stats[FullEnqueuedHash]=hashBits(prefix->queue.enqueuedHash);
+                stats[SeekOriginalNext]=prefix->decoder.originalNext;stats[SeekAttempts]=prefix->decoder.seekAttempts;
             }
             if (stats[PrefixFaults]) integrity.compromise(FlacSourceFault);
             if (prefix->queue.consumedHash != submittedPrefixHash) integrity.compromise(SourceHashMismatch);
@@ -710,6 +939,7 @@ struct Session {
         ran = true;
         started = monotonicUs(); lastOutCompletion = started; stats[Started] = 1;
         feedbackClock.started=started;
+        diagnosticFreshPrime=started;
         outContinuity.start(started);
         move(State::Starting); move(State::Bootstrap);
         if (prefix) prefix->beginStreaming();
@@ -779,10 +1009,18 @@ struct Session {
                 pollCompletion();
             }
         } catch (...) { fail(WorkerFailure, Stop::Worker); }
-        if(fullTrack) { playback.finish(monotonicUs(),PlaybackPhase::Stopping);publishPlayback(); }
+        if(fullTrack) {
+            if(playback.seeking() && stopCause.value==Stop::Requested && !playbackFault) seekOutcome=SeekOutcome::Stopped;
+            playback.finish(monotonicUs(),PlaybackPhase::Stopping);publishPlayback();
+        }
         shutdown();
         completedProgress.store(static_cast<uint64_t>(stats[CompletedFrames]),std::memory_order_release);
         if(fullTrack) {
+            // Producer errors discovered during join retain precedence over a racing user Stop.
+            if(prefix->queue.faults.load() & ~static_cast<uint64_t>(fv::PrefixCancelled)) playbackFault=true;
+            if(prefix->seekFailures.load()) {
+                if(!stats[SeekFailures]) ++stats[SeekFailures];seekOutcome=SeekOutcome::Failed;segments.valid=false;
+            }
             playback.finish(monotonicUs(),integrity.valid() && stopCause.value==Stop::NaturalEof ? PlaybackPhase::Ended :
                 stopCause.value==Stop::Requested && !playbackFault && !stats[ShutdownIncomplete] && !(integrity.reasons&(CancelError|DeviceDetached)) ? PlaybackPhase::Stopped : PlaybackPhase::Failed);
             const auto wanted=intent();
@@ -818,22 +1056,31 @@ std::shared_ptr<Session> lookup(jlong handle, jlong attachment, jlong stream) {
 jobject snapshot(JNIEnv* env, const Session& session) {
     jclass cls = env->FindClass("io/github/rsgarrido/sazanami/player/usb/UsbIsoNativeSnapshot");
     if (!cls) return nullptr;
-    jmethodID constructor = env->GetMethodID(cls, "<init>", "([J[J[J[J)V");
+    jmethodID constructor = env->GetMethodID(cls, "<init>", "([J[J[J[J[J)V");
     if (!constructor) return nullptr;
-    jlongArray numbers = env->NewLongArray(FieldCount);
+    jlongArray numbers = env->NewLongArray(kSnapshotFieldCount);
     jlongArray feedback = env->NewLongArray(static_cast<jsize>(session.feedbackExampleCount * 6));
     jlongArray packets = env->NewLongArray(static_cast<jsize>(session.packetExampleCount * 7));
     jlongArray pcm = env->NewLongArray(static_cast<jsize>(session.source.exampleCount * 9));
-    if (!numbers || !feedback || !packets || !pcm) return nullptr;
+    jlongArray segments=env->NewLongArray(static_cast<jsize>(session.segments.exampleCount*10));
+    if (!numbers || !feedback || !packets || !pcm || !segments) return nullptr;
+    std::array<jlong,80> segmentRows{};
+    for(size_t row=0;row<session.segments.exampleCount;++row) for(size_t col=0;col<10;++col)
+        segmentRows[row*10+col]=col==7 || col==8?hashBits(session.segments.examples[row][col]):static_cast<jlong>(session.segments.examples[row][col]);
+    env->SetLongArrayRegion(segments,0,static_cast<jsize>(session.segments.exampleCount*10),segmentRows.data());
     std::array<jlong, 13 * 9> examples{};
     for (size_t row = 0; row < session.source.exampleCount; ++row)
         for (size_t column = 0; column < 9; ++column) examples[row * 9 + column] = session.prefix ? session.prefix->queue.examples[row][column] : column<7 ? session.source.examples[row][column] : 0;
     env->SetLongArrayRegion(pcm, 0, static_cast<jsize>(session.source.exampleCount * 9), examples.data());
     env->SetLongArrayRegion(numbers, 0, FieldCount, session.stats.data());
+    const auto diagnostics=session.feedbackDiagnostics.serialized();
+    std::array<jlong,kFeedbackDiagnosticWords> diagnosticWords{};
+    std::copy(diagnostics.begin(),diagnostics.end(),diagnosticWords.begin());
+    env->SetLongArrayRegion(numbers,FieldCount,kFeedbackDiagnosticWords,diagnosticWords.data());
     env->SetLongArrayRegion(feedback, 0, static_cast<jsize>(session.feedbackExampleCount * 6), session.feedbackExamples.data());
     env->SetLongArrayRegion(packets, 0, static_cast<jsize>(session.packetExampleCount * 7), session.packetExamples.data());
     if (env->ExceptionCheck()) return nullptr;
-    return env->NewObject(cls, constructor, numbers, feedback, packets, pcm);
+    return env->NewObject(cls, constructor, numbers, feedback, packets, pcm,segments);
 }
 } // namespace
 
@@ -922,11 +1169,12 @@ extern "C" JNIEXPORT jlongArray JNICALL
 Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeFullProgress(JNIEnv* env,jobject,jlong handle,jlong attachment,jlong stream) {
     const auto session=lookup(handle,attachment,stream);
     if (!session || !session->fullTrack) { error(env,"java/lang/IllegalArgumentException","Stale full playback progress"); return nullptr; }
-    std::array<jlong,4+kControlFieldCount> values{};
+    std::array<jlong,4+kControlFieldCount+kSeekFieldCount> values{};
     { std::lock_guard<std::mutex> lock(session->controlMutex);
       values[0]=static_cast<jlong>(session->livePlayback[0]);values[1]=static_cast<jlong>(session->totalProgress);
       values[2]=static_cast<jlong>(session->sampleRateHz);values[3]=static_cast<jlong>(session->livePlayback[1]);
       std::copy(session->liveControl.begin(),session->liveControl.end(),values.begin()+4);
+      std::copy(session->liveSeek.begin(),session->liveSeek.end(),values.begin()+4+kControlFieldCount);
       if(session->livePausedStarted) values[4+PausedDurationUs-PlaybackPhaseField]+=static_cast<jlong>(monotonicUs()-session->livePausedStarted); }
     auto result=env->NewLongArray(values.size());
     if (result) env->SetLongArrayRegion(result,0,values.size(),values.data());
@@ -941,12 +1189,12 @@ Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeStopSilentTr
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeSetFullPlayWhenReady(JNIEnv* env,jobject,jlong handle,jlong attachment,jlong stream,
-        jboolean play,jlong sequence,jlong pauses,jlong resumes) {
+        jboolean play,jlong sequence,jlong pauses,jlong resumes,jlong seeks,jlong seekSerial,jlong target,jlong firstTarget) {
     auto session=lookup(handle,attachment,stream);
-    if(!session || !session->fullTrack || sequence<0 || pauses<0 || resumes<0) {
+    if(!session || !session->fullTrack || sequence<0 || pauses<0 || resumes<0 || seeks<0 || seekSerial<0 || target<0 || firstTarget<0) {
         error(env,"java/lang/IllegalArgumentException","Stale/invalid full playback control");return JNI_FALSE;
     }
-    try { return session->requestPlayback(play,sequence,pauses,resumes) ? JNI_TRUE : JNI_FALSE; }
+    try { return session->requestPlayback(play,sequence,pauses,resumes,seeks,seekSerial,target,firstTarget) ? JNI_TRUE : JNI_FALSE; }
     catch (...) { error(env,"java/lang/IllegalStateException","Full playback control failed");return JNI_FALSE; }
 }
 
@@ -992,7 +1240,8 @@ jobject prefixSnapshot(JNIEnv* env,const fv::PrefixSource& source,bool released)
         for (size_t j=0;j<9;++j) rows[i*9+j]=source.queue.examples[i][j];
     env->SetLongArrayRegion(numbers,0,fv::PrefixFieldCount,values.data());
     env->SetLongArrayRegion(examples,0,static_cast<jsize>(source.queue.exampleCount*9),rows.data());
-    jobject decoder=(source.joined.load() || source.queue.eofReached.load(std::memory_order_acquire))?fv::snapshotFlac(env,source.decoder):nullptr;
+    // EOF is now a reusable source checkpoint; only joined teardown makes decoder evidence immutable to observers.
+    jobject decoder=source.joined.load()?fv::snapshotFlac(env,source.decoder):nullptr;
     if (env->ExceptionCheck()) return nullptr;
     return env->NewObject(cls,constructor,numbers,examples,decoder);
 }

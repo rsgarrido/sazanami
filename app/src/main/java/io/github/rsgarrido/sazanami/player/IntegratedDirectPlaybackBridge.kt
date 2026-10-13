@@ -24,6 +24,7 @@ internal object IntegratedDirectPlaybackBridge {
     fun stop() { if(BuildConfig.DEBUG) owner?.stopDirect() }
     fun togglePlayPause() { if(BuildConfig.DEBUG) owner?.toggleDirectPlayback() }
     fun pause() { if(BuildConfig.DEBUG) owner?.pauseDirectPlayback() }
+    fun seek(positionMs: Long) { if(BuildConfig.DEBUG) owner?.seekDirectPlayback(positionMs) }
     @OptIn(UnstableApi::class)
     fun start() { if(BuildConfig.DEBUG) owner?.prepare() }
     fun reject(command: String) { owner?.rejectDirectCommand(command) }

@@ -1,10 +1,10 @@
 package io.github.rsgarrido.sazanami.ui.player.pocketflip
 
+import io.github.rsgarrido.sazanami.ui.state.rememberDirectSeekGestureControl
+import io.github.rsgarrido.sazanami.ui.state.directSeekPositionInput
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,7 +35,6 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -402,6 +401,7 @@ private fun PocketFlipSeekBar(
     onVisualTrackBoundsChanged: (Rect) -> Unit = {}
 ) {
     val colors = PocketFlipColors
+    val gesture=rememberDirectSeekGestureControl(onSeekChange)
     val safeDuration = duration.coerceAtLeast(1)
     val safePosition = currentPosition.coerceIn(0, safeDuration)
     val progress = safePosition.toFloat() / safeDuration.toFloat()
@@ -431,7 +431,7 @@ private fun PocketFlipSeekBar(
                                 range = 0f..safeDuration.toFloat()
                             )
                             setProgress { target ->
-                                onSeekChange(
+                                gesture.immediate(
                                     target.coerceIn(0f, safeDuration.toFloat()).toInt()
                                 )
                                 true
@@ -441,28 +441,7 @@ private fun PocketFlipSeekBar(
                         Modifier.clearAndSetSemantics { }
                     }
                 )
-                .pointerInput(safeDuration, inputEnabled) {
-                    if (!inputEnabled) return@pointerInput
-                    awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        fun seekTo(x: Float) {
-                            val fraction = (x / size.width.toFloat()).coerceIn(0f, 1f)
-                            onSeekChange((fraction * safeDuration).toInt())
-                        }
-
-                        seekTo(down.position.x)
-                        var pressed = true
-                        while (pressed) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            pressed = change.pressed
-                            if (pressed) {
-                                seekTo(change.position.x)
-                                change.consume()
-                            }
-                        }
-                    }
-                }
+                .then(if(inputEnabled) Modifier.directSeekPositionInput(gesture,safeDuration) else Modifier)
         ) {
             val housingHeightPx = housingHeight.toPx()
             val housingTop = (size.height - housingHeightPx) / 2f

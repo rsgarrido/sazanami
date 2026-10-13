@@ -421,7 +421,7 @@ class PlaybackController(
     }
 
     fun seekTo(position: Int) {
-        if (IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.reject("Seek");return }
+        if (IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.seek(position.toLong());return }
         musicPlayer.seekTo(position)
         currentPosition = position
         savePlayerState()

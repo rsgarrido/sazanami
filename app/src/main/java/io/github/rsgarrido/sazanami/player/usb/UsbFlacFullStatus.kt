@@ -4,6 +4,7 @@ internal object UsbFlacFullStatus {
     fun sourceFailure(source: UsbFlacSourceResult?): UsbSilentStatus {
         val faults=source?.count("sourceIntegrityMask") ?: 0L
         return when {
+            faults and 2097152L != 0L || (source?.count("sourceSeekFailures") ?: 0L)>0L -> UsbSilentStatus.FLAC_SOURCE_FAILED
             faults and 2048L != 0L -> UsbSilentStatus.CANCELLED
             faults and 131072L != 0L -> UsbSilentStatus.FLAC_MD5_UNAVAILABLE
             faults and 262144L != 0L -> UsbSilentStatus.FLAC_MD5_MISMATCH
@@ -16,6 +17,7 @@ internal object UsbFlacFullStatus {
     }
     fun classify(configuration: UsbAudioConfigurationResult,usb: UsbIsoTransportResult?,source: UsbFlacSourceResult?,memoryReleased: Boolean): UsbSilentStatus {
         if (source==null) return UsbSilentStatus.QUEUE_PRIME_FAILED
+        if(usb!=null && (usb.count("seekFailures")>0L || source.count("sourceSeekFailures")>0L)) return UsbSilentStatus.USB_TRANSPORT_FAILED
         // A concurrent Stop may cancel the producer, but cannot hide a real pause/resume/USB fault.
         if (usb!=null && (usb.count("pauseDrainFailures")>0L || usb.count("resumeFailure")>0L ||
             (usb.stopReason=="STOP_REQUESTED" && usb.count("playbackTransportState")==UsbFullTransportPhase.FAILED.ordinal.toLong())))
@@ -30,6 +32,26 @@ internal object UsbFlacFullStatus {
         if (usb?.integrityReasons?.contains("TERMINAL_TAIL_ACCOUNTING_FAILED")==true) return UsbSilentStatus.TERMINAL_TAIL_ACCOUNTING_FAILED
         if (usb==null || !usb.verified) return UsbSilentStatus.USB_TRANSPORT_FAILED
         if (usb.count("schedulerNominalRateHz")!=source.count("sampleRate") || usb.pcmFormat!=source.pcmFormat || usb.count("formatAlternate")!=configuration.resolution.plan?.streaming?.alternate?.toLong()) return UsbSilentStatus.USB_TRANSPORT_FAILED
+        if(usb.count("seekConfirmed")>0L) {
+            if(!source.seekComplete || !memoryReleased) return UsbSilentStatus.RESOURCE_CLEANUP_FAILED
+            var invalidated=0L
+            for(field in listOf("intentionallyInvalidatedQueuedFrames","intentionallyInvalidatedCanonicalFrames","intentionallyInvalidatedRawFrames")) {
+                val value=source.count(field)
+                if(value<0L || invalidated>Long.MAX_VALUE-value) return UsbSilentStatus.TERMINAL_TAIL_ACCOUNTING_FAILED
+                invalidated+=value
+            }
+            if(source.count("sourceEpoch")!=usb.count("seekSourceEpoch") || source.count("sourceSegmentStartFrame")!=usb.count("confirmedSeekTargetFrame") ||
+                source.count("generation")!=usb.generation || source.count("streamGeneration")!=usb.streamGeneration ||
+                invalidated!=usb.count("seekInvalidatedFrames") || source.count("sourceSeekAttempts")!=usb.count("sourceSeekAttempts") ||
+                source.count("sourceFirstSeekFrame")!=usb.count("seekFirstSourceFrame") || source.count("framesConsumedFromQueue")!=usb.count("framesSubmitted") ||
+                source.decoder?.counters?.get("pcmFnv1a")!=usb.counters["wholeDecodedPcmHash"] ||
+                source.counters["allEnqueuedPrefetchPcmHash"]!=usb.counters["allEnqueuedPcmHash"] ||
+                source.counters["consumedSourcePcmHash"]!=usb.counters["sourcePcmHash"] || source.count("totalSamples")!=usb.count("streamInfoTotalSamples"))
+                return UsbSilentStatus.TERMINAL_TAIL_ACCOUNTING_FAILED
+            if(configuration.restorationStatus!=UsbConfigurationRestorationStatus.RESTORED || configuration.asRelease.returned!=true ||
+                configuration.acRelease.returned!=true || configuration.closeStatus!=UsbAudioCleanupStatus.SUCCEEDED) return UsbSilentStatus.USB_CONFIGURATION_FAILED
+            return UsbSilentStatus.SEEKED_SEGMENTS_USB_TRANSPORT_VERIFIED
+        }
         if (!source.fullComplete || !memoryReleased) return UsbSilentStatus.RESOURCE_CLEANUP_FAILED
         // Both snapshots must describe the same entire source; independent internal consistency is insufficient.
         if (source.decoder?.count("sampleRate")!=source.count("sampleRate") ||

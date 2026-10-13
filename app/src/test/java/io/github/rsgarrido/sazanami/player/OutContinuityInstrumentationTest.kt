@@ -19,16 +19,72 @@ class OutContinuityInstrumentationTest {
         return UsbIsoNativeSnapshot(UsbIsoNativeStats.fields.map { values[it] ?: 0L }.toLongArray(),longArrayOf(),longArrayOf())
     }
     @Test fun schemaAppendsContinuityWithoutMovingWorkingFeedbackFields() {
-        assertEquals(11,UsbIsoNativeStats.VERSION);assertEquals(199,UsbIsoNativeStats.fields.size)
+        assertEquals(13,UsbIsoNativeStats.VERSION);assertEquals(508,UsbIsoNativeStats.fields.size)
         assertEquals(111,UsbIsoNativeStats.fields.indexOf("configuredFeedbackUrbs"))
         assertEquals(131,UsbIsoNativeStats.fields.indexOf("feedbackFailureReapAttempted"))
         assertEquals(140,UsbIsoNativeStats.fields.indexOf("configuredOutUrbs"))
         assertEquals(173,UsbIsoNativeStats.fields.indexOf("firstOutRiskCompletedFrames"))
+        assertEquals(182,UsbIsoNativeStats.fields.indexOf("playbackTransportState"))
+        assertEquals(198,UsbIsoNativeStats.fields.indexOf("pauseDrainFailures"))
+        assertEquals(199,UsbIsoNativeStats.fields.indexOf("sourceSeekCapable"))
+        assertEquals(235,UsbIsoNativeStats.fields.indexOf("seekStartedPaused"))
         for (stage in 0L..2L) assertEquals(stage,UsbIsoNativeStats.decode(packet(mapOf("firstOutRiskStage" to stage)),1,2).count("firstOutRiskStage"))
-        for (bad in listOf(packet(mapOf("version" to 7L)),packet(mapOf("firstOutRiskStage" to 3L)))) {
+        for (bad in listOf(packet(mapOf("version" to 11L)),packet(mapOf("version" to 7L)),
+            packet().copy(numbers=packet().numbers.copyOf(199)),packet().copy(numbers=packet().numbers.copyOf(235)),
+            packet(mapOf("firstOutRiskStage" to -1L)),packet(mapOf("firstOutRiskStage" to 3L)))) {
             try { UsbIsoNativeStats.decode(bad,1,2);fail("Old/malformed evidence was accepted") }
             catch (_: IllegalArgumentException) { }
         }
+    }
+    @Test fun seekSchemasAppendInNativeOrderAndProgressRemainsCoherentAndPassive() {
+        fun enumFields(text: String,name: String)=text.substringAfter("enum $name : size_t {")
+            .substringBefore("}").split(',').map { it.trim() }.dropLast(1)
+        val native=source("cpp/usb_iso_transport.cpp")
+        val nativeFields=enumFields(native,"Field")
+        val appended=listOf(
+            "SeekCapable" to "sourceSeekCapable", "SeekRequests" to "seekRequests", "SeekConfirmed" to "seekConfirmed",
+            "SeekFailures" to "seekFailures", "SeekSuperseded" to "seekSuperseded", "SeekOutcomeField" to "seekOutcome",
+            "FirstSeekTarget" to "firstSeekTargetFrame", "LastSeekTarget" to "lastSeekTargetFrame", "ConfirmedSeekTarget" to "confirmedSeekTargetFrame",
+            "SeekEpoch" to "seekSourceEpoch", "SeekOldBoundary" to "oldSegmentSourceBoundary", "SeekDrainOutcome" to "seekDrainOutcome",
+            "SeekPendingOut" to "seekOutstandingOut", "SeekInvalidatedFrames" to "seekInvalidatedFrames", "SeekInvalidatedBytes" to "seekInvalidatedBytes",
+            "SeekSourceReady" to "seekSourceReady", "SeekFirstFrame" to "seekFirstSourceFrame", "SeekFirstProven" to "seekFirstFrameProven",
+            "SeekSegmentCount" to "seekSegmentCount", "SeekSkipped" to "seekForwardDistanceFrames", "SeekRevisited" to "seekBackwardDistanceFrames",
+            "SeekSourcePosition" to "sourcePositionFrame", "SeekSegmentCompleted" to "completedFramesInSeekSegment", "SeekConfirmedSerial" to "confirmedSeekSerial",
+            "SeekSegmentIntegrity" to "seekSegmentIntegrity", "SeekChainHash" to "seekSegmentEvidenceHash", "SeekTailUrbs" to "seekTailOutUrbs",
+            "SeekTailPackets" to "seekTailPackets", "SeekTailFrames" to "seekTailFrames", "SeekTailPacketCompletions" to "seekTailPacketCompletions",
+            "SeekTailFrameCompletions" to "seekTailFrameCompletions", "SeekOriginalNext" to "originalDecoderNextFrame", "SeekAttempts" to "sourceSeekAttempts",
+            "SeekSegmentFrames" to "seekSegmentFrames", "SeekSegmentBytes" to "seekSegmentBytes", "SeekWholeMd5AfterSeek" to "wholeMd5NotVerifiedAfterSeek",
+            "SeekStartedPaused" to "seekStartedPaused")
+        assertEquals(236,nativeFields.size)
+        assertEquals(appended.map { it.first },nativeFields.drop(199))
+        assertEquals(appended.map { it.second },UsbIsoNativeStats.seekFields)
+        assertEquals("ConfiguredFeedbackUrbs",nativeFields[111]);assertEquals("FirstOutRiskCompletedFrames",nativeFields[173])
+        assertTrue(native.contains("kSnapshotVersion = 13"))
+        val prefix=source("cpp/flac/flac_prefix_queue.h")
+        val sourceFields=enumFields(prefix,"PrefixField")
+        assertEquals(53,sourceFields.size);assertEquals(53,UsbFlacSourceEvidence.fields.size)
+        assertEquals(listOf("PSeekCapable","PSeekAttempts","PSeekFailures","PSourceEpoch","PSourceBase","POriginalNext",
+            "PInvalidatedQueued","PInvalidatedCanonical","PInvalidatedRaw","PSeekFirstFrame","PSeekFirstProven"),sourceFields.drop(42))
+        assertEquals(listOf("sourceSeekCapable","sourceSeekAttempts","sourceSeekFailures","sourceEpoch","sourceSegmentStartFrame",
+            "originalDecoderNextFrame","intentionallyInvalidatedQueuedFrames","intentionallyInvalidatedCanonicalFrames",
+            "intentionallyInvalidatedRawFrames","sourceFirstSeekFrame","sourceFirstSeekFrameProven"),UsbFlacSourceEvidence.fields.drop(42))
+        assertEquals("PTotalMatch",sourceFields[41]);assertEquals("decodedTotalMatchesStreamInfo",UsbFlacSourceEvidence.fields[41])
+        assertTrue(prefix.contains("facts[PApi]=4"))
+        assertTrue(source("java/io/github/rsgarrido/sazanami/player/usb/UsbFlacPrefixSource.kt").contains("value.numbers[0]==4L"))
+        assertEquals(16,UsbFsEvidence.NATIVE_API_VERSION)
+        val api=source("cpp/usb_fs_diagnostics.cpp")
+        assertTrue(api.contains("kApiVersion = 16"));assertTrue(api.contains("return kApiVersion;"))
+        assertEquals(58,4+UsbIsoNativeStats.controlFields.size+UsbIsoNativeStats.seekFields.size)
+        val progress=native.substringAfter("UsbFsDiagnostics_nativeFullProgress(").substringBefore("extern \"C\"")
+        assertTrue(progress.contains("std::array<jlong,4+kControlFieldCount+kSeekFieldCount> values{}"))
+        assertTrue(progress.contains("std::lock_guard<std::mutex> lock(session->controlMutex)"))
+        assertTrue(progress.contains("values.begin()+4+kControlFieldCount"))
+        for(forbidden in listOf("submit(","reapOne(","ioctl(","queue.","prefix->")) assertFalse(forbidden,progress.contains(forbidden))
+        val bridge=source("java/io/github/rsgarrido/sazanami/player/usb/UsbFsDiagnostics.kt")
+        assertTrue(bridge.contains("nativeApiVersion() == UsbFsEvidence.NATIVE_API_VERSION"))
+        assertTrue(bridge.contains("values.size==4+UsbIsoNativeStats.controlFields.size+UsbIsoNativeStats.seekFields.size"))
+        assertTrue(bridge.contains("values.drop(4).take(17)"));assertTrue(bridge.contains("values.drop(21)"))
+        assertTrue(bridge.contains("control.getValue(\"playbackTransportState\")==values[3]"))
     }
     @Test fun reportMakesRiskAndKernelUncertaintyExplicitWithCorrelationTimes() {
         val metrics=mapOf("configuredOutUrbs" to 8L,"outPacketsPerUrb" to 8L,"dataIntervalUs" to 125L,

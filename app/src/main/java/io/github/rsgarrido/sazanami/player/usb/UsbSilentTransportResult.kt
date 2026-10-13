@@ -6,7 +6,7 @@ internal enum class UsbSilentPhase { CONFIGURING, STARTING_TRANSPORT, TRANSPORT_
 internal enum class UsbSilentStatus { NOT_ATTEMPTED, BLOCKED, FAILED, SILENT_TRANSPORT_VERIFIED, NON_AUTHORITATIVE, DETERMINISTIC_PCM_TRANSPORT_VERIFIED,
     BOUNDED_FLAC_USB_TRANSPORT_VERIFIED, FLAC_SOURCE_FAILED, FLAC_INPUT_OPEN_FAILED, QUEUE_PRIME_FAILED,
     SOURCE_EOF_BEFORE_DURATION, QUEUE_UNDERRUN, USB_CONFIGURATION_FAILED, USB_TRANSPORT_FAILED, RESOURCE_CLEANUP_FAILED, CANCELLED, FULL_FLAC_USB_TRANSPORT_VERIFIED, FLAC_MD5_UNAVAILABLE, FLAC_MD5_MISMATCH,
-    STREAMINFO_TOTAL_MISMATCH, TERMINAL_TAIL_ACCOUNTING_FAILED, OUT_POOL_STALL, SOURCE_VERIFICATION_STALLED }
+    STREAMINFO_TOTAL_MISMATCH, TERMINAL_TAIL_ACCOUNTING_FAILED, OUT_POOL_STALL, SOURCE_VERIFICATION_STALLED, SEEKED_SEGMENTS_USB_TRANSPORT_VERIFIED }
 internal data class UsbIsoFeedbackEvidence(val raw: Long, val length: Long, val packetStatus: Int, val elapsedUs: Long,
     val validity: UsbFeedbackValidity, val conservativeAgeUs: Long) {
     val bytes get() = (0 until minOf(length, 4L).toInt()).map { ((raw shr (it * 8)) and 0xff).toInt() }
@@ -19,13 +19,14 @@ internal data class UsbIsoPacketEvidence(val endpoint: Int, val urbStatus: Int, 
 
 @Keep
 internal data class UsbIsoNativeSnapshot(val numbers: LongArray, val feedback: LongArray, val packets: LongArray,
-    val pcm: LongArray = longArrayOf())
+    val pcm: LongArray = longArrayOf(),val segments: LongArray=longArrayOf())
 internal data class UsbPcmFrameEvidence(val index: Long, val left: Int, val right: Int, val bytes: List<Int>)
 
 internal data class UsbIsoTransportResult(val generation: Long, val streamGeneration: Long,
     val counters: Map<String, Long> = emptyMap(), val feedback: List<UsbIsoFeedbackEvidence> = emptyList(),
     val packets: List<UsbIsoPacketEvidence> = emptyList(), val exceptionType: String? = null,
-    val authorityFailure: UsbClockQueryStatus? = null, val pcm: List<UsbPcmFrameEvidence> = emptyList()) {
+    val authorityFailure: UsbClockQueryStatus? = null, val pcm: List<UsbPcmFrameEvidence> = emptyList(),val segments: List<List<Long>> = emptyList(),
+    val feedbackDiagnostics: UsbFeedbackDiagnosticEvidence? = null) {
     fun count(name: String) = counters[name] ?: 0L
     val pcmFormat get()=UsbDirectPcmFormat.resolve(count("schedulerNominalRateHz"),count("formatChannels"),count("formatBitsPerSample"))
     val bytesPerFrame get()=pcmFormat?.bytesPerFrame?.toLong() ?: 0L
@@ -38,7 +39,7 @@ internal data class UsbIsoTransportResult(val generation: Long, val streamGenera
     val shutdownAccounted get() = workerStopped && count("outstandingUrbsFinal") == 0L
     val state get() = counters["state"]?.let { UsbIsoNativeStats.states.getOrNull(it.toInt()) } ?: "UNAVAILABLE"
     val stopReason get() = counters["stopReason"]?.let { UsbIsoNativeStats.stops.getOrNull(it.toInt()) } ?: "UNAVAILABLE"
-    val verified get() = if (count("sourceMode")==3L) fullVerified else valid && formatEvidenceValid && shutdownAccounted && count("started") == 1L && stopReason == "DURATION_COMPLETE" &&
+    val verified get() = if (count("sourceMode")==3L) {if(count("seekConfirmed")>0L) seekVerified else fullVerified} else valid && formatEvidenceValid && shutdownAccounted && count("started") == 1L && stopReason == "DURATION_COMPLETE" &&
         count("durationUs") >= (if (count("sourceMode")==2L) 5000000L else UsbIsoTiming.DURATION_MS * 1000) && count("framesCompleted") > 0 &&
         count("outUrbsSubmitted") > 0 && count("feedbackPacketsValid") > 0 && count("feedbackScheduledPackets") > 0 &&
         count("sourceFramesGenerated") == count("framesScheduled") && count("framesScheduled") == count("framesSubmitted") &&
@@ -69,7 +70,7 @@ internal data class UsbIsoTransportResult(val generation: Long, val streamGenera
             count("outPoolStallEvents")==0L && count("prefixSourceFramesConsumed")==count("framesSubmitted") && count("prefixInitialPrimedFrames")>=8192L &&
             count("prefixSourceIntegrityMask")==0L && count("prefixProducerStopped")==1L && count("prefixProducerJoined")==1L &&
             counters.containsKey("sourcePcmHash") && counters.containsKey("submittedPcmHash") && count("sourcePcmHash")==count("submittedPcmHash")
-        3L -> fullVerified
+        3L -> if(count("seekConfirmed")>0L) seekVerified else fullVerified
         else -> false
     }
     val pauseEvidenceValid get() = counters.keys.containsAll(UsbIsoNativeStats.controlFields) &&
@@ -77,6 +78,55 @@ internal data class UsbIsoTransportResult(val generation: Long, val streamGenera
         count("pauseRequests")>=count("pauseConfirmed") && count("resumeRequests")>=count("resumeConfirmed") &&
         count("pauseConfirmed")>=count("resumeConfirmed") && count("pauseDrainFailures")==0L && count("resumeFailure")==0L &&
         (count("pauseConfirmed")==0L || (count("pauseSourceContinuity")==1L && count("pauseOutstandingOut")==0L && count("pauseDrainOutcome")==1L))
+    val seekVerified get()=valid && formatEvidenceValid && shutdownAccounted && counters.keys.containsAll(UsbIsoNativeStats.fields) &&
+        count("version")==UsbIsoNativeStats.VERSION.toLong() && count("generation")==generation && count("streamGeneration")==streamGeneration &&
+        count("sourceMode")==3L && count("sourceSeekCapable")==1L && count("pauseDrainFailures")==0L && count("resumeFailure")==0L &&
+        count("transportDurationTargetUs")==0L && count("sourceSeekAttempts")>=count("seekConfirmed") && count("seekSourceEpoch")>=count("seekConfirmed") &&
+        count("confirmedSeekSerial")>0L && count("firstSeekTargetFrame") in 0L until count("streamInfoTotalSamples") &&
+        bytesPerFrame>0L && count("seekInvalidatedFrames") in 0L..(Long.MAX_VALUE/bytesPerFrame) && count("seekInvalidatedBytes")==count("seekInvalidatedFrames")*bytesPerFrame &&
+        count("started")==1L && stopReason=="NATURAL_EOF_COMPLETE" && count("playbackTransportState")==7L && count("seekConfirmed")>0L &&
+        count("seekRequests")==count("seekConfirmed")+count("seekSuperseded") && count("seekFailures")==0L && count("seekOutcome")==5L &&
+        count("lastSeekTargetFrame")==count("confirmedSeekTargetFrame") && count("confirmedSeekTargetFrame") in 0L until count("streamInfoTotalSamples") &&
+        count("seekDrainOutcome")==1L && count("seekOutstandingOut")==0L && count("seekSourceReady")==1L &&
+        count("seekFirstFrameProven")==1L && count("seekFirstSourceFrame")==count("confirmedSeekTargetFrame") &&
+        count("seekSegmentIntegrity")==1L && count("seekSegmentCount")==count("seekConfirmed")+1 &&
+        count("seekSegmentFrames")==count("framesSubmitted") && count("seekSegmentBytes")==count("outBytesSubmitted") &&
+        count("sourcePositionFrame")==count("streamInfoTotalSamples") && count("originalDecoderNextFrame")==count("streamInfoTotalSamples") &&
+        count("sourceFramesGenerated")==count("framesSubmitted") && count("prefixSourceFramesConsumed")==count("framesSubmitted") &&
+        count("framesScheduled")==count("framesSubmitted") && count("framesSubmitted")==count("framesCompleted") &&
+        bytesPerFrame>0 && count("framesSubmitted") in 1L..(Long.MAX_VALUE/bytesPerFrame) && count("outBytesSubmitted")==count("framesSubmitted")*bytesPerFrame &&
+        count("outBytesSubmitted")==count("kernelOutActualBytes") && counters["sourcePcmHash"]==counters["submittedPcmHash"] &&
+        count("wholeMd5NotVerifiedAfterSeek")==1L && count("md5VerificationPass")==0L && count("resumeReadiness") in 1L..2L &&
+        listOf("trueEofReached","producerFinishedNaturally","prefixProducerStopped","prefixProducerJoined").all {count(it)==1L} &&
+        listOf("outPacketErrors","outUrbErrors","queueUnderruns","framesCancelled","framesNotSubmitted","feedbackUrbErrors","feedbackTimeouts",
+            "shutdownIncomplete","unknownCompletions","duplicateCompletions","outCancelledUrbs","outPoolStallEvents","sourceVerificationStalls",
+            "eofPaddingFrames","queueFramesAtNaturalCompletion","prefetchedFramesDiscardedAtNaturalCompletion","prefixSourceIntegrityMask").all {count(it)==0L} &&
+        count("seekTailOutUrbs")==1L && count("seekTailPackets") in 1L..8L && count("seekTailFrames")>0L &&
+        count("seekTailFrames")==count("seekTailFrameCompletions") && count("seekTailPackets")==count("seekTailPacketCompletions") &&
+        count("outUrbsSubmitted")==count("outUrbsCompleted") && count("outPacketsSubmitted")==count("outPacketsCompleted") &&
+        count("feedbackUrbsSubmitted")==count("feedbackUrbsCompleted") && seekExamplesValid()
+    private fun seekExamplesValid(): Boolean {
+        val segmentCount=count("seekSegmentCount")
+        if(bytesPerFrame<=0L || segmentCount<=0L || segments.size!=minOf(segmentCount,8L).toInt()) return false
+        var frames=0L;var bytes=0L;var previousEpoch=-1L
+        var chain=0xcbf29ce484222325UL.toLong()
+        for((index,row) in segments.withIndex()) {
+            if(row.size!=10 || row[0]<=previousEpoch || (index==0 && (row[0]!=0L || row[1]!=0L)) || row[1]<0L || row[2]<row[1] ||
+                row[2]>count("streamInfoTotalSamples") || row[2]-row[1]!=row[3] || row[3]!=row[4] || row[3]>Long.MAX_VALUE/bytesPerFrame ||
+                row[5]!=row[3]*bytesPerFrame || row[5]!=row[6] || row[7]!=row[8] || row[9]!=(if(index.toLong()==segmentCount-1) 1L else 0L) ||
+                frames>Long.MAX_VALUE-row[3] || bytes>Long.MAX_VALUE-row[5]) return false
+            previousEpoch=row[0];frames+=row[3];bytes+=row[5]
+            row.forEach { value -> repeat(8) { b -> chain=(chain xor ((value ushr (b*8)) and 255L))*0x100000001b3L } }
+        }
+        if(frames>count("seekSegmentFrames") || bytes>count("seekSegmentBytes")) return false
+        if(segmentCount<=8L) {
+            val last=segments.last()
+            return frames==count("seekSegmentFrames") && bytes==count("seekSegmentBytes") && chain==count("seekSegmentEvidenceHash") &&
+                last[0]==count("seekSourceEpoch") && last[1]==count("confirmedSeekTargetFrame") && last[2]==count("streamInfoTotalSamples") &&
+                last[3]==count("completedFramesInSeekSegment")
+        }
+        return true // All remaining segments are checked/sealed online; the diagnostic cap is not the proof cap.
+    }
     private val fullVerified get() = valid && formatEvidenceValid && pauseEvidenceValid && shutdownAccounted && count("started")==1L && stopReason=="NATURAL_EOF_COMPLETE" &&
         count("transportDurationTargetUs")==0L && bytesPerFrame>0 && count("streamInfoTotalSamples") in 1L..(Long.MAX_VALUE/bytesPerFrame) &&
         count("feedbackPacketsValid")>0L && count("feedbackScheduledPackets")>0L &&
@@ -104,8 +154,8 @@ internal data class UsbIsoTransportResult(val generation: Long, val streamGenera
 }
 
 internal object UsbIsoNativeStats {
-    const val VERSION = 11
-    val fields = listOf("version", "generation", "streamGeneration", "started", "state", "integrityMask", "stopReason", "durationUs",
+    const val VERSION = 13
+    val historicalFields = listOf("version", "generation", "streamGeneration", "started", "state", "integrityMask", "stopReason", "durationUs",
         "sourceFramesGenerated", "framesScheduled", "framesSubmitted", "framesCompleted", "outUrbsSubmitted", "outUrbsCompleted",
         "outPacketsSubmitted", "outPacketsCompleted", "outBytesSubmitted", "kernelOutActualBytes", "outPacketErrors", "outUrbErrors",
         "feedbackUrbsSubmitted", "feedbackUrbsCompleted", "feedbackPacketsCompleted", "feedbackPacketsValid", "feedbackPacketsInvalid", "feedbackTimeouts",
@@ -144,11 +194,20 @@ internal object UsbIsoNativeStats {
         "firstOutRiskWorkerGapUs", "firstOutRiskEstimatedCoverageUs", "firstOutRiskCompletedFrames", "schedulerNominalRateHz", "formatChannels", "formatBitsPerSample", "formatBytesPerSample", "formatBytesPerFrame", "formatSubslotBytes", "formatValidBits", "formatAlternate",
         "playbackTransportState", "pauseRequests", "pauseConfirmed", "resumeRequests", "resumeConfirmed", "lastPauseOutcome", "lastResumeOutcome",
         "firstPauseSourceFrame", "lastPauseSourceFrame", "confirmedPausedFrame", "intentionalPausedUs", "pauseOutstandingOut",
-        "pauseDrainOutcome", "resumeReadiness", "resumeFailure", "pauseSourceContinuity", "pauseDrainFailures")
+        "pauseDrainOutcome", "resumeReadiness", "resumeFailure", "pauseSourceContinuity", "pauseDrainFailures",
+        "sourceSeekCapable","seekRequests","seekConfirmed","seekFailures","seekSuperseded","seekOutcome","firstSeekTargetFrame","lastSeekTargetFrame",
+        "confirmedSeekTargetFrame","seekSourceEpoch","oldSegmentSourceBoundary","seekDrainOutcome","seekOutstandingOut","seekInvalidatedFrames","seekInvalidatedBytes",
+        "seekSourceReady","seekFirstSourceFrame","seekFirstFrameProven","seekSegmentCount","seekForwardDistanceFrames","seekBackwardDistanceFrames","sourcePositionFrame",
+        "completedFramesInSeekSegment","confirmedSeekSerial","seekSegmentIntegrity","seekSegmentEvidenceHash","seekTailOutUrbs","seekTailPackets","seekTailFrames",
+        "seekTailPacketCompletions","seekTailFrameCompletions","originalDecoderNextFrame","sourceSeekAttempts","seekSegmentFrames","seekSegmentBytes",
+        "wholeMd5NotVerifiedAfterSeek","seekStartedPaused")
+    val fields=historicalFields+UsbFeedbackDiagnostics.fields
     val outRiskStages=listOf("WORKER_WAKE","BEFORE_REFILL","AFTER_REFILL")
     val outRiskReasons=listOf("WORKER_GAP_BEYOND_NOMINAL_COVERAGE","NO_APPLICATION_OUT","ESTIMATED_COVERAGE_BELOW_ONE_URB","REFILL_LATENCY_BEYOND_NOMINAL_COVERAGE")
     val feedbackTimeoutSubtypes=listOf("NONE","BOOTSTRAP_TIMEOUT","LAST_VALID_WATCHDOG_TIMEOUT","VALID_OBSERVATION_GAP_AT_REAP")
-    val controlFields=fields.takeLast(17)
+    val controlFields=fields.subList(182,199)
+    val seekFields=historicalFields.drop(199)
+    val seekOutcomes=listOf("NONE","REQUESTED","DRAINING","REPOSITIONING","PRIMING","CONFIRMED","SUPERSEDED","FAILED","STOPPED")
     val controlOutcomes=listOf("NONE","REQUESTED","ALREADY","CONFIRMED","SUPERSEDED","TERMINAL","FAILED")
     val states = listOf("IDLE", "CONFIGURED", "STARTING_TRANSPORT", "BOOTSTRAP", "FEEDBACK_LOCKED", "STOP_REQUESTED", "DRAINING_OR_CANCELLING", "TRANSPORT_STOPPED")
     val stops = listOf("DURATION_COMPLETE", "STOP_REQUESTED", "AUTHORITY_LOST", "DEVICE_DETACHED", "SUBMIT_FAILURE", "REAP_FAILURE",
@@ -159,10 +218,14 @@ internal object UsbIsoNativeStats {
         "NONZERO_PCM", "SCHEDULER_INVALID", "CANCEL_ERROR", "REFERENCE_PREFLIGHT_FAILED", "REFERENCE_TABLE_HASH_MISMATCH",
         "PCM_PACKING_MISMATCH", "SOURCE_HASH_MISMATCH", "INACTIVE_CHANNEL_NONZERO", "NONZERO_OUTSIDE_SIGNAL_WINDOW", "REFERENCE_PEAK_VIOLATION", "FLAC_SOURCE_QUEUE_FAULT", "OUT_POOL_STALL", "TERMINAL_TAIL_ACCOUNTING_FAILED")
     fun validateControl(counters: Map<String,Long>) {
-        require(controlFields.all { counters.getValue(it)>=0L } && counters.getValue("playbackTransportState") in 0L..8L &&
+        require(controlFields.all { counters.getValue(it)>=0L } && counters.getValue("playbackTransportState") in 0L..11L &&
             counters.getValue("lastPauseOutcome") in 0L..6L && counters.getValue("lastResumeOutcome") in 0L..6L &&
             counters.getValue("pauseDrainOutcome") in 0L..2L && counters.getValue("resumeReadiness") in 0L..2L &&
             counters.getValue("resumeFailure") in 0L..3L && counters.getValue("pauseSourceContinuity") in 0L..1L)
+    }
+    fun validateSeek(counters: Map<String,Long>) {
+        require(seekFields.all {it=="seekSegmentEvidenceHash" || counters.getValue(it)>=0L} && counters.getValue("seekOutcome") in 0L..8L &&
+            listOf("sourceSeekCapable","seekSourceReady","seekFirstFrameProven","seekSegmentIntegrity","wholeMd5NotVerifiedAfterSeek","seekStartedPaused").all {counters.getValue(it) in 0L..1L})
     }
     fun decode(packet: UsbIsoNativeSnapshot, generation: Long, stream: Long): UsbIsoTransportResult {
         require(packet.numbers.size == fields.size && packet.numbers[0] == VERSION.toLong() && packet.numbers[1] == generation &&
@@ -170,6 +233,7 @@ internal object UsbIsoNativeStats {
             packet.packets.size % 7 == 0 && packet.packets.size <= 24 * 7)
         val counters = fields.zip(packet.numbers.toList()).toMap()
         validateControl(counters)
+        validateSeek(counters)
         require(counters.getValue("feedbackTimeoutSubtype") in feedbackTimeoutSubtypes.indices.map { it.toLong() })
         require(counters.getValue("firstOutRiskStage") in outRiskStages.indices.map { it.toLong() })
         require(counters.getValue("state") in states.indices.map { it.toLong() } && counters.getValue("stopReason") in stops.indices.map { it.toLong() })
@@ -186,7 +250,17 @@ internal object UsbIsoNativeStats {
         require(packet.pcm.size % 9 == 0 && packet.pcm.size <= 13 * 9)
         val format=UsbDirectPcmFormat.resolve(counters.getValue("schedulerNominalRateHz"),counters.getValue("formatChannels"),counters.getValue("formatBitsPerSample"))
         val pcm=packet.pcm.toList().chunked(9).map { decodeDirectPcmExample(it,requireNotNull(format)) }
-        return UsbIsoTransportResult(generation, stream, counters, feedback, packets, pcm = pcm)
+        require(packet.segments.size%10==0 && packet.segments.size<=80)
+        val segments=packet.segments.toList().chunked(10)
+        require(segments.all {row -> row.indices.all {it in 7..8 || row[it]>=0L} && row[9] in 0L..1L})
+        val diagnostics=UsbFeedbackDiagnostics.decode(packet.numbers.copyOfRange(UsbFeedbackDiagnostics.HISTORICAL_FIELDS,packet.numbers.size),
+            counters.getValue("schedulerNominalRateHz"))
+        if(diagnostics.exists) {
+            val reason=diagnostics.fatal[1]
+            val mask=when(reason) {1L->1L shl 6;2L->1L shl 5;3L,7L->1L shl 2;else->1L shl 7}
+            require((counters.getValue("integrityMask") and mask)!=0L && counters.getValue("stopReason")== (if(reason==7L) 9L else 6L))
+        }
+        return UsbIsoTransportResult(generation, stream, counters, feedback, packets, pcm = pcm,segments=segments,feedbackDiagnostics=diagnostics)
     }
 }
 
@@ -207,6 +281,8 @@ internal data class UsbSilentTransportExperimentResult(val generation: Long, val
         status = if (status == UsbSilentStatus.BOUNDED_FLAC_USB_TRANSPORT_VERIFIED &&
             (!closed || (source ?: flacSource)?.clean != true)) UsbSilentStatus.RESOURCE_CLEANUP_FAILED
         else if (status==UsbSilentStatus.FULL_FLAC_USB_TRANSPORT_VERIFIED && (!closed || (source ?: flacSource)?.fullComplete!=true))
+            UsbSilentStatus.RESOURCE_CLEANUP_FAILED
+        else if(status==UsbSilentStatus.SEEKED_SEGMENTS_USB_TRANSPORT_VERIFIED && (!closed || (source ?: flacSource)?.seekComplete!=true))
             UsbSilentStatus.RESOURCE_CLEANUP_FAILED else status)
     fun invalidate(failure: UsbClockQueryStatus) = copy(status = UsbSilentStatus.NON_AUTHORITATIVE,
         detail = "Attachment/permission authority changed; transaction evidence is historical only.",

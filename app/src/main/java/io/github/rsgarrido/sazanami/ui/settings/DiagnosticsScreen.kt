@@ -33,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -333,6 +334,8 @@ internal fun DiagnosticsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val reportLocale = configuration.locales[0]
     val appContext = context.applicationContext
     val repository = remember(appContext) { WaveformRepository.shared(appContext) }
     val scope = rememberCoroutineScope()
@@ -730,7 +733,7 @@ internal fun DiagnosticsScreen(
             ) { Text(stringResource(R.string.diagnostics_refresh)) }
             OutlinedButton(
                 onClick = {
-                    context.copyToClipboard(formatDiagnosticsSummary(snapshot) + if(BuildConfig.DEBUG) "\n"+io.github.rsgarrido.sazanami.player.formatIntegratedDirectPlayback(io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackBridge.reportState) else "")
+                    context.copyToClipboard(formatDiagnosticsSummary(snapshot) + if(BuildConfig.DEBUG) "\n"+io.github.rsgarrido.sazanami.player.formatIntegratedDirectPlayback(io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackBridge.reportState,reportLocale) else "")
                     statusMessage = copiedMessage
                 },
                 modifier = Modifier.weight(1f)

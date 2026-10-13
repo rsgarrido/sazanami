@@ -4,6 +4,7 @@ import io.github.rsgarrido.sazanami.player.*
 import io.github.rsgarrido.sazanami.player.usb.*
 import java.nio.file.Files
 import java.nio.file.Paths
+import java.util.Locale
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -100,11 +101,36 @@ class IntegratedDirectDiagnosticAccessTest {
     @Test fun copyUsesTheExistingReportFormatterAndDoesNotChangePlayback() {
         val section=source("ui/settings/IntegratedDirectPlaybackSection.kt")
         val copy=section.substringAfter("private fun Context.copyIntegratedDirectReport()")
-        assertTrue(copy.contains("formatIntegratedDirectPlayback(IntegratedDirectPlaybackBridge.reportState)"))
+        // The copy path delegates retained evidence plus an explicit locale, rather than pinning a one-argument signature.
+        assertTrue("Copy must delegate retained evidence to the shared formatter",Regex(
+            """formatIntegratedDirectPlayback\s*\(\s*IntegratedDirectPlaybackBridge\.reportState\s*,""").containsMatchIn(copy))
+        assertTrue("The non-composable helper must read the current resource locale at copy time",copy.contains("resources.configuration.locales[0]"))
         assertTrue(copy.contains("setPrimaryClip"))
+        assertTrue(copy.contains("ClipData.newPlainText"))
         assertFalse(section.contains("fun formatIntegratedDirectPlayback"))
-        for (command in listOf(".stop(",".start(",".select(",".prepare(",".release(",".runIntegratedFull(")) assertFalse(command,copy.contains(command))
-        assertTrue(source("ui/settings/DiagnosticsScreen.kt").contains("IntegratedDirectPlaybackBridge.reportState"))
+        val screen=source("ui/settings/DiagnosticsScreen.kt")
+        assertTrue(screen.contains("context.copyToClipboard("))
+        val copyAction=screen.substringAfter("context.copyToClipboard(").substringBefore("},")
+        assertTrue(copyAction.contains("IntegratedDirectPlaybackBridge.reportState"))
+        assertTrue(copyAction.contains("reportLocale"));assertTrue(screen.contains("LocalConfiguration.current"))
+        assertFalse(copyAction.contains("resources.configuration"))
+        assertTrue(Regex("""if\s*\(\s*BuildConfig\.DEBUG\s*\)""").containsMatchIn(copyAction))
+        for (command in listOf(".stop(",".start(",".select(",".prepare(",".release(",".runIntegratedFull(",
+            ".pause(",".resume(",".seek(",".seekTo(",".play(",".requestStop(",".requestPlayback(")) {
+            assertFalse(command,copy.contains(command));assertFalse(command,copyAction.contains(command))
+        }
         assertTrue(source("player/IntegratedDirectPlaybackReport.kt").contains("internal fun formatIntegratedDirectPlayback("))
+        // Exercise the production formatter's locale argument and immutable evidence, beyond source-expression matching.
+        val transport=UsbIsoTransportResult(7,2)
+        val result=UsbSilentTransportExperimentResult(7,2,UsbSilentTransportResolution(),status=UsbSilentStatus.FAILED,transport=transport)
+        val state=IntegratedDirectPlaybackState(enabled=true,phase=IntegratedDirectPhase.ERROR,generation=7,
+            libraryId=88,completedFrames=44100,totalFrames=88200,sampleRateHz=44100,error="DIRECT_TRANSPORT_FAILED",engine=result)
+        val before=state.copy()
+        for((locale,title) in listOf(Locale.ENGLISH to "First fatal feedback decision",Locale("es") to "Primera decisión fatal de feedback")) {
+            val report=formatIntegratedDirectPlayback(state,locale)
+            assertTrue(report.contains(title));assertTrue(report.contains("DIRECT_TRANSPORT_FAILED"))
+            assertTrue(report.contains("production Bit-perfect: NOT YET COMPLETE"))
+            assertEquals(before,state);assertSame(result,state.engine);assertSame(transport,state.engine?.transport)
+        }
     }
 }

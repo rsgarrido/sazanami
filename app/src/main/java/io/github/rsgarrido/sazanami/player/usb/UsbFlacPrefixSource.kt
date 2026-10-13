@@ -55,6 +55,32 @@ internal data class UsbFlacSourceResult(val counters: Map<String,Long> = emptyMa
         count("allEnqueuedPrefetchPcmHash")==count("consumedSourcePcmHash") &&
         decoder?.let { it.pcmFormat==pcmFormat && it.count("totalSamples")==count("totalSamples") && it.nativeStatus==FlacVerificationStatus.EXACT_FLAC_DECODE_VERIFIED && it.copy(originalFdClosed=true).strongEvidence &&
             it.count("pcmFnv1a")==count("consumedSourcePcmHash") }==true
+    val seekComplete get()=counters.keys.containsAll(UsbFlacSourceEvidence.fields) && primed && count("sourceSeekAttempts")>0L &&
+        count("version")==4L && count("sourceEpoch")>0L && count("sourceSegmentStartFrame") in 0L until count("totalSamples") &&
+        count("sourceFirstSeekFrame")==count("sourceSegmentStartFrame") &&
+        bytesPerFrame>0L && count("framesDecoded") in 1L..(Long.MAX_VALUE/bytesPerFrame) && count("framesDecoded")>=count("framesEnqueued") &&
+        count("sourceSeekFailures")==0L && count("sourceIntegrityMask")==0L && count("trueEofReached")==1L &&
+        listOf("producerStopped","producerJoined","decoderReleased","nativeFlacFdClosed","queueReleased","producerFinishedNaturally").all {count(it)==1L} &&
+        count("originalDecoderNextFrame")==count("totalSamples") && count("sourceFirstSeekFrameProven")==1L &&
+        count("framesEnqueued")>=count("framesConsumedFromQueue") &&
+        count("framesEnqueued")-count("framesConsumedFromQueue")==count("intentionallyInvalidatedQueuedFrames") &&
+        count("intentionallyInvalidatedCanonicalFrames")>=0L && count("framesDecoded")-count("framesEnqueued")==count("intentionallyInvalidatedCanonicalFrames") &&
+        count("sourceSeekCapable")==1L && count("md5VerificationPass")==0L && count("fullTrackMode")==1L &&
+        count("minimumQueueDepthDuringStreaming") in 0L..count("maximumQueueDepthDuringStreaming") && count("maximumQueueDepthDuringStreaming")<=16384L &&
+        listOf("queueFramesAtStop","prefetchedFramesDiscardedAtStop","preparedButUnsubmittedFrames","queueUnderruns","consumerEmptyEvents",
+            "sourceFrameOrderErrors","sourceFrameGapCount","sourceFrameDuplicateCount").all {count(it)==0L} &&
+        decoder?.let {it.nativeStatus==FlacVerificationStatus.SEEKED_SOURCE_EOF_NOT_WHOLE_FILE_VERIFIED && it.pcmFormat==pcmFormat &&
+            it.counters.keys.containsAll(FlacNativeEvidence.fields) && it.count("nativeFlacRecognized")==1L && it.count("decoderCreated")==1L &&
+            it.count("version")==2L && it.count("result")==FlacVerificationStatus.SEEKED_SOURCE_EOF_NOT_WHOLE_FILE_VERIFIED.ordinal.toLong() &&
+            it.count("initStatus")==0L && it.count("streamInfoReceived")==1L && it.count("metadataProcessed")==1L &&
+            it.count("md5ReferenceAvailable")==1L && it.streamInfoMd5!=null && it.streamInfoMd5!="0".repeat(32) && it.count("finishCalled")==1L &&
+            it.count("decodedStereoFrames")==count("framesDecoded") && it.count("decodedSamplesPerChannel")==count("framesDecoded") &&
+            it.count("decoderCallbacks")>0L && it.count("decodedBlocks")==it.count("decoderCallbacks") &&
+            it.decoderVersion=="1.5.0" && it.exceptionType==null && it.errors.isEmpty() && it.count("md5Verification")==0L && it.count("cleanEndOfStream")==1L && it.count("physicalInputEof")==1L &&
+            it.count("processSucceeded")==1L && it.count("finishReturned")==1L && it.count("decoderState")==4L && it.count("totalSamples")==count("totalSamples") &&
+            it.count("nativeDuplicateClosed")==1L && it.count("decoderDeleted")==1L && it.count("resourceErrors")==0L &&
+            it.count("decoderErrors")==0L && it.count("frameOrderErrors")==0L && it.count("formatContradictions")==0L && it.count("outOfRangeSamples")==0L &&
+            it.count("canonicalPcmBytesHashed")==count("framesDecoded")*bytesPerFrame }==true
 }
 internal object UsbFlacSourceEvidence {
     val fields=listOf("version","generation","streamGeneration","sourceIntegrityMask","initialPrimedFrames","metadataAccepted",
@@ -63,19 +89,22 @@ internal object UsbFlacSourceEvidence {
         "maximumQueueDepthDuringStreaming","producerFullWaitCount","consumerEmptyEvents","queueUnderruns",
         "firstSourceFrameEnqueued","lastSourceFrameEnqueued","firstSourceFrameConsumed","lastSourceFrameConsumed",
         "expectedNextEnqueueFrame","expectedNextConsumeFrame","sourceFrameGapCount","sourceFrameDuplicateCount","sourceFrameOrderErrors",
-        "consumedSourcePcmHash","allEnqueuedPrefetchPcmHash","producerStopped","producerJoined","decoderReleased","nativeFlacFdClosed","queueReleased","fullTrackMode","trueEofReached","producerFinishedNaturally","md5VerificationPass","decodedTotalMatchesStreamInfo")
+        "consumedSourcePcmHash","allEnqueuedPrefetchPcmHash","producerStopped","producerJoined","decoderReleased","nativeFlacFdClosed","queueReleased","fullTrackMode","trueEofReached","producerFinishedNaturally","md5VerificationPass","decodedTotalMatchesStreamInfo",
+        "sourceSeekCapable","sourceSeekAttempts","sourceSeekFailures","sourceEpoch","sourceSegmentStartFrame","originalDecoderNextFrame",
+        "intentionallyInvalidatedQueuedFrames","intentionallyInvalidatedCanonicalFrames","intentionallyInvalidatedRawFrames","sourceFirstSeekFrame","sourceFirstSeekFrameProven")
     val reasons=listOf("FLAC_DECODER_ERROR","FLAC_DECODER_INIT_FAILED","UNSUPPORTED_FLAC_FORMAT","PCM_SAMPLE_OUT_OF_RANGE",
         "SOURCE_EOF_BEFORE_DURATION","QUEUE_PRIME_FAILED","QUEUE_UNDERRUN","SOURCE_FRAME_GAP","SOURCE_FRAME_DUPLICATE",
-        "SOURCE_FRAME_ORDER_ERROR","SOURCE_SUBMITTED_HASH_MISMATCH","CANCELLED","RESOURCE_CLEANUP_FAILED","FLAC_INPUT_OPEN_FAILED","NOT_NATIVE_FLAC","FLAC_METADATA_INVALID","SOURCE_FORMAT_CONTRADICTION","FLAC_MD5_UNAVAILABLE","FLAC_MD5_MISMATCH","STREAMINFO_TOTAL_MISMATCH_OR_UNAVAILABLE","TERMINAL_TAIL_ACCOUNTING_FAILED")
+        "SOURCE_FRAME_ORDER_ERROR","SOURCE_SUBMITTED_HASH_MISMATCH","CANCELLED","RESOURCE_CLEANUP_FAILED","FLAC_INPUT_OPEN_FAILED","NOT_NATIVE_FLAC","FLAC_METADATA_INVALID","SOURCE_FORMAT_CONTRADICTION","FLAC_MD5_UNAVAILABLE","FLAC_MD5_MISMATCH","STREAMINFO_TOTAL_MISMATCH_OR_UNAVAILABLE","TERMINAL_TAIL_ACCOUNTING_FAILED","SOURCE_SEEK_FAILED")
     fun decode(value: UsbFlacSourceSnapshot,generation: Long,stream: Long): UsbFlacSourceResult {
-        require(value.numbers.size==fields.size && value.numbers[0]==3L && value.numbers[1]==generation && value.numbers[2]==stream &&
+        require(value.numbers.size==fields.size && value.numbers[0]==4L && value.numbers[1]==generation && value.numbers[2]==stream &&
             value.examples.size%9==0 && value.examples.size<=5*9)
         val counters=fields.zip(value.numbers.toList()).toMap()
         val signed=setOf("consumedSourcePcmHash","allEnqueuedPrefetchPcmHash")
         val indices=setOf("firstSourceFrameEnqueued","lastSourceFrameEnqueued","firstSourceFrameConsumed","lastSourceFrameConsumed")
         require(counters.all { (name,number) -> name in signed || if (name in indices) number>=-1L else number>=0L })
         require(countBooleanFields.all { counters.getValue(it) in 0L..1L } &&
-            counters.getValue("sourceIntegrityMask") in 0L..2097151L && counters.getValue("initialPrimedFrames")<=16384L)
+            counters.getValue("sourceIntegrityMask") in 0L..4194303L && counters.getValue("initialPrimedFrames")<=16384L &&
+            counters.getValue("sourceSeekCapable") in 0L..1L && counters.getValue("sourceFirstSeekFrameProven") in 0L..1L)
         val format=UsbDirectPcmFormat.resolve(counters.getValue("sampleRate"),counters.getValue("channels"),counters.getValue("bitsPerSample"))
         val examples=value.examples.toList().chunked(9).map {
             require(it[0]<counters.getValue("framesConsumedFromQueue"))

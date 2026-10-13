@@ -106,8 +106,36 @@ static void intentionalPauseRetainsRisksWithoutChargingTheGap() {
     c.wake(resumed+23001,21,21,true,1056);
     assert(c.riskCount==2 && c.gapsBeyondCoverage==2 && c.firstRiskAtUs==first);
 }
+static void repeatedQuietTransitionsCannotChargeTheOldActiveBaseline() {
+    OutContinuity c(21,8,125);c.start(1000);c.beginRefill(1000,true);
+    for(unsigned i=0;i<21;++i)c.submitted(1000,8);
+    c.wake(1000,21,21,true,0);
+    c.suspendSegment(1100,21,21,true,100); // PLAYING -> PAUSING/SEEK_DRAINING: capture the active boundary once.
+    for(unsigned i=0;i<21;++i)c.completed(2000,8);
+    const auto observations=c.observations,firstGap=c.maxWorkerLoopGapUs;
+    // PAUSED -> seek, superseding reposition/prime, or a new seek before RESUMING has primed its pools.
+    c.suspendSegment(1802695,0,0,true,100);
+    c.suspendSegment(3802695,0,0,true,100);
+    c.suspendSegment(5802695,0,0,true,100);
+    assert(c.maxWorkerLoopGapUs==firstGap && c.observations==observations && !c.riskCount && !c.gapsBeyondCoverage);
+    c.resumeSegment();c.beginRefill(5803000,true);
+    for(unsigned i=0;i<21;++i)c.submitted(5803000,8);
+    c.wake(5803000,21,21,true,100);
+    assert(!c.riskCount && c.maxWorkerLoopGapUs==firstGap);
+    for(unsigned i=0;i<21;++i)c.completed(5804000,8);
+    c.wake(5825001,0,0,true,200); // A genuine active zero-OUT starvation remains visible.
+    assert(c.riskCount==1 && c.gapsBeyondCoverage==1 && c.firstRiskGapUs==22001);
+    assert(c.firstRiskMask==(WorkerGapBeyondCoverage|NoApplicationOut|EstimatedBelowOneUrb));
+    const auto riskAt=c.firstRiskAtUs,mask=c.firstRiskMask,maxGap=c.maxWorkerLoopGapUs;
+    c.suspendSegment(5825100,0,0,true,200);c.suspendSegment(9000000,0,0,true,200);
+    c.resumeSegment();c.beginRefill(9000001,true);
+    for(unsigned i=0;i<21;++i)c.submitted(9000001,8);
+    c.wake(9000001,21,21,true,200);
+    assert(c.firstRiskAtUs==riskAt && c.firstRiskMask==mask && c.maxWorkerLoopGapUs==maxGap);
+}
 int main() {
     geometryAndShortTail();delayedWakeAndFrozenRisk();lowCountsAndIntervals();refillLatencyRiskWithoutWakeGap();
     directDepthUsesNewBudgetWithoutChangingRiskSemantics();
     intentionalPauseRetainsRisksWithoutChargingTheGap();
+    repeatedQuietTransitionsCannotChargeTheOldActiveBaseline();
 }

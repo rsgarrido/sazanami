@@ -30,19 +30,20 @@ internal class DirectUsbMediaPlayer(
     private var nextGeneration=0L
     private var control: UsbFullPlaybackControl?=null
     private fun update(value: IntegratedDirectPlaybackState) { evidence=value; changed(value); invalidateState() }
-    fun notice(command: String) { update(evidence.copy(notice="$command is unavailable in Session 16")) }
+    fun notice(command: String) { update(evidence.copy(notice="$command is unavailable in Session 17")) }
     override fun getState(): State {
         val playlist=items.mapIndexed { index,item -> MediaItemData.Builder(item.listeningEvidence()?.itemInstanceId ?: "${item.mediaId}:$index")
-            .setMediaItem(item).setMediaMetadata(item.mediaMetadata).setIsSeekable(false)
+            .setMediaItem(item).setMediaMetadata(item.mediaMetadata).setIsSeekable(index==selected && evidence.seekCapable && evidence.busy && evidence.phase!=IntegratedDirectPhase.STOPPING)
             .setDurationUs(if(index==selected) evidence.durationMs.coerceAtMost(Long.MAX_VALUE/1000)*1000 else C.TIME_UNSET).build() }
         val playbackState=when(evidence.phase) {
-            IntegratedDirectPhase.PREPARING,IntegratedDirectPhase.PAUSING,IntegratedDirectPhase.RESUMING -> Player.STATE_BUFFERING
+            IntegratedDirectPhase.PREPARING,IntegratedDirectPhase.PAUSING,IntegratedDirectPhase.RESUMING,IntegratedDirectPhase.SEEKING -> Player.STATE_BUFFERING
             IntegratedDirectPhase.PLAYING,IntegratedDirectPhase.PAUSED -> Player.STATE_READY
             IntegratedDirectPhase.ENDED -> Player.STATE_ENDED
             else -> Player.STATE_IDLE
         }
         val commands=Player.Commands.Builder().addAll(*integratedDirectCommands)
         if(worker?.isCompleted!=false || !evidence.busy || evidence.phase==IntegratedDirectPhase.STOPPING) commands.remove(Player.COMMAND_PLAY_PAUSE)
+        if(worker?.isCompleted!=false || !evidence.busy || evidence.phase==IntegratedDirectPhase.STOPPING || !evidence.seekCapable) commands.remove(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
         return State.Builder().setAvailableCommands(commands.build())
             .setPlaylist(playlist).setCurrentMediaItemIndex(if(playlist.isEmpty()) C.INDEX_UNSET else selected)
             .setPlaybackState(playbackState)
@@ -71,7 +72,8 @@ internal class DirectUsbMediaPlayer(
         val commands=UsbFullPlaybackControl();control=commands
         val generation=++nextGeneration
         update(evidence.copy(generation=generation,phase=IntegratedDirectPhase.PREPARING,completedFrames=0,totalFrames=0,sampleRateHz=0,error=null,notice=null,engine=null,cleanupSafe=false,playWhenReady=true,
-            nativeTransportPhase=UsbFullTransportPhase.STARTING,pauseRequests=0,resumeRequests=0,nativePauseCounters=emptyMap()))
+            nativeTransportPhase=UsbFullTransportPhase.STARTING,pauseRequests=0,resumeRequests=0,nativePauseCounters=emptyMap(),
+            sourcePositionFrame=0,sourceEpoch=0,seekCapable=false,pendingSeekSerial=0))
         worker=scope.launch {
             try {
                 val result=usb.runIntegratedFull(song.uri,commands) { progress ->
@@ -102,7 +104,7 @@ internal class DirectUsbMediaPlayer(
             }
             val intent=commands.intent()
             update(evidence.copy(playWhenReady=playWhenReady,pauseRequests=intent.pauses,resumeRequests=intent.resumes,
-                phase=if(already || evidence.phase==IntegratedDirectPhase.PREPARING) evidence.phase else
+                phase=if(already || evidence.phase in setOf(IntegratedDirectPhase.PREPARING,IntegratedDirectPhase.SEEKING)) evidence.phase else
                 if(playWhenReady) IntegratedDirectPhase.RESUMING else IntegratedDirectPhase.PAUSING))
             Futures.immediateVoidFuture()
         } catch(error: Exception) {
@@ -110,6 +112,19 @@ internal class DirectUsbMediaPlayer(
         } catch(error: LinkageError) {
             update(evidence.copy(phase=IntegratedDirectPhase.ERROR,error="DIRECT_CONTROL_FAILED",playWhenReady=false));Futures.immediateFailedFuture<Unit>(error)
         }
+    }
+    override fun handleSeek(mediaItemIndex: Int,positionMs: Long,seekCommand: Int): ListenableFuture<*> {
+        if(mediaItemIndex!=selected || seekCommand!=Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM || !evidence.seekCapable || !evidence.busy || evidence.phase==IntegratedDirectPhase.STOPPING)
+            return unsupported("Source seek")
+        return try {
+            val commands=control ?: return unsupported("Source seek")
+            val target=directSeekTargetFrame(positionMs,evidence.sampleRateHz,evidence.totalFrames)
+            if(!commands.seek(target)) return unsupported("Terminal source seek")
+            update(evidence.copy(phase=IntegratedDirectPhase.SEEKING,pendingSeekSerial=commands.intent().seekSerial,notice=null))
+            Futures.immediateVoidFuture()
+        } catch(error: IllegalArgumentException) {Futures.immediateFailedFuture<Unit>(error)}
+        catch(error: Exception) {update(evidence.copy(phase=IntegratedDirectPhase.ERROR,error="DIRECT_SEEK_CONTROL_FAILED",playWhenReady=false));Futures.immediateFailedFuture<Unit>(error)}
+        catch(error: LinkageError) {update(evidence.copy(phase=IntegratedDirectPhase.ERROR,error="DIRECT_SEEK_CONTROL_FAILED",playWhenReady=false));Futures.immediateFailedFuture<Unit>(error)}
     }
     fun requestStop() {
         if(evidence.busy || worker?.isCompleted==false) {

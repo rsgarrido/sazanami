@@ -15,6 +15,48 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class DirectUsbMediaPlayerTest {
+    @Test fun pausedAndSupersedingSeeksKeepActualMedia3PositionUntilConfirmationOnSameWorker() {
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate);val engine=Engine()
+        lateinit var player: DirectUsbMediaPlayer
+        instrumentation.runOnMainSync {
+            player=DirectUsbMediaPlayer(scope,engine,changed={},librarySong={song})
+            player.setMediaItem(song.toPlayableMediaItem());player.prepare()
+            fun update(position: Long,epoch: Long,serial: Long,phase: UsbFullTransportPhase) {
+                engine.progress!!.invoke(UsbFullProgress(96000,480000,48000,phase,mapOf("sourceSeekCapable" to 1L,
+                    "sourcePositionFrame" to position,"seekSourceEpoch" to epoch,"confirmedSeekSerial" to serial,"seekConfirmed" to epoch)))
+            }
+            update(96000,0,0,UsbFullTransportPhase.PLAYING)
+            assertTrue(player.availableCommands.contains(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM))
+            player.pause();update(96000,0,0,UsbFullTransportPhase.PAUSED)
+            assertFalse(player.isPlaying);assertEquals(2000L,player.currentPosition)
+            player.seekTo(1000)
+            assertEquals(1L,engine.control!!.intent().seeks)
+            val first=engine.control!!.intent().seekSerial
+            assertEquals(48000L,engine.control!!.intent().targetFrame);assertFalse(engine.control!!.playWhenReady)
+            assertEquals(Player.STATE_BUFFERING,player.playbackState);assertEquals(2000L,player.currentPosition)
+            update(48000,1,first,UsbFullTransportPhase.PAUSED)
+            assertEquals(1000L,player.currentPosition);assertFalse(player.isPlaying)
+            assertEquals(96000L,player.evidence.completedFrames);assertEquals(10000L,player.duration)
+            player.seekTo(5000);val older=engine.control!!.intent().seekSerial
+            player.seekTo(0);val newest=engine.control!!.intent().seekSerial
+            assertEquals(3L,engine.control!!.intent().seeks)
+            update(240000,2,older,UsbFullTransportPhase.PAUSED)
+            assertEquals(1000L,player.currentPosition)
+            update(0,3,newest,UsbFullTransportPhase.PAUSED)
+            assertEquals(0L,player.currentPosition);assertFalse(player.isPlaying)
+            player.play();update(0,3,newest,UsbFullTransportPhase.RESUMING)
+            assertFalse(player.isPlaying);update(0,3,newest,UsbFullTransportPhase.PLAYING)
+            assertTrue(player.isPlaying);assertEquals(1,engine.starts)
+            assertEquals("Library title",player.currentMediaItem?.mediaMetadata?.title.toString())
+            assertFalse(player.availableCommands.contains(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM))
+            player.stop();assertFalse(engine.control!!.seek(10));engine.terminal.complete(stopped())
+        }
+        instrumentation.waitForIdleSync()
+        instrumentation.runOnMainSync {
+            assertFalse(player.availableCommands.contains(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM));scope.cancel()
+        }
+    }
     @Test fun media3Uses96000CompletedFramesWithoutWallClockInterpolation() {
         val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate);val engine=Engine()
         val instrumentation=InstrumentationRegistry.getInstrumentation()

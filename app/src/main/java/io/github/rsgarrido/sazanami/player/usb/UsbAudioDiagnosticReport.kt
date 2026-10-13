@@ -436,7 +436,8 @@ internal object UsbAudioDiagnosticReport {
                 appendLine("Bounded ${if (flac) "COMMITTED" else "GENERATED"} PCM frame examples (index; L signed; R signed; LE packed L-low L-high R-low R-high):")
                 native.pcm.forEach { appendLine("  ${it.index}; ${it.left}; ${it.right}; ${it.bytes.joinToString(" ") { byte -> usbHex(byte) }}") }
             }
-            native.counters.forEach { (name, value) -> appendLine("  $name: $value") }
+            native.counters.filterKeys {it in UsbIsoNativeStats.historicalFields}.forEach { (name, value) -> appendLine("  $name: $value") }
+            append(formatFeedbackDiagnostics(native.feedbackDiagnostics,java.util.Locale.getDefault()))
             appendLine("Kernel OUT actual bytes are raw ISO completion evidence, separately from submitted bytes. Successful frames require zero URB/packet status and exact packet length; no DAC-consumption inference.")
             appendLine("Feedback raw examples (bounded):")
             native.feedback.forEach { sample -> appendLine("  stream=${native.streamGeneration}; elapsed=${sample.elapsedUs} us; conservative age=${sample.conservativeAgeUs} us (submission-to-reap bound); raw bytes=${sample.bytes.joinToString(" ") { usbHex(it) }}; raw unsigned=${sample.raw}; actual length=${sample.length}; packet status=${sample.packetStatus}; validity=${sample.validity}; frames/data service interval=${sample.framesPerServiceInterval(native.count("dataIntervalUs")) ?: "not accepted"}; approximate Hz=${sample.rateHz ?: "not accepted"}") }
@@ -461,7 +462,7 @@ internal object UsbAudioDiagnosticReport {
         appendLine("Queue capacity frames=16384; prebuffer target frames=8192; shorter complete tracks prime min(total,8192) only after verified EOF/MD5. Prime before AC/AS ownership.")
         appendLine("Producer EOF preserves queued PCM. Consumer drains through totalSamples-1; exact terminal tail; no zero padding, repetition, interpolation or truncation.")
         appendLine("ACTIVE insufficient source frames = QUEUE_UNDERRUN; verified EOF tail is distinct. Refill precedes OUT_POOL_STALL. No-progress terminal verification timeout fails.")
-        appendLine("Production Bit-perfect playback: NOT IMPLEMENTED; no Media3/AudioTrack integration, pause, seek, multi-track or DSP. Manual listening: NOT AUTOMATICALLY VERIFIED.")
+        appendLine("production Bit-perfect: NOT YET COMPLETE; integrated Session 17 adds native Pause/Resume and current-track seeking on capable sources; no multi-track or DSP. Manual listening: NOT AUTOMATICALLY VERIFIED.")
         appendLine("Kernel exact completions establish host USB transport evidence; DAC-internal reconstructed samples are not measured.")
         val source=result?.flacSource
         if (source==null) { appendLine("Full FLAC source evidence unavailable / not requested"); return }
@@ -470,7 +471,7 @@ internal object UsbAudioDiagnosticReport {
         source.counters.forEach { (name,value) -> appendLine("  $name: ${if (name.endsWith("Hash")) pcmHashHex(value) else value}") }
         val decoder=source.decoder
         decoder?.let {
-            appendLine("Whole-file result=${it.nativeStatus}; libFLAC=${it.decoderVersion}; MD5 reference available=${it.count("md5ReferenceAvailable")}; reference=${it.streamInfoMd5 ?: "unavailable"}; checking=${it.count("md5CheckingEnabled")}; verification=${it.md5Verification}")
+            appendLine("Whole-file result=${it.nativeStatus}; libFLAC=${it.decoderVersion}; MD5 reference available=${it.count("md5ReferenceAvailable")}; reference=${it.streamInfoMd5 ?: "unavailable"}; checking=${it.count("md5CheckingEnabled")}; verification=${if(source.count("sourceSeekAttempts")>0L) "WHOLE_FILE_MD5_NOT_VERIFIED_AFTER_SEEK" else it.md5Verification}")
             appendLine("True EOS: clean=${it.count("cleanEndOfStream")}; physical=${it.count("physicalInputEof")}; state=${it.count("decoderState")}; process=${it.count("processSucceeded")}; finish called=${it.count("finishCalled")}; finish returned=${it.count("finishReturned")}")
             appendLine("Format: native=${it.count("nativeFlacRecognized")}; init=${it.count("initStatus")}; STREAMINFO=${it.count("streamInfoReceived")}; sampleRate=${it.count("sampleRate")}; channels=${it.count("channels")}; bits/sample=${it.count("bitsPerSample")}; accepted=${source.count("metadataAccepted")}")
             appendLine("Decoder errors=${it.count("decoderErrors")}; range errors=${it.count("outOfRangeSamples")}; contradictions=${it.count("formatContradictions")}; frame order errors=${it.count("frameOrderErrors")}; bounded error codes=${it.errors.joinToString().ifEmpty { "none" }}; read errno=${it.count("readErrno")}")
@@ -483,7 +484,8 @@ internal object UsbAudioDiagnosticReport {
         appendLine("Decoded first/last index=${if (source.count("framesDecoded")>0) "0/${source.count("framesDecoded")-1}" else "unavailable"}; submitted first index=${if ((native?.count("framesSubmitted") ?: 0)>0) "0" else "unavailable"}; completed first index=${if (native?.verified==true) "0" else "unavailable"}; expected final index=${if (total>0) total-1 else "unavailable"}; actual final indices recorded below")
         val hashes=listOf(decoder?.counters?.get("pcmFnv1a"),source.counters["allEnqueuedPrefetchPcmHash"],source.counters["consumedSourcePcmHash"],native?.counters?.get("submittedPcmHash"))
         listOf("wholeDecodedPcmFNV","wholeEnqueuedPcmFNV","consumedPcmFNV","submittedUsbPcmFNV").zip(hashes).forEach { (name,value) -> appendLine("$name=${value?.let(::pcmHashHex) ?: "unavailable"}") }
-        appendLine("All whole-track FNVs equal=${hashes.all { it!=null && it==hashes.first() }}; FNV over canonical ordered L-low/L-high/R-low/R-high bytes only; no metadata or unused capacity")
+        if(source.count("sourceSeekAttempts")==0L) appendLine("All whole-track FNVs equal=${hashes.all { it!=null && it==hashes.first() }}; FNV over canonical ordered L-low/L-high/R-low/R-high bytes only; no metadata or unused capacity")
+        else appendLine("Seek-aware consumed/submitted FNVs equal=${hashes[2]!=null && hashes[2]==hashes[3]}; decoded/enqueued hashes include invalidated prefetch; canonical packed stereo bytes only; WHOLE_FILE_MD5_NOT_VERIFIED_AFTER_SEEK")
         appendLine("Producer natural EOF=${source.count("trueEofReached")}; finished naturally=${source.count("producerFinishedNaturally")}; queue after final consumption=${native?.count("queueFramesAtNaturalCompletion")}; natural prefetch discarded=${native?.count("prefetchedFramesDiscardedAtNaturalCompletion")}")
         appendLine("Terminal remaining=${native?.count("remainingFramesAtTerminalTransition")}; frames=${native?.count("terminalTailFrames")}; packets=${native?.count("terminalTailPackets")}; URBs=${native?.count("terminalTailOutUrbs")}; exact packet completions=${native?.count("terminalTailPacketCompletions")}; exact frame completions=${native?.count("terminalTailFrameCompletions")}; eofPaddingFrames=${native?.count("eofPaddingFrames")}")
         appendLine("Bounded source examples: first four and latest committed frame (final source frame on natural success); never substantial PCM content")

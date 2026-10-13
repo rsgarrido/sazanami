@@ -34,11 +34,18 @@ class FeedbackQueueCorrectionTest {
         return UsbIsoNativeSnapshot(UsbIsoNativeStats.fields.map { values[it] ?: 0L }.toLongArray(),longArrayOf(),longArrayOf())
     }
     @Test fun schemaHasThreeDistinctTimeoutOriginsAndRejectsOldOrInvalidData() {
-        assertEquals(11,UsbIsoNativeStats.VERSION);assertEquals(199,UsbIsoNativeStats.fields.size)
+        assertEquals(13,UsbIsoNativeStats.VERSION);assertEquals(508,UsbIsoNativeStats.fields.size)
         assertEquals(111,UsbIsoNativeStats.fields.indexOf("configuredFeedbackUrbs"))
+        assertEquals(114,UsbIsoNativeStats.fields.indexOf("feedbackBootstrapTimeouts"))
+        assertEquals(115,UsbIsoNativeStats.fields.indexOf("feedbackLastValidWatchdogTimeouts"))
+        assertEquals(116,UsbIsoNativeStats.fields.indexOf("feedbackStaleReapedTimeouts"))
+        assertEquals(117,UsbIsoNativeStats.fields.indexOf("feedbackTimeoutSubtype"))
         for(kind in 0L..3L) assertEquals(kind,UsbIsoNativeStats.decode(packet(mapOf("feedbackTimeoutSubtype" to kind)),1,2).count("feedbackTimeoutSubtype"))
         assertEquals(listOf("NONE","BOOTSTRAP_TIMEOUT","LAST_VALID_WATCHDOG_TIMEOUT","VALID_OBSERVATION_GAP_AT_REAP"),UsbIsoNativeStats.feedbackTimeoutSubtypes)
-        for(bad in listOf(packet(mapOf("version" to 7L)),packet(mapOf("version" to 6L)),packet(mapOf("version" to 5L)),packet(mapOf("feedbackTimeoutSubtype" to 4L)))) {
+        val current=packet()
+        val malformedSizes=listOf(0,199,235,237).map { current.copy(numbers=current.numbers.copyOf(it)) }
+        val oldVersions=(5L..12L).map { packet(mapOf("version" to it)) }
+        for(bad in oldVersions+malformedSizes+listOf(packet(mapOf("feedbackTimeoutSubtype" to -1L)),packet(mapOf("feedbackTimeoutSubtype" to 4L)))) {
             try { UsbIsoNativeStats.decode(bad,1,2);fail("Invalid/old feedback evidence was accepted") }
             catch (_: IllegalArgumentException) { }
         }

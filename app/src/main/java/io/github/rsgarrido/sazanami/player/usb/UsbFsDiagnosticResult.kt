@@ -91,7 +91,7 @@ internal data class UsbFsNativeResult(val numbers: IntArray, val driverNames: Ar
 
 /** Pure interpretation and packet validation. Never infers rates, speed, or kernel ownership from descriptors. */
 internal object UsbFsEvidence {
-    const val NATIVE_API_VERSION = 15
+    const val NATIVE_API_VERSION = 16
     const val MAX_INTERFACES = 256
 
     // Values from linux/usb/ch9.h enum usb_device_speed. Native code also uses the actual NDK enum.

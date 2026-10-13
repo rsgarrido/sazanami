@@ -8,6 +8,7 @@
 #include <memory>
 #include <functional>
 #include <utility>
+#include <vector>
 
 namespace sazanami::flacverify {
 struct DecoderDelete { void operator()(FLAC__StreamDecoder* p) const { if (p) FLAC__stream_decoder_delete(p); } };
@@ -16,6 +17,13 @@ struct Verification {
     std::function<bool(uint64_t, const uint8_t*)> consumeCanonical;
     std::function<void(const Verification&)> metadataAccepted;
     std::function<void(Outcome)> failureObserved;
+    std::function<void(FLAC__StreamDecoder*)> interactiveProcess;
+    std::function<bool()> quiesceRequested;
+    bool reloadMetadata=false,stagingSeek=false;
+    uint64_t originalNext=0,seekTarget=0,seekAttempts=0,unpublishedCanonical=0,unpublishedRaw=0;
+    off_t origin=0;
+    std::vector<uint8_t> targetBlock;
+    uint64_t targetBlockFirst=0,targetBlockFrames=0;
     bool wholeFile = true;
     bool enforceExpectedTotal = false; // Session 11 only; Sessions 9/10 retain their established gates.
     std::array<int64_t, FieldCount> facts{};
@@ -28,6 +36,18 @@ struct Verification {
     OwnedFd input;
     bool physicalEof = false, accepted = false;
     uint64_t fed = 0;
+    bool seekCapable() const { return facts[Seekable]==1 && facts[FileSize]>0; }
+    static FLAC__StreamDecoderSeekStatus seek(const FLAC__StreamDecoder*,FLAC__uint64 offset,void* context) {
+        auto& v=*static_cast<Verification*>(context);
+        if(!v.seekCapable()) return FLAC__STREAM_DECODER_SEEK_STATUS_UNSUPPORTED;
+        if(v.cancelled() || offset>static_cast<uint64_t>(v.facts[FileSize]) ||
+            offset>static_cast<uint64_t>(std::numeric_limits<off_t>::max())-static_cast<uint64_t>(v.origin)) return FLAC__STREAM_DECODER_SEEK_STATUS_ERROR;
+        if(::lseek(v.input.value,v.origin+static_cast<off_t>(offset),SEEK_SET)<0) {
+            v.facts[ReadErrno]=errno;v.fail(Outcome::DecoderError);return FLAC__STREAM_DECODER_SEEK_STATUS_ERROR;
+        }
+        v.fed=offset;v.prefixOffset=v.prefix.size();v.physicalEof=false;return FLAC__STREAM_DECODER_SEEK_STATUS_OK;
+    }
+    static FLAC__bool eof(const FLAC__StreamDecoder*,void* context) { return static_cast<Verification*>(context)->physicalEof; }
     Verification(OwnedFd duplicate, std::function<bool()> stop, bool whole = true)
         : stopRequested(std::move(stop)), wholeFile(whole), input(std::move(duplicate)) {
         facts[Version] = 2; facts[InitStatus] = -1; facts[DecoderState] = -1;
@@ -80,6 +100,14 @@ struct Verification {
     static void metadata(const FLAC__StreamDecoder*, const FLAC__StreamMetadata* block, void* context) {
         auto& v = *static_cast<Verification*>(context);
         if (v.cancelled() || v.failure != Outcome::Pending) return;
+        if(block && block->type==FLAC__METADATA_TYPE_STREAMINFO && v.reloadMetadata) {
+            const auto& s=block->data.stream_info;
+            if(s.sample_rate!=v.facts[Rate] || s.channels!=v.facts[Channels] || s.bits_per_sample!=v.facts[Bits] ||
+                s.total_samples!=static_cast<uint64_t>(v.facts[Total]) || s.max_blocksize!=v.facts[MaxBlock] || s.min_blocksize!=v.facts[MinBlock] ||
+                s.min_framesize!=v.facts[MinFrame] || s.max_framesize!=v.facts[MaxFrame] ||
+                !std::equal(v.md5.begin(),v.md5.end(),s.md5sum)) {++v.facts[Contradictions];v.fail(Outcome::FormatContradiction);}
+            v.reloadMetadata=false;return;
+        }
         if (!block || block->type != FLAC__METADATA_TYPE_STREAMINFO || v.facts[StreamInfo]) {
             ++v.facts[Contradictions]; v.fail(Outcome::FormatContradiction); return;
         }
@@ -123,15 +151,40 @@ struct Verification {
             ++v.facts[Contradictions]; v.fail(Outcome::FormatContradiction); return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
         }
         const auto& h = frame->header;
-        const bool ordered = h.number_type == FLAC__FRAME_NUMBER_TYPE_SAMPLE_NUMBER ? h.number.sample_number == v.pcm.frames :
+        const bool ordered = v.seekAttempts ? h.number_type==FLAC__FRAME_NUMBER_TYPE_SAMPLE_NUMBER && h.number.sample_number==v.originalNext :
+            h.number_type == FLAC__FRAME_NUMBER_TYPE_SAMPLE_NUMBER ? h.number.sample_number == v.pcm.frames :
             h.number_type == FLAC__FRAME_NUMBER_TYPE_FRAME_NUMBER && h.number.frame_number == v.pcm.blocks;
         if (!ordered) { ++v.facts[FrameOrderErrors]; ++v.facts[Contradictions]; v.fail(Outcome::FormatContradiction); return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT; }
+        const auto originalStart=v.seekAttempts?v.originalNext:v.pcm.frames;
+        if(v.enforceExpectedTotal && (originalStart>static_cast<uint64_t>(v.facts[Total]) || h.blocksize>static_cast<uint64_t>(v.facts[Total])-originalStart)) {
+            ++v.facts[Contradictions];v.fail(Outcome::FormatContradiction);return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
+        }
         if (!canAdd(v.pcm.frames, h.blocksize) || !canAdd(v.pcm.bytes, static_cast<uint64_t>(h.blocksize) * v.pcm.frameBytes()) || !canAdd(v.pcm.blocks, 1)) {
             v.fail(Outcome::CounterOverflow); return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
         }
         v.phase(Phase::Decoding);
+        if(v.stagingSeek) {
+            if(h.number_type!=FLAC__FRAME_NUMBER_TYPE_SAMPLE_NUMBER || h.number.sample_number!=v.seekTarget || v.targetBlockFrames ||
+                h.blocksize>static_cast<uint32_t>(v.facts[MaxBlock]) || h.blocksize>static_cast<uint64_t>(v.facts[Total])-v.seekTarget) {
+                v.fail(Outcome::FormatContradiction);return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
+            }
+            try {v.targetBlock.resize(static_cast<size_t>(h.blocksize)*v.pcm.frameBytes());} catch(...) {v.fail(Outcome::CleanupFailed);return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;}
+            for(uint32_t i=0;i<h.blocksize;++i) {
+                if(v.cancelled() || !v.pcm.append(channels[0][i],channels[1][i],v.targetBlock.data()+i*v.pcm.frameBytes())) {
+                    v.fail(v.pcm.failure==Outcome::Pending?Outcome::Cancelled:v.pcm.failure);return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
+                }
+            }
+            v.targetBlockFirst=v.seekTarget;v.targetBlockFrames=h.blocksize;v.originalNext=v.seekTarget+h.blocksize;
+            ++v.pcm.blocks;return FLAC__STREAM_DECODER_WRITE_STATUS_CONTINUE;
+        }
         for (uint32_t i = 0; i < h.blocksize; ++i) {
-            if (v.enforceExpectedTotal && (!v.facts[Total] || v.pcm.frames>=static_cast<uint64_t>(v.facts[Total]))) {
+            if(v.interactiveProcess && v.quiesceRequested && v.quiesceRequested()) {
+                if(!canAdd(v.unpublishedRaw,h.blocksize-i)) {v.fail(Outcome::CounterOverflow);return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;}
+                v.unpublishedRaw+=h.blocksize-i;v.originalNext+=h.blocksize-i;++v.pcm.blocks;
+                return FLAC__STREAM_DECODER_WRITE_STATUS_CONTINUE; // Return to decoder owner, never seek inside its callback.
+            }
+            const auto original=v.seekAttempts?v.originalNext:v.pcm.frames;
+            if (v.enforceExpectedTotal && (!v.facts[Total] || original>=static_cast<uint64_t>(v.facts[Total]))) {
                 ++v.facts[Contradictions]; v.fail(Outcome::FormatContradiction);
                 return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT; // Never serialize a frame beyond STREAMINFO.
             }
@@ -140,15 +193,21 @@ struct Verification {
                 if (v.pcm.failure != Outcome::Pending) v.fail(v.pcm.failure);
                 return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
             }
-            if (v.consumeCanonical && !v.consumeCanonical(v.pcm.frames - 1, canonical)) {
+            if (v.consumeCanonical && !v.consumeCanonical(original, canonical)) {
+                if(v.interactiveProcess && v.quiesceRequested && v.quiesceRequested() && !v.cancelled()) {
+                    if(!canAdd(v.unpublishedCanonical,1) || !canAdd(v.unpublishedRaw,h.blocksize-i-1)) {v.fail(Outcome::CounterOverflow);return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;}
+                    ++v.unpublishedCanonical;v.unpublishedRaw+=h.blocksize-i-1;v.originalNext=original+h.blocksize-i;++v.pcm.blocks;
+                    return FLAC__STREAM_DECODER_WRITE_STATUS_CONTINUE;
+                }
                 v.fail(Outcome::Cancelled); return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
             }
+            v.originalNext=original+1;
         }
         ++v.pcm.blocks; return FLAC__STREAM_DECODER_WRITE_STATUS_CONTINUE;
     }
     void decode() {
         phase(Phase::DocumentOpened);
-        const off_t origin = ::lseek(input.value, 0, SEEK_CUR);
+        origin = ::lseek(input.value, 0, SEEK_CUR);
         facts[Seekable] = origin >= 0 ? 1 : errno == ESPIPE ? 0 : -1;
         struct stat info{};
         if (origin >= 0 && ::fstat(input.value, &info) == 0 && S_ISREG(info.st_mode) && info.st_size >= origin)
@@ -169,13 +228,16 @@ struct Verification {
         const bool filters = FLAC__stream_decoder_set_metadata_ignore_all(decoder.get()) &&
             FLAC__stream_decoder_set_metadata_respond(decoder.get(), FLAC__METADATA_TYPE_STREAMINFO);
         if (!filters || !md5Set || (facts[Md5Enabled] != (wholeFile ? 1 : 0))) { fail(Outcome::DecoderError); decoder.reset(); facts[DecoderDeleted] = 1; return; }
-        // Whole-file mode has no seek/flush/reset that could disable its nonzero-reference MD5 check.
-        facts[InitStatus] = FLAC__stream_decoder_init_stream(decoder.get(), read, nullptr,
+        // The standalone verifier has no seek/flush/reset. Full playback enables callbacks only for a capable source.
+        const bool callbacks=interactiveProcess && seekCapable();
+        facts[InitStatus] = FLAC__stream_decoder_init_stream(decoder.get(), read, callbacks?seek:nullptr,
             facts[Seekable] == 1 ? tell : nullptr, facts[FileSize] >= 0 ? length : nullptr,
-            nullptr, write, metadata, error, this);
+            callbacks?eof:nullptr, write, metadata, error, this);
         if (facts[InitStatus] == FLAC__STREAM_DECODER_INIT_STATUS_OK) {
             phase(Phase::MetadataReading);
             facts[MetadataOk] = FLAC__stream_decoder_process_until_end_of_metadata(decoder.get()) ? 1 : 0;
+            if(interactiveProcess && failure==Outcome::Pending && facts[MetadataOk] && facts[StreamInfo] && accepted) interactiveProcess(decoder.get());
+            else {
             if (failure == Outcome::Pending && facts[MetadataOk] && facts[StreamInfo] && accepted)
                 facts[ProcessOk] = FLAC__stream_decoder_process_until_end_of_stream(decoder.get()) ? 1 : 0;
             facts[DecoderState] = FLAC__stream_decoder_get_state(decoder.get()); // Capture BEFORE finish resets it.
@@ -185,6 +247,7 @@ struct Verification {
             facts[FinishOk] = FLAC__stream_decoder_finish(decoder.get()) ? 1 : 0;
             if (failure == Outcome::Pending && facts[CleanEos] && facts[Md5Available] && facts[Md5Enabled] && !facts[DecoderErrors])
                 facts[Md5Verification] = facts[FinishOk] ? 1 : 2;
+            }
         } else fail(Outcome::DecoderError);
         decoder.reset(); facts[DecoderDeleted] = 1;
     }
@@ -199,6 +262,7 @@ struct Verification {
         facts[MinObserved] = pcm.minimum; facts[MaxObserved] = pcm.maximum; facts[RangeErrors] = static_cast<int64_t>(pcm.rangeErrors);
         const bool released = facts[FdClosed] && (!facts[Created] || facts[DecoderDeleted]);
         if (!released) failure = Outcome::CleanupFailed;
+        if(failure==Outcome::Pending && seekAttempts) failure=released && facts[CleanEos] && facts[FinishOk] && originalNext==static_cast<uint64_t>(facts[Total]) ? Outcome::SeekedEof : Outcome::Truncated;
         if (failure == Outcome::Pending && wholeFile) failure = classify(facts[Recognized], facts[InitStatus] == 0, facts[StreamInfo], accepted,
             facts[ProcessOk], facts[CleanEos], facts[Md5Enabled], facts[Md5Available], facts[FinishOk],
             static_cast<uint64_t>(facts[Total]), pcm, static_cast<uint64_t>(facts[DecoderErrors]), static_cast<uint64_t>(facts[Contradictions]), released);

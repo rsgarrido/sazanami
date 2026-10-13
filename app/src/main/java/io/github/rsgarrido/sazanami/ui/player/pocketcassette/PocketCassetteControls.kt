@@ -1,11 +1,11 @@
 package io.github.rsgarrido.sazanami.ui.player.pocketcassette
 
+import io.github.rsgarrido.sazanami.ui.state.rememberDirectSeekGestureControl
+import io.github.rsgarrido.sazanami.ui.state.directSeekPositionInput
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -49,7 +49,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntOffset
@@ -401,6 +400,7 @@ private fun PocketCassetteSeekSlot(
     modifier: Modifier = Modifier
 ) {
     val colors = PocketCassetteColors
+    val gesture=rememberDirectSeekGestureControl(onSeekChange)
     val safeDuration = duration.coerceAtLeast(1)
     val safePosition = currentPosition.coerceIn(0, safeDuration)
     val progress = safePosition.toFloat() / safeDuration.toFloat()
@@ -441,28 +441,7 @@ private fun PocketCassetteSeekSlot(
         }
 
         val seekInputModifier = if (enabled) {
-            Modifier.pointerInput(safeDuration) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-
-                    fun seekTo(x: Float) {
-                        val fraction = (x / size.width.toFloat()).coerceIn(0f, 1f)
-                        onSeekChange((fraction * safeDuration).toInt())
-                    }
-
-                    seekTo(down.position.x)
-                    var pressed = true
-                    while (pressed) {
-                        val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                        pressed = change.pressed
-                        if (pressed) {
-                            seekTo(change.position.x)
-                            change.consume()
-                        }
-                    }
-                }
-            }
+            Modifier.directSeekPositionInput(gesture,safeDuration)
         } else {
             Modifier
         }
@@ -476,7 +455,7 @@ private fun PocketCassetteSeekSlot(
                     range = 0f..safeDuration.toFloat()
                 )
                 setProgress { target ->
-                    onSeekChange(target.coerceIn(0f, safeDuration.toFloat()).toInt())
+                    gesture.immediate(target.coerceIn(0f, safeDuration.toFloat()).toInt())
                     true
                 }
             }

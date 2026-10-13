@@ -12,5 +12,6 @@ fun PlaybackProgress(
     content: @Composable (PlaybackProgressUiState) -> Unit
 ) {
     val progress by progressState.collectAsStateWithLifecycle()
-    content(progress)
+    val preview=LocalDirectSeekPreview.current
+    content(if(preview==null) progress else progress.copy(currentPosition=preview,isSeeking=true))
 }
