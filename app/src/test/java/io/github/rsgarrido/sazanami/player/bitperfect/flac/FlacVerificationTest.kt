@@ -89,6 +89,20 @@ class FlacVerificationTest {
         val zeroDigest = FlacNativeEvidence.decode(snapshot().copy(md5 = ByteArray(16))).copy(originalFdClosed = true)
         assertFalse(zeroDigest.strongEvidence)
     }
+    @Test fun missingReferenceCompletionRequiresActualUnavailableOutcomeAndAllDecodeEvidence() {
+        val complete=FlacNativeEvidence.decode(snapshot("result" to 3,"md5ReferenceAvailable" to 0,
+            "md5Verification" to 0,"minBlockSize" to 16,"maxBlockSize" to 4096).copy(md5=ByteArray(16))).copy(originalFdClosed=true)
+        assertTrue(complete.referenceUnavailableComplete);assertFalse(complete.strongEvidence)
+        assertEquals("UNAVAILABLE",complete.md5Verification)
+        for(field in FlacNativeEvidence.fields) assertFalse(field,complete.copy(counters=complete.counters-field).referenceUnavailableComplete)
+        for(change in listOf("finishReturned" to 0L,"cleanEndOfStream" to 0L,"physicalInputEof" to 0L,
+            "decoderErrors" to 1L,"frameOrderErrors" to 1L,"totalSamples" to 0L,"decodedStereoFrames" to 5L,
+            "canonicalPcmBytesHashed" to 23L,"md5Verification" to 1L,"md5Verification" to 2L,"minBlockSize" to 0L))
+            assertFalse(change.first,complete.copy(counters=complete.counters+change).referenceUnavailableComplete)
+        assertFalse(complete.copy(streamInfoMd5="1".repeat(32)).referenceUnavailableComplete)
+        assertFalse(complete.copy(nativeStatus=FlacVerificationStatus.FLAC_MD5_MISMATCH).referenceUnavailableComplete)
+        assertFalse(complete.copy(originalFdClosed=false).referenceUnavailableComplete)
+    }
     @Test fun mismatchAndCorruptionNeverBecomeSuccess() {
         assertEquals(FlacVerificationStatus.FLAC_MD5_MISMATCH, result("result" to 5, "finishReturned" to 0, "md5Verification" to 2).status)
         for (name in listOf("decoderErrors","outOfRangeSamples","formatContradictions","frameOrderErrors","resourceErrors"))

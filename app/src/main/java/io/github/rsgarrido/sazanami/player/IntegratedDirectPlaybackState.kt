@@ -89,6 +89,10 @@ internal fun integratedTerminalState(previous: IntegratedDirectPlaybackState,res
     val rateVerified=UsbDirectPcmFormat.supportsRate(sourceRate) && result.transport?.count("schedulerNominalRateHz")==sourceRate
     val success=rateVerified && result.status==UsbSilentStatus.FULL_FLAC_USB_TRANSPORT_VERIFIED && result.transport?.verified==true &&
         result.transport?.count("seekConfirmed")==0L && result.transport?.count("sourceSeekAttempts")==0L && safe && total>0 && completed==total
+    val referenceUnavailableSuccess=rateVerified && result.status==UsbSilentStatus.FULL_FLAC_USB_TRANSPORT_COMPLETE_MD5_UNAVAILABLE &&
+        result.configuration?.let { UsbFlacFullStatus.classify(it,result.transport,result.flacSource,result.nativeMemoryReleased)==
+            UsbSilentStatus.FULL_FLAC_USB_TRANSPORT_COMPLETE_MD5_UNAVAILABLE }==true &&
+        result.originalFlacFdClosed==true && safe && total>0 && completed==total
     val seekSuccess=rateVerified && result.status==UsbSilentStatus.SEEKED_SEGMENTS_USB_TRANSPORT_VERIFIED && result.transport?.seekVerified==true && safe &&
         result.flacSource?.seekComplete==true && result.transport?.count("sourcePositionFrame")==total
     val stopped=result.status==UsbSilentStatus.CANCELLED && safe
@@ -96,8 +100,8 @@ internal fun integratedTerminalState(previous: IntegratedDirectPlaybackState,res
     return previous.copy(engine=result,sampleRateHz=sourceRate,totalFrames=total,completedFrames=completed,cleanupSafe=safe,playWhenReady=false,nativeTransportPhase=nativePhase,
         nativePauseCounters=result.transport?.counters?.filterKeys { it in UsbIsoNativeStats.controlFields || it in UsbIsoNativeStats.seekFields } ?: previous.nativePauseCounters,
         sourcePositionFrame=if((result.transport?.count("seekConfirmed") ?: 0L)>0L) result.transport?.counters?.get("sourcePositionFrame") ?: previous.sourcePositionFrame else completed,
-        phase=if(success || seekSuccess) IntegratedDirectPhase.ENDED else if(stopped) IntegratedDirectPhase.STOPPED else IntegratedDirectPhase.ERROR,
-        error=if(success || seekSuccess || stopped) null else integratedDirectFailure(result))
+        phase=if(success || referenceUnavailableSuccess || seekSuccess) IntegratedDirectPhase.ENDED else if(stopped) IntegratedDirectPhase.STOPPED else IntegratedDirectPhase.ERROR,
+        error=if(success || referenceUnavailableSuccess || seekSuccess || stopped) null else integratedDirectFailure(result))
 }
 
 internal val integratedDirectCommands=intArrayOf(

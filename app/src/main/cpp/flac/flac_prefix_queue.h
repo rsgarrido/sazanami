@@ -297,7 +297,6 @@ struct PrefixSource {
             if(!queue.configure(v.pcm.format)) { queue.fail(PrefixFormat);return; }
             if (fullTrack) {
                 if (!v.facts[Total] || static_cast<uint64_t>(v.facts[Total])>kCounterMax/queue.frameBytes()) { queue.fail(PrefixTotal); return; }
-                if (!v.facts[Md5Available]) { queue.fail(PrefixMd5Unavailable); return; }
                 queue.expectedTotal.store(static_cast<uint64_t>(v.facts[Total]));
             }
             metadataFacts=v.facts; metadataReady.store(true,std::memory_order_release); queue.changed.notify_all();
@@ -333,7 +332,7 @@ struct PrefixSource {
             if (!decoder.facts[FdClosed] || (decoder.facts[Created] && !decoder.facts[DecoderDeleted])) queue.fail(PrefixCleanup);
             stopped.store(true);
             if (fullTrack && !queue.stop.load() && !queue.faults.load()) {
-                if ((decoder.failure==Outcome::Exact || decoder.failure==Outcome::SeekedEof) && queue.sourceBase.load()+queue.tail.load()==static_cast<uint64_t>(decoder.facts[Total]))
+                if ((decoder.sequentialDecodeComplete() || decoder.failure==Outcome::SeekedEof) && queue.sourceBase.load()+queue.tail.load()==static_cast<uint64_t>(decoder.facts[Total]))
                     queue.eofReached.store(true,std::memory_order_release);
                 else queue.fail(decoder.failure==Outcome::Md5Mismatch ? PrefixMd5Mismatch :
                     decoder.failure==Outcome::Md5Unavailable ? PrefixMd5Unavailable :

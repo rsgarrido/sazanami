@@ -36,6 +36,20 @@ struct Verification {
     OwnedFd input;
     bool physicalEof = false, accepted = false;
     uint64_t fed = 0;
+    // Decode completion is distinct from matching an optional STREAMINFO reference.
+    // Called by its owner, or by an observer after EOF publication/joined teardown.
+    bool sequentialDecodeComplete() const {
+        const bool reference=std::any_of(md5.begin(),md5.end(),[](uint8_t byte){return byte!=0;});
+        return !seekAttempts && accepted && (failure==Outcome::Pending || failure==Outcome::Exact || failure==Outcome::Md5Unavailable) &&
+            pcm.failure==Outcome::Pending && facts[Recognized]==1 && facts[Created]==1 && facts[InitStatus]==0 &&
+            facts[StreamInfo]==1 && facts[MetadataOk]==1 && facts[ProcessOk]==1 && facts[CleanEos]==1 && physicalEof &&
+            facts[DecoderState]==FLAC__STREAM_DECODER_END_OF_STREAM && facts[FinishCalled]==1 && facts[FinishOk]==1 && facts[Md5Enabled]==1 &&
+            !facts[DecoderErrors] && !facts[Contradictions] &&
+            !facts[FrameOrderErrors] && !pcm.rangeErrors && facts[Total]>0 && pcm.frameBytes() &&
+            static_cast<uint64_t>(facts[Total])<=kCounterMax/pcm.frameBytes() && pcm.frames==static_cast<uint64_t>(facts[Total]) &&
+            pcm.bytes==pcm.frames*pcm.frameBytes() && facts[Md5Available]==(reference?1:0) &&
+            facts[Md5Verification]==(reference?1:0);
+    }
     bool seekCapable() const { return facts[Seekable]==1 && facts[FileSize]>0; }
     static FLAC__StreamDecoderSeekStatus seek(const FLAC__StreamDecoder*,FLAC__uint64 offset,void* context) {
         auto& v=*static_cast<Verification*>(context);

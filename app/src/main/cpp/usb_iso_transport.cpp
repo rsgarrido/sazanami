@@ -474,7 +474,7 @@ struct Session {
         const auto total=static_cast<jlong>(q.expectedTotal.load());
         // EOF's acquire publication makes the producer's final decoder/hash evidence immutable here.
         if (stats[ScheduledFrames]!=total || prefix->decoder.pcm.frames!=q.expectedTotal.load() ||
-            prefix->decoder.pcm.bytes!=q.expectedTotal.load()*frameBytes() || prefix->decoder.facts[fv::Md5Verification]!=1 ||
+            prefix->decoder.pcm.bytes!=q.expectedTotal.load()*frameBytes() || !prefix->decoder.sequentialDecodeComplete() ||
             prefix->decoder.pcm.hash!=q.enqueuedHash || q.enqueuedHash!=q.consumedHash || q.consumedHash!=submittedPrefixHash ||
             stats[OutBytesSubmitted]!=total*frameBytes() || stats[KernelOutActualBytes]!=stats[OutBytesSubmitted] ||
             stats[FullLastSubmitted]!=total-1 || stats[FullLastCompleted]!=total-1 || stats[TailUrbs]!=1 ||

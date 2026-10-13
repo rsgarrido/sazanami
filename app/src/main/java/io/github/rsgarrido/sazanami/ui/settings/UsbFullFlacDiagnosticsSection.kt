@@ -46,7 +46,7 @@ import io.github.rsgarrido.sazanami.player.usb.pcmHashHex
         }
         result.flacSource?.let { source ->
             Text(stringResource(R.string.usb_full_flac_summary,source.count("totalSamples").toString(),
-                source.count("framesConsumedFromQueue").toString(),source.decoder?.md5Verification ?: "—",
+                source.count("framesConsumedFromQueue").toString(),source.md5Report,
                 source.decoder?.counters?.get("pcmFnv1a")?.let(::pcmHashHex) ?: "—"))
             if (source.reasons.isNotEmpty()) Text(source.reasons.joinToString(),color=MaterialTheme.colorScheme.error)
         }

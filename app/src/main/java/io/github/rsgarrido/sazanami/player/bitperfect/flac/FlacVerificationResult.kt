@@ -28,11 +28,9 @@ internal data class FlacVerificationResult(
     val pcmFormat get()=UsbDirectPcmFormat.resolve(count("sampleRate"),count("channels"),count("bitsPerSample"))
     val bytesPerFrame get()=pcmFormat?.bytesPerFrame?.toLong() ?: 0L
     private val sampleLimit get()=pcmFormat?.let { 1L shl (it.bitsPerSample-1) } ?: 0L
-    val strongEvidence get() = decoderVersion == "1.5.0" && exceptionType == null &&
+    private val completeDecodeEvidence get() = decoderVersion == "1.5.0" && exceptionType == null &&
         count("nativeFlacRecognized") == 1L && count("decoderCreated") == 1L && count("initStatus") == 0L &&
         count("streamInfoReceived") == 1L && UsbDirectPcmFormat.supports(count("sampleRate"), count("channels"), count("bitsPerSample")) && count("metadataProcessed") == 1L &&
-        count("md5CheckingEnabled") == 1L && count("md5ReferenceAvailable") == 1L &&
-        streamInfoMd5 != null && streamInfoMd5 != "0".repeat(32) && count("md5Verification") == 1L &&
         count("processSucceeded") == 1L && count("cleanEndOfStream") == 1L && count("physicalInputEof") == 1L &&
         count("decoderState") == 4L && (count("lifecycleMask") and 511L) == 511L &&
         count("finishCalled") == 1L && count("finishReturned") == 1L &&
@@ -47,6 +45,16 @@ internal data class FlacVerificationResult(
             .all { count(it) in -sampleLimit until sampleLimit } &&
         count("nativeDuplicateClosed") == 1L && count("decoderDeleted") == 1L &&
         count("resourceErrors") == 0L && originalFdClosed == true
+    val strongEvidence get() = completeDecodeEvidence && count("md5CheckingEnabled") == 1L && count("md5ReferenceAvailable") == 1L &&
+        streamInfoMd5 != null && streamInfoMd5 != "0".repeat(32) && count("md5Verification") == 1L
+    /** Clean whole-file decoding, without an independent source-reference claim. */
+    val referenceUnavailableComplete get() = counters.keys.containsAll(FlacNativeEvidence.fields) && completeDecodeEvidence &&
+        count("version")==2L && count("result")==FlacVerificationStatus.FLAC_DECODE_COMPLETED_MD5_UNAVAILABLE.ordinal.toLong() &&
+        nativeStatus==FlacVerificationStatus.FLAC_DECODE_COMPLETED_MD5_UNAVAILABLE && count("md5CheckingEnabled")==1L &&
+        count("md5ReferenceAvailable")==0L && streamInfoMd5=="0".repeat(32) && count("md5Verification")==0L &&
+        count("minBlockSize") in 1L..65535L && count("maxBlockSize") in count("minBlockSize")..65535L &&
+        (count("minFrameSize")==0L || count("maxFrameSize")==0L || count("minFrameSize")<=count("maxFrameSize")) &&
+        count("readErrno")==0L && count("dupErrno")==0L
     val status get() = when {
         originalFdClosed == false -> FlacVerificationStatus.RESOURCE_CLEANUP_FAILED
         nativeStatus == FlacVerificationStatus.EXACT_FLAC_DECODE_VERIFIED && !strongEvidence -> FlacVerificationStatus.NATIVE_EVIDENCE_INVALID

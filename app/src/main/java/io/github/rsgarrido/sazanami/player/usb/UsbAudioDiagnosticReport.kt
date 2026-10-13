@@ -458,20 +458,22 @@ internal object UsbAudioDiagnosticReport {
     private fun StringBuilder.appendFullFlacSource(result: UsbSilentTransportExperimentResult?) {
         appendLine("Scope: debug-only one-track full direct USB playback; source start frame=0; no duration-success timer")
         appendLine("Input: native FLAC; accepted formats ONLY stereo 16/44100, 16/48000, 24/48000, 24/96000 integer packed PCM; original amplitude")
-        appendLine("libFLAC version=1.5.0; Session 9 whole-file verifier reused; MD5 checking enabled before init; nonzero STREAMINFO reference and true physical EOS required")
-        appendLine("Queue capacity frames=16384; prebuffer target frames=8192; shorter complete tracks prime min(total,8192) only after verified EOF/MD5. Prime before AC/AS ownership.")
+        appendLine("libFLAC version=1.5.0; Session 9 whole-file verifier reused; MD5 checking enabled before init; true physical EOS required; absent STREAMINFO reference stays UNAVAILABLE, nonzero mismatch fails")
+        appendLine("Queue capacity frames=16384; prebuffer target frames=8192; shorter complete tracks prime min(total,8192) only after clean EOF and applicable MD5 checks. Prime before AC/AS ownership.")
         appendLine("Producer EOF preserves queued PCM. Consumer drains through totalSamples-1; exact terminal tail; no zero padding, repetition, interpolation or truncation.")
         appendLine("ACTIVE insufficient source frames = QUEUE_UNDERRUN; verified EOF tail is distinct. Refill precedes OUT_POOL_STALL. No-progress terminal verification timeout fails.")
         appendLine("production Bit-perfect: NOT YET COMPLETE; integrated Session 17 adds native Pause/Resume and current-track seeking on capable sources; no multi-track or DSP. Manual listening: NOT AUTOMATICALLY VERIFIED.")
         appendLine("Kernel exact completions establish host USB transport evidence; DAC-internal reconstructed samples are not measured.")
         val source=result?.flacSource
         if (source==null) { appendLine("Full FLAC source evidence unavailable / not requested"); return }
-        appendLine("Source reasons=${source.reasons.joinToString().ifEmpty { "none" }}; source full-completion evidence=${source.fullComplete}")
+        appendLine("Source reasons=${source.reasons.joinToString().ifEmpty { "none" }}; source MD5-verified full-completion evidence=${source.fullComplete}")
+        appendLine("Clean source playback completion=${source.fullPlaybackComplete}; PCM consistency=${if(result.flacPlaybackComplete) "PASS" else "NOT_VERIFIED"}; USB transport completion=${if(result.transport?.let { it.fullPlaybackComplete || it.seekVerified }==true) "PASS" else "NOT_VERIFIED"}")
         source.exceptionType?.let { appendLine("Source boundary exception=${safeText(it)}; private message omitted") }
         source.counters.forEach { (name,value) -> appendLine("  $name: ${if (name.endsWith("Hash")) pcmHashHex(value) else value}") }
         val decoder=source.decoder
         decoder?.let {
-            appendLine("Whole-file result=${it.nativeStatus}; libFLAC=${it.decoderVersion}; MD5 reference available=${it.count("md5ReferenceAvailable")}; reference=${it.streamInfoMd5 ?: "unavailable"}; checking=${it.count("md5CheckingEnabled")}; verification=${if(source.count("sourceSeekAttempts")>0L) "WHOLE_FILE_MD5_NOT_VERIFIED_AFTER_SEEK" else it.md5Verification}")
+            appendLine("Whole-file result=${it.nativeStatus}; libFLAC=${it.decoderVersion}; MD5 reference available=${it.count("md5ReferenceAvailable")}; reference=${it.streamInfoMd5 ?: "unavailable"}; checking=${it.count("md5CheckingEnabled")}; verification=${source.md5Report}")
+            appendLine("Whole-file verification scope=${if(source.count("sourceSeekAttempts")>0L) "INVALIDATED_BY_SEEK" else "SEQUENTIAL"}; absent reference never counts as MD5 PASS")
             appendLine("True EOS: clean=${it.count("cleanEndOfStream")}; physical=${it.count("physicalInputEof")}; state=${it.count("decoderState")}; process=${it.count("processSucceeded")}; finish called=${it.count("finishCalled")}; finish returned=${it.count("finishReturned")}")
             appendLine("Format: native=${it.count("nativeFlacRecognized")}; init=${it.count("initStatus")}; STREAMINFO=${it.count("streamInfoReceived")}; sampleRate=${it.count("sampleRate")}; channels=${it.count("channels")}; bits/sample=${it.count("bitsPerSample")}; accepted=${source.count("metadataAccepted")}")
             appendLine("Decoder errors=${it.count("decoderErrors")}; range errors=${it.count("outOfRangeSamples")}; contradictions=${it.count("formatContradictions")}; frame order errors=${it.count("frameOrderErrors")}; bounded error codes=${it.errors.joinToString().ifEmpty { "none" }}; read errno=${it.count("readErrno")}")

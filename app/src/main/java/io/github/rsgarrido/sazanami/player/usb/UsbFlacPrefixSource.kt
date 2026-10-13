@@ -15,6 +15,11 @@ internal data class UsbFlacSourceResult(val counters: Map<String,Long> = emptyMa
     val pcmFormat get()=UsbDirectPcmFormat.resolve(count("sampleRate"),count("channels"),count("bitsPerSample"))
     val bytesPerFrame get()=pcmFormat?.bytesPerFrame?.toLong() ?: 0L
     val reasons get() = UsbFlacSourceEvidence.reasons.filterIndexed { i,_ -> count("sourceIntegrityMask") and (1L shl i) != 0L }
+    val md5Report get() = when {
+        decoder?.count("md5ReferenceAvailable")==0L && decoder?.streamInfoMd5=="0".repeat(32) -> "UNAVAILABLE"
+        count("sourceSeekAttempts")>0L -> "WHOLE_FILE_MD5_NOT_VERIFIED_AFTER_SEEK"
+        else -> decoder?.md5Verification ?: "UNAVAILABLE"
+    }
     val primed get() = exceptionType == null && count("sourceIntegrityMask")==0L && count("metadataAccepted")==1L &&
         count("initialPrimedFrames") in (if (count("fullTrackMode")==1L) minOf(8192L,count("totalSamples")) else 8192L)..16384L &&
         (count("fullTrackMode")==0L || count("totalSamples")>0L) &&
@@ -39,10 +44,10 @@ internal data class UsbFlacSourceResult(val counters: Map<String,Long> = emptyMa
             it.count("metadataProcessed")==1L && it.count("streamInfoReceived")==1L && it.count("md5Verification")==0L &&
             it.count("frameOrderErrors")==0L && it.count("md5CheckingEnabled")==0L && it.count("decoderErrors")==0L &&
             it.count("outOfRangeSamples")==0L && it.count("formatContradictions")==0L } == true)
-    val fullComplete get() = counters.keys.containsAll(UsbFlacSourceEvidence.fields) && primed && count("fullTrackMode")==1L && count("trueEofReached")==1L &&
+    private val fullCompletionAccounting get() = counters.keys.containsAll(UsbFlacSourceEvidence.fields) && primed && count("fullTrackMode")==1L && count("trueEofReached")==1L &&
         count("producerFinishedNaturally")==1L && count("producerStopped")==1L && count("producerJoined")==1L &&
         count("decoderReleased")==1L && count("nativeFlacFdClosed")==1L && count("queueReleased")==1L &&
-        count("md5VerificationPass")==1L && count("decodedTotalMatchesStreamInfo")==1L &&
+        count("decodedTotalMatchesStreamInfo")==1L &&
         bytesPerFrame>0 && count("totalSamples") in 1L..(Long.MAX_VALUE/bytesPerFrame) &&
         listOf("framesDecoded","framesEnqueued","framesConsumedFromQueue","expectedNextEnqueueFrame","expectedNextConsumeFrame")
             .all { counters[it]==count("totalSamples") } &&
@@ -52,9 +57,15 @@ internal data class UsbFlacSourceResult(val counters: Map<String,Long> = emptyMa
         count("lastSourceFrameEnqueued")==count("totalSamples")-1 && count("lastSourceFrameConsumed")==count("totalSamples")-1 &&
         count("minimumQueueDepthDuringStreaming") in 0L..count("maximumQueueDepthDuringStreaming") &&
         count("maximumQueueDepthDuringStreaming")<=16384L &&
-        count("allEnqueuedPrefetchPcmHash")==count("consumedSourcePcmHash") &&
+        count("allEnqueuedPrefetchPcmHash")==count("consumedSourcePcmHash")
+    val fullComplete get() = fullCompletionAccounting && count("md5VerificationPass")==1L &&
         decoder?.let { it.pcmFormat==pcmFormat && it.count("totalSamples")==count("totalSamples") && it.nativeStatus==FlacVerificationStatus.EXACT_FLAC_DECODE_VERIFIED && it.copy(originalFdClosed=true).strongEvidence &&
             it.count("pcmFnv1a")==count("consumedSourcePcmHash") }==true
+    val referenceUnavailableComplete get() = fullCompletionAccounting && count("version")==4L && count("sourceSeekAttempts")==0L &&
+        count("sourceEpoch")==0L && count("sourceSegmentStartFrame")==0L && count("md5VerificationPass")==0L &&
+        decoder?.let { it.pcmFormat==pcmFormat && it.count("totalSamples")==count("totalSamples") &&
+            it.copy(originalFdClosed=true).referenceUnavailableComplete && it.count("pcmFnv1a")==count("consumedSourcePcmHash") }==true
+    val fullPlaybackComplete get() = fullComplete || referenceUnavailableComplete
     val seekComplete get()=counters.keys.containsAll(UsbFlacSourceEvidence.fields) && primed && count("sourceSeekAttempts")>0L &&
         count("version")==4L && count("sourceEpoch")>0L && count("sourceSegmentStartFrame") in 0L until count("totalSamples") &&
         count("sourceFirstSeekFrame")==count("sourceSegmentStartFrame") &&
@@ -73,7 +84,8 @@ internal data class UsbFlacSourceResult(val counters: Map<String,Long> = emptyMa
             it.counters.keys.containsAll(FlacNativeEvidence.fields) && it.count("nativeFlacRecognized")==1L && it.count("decoderCreated")==1L &&
             it.count("version")==2L && it.count("result")==FlacVerificationStatus.SEEKED_SOURCE_EOF_NOT_WHOLE_FILE_VERIFIED.ordinal.toLong() &&
             it.count("initStatus")==0L && it.count("streamInfoReceived")==1L && it.count("metadataProcessed")==1L &&
-            it.count("md5ReferenceAvailable")==1L && it.streamInfoMd5!=null && it.streamInfoMd5!="0".repeat(32) && it.count("finishCalled")==1L &&
+            ((it.count("md5ReferenceAvailable")==1L && it.streamInfoMd5!=null && it.streamInfoMd5!="0".repeat(32)) ||
+                (it.count("md5ReferenceAvailable")==0L && it.streamInfoMd5=="0".repeat(32))) && it.count("finishCalled")==1L &&
             it.count("decodedStereoFrames")==count("framesDecoded") && it.count("decodedSamplesPerChannel")==count("framesDecoded") &&
             it.count("decoderCallbacks")>0L && it.count("decodedBlocks")==it.count("decoderCallbacks") &&
             it.decoderVersion=="1.5.0" && it.exceptionType==null && it.errors.isEmpty() && it.count("md5Verification")==0L && it.count("cleanEndOfStream")==1L && it.count("physicalInputEof")==1L &&

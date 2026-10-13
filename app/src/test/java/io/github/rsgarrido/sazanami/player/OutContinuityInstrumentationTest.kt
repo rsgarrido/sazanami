@@ -132,7 +132,11 @@ class OutContinuityInstrumentationTest {
         assertEquals("c9c5cb2e0ee36a66708c0ac4a17483a6a98764538e77a8962678551968242461",digest(shutdown.replace(
             "        captureOutContinuity(); // Freeze active telemetry before any stop/drain completions.\n","")))
         val natural="    bool naturalComplete()"+native.substringAfter("    bool naturalComplete()").substringBefore("    void beginStop()")
-        assertEquals("a7f2ab508d5298558e106f1a0d25da534ea3c2ca163ecf8e2e66a93e16e72195",digest(natural))
+        // Preserve every EOF/transport condition while allowing the reviewed reference-policy change.
+        val completionGate="!prefix->decoder.sequentialDecodeComplete()"
+        assertEquals(1,Regex(Regex.escape(completionGate)).findAll(natural).count())
+        assertEquals("a7f2ab508d5298558e106f1a0d25da534ea3c2ca163ecf8e2e66a93e16e72195",
+            digest(natural.replace(completionGate,"prefix->decoder.facts[fv::Md5Verification]!=1")))
         val feedback="    void feedbackPacket("+native.substringAfter("    void feedbackPacket(").substringBefore("    bool reapOne()")
         assertEquals("78b404608e4266de52ade3fcb483e5b71ffaecd9fd51cb42ccd166859319af8a",digest(feedback))
         val worker=native.substringAfter("    void run() {").substringBefore("std::mutex registryMutex;")

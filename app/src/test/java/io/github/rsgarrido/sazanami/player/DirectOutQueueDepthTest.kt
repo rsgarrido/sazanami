@@ -53,7 +53,16 @@ class DirectOutQueueDepthTest {
             Triple("    void shutdown()","    void run()","25c04ab055fddbb36f65869a63246732a4f54b662dc8b7f7b481f242cf85cb0b"),
             Triple("    bool naturalComplete()","    void beginStop()","a7f2ab508d5298558e106f1a0d25da534ea3c2ca163ecf8e2e66a93e16e72195"),
             Triple("    void beginStop()","    bool submit(","468ea597d112d02b59346dd0a8749065ed66f6ea91f35619bfbd8dafb9ddc7ce"))
-        for ((start,end,hash) in functions) assertEquals(start,hash,digest(start+native.substringAfter(start).substringBefore(end)))
+        for ((start,end,hash) in functions) {
+            val body=start+native.substringAfter(start).substringBefore(end)
+            // Only the source-reference eligibility gate changed; retain the transport algorithm pin.
+            val equivalent=if(start=="    bool naturalComplete()") {
+                val completionGate="!prefix->decoder.sequentialDecodeComplete()"
+                assertEquals(1,Regex(Regex.escape(completionGate)).findAll(body).count())
+                body.replace(completionGate,"prefix->decoder.facts[fv::Md5Verification]!=1")
+            } else body
+            assertEquals(start,hash,digest(equivalent))
+        }
         val submit=native.substringAfter("    bool submit(").substringBefore("    void packetExample(")
         assertEquals(2,Regex("durationReached\\(").findAll(submit).count())
         assertTrue(submit.indexOf("durationReached(")<submit.indexOf("queue.reserve("))

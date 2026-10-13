@@ -164,6 +164,63 @@ static void finishBounded(PrefixSource& source,const AwaitContext& context) {
         [&]{return finished.wait_for(std::chrono::seconds(0))==std::future_status::ready;});
     finished.get(); // Join completion precedes all existing decoder/cleanup assertions.
 }
+static void missingReferenceCompatibility() {
+    for(auto tuple:{std::pair<unsigned,unsigned>{44100,16},{48000,16},{48000,24},{96000,24}}) {
+        auto bytes=fixture(tuple.first,tuple.second,4096);
+        // STREAMINFO begins at byte 8; only its sixteen reference bytes change.
+        std::fill(bytes.begin()+26,bytes.begin()+42,0);
+        AwaitContext context{"missing-reference-eof",tuple.first,tuple.second};
+        auto source=std::make_unique<PrefixSource>(file(bytes),61,62,true);
+        source->start();assert(source->prime());consume(*source,4096,context);finishBounded(*source,context);
+        assert(!source->queue.faults && source->queue.eofReached && source->decoder.sequentialDecodeComplete());
+        assert(source->decoder.failure==Outcome::Md5Unavailable && source->decoder.facts[Md5Available]==0 && source->decoder.facts[Md5Verification]==0);
+        assert(source->decoder.pcm.frames==4096 && source->decoder.pcm.bytes==4096*source->queue.frameBytes());
+        assert(source->queue.consumedTotal==4096 && source->queue.depth()==0);
+        assert(source->queue.enqueuedHash==source->queue.consumedHash && source->queue.consumedHash==source->decoder.pcm.hash);
+        assert(source->joined && source->decoder.facts[FdClosed] && source->decoder.facts[DecoderDeleted]);
+
+        auto longBytes=fixture(tuple.first,tuple.second,32768);
+        std::fill(longBytes.begin()+26,longBytes.begin()+42,0);
+        context={"missing-reference-seek",tuple.first,tuple.second};
+        source=std::make_unique<PrefixSource>(file(longBytes),63,64,true);
+        source->start();assert(source->prime() && source->seekCapable());consume(*source,512,context);
+        reposition(*source,10037,1,context);consume(*source,32768-10037,context);
+        await(*source,context,"missing-reference-seek-eof","eofReached",[&]{return source->queue.eofReached.load(std::memory_order_acquire);});
+        finishBounded(*source,context);
+        assert(!source->queue.faults && source->decoder.failure==Outcome::SeekedEof && source->decoder.originalNext==32768);
+        assert(source->seekFirstProven && source->seekFirst==10037 && source->queue.sourceEpoch==1);
+        assert(source->queue.consumedTotal==512+32768-10037 && source->queue.sourceHead()==32768);
+        assert(source->decoder.facts[Md5Available]==0 && source->decoder.facts[Md5Verification]==0 && !source->decoder.sequentialDecodeComplete());
+
+        context={"missing-reference-stop",tuple.first,tuple.second};
+        source=std::make_unique<PrefixSource>(file(longBytes),69,70,true);
+        source->start();assert(source->prime());consume(*source,512,context);finishBounded(*source,context);
+        assert(!source->queue.eofReached && !source->decoder.sequentialDecodeComplete());
+        assert(source->decoder.failure==Outcome::Cancelled && source->decoder.facts[Md5Verification]==0);
+
+        // Valid frames with a wrong, nonzero reference fail only at final verification.
+        auto mismatch=fixture(tuple.first,tuple.second,4096);mismatch[26]^=1;
+        context={"nonzero-reference-mismatch",tuple.first,tuple.second};
+        source=std::make_unique<PrefixSource>(file(mismatch),65,66,true);
+        source->start();assert(!source->prime());finishBounded(*source,context);
+        assert(source->queue.faults.load()&PrefixMd5Mismatch);
+        assert(source->decoder.pcm.frames==4096 && source->decoder.facts[Md5Verification]==2 && !source->decoder.sequentialDecodeComplete());
+
+        for(unsigned damage=0;damage<3;++damage) {
+            auto invalid=bytes;
+            if(damage==0) invalid.back()^=1; // Frame CRC.
+            else if(damage==1) invalid.resize(invalid.size()-128); // Truncated audio.
+            else {invalid[21]&=0xf0;std::fill(invalid.begin()+22,invalid.begin()+26,0);} // Unknown 36-bit total.
+            context={damage==0?"missing-reference-crc":damage==1?"missing-reference-truncated":"missing-reference-unknown-total",tuple.first,tuple.second};
+            source=std::make_unique<PrefixSource>(file(invalid),67,68,true);
+            source->start();assert(!source->prime());finishBounded(*source,context);
+            assert(source->queue.faults && !source->queue.eofReached && !source->decoder.sequentialDecodeComplete());
+            if(damage==2) assert(source->queue.faults.load()&PrefixTotal);
+            else assert(source->decoder.failure!=Outcome::Exact && source->decoder.failure!=Outcome::Md5Unavailable);
+            assert(source->joined && source->decoder.facts[FdClosed] && source->decoder.facts[DecoderDeleted]);
+        }
+    }
+}
 static void predicateTransitionWakeups() {
     // Finite waiters exercise the production publication APIs, not a decoder/USB worker.
     // Handshakes put publication next to a false predicate check; no timing sleeps/hooks.
@@ -220,6 +277,7 @@ static void predicateTransitionWakeups() {
     }
 }
 int main() {
+    missingReferenceCompatibility();
     for(auto tuple: {std::pair<unsigned,unsigned>{44100,16},{48000,16},{48000,24},{96000,24}}) {
         AwaitContext context{"absolute-seeks",tuple.first,tuple.second};
         auto source=std::make_unique<PrefixSource>(file(fixture(tuple.first,tuple.second,32768)),1,2,true);
@@ -263,7 +321,7 @@ int main() {
         context={"short-file-md5",tuple.first,tuple.second};
         source=std::make_unique<PrefixSource>(file(fixture(tuple.first,tuple.second,4096)),3,4,true);
         source->start();assert(source->prime());consume(*source,4096,context);source->finish();
-        assert(source->decoder.failure==Outcome::Exact && source->decoder.facts[Md5Verification]==1);
+        assert(source->decoder.failure==Outcome::Exact && source->decoder.facts[Md5Verification]==1 && source->decoder.sequentialDecodeComplete());
         assert(source->queue.consumedHash==source->decoder.pcm.hash && source->decoder.pcm.frames==4096);
         context={"uninterrupted-backpressure-md5",tuple.first,tuple.second};
         source=std::make_unique<PrefixSource>(file(fixture(tuple.first,tuple.second,32768)),3,4,true);
@@ -275,7 +333,7 @@ int main() {
         assert(source->queue.consumedHash==pausedHash && source->queue.sourceHead()==pausedFrame);
         consume(*source,32768-1024,context);
         await(*source,context,"uninterrupted-eof","eofReached",[&]{return source->queue.eofReached.load(std::memory_order_acquire);});source->finish();
-        assert(source->decoder.failure==Outcome::Exact && source->decoder.facts[Md5Verification]==1 && source->queue.consumedHash==source->decoder.pcm.hash);
+        assert(source->decoder.failure==Outcome::Exact && source->decoder.facts[Md5Verification]==1 && source->decoder.sequentialDecodeComplete() && source->queue.consumedHash==source->decoder.pcm.hash);
     }
     AwaitContext context{"invalid-bound",48000,24,4096,1};
     auto source=std::make_unique<PrefixSource>(file(fixture(48000,24,4096)),5,6,true);

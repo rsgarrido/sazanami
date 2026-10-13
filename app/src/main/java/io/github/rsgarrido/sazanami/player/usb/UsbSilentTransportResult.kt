@@ -6,7 +6,8 @@ internal enum class UsbSilentPhase { CONFIGURING, STARTING_TRANSPORT, TRANSPORT_
 internal enum class UsbSilentStatus { NOT_ATTEMPTED, BLOCKED, FAILED, SILENT_TRANSPORT_VERIFIED, NON_AUTHORITATIVE, DETERMINISTIC_PCM_TRANSPORT_VERIFIED,
     BOUNDED_FLAC_USB_TRANSPORT_VERIFIED, FLAC_SOURCE_FAILED, FLAC_INPUT_OPEN_FAILED, QUEUE_PRIME_FAILED,
     SOURCE_EOF_BEFORE_DURATION, QUEUE_UNDERRUN, USB_CONFIGURATION_FAILED, USB_TRANSPORT_FAILED, RESOURCE_CLEANUP_FAILED, CANCELLED, FULL_FLAC_USB_TRANSPORT_VERIFIED, FLAC_MD5_UNAVAILABLE, FLAC_MD5_MISMATCH,
-    STREAMINFO_TOTAL_MISMATCH, TERMINAL_TAIL_ACCOUNTING_FAILED, OUT_POOL_STALL, SOURCE_VERIFICATION_STALLED, SEEKED_SEGMENTS_USB_TRANSPORT_VERIFIED }
+    STREAMINFO_TOTAL_MISMATCH, TERMINAL_TAIL_ACCOUNTING_FAILED, OUT_POOL_STALL, SOURCE_VERIFICATION_STALLED, SEEKED_SEGMENTS_USB_TRANSPORT_VERIFIED,
+    FULL_FLAC_USB_TRANSPORT_COMPLETE_MD5_UNAVAILABLE }
 internal data class UsbIsoFeedbackEvidence(val raw: Long, val length: Long, val packetStatus: Int, val elapsedUs: Long,
     val validity: UsbFeedbackValidity, val conservativeAgeUs: Long) {
     val bytes get() = (0 until minOf(length, 4L).toInt()).map { ((raw shr (it * 8)) and 0xff).toInt() }
@@ -127,7 +128,13 @@ internal data class UsbIsoTransportResult(val generation: Long, val streamGenera
         }
         return true // All remaining segments are checked/sealed online; the diagnostic cap is not the proof cap.
     }
-    private val fullVerified get() = valid && formatEvidenceValid && pauseEvidenceValid && shutdownAccounted && count("started")==1L && stopReason=="NATURAL_EOF_COMPLETE" &&
+    private val fullVerified get() = fullCompletionAccounting && count("md5VerificationPass")==1L
+    /** Exact host completion; the source snapshot must independently establish reference availability. */
+    val fullPlaybackComplete get() = counters.keys.containsAll(UsbIsoNativeStats.fields) &&
+        count("version")==UsbIsoNativeStats.VERSION.toLong() && count("generation")==generation && count("streamGeneration")==streamGeneration &&
+        count("sourceMode")==3L && count("seekConfirmed")==0L && count("sourceSeekAttempts")==0L &&
+        count("md5VerificationPass") in 0L..1L && fullCompletionAccounting
+    private val fullCompletionAccounting get() = valid && formatEvidenceValid && pauseEvidenceValid && shutdownAccounted && count("started")==1L && stopReason=="NATURAL_EOF_COMPLETE" &&
         count("transportDurationTargetUs")==0L && bytesPerFrame>0 && count("streamInfoTotalSamples") in 1L..(Long.MAX_VALUE/bytesPerFrame) &&
         count("feedbackPacketsValid")>0L && count("feedbackScheduledPackets")>0L &&
         listOf("sourceFramesGenerated","framesScheduled","framesSubmitted","framesCompleted","prefixSourceFramesConsumed")
@@ -136,7 +143,7 @@ internal data class UsbIsoTransportResult(val generation: Long, val streamGenera
             "feedbackTimeouts","shutdownIncomplete","unknownCompletions","duplicateCompletions","outCancelledUrbs",
             "outPoolStallEvents","sourceVerificationStalls","eofPaddingFrames","queueFramesAtNaturalCompletion",
             "prefetchedFramesDiscardedAtNaturalCompletion").all { counters[it]==0L } &&
-        listOf("trueEofReached","producerFinishedNaturally","md5VerificationPass","prefixProducerStopped","prefixProducerJoined")
+        listOf("trueEofReached","producerFinishedNaturally","prefixProducerStopped","prefixProducerJoined")
             .all { counters[it]==1L } && count("prefixSourceIntegrityMask")==0L &&
         count("finalSubmittedSourceFrame")==count("streamInfoTotalSamples")-1 &&
         count("finalCompletedSourceFrame")==count("streamInfoTotalSamples")-1 &&
@@ -275,6 +282,12 @@ internal data class UsbSilentTransportExperimentResult(val generation: Long, val
     val kernelRecovery get() = configuration?.kernelRecovery ?: UsbKernelBindingRecovery.INDETERMINATE
     val frameworkRecovery get() = configuration?.frameworkRecovery ?: UsbFrameworkEnumerationRecovery.INDETERMINATE
     val functionalRecovery get() = UsbFunctionalAudioRecovery.NOT_VERIFIED
+    /** Includes cross-snapshot PCM agreement and cleanup, without changing strict verification. */
+    val flacPlaybackComplete get() = originalFlacFdClosed==true && integratedCleanupSafe() && configuration?.let {
+        UsbFlacFullStatus.classify(it,transport,flacSource,nativeMemoryReleased) in setOf(
+            UsbSilentStatus.FULL_FLAC_USB_TRANSPORT_VERIFIED,UsbSilentStatus.FULL_FLAC_USB_TRANSPORT_COMPLETE_MD5_UNAVAILABLE,
+            UsbSilentStatus.SEEKED_SEGMENTS_USB_TRANSPORT_VERIFIED)
+    }==true
     /** The controller publishes only after closing its original SAF descriptor. */
     fun withFlacInputClosed(closed: Boolean, source: UsbFlacSourceResult?) = copy(
         originalFlacFdClosed = closed, flacSource = source ?: flacSource,
@@ -282,6 +295,8 @@ internal data class UsbSilentTransportExperimentResult(val generation: Long, val
             (!closed || (source ?: flacSource)?.clean != true)) UsbSilentStatus.RESOURCE_CLEANUP_FAILED
         else if (status==UsbSilentStatus.FULL_FLAC_USB_TRANSPORT_VERIFIED && (!closed || (source ?: flacSource)?.fullComplete!=true))
             UsbSilentStatus.RESOURCE_CLEANUP_FAILED
+        else if (status==UsbSilentStatus.FULL_FLAC_USB_TRANSPORT_COMPLETE_MD5_UNAVAILABLE &&
+            (!closed || (source ?: flacSource)?.referenceUnavailableComplete!=true)) UsbSilentStatus.RESOURCE_CLEANUP_FAILED
         else if(status==UsbSilentStatus.SEEKED_SEGMENTS_USB_TRANSPORT_VERIFIED && (!closed || (source ?: flacSource)?.seekComplete!=true))
             UsbSilentStatus.RESOURCE_CLEANUP_FAILED else status)
     fun invalidate(failure: UsbClockQueryStatus) = copy(status = UsbSilentStatus.NON_AUTHORITATIVE,

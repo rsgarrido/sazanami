@@ -48,7 +48,9 @@ internal fun formatIntegratedDirectPlayback(state: IntegratedDirectPlaybackState
     state.engine?.let { result ->
         appendLine("underlying Session 11 engine result=${result.status}; original descriptor closed=${result.originalFlacFdClosed}; native memory released=${result.nativeMemoryReleased}")
         result.flacSource?.let { source ->
-            appendLine("format=${source.count("sampleRate")}/${source.count("channels")}/${source.count("bitsPerSample")}; accepted=${source.count("metadataAccepted")}; MD5=${if(source.count("sourceSeekAttempts")>0L) "WHOLE_FILE_MD5_NOT_VERIFIED_AFTER_SEEK" else source.decoder?.md5Verification}; true EOF=${source.count("trueEofReached")}")
+            appendLine("format=${source.count("sampleRate")}/${source.count("channels")}/${source.count("bitsPerSample")}; accepted=${source.count("metadataAccepted")}; MD5=${source.md5Report}; true EOF=${source.count("trueEofReached")}")
+            appendLine("STREAMINFO MD5 reference available=${source.decoder?.counters?.get("md5ReferenceAvailable") ?: "unavailable"}; whole-file verification scope=${if(source.count("sourceSeekAttempts")>0L) "INVALIDATED_BY_SEEK" else "SEQUENTIAL"}")
+            appendLine("PCM consistency=${if(result.flacPlaybackComplete) "PASS" else "NOT_VERIFIED"}; USB transport completion=${if(result.transport?.let { it.fullPlaybackComplete || it.seekVerified }==true) "PASS" else "NOT_VERIFIED"}")
             appendLine("decoded=${source.count("framesDecoded")}; enqueued=${source.count("framesEnqueued")}; consumed=${source.count("framesConsumedFromQueue")}; prepared=${source.count("preparedButUnsubmittedFrames")}; discarded=${source.count("prefetchedFramesDiscardedAtStop")}")
             appendLine("source faults=${source.reasons.joinToString()}; source released=${source.count("queueReleased")}; producer joined=${source.count("producerJoined")}")
         }
