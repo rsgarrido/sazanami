@@ -32,6 +32,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -128,6 +129,12 @@ fun SettingsScreen(
     scrollState: ScrollState = rememberScrollState(),
     modifier: Modifier = Modifier
 ) {
+    var isUsbAudioVisible by rememberSaveable { mutableStateOf(false) }
+    if (isUsbAudioVisible) {
+        UsbAudioSettingsScreen(onBack = { isUsbAudioVisible = false },
+            onDiagnostics = { isUsbAudioVisible = false; onDiagnosticsClick() }, modifier = modifier)
+        return
+    }
     var isPlayerThemeDialogVisible by remember { mutableStateOf(false) }
     var isFontDialogVisible by remember { mutableStateOf(false) }
     var isAppAppearanceDialogVisible by remember { mutableStateOf(false) }
@@ -306,6 +313,15 @@ fun SettingsScreen(
             description = stringResource(R.string.settings_playback_section_summary),
             icon = AppShellIcons.Equalizer
         ) {
+            SettingsRow(
+                title = stringResource(R.string.usb_settings_title),
+                summary = stringResource(R.string.usb_settings_entry_summary),
+                icon = AppShellIcons.AudioRoute,
+                onClick = { isUsbAudioVisible = true },
+                navigationContentDescription = stringResource(R.string.usb_settings_open)
+            )
+            SettingsDivider()
+
             SettingsRow(
                 title = stringResource(R.string.settings_smooth_play_pause),
                 summary = stringResource(R.string.settings_smooth_play_pause_summary),

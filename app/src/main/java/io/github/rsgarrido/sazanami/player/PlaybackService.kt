@@ -669,8 +669,14 @@ class PlaybackService : MediaLibraryService() {
                 lastAudioRuntime?.let { runtime -> physicalPlayers.updateCrossfadeConfiguration(runtime.crossfade);applyAudioProcessingPolicy(runtime,runtime.crossfade.enabled) }
                 physicalPlayers.logicalPhysicalPlayer
             },acquireFocus=::acquireDirectFocus,releaseFocus=::releaseDirectFocus,
-            predecessorReleased={ previousDirectTeardown==null || previousDirectTeardown.safe==true })
+            predecessorReleased={ previousDirectTeardown==null || previousDirectTeardown.safe==true },
+            selection=io.github.rsgarrido.sazanami.player.usb.UsbOutputSelectionCallbacks { usbAudioController })
         IntegratedDirectPlaybackBridge.attach(sessionPlayer)
+        serviceScope.launch {
+            io.github.rsgarrido.sazanami.player.usb.UsbAudioDiagnosticBridge.state.collect {
+                sessionPlayer.usbSelectionChanged()
+            }
+        }
         physicalPlayers.attachLogicalPlayer(
             player = normalSessionPlayer,
             integration = activePlayerIntegration

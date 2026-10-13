@@ -69,6 +69,12 @@ internal object UsbFsDiagnostics {
     }
 
     private external fun nativeApiVersion(): Int
+    /** Activation-only explanation; keep historical diagnostic idle checks unchanged. */
+    fun integratedAvailabilityFailure(): String? {
+        if (!available) return "DIRECT_NATIVE_UNAVAILABLE"
+        return try { if (nativeSilentTransportIdle()) null else "DIRECT_NATIVE_BUSY" }
+        catch (_: Throwable) { "DIRECT_NATIVE_IDLE_CHECK_FAILED" }
+    }
     fun silentTransportIdle(): Boolean = available && runCatching { nativeSilentTransportIdle() }.getOrDefault(false)
     private external fun nativeSilentTransportIdle(): Boolean
     fun referencePreflight(): UsbReferencePreflight = try {

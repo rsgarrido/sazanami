@@ -62,7 +62,7 @@ class IntegratedDirectDiagnosticAccessTest {
         assertTrue(service.contains("ExperimentalUsbPlaybackPlayer(normalSessionPlayer,serviceScope"))
         assertTrue(service.contains("physicalPlayers.releaseForDirect()"))
         val route=source("player/ExperimentalUsbPlaybackPlayer.kt")
-        assertTrue(route.contains("selectedDirect && !normalReleaseSafe"))
+        assertTrue(route.contains("selectedDirect && (!normalReleaseSafe || !selectionHandedOff"))
         assertTrue(route.indexOf("direct.stopAndJoin()")<route.indexOf("recreateNormal()"))
         assertTrue(source("player/DirectUsbMediaPlayer.kt").contains("usb.runIntegratedFull(song.uri,commands)"))
     }

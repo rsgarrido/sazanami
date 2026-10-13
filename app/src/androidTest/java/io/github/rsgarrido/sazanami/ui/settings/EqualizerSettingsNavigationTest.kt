@@ -90,6 +90,11 @@ class EqualizerSettingsNavigationTest {
         composeRule.runOnIdle {
             assertTrue(opened)
         }
+        composeRule.onNodeWithContentDescription("Open USB Audio settings")
+            .performScrollTo()
+            .performClick()
+        composeRule.onNodeWithText("Audio output").assertExists()
+        composeRule.onNodeWithText("USB Direct (Experimental)").assertExists()
     }
 
     @Test

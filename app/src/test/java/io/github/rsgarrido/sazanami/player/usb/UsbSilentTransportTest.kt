@@ -458,7 +458,7 @@ class UsbSilentTransportTest {
         val native = source("cpp/usb_iso_transport.cpp") + source("cpp/usb_iso_core.h")
         listOf("USBDEVFS_RESET", "USBDEVFS_SETCONFIGURATION", "USBDEVFS_CONNECT", "USBDEVFS_DISCONNECT", "sin(", "libusb", "AudioTrack", "AudioSink").forEach { assertFalse(native.contains(it)) }
     }
-    @Test fun actionIsDebugOnlyAndNeverAutomaticPlayback() { val controller = source("java/io/github/rsgarrido/sazanami/player/usb/UsbAudioController.kt"); assertTrue(controller.contains("if (BuildConfig.DEBUG) runConfigurationDiagnostic(identity, silentRun = true)")); assertFalse(controller.contains("setPreferredMixerAttributes")); assertFalse(controller.contains("AudioTrack(")) }
+    @Test fun actionIsDebugOnlyAndNeverAutomaticPlayback() { val controller = source("java/io/github/rsgarrido/sazanami/player/usb/UsbAudioController.kt"); assertTrue(controller.contains("if (developerOperationsAllowed()) runConfigurationDiagnostic(identity, silentRun = true)")); assertTrue(controller.contains("UsbPlaybackOperation.DEVELOPER_EXPERIMENT, BuildConfig.DEBUG")); assertFalse(controller.contains("setPreferredMixerAttributes")); assertFalse(controller.contains("AudioTrack(")) }
 
     @Test fun configurationIsReusedBeforeEndpointWorkAndIdleAfterward() {
         val fake = ConfigurationFake(); val backend = BackendFake(fake.events)
@@ -673,7 +673,7 @@ class UsbSilentTransportTest {
         val jni = source("java/io/github/rsgarrido/sazanami/player/usb/UsbFsDiagnostics.kt")
         assertFalse(jni.contains("pcm: ByteArray")); assertTrue(jni.contains("mode.ordinal"))
         val controller = source("java/io/github/rsgarrido/sazanami/player/usb/UsbAudioController.kt")
-        assertTrue(controller.contains("if (BuildConfig.DEBUG) runConfigurationDiagnostic(identity, silentRun = true, mode = UsbPcmDiagnosticMode.REFERENCE)"))
+        assertTrue(controller.contains("if (developerOperationsAllowed()) runConfigurationDiagnostic(identity, silentRun = true, mode = UsbPcmDiagnosticMode.REFERENCE)"))
     }
     private fun prefixEvidence(vararg changes: Pair<String,Long>): UsbFlacSourceResult {
         val values = mutableMapOf("version" to 4L,"generation" to 17L,"streamGeneration" to 23L,

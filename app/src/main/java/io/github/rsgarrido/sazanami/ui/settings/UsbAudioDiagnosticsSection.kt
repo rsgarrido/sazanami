@@ -106,50 +106,52 @@ internal fun UsbAudioDiagnosticsSection() {
                 Text(stringResource(if (state.clockDiagnostics?.phase == UsbClockDiagnosticPhase.QUERYING)
                     R.string.usb_diagnostics_querying_clock else R.string.usb_diagnostics_query_clock))
             }
-            OutlinedButton(
-                onClick = { UsbAudioDiagnosticBridge.testAudioControlClaim(selected.identity) },
-                enabled = state.serviceAvailable && selected.hasPermission && state.descriptors != null &&
-                    !state.diagnosticOperationRunning,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(stringResource(if (state.clockDiagnostics?.phase == UsbClockDiagnosticPhase.QUERYING &&
-                    state.clockDiagnostics?.claimExperiment != null) R.string.usb_diagnostics_testing_claim
-                    else R.string.usb_diagnostics_test_claim))
-            }
-            Text(stringResource(R.string.usb_diagnostics_claim_note), style = MaterialTheme.typography.bodySmall)
-            OutlinedButton(
-                onClick = { UsbAudioDiagnosticBridge.inspectKernelOwnership(selected.identity) },
-                enabled = state.serviceAvailable && selected.hasPermission && state.descriptors != null && !state.diagnosticOperationRunning,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(stringResource(if (state.usbFsDiagnostics?.status == UsbFsProbeStatus.QUERYING)
-                    R.string.usb_diagnostics_inspecting_kernel else R.string.usb_diagnostics_inspect_kernel))
-            }
-            Text(stringResource(R.string.usb_diagnostics_kernel_note), style = MaterialTheme.typography.bodySmall)
-            Text(stringResource(R.string.usb_diagnostics_force_note), style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error)
-            // Known manual evidence is visible without asking for another forced run.
-            Text(stringResource(R.string.usb_diagnostics_manual_ka15_note), style = MaterialTheme.typography.bodySmall)
-            OutlinedButton(
-                onClick = { UsbAudioDiagnosticBridge.forceOwnAudioControl(selected.identity) },
-                enabled = state.serviceAvailable && selected.hasPermission && state.descriptors != null &&
-                    !state.diagnosticOperationRunning && state.usbFsDiagnostics?.let {
-                        it.generation == state.generation && it.status == UsbFsProbeStatus.RECORDED && it.plan.audioControl != null
-                    } == true,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(stringResource(if (state.forcedExperiment?.phase == UsbForcedPhase.QUERYING)
-                    R.string.usb_diagnostics_forcing else R.string.usb_diagnostics_force))
-            }
-            Text(stringResource(R.string.usb_diagnostics_configure_note), style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error)
-            OutlinedButton(
-                onClick = { UsbAudioDiagnosticBridge.configurePcm16(selected.identity) },
-                enabled = state.serviceAvailable && selected.hasPermission && state.descriptors != null && !state.diagnosticOperationRunning,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(stringResource(if (state.configurationExperiment?.phase == UsbConfigurationPhase.QUERYING)
-                    R.string.usb_diagnostics_configuring else R.string.usb_diagnostics_configure))
+            if (BuildConfig.DEBUG) {
+                OutlinedButton(
+                    onClick = { UsbAudioDiagnosticBridge.testAudioControlClaim(selected.identity) },
+                    enabled = state.serviceAvailable && selected.hasPermission && state.descriptors != null &&
+                        !state.diagnosticOperationRunning,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(if (state.clockDiagnostics?.phase == UsbClockDiagnosticPhase.QUERYING &&
+                        state.clockDiagnostics?.claimExperiment != null) R.string.usb_diagnostics_testing_claim
+                        else R.string.usb_diagnostics_test_claim))
+                }
+                Text(stringResource(R.string.usb_diagnostics_claim_note), style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(
+                    onClick = { UsbAudioDiagnosticBridge.inspectKernelOwnership(selected.identity) },
+                    enabled = state.serviceAvailable && selected.hasPermission && state.descriptors != null && !state.diagnosticOperationRunning,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(if (state.usbFsDiagnostics?.status == UsbFsProbeStatus.QUERYING)
+                        R.string.usb_diagnostics_inspecting_kernel else R.string.usb_diagnostics_inspect_kernel))
+                }
+                Text(stringResource(R.string.usb_diagnostics_kernel_note), style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.usb_diagnostics_force_note), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error)
+                // Known manual evidence is visible without asking for another forced run.
+                Text(stringResource(R.string.usb_diagnostics_manual_ka15_note), style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(
+                    onClick = { UsbAudioDiagnosticBridge.forceOwnAudioControl(selected.identity) },
+                    enabled = state.serviceAvailable && selected.hasPermission && state.descriptors != null &&
+                        !state.diagnosticOperationRunning && state.usbFsDiagnostics?.let {
+                            it.generation == state.generation && it.status == UsbFsProbeStatus.RECORDED && it.plan.audioControl != null
+                        } == true,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(if (state.forcedExperiment?.phase == UsbForcedPhase.QUERYING)
+                        R.string.usb_diagnostics_forcing else R.string.usb_diagnostics_force))
+                }
+                Text(stringResource(R.string.usb_diagnostics_configure_note), style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error)
+                OutlinedButton(
+                    onClick = { UsbAudioDiagnosticBridge.configurePcm16(selected.identity) },
+                    enabled = state.serviceAvailable && selected.hasPermission && state.descriptors != null && !state.diagnosticOperationRunning,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(if (state.configurationExperiment?.phase == UsbConfigurationPhase.QUERYING)
+                        R.string.usb_diagnostics_configuring else R.string.usb_diagnostics_configure))
+                }
             }
             if (BuildConfig.DEBUG) {
                 Text(stringResource(R.string.usb_diagnostics_silent_note), style = MaterialTheme.typography.bodyMedium,

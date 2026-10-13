@@ -2,8 +2,11 @@ package io.github.rsgarrido.sazanami.player
 
 import io.github.rsgarrido.sazanami.player.usb.*
 
+internal enum class DirectOutputSwitch { TO_USB, TO_ANDROID }
 internal enum class IntegratedDirectPhase { IDLE, PREPARING, PLAYING, PAUSING, PAUSED, RESUMING, STOPPING, STOPPED, ENDED, ERROR, SEEKING }
 internal data class IntegratedDirectPlaybackState(
+    val serviceAvailable: Boolean=false, val switching: DirectOutputSwitch?=null,
+    val activation: UsbActivationEvidence?=null,
     val enabled: Boolean=false, val phase: IntegratedDirectPhase=IntegratedDirectPhase.IDLE,
     val generation: Long=0, val libraryId: Long?=null, val completedFrames: Long=0, val totalFrames: Long=0,
     val metadataDurationMs: Long=0, val error: String?=null, val notice: String?=null,
@@ -15,6 +18,8 @@ internal data class IntegratedDirectPlaybackState(
     val pauseRequests: Long=0,val resumeRequests: Long=0,val nativePauseCounters: Map<String,Long> = emptyMap(),
     val sourcePositionFrame: Long?=null,val sourceEpoch: Long=0,val seekCapable: Boolean=false,val pendingSeekSerial: Long=0
 ) {
+    val confirmedDirect get()=enabled && normalReleased && switching != DirectOutputSwitch.TO_USB &&
+        (activation == null || activation.reservation == UsbActivationReservation.PROTECTED)
     val positionMs get()=(if (UsbDirectPcmFormat.supportsRate(sampleRateHz)) completedFramePositionMs(sourcePositionFrame ?: completedFrames,sampleRateHz) else 0L).coerceAtMost(durationMs)
     val durationMs get()=if (totalFrames>0) {
         if (UsbDirectPcmFormat.supportsRate(sampleRateHz)) completedFramePositionMs(totalFrames,sampleRateHz) else 0L

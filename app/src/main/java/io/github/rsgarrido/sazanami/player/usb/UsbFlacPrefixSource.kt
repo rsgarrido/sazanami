@@ -118,7 +118,12 @@ internal object UsbFlacSourceEvidence {
 }
 @Keep internal object UsbFlacPrefixNative {
     private val available by lazy { runCatching { System.loadLibrary("sazanami_usb_diagnostics"); true }.getOrDefault(false) }
-    fun create(fd: Int,generation: Long,stream: Long,fullTrack: Boolean=false): Long { check(BuildConfig.DEBUG && available);return nativeCreate(fd,generation,stream,fullTrack) }
+    fun create(fd: Int,generation: Long,stream: Long,fullTrack: Boolean=false,
+        operation: UsbPlaybackOperation=UsbPlaybackOperation.DEVELOPER_EXPERIMENT): Long {
+        check(available && UsbPlaybackPolicy.allows(operation, BuildConfig.DEBUG,
+            authorized = operation == UsbPlaybackOperation.INTEGRATED_PLAYBACK && fullTrack))
+        return nativeCreate(fd,generation,stream,fullTrack)
+    }
     fun prime(handle: Long,generation: Long,stream: Long)=UsbFlacSourceEvidence.decode(nativePrime(handle,generation,stream),generation,stream)
     fun healthy(handle: Long,generation: Long,stream: Long)=nativeHealthy(handle,generation,stream)
     fun stop(handle: Long,generation: Long,stream: Long)=nativeStop(handle,generation,stream)
@@ -137,8 +142,9 @@ internal interface UsbFlacSourceLifecycle {
     suspend fun prepare(access: () -> UsbClockQueryStatus?): Boolean
     suspend fun finish()
 }
-/** One narrow debug source owner. Every native operation uses both attachment and stream identities. */
-internal class UsbFlacPrefixSource(private val fd: Int,private val generation: Long,private val stream: Long, private val fullTrack: Boolean=false) : UsbFlacSourceLifecycle {
+/** One narrow source owner. Every native operation uses both attachment and stream identities. */
+internal class UsbFlacPrefixSource(private val fd: Int,private val generation: Long,private val stream: Long, private val fullTrack: Boolean=false,
+    private val operation: UsbPlaybackOperation=UsbPlaybackOperation.DEVELOPER_EXPERIMENT) : UsbFlacSourceLifecycle {
     @Volatile override var handle=0L; private set
     override var result=UsbFlacSourceResult(); private set
     @Volatile private var stopRequested=false
@@ -148,7 +154,7 @@ internal class UsbFlacPrefixSource(private val fd: Int,private val generation: L
         val parent=currentCoroutineContext()
         withContext(NonCancellable) {
             try {
-                handle=UsbFlacPrefixNative.create(fd,generation,stream,fullTrack)
+                handle=UsbFlacPrefixNative.create(fd,generation,stream,fullTrack,operation)
                 if (handle<0) {
                     result=UsbFlacSourceResult(mapOf("sourceIntegrityMask" to 8192L,"createErrno" to -handle), exceptionType="NativeDuplicateFailed")
                     handle=0;return@withContext

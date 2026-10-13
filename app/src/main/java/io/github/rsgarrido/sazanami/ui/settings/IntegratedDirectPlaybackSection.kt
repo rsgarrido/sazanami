@@ -20,21 +20,21 @@ import io.github.rsgarrido.sazanami.player.*
 
 /** Requests only; playback/cleanup lifetime belongs to PlaybackService. */
 @Composable internal fun IntegratedDirectPlaybackSection(showModeSwitch: Boolean=true) {
-    if(!BuildConfig.DEBUG) return
     val state by IntegratedDirectPlaybackBridge.state.collectAsState()
     val latest by IntegratedDirectPlaybackBridge.latestAttempt.collectAsState()
     val context=LocalContext.current
     if(!showModeSwitch && !state.enabled) return
     Text(stringResource(R.string.usb_integrated_title),style=MaterialTheme.typography.titleMedium)
-    if(showModeSwitch) {
+    if(showModeSwitch && BuildConfig.DEBUG) {
         Text(stringResource(R.string.usb_integrated_warning))
         OutlinedButton(onClick={ IntegratedDirectPlaybackBridge.select(!state.enabled) }) {
             Text(stringResource(if(state.enabled) R.string.usb_integrated_disable else R.string.usb_integrated_enable))
         }
     }
+    state.error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
+    state.activation?.let { UsbActivationResultSection(it, showFailure = state.error == null) }
     if(state.enabled) {
         Text("DIRECT_USB: ${state.phase}; ${state.positionMs}/${state.durationMs} ms")
-        state.error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
         state.notice?.let { Text(it) }
         if(state.busy) OutlinedButton(onClick=IntegratedDirectPlaybackBridge::stop) { Text(stringResource(R.string.usb_integrated_stop)) }
         else if(state.libraryId!=null && state.cleanupSafe && state.normalReleased)
