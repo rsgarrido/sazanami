@@ -2,6 +2,7 @@ package io.github.rsgarrido.sazanami.lyrics
 
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.ui.state.PlaybackUiState
+import io.github.rsgarrido.sazanami.ui.state.PlaybackProgressUiState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -19,7 +20,8 @@ class LyricsPlaybackController(
     private val positionSource: LyricsPositionSource,
     private val scope: CoroutineScope,
     private val tickerIntervalMs: Long = DEFAULT_TICKER_INTERVAL_MS,
-    private val monotonicTimeMs: () -> Long = { System.nanoTime() / 1_000_000L }
+    private val monotonicTimeMs: () -> Long = { System.nanoTime() / 1_000_000L },
+    private val authoritativeProgress: StateFlow<PlaybackProgressUiState>? = null
 ) {
     private val _uiState = kotlinx.coroutines.flow.MutableStateFlow<LyricsPlaybackUiState>(
         LyricsPlaybackUiState.Hidden
@@ -45,6 +47,13 @@ class LyricsPlaybackController(
                     isPlaying = state.isPlaying
                     updatePositionNow()
                     updateTicker()
+                }
+            }
+        }
+        authoritativeProgress?.let { progress ->
+            scope.launch {
+                progress.collect { position ->
+                    if (position.isDirect && isVisible) updatePositionNow()
                 }
             }
         }
@@ -74,6 +83,13 @@ class LyricsPlaybackController(
     }
 
     fun onSeek(positionMs: Long) {
+        // Direct acceptance is not completion. Rejected and superseded requests must not
+        // invent a lyric position; the service already withholds unconfirmed source epochs.
+        if (authoritativeProgress?.value?.isDirect == true) {
+            pendingSeek = null
+            updatePositionNow()
+            return
+        }
         pendingSeek = PendingSeek(
             positionMs = positionMs,
             expiresAtMs = monotonicTimeMs() + PENDING_SEEK_WINDOW_MS
@@ -130,7 +146,13 @@ class LyricsPlaybackController(
 
     private fun updatePositionNow() {
         if (currentContent is Content.Synced) {
-            updateReportedPosition(positionSource.currentPositionMs())
+            val confirmed = authoritativeProgress?.value
+            if (confirmed?.isDirect == true) {
+                pendingSeek = null
+                if (!confirmed.isSeeking) updatePosition(confirmed.currentPosition.toLong())
+            } else {
+                updateReportedPosition(positionSource.currentPositionMs())
+            }
         } else {
             publish()
         }

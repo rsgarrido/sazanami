@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertCountEquals
@@ -17,11 +19,15 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.geometry.Offset
 import io.github.rsgarrido.sazanami.data.Song
+import io.github.rsgarrido.sazanami.R
+import io.github.rsgarrido.sazanami.ui.state.LocalPlaybackPlayPauseIntent
+import io.github.rsgarrido.sazanami.ui.state.LocalPlaybackStatus
 import io.github.rsgarrido.sazanami.lyrics.ActiveLyricGroup
 import io.github.rsgarrido.sazanami.lyrics.LyricCue
 import io.github.rsgarrido.sazanami.lyrics.LyricCueContent
@@ -40,6 +46,19 @@ import org.junit.Test
 import kotlin.math.abs
 
 class LyricsScreenTest {
+    @Test
+    fun nativeTransitionUsesIntentActionAndDoesNotAnnounceConfirmedPause() {
+        val seeking = composeRule.activity.getString(R.string.player_playback_seeking)
+        var requestedPause = false
+        setContent(LyricsPlaybackUiState.Loading(song()), onPlayPause = { requestedPause = true },
+            playPauseIntent = true, playbackStatus = seeking)
+        composeRule.onNodeWithContentDescription(composeRule.activity.getString(R.string.lyrics_pause)).assertExists()
+        assertEquals(seeking, composeRule.onNodeWithTag(LyricsPlayPauseTag)
+            .fetchSemanticsNode().config[SemanticsProperties.StateDescription])
+        composeRule.onNodeWithTag(LyricsPlayPauseTag).performClick()
+        composeRule.runOnIdle { assertTrue(requestedPause) }
+    }
+
     @get:Rule
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
@@ -335,24 +354,29 @@ class LyricsScreenTest {
         onBack: () -> Unit = {},
         onPlayPause: () -> Unit = {},
         onSeek: (Int) -> Unit = {},
-        onReturn: () -> Unit = {}
+        onReturn: () -> Unit = {},
+        playPauseIntent: Boolean? = null,
+        playbackStatus: String? = null
     ) {
         composeRule.setContent {
             MaterialTheme {
-                val transitionState = rememberPlayerLyricsTransitionState(true) {}
-                LyricsScreen(
-                    state = state,
-                    isPlaying = false,
-                    transitionState = transitionState,
-                    interactive = true,
-                    onBack = onBack,
-                    onPlayPause = onPlayPause,
-                    onSeek = onSeek,
-                    onSuspendAutoFollow = {},
-                    onReturnToCurrentLine = onReturn,
-                    onRescan = {},
-                    onOpenSettings = {}
-                )
+                CompositionLocalProvider(LocalPlaybackPlayPauseIntent provides playPauseIntent,
+                    LocalPlaybackStatus provides playbackStatus) {
+                    val transitionState = rememberPlayerLyricsTransitionState(true) {}
+                    LyricsScreen(
+                        state = state,
+                        isPlaying = false,
+                        transitionState = transitionState,
+                        interactive = true,
+                        onBack = onBack,
+                        onPlayPause = onPlayPause,
+                        onSeek = onSeek,
+                        onSuspendAutoFollow = {},
+                        onReturnToCurrentLine = onReturn,
+                        onRescan = {},
+                        onOpenSettings = {}
+                    )
+                }
             }
         }
     }

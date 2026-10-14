@@ -640,7 +640,8 @@ class MusicViewModel(
         positionSource = LyricsPositionSource(
             playbackController::getCurrentPositionForLyrics
         ),
-        scope = viewModelScope
+        scope = viewModelScope,
+        authoritativeProgress = playbackController.progressState
     )
     val lyricsPlaybackUiState = lyricsPlaybackController.uiState
 

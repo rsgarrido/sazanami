@@ -1,5 +1,7 @@
 package io.github.rsgarrido.sazanami.ui.player.modern
 
+import io.github.rsgarrido.sazanami.ui.state.playbackPlayPauseShowsPause
+
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -221,12 +223,12 @@ private fun ModernPlayerPlayPauseButton(
             modifier = Modifier.fillMaxSize()
         ) {
             Icon(
-                imageVector = if (isPlaying) {
+                imageVector = if (playbackPlayPauseShowsPause(isPlaying)) {
                     Icons.Filled.Pause
                 } else {
                     Icons.Filled.PlayArrow
                 },
-                contentDescription = stringResource(if (isPlaying) R.string.player_pause else R.string.player_play),
+                contentDescription = stringResource(if (playbackPlayPauseShowsPause(isPlaying)) R.string.player_pause else R.string.player_play),
                 tint = iconColor,
                 modifier = Modifier.size(
                     (appearance.size.primarySizeDp * 0.61f * controlScale).dp

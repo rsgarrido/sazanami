@@ -1,5 +1,7 @@
 package io.github.rsgarrido.sazanami.ui.player.pocketdisc
 
+import io.github.rsgarrido.sazanami.ui.state.playbackPlayPauseShowsPause
+
 import android.R as AndroidR
 import io.github.rsgarrido.sazanami.R
 import androidx.compose.foundation.Canvas
@@ -639,8 +641,8 @@ private fun PocketDiscTransportControls(
                 active = true
             ) {
                 Icon(
-                    imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = stringResource(if (isPlaying) R.string.player_pause else R.string.player_play),
+                    imageVector = if (playbackPlayPauseShowsPause(isPlaying)) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = stringResource(if (playbackPlayPauseShowsPause(isPlaying)) R.string.player_pause else R.string.player_play),
                     tint = colors.lcdText,
                     modifier = Modifier.size(if (compact) 24.dp else 28.dp)
                 )

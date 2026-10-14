@@ -1,5 +1,7 @@
 package io.github.rsgarrido.sazanami.ui.player.pocketcassette
 
+import io.github.rsgarrido.sazanami.ui.state.playbackPlayPauseShowsPause
+
 import io.github.rsgarrido.sazanami.ui.state.rememberDirectSeekGestureControl
 import io.github.rsgarrido.sazanami.ui.state.directSeekPositionInput
 import androidx.compose.foundation.Canvas
@@ -154,9 +156,9 @@ internal fun PocketCassetteControls(
                 modifier = Modifier.weight(1f)
             )
             PocketCassetteMechanicalButton(
-                icon = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                label = stringResource(if (isPlaying) R.string.player_cassette_pause else R.string.player_cassette_play),
-                contentDescription = stringResource(if (isPlaying) R.string.player_pause else R.string.player_play),
+                icon = if (playbackPlayPauseShowsPause(isPlaying)) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                label = stringResource(if (playbackPlayPauseShowsPause(isPlaying)) R.string.player_cassette_pause else R.string.player_cassette_play),
+                contentDescription = stringResource(if (playbackPlayPauseShowsPause(isPlaying)) R.string.player_pause else R.string.player_play),
                 onClick = onPlayPauseClick,
                 compact = compact,
                 accent = true,

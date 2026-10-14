@@ -17,6 +17,72 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class UsbOutputSwitchingTest {
+    @Test fun activeDirectRuntimeRejectsQueueReplacementWithoutNativeOrLogicalCommands() = checkRoute { f ->
+        f.released.complete(true);f.route.selectDirect(true);settled(f)
+        f.route.setMediaItem(song.toPlayableMediaItem());f.route.prepare();yield()
+        val playing = CompletableDeferred<Unit>()
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) playing.complete(Unit)
+            }
+        }
+        f.route.addListener(listener)
+        try {
+            // The forwarding player's state refresh follows the wrapped player's posted onEvents.
+            f.engine.progress(UsbFullProgress(44100, 441000, 44100, UsbFullTransportPhase.PLAYING))
+            withTimeout(5000) { playing.await() }
+        } finally {
+            f.route.removeListener(listener)
+        }
+        assertTrue(f.route.isPlaying)
+        val intent = f.engine.control.intent()
+        val original = f.route.currentMediaItem
+        var callbacks = 0
+        val runtime = Media3PlaybackQueueRuntime(f.route, { false }, { listOf(song) },
+            { callbacks++ }, { _, _ -> callbacks++ })
+        assertFalse(runtime.canReplaceTimeline())
+        try {
+            runtime.replaceTimeline(PlaybackQueueRestoration("other", emptyList(), "other-entry", 0,
+                true, false, io.github.rsgarrido.sazanami.data.local.PersistedQueueRepeatMode.OFF))
+            fail("Direct queue activation must reject before touching playback")
+        } catch (_: IllegalStateException) {
+            // The existing service runtime cannot bypass the Direct adapter's command boundary.
+        }
+        assertEquals(0, callbacks)
+        assertEquals(intent, f.engine.control.intent())
+        assertEquals(original, f.route.currentMediaItem)
+        assertEquals(1, f.engine.starts)
+        assertEquals(0, f.engine.stops)
+        assertTrue(f.route.isPlaying)
+    }
+
+    @Test fun emptyActivationAndNativeSelectionProjectMetadataWithoutChangingAndroidSnapshot() = checkRoute { f ->
+        val androidUi = io.github.rsgarrido.sazanami.ui.state.PlaybackUiState(currentSong = song, isPlaying = true)
+        f.released.complete(true);f.route.selectDirect(true);settled(f)
+        assertNull(f.route.currentMediaItem)
+        assertNull(directPlaybackUiState(androidUi, f.route.directState, listOf(song)).currentSong)
+        assertEquals(0, f.engine.starts)
+
+        f.route.setMediaItem(song.toPlayableMediaItem());f.route.prepare();yield()
+        val directUi = directPlaybackUiState(androidUi, f.route.directState, listOf(song))
+        assertEquals(song, directUi.currentSong)
+        assertFalse(directUi.isPlaying)
+        assertEquals(true, directUi.playPauseIntent)
+        assertEquals(1, f.engine.starts)
+
+        f.engine.terminal.complete(terminal(true).copy(status = UsbSilentStatus.USB_TRANSPORT_FAILED))
+        withTimeout(5000) { while (f.route.directState.phase != IntegratedDirectPhase.ERROR) yield() }
+        f.route.selectDirect(false);settled(f)
+        assertEquals(song.id.toString(), f.route.currentMediaItem?.mediaId)
+        assertEquals(2000L, f.route.currentPosition)
+        assertFalse(f.route.playWhenReady)
+        f.route.selectDirect(true);settled(f)
+        // Re-selecting an existing adapter reports its real item, without starting another engine.
+        assertEquals(f.route.currentMediaItem?.mediaId?.toLong(), f.route.directState.libraryId)
+        assertEquals(song, directPlaybackUiState(directUi, f.route.directState, listOf(song)).currentSong)
+        assertEquals(1, f.engine.starts)
+    }
+
     private val song = Song(12, "Track", "Artist", "Album", 1, 10000,
         Uri.parse("content://media/external/audio/media/12"), "private", "private", null)
 

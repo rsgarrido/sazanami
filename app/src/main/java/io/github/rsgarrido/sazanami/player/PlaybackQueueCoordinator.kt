@@ -98,6 +98,8 @@ internal fun captureCanonicalBaseEntryIds(
 }
 
 internal interface PlaybackQueueRuntime {
+    /** Checked again after suspended resolution, before activation has any playback side effects. */
+    fun canReplaceTimeline(): Boolean = true
     fun captureSnapshot(): LivePlaybackQueueSnapshot?
     fun replaceTimeline(restoration: PlaybackQueueRestoration)
     fun captureForBackupRestore(): BackupRestorePlaybackSnapshot? = null
@@ -416,11 +418,13 @@ internal class PlaybackQueueCoordinator(
         displayName: String,
         songs: List<Song>
     ): PlaybackQueueWithEntries? = mutex.withLock {
-        if (backupRestoreInProgress) return@withLock null
+        if (backupRestoreInProgress || !runtime.canReplaceTimeline()) return@withLock null
         if (songs.isEmpty()) return@withLock null
         persistActiveQueueSnapshotLocked()
-        val creation = createPopulatedQueueLocked(displayName, songs)
+        if (!runtime.canReplaceTimeline()) return@withLock null
+        val creation = createPopulatedQueueLocked(displayName, songs, activationRequired = true)
             ?: return@withLock null
+        if (!runtime.canReplaceTimeline()) return@withLock null
         val created = creation.queue
         val drafts = creation.drafts
         val identified = creation.identified
@@ -628,7 +632,7 @@ internal class PlaybackQueueCoordinator(
     }
 
     suspend fun switchToQueue(queueId: String): Boolean = mutex.withLock {
-        if (backupRestoreInProgress) return@withLock false
+        if (backupRestoreInProgress || !runtime.canReplaceTimeline()) return@withLock false
         require(queueId.isNotBlank()) { "Queue ID cannot be blank" }
         if (queueId == activeQueueId) return@withLock true
 
@@ -659,6 +663,7 @@ internal class PlaybackQueueCoordinator(
             repeatMode = target.queue.repeatMode
         )
 
+        if (!runtime.canReplaceTimeline()) return@withLock false
         runtime.replaceTimeline(restoration)
         persistence.updateSavedPlaybackState(
             queueId = queueId,
@@ -829,13 +834,14 @@ internal class PlaybackQueueCoordinator(
     }
 
     private suspend fun restoreIntoEmptyRuntime(queueId: String) {
+        if (!runtime.canReplaceTimeline()) return
         val target = persistence.loadQueue(queueId) ?: return
         val resolved = trackAccess.resolve(target.entries)
             .sortedBy { item -> item.persistedEntry.playbackOrder }
         if (resolved.isEmpty()) return
         // A controller may restore its already-live session while exact Room resolution is
         // suspended. In that race, adopting the live session must win over rebuilding it.
-        if (runtime.captureSnapshot() != null) return
+        if (runtime.captureSnapshot() != null || !runtime.canReplaceTimeline()) return
         val selected = selectRestoredCurrentEntry(target, resolved)
         val savedCurrentResolved = target.queue.currentEntryId ==
             selected.persistedEntry.entryId
@@ -875,7 +881,8 @@ internal class PlaybackQueueCoordinator(
 
     private suspend fun createPopulatedQueueLocked(
         displayName: String,
-        songs: List<Song>
+        songs: List<Song>,
+        activationRequired: Boolean = false
     ): PopulatedQueueCreation? {
         if (songs.isEmpty()) return null
         val identified = trackAccess.identify(songs.map { song ->
@@ -888,6 +895,7 @@ internal class PlaybackQueueCoordinator(
         val drafts = identified.mapIndexed { index, item ->
             item.toDraft(baseOrder = index, playbackOrder = index)
         }
+        if (activationRequired && !runtime.canReplaceTimeline()) return null
         val created = persistence.createQueue(
             queueId = queueId,
             displayName = resolvedDisplayName,

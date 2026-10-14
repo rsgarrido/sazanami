@@ -87,6 +87,9 @@ internal class Media3PlaybackQueueRuntime(
     private val evidenceReader: (MediaItem) -> ListeningMediaItemEvidence? =
         MediaItem::listeningEvidence
 ) : PlaybackQueueRuntime {
+    override fun canReplaceTimeline(): Boolean =
+        player.isCommandAvailable(Player.COMMAND_CHANGE_MEDIA_ITEMS)
+
     override fun captureForBackupRestore(): BackupRestorePlaybackSnapshot? {
         if (player.mediaItemCount == 0) return null
         return BackupRestorePlaybackSnapshot(
@@ -160,6 +163,7 @@ internal class Media3PlaybackQueueRuntime(
     }
 
     override fun replaceTimeline(restoration: PlaybackQueueRestoration) {
+        check(canReplaceTimeline()) { "Playback queue replacement is unavailable" }
         beforeTimelineReplacement()
         val playbackOrdered = restoration.entries.sortedBy { item ->
             item.persistedEntry.playbackOrder
@@ -185,6 +189,7 @@ internal class Media3PlaybackQueueRuntime(
     }
 
     override fun removeEntry(entryId: String): Boolean {
+        if (!player.isCommandAvailable(Player.COMMAND_CHANGE_MEDIA_ITEMS)) return false
         val index = (0 until player.mediaItemCount).firstOrNull { candidate ->
             evidenceReader(player.getMediaItemAt(candidate))?.itemInstanceId == entryId
         } ?: return false
@@ -193,6 +198,7 @@ internal class Media3PlaybackQueueRuntime(
     }
 
     override fun moveEntry(entryId: String, toPlaybackOrder: Int): Boolean {
+        if (!player.isCommandAvailable(Player.COMMAND_CHANGE_MEDIA_ITEMS)) return false
         if (toPlaybackOrder !in 0 until player.mediaItemCount) return false
         val fromIndex = (0 until player.mediaItemCount).firstOrNull { candidate ->
             evidenceReader(player.getMediaItemAt(candidate))?.itemInstanceId == entryId
@@ -207,6 +213,7 @@ internal class Media3PlaybackQueueRuntime(
     }
 
     override fun seekToEntry(entryId: String): Boolean {
+        if (!player.isCommandAvailable(Player.COMMAND_SEEK_TO_MEDIA_ITEM)) return false
         val index = (0 until player.mediaItemCount).firstOrNull { candidate ->
             evidenceReader(player.getMediaItemAt(candidate))?.itemInstanceId == entryId
         } ?: return false
@@ -219,6 +226,7 @@ internal class Media3PlaybackQueueRuntime(
         item: ResolvedPlaybackQueueItem,
         playbackOrder: Int
     ): Boolean {
+        if (!player.isCommandAvailable(Player.COMMAND_CHANGE_MEDIA_ITEMS)) return false
         if ((0 until player.mediaItemCount).any { candidate ->
                 evidenceReader(player.getMediaItemAt(candidate))?.itemInstanceId ==
                     item.persistedEntry.entryId

@@ -159,16 +159,28 @@ class PlaybackController(
 
     init {
         coroutineScope.launch {
+            var wasDirect = false
             IntegratedDirectPlaybackBridge.state.collect { direct ->
                 if (direct.enabled) {
-                    isPlaying=direct.phase==IntegratedDirectPhase.PLAYING
-                    currentPosition=direct.positionMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-                    duration=direct.durationMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                    projectDirectPlayback(direct)
+                } else {
+                    _uiState.update { directPlaybackUiState(it, direct, librarySongs) }
+                    _progressState.update { it.copy(isDirect = false, isSeeking = false) }
+                    if (wasDirect) {
+                        // Adopt the restored session, never restore a stored item over a live backend.
+                        adoptLivePlayerState()
+                    }
                 }
+                wasDirect = direct.enabled
             }
         }
         PlaybackLibraryBridge.register(this)
         startAdvancedAudioRuntimeCollection()
+    }
+
+    private fun projectDirectPlayback(direct: IntegratedDirectPlaybackState) {
+        _uiState.update { directPlaybackUiState(it, direct, librarySongs) }
+        _progressState.value = directPlaybackProgress(direct)
     }
 
     private fun startAdvancedAudioRuntimeCollection() {
@@ -209,10 +221,13 @@ class PlaybackController(
         }
 
         musicPlayer.onPlaybackStateChanged = { playerIsPlaying ->
-            val wasPlaying = isPlaying
-            isPlaying = playerIsPlaying
-            if (wasPlaying && !playerIsPlaying) {
-                savePlayerState()
+            // MediaController can mask intent asynchronously; native evidence owns Direct truth.
+            if (!IntegratedDirectPlaybackBridge.directSelected) {
+                val wasPlaying = isPlaying
+                isPlaying = playerIsPlaying
+                if (wasPlaying && !playerIsPlaying) {
+                    savePlayerState()
+                }
             }
         }
 
@@ -750,6 +765,8 @@ class PlaybackController(
     }
 
     fun savePlayerState() {
+        // An empty Direct adapter is not a request to erase the saved Android selection.
+        if (IntegratedDirectPlaybackBridge.directSelected && currentSong == null) return
         playerStateStorage.saveState(
             currentSongId = currentSong?.id,
             currentPosition = musicPlayer.getCurrentPosition(),
@@ -780,6 +797,11 @@ class PlaybackController(
     }
 
     private fun restoreOrAdoptPlayerState() {
+        val direct = IntegratedDirectPlaybackBridge.state.value
+        if (direct.enabled) {
+            projectDirectPlayback(direct)
+            return
+        }
         // Android Auto, Assistant, notifications, or Bluetooth may have started the service before
         // the phone UI exists. In that case the live Media3 session is authoritative; restoring the
         // persisted snapshot over it would rebuild the active decoder and briefly interrupt audio.
@@ -1040,6 +1062,11 @@ class PlaybackController(
     }
 
     private fun handleServiceSongChanged(songId: Long?) {
+        val direct = IntegratedDirectPlaybackBridge.state.value
+        if (direct.enabled) {
+            projectDirectPlayback(direct)
+            return
+        }
         adoptedPersistentQueueEntryId?.let { adoptedEntryId ->
             adoptedPersistentQueueEntryId = null
             if (musicPlayer.currentItemInstanceId() == adoptedEntryId) return

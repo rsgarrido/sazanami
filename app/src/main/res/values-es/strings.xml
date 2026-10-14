@@ -398,4 +398,11 @@
     <string name="usb_activation_backend_failed">No se pudo seleccionar el motor de USB directo. Comprueba el estado de la salida y copia los detalles de activación.</string>
     <string name="usb_activation_authorization_failed">No se pudo completar la comprobación de autorización USB. Copia los detalles de activación antes de intentarlo de nuevo.</string>
     <string name="usb_activation_cancelled">Se canceló el cambio de salida. Comprueba la salida confirmada y el estado del cierre antes de intentarlo de nuevo.</string>
+    <string name="player_playback_pausing">Pausando la reproducción…</string>
+    <string name="player_playback_resuming">Reanudando la reproducción…</string>
+    <string name="player_playback_seeking">Buscando posición…</string>
+    <string name="player_playback_stopping">Deteniendo la reproducción…</string>
+    <string name="player_playback_stopped">Reproducción detenida.</string>
+    <string name="player_playback_ended">La pista ha terminado.</string>
+    <string name="player_playback_failed">La reproducción ha fallado. Revisa los ajustes de Audio USB o vuelve al audio de Android.</string>
 </resources>

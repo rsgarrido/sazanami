@@ -1,4 +1,6 @@
 package io.github.rsgarrido.sazanami.ui.player.pocketflip
+
+import io.github.rsgarrido.sazanami.ui.state.playbackPlayPauseShowsPause
 import androidx.compose.ui.res.stringResource
 import io.github.rsgarrido.sazanami.R
 
@@ -234,8 +236,8 @@ private fun PocketFlipSharedContent(
             modifier = Modifier.fillMaxSize()
         ) {
             Icon(
-                imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                contentDescription = stringResource(if (isPlaying) R.string.player_pause else R.string.player_play),
+                imageVector = if (playbackPlayPauseShowsPause(isPlaying)) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                contentDescription = stringResource(if (playbackPlayPauseShowsPause(isPlaying)) R.string.player_pause else R.string.player_play),
                 tint = lerp(
                     start = tokens.displayTextColor,
                     stop = PocketFlipColors.actionIcon,

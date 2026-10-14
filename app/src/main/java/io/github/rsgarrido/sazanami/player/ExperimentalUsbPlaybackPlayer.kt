@@ -139,7 +139,8 @@ internal class ExperimentalUsbPlaybackPlayer(
                 failure("DIRECT_BACKEND_SELECTION_FAILED",error);rollback(owner)
                 directState=directState.copy(enabled=selectedDirect,cleanupSafe=!selectedDirect);publish();return
             }
-            directState=directState.copy(enabled=true,switching=switching,cleanupSafe=false)
+            directState=direct.evidence.copy(enabled=true,switching=switching,normalReleased=false,cleanupSafe=false,
+                activation=directState.activation)
             publish()
             var restoreAfterFailure=false
             launchSwitch(DirectOutputSwitch.TO_USB) {
@@ -165,7 +166,7 @@ internal class ExperimentalUsbPlaybackPlayer(
                             restoreAfterFailure=true
                         } else {
                             selectionHandedOff=true
-                            directState=directState.copy(phase=IntegratedDirectPhase.IDLE,error=null,
+                            directState=direct.evidence.copy(enabled=true,normalReleased=true,switching=switching,
                                 activation=directState.activation?.copy(stage=UsbActivationStage.ACTIVE,reservation=UsbActivationReservation.PROTECTED))
                         }
                     }

@@ -24,6 +24,9 @@ import io.github.rsgarrido.sazanami.ui.state.DirectSeekGestureEnvironment
 import io.github.rsgarrido.sazanami.ui.state.LocalDirectSeekGestureEnvironment
 import io.github.rsgarrido.sazanami.ui.state.DirectScrubAuthority
 import io.github.rsgarrido.sazanami.ui.state.LocalDirectSeekPreview
+import io.github.rsgarrido.sazanami.ui.state.LocalPlaybackPlayPauseIntent
+import io.github.rsgarrido.sazanami.ui.state.LocalPlaybackStatus
+import io.github.rsgarrido.sazanami.ui.state.resolve
 import androidx.compose.ui.platform.LocalResources
 import io.github.rsgarrido.sazanami.viewmodel.MusicViewModel
 import io.github.rsgarrido.sazanami.ui.state.displayText
@@ -81,6 +84,7 @@ internal fun MusicRoute(
 ) {
     val resources = LocalResources.current
     val playbackUiState by musicViewModel.playbackUiState.collectAsStateWithLifecycle()
+    val playbackStatus = playbackUiState.playbackStatus?.resolve()
     val playbackQueueHubUiState by
         musicViewModel.playbackQueueHubUiState.collectAsStateWithLifecycle()
     val libraryUiState by musicViewModel.libraryUiState.collectAsStateWithLifecycle()
@@ -411,7 +415,9 @@ internal fun MusicRoute(
             onApplyFavoriteBatch = musicViewModel::applyFavoriteBatch
         )
     ) {
-        CompositionLocalProvider(LocalDirectSeekPreview provides seekPreview,LocalDirectSeekGestureEnvironment provides seekGestures) {
+        CompositionLocalProvider(LocalDirectSeekPreview provides seekPreview,LocalDirectSeekGestureEnvironment provides seekGestures,
+            LocalPlaybackPlayPauseIntent provides playbackUiState.playPauseIntent,
+            LocalPlaybackStatus provides playbackStatus) {
         MusicScreen(
             songs = libraryUiState.songs,
             recentlyPlayedSongs = libraryUiState.recentlyPlayedSongs,

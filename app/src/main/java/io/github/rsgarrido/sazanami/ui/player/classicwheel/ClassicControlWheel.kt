@@ -1,5 +1,7 @@
 package io.github.rsgarrido.sazanami.ui.player.classicwheel
 
+import io.github.rsgarrido.sazanami.ui.state.playbackPlayPauseShowsPause
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
@@ -174,12 +176,12 @@ fun ClassicControlWheel(
                 .graphicsLayer { alpha = playControlAlpha.coerceIn(0f, 1f) }
         ) {
             Icon(
-                imageVector = if (isPlaying) {
+                imageVector = if (playbackPlayPauseShowsPause(isPlaying)) {
                     Icons.Filled.Pause
                 } else {
                     Icons.Filled.PlayArrow
                 },
-                contentDescription = stringResource(if (isPlaying) R.string.player_pause else R.string.player_play),
+                contentDescription = stringResource(if (playbackPlayPauseShowsPause(isPlaying)) R.string.player_pause else R.string.player_play),
                 tint = ClassicWheelColors.wheelContent,
                 modifier = Modifier.size(ClassicWheelPlayPauseVisualSize)
             )

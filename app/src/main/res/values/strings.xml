@@ -443,4 +443,11 @@
     <string name="usb_activation_backend_failed">Unable to select the Direct USB backend. Check the output status and copy the activation details.</string>
     <string name="usb_activation_authorization_failed">The USB authorization check could not complete. Copy the activation details before trying again.</string>
     <string name="usb_activation_cancelled">The output switch was cancelled. Check the confirmed output and cleanup status before trying again.</string>
+    <string name="player_playback_pausing">Pausing playback…</string>
+    <string name="player_playback_resuming">Resuming playback…</string>
+    <string name="player_playback_seeking">Seeking…</string>
+    <string name="player_playback_stopping">Stopping playback…</string>
+    <string name="player_playback_stopped">Playback stopped.</string>
+    <string name="player_playback_ended">Track ended.</string>
+    <string name="player_playback_failed">Playback failed. Check USB Audio settings or return to Android audio.</string>
 </resources>

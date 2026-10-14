@@ -18,6 +18,88 @@ import org.mockito.Mockito.mock
 
 class PlaybackQueueCoordinatorTest {
     @Test
+    fun unavailableQueueActivationLeavesSourceAndActiveIdentityUntouched() = runBlocking {
+        val persistence = FakePersistence(activeQueueId = "A").apply {
+            seed(queue("A", listOf(spec("native-source", 1L, 0, 0)), "native-source"))
+            seed(queue("B", listOf(spec("other", 2L, 0, 0)), "other"))
+        }
+        val original = liveSnapshot(listOf("native-source" to 1L), "native-source", 1234L, true)
+        val runtime = FakeRuntime(original)
+        val coordinator = coordinator(persistence, runtime)
+        coordinator.initialize()
+        runtime.activationAllowed = false // The Direct player has no queue replacement command.
+        val savedQueues = persistence.queues.toMap()
+
+        assertFalse(coordinator.switchToQueue("B"))
+        assertNull(coordinator.createAndActivateQueue("Rejected", listOf(song(3L))))
+        assertEquals("A", coordinator.getActiveQueueId())
+        assertEquals("A", persistence.activeQueueId)
+        assertEquals(savedQueues, persistence.queues)
+        assertEquals(original, runtime.snapshot)
+        assertEquals(0, runtime.replaceCount)
+        assertEquals(0, runtime.prepareCount)
+        assertEquals(0, runtime.playCount)
+
+        // Independent saved-queue management remains available on the same runtime.
+        val saved = requireNotNull(coordinator.createInactiveQueue(listOf(song(3L))))
+        assertTrue(coordinator.appendToInactiveQueue(saved.queue.queueId, listOf(song(4L))) != null)
+        assertTrue(coordinator.reorderEntry(saved.queue.queueId, saved.entries.first().entryId, 1))
+        assertTrue(coordinator.removeEntry(saved.queue.queueId, saved.entries.first().entryId))
+        assertEquals("A", persistence.activeQueueId)
+        assertEquals(original, runtime.snapshot)
+        assertEquals(0, runtime.replaceCount)
+
+        runtime.activationAllowed = true // Android can activate the original saved target normally.
+        assertTrue(coordinator.switchToQueue("B"))
+        assertEquals("B", persistence.activeQueueId)
+        assertEquals("other", runtime.snapshot?.currentEntryId)
+        assertEquals(1, runtime.replaceCount)
+    }
+
+    @Test
+    fun activationRechecksBackendAfterSuspendedTargetResolution() = runBlocking {
+        val persistence = FakePersistence(activeQueueId = "A").apply {
+            seed(queue("A", listOf(spec("source", 1L, 0, 0)), "source"))
+            seed(queue("B", listOf(spec("other", 2L, 0, 0)), "other"))
+        }
+        val original = liveSnapshot(listOf("source" to 1L), "source", 1234L, true)
+        val runtime = FakeRuntime(original)
+        val access = FakeTrackAccess()
+        val coordinator = coordinator(persistence, runtime, access)
+        coordinator.initialize()
+        access.beforeResolve = { runtime.activationAllowed = false }
+
+        assertFalse(coordinator.switchToQueue("B"))
+        assertEquals("A", coordinator.getActiveQueueId())
+        assertEquals("A", persistence.activeQueueId)
+        assertEquals(original, runtime.snapshot)
+        assertEquals(0, runtime.replaceCount)
+        assertEquals(0, runtime.prepareCount)
+        assertEquals(0, runtime.playCount)
+    }
+
+    @Test
+    fun createAndActivateRechecksBackendBeforeSavingTheNewQueue() = runBlocking {
+        val persistence = FakePersistence(activeQueueId = "A").apply {
+            seed(queue("A", listOf(spec("source", 1L, 0, 0)), "source"))
+        }
+        val original = liveSnapshot(listOf("source" to 1L), "source", 1234L, true)
+        val runtime = FakeRuntime(original)
+        val access = FakeTrackAccess()
+        val coordinator = coordinator(persistence, runtime, access)
+        coordinator.initialize()
+        access.beforeIdentify = { runtime.activationAllowed = false }
+
+        assertNull(coordinator.createAndActivateQueue("Rejected", listOf(song(2L))))
+        assertEquals("A", persistence.activeQueueId)
+        assertEquals(setOf("A"), persistence.queues.keys)
+        assertEquals(original, runtime.snapshot)
+        assertEquals(0, runtime.replaceCount)
+        assertEquals(0, runtime.prepareCount)
+        assertEquals(0, runtime.playCount)
+    }
+
+    @Test
     fun backupRestoreSuppressesSnapshotsAndReconcilesRolledBackQueues() = runBlocking {
         val persistence = FakePersistence(activeQueueId = "A").apply {
             seed(queue("A", listOf(spec("one", 1L, 0, 0)), "one"))
@@ -1282,6 +1364,8 @@ class PlaybackQueueCoordinatorTest {
     private class FakeRuntime(
         var snapshot: LivePlaybackQueueSnapshot?
     ) : PlaybackQueueRuntime {
+        var activationAllowed = true
+        override fun canReplaceTimeline(): Boolean = activationAllowed
         var captureBackupRestoreCheckpoint = false
         private var backupRestoreCheckpoint: LivePlaybackQueueSnapshot? = null
         var replaceCount = 0
@@ -1396,17 +1480,21 @@ class PlaybackQueueCoordinatorTest {
     private class FakeTrackAccess : PlaybackQueueTrackAccess {
         val unresolvedIdentityIds = mutableSetOf<Long>()
         var beforeResolve: (() -> Unit)? = null
+        var beforeIdentify: (() -> Unit)? = null
 
         override suspend fun identify(
             items: List<LivePlaybackQueueItem>
-        ): List<IdentifiedLivePlaybackQueueItem> = items.mapNotNull { item ->
-            val id = item.evidence.reference.mediaStoreId
-                ?: item.evidence.referenceKey.substringAfter("track-").toLong()
-            if (id in unresolvedIdentityIds) null else IdentifiedLivePlaybackQueueItem(
-                liveItem = item,
-                trackIdentityId = id,
-                localTrackBindingId = id * 10L
-            )
+        ): List<IdentifiedLivePlaybackQueueItem> {
+            beforeIdentify?.invoke()
+            return items.mapNotNull { item ->
+                val id = item.evidence.reference.mediaStoreId
+                    ?: item.evidence.referenceKey.substringAfter("track-").toLong()
+                if (id in unresolvedIdentityIds) null else IdentifiedLivePlaybackQueueItem(
+                    liveItem = item,
+                    trackIdentityId = id,
+                    localTrackBindingId = id * 10L
+                )
+            }
         }
 
         override suspend fun resolve(

@@ -1,4 +1,6 @@
 package io.github.rsgarrido.sazanami.ui.player.retrorack
+
+import io.github.rsgarrido.sazanami.ui.state.playbackPlayPauseShowsPause
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import io.github.rsgarrido.sazanami.R
@@ -426,9 +428,9 @@ private fun MainDeck(
                 onClick = onPreviousClick
             )
             RackIconButton(
-                icon = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                label = stringResource(if (isPlaying) R.string.player_rack_pause else R.string.player_rack_play),
-                contentDescription = stringResource(if (isPlaying) R.string.player_pause else R.string.player_play),
+                icon = if (playbackPlayPauseShowsPause(isPlaying)) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                label = stringResource(if (playbackPlayPauseShowsPause(isPlaying)) R.string.player_rack_pause else R.string.player_rack_play),
+                contentDescription = stringResource(if (playbackPlayPauseShowsPause(isPlaying)) R.string.player_pause else R.string.player_play),
                 active = true,
                 compact = compact,
                 primary = true,

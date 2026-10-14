@@ -1,4 +1,6 @@
 package io.github.rsgarrido.sazanami.ui.player.pocketdisc
+
+import io.github.rsgarrido.sazanami.ui.state.playbackPlayPauseShowsPause
 import androidx.compose.ui.res.stringResource
 import io.github.rsgarrido.sazanami.R
 
@@ -259,8 +261,8 @@ private fun SharedPocketDiscForeground(
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                contentDescription = stringResource(if (isPlaying) R.string.player_pause else R.string.player_play),
+                imageVector = if (playbackPlayPauseShowsPause(isPlaying)) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                contentDescription = stringResource(if (playbackPlayPauseShowsPause(isPlaying)) R.string.player_pause else R.string.player_play),
                 tint = colors.lcdText,
                 modifier = Modifier.fillMaxSize(0.48f)
             )

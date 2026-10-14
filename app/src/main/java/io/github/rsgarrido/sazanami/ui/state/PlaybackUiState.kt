@@ -11,6 +11,9 @@ data class PlaybackUiState(
     val isConnected: Boolean = false,
     val currentSong: Song? = null,
     val isPlaying: Boolean = false,
+    /** Direct command intent is distinct from confirmed playing state; Android keeps its existing presentation. */
+    val playPauseIntent: Boolean? = null,
+    val playbackStatus: UiMessage? = null,
     val isShuffleEnabled: Boolean = false,
     val repeatMode: RepeatMode = RepeatMode.OFF,
     val queuedSongs: List<Song> = emptyList(),
@@ -29,7 +32,9 @@ data class PlaybackProgressUiState(
     val currentPosition: Int = 0,
     val duration: Int = 0,
     val bufferedPosition: Int = 0,
-    val isSeeking: Boolean = false
+    val isSeeking: Boolean = false,
+    /** This position comes from the native source/seek-confirmation projection, not a UI preview. */
+    val isDirect: Boolean = false
 ) {
     companion object {
         val Empty = PlaybackProgressUiState()
