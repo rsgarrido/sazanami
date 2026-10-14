@@ -36,6 +36,8 @@ internal class DirectPlaybackListeningBinding(
                 DirectListeningEvent.SUSPENDED -> adapter.onIsPlayingChanged(item, false)
                 DirectListeningEvent.DISCONTINUITY -> adapter.onPositionDiscontinuity(item)
                 DirectListeningEvent.NATURAL_END -> adapter.onNaturalEnd(item)
+                DirectListeningEvent.TRANSITION -> adapter.onMediaItemTransition(
+                    item, ListeningMediaTransitionReason.SEEK, false)
                 DirectListeningEvent.STOPPED -> adapter.onStopped()
                 DirectListeningEvent.ERROR -> adapter.onError()
             }
@@ -46,7 +48,7 @@ internal class DirectPlaybackListeningBinding(
 }
 
 internal enum class DirectListeningEvent {
-    PLAYING, SUSPENDED, DISCONTINUITY, NATURAL_END, STOPPED, ERROR
+    PLAYING, SUSPENDED, DISCONTINUITY, NATURAL_END, TRANSITION, STOPPED, ERROR
 }
 
 /** Only translates lifecycle edges. Durations, qualification and session IDs belong to the recorder. */
@@ -80,8 +82,7 @@ internal class DirectListeningEventTranslator {
         val currentGeneration = generation
         if (currentGeneration != null && state.generation < currentGeneration) return emptyList()
         if (currentGeneration != state.generation) {
-            // The single-track player cannot replace a running worker. Never let an unexpected
-            // newer generation steal an attempt that is still awaiting its joined result.
+            // A successor cannot steal an attempt that is still awaiting its joined result.
             if (attemptStarted && !finalized) return emptyList()
             reset()
             generation = state.generation
@@ -111,7 +112,8 @@ internal class DirectListeningEventTranslator {
 
         val terminal = if (terminalConfirmed) when (state.phase) {
             IntegratedDirectPhase.ENDED -> DirectListeningEvent.NATURAL_END
-            IntegratedDirectPhase.STOPPED -> DirectListeningEvent.STOPPED
+            IntegratedDirectPhase.STOPPED -> if (state.stoppedForReplacement)
+                DirectListeningEvent.TRANSITION else DirectListeningEvent.STOPPED
             IntegratedDirectPhase.ERROR -> DirectListeningEvent.ERROR
             else -> null
         } else null

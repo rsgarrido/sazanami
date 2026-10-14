@@ -17,6 +17,26 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class DirectPlaybackListeningIntegrationTest {
+    @Test fun verifiedEofBeforeFirstProgressCompletesInternalRequestWithoutAutomaticAdvancement() = runBlocking {
+        withContext(Dispatchers.Main) {
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+            val engine = Engine()
+            val player = DirectUsbMediaPlayer(scope, engine, changed = {}, librarySong = { song })
+            try {
+                val result = player.replaceSource(song.toPlayableMediaItem("short-source"), true)
+                engine.terminal.complete(naturalResult())
+                assertEquals(DirectSourceTransitionStatus.COMPLETED, withTimeout(5000) { result.await() }.status)
+                assertEquals(IntegratedDirectPhase.ENDED, player.evidence.phase)
+                assertFalse(player.isPlaying)
+                assertEquals(1, engine.starts)
+                assertFalse(player.availableCommands.contains(androidx.media3.common.Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM))
+            } finally {
+                engine.terminal.complete(naturalResult())
+                player.stopAndJoin();scope.cancel()
+            }
+        }
+    }
+
     @Test fun acceptedEofPersistsOriginalEvidenceAndUpdatesExistingConsumers() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
@@ -139,9 +159,11 @@ class DirectPlaybackListeningIntegrationTest {
     }
 
     private class Engine : FullUsbPlaybackEngineClient {
+        var starts = 0
         lateinit var progress: (UsbFullProgress) -> Unit
         val terminal = CompletableDeferred<UsbSilentTransportExperimentResult>()
         override suspend fun runIntegratedFull(uri: Uri, control: UsbFullPlaybackControl, progress: (UsbFullProgress) -> Unit): UsbSilentTransportExperimentResult {
+            starts++
             this.progress = progress
             control.bind({ true }, {})
             return terminal.await()

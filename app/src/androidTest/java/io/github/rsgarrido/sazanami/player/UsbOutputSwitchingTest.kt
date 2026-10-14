@@ -9,6 +9,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.usb.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -114,13 +115,16 @@ class UsbOutputSwitchingTest {
     }
 
     private class Engine : FullUsbPlaybackEngineClient {
+        class Run(val uri: Uri,val terminal: CompletableDeferred<UsbSilentTransportExperimentResult>)
+        val started = Channel<Run>(Channel.UNLIMITED)
         var starts = 0
         var stops = 0
         lateinit var progress: (UsbFullProgress) -> Unit
         lateinit var control: UsbFullPlaybackControl
-        val terminal = CompletableDeferred<UsbSilentTransportExperimentResult>()
+        var terminal = CompletableDeferred<UsbSilentTransportExperimentResult>()
         override suspend fun runIntegratedFull(uri: Uri, control: UsbFullPlaybackControl, progress: (UsbFullProgress) -> Unit): UsbSilentTransportExperimentResult {
             starts++;this.control = control;this.progress = progress;control.bind({true}, {})
+            started.send(Run(uri,terminal))
             return terminal.await()
         }
         override fun stopIntegratedFull() { stops++ }
@@ -216,6 +220,96 @@ class UsbOutputSwitchingTest {
 
     private suspend fun settled(f: Fixture) {
         withTimeout(5000) { while (f.route.directState.switching != null) yield() }
+    }
+
+    @Test fun internalReplacementKeepsProtectedDirectOutputAndOriginalAndroidRestoration() = checkRoute { f ->
+        f.released.complete(true);f.route.selectDirect(true);settled(f)
+        val replacementSong=song.copy(id=13,title="Replacement",uri=Uri.parse("content://media/external/audio/media/13"))
+        PlaybackLibraryBridge.updateSongs(listOf(song,replacementSong))
+        f.route.setMediaItem(song.toPlayableMediaItem("source-a"));f.route.prepare()
+        val old=withTimeout(5000) { f.engine.started.receive() }
+        f.engine.progress(UsbFullProgress(44100,441000,44100))
+        val attachment=f.reservation.token
+        val activationSerial=f.route.directState.activation?.serial
+        val result=f.route.replaceDirectSource(replacementSong.toPlayableMediaItem("source-b"),false)
+        assertTrue(f.route.directState.enabled);assertFalse(f.reservationReleased)
+        assertEquals(0,f.recreations);assertEquals(1,f.engine.starts)
+        f.engine.terminal=CompletableDeferred()
+        old.terminal.complete(terminal(true))
+        val next=withTimeout(5000) { f.engine.started.receive() }
+        assertEquals(replacementSong.uri,next.uri);assertSame(attachment,f.reservation.token)
+        assertEquals(activationSerial,f.route.directState.activation?.serial);assertTrue(f.reservation.handedOff)
+        assertFalse(f.engine.control.playWhenReady)
+        f.engine.progress(UsbFullProgress(0,441000,44100,UsbFullTransportPhase.PAUSED))
+        assertEquals(DirectSourceTransitionStatus.READY,result.await().status)
+        assertEquals(1,f.listeningEvents.count { it==DirectListeningEvent.TRANSITION })
+        assertEquals(0,f.listeningEvents.count { it==DirectListeningEvent.STOPPED })
+        assertEquals(0,f.recreations);assertFalse(f.reservationReleased)
+        f.route.selectDirect(false)
+        next.terminal.complete(terminal(true));settled(f)
+        assertEquals(1,f.recreations);assertTrue(f.reservationReleased)
+        assertEquals(song.id.toString(),f.route.currentMediaItem?.mediaId)
+        assertEquals(2000L,f.route.currentPosition);assertFalse(f.route.playWhenReady)
+    }
+
+    @Test fun outputSwitchSupersedesPendingReplacementAndJoinsBeforeAndroidRecreation() = checkRoute { f ->
+        f.released.complete(true);f.route.selectDirect(true);settled(f)
+        f.route.setMediaItem(song.toPlayableMediaItem());f.route.prepare()
+        val old=withTimeout(5000) { f.engine.started.receive() }
+        val pending=f.route.replaceDirectSource(song.toPlayableMediaItem("pending"),false,3000)
+        f.route.selectDirect(false);yield()
+        assertEquals(DirectSourceTransitionStatus.CANCELLED,pending.await().status)
+        assertEquals(0,f.recreations);assertFalse(f.reservationReleased)
+        old.terminal.complete(terminal(true));settled(f)
+        assertEquals(1,f.engine.starts);assertEquals(1,f.recreations)
+        assertTrue(f.reservationReleased)
+    }
+
+    @Test fun detachmentWhileReplacementWaitsCancelsTargetAndRetainsUnsafeOwnership() = checkRoute { f ->
+        f.released.complete(true);f.route.selectDirect(true);settled(f)
+        f.route.setMediaItem(song.toPlayableMediaItem());f.route.prepare()
+        val old=withTimeout(5000) { f.engine.started.receive() }
+        val pending=f.route.replaceDirectSource(song.toPlayableMediaItem("pending"),true)
+        f.attachmentFailure="DIRECT_USB_SELECTION_CHANGED"
+        f.route.usbSelectionChanged();yield()
+        assertEquals(DirectSourceTransitionStatus.CANCELLED,pending.await().status)
+        old.terminal.complete(terminal(false));settled(f)
+        assertEquals(1,f.engine.starts);assertEquals(0,f.recreations)
+        assertFalse(f.reservationReleased);assertFalse(f.route.directState.cleanupSafe)
+        assertTrue(f.route.directState.enabled)
+    }
+
+    @Test fun outputSwitchDuringSuccessorPreparationJoinsBothRunsBeforeRestoringAndroid() = checkRoute { f ->
+        f.released.complete(true);f.route.selectDirect(true);settled(f)
+        f.route.setMediaItem(song.toPlayableMediaItem());f.route.prepare()
+        val old=withTimeout(5000) { f.engine.started.receive() }
+        val replacement=f.route.replaceDirectSource(song.toPlayableMediaItem("preparing-b"),false)
+        f.engine.terminal=CompletableDeferred()
+        old.terminal.complete(terminal(true))
+        val next=withTimeout(5000) { f.engine.started.receive() }
+        assertEquals(2,f.engine.starts);assertFalse(replacement.isCompleted)
+        f.route.selectDirect(false);yield()
+        assertEquals(DirectSourceTransitionStatus.CANCELLED,replacement.await().status)
+        assertEquals(0,f.recreations);assertFalse(f.reservationReleased)
+        next.terminal.complete(terminal(true));settled(f)
+        assertEquals(1,f.recreations);assertTrue(f.reservationReleased)
+        assertEquals(song.id.toString(),f.route.currentMediaItem?.mediaId)
+        assertEquals(2000L,f.route.currentPosition)
+    }
+
+    @Test fun destructionDuringReplacementCancelsTargetButRetainsListeningUntilJoin() = checkRoute { f ->
+        f.released.complete(true);f.route.selectDirect(true);settled(f)
+        f.route.setMediaItem(song.toPlayableMediaItem("source-a"));f.route.prepare()
+        val old=withTimeout(5000) { f.engine.started.receive() }
+        f.engine.progress(UsbFullProgress(44100,441000,44100))
+        val pending=f.route.replaceDirectSource(song.toPlayableMediaItem("pending"),false)
+        val shutdown=f.scope.async { f.route.shutdown() };yield()
+        assertEquals(DirectSourceTransitionStatus.CANCELLED,pending.await().status)
+        assertFalse(shutdown.isCompleted);assertFalse(f.listeningTrace.contains("deactivated"))
+        old.terminal.complete(terminal(true));assertTrue(shutdown.await())
+        assertEquals(1,f.engine.starts);assertEquals(0,f.recreations)
+        assertEquals(DirectListeningEvent.STOPPED,f.listeningEvents.last())
+        assertTrue(f.reservationReleased)
     }
 
     @Test fun listeningOwnershipStartsAfterReleaseAndEndsAfterTerminalBeforeAndroidRebind() = checkRoute { f ->

@@ -62,7 +62,11 @@ class UsbDirectSampleRateTest {
         assertTrue(queue.contains("kPrefixDurationUs = 5000000"))
         assertFalse(native.contains("066098d12bfd5e3c")) // Known 88 hash belongs to that exact manual fixture only.
         val adapter=source("java/io/github/rsgarrido/sazanami/player/DirectUsbMediaPlayer.kt")
-        assertTrue(adapter.contains("integratedProgressState(evidence,progress,commands.playWhenReady)"))
+        // Initial seeks preserve the accepted rate and validate progress before confirmation/publication.
+        assertTrue(adapter.contains("val before=if(start.positionPending) evidence.copy(pendingSeekSerial=commands.intent().seekSerial) else evidence"))
+        precedes(adapter,"val before=if(start.positionPending)","val accepted=integratedProgressState(before,progress,start.playWhenReady)")
+        precedes(adapter,"val accepted=integratedProgressState(before,progress,start.playWhenReady)","start.confirmPosition(progress)")
+        precedes(adapter,"start.confirmPosition(progress)","update(accepted)")
         assertTrue(adapter.contains("PositionSupplier"));assertFalse(adapter.contains("ExoPlayer"))
         // Exercise the actual delegated projection; its source-selected rate must survive Pause/Resume.
         for((rate,bits) in listOf(44100L to 16L,48000L to 16L,48000L to 24L,96000L to 24L)) {

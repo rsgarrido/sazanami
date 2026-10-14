@@ -16,7 +16,9 @@ internal data class IntegratedDirectPlaybackState(
     val playWhenReady: Boolean=true,
     val nativeTransportPhase: UsbFullTransportPhase=UsbFullTransportPhase.STARTING,
     val pauseRequests: Long=0,val resumeRequests: Long=0,val nativePauseCounters: Map<String,Long> = emptyMap(),
-    val sourcePositionFrame: Long?=null,val sourceEpoch: Long=0,val seekCapable: Boolean=false,val pendingSeekSerial: Long=0
+    val sourcePositionFrame: Long?=null,val sourceEpoch: Long=0,val seekCapable: Boolean=false,val pendingSeekSerial: Long=0,
+    val sourceTransition: DirectSourceTransitionState?=null,
+    val stoppedForReplacement: Boolean=false // Only a confirmed STOPPED run may use TRANSITION history.
 ) {
     val confirmedDirect get()=enabled && normalReleased && switching != DirectOutputSwitch.TO_USB &&
         (activation == null || activation.reservation == UsbActivationReservation.PROTECTED)

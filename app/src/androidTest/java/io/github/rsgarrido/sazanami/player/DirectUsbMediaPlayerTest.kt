@@ -132,7 +132,7 @@ class DirectUsbMediaPlayerTest {
         val engine=Engine();lateinit var player: DirectUsbMediaPlayer
         instrumentation.runOnMainSync {
             player=DirectUsbMediaPlayer(scope,engine,changed={},librarySong={ song })
-            player.setMediaItem(song.toPlayableMediaItem(),500)
+            player.setMediaItem(song.toPlayableMediaItem(),0)
             assertEquals("Library title",player.currentMediaItem?.mediaMetadata?.title.toString())
             player.prepare();assertEquals(1,engine.starts);assertEquals(song.uri,engine.uri)
             assertEquals(IntegratedDirectPhase.PREPARING,player.evidence.phase);assertFalse(player.isPlaying)

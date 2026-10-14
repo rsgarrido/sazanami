@@ -11,6 +11,41 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DirectListeningEventTranslatorTest {
+    @Test fun manualReplacementFinalizesOnlyAfterJoinedStopAndAdmitsSuccessorOnce() = runBlocking {
+        val fixture = Fixture()
+        val translator = DirectListeningEventTranslator().apply { activate() }
+        fixture.consume(translator.observe("item", state(IntegratedDirectPhase.PLAYING)), 0)
+        fixture.consume(translator.observe("item", state(IntegratedDirectPhase.STOPPING)), 10_000)
+        assertTrue(fixture.drafts.isEmpty())
+        assertTrue(translator.observe("item", state(IntegratedDirectPhase.PLAYING, 2)).isEmpty())
+        val terminal = state(IntegratedDirectPhase.STOPPED).copy(stoppedForReplacement = true)
+        val events = translator.observe("item", terminal, true)
+        assertEquals(listOf(DirectListeningEvent.TRANSITION), events)
+        fixture.consume(events, 20_000)
+        assertEquals(ListeningEndReason.TRANSITION, fixture.drafts.single().endReason)
+        assertEquals(10_000L, fixture.drafts.single().listenedMs)
+        assertTrue(translator.observe("item", terminal, true).isEmpty())
+        assertTrue(translator.observe("item", state(IntegratedDirectPhase.PAUSED, 2)).isEmpty())
+        fixture.consume(translator.observe("item", state(IntegratedDirectPhase.PLAYING, 2)), 25_000)
+        assertTrue(translator.observe("item", state(IntegratedDirectPhase.ERROR), true).isEmpty())
+        fixture.consume(translator.observe("item", state(IntegratedDirectPhase.STOPPING, 2)), 30_000)
+        fixture.consume(translator.observe("item", state(IntegratedDirectPhase.STOPPED, 2), true), 35_000)
+        assertEquals(listOf(ListeningEndReason.TRANSITION, ListeningEndReason.STOPPED), fixture.drafts.map { it.endReason })
+        assertEquals(listOf(10_000L, 5_000L), fixture.drafts.map { it.listenedMs })
+        assertEquals(2, fixture.drafts.map { it.playbackSessionId }.distinct().size)
+    }
+
+    @Test fun replacementIntentCannotRelabelConfirmedNaturalEndOrNativeFailure() {
+        for ((phase, event) in mapOf(IntegratedDirectPhase.ENDED to DirectListeningEvent.NATURAL_END,
+            IntegratedDirectPhase.ERROR to DirectListeningEvent.ERROR)) {
+            val translator = DirectListeningEventTranslator().apply { activate() }
+            translator.observe("item", state(IntegratedDirectPhase.PLAYING))
+            assertEquals(listOf(DirectListeningEvent.SUSPENDED, event), translator.observe("item",
+                state(phase).copy(stoppedForReplacement = true), true))
+            assertTrue(translator.observe("item", state(IntegratedDirectPhase.STOPPED).copy(stoppedForReplacement = true), true).isEmpty())
+        }
+    }
+
     @Test fun selectionPreparationAndUnownedOrMissingIdentityStartNothing() {
         val translator = DirectListeningEventTranslator()
         assertTrue(translator.observe("item", state(IntegratedDirectPhase.PLAYING)).isEmpty())
@@ -197,6 +232,8 @@ class DirectListeningEventTranslatorTest {
                     DirectListeningEvent.SUSPENDED -> coordinator.onIsPlayingChanged(evidence, false, at(time))
                     DirectListeningEvent.DISCONTINUITY -> coordinator.onPositionDiscontinuity(evidence, at(time))
                     DirectListeningEvent.NATURAL_END -> coordinator.onNaturalEnd(evidence, at(time))
+                    DirectListeningEvent.TRANSITION -> coordinator.onMediaItemTransition(
+                        evidence, ListeningMediaTransitionReason.SEEK, false, at(time))
                     DirectListeningEvent.STOPPED -> coordinator.onStopped(at(time))
                     DirectListeningEvent.ERROR -> coordinator.onError(at(time))
                 }

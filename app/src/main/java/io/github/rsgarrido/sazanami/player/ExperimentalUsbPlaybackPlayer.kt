@@ -48,7 +48,22 @@ internal class ExperimentalUsbPlaybackPlayer(
         }
     },acquireFocus=acquireFocus,releaseFocus=releaseFocus,listeningChanged={ item, state, terminal ->
         if(directListeningOwned) directListeningObserver?.onObservation(item,state,terminal)
-    })
+    },sourceAdmissionFailure=::directSourceAdmissionFailure)
+    private fun directSourceAdmissionFailure(): String? = when {
+        shuttingDown || !scope.isActive -> "DIRECT_SERVICE_UNAVAILABLE"
+        !predecessorReleased() -> "DIRECT_PREDECESSOR_CLEANUP_PENDING"
+        switching!=null || !selectedDirect -> "DIRECT_SWITCH_PENDING"
+        !normalReleaseSafe -> "NORMAL_BACKEND_RELEASE_UNVERIFIED"
+        !selectionHandedOff -> "DIRECT_USB_NOT_AUTHORIZED"
+        else -> if(selectionOwner==null) "DIRECT_USB_NOT_AUTHORIZED"
+            else selection.failure(requireNotNull(selectionOwner))
+    }
+
+    /** Internal Stage A contract; production queue and library-selection guards stay in place. */
+    fun replaceDirectSource(item: MediaItem,playing: Boolean,startPositionMs: Long=0L): Deferred<DirectSourceTransitionResult> {
+        verifyApplicationThread()
+        return direct.replaceSource(item,playing,startPositionMs)
+    }
     fun attachDirectListeningObserver(observer: DirectPlaybackListeningObserver) {
         check(directListeningObserver==null && !directListeningOwned)
         directListeningObserver=observer
@@ -287,7 +302,9 @@ internal class ExperimentalUsbPlaybackPlayer(
     }
     fun rejectDirectCommand(command: String) { if(selectedDirect) direct.notice(command) }
     suspend fun shutdown(): Boolean {
-        shuttingDown=true;modeJob?.join()
+        shuttingDown=true
+        if(selectedDirect) direct.requestStop()
+        modeJob?.join()
         val safe=direct.stopAndJoin()
         endDirectListening()
         selectionOwner?.let { owner ->
