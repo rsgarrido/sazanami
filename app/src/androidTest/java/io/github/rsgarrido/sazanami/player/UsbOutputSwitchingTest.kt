@@ -154,6 +154,26 @@ class UsbOutputSwitchingTest {
         var token = gate.select(identity)!!
         val reservationReleased get() = reservation.token == null
         var commitFails: String? = null
+        val listeningTrace = mutableListOf<String>()
+        val listeningEvents = mutableListOf<DirectListeningEvent>()
+        val listeningItems = mutableListOf<String?>()
+        private val listeningTranslator = DirectListeningEventTranslator()
+        private val listeningObserver = object : DirectPlaybackListeningObserver {
+            override fun onActivated() {
+                listeningTrace += "activated"
+                listeningTranslator.activate()
+            }
+            override fun onObservation(item: MediaItem?, state: IntegratedDirectPlaybackState, terminalConfirmed: Boolean) {
+                val itemId = item?.listeningEvidence()?.itemInstanceId
+                listeningItems += itemId
+                listeningEvents += listeningTranslator.observe(itemId, state, terminalConfirmed)
+                if (terminalConfirmed) listeningTrace += "terminal:${state.phase}"
+            }
+            override fun onDeactivated() {
+                listeningTrace += "deactivated"
+                listeningTranslator.deactivate()
+            }
+        }
         private val controller = object : UsbOutputSelectionController {
             override fun authorizeIntegratedSelection(owner: UsbActivationOwner, identity: UsbAudioDeviceIdentity?, generation: Long): String? {
                 authorizations++;authorizationFailure?.let { return it }
@@ -176,8 +196,10 @@ class UsbOutputSwitchingTest {
         }
         val route = ExperimentalUsbPlaybackPlayer(normal, scope, engine,
             releaseNormal = { releases++;released.await() },
-            recreateNormal = { recreations++;if (recreationFails) error("restore failed");Physical(if (emptyQueue) null else song.toPlayableMediaItem(), false) },
-            selection = UsbOutputSelectionCallbacks { controller })
+            recreateNormal = { listeningTrace += "recreate";recreations++;if (recreationFails) error("restore failed");Physical(if (emptyQueue) null else song.toPlayableMediaItem(), false) },
+            selection = UsbOutputSelectionCallbacks { controller }).also {
+                it.attachDirectListeningObserver(listeningObserver)
+            }
         suspend fun close() {
             engine.terminal.complete(terminal(true));released.complete(true)
             route.shutdown();route.releaseTransitionResources();route.release();scope.cancel()
@@ -194,6 +216,63 @@ class UsbOutputSwitchingTest {
 
     private suspend fun settled(f: Fixture) {
         withTimeout(5000) { while (f.route.directState.switching != null) yield() }
+    }
+
+    @Test fun listeningOwnershipStartsAfterReleaseAndEndsAfterTerminalBeforeAndroidRebind() = checkRoute { f ->
+        f.route.selectDirect(true)
+        assertTrue(f.listeningTrace.isEmpty())
+        f.released.complete(true);settled(f)
+        assertEquals(listOf("activated"), f.listeningTrace)
+        assertTrue(f.listeningEvents.isEmpty())
+        val original = song.toPlayableMediaItem("listening-original")
+        f.route.setMediaItem(original);f.route.prepare();yield()
+        assertTrue(f.listeningEvents.isEmpty())
+        val oldProgress = f.engine.progress
+        oldProgress(UsbFullProgress(44100, 441000, 44100))
+        assertEquals(listOf(DirectListeningEvent.PLAYING), f.listeningEvents)
+        f.route.selectDirect(false);yield()
+        assertEquals(listOf(DirectListeningEvent.PLAYING, DirectListeningEvent.SUSPENDED), f.listeningEvents)
+        assertEquals(0, f.recreations)
+        f.engine.terminal.complete(terminal(true));settled(f)
+        assertEquals(listOf("activated", "terminal:STOPPED", "deactivated", "recreate"), f.listeningTrace)
+        assertEquals(DirectListeningEvent.STOPPED, f.listeningEvents.last())
+        assertTrue(f.listeningItems.all { it == "listening-original" })
+        val recorded = f.listeningEvents.toList()
+        oldProgress(UsbFullProgress(88200, 441000, 44100))
+        f.route.stopDirect()
+        assertEquals(recorded, f.listeningEvents)
+        assertFalse(f.route.playWhenReady)
+    }
+
+    @Test fun joinedFailureAfterProvisionalStoppingReachesErrorExactlyOnce() = checkRoute { f ->
+        f.released.complete(true);f.route.selectDirect(true);settled(f)
+        f.route.setMediaItem(song.toPlayableMediaItem("failed-item"));f.route.prepare();yield()
+        f.engine.progress(UsbFullProgress(44100, 441000, 44100))
+        f.engine.progress(UsbFullProgress(44100, 441000, 44100, UsbFullTransportPhase.FAILED))
+        assertEquals(IntegratedDirectPhase.STOPPING, f.route.directState.phase)
+        assertEquals(listOf(DirectListeningEvent.PLAYING, DirectListeningEvent.SUSPENDED), f.listeningEvents)
+        f.engine.terminal.complete(terminal(true).copy(status = UsbSilentStatus.USB_TRANSPORT_FAILED))
+        withTimeout(5000) { while (f.route.directState.phase != IntegratedDirectPhase.ERROR) yield() }
+        assertEquals(DirectListeningEvent.ERROR, f.listeningEvents.last())
+        assertFalse(f.listeningEvents.contains(DirectListeningEvent.STOPPED))
+        f.route.stopDirect();yield()
+        assertEquals(1, f.listeningEvents.count { it == DirectListeningEvent.ERROR })
+        assertFalse(f.listeningEvents.contains(DirectListeningEvent.STOPPED))
+    }
+
+    @Test fun shutdownRetainsListeningOwnershipUntilWorkerTerminal() = checkRoute { f ->
+        f.released.complete(true);f.route.selectDirect(true);settled(f)
+        f.route.setMediaItem(song.toPlayableMediaItem("shutdown-item"));f.route.prepare();yield()
+        f.engine.progress(UsbFullProgress(44100, 441000, 44100))
+        val shutdown = f.scope.async { f.route.shutdown() }
+        yield()
+        assertFalse(shutdown.isCompleted)
+        assertFalse(f.listeningTrace.contains("deactivated"))
+        f.engine.terminal.complete(terminal(true))
+        assertTrue(shutdown.await())
+        assertEquals(listOf("activated", "terminal:STOPPED", "deactivated"), f.listeningTrace)
+        assertEquals(listOf(DirectListeningEvent.PLAYING, DirectListeningEvent.SUSPENDED, DirectListeningEvent.STOPPED), f.listeningEvents)
+        assertEquals(0, f.recreations)
     }
 
     @Test fun activationWaitsForReleaseIgnoresRepeatTapsAndDoesNotPlay() = checkRoute { f ->

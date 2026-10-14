@@ -37,6 +37,8 @@ internal class ExperimentalUsbPlaybackPlayer(
     private var savedVolume=1f
     private var savedParameters=PlaybackParameters.DEFAULT
     private var shuttingDown=false
+    private var directListeningObserver: DirectPlaybackListeningObserver?=null
+    private var directListeningOwned=false
     private val direct=DirectUsbMediaPlayer(scope,usb,changed={ value ->
         if(selectedDirect && switching != DirectOutputSwitch.TO_USB) {
             directState=value.copy(switching=switching,normalReleased=normalReleaseSafe,cleanupSafe=value.cleanupSafe && normalReleaseSafe,
@@ -44,7 +46,27 @@ internal class ExperimentalUsbPlaybackPlayer(
                 activation=directState.activation)
             IntegratedDirectPlaybackBridge.publish(this,directState)
         }
-    },acquireFocus=acquireFocus,releaseFocus=releaseFocus)
+    },acquireFocus=acquireFocus,releaseFocus=releaseFocus,listeningChanged={ item, state, terminal ->
+        if(directListeningOwned) directListeningObserver?.onObservation(item,state,terminal)
+    })
+    fun attachDirectListeningObserver(observer: DirectPlaybackListeningObserver) {
+        check(directListeningObserver==null && !directListeningOwned)
+        directListeningObserver=observer
+    }
+    fun detachDirectListeningObserver() {
+        endDirectListening()
+        directListeningObserver=null
+    }
+    private fun beginDirectListening() {
+        if(directListeningOwned) return
+        directListeningOwned=true
+        directListeningObserver?.onActivated()
+    }
+    private fun endDirectListening() {
+        if(!directListeningOwned) return
+        directListeningOwned=false
+        directListeningObserver?.onDeactivated()
+    }
     private fun publish() {
         directState=directState.copy(activation=directState.activation?.copy(output=when {
             switching!=null -> UsbActivationOutput.SWITCHING
@@ -166,6 +188,7 @@ internal class ExperimentalUsbPlaybackPlayer(
                             restoreAfterFailure=true
                         } else {
                             selectionHandedOff=true
+                            beginDirectListening()
                             directState=direct.evidence.copy(enabled=true,normalReleased=true,switching=switching,
                                 activation=directState.activation?.copy(stage=UsbActivationStage.ACTIVE,reservation=UsbActivationReservation.PROTECTED))
                         }
@@ -200,6 +223,9 @@ internal class ExperimentalUsbPlaybackPlayer(
                         return@launchSwitch
                     }
                     if(shuttingDown) return@launchSwitch
+                    // The joined terminal observation has entered history before normal callbacks
+                    // can be rebound. Later Direct notices/idle updates no longer own that ingress.
+                    endDirectListening()
                     restorationStarted=true
                     val restored=recreateNormal()
                     normal.rebindPhysicalPlayer(restored,baselineVolume=savedVolume,logicalPlayWhenReady=false)
@@ -263,6 +289,7 @@ internal class ExperimentalUsbPlaybackPlayer(
     suspend fun shutdown(): Boolean {
         shuttingDown=true;modeJob?.join()
         val safe=direct.stopAndJoin()
+        endDirectListening()
         selectionOwner?.let { owner ->
             stage(UsbActivationStage.SHUTDOWN)
             if(!selectionHandedOff) rollback(owner)

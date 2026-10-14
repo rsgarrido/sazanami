@@ -107,6 +107,7 @@ class PlaybackService : MediaLibraryService() {
     private val previousDirectTeardown=DirectPlaybackTeardown.latest
     private lateinit var playerStateStorage: PlayerStateStorage
     private lateinit var listeningAdapter: PlaybackServiceListeningAdapter
+    private lateinit var directListeningBinding: DirectPlaybackListeningBinding
     private lateinit var playbackQueueCoordinator: PlaybackQueueCoordinator
     private var nowPlayingWidgetPublisher: NowPlayingWidgetPublisher? = null
     private var playbackQueueRestorationComplete = false
@@ -181,6 +182,7 @@ class PlaybackService : MediaLibraryService() {
 
         private fun isAuthoritative(): Boolean =
             !released &&
+                    (!::directListeningBinding.isInitialized || !directListeningBinding.isActive) &&
                     ::physicalPlayers.isInitialized &&
                     physicalPlayers.isActive(pipeline.player)
 
@@ -699,6 +701,8 @@ class PlaybackService : MediaLibraryService() {
             trackResolver = ListeningNativeTrackResolver(database),
             eventRepository = ListeningEventRepository(database.listeningEventDao())
         )
+        directListeningBinding = DirectPlaybackListeningBinding(listeningAdapter)
+        sessionPlayer.attachDirectListeningObserver(directListeningBinding)
         playbackQueueCoordinator = PlaybackQueueCoordinator(
             persistence = PlaybackQueueRepository(database).asPlaybackQueuePersistence(),
             trackAccess = RoomPlaybackQueueTrackAccess(
@@ -836,13 +840,14 @@ class PlaybackService : MediaLibraryService() {
     override fun onDestroy() {
         val teardownLease=if(IntegratedDirectPlaybackBridge.directSelected) DirectPlaybackTeardown.begin() else null
         sessionPlayer.stopDirect()
+        val awaitDirectListeningTerminal = directListeningBinding.isActive
         saveServicePlaybackState()
         IntegratedDirectPlaybackBridge.detach(sessionPlayer)
         checkpointHandler.removeCallbacks(checkpointRunnable)
         saveServicePlaybackState()
         activeServiceBinding?.release()
         activeServiceBinding = null
-        listeningAdapter.closeGracefully()
+        if (!awaitDirectListeningTerminal) listeningAdapter.closeGracefully()
         audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)
         PlaybackLibraryBridge.unregisterPlaybackPolicyListener()
         PlaybackQueueRuntimeBridge.unregister(playbackQueueCoordinator)
@@ -852,7 +857,12 @@ class PlaybackService : MediaLibraryService() {
         mediaSession?.release()
         mediaSession = null
         shutdownJob=serviceScope.launch {
-            val safe=sessionPlayer.shutdown()
+            val safe=try {
+                sessionPlayer.shutdown()
+            } finally {
+                sessionPlayer.detachDirectListeningObserver()
+                if (awaitDirectListeningTerminal) listeningAdapter.closeGracefully()
+            }
             usbAudioController?.close()
             usbAudioController?.awaitIdle()
             usbAudioController=null

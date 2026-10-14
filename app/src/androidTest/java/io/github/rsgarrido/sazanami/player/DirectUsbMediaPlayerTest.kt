@@ -19,8 +19,12 @@ class DirectUsbMediaPlayerTest {
         val instrumentation=InstrumentationRegistry.getInstrumentation()
         val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate);val engine=Engine()
         lateinit var player: DirectUsbMediaPlayer
+        val listeningTranslator=DirectListeningEventTranslator().apply { activate() }
+        val listeningEvents=mutableListOf<DirectListeningEvent>()
         instrumentation.runOnMainSync {
-            player=DirectUsbMediaPlayer(scope,engine,changed={},librarySong={song})
+            player=DirectUsbMediaPlayer(scope,engine,changed={},librarySong={song},listeningChanged={ item,state,terminal ->
+                listeningEvents+=listeningTranslator.observe(item?.listeningEvidence()?.itemInstanceId,state,terminal)
+            })
             player.setMediaItem(song.toPlayableMediaItem());player.prepare()
             fun update(position: Long,epoch: Long,serial: Long,phase: UsbFullTransportPhase) {
                 engine.progress!!.invoke(UsbFullProgress(96000,480000,48000,phase,mapOf("sourceSeekCapable" to 1L,
@@ -43,8 +47,12 @@ class DirectUsbMediaPlayerTest {
             assertEquals(3L,engine.control!!.intent().seeks)
             update(240000,2,older,UsbFullTransportPhase.PAUSED)
             assertEquals(1000L,player.currentPosition)
+            assertEquals(1,listeningEvents.count { it==DirectListeningEvent.DISCONTINUITY })
             update(0,3,newest,UsbFullTransportPhase.PAUSED)
             assertEquals(0L,player.currentPosition);assertFalse(player.isPlaying)
+            assertEquals(2,listeningEvents.count { it==DirectListeningEvent.DISCONTINUITY })
+            update(0,3,newest,UsbFullTransportPhase.PAUSED)
+            assertEquals(2,listeningEvents.count { it==DirectListeningEvent.DISCONTINUITY })
             player.play();update(0,3,newest,UsbFullTransportPhase.RESUMING)
             assertFalse(player.isPlaying);update(0,3,newest,UsbFullTransportPhase.PLAYING)
             assertTrue(player.isPlaying);assertEquals(1,engine.starts)
@@ -222,17 +230,27 @@ class DirectUsbMediaPlayerTest {
         val instrumentation=InstrumentationRegistry.getInstrumentation()
         val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate);val engine=Engine()
         lateinit var player: DirectUsbMediaPlayer
+        val listeningTranslator=DirectListeningEventTranslator().apply { activate() }
+        val listeningEvents=mutableListOf<DirectListeningEvent>()
         instrumentation.runOnMainSync {
-            player=DirectUsbMediaPlayer(scope,engine,changed={},librarySong={song})
+            player=DirectUsbMediaPlayer(scope,engine,changed={},librarySong={song},listeningChanged={ item,state,terminal ->
+                listeningEvents+=listeningTranslator.observe(item?.listeningEvidence()?.itemInstanceId,state,terminal)
+            })
             player.setMediaItem(song.toPlayableMediaItem());player.prepare()
             engine.progress!!.invoke(UsbFullProgress(48000,96000,48000))
             engine.progress!!.invoke(UsbFullProgress(47999,96000,48000))
             assertEquals(IntegratedDirectPhase.ERROR,player.evidence.phase)
+            assertEquals(listOf(DirectListeningEvent.PLAYING,DirectListeningEvent.SUSPENDED,DirectListeningEvent.ERROR),listeningEvents)
             assertNotNull(engine.control!!.failure);assertFalse(engine.control!!.request(true))
             player.stop();assertEquals(1,engine.stops)
             engine.terminal.complete(stopped().copy(status=UsbSilentStatus.FAILED))
         }
         instrumentation.waitForIdleSync()
-        instrumentation.runOnMainSync { assertEquals(IntegratedDirectPhase.ERROR,player.evidence.phase);scope.cancel() }
+        instrumentation.runOnMainSync {
+            assertEquals(IntegratedDirectPhase.ERROR,player.evidence.phase)
+            assertEquals(1,listeningEvents.count { it==DirectListeningEvent.ERROR })
+            assertFalse(listeningEvents.contains(DirectListeningEvent.STOPPED))
+            scope.cancel()
+        }
     }
 }

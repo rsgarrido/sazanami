@@ -19,7 +19,8 @@ internal class DirectUsbMediaPlayer(
     private val scope: CoroutineScope, private val usb: FullUsbPlaybackEngineClient,
     private val changed: (IntegratedDirectPlaybackState)->Unit,
     private val acquireFocus: ()->Boolean={true},private val releaseFocus: ()->Unit={},
-    private val librarySong: (String)->Song?={ id -> PlaybackLibraryBridge.songs.firstOrNull { it.id.toString()==id } }
+    private val librarySong: (String)->Song?={ id -> PlaybackLibraryBridge.songs.firstOrNull { it.id.toString()==id } },
+    private val listeningChanged: (MediaItem?, IntegratedDirectPlaybackState, Boolean)->Unit={ _, _, _ -> }
 ) : SimpleBasePlayer(Looper.getMainLooper()) {
     var evidence=IntegratedDirectPlaybackState(enabled=true,normalReleased=true); private set
     private var items: List<MediaItem> = emptyList()
@@ -29,7 +30,12 @@ internal class DirectUsbMediaPlayer(
     private var stopRequested=false
     private var nextGeneration=0L
     private var control: UsbFullPlaybackControl?=null
-    private fun update(value: IntegratedDirectPlaybackState) { evidence=value; changed(value); invalidateState() }
+    private fun update(value: IntegratedDirectPlaybackState, terminalConfirmed: Boolean=false) {
+        evidence=value
+        listeningChanged(items.getOrNull(selected), value, terminalConfirmed)
+        changed(value)
+        invalidateState()
+    }
     fun notice(command: String) { update(evidence.copy(notice="$command is unavailable in Session 17")) }
     override fun getState(): State {
         val playlist=items.mapIndexed { index,item -> MediaItemData.Builder(item.listeningEvidence()?.itemInstanceId ?: "${item.mediaId}:$index")
@@ -79,15 +85,15 @@ internal class DirectUsbMediaPlayer(
                 val result=usb.runIntegratedFull(song.uri,commands) { progress ->
                     if(evidence.generation==generation && !stopRequested) {
                         try { update(integratedProgressState(evidence,progress,commands.playWhenReady)) }
-                        catch(error: IllegalArgumentException) { commands.fail(error);update(evidence.copy(phase=IntegratedDirectPhase.ERROR,error="DIRECT_PROGRESS_INVALID",playWhenReady=false)) }
+                        catch(error: IllegalArgumentException) { commands.fail(error);update(evidence.copy(phase=IntegratedDirectPhase.ERROR,error="DIRECT_PROGRESS_INVALID",playWhenReady=false), terminalConfirmed=true) }
                     }
                 }
                 if(evidence.generation!=generation) return@launch
-                update(integratedTerminalState(evidence,result))
+                update(integratedTerminalState(evidence,result), terminalConfirmed=true)
             } catch(error: UsbIntegratedStartException) {
-                update(evidence.copy(phase=IntegratedDirectPhase.ERROR,error=error.reason,cleanupSafe=error.reason!="DIRECT_RESOURCE_CLEANUP_UNVERIFIED"))
+                update(evidence.copy(phase=IntegratedDirectPhase.ERROR,error=error.reason,cleanupSafe=error.reason!="DIRECT_RESOURCE_CLEANUP_UNVERIFIED"), terminalConfirmed=true)
             } catch(error: Exception) {
-                update(evidence.copy(phase=IntegratedDirectPhase.ERROR,error="DIRECT_RESOURCE_CLEANUP_UNVERIFIED",cleanupSafe=false))
+                update(evidence.copy(phase=IntegratedDirectPhase.ERROR,error="DIRECT_RESOURCE_CLEANUP_UNVERIFIED",cleanupSafe=false), terminalConfirmed=true)
             } finally { commands.finish();if(control===commands)control=null;releaseFocus() }
         }
         invalidateState()
@@ -108,9 +114,9 @@ internal class DirectUsbMediaPlayer(
                 if(playWhenReady) IntegratedDirectPhase.RESUMING else IntegratedDirectPhase.PAUSING))
             Futures.immediateVoidFuture()
         } catch(error: Exception) {
-            update(evidence.copy(phase=IntegratedDirectPhase.ERROR,error="DIRECT_CONTROL_FAILED",playWhenReady=false));Futures.immediateFailedFuture<Unit>(error)
+            update(evidence.copy(phase=IntegratedDirectPhase.ERROR,error="DIRECT_CONTROL_FAILED",playWhenReady=false), terminalConfirmed=true);Futures.immediateFailedFuture<Unit>(error)
         } catch(error: LinkageError) {
-            update(evidence.copy(phase=IntegratedDirectPhase.ERROR,error="DIRECT_CONTROL_FAILED",playWhenReady=false));Futures.immediateFailedFuture<Unit>(error)
+            update(evidence.copy(phase=IntegratedDirectPhase.ERROR,error="DIRECT_CONTROL_FAILED",playWhenReady=false), terminalConfirmed=true);Futures.immediateFailedFuture<Unit>(error)
         }
     }
     override fun handleSeek(mediaItemIndex: Int,positionMs: Long,seekCommand: Int): ListenableFuture<*> {
@@ -123,15 +129,15 @@ internal class DirectUsbMediaPlayer(
             update(evidence.copy(phase=IntegratedDirectPhase.SEEKING,pendingSeekSerial=commands.intent().seekSerial,notice=null))
             Futures.immediateVoidFuture()
         } catch(error: IllegalArgumentException) {Futures.immediateFailedFuture<Unit>(error)}
-        catch(error: Exception) {update(evidence.copy(phase=IntegratedDirectPhase.ERROR,error="DIRECT_SEEK_CONTROL_FAILED",playWhenReady=false));Futures.immediateFailedFuture<Unit>(error)}
-        catch(error: LinkageError) {update(evidence.copy(phase=IntegratedDirectPhase.ERROR,error="DIRECT_SEEK_CONTROL_FAILED",playWhenReady=false));Futures.immediateFailedFuture<Unit>(error)}
+        catch(error: Exception) {update(evidence.copy(phase=IntegratedDirectPhase.ERROR,error="DIRECT_SEEK_CONTROL_FAILED",playWhenReady=false), terminalConfirmed=true);Futures.immediateFailedFuture<Unit>(error)}
+        catch(error: LinkageError) {update(evidence.copy(phase=IntegratedDirectPhase.ERROR,error="DIRECT_SEEK_CONTROL_FAILED",playWhenReady=false), terminalConfirmed=true);Futures.immediateFailedFuture<Unit>(error)}
     }
     fun requestStop() {
         if(evidence.busy || worker?.isCompleted==false) {
             stopRequested=true
             try { control?.stop() }
             finally { update(evidence.copy(phase=IntegratedDirectPhase.STOPPING,playWhenReady=false));usb.stopIntegratedFull() }
-        } else if(worker?.isCompleted!=false) update(evidence.copy(phase=IntegratedDirectPhase.STOPPED,playWhenReady=false))
+        } else if(worker?.isCompleted!=false) update(evidence.copy(phase=IntegratedDirectPhase.STOPPED,playWhenReady=false), terminalConfirmed=true)
     }
     suspend fun stopAndJoin(): Boolean { requestStop(); withContext(NonCancellable) { worker?.join() }; return evidence.cleanupSafe }
     override fun handleStop(): ListenableFuture<*> { requestStop(); return Futures.immediateVoidFuture() }
