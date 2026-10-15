@@ -6,7 +6,7 @@ import io.github.rsgarrido.sazanami.player.usb.UsbFullTransportPhase
 import io.github.rsgarrido.sazanami.player.usb.directSeekTargetFrame
 
 internal enum class DirectSourceTransitionStatus {
-    WAITING_FOR_CLEANUP, PREPARING, READY, COMPLETED, FAILED, SUPERSEDED, CANCELLED, REJECTED
+    WAITING_FOR_CLEANUP, PREPARING, READY, COMPLETED, UNCHANGED, FAILED, SUPERSEDED, CANCELLED, REJECTED
 }
 
 /** Requested identity is separate from the accepted item and native generation in player state. */
@@ -20,7 +20,7 @@ internal data class DirectSourceTransitionState(
     val error: String? = null
 )
 
-/** READY confirms playing/paused readiness; COMPLETED is verified EOF before a readiness snapshot. */
+/** READY confirms native readiness; COMPLETED is verified early EOF; UNCHANGED selects no new run. */
 internal data class DirectSourceTransitionResult(
     val requestId: Long,
     val status: DirectSourceTransitionStatus,

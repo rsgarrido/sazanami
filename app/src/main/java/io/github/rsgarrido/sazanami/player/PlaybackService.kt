@@ -129,7 +129,7 @@ class PlaybackService : MediaLibraryService() {
     private val checkpointRunnable = object : Runnable {
         override fun run() {
             saveServicePlaybackState()
-            if (::physicalPlayers.isInitialized && player.isPlaying) {
+            if (::sessionPlayer.isInitialized && sessionPlayer.isPlaying) {
                 checkpointHandler.postDelayed(
                     this,
                     PlaybackStateCheckpointPolicy.DEFAULT_INTERVAL_MILLIS
@@ -731,7 +731,8 @@ class PlaybackService : MediaLibraryService() {
                 },
                 onBaseSongsRestored = { songs, shuffleEnabled ->
                     servicePlaybackContextSongs = songs
-                    playerStateStorage.saveServicePlaybackContext(
+                    // Direct uses Room checkpoints. Output restoration keeps the original Android preferences.
+                    if(!sessionPlayer.isDirectSelected && sessionPlayer.directState.switching==null) playerStateStorage.saveServicePlaybackContext(
                         playbackContextSongIds = songs.map(Song::id),
                         shuffleMode = if (shuffleEnabled) {
                             PlaybackShuffleMode.SONGS
@@ -751,6 +752,27 @@ class PlaybackService : MediaLibraryService() {
             onActiveQueueChanged = PlaybackQueueRuntimeBridge::updateActiveQueueId
         )
         PlaybackQueueRuntimeBridge.register(playbackQueueCoordinator)
+        PlaybackQueueRuntimeBridge.registerContextRequest(playbackQueueCoordinator) { songs,items,index,position,playing,baseIds,shuffle,repeat ->
+            serviceScope.launch {
+                val accepted=try { playbackQueueCoordinator.replacePlaybackContext(songs,items,index,position,playing,baseIds,shuffle,repeat) }
+                    catch(cancelled: CancellationException) { throw cancelled }
+                    catch(_: Exception) { false }
+                if(!accepted)
+                    sessionPlayer.rejectDirectCommand("Track selection")
+            }
+        }
+        sessionPlayer.attachQueueOutputObserver(playbackQueueCoordinator)
+        sessionPlayer.addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if(!sessionPlayer.isDirectSelected) return
+                checkpointHandler.removeCallbacks(checkpointRunnable)
+                if(isPlaying) checkpointHandler.postDelayed(checkpointRunnable,PlaybackStateCheckpointPolicy.DEFAULT_INTERVAL_MILLIS)
+                else saveServicePlaybackState()
+            }
+            override fun onMediaItemTransition(mediaItem: MediaItem?,reason: Int) {
+                if(sessionPlayer.isDirectSelected) saveServicePlaybackState()
+            }
+        })
         playbackQueueRestorationJob = serviceScope.launch {
             try {
                 if(previousDirectTeardown!=null && !previousDirectTeardown.awaitSafe()) return@launch
@@ -1211,7 +1233,12 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private fun saveServicePlaybackState() {
-        if (IntegratedDirectPlaybackBridge.directSelected) return
+        if (IntegratedDirectPlaybackBridge.directSelected) {
+            if(::playbackQueueCoordinator.isInitialized) serviceScope.launch {
+                playbackQueueCoordinator.persistActiveQueueSnapshot()
+            }
+            return
+        }
         if (
             !::physicalPlayers.isInitialized ||
             !::playerStateStorage.isInitialized

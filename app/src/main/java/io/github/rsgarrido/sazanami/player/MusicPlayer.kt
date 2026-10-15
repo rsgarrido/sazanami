@@ -139,6 +139,7 @@ class MusicPlayer(private val context: Context) {
         val mediaItems = safePlaylist.map { playlistSong ->
             playlistSong.toPlayableMediaItem()
         }
+        var contextBaseEntryIds=mediaItems.map { checkNotNull(it.listeningEvidence()?.itemInstanceId) }
         canonicalBaseSongs?.let { canonicalSongs ->
             val playbackEntries = safePlaylist.zip(mediaItems).map { (playlistSong, mediaItem) ->
                 val entryId = checkNotNull(mediaItem.listeningEvidence()?.itemInstanceId)
@@ -149,12 +150,18 @@ class MusicPlayer(private val context: Context) {
                 playbackEntries = playbackEntries
             ))
             PlaybackQueueRuntimeBridge.prepareNewPlaybackContext(canonicalBaseEntryIds)
+            contextBaseEntryIds=canonicalBaseEntryIds
         }
 
         if (IntegratedDirectPlaybackBridge.directSelected) {
-            // One session item; the surrounding normal queue stays stored separately.
-            playerController.setMediaItem(mediaItems[startIndex],0L)
-            if (shouldStart) playerController.prepare()
+            val repeat=when(PlaybackLibraryBridge.currentRepeatMode()) {
+                RepeatMode.ONE -> io.github.rsgarrido.sazanami.data.local.PersistedQueueRepeatMode.ONE
+                RepeatMode.ALL -> io.github.rsgarrido.sazanami.data.local.PersistedQueueRepeatMode.ALL
+                else -> io.github.rsgarrido.sazanami.data.local.PersistedQueueRepeatMode.OFF
+            }
+            if(!PlaybackQueueRuntimeBridge.requestPlaybackContext(safePlaylist,mediaItems,startIndex,startPosition.toLong(),
+                shouldStart,contextBaseEntryIds,PlaybackLibraryBridge.currentShuffleEnabled() ?: false,repeat))
+                IntegratedDirectPlaybackBridge.reject("Track selection")
         } else {
             playerController.setMediaItems(mediaItems,startIndex,startPosition.toLong())
             playerController.prepare()

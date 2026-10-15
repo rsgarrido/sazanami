@@ -13,6 +13,10 @@ import io.github.rsgarrido.sazanami.data.local.PlaybackQueueWithEntries
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 
 internal data class LivePlaybackQueueItem(
     val entryId: String,
@@ -100,8 +104,24 @@ internal fun captureCanonicalBaseEntryIds(
 internal interface PlaybackQueueRuntime {
     /** Checked again after suspended resolution, before activation has any playback side effects. */
     fun canReplaceTimeline(): Boolean = true
+    fun canActivate(restoration: PlaybackQueueRestoration): Boolean = canReplaceTimeline()
+    fun canSelectEntry(entryId: String): Boolean = true
     fun captureSnapshot(): LivePlaybackQueueSnapshot?
     fun replaceTimeline(restoration: PlaybackQueueRestoration)
+    /** Direct acknowledgment must come from its native request, never a Media3 placeholder. */
+    suspend fun replaceTimelineAndAwait(restoration: PlaybackQueueRestoration): Boolean {
+        replaceTimeline(restoration)
+        return true
+    }
+    suspend fun seekToEntryAndAwait(entryId: String): Boolean = seekToEntry(entryId)
+    suspend fun restoreColdTimeline(restoration: PlaybackQueueRestoration): Boolean = replaceTimelineAndAwait(restoration)
+    fun canCheckpoint(): Boolean = true
+    fun usesDirectOutput(): Boolean = false
+    fun captureSelectionSnapshot(): LivePlaybackQueueSnapshot? = captureSnapshot()
+    fun requestedPlaying(): Boolean = captureSelectionSnapshot()?.shouldPlay ?: false
+    fun captureBaseSongs(): List<Song> = emptyList()
+    fun restoreBaseSongs(songs: List<Song>,shuffle: Boolean) {}
+    fun canRestoreBackup(): Boolean = true
     fun captureForBackupRestore(): BackupRestorePlaybackSnapshot? = null
     fun clearForBackupRestore() {}
     fun restoreAfterFailedBackupRestore(snapshot: BackupRestorePlaybackSnapshot) {}
@@ -110,6 +130,17 @@ internal interface PlaybackQueueRuntime {
     fun moveEntry(entryId: String, toPlaybackOrder: Int): Boolean = false
     fun seekToEntry(entryId: String): Boolean = false
     fun insertEntry(item: ResolvedPlaybackQueueItem, playbackOrder: Int): Boolean = false
+}
+
+/** Keeps the existing pre-Direct Android snapshot and its saved queue identity together. */
+internal interface PlaybackQueueOutputObserver {
+    fun onDirectRequested(): Boolean
+    fun onDirectAbandoned() {}
+    suspend fun beforeDirectRelease()
+    fun onAndroidRequested()
+    suspend fun beforeAndroidRestore()
+    suspend fun afterAndroidRestore()
+    fun onAndroidRestored() {}
 }
 
 internal interface PlaybackQueueTrackAccess {
@@ -287,8 +318,18 @@ internal class PlaybackQueueCoordinator(
     private val generatedQueueName: (Int) -> String,
     private val queueIdFactory: () -> String = { java.util.UUID.randomUUID().toString() },
     private val onActiveQueueChanged: (String?) -> Unit = {}
-) {
+) : PlaybackQueueOutputObserver {
     private val mutex = Mutex()
+    private var operationSerial=0L
+    private var outputEpoch=0L
+    private var pendingOperation: QueueOperation?=null
+    private var queueStateConfirmed=true
+    private var outputCheckpointFrozen=false
+    private var androidQueue: OutputQueueSnapshot?=null
+    private var leavingDirectSnapshot: LivePlaybackQueueSnapshot?=null
+    private data class QueueOperation(val serial: Long,val epoch: Long,val activation: Boolean)
+    private data class OutputQueueSnapshot(var queueId: String?,val live: LivePlaybackQueueSnapshot?,
+        val baseSongs: List<Song>,var signature: LiveQueueSignature?,var baseIds: List<String>)
     @Volatile
     private var activeQueueId: String? = null
     @Volatile
@@ -303,6 +344,9 @@ internal class PlaybackQueueCoordinator(
 
     suspend fun beginBackupRestore() = mutex.withLock {
         check(!backupRestoreInProgress) { "Backup restore is already in progress" }
+        check(pendingOperation==null && !outputCheckpointFrozen && runtime.canRestoreBackup()) {
+            "Backup restoration is unavailable during Direct playback or a queue transition"
+        }
         val playback = runtime.captureForBackupRestore()
         val previousActiveQueueId = activeQueueId
         backupRestoreInProgress = true
@@ -385,10 +429,10 @@ internal class PlaybackQueueCoordinator(
     fun getActiveQueueId(): String? = activeQueueId
 
     fun captureActiveQueueSnapshot(): LivePlaybackQueueSnapshot? =
-        runtime.captureSnapshot()?.withAuthoritativeBaseOrder()
+        if(pendingOperation!=null || !queueStateConfirmed || outputCheckpointFrozen) null
+        else runtime.captureSnapshot()?.withAuthoritativeBaseOrder()
 
     fun prepareNewPlaybackContext(baseEntryIds: List<String>) {
-        if (IntegratedDirectPlaybackBridge.directSelected) return
         if (backupRestoreInProgress) return
         require(baseEntryIds.isNotEmpty()) { "A new playback context must not be empty" }
         require(baseEntryIds.none(String::isBlank)) { "Queue entry IDs must not be blank" }
@@ -403,7 +447,8 @@ internal class PlaybackQueueCoordinator(
     }
 
     suspend fun createQueueFromCurrent(): PlaybackQueueWithEntries? = mutex.withLock {
-        if (backupRestoreInProgress) return@withLock null
+        if (backupRestoreInProgress || pendingOperation!=null || !queueStateConfirmed ||
+            outputCheckpointFrozen || !runtime.canCheckpoint()) return@withLock null
         val sourceQueueId = persistActiveQueueSnapshotLocked() ?: return@withLock null
         val source = persistence.loadQueue(sourceQueueId) ?: return@withLock null
         if (source.entries.isEmpty()) return@withLock null
@@ -417,14 +462,16 @@ internal class PlaybackQueueCoordinator(
     suspend fun createAndActivateQueue(
         displayName: String,
         songs: List<Song>
-    ): PlaybackQueueWithEntries? = mutex.withLock {
-        if (backupRestoreInProgress || !runtime.canReplaceTimeline()) return@withLock null
-        if (songs.isEmpty()) return@withLock null
+    ): PlaybackQueueWithEntries? {
+        val (created,restoration,operation)=mutex.withLock {
+        if (backupRestoreInProgress || outputCheckpointFrozen || !runtime.canReplaceTimeline()) return null
+        if (songs.isEmpty()) return null
+        val epoch=outputEpoch
         persistActiveQueueSnapshotLocked()
-        if (!runtime.canReplaceTimeline()) return@withLock null
+        if (!runtime.canReplaceTimeline() || epoch!=outputEpoch) return null
         val creation = createPopulatedQueueLocked(displayName, songs, activationRequired = true)
-            ?: return@withLock null
-        if (!runtime.canReplaceTimeline()) return@withLock null
+            ?: return null
+        if (!runtime.canReplaceTimeline() || epoch!=outputEpoch) return null
         val created = creation.queue
         val drafts = creation.drafts
         val identified = creation.identified
@@ -435,8 +482,7 @@ internal class PlaybackQueueCoordinator(
                 song = songs[index]
             )
         }
-        runtime.replaceTimeline(
-            PlaybackQueueRestoration(
+        val restoration=PlaybackQueueRestoration(
                 queueId = queueId,
                 entries = restorationEntries,
                 currentEntryId = drafts.first().entryId,
@@ -445,17 +491,31 @@ internal class PlaybackQueueCoordinator(
                 shuffleEnabled = false,
                 repeatMode = PersistedQueueRepeatMode.OFF
             )
-        )
-        persistence.setActiveQueue(queueId)
+        if(!runtime.canActivate(restoration)) return null
+        Triple(created,restoration,beginQueueOperation(activation=true))
+        }
+        try {
+        if(!runtime.replaceTimelineAndAwait(restoration)) return null
+        return mutex.withLock {
+        if(!owns(operation) || !runtime.canCheckpoint()) return@withLock null
+        val queueId=created.queue.queueId
+        val accepted=runtime.captureSnapshot() ?: return@withLock null
+        persistence.updateSavedPlaybackState(queueId,accepted.currentEntryId,accepted.currentPositionMs,
+            restoration.shuffleEnabled,restoration.repeatMode)
+        if(!owns(operation)) return@withLock null
+        if(!setActiveQueueWhileOwned(queueId,operation)) return@withLock null
         activeQueueId = queueId
         lastLiveSignature = LiveQueueSignature(
             queueId = queueId,
-            entries = songs.indices.map { index -> drafts[index].entryId to songs[index].membershipKey() },
-            baseEntryIds = drafts.map(PlaybackQueueEntryDraft::entryId)
+            entries = restoration.entries.map { it.persistedEntry.entryId to it.song.membershipKey() },
+            baseEntryIds = restoration.entries.map { it.persistedEntry.entryId }
         )
-        rememberedBaseEntryIds = drafts.map(PlaybackQueueEntryDraft::entryId)
+        rememberedBaseEntryIds = lastLiveSignature?.baseEntryIds.orEmpty()
+        pendingOperation=null;queueStateConfirmed=true
         onActiveQueueChanged(queueId)
         created
+        }
+        } finally { abandon(operation) }
     }
 
     suspend fun createInactiveQueue(
@@ -463,6 +523,47 @@ internal class PlaybackQueueCoordinator(
     ): PlaybackQueueWithEntries? = mutex.withLock {
         if (backupRestoreInProgress) return@withLock null
         createPopulatedQueueLocked(displayName = "", songs = songs)?.queue
+    }
+
+    /** The existing library/context path supplies its already-established explicit occurrence order. */
+    suspend fun replacePlaybackContext(songs: List<Song>,items: List<MediaItem>,index: Int,positionMs: Long,
+        playing: Boolean,baseEntryIds: List<String>,shuffle: Boolean,repeat: PersistedQueueRepeatMode): Boolean {
+        val (restoration,operation)=mutex.withLock {
+            if(backupRestoreInProgress || outputCheckpointFrozen || !runtime.canReplaceTimeline() ||
+                songs.size!=items.size || index !in items.indices) return false
+            val epoch=outputEpoch
+            val live=items.map { item ->
+                val evidence=item.listeningEvidence() ?: return false
+                LivePlaybackQueueItem(evidence.itemInstanceId,evidence)
+            }
+            val ids=live.map { it.entryId }
+            if(ids.distinct().size!=ids.size || baseEntryIds.size!=ids.size || baseEntryIds.toSet()!=ids.toSet()) return false
+            val identified=trackAccess.identify(live)
+            if(identified.size!=items.size || epoch!=outputEpoch) return false
+            val baseOrders=baseEntryIds.withIndex().associate { it.value to it.index }
+            val entries=identified.mapIndexed { order,item ->
+                ResolvedPlaybackQueueItem(item.toDraft(checkNotNull(baseOrders[item.liveItem.entryId]),order)
+                    .toEntity(activeQueueId ?: ""),songs[order])
+            }
+            val restoration=PlaybackQueueRestoration(activeQueueId ?: "",entries,ids[index],positionMs,playing,shuffle,repeat)
+            if(!runtime.canActivate(restoration)) return false
+            persistActiveQueueSnapshotLocked()
+            if(epoch!=outputEpoch || !runtime.canActivate(restoration)) return false
+            restoration to beginQueueOperation(activation=true)
+        }
+        try {
+            if(!runtime.replaceTimelineAndAwait(restoration)) return false
+            return mutex.withLock {
+                if(!owns(operation) || !runtime.canCheckpoint() || runtime.captureSnapshot()?.currentEntryId!=restoration.currentEntryId) return@withLock false
+                pendingCanonicalBaseEntryIds=baseEntryIds.toList()
+                val accepted=runtime.captureSnapshot() ?: return@withLock false
+                persistActiveQueueSnapshotLocked(accepted,frozenOutputSnapshot=true,operation=operation)
+                if(!owns(operation)) return@withLock false
+                pendingOperation=null;queueStateConfirmed=true
+                onActiveQueueChanged(activeQueueId)
+                true
+            }
+        } finally { abandon(operation) }
     }
 
     suspend fun appendToInactiveQueue(
@@ -575,15 +676,27 @@ internal class PlaybackQueueCoordinator(
         true
     }
 
-    suspend fun playEntry(queueId: String, entryId: String): Boolean = mutex.withLock {
-        if (backupRestoreInProgress) return@withLock false
-        if (queueId != activeQueueId) return@withLock false
-        val snapshot = runtime.captureSnapshot() ?: return@withLock false
-        if (snapshot.currentEntryId == entryId) return@withLock true
-        if (snapshot.entries.none { item -> item.entryId == entryId }) return@withLock false
-        if (!runtime.seekToEntry(entryId)) return@withLock false
-        persistActiveQueueSnapshotLocked()
-        true
+    suspend fun playEntry(queueId: String, entryId: String): Boolean {
+        val operation=mutex.withLock {
+            if(backupRestoreInProgress || outputCheckpointFrozen || pendingOperation?.activation==true || queueId!=activeQueueId) return false
+            val snapshot=runtime.captureSelectionSnapshot() ?: return false
+            if(snapshot.currentEntryId==entryId && pendingOperation==null && queueStateConfirmed) return true
+            if(snapshot.entries.none { it.entryId==entryId }) return false
+            if(!runtime.canSelectEntry(entryId)) return false
+            beginQueueOperation(activation=false)
+        }
+        try {
+            if(!runtime.seekToEntryAndAwait(entryId)) return false
+            return mutex.withLock {
+                if(!owns(operation) || !runtime.canCheckpoint() || runtime.captureSnapshot()?.currentEntryId!=entryId) return@withLock false
+                val accepted=runtime.captureSnapshot() ?: return@withLock false
+                persistActiveQueueSnapshotLocked(accepted,frozenOutputSnapshot=true)
+                if(!owns(operation)) return@withLock false
+                pendingOperation=null;queueStateConfirmed=true
+                onActiveQueueChanged(activeQueueId)
+                true
+            }
+        } finally { abandon(operation) }
     }
 
     suspend fun reorderEntry(
@@ -631,19 +744,22 @@ internal class PlaybackQueueCoordinator(
         true
     }
 
-    suspend fun switchToQueue(queueId: String): Boolean = mutex.withLock {
-        if (backupRestoreInProgress || !runtime.canReplaceTimeline()) return@withLock false
+    suspend fun switchToQueue(queueId: String): Boolean {
+        val (restoration,operation)=mutex.withLock {
+        if (backupRestoreInProgress || outputCheckpointFrozen || !runtime.canReplaceTimeline()) return false
+        val epoch=outputEpoch
         require(queueId.isNotBlank()) { "Queue ID cannot be blank" }
-        if (queueId == activeQueueId) return@withLock true
+        if (queueId == activeQueueId && pendingOperation==null && queueStateConfirmed &&
+            runtime.captureSnapshot()?.entries?.isNotEmpty()==true) return true
 
         val outgoing = runtime.captureSnapshot()
-        val shouldPlay = outgoing?.shouldPlay ?: false
+        val shouldPlay = runtime.requestedPlaying()
         persistActiveQueueSnapshotLocked(outgoing)
 
-        val target = persistence.loadQueue(queueId) ?: return@withLock false
+        val target = persistence.loadQueue(queueId) ?: return false
         val resolved = trackAccess.resolve(target.entries)
             .sortedBy { item -> item.persistedEntry.playbackOrder }
-        if (resolved.isEmpty()) return@withLock false
+        if (resolved.isEmpty()) return false
 
         val selected = selectRestoredCurrentEntry(target, resolved)
         val savedCurrentResolved = target.queue.currentEntryId ==
@@ -663,16 +779,24 @@ internal class PlaybackQueueCoordinator(
             repeatMode = target.queue.repeatMode
         )
 
-        if (!runtime.canReplaceTimeline()) return@withLock false
-        runtime.replaceTimeline(restoration)
+        if (!runtime.canActivate(restoration) || epoch!=outputEpoch) return false
+        restoration to beginQueueOperation(activation=true)
+        }
+        try {
+        if(!runtime.replaceTimelineAndAwait(restoration)) return false
+        return mutex.withLock {
+        if(!owns(operation) || !runtime.canCheckpoint()) return@withLock false
+        val resolved=restoration.entries
+        val position=runtime.captureSnapshot()?.currentPositionMs ?: return@withLock false
         persistence.updateSavedPlaybackState(
             queueId = queueId,
             currentEntryId = restoration.currentEntryId,
-            currentPositionMs = restoration.currentPositionMs,
+            currentPositionMs = position,
             shuffleEnabled = restoration.shuffleEnabled,
             repeatMode = restoration.repeatMode
         )
-        persistence.setActiveQueue(queueId)
+        if(!owns(operation)) return@withLock false
+        if(!setActiveQueueWhileOwned(queueId,operation)) return@withLock false
         activeQueueId = queueId
         lastLiveSignature = LiveQueueSignature(
             queueId = queueId,
@@ -683,17 +807,103 @@ internal class PlaybackQueueCoordinator(
                 .map { item -> item.persistedEntry.entryId }
         )
         rememberedBaseEntryIds = lastLiveSignature?.baseEntryIds.orEmpty()
+        pendingOperation=null;queueStateConfirmed=true
         onActiveQueueChanged(queueId)
         true
+        }
+        } finally { abandon(operation) }
+    }
+
+    private fun beginQueueOperation(activation: Boolean): QueueOperation =
+        QueueOperation(++operationSerial,outputEpoch,activation).also {
+            pendingOperation=it;queueStateConfirmed=false
+        }
+    private fun owns(operation: QueueOperation)=pendingOperation==operation && operation.epoch==outputEpoch
+    private fun abandon(operation: QueueOperation) { if(owns(operation)) pendingOperation=null }
+    private suspend fun setActiveQueueWhileOwned(queueId: String,operation: QueueOperation?=null): Boolean {
+        val epoch=outputEpoch
+        try { persistence.setActiveQueue(queueId) }
+        catch(cancelled: CancellationException) {
+            withContext(NonCancellable) { persistence.setActiveQueue(activeQueueId) }
+            throw cancelled
+        }
+        if(epoch!=outputEpoch || !currentCoroutineContext().isActive || (operation!=null && !owns(operation))) {
+            withContext(NonCancellable) { persistence.setActiveQueue(activeQueueId) }
+            return false
+        }
+        return true
+    }
+
+    override fun onDirectRequested(): Boolean {
+        if(backupRestoreInProgress || pendingOperation!=null || outputCheckpointFrozen || !queueStateConfirmed) return false
+        androidQueue=OutputQueueSnapshot(activeQueueId,runtime.captureSnapshot()?.withAuthoritativeBaseOrder(),
+            runtime.captureBaseSongs(),lastLiveSignature,rememberedBaseEntryIds)
+        outputCheckpointFrozen=true
+        return true
+    }
+    override suspend fun beforeDirectRelease() = mutex.withLock {
+        val original=androidQueue ?: return@withLock
+        outputEpoch++ // Drain earlier Android persistence before changing output transaction authority.
+        original.live?.let { persistActiveQueueSnapshotLocked(it,frozenOutputSnapshot=true) }
+        original.queueId=activeQueueId;original.signature=lastLiveSignature;original.baseIds=rememberedBaseEntryIds
+        queueStateConfirmed=true;outputCheckpointFrozen=false
+    }
+    override fun onDirectAbandoned() {
+        androidQueue=null;outputCheckpointFrozen=false
+    }
+    override fun onAndroidRequested() {
+        leavingDirectSnapshot=if(pendingOperation==null && queueStateConfirmed)
+            runtime.captureSnapshot()?.withAuthoritativeBaseOrder() else null
+        outputEpoch++;operationSerial++;pendingOperation=null
+        outputCheckpointFrozen=true;queueStateConfirmed=false
+    }
+    override suspend fun beforeAndroidRestore() = mutex.withLock {
+        leavingDirectSnapshot?.let { persistActiveQueueSnapshotLocked(it,frozenOutputSnapshot=true) }
+        leavingDirectSnapshot=null
+    }
+    override suspend fun afterAndroidRestore() = mutex.withLock {
+        val original=androidQueue ?: run { outputCheckpointFrozen=false;queueStateConfirmed=true;return@withLock }
+        // An inactive queue may have been edited/deleted while Direct used another queue.
+        // Reuse its identity only while it still owns the frozen Android occurrence/order snapshot.
+        val saved=original.queueId?.let { persistence.loadQueue(it) }
+        val originalIds=original.live?.entries?.map { it.entryId }.orEmpty()
+        val sameStructure=saved!=null && saved.entries.sortedBy { it.playbackOrder }.map { it.entryId }==originalIds &&
+            saved.entries.sortedBy { it.baseOrder }.map { it.entryId }==original.baseIds
+        activeQueueId=original.queueId.takeIf { sameStructure }
+        if(sameStructure) original.live?.let { restored ->
+            persistence.updateSavedPlaybackState(requireNotNull(activeQueueId),restored.currentEntryId,
+                restored.currentPositionMs,restored.shuffleEnabled,restored.repeatMode)
+        }
+        persistence.setActiveQueue(activeQueueId)
+        lastLiveSignature=original.signature.takeIf { sameStructure }
+        rememberedBaseEntryIds=original.baseIds;pendingCanonicalBaseEntryIds=emptyList()
+        runtime.restoreBaseSongs(original.baseSongs,original.live?.shuffleEnabled ?: false)
+        outputCheckpointFrozen=false;queueStateConfirmed=sameStructure || original.live==null;androidQueue=null
+        onActiveQueueChanged(activeQueueId)
+        // With changed/deleted saved ownership, retain the approved physical snapshot unassigned.
+        // Its old occurrence IDs must not be inserted into or overwrite a different saved queue.
+    }
+    override fun onAndroidRestored() {
+        // The route now exposes Android, so subscribers can capture its authoritative timeline.
+        onActiveQueueChanged(activeQueueId)
     }
 
     private suspend fun persistActiveQueueSnapshotLocked(
         suppliedSnapshot: LivePlaybackQueueSnapshot? = null,
-        useSuppliedBaseOrder: Boolean = false
+        useSuppliedBaseOrder: Boolean = false,
+        frozenOutputSnapshot: Boolean = false,
+        operation: QueueOperation? = null
     ): String? {
-        if (IntegratedDirectPlaybackBridge.directSelected) return activeQueueId
+        if(operation!=null && !owns(operation)) return activeQueueId
+        if(!frozenOutputSnapshot && (pendingOperation!=null || outputCheckpointFrozen || !runtime.canCheckpoint())) return activeQueueId
         if (backupRestoreInProgress) return null
         val captured = suppliedSnapshot ?: runtime.captureSnapshot() ?: return activeQueueId
+        val snapshotEpoch=outputEpoch
+        if(!frozenOutputSnapshot && !queueStateConfirmed) {
+            // Only a fresh, accepted Android context may adopt an unassigned restored snapshot.
+            if(runtime.usesDirectOutput() || captured.matchingPendingCanonicalBaseOrder()==null) return activeQueueId
+            queueStateConfirmed=true
+        }
         val pendingCanonicalBase = captured.matchingPendingCanonicalBaseOrder()
         val capturesNewPlaybackContext = !useSuppliedBaseOrder && pendingCanonicalBase != null
         val snapshot = when {
@@ -703,7 +913,13 @@ internal class PlaybackQueueCoordinator(
         }
         if (snapshot.entries.isEmpty()) return activeQueueId
 
-        val queueId = activeQueueId
+        // A different Direct context must not replace the record owning the frozen Android queue.
+        // Allocate its saved identity only after that context has passed native acknowledgment.
+        val original=androidQueue
+        val queueId = activeQueueId.takeUnless { id ->
+            id!=null && runtime.usesDirectOutput() && original?.queueId==id &&
+                original?.live?.entries?.map { it.entryId }!=snapshot.entries.map { it.entryId }
+        }
         val rawSignature = LiveQueueSignature(
             queueId = queueId,
             entries = snapshot.entries.map { item ->
@@ -753,7 +969,7 @@ internal class PlaybackQueueCoordinator(
                 shuffleEnabled = snapshot.shuffleEnabled,
                 repeatMode = snapshot.repeatMode
             )
-            persistence.setActiveQueue(newQueueId)
+            if(snapshotEpoch!=outputEpoch || !setActiveQueueWhileOwned(newQueueId,operation)) return activeQueueId
             activeQueueId = newQueueId
             lastLiveSignature = rawSignature.copy(queueId = newQueueId)
             rememberedBaseEntryIds = rawSignature.baseEntryIds
@@ -834,6 +1050,7 @@ internal class PlaybackQueueCoordinator(
     }
 
     private suspend fun restoreIntoEmptyRuntime(queueId: String) {
+        val epoch=outputEpoch
         if (!runtime.canReplaceTimeline()) return
         val target = persistence.loadQueue(queueId) ?: return
         val resolved = trackAccess.resolve(target.entries)
@@ -841,7 +1058,7 @@ internal class PlaybackQueueCoordinator(
         if (resolved.isEmpty()) return
         // A controller may restore its already-live session while exact Room resolution is
         // suspended. In that race, adopting the live session must win over rebuilding it.
-        if (runtime.captureSnapshot() != null || !runtime.canReplaceTimeline()) return
+        if (epoch!=outputEpoch || runtime.captureSnapshot() != null || !runtime.canReplaceTimeline()) return
         val selected = selectRestoredCurrentEntry(target, resolved)
         val savedCurrentResolved = target.queue.currentEntryId ==
             selected.persistedEntry.entryId
@@ -850,7 +1067,7 @@ internal class PlaybackQueueCoordinator(
         } else {
             0L
         }
-        runtime.replaceTimeline(
+        if(!runtime.restoreColdTimeline(
             PlaybackQueueRestoration(
                 queueId = queueId,
                 entries = resolved,
@@ -860,7 +1077,7 @@ internal class PlaybackQueueCoordinator(
                 shuffleEnabled = target.queue.shuffleEnabled,
                 repeatMode = target.queue.repeatMode
             )
-        )
+        )) return
         lastLiveSignature = LiveQueueSignature(
             queueId = queueId,
             entries = resolved.map { item ->

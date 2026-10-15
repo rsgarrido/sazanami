@@ -18,11 +18,15 @@ internal data class IntegratedDirectPlaybackState(
     val pauseRequests: Long=0,val resumeRequests: Long=0,val nativePauseCounters: Map<String,Long> = emptyMap(),
     val sourcePositionFrame: Long?=null,val sourceEpoch: Long=0,val seekCapable: Boolean=false,val pendingSeekSerial: Long=0,
     val sourceTransition: DirectSourceTransitionState?=null,
-    val stoppedForReplacement: Boolean=false // Only a confirmed STOPPED run may use TRANSITION history.
+    val stoppedForReplacement: Boolean=false, // Only a confirmed STOPPED run may use TRANSITION history.
+    val idlePositionMs: Long?=null, // Logical restoration position; native preparation still requires confirmed seeking.
+    val queueMediaIds: List<String>?=null,val queueIndex: Int=0,
+    val queueShuffle: Boolean?=null,val queueRepeat: Int?=null
 ) {
     val confirmedDirect get()=enabled && normalReleased && switching != DirectOutputSwitch.TO_USB &&
         (activation == null || activation.reservation == UsbActivationReservation.PROTECTED)
-    val positionMs get()=(if (UsbDirectPcmFormat.supportsRate(sampleRateHz)) completedFramePositionMs(sourcePositionFrame ?: completedFrames,sampleRateHz) else 0L).coerceAtMost(durationMs)
+    val positionMs get()=if(phase==IntegratedDirectPhase.IDLE && idlePositionMs!=null) idlePositionMs
+        else (if (UsbDirectPcmFormat.supportsRate(sampleRateHz)) completedFramePositionMs(sourcePositionFrame ?: completedFrames,sampleRateHz) else 0L).coerceAtMost(durationMs)
     val durationMs get()=if (totalFrames>0) {
         if (UsbDirectPcmFormat.supportsRate(sampleRateHz)) completedFramePositionMs(totalFrames,sampleRateHz) else 0L
     } else metadataDurationMs.coerceAtLeast(0)
@@ -110,7 +114,7 @@ internal val integratedDirectCommands=intArrayOf(
     androidx.media3.common.Player.COMMAND_GET_CURRENT_MEDIA_ITEM,androidx.media3.common.Player.COMMAND_GET_TIMELINE,
     androidx.media3.common.Player.COMMAND_GET_METADATA,androidx.media3.common.Player.COMMAND_SET_MEDIA_ITEM,
     androidx.media3.common.Player.COMMAND_PREPARE,androidx.media3.common.Player.COMMAND_STOP,androidx.media3.common.Player.COMMAND_PLAY_PAUSE,
-    androidx.media3.common.Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
+    androidx.media3.common.Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,androidx.media3.common.Player.COMMAND_SEEK_TO_MEDIA_ITEM)
 internal fun allowsDirectCommand(command: Int,internalController: Boolean): Boolean =
     command in if(internalController) integratedDirectCommands else intArrayOf(
         androidx.media3.common.Player.COMMAND_GET_CURRENT_MEDIA_ITEM,androidx.media3.common.Player.COMMAND_GET_METADATA,

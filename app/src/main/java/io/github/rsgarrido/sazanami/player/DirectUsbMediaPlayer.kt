@@ -9,6 +9,7 @@ import androidx.media3.common.SimpleBasePlayer.MediaItemData
 import androidx.media3.common.SimpleBasePlayer.PositionSupplier
 import androidx.media3.common.util.UnstableApi
 import com.google.common.util.concurrent.Futures
+import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.ListenableFuture
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.usb.*
@@ -41,10 +42,36 @@ internal class DirectUsbMediaPlayer(
     private var runRequest: SourceRequest?=null
     private var transitionJob: Job?=null
     private val applicationHandler=Handler(applicationLooper)
+    private var logicalShuffle=false
+    private var logicalRepeat=Player.REPEAT_MODE_OFF
+    private var timelineConfirmed=true
+    private var playlistItems: List<MediaItem>?=null
+    private var playlistIndex=-1
+    private var playlistDuration=-1L
+    private var playlistSeekable=false
+    private var playlistData=ImmutableList.of<MediaItemData>()
+    val canCheckpointTimeline get()=timelineConfirmed && pendingSource==null
+    val requestedPlaying get()=pendingSource?.playing ?: if(evidence.phase in setOf(IntegratedDirectPhase.STOPPING,
+        IntegratedDirectPhase.STOPPED,IntegratedDirectPhase.ENDED,IntegratedDirectPhase.ERROR)) false
+        else sourceStart?.playWhenReady ?: initialPlayingIntent
+    fun canReplaceTimeline(): Boolean=scope.isActive && sourceAdmissionFailure()==null &&
+        (evidence.cleanupSafe || worker?.isCompleted==false)
+    /** Output admission changes outside native evidence also affect the advertised commands. */
+    fun refreshCommandAvailability() {
+        verifyApplicationThread()
+        invalidateState()
+    }
+    fun canAdmitTimeline(mediaItems: List<MediaItem>,index: Int,positionMs: Long,repeat: Int): Boolean =
+        canReplaceTimeline() && positionMs>=0 && index in mediaItems.indices &&
+            mediaItems.all { it.listeningEvidence()!=null } &&
+            mediaItems.map { it.listeningEvidence()?.itemInstanceId }.distinct().size==mediaItems.size &&
+            librarySong(mediaItems[index].mediaId)!=null && repeat in Player.REPEAT_MODE_OFF..Player.REPEAT_MODE_ALL
 
     private class SourceRequest(
-        val id: Long, val item: MediaItem, val song: Song?, val playing: Boolean, val positionMs: Long
+        val id: Long, val timeline: List<MediaItem>, val index: Int, val song: Song?,
+        val playing: Boolean, val positionMs: Long, val shuffle: Boolean, val repeat: Int
     ) {
+        val item get()=timeline[index]
         val result=CompletableDeferred<DirectSourceTransitionResult>()
         var generation: Long?=null
         fun state(status: DirectSourceTransitionStatus,error: String?=null)=DirectSourceTransitionState(
@@ -53,8 +80,21 @@ internal class DirectUsbMediaPlayer(
 
     /** Stage A execution contract. It does not mutate a queue or advertise multi-item commands. */
     fun replaceSource(item: MediaItem,playing: Boolean,startPositionMs: Long=0L): Deferred<DirectSourceTransitionResult> {
+        return replaceTimeline(listOf(item),0,playing,startPositionMs,false,Player.REPEAT_MODE_OFF)
+    }
+
+    /** The service's existing queue supplies order and occurrence IDs; no traversal lives here. */
+    fun replaceTimeline(mediaItems: List<MediaItem>,index: Int,playing: Boolean,startPositionMs: Long,
+        shuffle: Boolean,repeat: Int): Deferred<DirectSourceTransitionResult> {
         verifyApplicationThread()
-        val request=SourceRequest(++nextRequestId,item,librarySong(item.mediaId),playing,startPositionMs)
+        if(mediaItems.isEmpty() || index !in mediaItems.indices ||
+            mediaItems.withIndex().any { it.index!=index && it.value.listeningEvidence()==null } ||
+            mediaItems.map { it.listeningEvidence()?.itemInstanceId }.distinct().size!=mediaItems.size ||
+            repeat !in Player.REPEAT_MODE_OFF..Player.REPEAT_MODE_ALL)
+            return CompletableDeferred(DirectSourceTransitionResult(++nextRequestId,
+                DirectSourceTransitionStatus.REJECTED,error="DIRECT_TIMELINE_INVALID"))
+        val item=mediaItems[index]
+        val request=SourceRequest(++nextRequestId,mediaItems.toList(),index,librarySong(item.mediaId),playing,startPositionMs,shuffle,repeat)
         val rejected=when {
             startPositionMs<0L -> "DIRECT_INITIAL_POSITION_INVALID"
             request.song==null -> "UNSUPPORTED_TRACK"
@@ -70,6 +110,7 @@ internal class DirectUsbMediaPlayer(
         val supersededPending=pendingSource
         val supersededRun=runRequest
         pendingSource=request
+        timelineConfirmed=false
         request.result.invokeOnCompletion {
             if(request.result.isCancelled) {
                 val cancel={
@@ -110,7 +151,8 @@ internal class DirectUsbMediaPlayer(
                             continue
                         }
                         runRequest=target
-                        acceptSource(listOf(target.item),0,target.positionMs,target.playing,target)
+                        logicalShuffle=target.shuffle;logicalRepeat=target.repeat
+                        acceptSource(target.timeline,target.index,target.positionMs,target.playing,target)
                         // A synchronous observer may supersede/cancel a just-accepted request.
                         if(!target.result.isCompleted && pendingSource==null) startRun(target)
                     }
@@ -125,34 +167,54 @@ internal class DirectUsbMediaPlayer(
     }
 
     private fun settle(request: SourceRequest,status: DirectSourceTransitionStatus,error: String?=null) {
+        if(request.result.isCompleted) return
+        if(evidence.sourceTransition?.requestId==request.id &&
+            status in setOf(DirectSourceTransitionStatus.READY,DirectSourceTransitionStatus.COMPLETED))
+            timelineConfirmed=true
         if(request.result.complete(DirectSourceTransitionResult(request.id,status,request.generation,error)) &&
             evidence.sourceTransition?.requestId==request.id)
             update(evidence.copy(sourceTransition=request.state(status,error)))
     }
 
-    private fun acceptSource(mediaItems: List<MediaItem>,index: Int,positionMs: Long,playing: Boolean,request: SourceRequest?=null) {
+    private fun acceptSource(mediaItems: List<MediaItem>,index: Int,positionMs: Long,playing: Boolean,request: SourceRequest?=null,idleOnly: Boolean=false) {
         check(evidence.cleanupSafe && worker?.isCompleted!=false)
         items=mediaItems.toList();selected=index
         source=request?.song ?: items.getOrNull(selected)?.mediaId?.let(librarySong)
         startPositionMs=positionMs;initialPlayingIntent=playing
         sourceStart=null;control=null;stoppingForReplacement=false
         update(IntegratedDirectPlaybackState(enabled=true,normalReleased=true,generation=++nextGeneration,
-            libraryId=source?.id,metadataDurationMs=source?.duration ?: 0,playWhenReady=playing,
+            libraryId=source?.id ?: items.getOrNull(selected)?.mediaId?.toLongOrNull()?.takeIf { idleOnly },
+            metadataDurationMs=source?.duration ?: items.getOrNull(selected)?.listeningEvidence()?.reference?.duration ?: 0,
+            playWhenReady=playing,idlePositionMs=positionMs,
+            queueMediaIds=items.map { it.mediaId },queueIndex=selected,queueShuffle=logicalShuffle,queueRepeat=logicalRepeat,
             sourceTransition=request?.state(DirectSourceTransitionStatus.PREPARING),
-            phase=if(source==null && items.isNotEmpty()) IntegratedDirectPhase.ERROR else IntegratedDirectPhase.IDLE,
-            error=if(source==null && items.isNotEmpty()) "UNSUPPORTED_TRACK" else null))
+            phase=if(source==null && items.isNotEmpty() && !idleOnly) IntegratedDirectPhase.ERROR else IntegratedDirectPhase.IDLE,
+            error=if(source==null && items.isNotEmpty() && !idleOnly) "UNSUPPORTED_TRACK" else null))
     }
     private fun update(value: IntegratedDirectPlaybackState, terminalConfirmed: Boolean=false) {
         evidence=value
         listeningChanged(items.getOrNull(selected), value, terminalConfirmed)
-        changed(value)
+        if(evidence===value) changed(value) // A synchronous observer may already own a newer request/state.
         invalidateState()
     }
     fun notice(command: String) { update(evidence.copy(notice="$command is unavailable in Session 17")) }
     override fun getState(): State {
-        val playlist=items.mapIndexed { index,item -> MediaItemData.Builder(item.listeningEvidence()?.itemInstanceId ?: "${item.mediaId}:$index")
-            .setMediaItem(item).setMediaMetadata(item.mediaMetadata).setIsSeekable(index==selected && evidence.seekCapable && evidence.busy && evidence.phase!=IntegratedDirectPhase.STOPPING)
-            .setDurationUs(if(index==selected) evidence.durationMs.coerceAtMost(Long.MAX_VALUE/1000)*1000 else C.TIME_UNSET).build() }
+        val seekable=evidence.seekCapable && evidence.busy && evidence.phase!=IntegratedDirectPhase.STOPPING
+        fun itemData(index: Int,item: MediaItem): MediaItemData {
+            val duration=if(index==selected) evidence.durationMs else item.listeningEvidence()?.reference?.duration
+            return MediaItemData.Builder(item.listeningEvidence()?.itemInstanceId ?: "${item.mediaId}:$index")
+                .setMediaItem(item).setMediaMetadata(item.mediaMetadata).setIsSeekable(index==selected && seekable)
+                .setDurationUs(duration?.coerceIn(0,Long.MAX_VALUE/1000)?.times(1000) ?: C.TIME_UNSET).build()
+        }
+        // Native position polling must not reconstruct every window/evidence bundle in a full queue.
+        if(playlistItems!==items || playlistIndex!=selected) {
+            playlistData=ImmutableList.copyOf(items.mapIndexed(::itemData))
+            playlistItems=items;playlistIndex=selected
+        } else if(items.isNotEmpty() && (playlistDuration!=evidence.durationMs || playlistSeekable!=seekable)) {
+            playlistData=ImmutableList.copyOf(playlistData.toMutableList().also { it[selected]=itemData(selected,items[selected]) })
+        }
+        playlistDuration=evidence.durationMs;playlistSeekable=seekable
+        val playlist=playlistData
         val playbackState=when(evidence.phase) {
             IntegratedDirectPhase.PREPARING,IntegratedDirectPhase.PAUSING,IntegratedDirectPhase.RESUMING,IntegratedDirectPhase.SEEKING -> Player.STATE_BUFFERING
             IntegratedDirectPhase.PLAYING,IntegratedDirectPhase.PAUSED -> Player.STATE_READY
@@ -160,10 +222,12 @@ internal class DirectUsbMediaPlayer(
             else -> Player.STATE_IDLE
         }
         val commands=Player.Commands.Builder().addAll(*integratedDirectCommands)
+        if(items.isEmpty() || !canReplaceTimeline()) commands.remove(Player.COMMAND_SEEK_TO_MEDIA_ITEM)
         if(worker?.isCompleted!=false || !evidence.busy || evidence.phase==IntegratedDirectPhase.STOPPING) commands.remove(Player.COMMAND_PLAY_PAUSE)
         if(worker?.isCompleted!=false || !evidence.busy || evidence.phase==IntegratedDirectPhase.STOPPING || !evidence.seekCapable) commands.remove(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
         return State.Builder().setAvailableCommands(commands.build())
             .setPlaylist(playlist).setCurrentMediaItemIndex(if(playlist.isEmpty()) C.INDEX_UNSET else selected)
+            .setShuffleModeEnabled(logicalShuffle).setRepeatMode(logicalRepeat)
             .setPlaybackState(playbackState)
             .setPlayWhenReady(evidence.busy && evidence.phase!=IntegratedDirectPhase.STOPPING && evidence.playWhenReady,Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
             // A supplier prevents Media3 from extrapolating USB position using its elapsed clock.
@@ -171,6 +235,22 @@ internal class DirectUsbMediaPlayer(
             .setPlayerError(if(evidence.phase==IntegratedDirectPhase.ERROR) PlaybackException(evidence.error ?: "DIRECT_FAILED",null,PlaybackException.ERROR_CODE_UNSPECIFIED) else null)
             .build()
     }
+    /** Reconstructing a logical queue does not acquire a native source or USB resources. */
+    fun restoreIdleTimeline(mediaItems: List<MediaItem>,index: Int,positionMs: Long,shuffle: Boolean,repeat: Int,playing: Boolean=false) {
+        verifyApplicationThread()
+        check(evidence.cleanupSafe && worker?.isCompleted!=false && pendingSource==null)
+        require(positionMs>=0 && (mediaItems.isEmpty() || index in mediaItems.indices))
+        logicalShuffle=shuffle;logicalRepeat=repeat;timelineConfirmed=true;runRequest=null
+        acceptSource(mediaItems,if(mediaItems.isEmpty()) 0 else index,positionMs,playing,idleOnly=true)
+    }
+    fun selectOccurrence(index: Int,positionMs: Long): Deferred<DirectSourceTransitionResult> {
+        verifyApplicationThread()
+        if(index==selected && pendingSource==null && timelineConfirmed && positionMs==C.TIME_UNSET)
+            return CompletableDeferred(DirectSourceTransitionResult(++nextRequestId,DirectSourceTransitionStatus.UNCHANGED,
+                evidence.generation.takeIf { worker?.isCompleted==false }))
+        return replaceTimeline(items,index,requestedPlaying,if(positionMs==C.TIME_UNSET) 0 else positionMs,logicalShuffle,logicalRepeat)
+    }
+    fun restartSelectedFromZero()=replaceTimeline(items,selected,true,0,logicalShuffle,logicalRepeat)
     override fun handleSetMediaItems(mediaItems: List<MediaItem>,startIndex: Int,startPositionMs: Long): ListenableFuture<*> {
         if(!evidence.cleanupSafe && worker?.isCompleted!=false) {
             notice("Track replacement blocked until USB cleanup is verified")
@@ -183,6 +263,7 @@ internal class DirectUsbMediaPlayer(
         if(position<0L) return Futures.immediateFailedFuture<Unit>(IllegalArgumentException("DIRECT_INITIAL_POSITION_INVALID"))
         sourceAdmissionFailure()?.let { return Futures.immediateFailedFuture<Unit>(IllegalStateException(it)) }
         runRequest=null
+        timelineConfirmed=true
         acceptSource(mediaItems,0,position,true)
         return Futures.immediateVoidFuture()
     }
@@ -195,6 +276,7 @@ internal class DirectUsbMediaPlayer(
     }
     private fun startRun(request: SourceRequest?=null) {
         val admission=if(scope.isActive) sourceAdmissionFailure() else "DIRECT_SERVICE_UNAVAILABLE"
+        if(source==null) source=items.getOrNull(selected)?.mediaId?.let(librarySong)
         val song=source ?: run {
             update(evidence.copy(phase=IntegratedDirectPhase.ERROR,error="UNSUPPORTED_TRACK",playWhenReady=false),terminalConfirmed=true)
             request?.let { settle(it,DirectSourceTransitionStatus.FAILED,"UNSUPPORTED_TRACK") }
@@ -209,6 +291,7 @@ internal class DirectUsbMediaPlayer(
         check(evidence.cleanupSafe && worker?.isCompleted!=false)
         stopRequested=false
         stoppingForReplacement=false
+        timelineConfirmed=false
         val start=DirectSourceStart(startPositionMs,initialPlayingIntent);sourceStart=start
         val commands=start.control;control=commands
         val generation=++nextGeneration
@@ -248,10 +331,12 @@ internal class DirectUsbMediaPlayer(
                                     update(evidence.copy(phase=IntegratedDirectPhase.STOPPING,playWhenReady=false,error=start.failure))
                                     return@runIntegratedFull
                                 }
-                                update(accepted)
-                                if(!start.positionPending &&
+                                val ready=!start.positionPending &&
                                     ((accepted.phase==IntegratedDirectPhase.PLAYING && start.playWhenReady) ||
-                                        (accepted.phase==IntegratedDirectPhase.PAUSED && !start.playWhenReady)))
+                                        (accepted.phase==IntegratedDirectPhase.PAUSED && !start.playWhenReady))
+                                if(ready) timelineConfirmed=true
+                                update(accepted)
+                                if(ready)
                                     request?.let { settle(it,DirectSourceTransitionStatus.READY) }
                             }
                         }
@@ -263,6 +348,7 @@ internal class DirectUsbMediaPlayer(
                 var terminal=integratedTerminalState(evidence,result)
                 if(start.failure!=null || (start.positionPending && terminal.phase==IntegratedDirectPhase.ENDED))
                     terminal=terminal.copy(phase=IntegratedDirectPhase.ERROR,error=start.failure ?: "DIRECT_INITIAL_POSITION_UNSATISFIED")
+                if(terminal.phase==IntegratedDirectPhase.ENDED) timelineConfirmed=true
                 update(terminal.copy(stoppedForReplacement=terminal.phase==IntegratedDirectPhase.STOPPED && stoppingForReplacement), terminalConfirmed=true)
                 request?.let { settle(it,when(terminal.phase) {
                     IntegratedDirectPhase.ENDED -> DirectSourceTransitionStatus.COMPLETED
@@ -305,6 +391,12 @@ internal class DirectUsbMediaPlayer(
         }
     }
     override fun handleSeek(mediaItemIndex: Int,positionMs: Long,seekCommand: Int): ListenableFuture<*> {
+        if(seekCommand==Player.COMMAND_SEEK_TO_MEDIA_ITEM) {
+            if(mediaItemIndex !in items.indices || !canReplaceTimeline()) return unsupported("Queue selection")
+            selectOccurrence(mediaItemIndex,positionMs)
+            // Acceptance only. Queue transactions await the request-specific native result directly.
+            return Futures.immediateVoidFuture()
+        }
         if(mediaItemIndex!=selected || seekCommand!=Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM || !evidence.seekCapable || !evidence.busy || evidence.phase==IntegratedDirectPhase.STOPPING)
             return unsupported("Source seek")
         return try {

@@ -10,6 +10,23 @@ import org.junit.Test
 import org.mockito.Mockito.mock
 
 class DirectPlaybackUiProjectionTest {
+    @Test fun unavailableEarlierWindowCannotShiftTheCurrentOccurrenceOrHideItsUpcomingSong() {
+        val ui=project(state(IntegratedDirectPhase.PAUSED).copy(queueMediaIds=listOf("404","2","1"),queueIndex=1))
+        assertEquals(nativeSong,ui.currentSong);assertEquals(listOf(androidSong),ui.upcomingSongs)
+    }
+    @Test fun dormantSavedPositionIsNotClampedByUnverifiedLibraryDurationOrTreatedAsNativeProgress() {
+        val dormant=state(IntegratedDirectPhase.IDLE).copy(idlePositionMs=5000,metadataDurationMs=3000)
+        assertEquals(5000L,dormant.positionMs);assertEquals(0L,dormant.completedFrames)
+        assertFalse(project(dormant).isPlaying)
+        assertEquals(0L,dormant.copy(phase=IntegratedDirectPhase.PREPARING).positionMs)
+    }
+    @Test fun fullTimelineProjectsDuplicateUpcomingOccurrencesAndSavedPolicyWithoutTraversal() {
+        val ui=project(state(IntegratedDirectPhase.PAUSED).copy(queueMediaIds=listOf("2","1","2"),
+            queueIndex=0,queueShuffle=true,queueRepeat=androidx.media3.common.Player.REPEAT_MODE_ALL))
+        assertEquals(listOf(androidSong,nativeSong),ui.upcomingSongs)
+        assertTrue(ui.queuedSongs.isEmpty());assertTrue(ui.isShuffleEnabled)
+        assertEquals(RepeatMode.ALL,ui.repeatMode);assertFalse(ui.isPlaying)
+    }
     private val androidSong = song(1)
     private val nativeSong = song(2)
 

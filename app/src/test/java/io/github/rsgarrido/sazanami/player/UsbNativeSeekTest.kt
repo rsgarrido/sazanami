@@ -85,7 +85,9 @@ class UsbNativeSeekTest {
     }
     @Test fun oneMediaSessionAndAppPathSourceOwnershipAndTransportGuardsRemainExplicit() {
         assertTrue(allowsDirectCommand(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,false))
-        for(command in listOf(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,Player.COMMAND_SEEK_TO_MEDIA_ITEM))
+        assertTrue(allowsDirectCommand(Player.COMMAND_SEEK_TO_MEDIA_ITEM,true))
+        assertFalse(allowsDirectCommand(Player.COMMAND_SEEK_TO_MEDIA_ITEM,false))
+        for(command in listOf(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,Player.COMMAND_CHANGE_MEDIA_ITEMS))
             assertFalse(allowsDirectCommand(command,true))
         val native=source("cpp/usb_iso_transport.cpp")
         val seek=native.substringAfter("bool seekStep(").substringBefore("bool fullSubmitted()")

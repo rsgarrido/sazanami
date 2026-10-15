@@ -10,6 +10,10 @@ import io.github.rsgarrido.sazanami.data.local.LocalTrackBindingEntity
 import io.github.rsgarrido.sazanami.data.local.PersistedQueueRepeatMode
 import io.github.rsgarrido.sazanami.data.local.PlaybackQueueEntryEntity
 import io.github.rsgarrido.sazanami.data.membershipKey
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 internal class RoomPlaybackQueueTrackAccess(
     private val database: AppDatabase,
@@ -87,8 +91,32 @@ internal class Media3PlaybackQueueRuntime(
     private val evidenceReader: (MediaItem) -> ListeningMediaItemEvidence? =
         MediaItem::listeningEvidence
 ) : PlaybackQueueRuntime {
+    private val directOutput get()=(player as? ExperimentalUsbPlaybackPlayer)?.takeIf { it.isDirectSelected }
     override fun canReplaceTimeline(): Boolean =
-        player.isCommandAvailable(Player.COMMAND_CHANGE_MEDIA_ITEMS)
+        directOutput?.canReplaceDirectTimeline() ?: player.isCommandAvailable(Player.COMMAND_CHANGE_MEDIA_ITEMS)
+
+    override fun canCheckpoint(): Boolean = directOutput?.directQueueCheckpointAllowed ?: true
+    override fun usesDirectOutput(): Boolean = directOutput!=null
+    override fun requestedPlaying(): Boolean = directOutput?.directRequestedPlaying ?: player.playWhenReady
+    override fun canRestoreBackup(): Boolean = directOutput==null
+    override fun canActivate(restoration: PlaybackQueueRestoration): Boolean {
+        val output=directOutput ?: return canReplaceTimeline()
+        val ordered=restoration.entries.sortedBy { it.persistedEntry.playbackOrder }
+        val index=ordered.indexOfFirst { it.persistedEntry.entryId==restoration.currentEntryId }
+        return output.canAdmitDirectTimeline(ordered.map(mediaItemFactory),index,restoration.currentPositionMs,restoration.repeatMode.toPlayerRepeatMode())
+    }
+    override fun canSelectEntry(entryId: String): Boolean {
+        val output=directOutput ?: return player.isCommandAvailable(Player.COMMAND_SEEK_TO_MEDIA_ITEM)
+        val queue=output.queuePlayer
+        val items=(0 until queue.mediaItemCount).map(queue::getMediaItemAt)
+        val index=items.indexOfFirst { evidenceReader(it)?.itemInstanceId==entryId }
+        return output.canAdmitDirectTimeline(items,index,0,queue.repeatMode)
+    }
+    override fun captureBaseSongs(): List<Song> = logicalBaseSongs().toList()
+    override fun restoreBaseSongs(songs: List<Song>,shuffle: Boolean) {
+        beforeTimelineReplacement()
+        onBaseSongsRestored(songs,shuffle)
+    }
 
     override fun captureForBackupRestore(): BackupRestorePlaybackSnapshot? {
         if (player.mediaItemCount == 0) return null
@@ -127,6 +155,11 @@ internal class Media3PlaybackQueueRuntime(
     }
 
     override fun captureSnapshot(): LivePlaybackQueueSnapshot? {
+        if(!canCheckpoint()) return null
+        return captureSelectionSnapshot()
+    }
+    override fun captureSelectionSnapshot(): LivePlaybackQueueSnapshot? {
+        val player=directOutput?.queuePlayer ?: this.player
         if (player.mediaItemCount == 0) return null
         val entries = (0 until player.mediaItemCount).mapNotNull { index ->
             val evidence = evidenceReader(player.getMediaItemAt(index))
@@ -157,13 +190,14 @@ internal class Media3PlaybackQueueRuntime(
             currentEntryId = currentEntryId,
             currentPositionMs = player.currentPosition.coerceAtLeast(0L),
             shouldPlay = player.playWhenReady,
-            shuffleEnabled = isLogicalShuffleEnabled(),
+            shuffleEnabled = if(directOutput!=null) player.shuffleModeEnabled else isLogicalShuffleEnabled(),
             repeatMode = player.repeatMode.toPersistedQueueRepeatMode()
         )
     }
 
     override fun replaceTimeline(restoration: PlaybackQueueRestoration) {
         check(canReplaceTimeline()) { "Playback queue replacement is unavailable" }
+        check(directOutput==null) { "Direct activation requires native acknowledgment" }
         beforeTimelineReplacement()
         val playbackOrdered = restoration.entries.sortedBy { item ->
             item.persistedEntry.playbackOrder
@@ -186,6 +220,43 @@ internal class Media3PlaybackQueueRuntime(
         )
         player.prepare()
         if (restoration.shouldPlay) player.play()
+    }
+
+    override suspend fun replaceTimelineAndAwait(restoration: PlaybackQueueRestoration): Boolean {
+        val output=directOutput ?: return super<PlaybackQueueRuntime>.replaceTimelineAndAwait(restoration)
+        if(!canReplaceTimeline()) return false
+        val ordered=restoration.entries.sortedBy { it.persistedEntry.playbackOrder }
+        val index=ordered.indexOfFirst { it.persistedEntry.entryId==restoration.currentEntryId }
+        val request=output.replaceDirectTimeline(ordered.map(mediaItemFactory),index,restoration.shouldPlay,
+            restoration.currentPositionMs,restoration.shuffleEnabled,restoration.repeatMode.toPlayerRepeatMode())
+        val result=try { request.await() } catch(cancelled: CancellationException) { request.cancel();throw cancelled }
+        if(result.status !in setOf(DirectSourceTransitionStatus.READY,DirectSourceTransitionStatus.COMPLETED) ||
+            directOutput!==output || !output.directQueueCheckpointAllowed) return false
+        beforeTimelineReplacement()
+        onBaseSongsRestored(restoration.entries.sortedBy { it.persistedEntry.baseOrder }.map { it.song },restoration.shuffleEnabled)
+        return true
+    }
+    override suspend fun restoreColdTimeline(restoration: PlaybackQueueRestoration): Boolean {
+        val output=directOutput ?: return super<PlaybackQueueRuntime>.restoreColdTimeline(restoration)
+        if(!canReplaceTimeline() || output.queuePlayer.mediaItemCount!=0) return false
+        val ordered=restoration.entries.sortedBy { it.persistedEntry.playbackOrder }
+        val index=ordered.indexOfFirst { it.persistedEntry.entryId==restoration.currentEntryId }
+        output.restoreDirectIdleTimeline(ordered.map(mediaItemFactory),index,restoration.currentPositionMs,
+            restoration.shuffleEnabled,restoration.repeatMode.toPlayerRepeatMode())
+        restoreBaseSongs(restoration.entries.sortedBy { it.persistedEntry.baseOrder }.map { it.song },restoration.shuffleEnabled)
+        return true
+    }
+
+    override suspend fun seekToEntryAndAwait(entryId: String): Boolean {
+        val output=directOutput ?: return super<PlaybackQueueRuntime>.seekToEntryAndAwait(entryId)
+        if(!output.canReplaceDirectTimeline()) return false
+        val queue=output.queuePlayer
+        val index=(0 until queue.mediaItemCount).firstOrNull { evidenceReader(queue.getMediaItemAt(it))?.itemInstanceId==entryId } ?: return false
+        val request=output.selectDirectQueueOccurrence(index)
+        val result=try { request.await() } catch(cancelled: CancellationException) { request.cancel();throw cancelled }
+        return result.status in setOf(DirectSourceTransitionStatus.READY,DirectSourceTransitionStatus.COMPLETED,DirectSourceTransitionStatus.UNCHANGED) &&
+            directOutput===output && output.directQueueCheckpointAllowed &&
+            evidenceReader(queue.currentMediaItem ?: return false)?.itemInstanceId==entryId
     }
 
     override fun removeEntry(entryId: String): Boolean {
@@ -213,6 +284,7 @@ internal class Media3PlaybackQueueRuntime(
     }
 
     override fun seekToEntry(entryId: String): Boolean {
+        if(directOutput!=null) return false // Synchronous acknowledgment is insufficient for native selection.
         if (!player.isCommandAvailable(Player.COMMAND_SEEK_TO_MEDIA_ITEM)) return false
         val index = (0 until player.mediaItemCount).firstOrNull { candidate ->
             evidenceReader(player.getMediaItemAt(candidate))?.itemInstanceId == entryId
@@ -242,8 +314,11 @@ internal class Media3PlaybackQueueRuntime(
 
 internal object PlaybackQueueRuntimeBridge {
     private var coordinator: PlaybackQueueCoordinator? = null
+    private var contextRequest: ((List<Song>,List<MediaItem>,Int,Long,Boolean,List<String>,Boolean,PersistedQueueRepeatMode)->Unit)?=null
     @Volatile
     private var activeQueueId: String? = null
+    private val publication=MutableStateFlow(0L)
+    val revisions=publication.asStateFlow()
 
     fun register(coordinator: PlaybackQueueCoordinator) {
         this.coordinator = coordinator
@@ -253,8 +328,20 @@ internal object PlaybackQueueRuntimeBridge {
     fun unregister(coordinator: PlaybackQueueCoordinator) {
         if (this.coordinator === coordinator) {
             this.coordinator = null
+            contextRequest=null
             updateActiveQueueId(null)
         }
+    }
+    fun registerContextRequest(owner: PlaybackQueueCoordinator,
+        request: (List<Song>,List<MediaItem>,Int,Long,Boolean,List<String>,Boolean,PersistedQueueRepeatMode)->Unit) {
+        check(coordinator===owner)
+        contextRequest=request
+    }
+    fun requestPlaybackContext(songs: List<Song>,items: List<MediaItem>,index: Int,positionMs: Long,
+        playing: Boolean,baseEntryIds: List<String>,shuffle: Boolean,repeat: PersistedQueueRepeatMode): Boolean {
+        val request=contextRequest ?: return false
+        request(songs,items,index,positionMs,playing,baseEntryIds,shuffle,repeat)
+        return true
     }
 
     suspend fun saveActiveQueue(): String? = coordinator?.persistActiveQueueSnapshot()
@@ -313,6 +400,7 @@ internal object PlaybackQueueRuntimeBridge {
 
     fun updateActiveQueueId(queueId: String?) {
         activeQueueId = queueId
+        publication.update { it+1L }
     }
 }
 

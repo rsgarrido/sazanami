@@ -16,8 +16,19 @@ internal fun directPlaybackUiState(
     val song = direct.libraryId?.let { id ->
         librarySongs.firstOrNull { it.id == id } ?: previous.currentSong?.takeIf { it.id == id }
     }
+    val availableSongs=(previous.queuedSongs+previous.upcomingSongs+listOfNotNull(previous.currentSong)+librarySongs).associateBy { it.id.toString() }
+    val queue=direct.queueMediaIds?.drop(direct.queueIndex+1)?.mapNotNull(availableSongs::get)
     return previous.copy(
         currentSong = song,
+        queuedSongs=if(queue!=null) emptyList() else previous.queuedSongs,
+        upcomingSongs=queue ?: previous.upcomingSongs,
+        isShuffleEnabled=direct.queueShuffle ?: previous.isShuffleEnabled,
+        repeatMode=when(direct.queueRepeat) {
+            androidx.media3.common.Player.REPEAT_MODE_OFF -> RepeatMode.OFF
+            androidx.media3.common.Player.REPEAT_MODE_ONE -> RepeatMode.ONE
+            androidx.media3.common.Player.REPEAT_MODE_ALL -> RepeatMode.ALL
+            else -> previous.repeatMode
+        },
         isPlaying = direct.switching == null && direct.phase == IntegratedDirectPhase.PLAYING,
         playPauseIntent = direct.switching == null && direct.busy &&
             direct.phase != IntegratedDirectPhase.STOPPING && direct.playWhenReady,

@@ -14,12 +14,15 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -29,6 +32,40 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
 
 class PlaybackQueueUiControllerTest {
+    @Test
+    fun ownershipPublicationRefreshesRestoredOrUnassignedQueueWithoutQueueRowChanges() = runBlocking {
+        val androidSong=song(1L)
+        val directSong=song(2L)
+        val operations=FakeOperations(activeQueueId="B").apply {
+            add(queue("A","Android","a",androidSong))
+            add(queue("B","Direct","b",directSong))
+        }
+        val revisions=MutableStateFlow(0L)
+        val staleDirect=MutableStateFlow<LiveActiveQueueForUi?>(LiveActiveQueueForUi(
+            songs=listOf(directSong),entryIds=listOf("b"),currentEntryId="b",queueId="B"))
+        val scope=CoroutineScope(SupervisorJob()+Dispatchers.Unconfined)
+        val controller=PlaybackQueueUiController(object : PlaybackQueueUiOperations by operations {
+            override fun observeQueues()=observeQueueOwnershipChanges(operations.observeQueues(),revisions)
+            override fun observeLiveActiveQueue()=staleDirect
+        },scope)
+        try {
+            withTimeout(5000) { controller.state.first { !it.isLoading && it.activeQueueId=="B" } }
+            assertEquals("B",controller.state.value.activeQueueId)
+            operations.activeQueueId="A";revisions.value++
+            withTimeout(5000) { controller.state.first { it.activeQueueId=="A" } }
+            assertEquals("A",controller.state.value.activeQueueId)
+            assertEquals(androidSong,controller.state.value.queues.single { it.isActive }.currentTrack)
+            assertEquals(listOf("a"),controller.state.value.activeEntries.map { it.entryId })
+            operations.activeQueueId=null;revisions.value++
+            withTimeout(5000) { controller.state.first { it.activeQueueId==null } }
+            assertNull(controller.state.value.activeQueueId)
+            assertFalse(controller.state.value.queues.any { it.isActive })
+            staleDirect.value=staleDirect.value!!.copy(currentEntryId="obsolete-direct-entry")
+            assertNull(controller.state.value.activeQueueId)
+            assertTrue(controller.state.value.activeEntries.isEmpty())
+        } finally { scope.cancel() }
+    }
+
     @Test
     fun queueListMapsActiveCurrentAndSelectedStateIndependently() {
         val operations = FakeOperations(activeQueueId = "A").apply {

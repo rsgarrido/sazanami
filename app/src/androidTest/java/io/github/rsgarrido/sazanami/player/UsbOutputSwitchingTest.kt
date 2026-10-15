@@ -18,7 +18,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class UsbOutputSwitchingTest {
-    @Test fun activeDirectRuntimeRejectsQueueReplacementWithoutNativeOrLogicalCommands() = checkRoute { f ->
+    @Test fun activeDirectRuntimeRequiresNativeAcknowledgmentAndKeepsEditingGuarded() = checkRoute { f ->
         f.released.complete(true);f.route.selectDirect(true);settled(f)
         f.route.setMediaItem(song.toPlayableMediaItem());f.route.prepare();yield()
         val playing = CompletableDeferred<Unit>()
@@ -41,11 +41,12 @@ class UsbOutputSwitchingTest {
         var callbacks = 0
         val runtime = Media3PlaybackQueueRuntime(f.route, { false }, { listOf(song) },
             { callbacks++ }, { _, _ -> callbacks++ })
-        assertFalse(runtime.canReplaceTimeline())
+        assertTrue(runtime.canReplaceTimeline())
+        assertFalse(runtime.removeEntry("anything"));assertFalse(runtime.moveEntry("anything",0))
         try {
             runtime.replaceTimeline(PlaybackQueueRestoration("other", emptyList(), "other-entry", 0,
                 true, false, io.github.rsgarrido.sazanami.data.local.PersistedQueueRepeatMode.OFF))
-            fail("Direct queue activation must reject before touching playback")
+            fail("Direct queue activation must require the asynchronous native contract")
         } catch (_: IllegalStateException) {
             // The existing service runtime cannot bypass the Direct adapter's command boundary.
         }
@@ -57,11 +58,15 @@ class UsbOutputSwitchingTest {
         assertTrue(f.route.isPlaying)
     }
 
-    @Test fun emptyActivationAndNativeSelectionProjectMetadataWithoutChangingAndroidSnapshot() = checkRoute { f ->
+    @Test fun idleTimelineAdoptionAndNativeSelectionPreserveAndroidSnapshot() = checkRoute { f ->
         val androidUi = io.github.rsgarrido.sazanami.ui.state.PlaybackUiState(currentSong = song, isPlaying = true)
+        val original = f.route.currentMediaItem!!
         f.released.complete(true);f.route.selectDirect(true);settled(f)
-        assertNull(f.route.currentMediaItem)
-        assertNull(directPlaybackUiState(androidUi, f.route.directState, listOf(song)).currentSong)
+        f.forwarding { f.route.currentMediaItem == original }
+        assertEquals(song.id.toString(),f.route.currentMediaItem?.mediaId)
+        assertEquals(original.listeningEvidence()?.itemInstanceId,f.route.currentMediaItem?.listeningEvidence()?.itemInstanceId)
+        assertEquals(song,directPlaybackUiState(androidUi, f.route.directState, listOf(song)).currentSong)
+        assertEquals(2000L,f.route.currentPosition);assertFalse(f.route.isPlaying)
         assertEquals(0, f.engine.starts)
 
         f.route.setMediaItem(song.toPlayableMediaItem());f.route.prepare();yield()
@@ -74,10 +79,12 @@ class UsbOutputSwitchingTest {
         f.engine.terminal.complete(terminal(true).copy(status = UsbSilentStatus.USB_TRANSPORT_FAILED))
         withTimeout(5000) { while (f.route.directState.phase != IntegratedDirectPhase.ERROR) yield() }
         f.route.selectDirect(false);settled(f)
+        f.forwarding { f.route.currentMediaItem == original }
         assertEquals(song.id.toString(), f.route.currentMediaItem?.mediaId)
         assertEquals(2000L, f.route.currentPosition)
         assertFalse(f.route.playWhenReady)
         f.route.selectDirect(true);settled(f)
+        f.forwarding { f.route.currentMediaItem == original }
         // Re-selecting an existing adapter reports its real item, without starting another engine.
         assertEquals(f.route.currentMediaItem?.mediaId?.toLong(), f.route.directState.libraryId)
         assertEquals(song, directPlaybackUiState(directUi, f.route.directState, listOf(song)).currentSong)
@@ -207,6 +214,15 @@ class UsbOutputSwitchingTest {
         suspend fun close() {
             engine.terminal.complete(terminal(true));released.complete(true)
             route.shutdown();route.releaseTransitionResources();route.release();scope.cancel()
+        }
+        suspend fun forwarding(predicate: ()->Boolean) {
+            val accepted=CompletableDeferred<Unit>()
+            val listener=object : Player.Listener {
+                override fun onEvents(player: Player,events: Player.Events) { if(predicate()) accepted.complete(Unit) }
+            }
+            route.addListener(listener)
+            try { if(predicate()) accepted.complete(Unit);withTimeout(5000) { accepted.await() } }
+            finally { route.removeListener(listener) }
         }
     }
     private fun checkRoute(playing: Boolean = true, emptyQueue: Boolean = false, block: suspend (Fixture) -> Unit) = runBlocking {

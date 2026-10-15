@@ -31,6 +31,6 @@ internal object IntegratedDirectPlaybackBridge {
     fun pause() { owner?.pauseDirectPlayback() }
     fun seek(positionMs: Long) { owner?.seekDirectPlayback(positionMs) }
     @OptIn(UnstableApi::class)
-    fun start() { owner?.prepare() }
+    fun start() { owner?.restartDirectPlayback() }
     fun reject(command: String) { owner?.rejectDirectCommand(command) }
 }

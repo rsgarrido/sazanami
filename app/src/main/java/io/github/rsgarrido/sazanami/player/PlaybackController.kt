@@ -53,6 +53,7 @@ class PlaybackController(
     private var pendingExternalPlaybackSelection: PendingExternalPlaybackSelection? = null
     private var pendingPersistentQueueSwitch = false
     private var adoptedPersistentQueueEntryId: String? = null
+    private var directQueueUiSignature: Pair<List<String>?,String?>?=null
     private var replayGainMode: ReplayGainMode = ReplayGainMode.OFF
     private var replayGainRequestId = 0
     private val _uiState = MutableStateFlow(
@@ -117,6 +118,10 @@ class PlaybackController(
         set(value) = _uiState.update { state -> state.copy(isConnected = value) }
 
     private fun publishDerivedPlaybackState() {
+        if(IntegratedDirectPlaybackBridge.directSelected) {
+            projectDirectPlayback(IntegratedDirectPlaybackBridge.state.value)
+            return
+        }
         _uiState.update { state ->
             val queuedSongs = playbackQueue.toList()
             val queuedSongCount = playbackQueueManager.getQueuedSongCountExcludingCurrent(
@@ -141,6 +146,12 @@ class PlaybackController(
 
     private val progressRunnable = object : Runnable {
         override fun run() {
+            val direct=IntegratedDirectPlaybackBridge.state.value
+            if(direct.enabled) {
+                projectDirectPlayback(direct)
+                if(currentSong!=null) progressHandler.postDelayed(this,500)
+                return
+            }
             if (currentSong != null) {
                 val updatedPosition = musicPlayer.getCurrentPosition()
 
@@ -159,6 +170,18 @@ class PlaybackController(
 
     init {
         coroutineScope.launch {
+            PlaybackQueueRuntimeBridge.revisions.collect {
+                val direct=IntegratedDirectPlaybackBridge.state.value
+                if(direct.enabled && direct.switching==null) {
+                    projectDirectPlayback(direct)
+                    if(pendingPersistentQueueSwitch && PlaybackQueueRuntimeBridge.getActiveQueueSnapshot()!=null)
+                        adoptPersistentQueueSwitch(expectTimelineCallback=false)
+                } else if(!direct.enabled) {
+                    _activeQueueTimelineRevision.update { it+1L }
+                }
+            }
+        }
+        coroutineScope.launch {
             var wasDirect = false
             IntegratedDirectPlaybackBridge.state.collect { direct ->
                 if (direct.enabled) {
@@ -168,6 +191,7 @@ class PlaybackController(
                     _progressState.update { it.copy(isDirect = false, isSeeking = false) }
                     if (wasDirect) {
                         // Adopt the restored session, never restore a stored item over a live backend.
+                        pendingPersistentQueueSwitch=false
                         adoptLivePlayerState()
                     }
                 }
@@ -181,6 +205,12 @@ class PlaybackController(
     private fun projectDirectPlayback(direct: IntegratedDirectPlaybackState) {
         _uiState.update { directPlaybackUiState(it, direct, librarySongs) }
         _progressState.value = directPlaybackProgress(direct)
+        val snapshot=PlaybackQueueRuntimeBridge.getActiveQueueSnapshot()
+        val signature=snapshot?.entries?.map { it.entryId } to snapshot?.currentEntryId
+        if(signature!=directQueueUiSignature) {
+            directQueueUiSignature=signature
+            _activeQueueTimelineRevision.update { it+1L }
+        }
     }
 
     private fun startAdvancedAudioRuntimeCollection() {
@@ -765,8 +795,8 @@ class PlaybackController(
     }
 
     fun savePlayerState() {
-        // An empty Direct adapter is not a request to erase the saved Android selection.
-        if (IntegratedDirectPlaybackBridge.directSelected && currentSong == null) return
+        // Direct queues checkpoint through the service; keep the pre-Direct Android preferences.
+        if (IntegratedDirectPlaybackBridge.directSelected) return
         playerStateStorage.saveState(
             currentSongId = currentSong?.id,
             currentPosition = musicPlayer.getCurrentPosition(),
@@ -1169,6 +1199,15 @@ class PlaybackController(
 
     private fun adoptPersistentQueueSwitch(expectTimelineCallback: Boolean) {
         pendingPersistentQueueSwitch = false
+        if(IntegratedDirectPlaybackBridge.directSelected) {
+            val snapshot=PlaybackQueueRuntimeBridge.getActiveQueueSnapshot() ?: return
+            val songs=librarySongs.associateBy { it.id }
+            val timelineSongs=snapshot.entries.mapNotNull { it.evidence.reference.mediaStoreId?.let(songs::get) }
+            if(timelineSongs.size==snapshot.entries.size)
+                playbackContextSongs=baseOrderedActiveQueueSongs(timelineSongs,snapshot.entries.map { it.entryId },snapshot.baseEntryIds)
+            projectDirectPlayback(IntegratedDirectPlaybackBridge.state.value)
+            return
+        }
         val live = musicPlayer.adoptLiveSession(librarySongs) ?: return
         adoptedPersistentQueueEntryId = musicPlayer.currentItemInstanceId()
             .takeIf { expectTimelineCallback }

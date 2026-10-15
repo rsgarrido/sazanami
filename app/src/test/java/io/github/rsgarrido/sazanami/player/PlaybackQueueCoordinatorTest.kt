@@ -9,6 +9,9 @@ import io.github.rsgarrido.sazanami.data.local.PlaybackQueueEntity
 import io.github.rsgarrido.sazanami.data.local.PlaybackQueueEntryEntity
 import io.github.rsgarrido.sazanami.data.local.PlaybackQueueWithEntries
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -17,6 +20,83 @@ import org.junit.Test
 import org.mockito.Mockito.mock
 
 class PlaybackQueueCoordinatorTest {
+    @Test fun pendingNativeAcknowledgmentCannotCommitOrCheckpointAPlaceholder() = runBlocking {
+        val persistence=FakePersistence("A").apply {
+            seed(queue("A",listOf(spec("a",1,0,0)),"a"))
+            seed(queue("B",listOf(spec("b",2,0,0)),"b",position=3000))
+        }
+        val runtime=FakeRuntime(liveSnapshot(listOf("a" to 1L),"a",1500,true))
+        val coordinator=coordinator(persistence,runtime);coordinator.initialize()
+        val started=CompletableDeferred<Unit>();val ready=CompletableDeferred<Boolean>()
+        runtime.beforeAcknowledgment={ restoration ->
+            runtime.snapshot=liveSnapshot(listOf("b" to 2L),"b",restoration.currentPositionMs,true)
+            runtime.checkpointAllowed=false;started.complete(Unit)
+            ready.await().also { runtime.checkpointAllowed=it }
+        }
+        val activation=async { coordinator.switchToQueue("B") };started.await()
+        assertFalse(activation.isCompleted);assertEquals("A",coordinator.getActiveQueueId())
+        assertNull(coordinator.captureActiveQueueSnapshot())
+        coordinator.persistActiveQueueSnapshot()
+        assertEquals("a",persistence.queue("A").queue.currentEntryId)
+        assertEquals(1500L,persistence.queue("A").queue.currentPositionMs)
+        ready.complete(true);assertTrue(activation.await())
+        assertEquals("B",persistence.activeQueueId)
+        assertEquals("b",coordinator.captureActiveQueueSnapshot()?.currentEntryId)
+    }
+
+    @Test fun failedNativeActivationRetainsSavedIdentityAndBlocksFailedTargetCheckpoint() = runBlocking {
+        val persistence=FakePersistence("A").apply {
+            seed(queue("A",listOf(spec("a",1,0,0)),"a"))
+            seed(queue("B",listOf(spec("b",2,0,0)),"b"))
+        }
+        val runtime=FakeRuntime(liveSnapshot(listOf("a" to 1L),"a",1500,true))
+        val coordinator=coordinator(persistence,runtime);coordinator.initialize()
+        runtime.beforeAcknowledgment={
+            runtime.snapshot=liveSnapshot(listOf("b" to 2L),"b",0,false)
+            runtime.checkpointAllowed=false;false
+        }
+        assertFalse(coordinator.switchToQueue("B"))
+        assertEquals("A",coordinator.getActiveQueueId());assertNull(coordinator.captureActiveQueueSnapshot())
+        runtime.checkpointAllowed=true // Even later player snapshots cannot retroactively commit failure.
+        coordinator.persistActiveQueueSnapshot()
+        assertEquals(listOf("a"),persistence.queue("A").entries.map { it.entryId })
+        assertEquals("A",persistence.activeQueueId)
+    }
+
+    @Test fun newerAcceptedActivationOwnsCommitEvenWhenOlderAcknowledgmentArrivesFirst() = runBlocking {
+        val persistence=FakePersistence("A").apply {
+            for((id,track) in listOf("A" to 1L,"B" to 2L,"C" to 3L))
+                seed(queue(id,listOf(spec(id.lowercase(),track,0,0)),id.lowercase()))
+        }
+        val runtime=FakeRuntime(liveSnapshot(listOf("a" to 1L),"a",0,true))
+        val coordinator=coordinator(persistence,runtime);coordinator.initialize()
+        val started=Channel<String>(Channel.UNLIMITED)
+        val readyB=CompletableDeferred<Boolean>();val readyC=CompletableDeferred<Boolean>()
+        runtime.beforeAcknowledgment={ restoration ->
+            runtime.checkpointAllowed=false;started.send(restoration.queueId)
+            (if(restoration.queueId=="B") readyB else readyC).await().also { runtime.checkpointAllowed=it }
+        }
+        val first=async { coordinator.switchToQueue("B") };assertEquals("B",started.receive())
+        val last=async { coordinator.switchToQueue("C") };assertEquals("C",started.receive())
+        readyB.complete(true);assertFalse(first.await());assertEquals("A",persistence.activeQueueId)
+        readyC.complete(true);assertTrue(last.await());assertEquals("C",persistence.activeQueueId)
+    }
+
+    @Test fun cancellationDoesNotCommitOrLeaveCoordinatorMutexHeld() = runBlocking {
+        val persistence=FakePersistence("A").apply {
+            seed(queue("A",listOf(spec("a",1,0,0)),"a"))
+            seed(queue("B",listOf(spec("b",2,0,0)),"b"))
+        }
+        val runtime=FakeRuntime(liveSnapshot(listOf("a" to 1L),"a",0,false))
+        val coordinator=coordinator(persistence,runtime);coordinator.initialize()
+        val started=CompletableDeferred<Unit>();val ready=CompletableDeferred<Boolean>()
+        runtime.beforeAcknowledgment={ started.complete(Unit);ready.await() }
+        val activation=async { coordinator.switchToQueue("B") };started.await()
+        activation.cancel();activation.join()
+        assertEquals("A",persistence.activeQueueId)
+        runtime.beforeAcknowledgment=null
+        assertTrue(coordinator.switchToQueue("B"));assertEquals("B",persistence.activeQueueId)
+    }
     @Test
     fun unavailableQueueActivationLeavesSourceAndActiveIdentityUntouched() = runBlocking {
         val persistence = FakePersistence(activeQueueId = "A").apply {
@@ -1365,6 +1445,8 @@ class PlaybackQueueCoordinatorTest {
         var snapshot: LivePlaybackQueueSnapshot?
     ) : PlaybackQueueRuntime {
         var activationAllowed = true
+        var checkpointAllowed=true
+        var beforeAcknowledgment: (suspend (PlaybackQueueRestoration)->Boolean)?=null
         override fun canReplaceTimeline(): Boolean = activationAllowed
         var captureBackupRestoreCheckpoint = false
         private var backupRestoreCheckpoint: LivePlaybackQueueSnapshot? = null
@@ -1377,7 +1459,14 @@ class PlaybackQueueCoordinatorTest {
         var insertCount = 0
         var moveCount = 0
 
-        override fun captureSnapshot(): LivePlaybackQueueSnapshot? = snapshot
+        override fun captureSnapshot(): LivePlaybackQueueSnapshot? = if(checkpointAllowed) snapshot else null
+        override fun captureSelectionSnapshot(): LivePlaybackQueueSnapshot? = snapshot
+        override suspend fun replaceTimelineAndAwait(restoration: PlaybackQueueRestoration): Boolean {
+            val gate=beforeAcknowledgment
+            if(gate!=null && !gate(restoration)) return false
+            replaceTimeline(restoration)
+            return true
+        }
 
         override fun captureForBackupRestore(): BackupRestorePlaybackSnapshot? {
             if (!captureBackupRestoreCheckpoint) return null

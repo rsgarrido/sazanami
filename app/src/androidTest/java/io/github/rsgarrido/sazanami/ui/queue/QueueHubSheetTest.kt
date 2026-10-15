@@ -6,6 +6,8 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -16,9 +18,10 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.swipeUp
-import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeLeft
 import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.controller.PlaybackQueueCardUiState
@@ -52,8 +55,13 @@ class QueueHubSheetTest {
             }
         }
 
-        composeRule.onNodeWithText("Queue 2").performClick()
-        composeRule.runOnIdle { assertEquals(0, switchCount) }
+        // A merged card's center can hit its overflow button instead of the queue title.
+        composeRule.onNodeWithText("Queue 2", useUnmergedTree = true)
+            .performScrollTo().assertIsDisplayed().performClick()
+        composeRule.runOnIdle {
+            assertEquals("B", selectedQueueId)
+            assertEquals(0, switchCount)
+        }
         composeRule.onNodeWithText("VIEWING").assertIsDisplayed()
         composeRule.onNodeWithText("Switch to this queue").assertIsDisplayed().performClick()
         composeRule.runOnIdle { assertEquals(1, switchCount) }
@@ -439,9 +447,13 @@ class QueueHubSheetTest {
             }
         }
 
-        composeRule.onAllNodesWithContentDescription("Reorder queue entry").assertCountEquals(2)
-        composeRule.onAllNodesWithContentDescription("Reorder queue entry")[1]
-            .performTouchInput { swipeUp(durationMillis = 150) }
+        composeRule.onAllNodesWithContentDescription("Reorder queue entry", useUnmergedTree = true)
+            .assertCountEquals(2)
+        swipeToEntryRow(
+            composeRule.onAllNodesWithContentDescription("Reorder queue entry", useUnmergedTree = true)[1],
+            targetEntryId = "current",
+            durationMillis = 150
+        )
 
         composeRule.runOnIdle { assertEquals(Triple("A", "next-2", 1), reorder) }
     }
@@ -474,13 +486,40 @@ class QueueHubSheetTest {
             }
         }
 
-        composeRule.onAllNodesWithText("Unavailable track")[0]
-            .performTouchInput { swipeDown(durationMillis = 100) }
+        swipeToEntryRow(
+            composeRule.onAllNodesWithText("Unavailable track")[0],
+            targetEntryId = "second",
+            durationMillis = 100
+        )
         composeRule.runOnIdle { assertEquals(null, reorder) }
 
-        composeRule.onAllNodesWithContentDescription("Reorder queue entry")[0]
-            .performTouchInput { swipeDown(durationMillis = 100) }
+        swipeToEntryRow(
+            composeRule.onAllNodesWithContentDescription("Reorder queue entry", useUnmergedTree = true)[0],
+            targetEntryId = "second",
+            durationMillis = 100
+        )
         composeRule.runOnIdle { assertEquals(Triple("B", "first", 1), reorder) }
+    }
+
+    private fun swipeToEntryRow(
+        startNode: SemanticsNodeInteraction,
+        targetEntryId: String,
+        durationMillis: Long
+    ) {
+        val list = composeRule.onNodeWithTag("queue-hub-entry-list")
+        val listBounds = list.fetchSemanticsNode().boundsInRoot
+        val start = startNode.assertIsDisplayed().fetchSemanticsNode().boundsInRoot.center
+        val target = composeRule.onNodeWithTag("queue-entry-$targetEntryId")
+            .assertIsDisplayed().fetchSemanticsNode().boundsInRoot.center
+        // Default handle-local swipes are shorter than half a 64 dp row, even before touch slop.
+        // Inject through the list so the pointer can travel from the handle across row boundaries.
+        list.performTouchInput {
+            swipe(
+                start = start - listBounds.topLeft,
+                end = Offset(start.x, target.y) - listBounds.topLeft,
+                durationMillis = durationMillis
+            )
+        }
     }
 
     private fun state(selectedQueueId: String): PlaybackQueueHubUiState {
