@@ -11,6 +11,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DirectListeningEventTranslatorTest {
+    @Test fun naturalRepeatOfSameOccurrenceCreatesDistinctRecorderAttemptsWithoutDuplicateFinalization() = runBlocking {
+        val fixture=Fixture()
+        val translator=DirectListeningEventTranslator().apply { activate() }
+        for(generation in 1L..2L) {
+            val start=(generation-1)*10_000L
+            fixture.consume(translator.observe("item",state(IntegratedDirectPhase.PLAYING,generation)),start)
+            val end=state(IntegratedDirectPhase.ENDED,generation)
+            fixture.consume(translator.observe("item",end,true),start+1_000)
+            assertTrue(translator.observe("item",end,true).isEmpty())
+        }
+        assertEquals(listOf(ListeningEndReason.NATURAL_END,ListeningEndReason.NATURAL_END),fixture.drafts.map { it.endReason })
+        assertEquals(2,fixture.drafts.map { it.playbackSessionId }.distinct().size)
+        assertTrue(fixture.drafts.all { it.qualifiedAsPlay && it.qualificationReason==ListeningQualificationReason.NATURAL_END })
+        assertEquals(listOf(1_000L,1_000L),fixture.drafts.map { it.listenedMs })
+    }
     @Test fun manualReplacementFinalizesOnlyAfterJoinedStopAndAdmitsSuccessorOnce() = runBlocking {
         val fixture = Fixture()
         val translator = DirectListeningEventTranslator().apply { activate() }

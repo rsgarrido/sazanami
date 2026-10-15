@@ -338,7 +338,7 @@
     <string name="usb_integrated_stop">Detener reproducción USB directa</string>
     <string name="usb_integrated_restart">Reiniciar la pista desde el fotograma 0</string>
     <string name="usb_integrated_warning">Solo desarrollo. Detén la reproducción normal y concede acceso USB en el diagnóstico de abajo. Activar libera ambos motores normales sin iniciar una canción. Selecciona un FLAC nativo estéreo de 16 bits a 44.1/48 kHz o 24 bits a 48/96 kHz en la biblioteca. Usa un volumen físico de KA15 de unos 15A–20A. Un fallo directo nunca activa audio normal.</string>
-    <string name="usb_integrated_commands">Usa Detener para abortar con seguridad. Pausa, Reproducir y la búsqueda dentro de la pista controlan esta misma sesión directa. Arrastra la barra para previsualizar y suelta una vez para buscar si la fuente lo permite. Siguiente, anterior, repetición y mezcla siguen sin estar disponibles. Desactiva el modo tras la restauración; la reproducción normal no se reinicia automáticamente.</string>
+    <string name="usb_integrated_commands">Usa los controles del reproductor para pausar, reproducir, desplazarte por la pista, avanzar, retroceder, repetir y activar la reproducción aleatoria. La reproducción sigue la cola seleccionada. Una pista siguiente no compatible detiene la reproducción automática. Usa Detener para abortar con seguridad. Elige Audio de Android para volver; la reproducción normal permanece pausada.</string>
     <!-- USB Audio output selection; service session only. -->
     <string name="usb_settings_title">Audio USB</string>
     <string name="usb_settings_entry_summary">Elige el audio de Android o la reproducción experimental por USB directo.</string>
@@ -367,7 +367,7 @@
     <string name="usb_settings_refresh">Actualizar dispositivos</string>
     <string name="usb_settings_formats_title">Formatos de origen compatibles</string>
     <string name="usb_settings_formats">FLAC estéreo: 16 bits a 44,1 o 48 kHz; 24 bits a 48 o 96 kHz. Cada combinación también requiere descriptores y configuración de reloj compatibles en el DAC.</string>
-    <string name="usb_settings_features">La reproducción experimental admite pausa, reanudación y desplazamiento dentro de la pista. No admite otros formatos ni algunas funciones habituales, como cambiar de pista, avanzar automáticamente, reproducción aleatoria, repetición y volumen o ganancia por software.</string>
+    <string name="usb_settings_features">La reproducción experimental admite pausa, reanudación, desplazamiento dentro de la pista, navegación por la cola, avance automático, reproducción aleatoria y repetición. Una pista siguiente no compatible detiene la reproducción automática. El volumen y la ganancia por software siguen sin estar disponibles.</string>
     <string name="usb_settings_troubleshooting">Abrir diagnóstico para resolver problemas</string>
     <string name="usb_settings_volume_title">Comprueba el volumen del DAC</string>
     <string name="usb_settings_volume_warning">Empieza a escuchar a un volumen bajo. USB directo envía la amplitud PCM original sin aplicar el volumen ni la ganancia por software de Sazanami. Usa los controles de volumen del DAC si dispone de ellos; el nivel de audio puede ser distinto al de Android.</string>

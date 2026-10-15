@@ -27,9 +27,14 @@ internal object IntegratedDirectPlaybackBridge {
         owner?.selectDirect(enabled, identity, generation)
     }
     fun stop() { owner?.stopDirect() }
+    fun canReplaceTimeline()=owner?.canReplaceDirectTimeline()==true
     fun togglePlayPause() { owner?.toggleDirectPlayback() }
     fun pause() { owner?.pauseDirectPlayback() }
     fun seek(positionMs: Long) { owner?.seekDirectPlayback(positionMs) }
+    fun next() { owner?.requestDirectNavigation(androidx.media3.common.Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM) }
+    fun previous() { owner?.requestDirectNavigation(androidx.media3.common.Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM) }
+    fun shuffle(enabled: Boolean) { owner?.requestDirectShuffle(enabled) }
+    fun repeat(mode: Int) { owner?.requestDirectRepeat(mode) }
     @OptIn(UnstableApi::class)
     fun start() { owner?.restartDirectPlayback() }
     fun reject(command: String) { owner?.rejectDirectCommand(command) }

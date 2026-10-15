@@ -383,7 +383,7 @@
     <string name="usb_integrated_stop">Stop direct USB playback</string>
     <string name="usb_integrated_restart">Restart selected track from frame 0</string>
     <string name="usb_integrated_warning">Development only. Stop ordinary playback and grant USB access in the USB diagnostics below first. Enabling releases both normal audio engines without starting a song. Select one native stereo FLAC: 16-bit at 44.1/48 kHz or 24-bit at 48/96 kHz in the normal library. Keep KA15 physical volume around 15A–20A. Direct failures never fall back to normal audio.</string>
-    <string name="usb_integrated_commands">Use Stop to abort safely. Pause, Play and seeking within the current track control this same direct session. Drag the normal seek bar to preview; release once to seek when the source supports it. Next, previous, repeat and shuffle remain unavailable. Disable direct mode after restoration; normal playback does not restart automatically.</string>
+    <string name="usb_integrated_commands">Use the player controls for pause, play, seeking, next, previous, repeat and shuffle. Playback follows the selected queue. An unsupported next track stops automatic playback. Use Stop to abort safely. Choose Android audio to return; normal playback stays paused.</string>
     <!-- USB Audio output selection; service session only. -->
     <string name="usb_settings_title">USB Audio</string>
     <string name="usb_settings_entry_summary">Choose Android audio or experimental USB Direct playback.</string>
@@ -412,7 +412,7 @@
     <string name="usb_settings_refresh">Refresh devices</string>
     <string name="usb_settings_formats_title">Supported source formats</string>
     <string name="usb_settings_formats">Stereo FLAC: 16-bit at 44.1 or 48 kHz; 24-bit at 48 or 96 kHz. Each combination also requires compatible DAC descriptors and clock configuration.</string>
-    <string name="usb_settings_features">Experimental playback supports pause, resume and seeking. Other formats and some standard player features are unavailable, including track navigation, automatic advancement, shuffle, repeat and software volume or gain.</string>
+    <string name="usb_settings_features">Experimental playback supports pause, resume, seeking, queue navigation, automatic advancement, shuffle and repeat. An unsupported next track stops automatic playback. Software volume and gain remain unavailable.</string>
     <string name="usb_settings_troubleshooting">Open diagnostics for troubleshooting</string>
     <string name="usb_settings_volume_title">Check your DAC volume</string>
     <string name="usb_settings_volume_warning">Begin listening at a low volume. USB Direct sends the original PCM amplitude without Sazanami’s software volume or gain. Use the DAC’s hardware volume controls where available; audio levels may differ from Android audio.</string>

@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import androidx.media3.common.Player
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.membershipKey
 import io.github.rsgarrido.sazanami.data.knownDiscNumber
@@ -387,9 +388,8 @@ class PlaybackController(
         clearForwardHistory: Boolean = true,
         preserveSpecializedShuffleMode: Boolean = false
     ) {
-        val direct=IntegratedDirectPlaybackBridge.state.value
-        if (direct.enabled && (direct.busy || !direct.normalReleased || !direct.cleanupSafe)) {
-            IntegratedDirectPlaybackBridge.reject("Track replacement; Stop and wait for USB restoration first");return
+        if (IntegratedDirectPlaybackBridge.directSelected && !IntegratedDirectPlaybackBridge.canReplaceTimeline()) {
+            IntegratedDirectPlaybackBridge.reject("Track replacement");return
         }
         val previousSong = currentSong
 
@@ -443,7 +443,7 @@ class PlaybackController(
     }
 
     fun skipToPrevious() {
-        if (IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.reject("Previous");return }
+        if (IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.previous();return }
         if (hasAuthoritativeActiveQueueTimeline()) {
             musicPlayer.skipToPrevious()
             return
@@ -457,7 +457,7 @@ class PlaybackController(
     }
 
     fun skipToNext() {
-        if (IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.reject("Next");return }
+        if (IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.next();return }
         if (hasAuthoritativeActiveQueueTimeline()) {
             musicPlayer.skipToNext()
             return
@@ -594,11 +594,14 @@ class PlaybackController(
     }
 
     fun toggleShuffle() {
-        if (IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.reject("Shuffle");return }
+        if (IntegratedDirectPlaybackBridge.directSelected) {
+            IntegratedDirectPlaybackBridge.shuffle(IntegratedDirectPlaybackBridge.state.value.queueShuffle!=true);return
+        }
         setSongShuffleEnabled(shuffleMode == PlaybackShuffleMode.OFF)
     }
 
     fun setSongShuffleEnabled(enabled: Boolean) {
+        if(IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.shuffle(enabled);return }
         val target = if (enabled) PlaybackShuffleMode.SONGS else PlaybackShuffleMode.OFF
         if (shuffleMode == target) return
         val previousMode = shuffleMode
@@ -679,7 +682,14 @@ class PlaybackController(
     }
 
     fun cycleRepeatMode() {
-        if (IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.reject("Repeat");return }
+        if (IntegratedDirectPlaybackBridge.directSelected) {
+            val repeat=when(IntegratedDirectPlaybackBridge.state.value.queueRepeat) {
+                Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+                Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+                else -> Player.REPEAT_MODE_OFF
+            }
+            IntegratedDirectPlaybackBridge.repeat(repeat);return
+        }
         setRepeatModeFromExternalController(
             when (repeatMode) {
                 RepeatMode.OFF -> RepeatMode.ALL
@@ -690,6 +700,13 @@ class PlaybackController(
     }
 
     fun setRepeatModeFromExternalController(mode: RepeatMode) {
+        if(IntegratedDirectPlaybackBridge.directSelected) {
+            IntegratedDirectPlaybackBridge.repeat(when(mode) {
+                RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+                RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+                RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+            });return
+        }
         if (repeatMode == mode) return
         repeatMode = mode
         musicPlayer.synchronizeNavigationPolicy(
@@ -701,6 +718,7 @@ class PlaybackController(
     }
 
     fun addSongToQueue(song: Song) {
+        if(enqueueDirect(listOf(song),false)) return
         playbackQueueManager.addSongToQueue(song)
         syncServicePlaylistKeepingCurrent()
         savePlayerState()
@@ -708,6 +726,7 @@ class PlaybackController(
     }
 
     fun addSongToPlayNext(song: Song) {
+        if(enqueueDirect(listOf(song),true)) return
         playbackQueueManager.addSongToPlayNext(song)
         syncServicePlaylistKeepingCurrent()
         savePlayerState()
@@ -715,6 +734,7 @@ class PlaybackController(
     }
 
     fun removeSongFromQueue(index: Int) {
+        if(IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.reject("Use Queue Hub occurrence editing");return }
         if (playbackQueueManager.removeSongFromQueue(index)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
@@ -723,6 +743,7 @@ class PlaybackController(
     }
 
     fun moveQueuedSongUp(index: Int) {
+        if(IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.reject("Use Queue Hub occurrence editing");return }
         if (playbackQueueManager.moveQueuedSongUp(index)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
@@ -731,6 +752,7 @@ class PlaybackController(
     }
 
     fun moveQueuedSongDown(index: Int) {
+        if(IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.reject("Use Queue Hub occurrence editing");return }
         if (playbackQueueManager.moveQueuedSongDown(index)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
@@ -739,6 +761,7 @@ class PlaybackController(
     }
 
     fun clearQueue() {
+        if(IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.reject("Use Queue Hub occurrence editing");return }
         if (playbackQueueManager.clearQueue()) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
@@ -747,6 +770,7 @@ class PlaybackController(
     }
 
     fun addSongsToPlayNext(songs: List<Song>) {
+        if(enqueueDirect(songs,true)) return
         if (playbackQueueManager.addSongsToPlayNext(songs)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
@@ -755,6 +779,7 @@ class PlaybackController(
     }
 
     fun addSongsToQueue(songs: List<Song>) {
+        if(enqueueDirect(songs,false)) return
         if (playbackQueueManager.addSongsToQueue(songs)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
@@ -763,6 +788,7 @@ class PlaybackController(
     }
 
     fun removeFirstMatchingSongsFromQueue(songs: List<Song>) {
+        if(IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.reject("Use Queue Hub occurrence editing");return }
         if (playbackQueueManager.removeFirstMatchingSongsFromQueue(songs)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
@@ -770,7 +796,14 @@ class PlaybackController(
         }
     }
 
+    private fun enqueueDirect(songs: List<Song>,playNext: Boolean): Boolean {
+        if(!IntegratedDirectPlaybackBridge.directSelected) return false
+        coroutineScope.launch { PlaybackQueueRuntimeBridge.enqueueSongs(songs,playNext) }
+        return true
+    }
+
     fun removeLastMatchingSongsFromQueue(songs: List<Song>) {
+        if(IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.reject("Use Queue Hub occurrence editing");return }
         if (playbackQueueManager.removeLastMatchingSongsFromQueue(songs)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
@@ -779,6 +812,7 @@ class PlaybackController(
     }
 
     fun removeLastMatchingSongFromQueue(song: Song) {
+        if(IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.reject("Use Queue Hub occurrence editing");return }
         if (playbackQueueManager.removeLastMatchingSongFromQueue(song)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
@@ -787,6 +821,7 @@ class PlaybackController(
     }
 
     fun removeFirstMatchingSongFromQueue(song: Song) {
+        if(IntegratedDirectPlaybackBridge.directSelected) { IntegratedDirectPlaybackBridge.reject("Use Queue Hub occurrence editing");return }
         if (playbackQueueManager.removeFirstMatchingSongFromQueue(song)) {
             syncServicePlaylistKeepingCurrent()
             savePlayerState()
@@ -1297,10 +1332,13 @@ class PlaybackController(
         playlist: List<Song>,
         newPlaybackContextBaseSongs: List<Song>? = null
     ) {
-        currentSong = song
-        isPlaying = !IntegratedDirectPlaybackBridge.directSelected
-        currentPosition = 0
-        duration = song.duration.toInt()
+        // Direct publishes its own selected source and position; dispatch is not native readiness.
+        if(!IntegratedDirectPlaybackBridge.directSelected) {
+            currentSong = song
+            isPlaying = true
+            currentPosition = 0
+            duration = song.duration.toInt()
+        }
 
         musicPlayer.playSong(
             song = song,
@@ -1332,6 +1370,9 @@ class PlaybackController(
         startSong: Song,
         preserveExistingShuffleOrder: Boolean
     ): List<Song> {
+        val selectionShuffleMode=if(IntegratedDirectPlaybackBridge.directSelected) {
+            if(IntegratedDirectPlaybackBridge.state.value.queueShuffle==true) PlaybackShuffleMode.SONGS else PlaybackShuffleMode.OFF
+        } else shuffleMode
         val refreshedUpcomingSongs = upcomingPlaylistBuilder.buildUpcomingPlaylistAfterCurrent(
             startSong = startSong,
             playbackSourceSongs = getPlaybackSourceSongs(),
@@ -1339,7 +1380,7 @@ class PlaybackController(
                 currentSongId = startSong.id
             ),
             currentUpcomingSongs = upcomingSongs,
-            shuffleMode = shuffleMode,
+            shuffleMode = selectionShuffleMode,
             repeatMode = repeatMode,
             preserveExistingShuffleOrder = preserveExistingShuffleOrder
         )

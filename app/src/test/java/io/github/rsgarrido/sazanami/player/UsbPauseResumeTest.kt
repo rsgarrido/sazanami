@@ -170,8 +170,11 @@ class UsbPauseResumeTest {
             assertTrue(allowsDirectCommand(Player.COMMAND_STOP,internal))
             assertTrue(allowsDirectCommand(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,internal)) // Active seekability is gated by the player.
             assertEquals(internal,allowsDirectCommand(Player.COMMAND_SEEK_TO_MEDIA_ITEM,internal))
-            for(command in listOf(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,Player.COMMAND_CHANGE_MEDIA_ITEMS,
-                Player.COMMAND_SET_SHUFFLE_MODE,Player.COMMAND_SET_REPEAT_MODE,Player.COMMAND_SET_VOLUME,Player.COMMAND_SET_SPEED_AND_PITCH))
+            for(command in listOf(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM))
+                assertTrue(allowsDirectCommand(command,internal))
+            for(command in listOf(Player.COMMAND_SET_SHUFFLE_MODE,Player.COMMAND_SET_REPEAT_MODE))
+                assertEquals(internal,allowsDirectCommand(command,internal))
+            for(command in listOf(Player.COMMAND_CHANGE_MEDIA_ITEMS,Player.COMMAND_SET_VOLUME,Player.COMMAND_SET_SPEED_AND_PITCH))
                 assertFalse(allowsDirectCommand(command,internal))
         }
         assertFalse(allowsDirectCommand(Player.COMMAND_SET_MEDIA_ITEM,false))

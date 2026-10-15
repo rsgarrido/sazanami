@@ -141,12 +141,26 @@ class IntegratedDirectPlaybackTest {
         assertTrue(commands.contains("COMMAND_SEEK_TO_MEDIA_ITEM"))
         assertTrue(allowsDirectCommand(androidx.media3.common.Player.COMMAND_SEEK_TO_MEDIA_ITEM,true))
         assertFalse(allowsDirectCommand(androidx.media3.common.Player.COMMAND_SEEK_TO_MEDIA_ITEM,false))
-        for(name in listOf("COMMAND_SEEK_TO_NEXT_MEDIA_ITEM","COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM","COMMAND_CHANGE_MEDIA_ITEMS","COMMAND_SET_REPEAT","COMMAND_SET_SHUFFLE","COMMAND_SET_VOLUME","COMMAND_SET_SPEED")) assertFalse(commands.contains(name))
+        for(command in directAdjacentCommands) {
+            assertTrue(command in integratedDirectCommands)
+            assertTrue(allowsDirectCommand(command,true));assertTrue(allowsDirectCommand(command,false))
+        }
+        assertTrue(androidx.media3.common.Player.COMMAND_SET_REPEAT_MODE in integratedDirectCommands)
+        assertTrue(androidx.media3.common.Player.COMMAND_SET_SHUFFLE_MODE in integratedDirectCommands)
+        assertFalse(allowsDirectCommand(androidx.media3.common.Player.COMMAND_SET_SHUFFLE_MODE,false))
+        assertTrue(allowsDirectCommand(androidx.media3.common.Player.COMMAND_PLAY_PAUSE,false))
+        for(command in listOf(androidx.media3.common.Player.COMMAND_SET_MEDIA_ITEM,
+            androidx.media3.common.Player.COMMAND_CHANGE_MEDIA_ITEMS,androidx.media3.common.Player.COMMAND_PREPARE,
+            androidx.media3.common.Player.COMMAND_SET_REPEAT_MODE)) assertFalse(allowsDirectCommand(command,false))
+        for(name in listOf("COMMAND_CHANGE_MEDIA_ITEMS","COMMAND_SET_VOLUME","COMMAND_SET_SPEED")) assertFalse(commands.contains(name))
         assertTrue(adapter.contains("PositionSupplier { evidence.positionMs }"));assertTrue(adapter.contains("unsupported(\"Queue edit\")"))
         val app=source("java/io/github/rsgarrido/sazanami/player/PlaybackController.kt")
         assertTrue(app.contains("if (IntegratedDirectPlaybackBridge.directSelected) { isPlaying=false;currentPosition=duration } else handleSongCompleted()"))
-        assertTrue(app.contains("isPlaying = !IntegratedDirectPlaybackBridge.directSelected"))
-        for(name in listOf("Next","Previous","Shuffle")) assertTrue(app.contains("reject(\"$name\")"))
+        val selectionUi=app.substringAfter("private fun startSongPlayback(").substringBefore("musicPlayer.playSong(")
+            .replace(Regex("\\s+"),"")
+        assertTrue("Only Android selection may optimistically replace the current playback UI",
+            selectionUi.endsWith("if(!IntegratedDirectPlaybackBridge.directSelected){currentSong=songisPlaying=truecurrentPosition=0duration=song.duration.toInt()}"))
+        for(name in listOf("next()","previous()","shuffle(")) assertTrue(app.contains("IntegratedDirectPlaybackBridge.$name"))
         assertTrue(app.contains("IntegratedDirectPlaybackBridge.seek(position.toLong())"));assertTrue(adapter.contains("handleSeek(mediaItemIndex"))
         assertTrue(adapter.contains("commands.remove(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)"))
         assertTrue(app.contains("IntegratedDirectPlaybackBridge.togglePlayPause()"));assertTrue(app.contains("IntegratedDirectPlaybackBridge.pause()"))

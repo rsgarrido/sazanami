@@ -723,7 +723,7 @@ class PlaybackService : MediaLibraryService() {
                         ?: playerStateStorage.getShuffleMode().isEnabled
                 },
                 logicalBaseSongs = {
-                    PlaybackLibraryBridge.currentPlaybackContextSongs()
+                    (if(sessionPlayer.isDirectSelected) servicePlaybackContextSongs else PlaybackLibraryBridge.currentPlaybackContextSongs())
                         .ifEmpty { servicePlaybackContextSongs }
                 },
                 beforeTimelineReplacement = {
@@ -746,6 +746,10 @@ class PlaybackService : MediaLibraryService() {
                         repeatMode = PlaybackLibraryBridge.currentRepeatMode()
                             ?: playerStateStorage.getRepeatMode()
                     )
+                },
+                queuedReferenceKeys = {
+                    val byId=PlaybackLibraryBridge.songs.associateBy(Song::id)
+                    playerStateStorage.getQueueSongIds().mapNotNull { byId[it]?.membershipKey() }
                 }
             ),
             generatedQueueName = { number -> appLanguageContext().getString(R.string.queue_generated_name, number) },

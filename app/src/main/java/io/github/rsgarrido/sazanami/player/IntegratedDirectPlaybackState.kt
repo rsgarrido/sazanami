@@ -110,13 +110,17 @@ internal fun integratedTerminalState(previous: IntegratedDirectPlaybackState,res
         error=if(success || referenceUnavailableSuccess || seekSuccess || stopped) null else integratedDirectFailure(result))
 }
 
+internal val directAdjacentCommands=intArrayOf(
+    androidx.media3.common.Player.COMMAND_SEEK_TO_NEXT,androidx.media3.common.Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+    androidx.media3.common.Player.COMMAND_SEEK_TO_PREVIOUS,androidx.media3.common.Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
 internal val integratedDirectCommands=intArrayOf(
     androidx.media3.common.Player.COMMAND_GET_CURRENT_MEDIA_ITEM,androidx.media3.common.Player.COMMAND_GET_TIMELINE,
     androidx.media3.common.Player.COMMAND_GET_METADATA,androidx.media3.common.Player.COMMAND_SET_MEDIA_ITEM,
     androidx.media3.common.Player.COMMAND_PREPARE,androidx.media3.common.Player.COMMAND_STOP,androidx.media3.common.Player.COMMAND_PLAY_PAUSE,
-    androidx.media3.common.Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,androidx.media3.common.Player.COMMAND_SEEK_TO_MEDIA_ITEM)
+    androidx.media3.common.Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,androidx.media3.common.Player.COMMAND_SEEK_TO_MEDIA_ITEM,
+    *directAdjacentCommands,androidx.media3.common.Player.COMMAND_SET_REPEAT_MODE,androidx.media3.common.Player.COMMAND_SET_SHUFFLE_MODE)
 internal fun allowsDirectCommand(command: Int,internalController: Boolean): Boolean =
     command in if(internalController) integratedDirectCommands else intArrayOf(
         androidx.media3.common.Player.COMMAND_GET_CURRENT_MEDIA_ITEM,androidx.media3.common.Player.COMMAND_GET_METADATA,
         androidx.media3.common.Player.COMMAND_GET_TIMELINE,androidx.media3.common.Player.COMMAND_STOP,androidx.media3.common.Player.COMMAND_PLAY_PAUSE,
-        androidx.media3.common.Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
+        androidx.media3.common.Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,*directAdjacentCommands)

@@ -40,6 +40,7 @@ internal class ExperimentalUsbPlaybackPlayer(
     private var savedRepeat=Player.REPEAT_MODE_OFF
     private var savedPlaying=false
     private var queueOutputObserver: PlaybackQueueOutputObserver?=null
+    private var idlePreparationJob: Job?=null
     private var shuttingDown=false
     private var directListeningObserver: DirectPlaybackListeningObserver?=null
     private var directListeningOwned=false
@@ -78,7 +79,72 @@ internal class ExperimentalUsbPlaybackPlayer(
     fun canReplaceDirectTimeline()=selectedDirect && direct.canReplaceTimeline()
     fun canAdmitDirectTimeline(items: List<MediaItem>,index: Int,positionMs: Long,repeat: Int)=
         selectedDirect && direct.canAdmitTimeline(items,index,positionMs,repeat)
-    fun attachQueueOutputObserver(observer: PlaybackQueueOutputObserver) { queueOutputObserver=observer }
+    fun attachQueueOutputObserver(observer: PlaybackQueueOutputObserver) {
+        queueOutputObserver=observer
+        direct.stopRequestedObserver=observer::onDirectStop
+        direct.playWhenReadyRequested=observer::onDirectPlayWhenReady
+        direct.preparationAllowed=observer::canPrepareDirectCurrent
+        direct.preparationRequested=::prepareDirectPlayback
+        direct.preparationCancelled={ idlePreparationJob?.cancel() }
+        direct.navigationRequested={ command,generation ->
+            dispatchQueueOperation { observer.onDirectNavigation(command,generation) }
+        }
+        direct.shuffleRequested={ enabled ->
+            dispatchQueueOperation { observer.onDirectShuffle(enabled) }
+        }
+        direct.repeatRequested={ repeat ->
+            dispatchQueueOperation { observer.onDirectRepeat(repeat) }
+        }
+        direct.refreshCommandAvailability()
+    }
+    private fun prepareDirectPlayback(generation: Long) {
+        if(idlePreparationJob?.isActive==true) return
+        val job=scope.launch(start=CoroutineStart.LAZY) {
+            try { queueOutputObserver?.onDirectPrepare(generation) }
+            catch(cancelled: CancellationException) { throw cancelled }
+            catch(error: Exception) {
+                android.util.Log.w("DirectUsbPlayback","Source preparation failed",error)
+                direct.notice("Source preparation failed")
+            }
+        }
+        idlePreparationJob=job
+        job.invokeOnCompletion {
+            if(idlePreparationJob===job) idlePreparationJob=null
+            if(selectedDirect && !shuttingDown && scope.isActive) direct.refreshCommandAvailability()
+        }
+        job.start()
+    }
+    fun canPrepareDirectCurrent(generation: Long)=selectedDirect && direct.canPrepareCurrent(generation)
+    fun prepareDirectCurrent(generation: Long)=direct.prepareCurrent(generation)
+    private fun dispatchQueueOperation(operation: suspend ()->Unit) {
+        scope.launch(start=CoroutineStart.UNDISPATCHED) {
+            try { operation() }
+            catch(cancelled: CancellationException) { throw cancelled }
+            catch(error: Exception) {
+                android.util.Log.w("DirectUsbPlayback","Queue operation failed",error)
+                direct.notice("Queue operation failed")
+            }
+        }
+    }
+    fun invalidateAutomaticAdvance()=direct.invalidateAutomaticAdvance()
+    fun beginDirectContextPreparation()=direct.beginContextPreparation()
+    fun endDirectContextPreparation()=direct.endContextPreparation()
+    fun canAdvanceGeneration(generation: Long)=selectedDirect && !shuttingDown && switching==null && direct.canAdvanceGeneration(generation)
+    fun navigateDirect(command: Int,generation: Long?)=direct.navigate(command,generation)
+    val directIntentItems get()=direct.intentItems
+    val directIntentIndex get()=direct.intentIndex
+    val directIntentPositionMs get()=direct.intentPositionMs
+    fun setDirectRepeat(repeat: Int)=selectedDirect && direct.setQueueRepeat(repeat)
+    fun setDirectOrder(ids: List<String>,shuffle: Boolean)=selectedDirect && direct.setQueueOrder(ids,shuffle)
+    fun editDirectQueue(items: List<MediaItem>)=directQueueCheckpointAllowed && direct.editQueue(items)
+    fun requestDirectNavigation(command: Int) {
+        if(selectedDirect && canReplaceDirectTimeline()) {
+            direct.invalidateAutomaticAdvance()
+            direct.navigationRequested?.invoke(command,null)
+        }
+    }
+    fun requestDirectShuffle(enabled: Boolean) { if(selectedDirect) direct.shuffleRequested?.invoke(enabled) }
+    fun requestDirectRepeat(repeat: Int) { if(selectedDirect) direct.repeatRequested?.invoke(repeat) }
     fun replaceDirectTimeline(items: List<MediaItem>,index: Int,playing: Boolean,positionMs: Long,
         shuffle: Boolean,repeat: Int): Deferred<DirectSourceTransitionResult> {
         verifyApplicationThread()
@@ -264,6 +330,7 @@ internal class ExperimentalUsbPlaybackPlayer(
         } else {
             queueOutputObserver?.onAndroidRequested()
             switching=DirectOutputSwitch.TO_ANDROID
+            direct.refreshCommandAvailability()
             stage(UsbActivationStage.RESTORE_ANDROID)
             directState=directState.copy(switching=switching,error=null,
                 activation=directState.activation?.copy(restoration=UsbActivationRestoration.PENDING))

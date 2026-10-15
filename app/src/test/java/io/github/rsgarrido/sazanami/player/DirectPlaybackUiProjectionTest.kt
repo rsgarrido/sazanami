@@ -10,6 +10,17 @@ import org.junit.Test
 import org.mockito.Mockito.mock
 
 class DirectPlaybackUiProjectionTest {
+    @Test fun navigationPreviewsFollowDirectOccurrenceIndexInsteadOfAndroidHistory() {
+        val previous=PlaybackUiState(previousPreviewSong=nativeSong,nextPreviewSong=nativeSong,previousHistoryCount=99)
+        val direct=state(IntegratedDirectPhase.PLAYING).copy(queueMediaIds=listOf("1","2","1"),queueIndex=1)
+        val ui=directPlaybackUiState(previous,direct,listOf(androidSong,nativeSong))
+        assertEquals(androidSong,ui.previousPreviewSong);assertEquals(androidSong,ui.nextPreviewSong)
+        assertEquals(1,ui.previousHistoryCount);assertEquals(0,ui.forwardHistoryCount)
+        val last=directPlaybackUiState(ui,direct.copy(queueIndex=2),listOf(androidSong,nativeSong))
+        assertNull(last.nextPreviewSong)
+        val wrapped=directPlaybackUiState(ui,direct.copy(queueIndex=2,queueRepeat=androidx.media3.common.Player.REPEAT_MODE_ALL),listOf(androidSong,nativeSong))
+        assertEquals(androidSong,wrapped.nextPreviewSong)
+    }
     @Test fun unavailableEarlierWindowCannotShiftTheCurrentOccurrenceOrHideItsUpcomingSong() {
         val ui=project(state(IntegratedDirectPhase.PAUSED).copy(queueMediaIds=listOf("404","2","1"),queueIndex=1))
         assertEquals(nativeSong,ui.currentSong);assertEquals(listOf(androidSong),ui.upcomingSongs)

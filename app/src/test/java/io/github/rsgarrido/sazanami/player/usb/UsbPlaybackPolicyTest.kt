@@ -22,9 +22,9 @@ class UsbPlaybackPolicyTest {
             assertEquals(debug, UsbPlaybackPolicy.allows(UsbPlaybackOperation.DEVELOPER_EXPERIMENT, debug, authorized = true))
         }
         for (internal in listOf(false, true)) {
-            assertFalse(allowsDirectCommand(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM, internal))
+            assertTrue(allowsDirectCommand(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM, internal))
             assertFalse(allowsDirectCommand(Player.COMMAND_SET_VOLUME, internal))
-            assertFalse(allowsDirectCommand(Player.COMMAND_SET_REPEAT_MODE, internal))
+            assertEquals(internal,allowsDirectCommand(Player.COMMAND_SET_REPEAT_MODE, internal))
         }
     }
 

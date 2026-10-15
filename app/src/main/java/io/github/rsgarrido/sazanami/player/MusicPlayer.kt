@@ -119,7 +119,7 @@ class MusicPlayer(private val context: Context) {
         playlist: List<Song> = listOf(song),
         canonicalBaseSongs: List<Song>? = null
     ) {
-        val playerController = controller ?: return
+        if (!IntegratedDirectPlaybackBridge.directSelected && controller == null) return
 
         val safePlaylist = if (playlist.isEmpty()) {
             listOf(song)
@@ -149,7 +149,8 @@ class MusicPlayer(private val context: Context) {
                 canonicalReferenceKeys = canonicalSongs.map(Song::membershipKey),
                 playbackEntries = playbackEntries
             ))
-            PlaybackQueueRuntimeBridge.prepareNewPlaybackContext(canonicalBaseEntryIds)
+            if (!IntegratedDirectPlaybackBridge.directSelected)
+                PlaybackQueueRuntimeBridge.prepareNewPlaybackContext(canonicalBaseEntryIds)
             contextBaseEntryIds=canonicalBaseEntryIds
         }
 
@@ -163,6 +164,7 @@ class MusicPlayer(private val context: Context) {
                 shouldStart,contextBaseEntryIds,PlaybackLibraryBridge.currentShuffleEnabled() ?: false,repeat))
                 IntegratedDirectPlaybackBridge.reject("Track selection")
         } else {
+            val playerController = controller ?: return
             playerController.setMediaItems(mediaItems,startIndex,startPosition.toLong())
             playerController.prepare()
             if (shouldStart) playerController.play()
@@ -281,7 +283,6 @@ class MusicPlayer(private val context: Context) {
     }
 
     fun resume() {
-        if (IntegratedDirectPlaybackBridge.directSelected) { controller?.prepare();return }
         controller?.play()
     }
 

@@ -18,10 +18,18 @@ internal fun directPlaybackUiState(
     }
     val availableSongs=(previous.queuedSongs+previous.upcomingSongs+listOfNotNull(previous.currentSong)+librarySongs).associateBy { it.id.toString() }
     val queue=direct.queueMediaIds?.drop(direct.queueIndex+1)?.mapNotNull(availableSongs::get)
+    val timeline=direct.queueMediaIds
+    val wraps=direct.queueRepeat==androidx.media3.common.Player.REPEAT_MODE_ALL
+    val previousId=timeline?.getOrNull(direct.queueIndex-1) ?: timeline?.lastOrNull()?.takeIf { wraps }
+    val nextId=timeline?.getOrNull(direct.queueIndex+1) ?: timeline?.firstOrNull()?.takeIf { wraps }
     return previous.copy(
         currentSong = song,
         queuedSongs=if(queue!=null) emptyList() else previous.queuedSongs,
         upcomingSongs=queue ?: previous.upcomingSongs,
+        previousHistoryCount=if(timeline!=null) direct.queueIndex.coerceAtLeast(0) else previous.previousHistoryCount,
+        forwardHistoryCount=if(timeline!=null) 0 else previous.forwardHistoryCount,
+        previousPreviewSong=if(timeline!=null) previousId?.let(availableSongs::get) else previous.previousPreviewSong,
+        nextPreviewSong=if(timeline!=null) nextId?.let(availableSongs::get) else previous.nextPreviewSong,
         isShuffleEnabled=direct.queueShuffle ?: previous.isShuffleEnabled,
         repeatMode=when(direct.queueRepeat) {
             androidx.media3.common.Player.REPEAT_MODE_OFF -> RepeatMode.OFF
