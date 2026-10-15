@@ -278,7 +278,8 @@ internal data class UsbSilentTransportExperimentResult(val generation: Long, val
     val nativeMemoryReleased: Boolean = true, val connectionCloseRequired: Boolean = false,
     val connectionCloseDisposedUrbs: Long? = null, val outstandingAfterConnectionClose: Long? = null,
     val mode: UsbPcmDiagnosticMode = UsbPcmDiagnosticMode.ZERO, val preflight: UsbReferencePreflight? = null,
-    val flacSource: UsbFlacSourceResult? = null, val originalFlacFdClosed: Boolean? = null) {
+    val flacSource: UsbFlacSourceResult? = null, val originalFlacFdClosed: Boolean? = null,
+    val nativeExecutionJoined: Boolean = false, val detachedResourceRelease: UsbDetachedResourceRelease? = null) {
     val kernelRecovery get() = configuration?.kernelRecovery ?: UsbKernelBindingRecovery.INDETERMINATE
     val frameworkRecovery get() = configuration?.frameworkRecovery ?: UsbFrameworkEnumerationRecovery.INDETERMINATE
     val functionalRecovery get() = UsbFunctionalAudioRecovery.NOT_VERIFIED

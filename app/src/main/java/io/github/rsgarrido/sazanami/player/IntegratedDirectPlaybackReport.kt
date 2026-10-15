@@ -18,7 +18,7 @@ internal fun formatIntegratedDirectPlayback(state: IntegratedDirectPlaybackState
     appendLine("integrated state=${state.phase}; completed frames=${state.completedFrames} (cumulative delivered); original source frame=${state.sourcePositionFrame ?: state.completedFrames}; source epoch=${state.sourceEpoch}; position ms=${state.positionMs}; duration ms=${state.durationMs}; STREAMINFO total=${state.totalFrames}")
     appendLine("requested playWhenReady=${state.playWhenReady}; latest native lifecycle=${state.nativeTransportPhase}; app Pause/Resume requests=${state.pauseRequests}/${state.resumeRequests} (native confirmations below require snapshot evidence)")
     appendLine("error=${state.error ?: "none"}; command notice=${state.notice ?: "none"}")
-    appendLine("direct resources/restoration safe=${state.cleanupSafe}; production Bit-perfect: NOT YET COMPLETE")
+    appendLine("direct resources/restoration safe=${state.cleanupSafe}; detached native resources independently released=${state.detachedResourcesReleased}; production Bit-perfect: NOT YET COMPLETE")
     appendLine("Single track; native Pause/Resume and absolute seek on capable sources; no next/previous/repeat/shuffle, DSP/gain, Android audio sink or mixer; physical KA15 volume only")
     val controlCounters=state.engine?.transport?.counters ?: state.nativePauseCounters
     fun control(name: String)=controlCounters[name]?.toString() ?: "unavailable"
@@ -46,7 +46,7 @@ internal fun formatIntegratedDirectPlayback(state: IntegratedDirectPlaybackState
         appendLine("Pause frame telemetry remains cumulative delivered frames after seeking. Confirmed source base + current-epoch successful completions drives position; queued PCM and scrub previews are not completions.")
     }
     state.engine?.let { result ->
-        appendLine("underlying Session 11 engine result=${result.status}; original descriptor closed=${result.originalFlacFdClosed}; native memory released=${result.nativeMemoryReleased}")
+        appendLine("underlying Session 11 engine result=${result.status}; original descriptor closed=${result.originalFlacFdClosed}; native memory released=${result.nativeMemoryReleased}; native execution joined=${result.nativeExecutionJoined}")
         result.flacSource?.let { source ->
             appendLine("format=${source.count("sampleRate")}/${source.count("channels")}/${source.count("bitsPerSample")}; accepted=${source.count("metadataAccepted")}; MD5=${source.md5Report}; true EOF=${source.count("trueEofReached")}")
             appendLine("STREAMINFO MD5 reference available=${source.decoder?.counters?.get("md5ReferenceAvailable") ?: "unavailable"}; whole-file verification scope=${if(source.count("sourceSeekAttempts")>0L) "INVALIDATED_BY_SEEK" else "SEQUENTIAL"}")

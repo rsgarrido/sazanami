@@ -44,7 +44,7 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
     // Keep claimed/native borrowed-fd operations open through worker cleanup. Cancellation
     // invalidates authority immediately, but must not close/reuse an fd still in native code.
     private var workerOwnedConnection: UsbDeviceConnection? = null
-    private var integratedClient: UsbFullPlaybackClient?=null
+    @Volatile private var integratedClient: UsbFullPlaybackClient?=null
     private val reservation = UsbOutputReservation()
     private val integratedSelection get() = reservation.token
     private var fullStop: (() -> Unit)? = null
@@ -66,8 +66,11 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
         override fun onReceive(context: Context, intent: Intent) {
             val identity = runCatching { intent.usbDevice()?.diagnosticIdentity() }.getOrNull()
             if (intent.action == UsbManager.ACTION_USB_DEVICE_DETACHED) {
-                if (identity == gate.current?.identity) invalidate()
-                refreshOnMain(excluded = identity)
+                // A delayed broadcast for a reused bus ID must not invalidate a present attachment.
+                val present = runCatching { manager?.deviceList?.values?.map { it.diagnosticIdentity() }?.toSet() }.getOrNull()
+                val absent = identity != null && present != null && identity !in present
+                if (acceptsUsbDetach(gate.current,identity,present)) invalidate(detached = true)
+                refreshOnMain(excluded = identity.takeIf { absent })
             } else if (intent.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) {
                 // Even a reused Android bus ID must represent a fresh attachment generation.
                 if (identity == gate.current?.identity) invalidate()
@@ -115,9 +118,8 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
                 when {
                     pending != null -> publish(state)
                     !granted -> {
-                        readJob?.cancel()
+                        cancelInspection()
                         closeConnection()
-                        readJob = null
                         val token = gate.select(current.identity)
                         inspectionToken = token
                         publish(state.copy(descriptors = null, clockDiagnostics = null, usbFsDiagnostics = null, forcedExperiment = null, configurationExperiment = null, silentExperiment = null, referenceExperiment = null, flacUsbExperiment = null, fullFlacUsbExperiment = null, integratedFlacUsbExperiment = null, generation = gate.generation,
@@ -131,7 +133,7 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
                 }
                 return
             }
-            if (current != null) invalidate()
+            if (current != null) invalidate(detached = true)
             val audio = snapshots.filter { it.hasAudioInterface }
             if (integratedSelection != null) {
                 // Preserve the lost attachment reservation until its worker has joined.
@@ -607,7 +609,10 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
     }
 
     /** A service-authorized client of the shared full decoder/configuration/transport path. */
-    override suspend fun runIntegratedFull(uri: Uri,control: UsbFullPlaybackControl,progress: (UsbFullProgress)->Unit): UsbSilentTransportExperimentResult = withContext(Dispatchers.Main.immediate) {
+    override suspend fun runIntegratedFull(uri: Uri,control: UsbFullPlaybackControl,progress: (UsbFullProgress)->Unit): UsbSilentTransportExperimentResult {
+        // DirectUsbMediaPlayer owns this call on its application looper. Returning in that same
+        // context avoids a dispatcher handoff discarding the terminal result after waiter cancellation.
+        check(Looper.myLooper() == handler.looper)
         val selection = integratedSelection ?: throw UsbIntegratedStartException("DIRECT_USB_NOT_AUTHORIZED")
         if (!reservation.handedOff) throw UsbIntegratedStartException("DIRECT_USB_NOT_AUTHORIZED")
         currentSelectionFailure()?.let { throw UsbIntegratedStartException(it) }
@@ -617,13 +622,10 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
         if (!selected.hasPermission) throw UsbIntegratedStartException("DIRECT_USB_PERMISSION_FAILED")
         if (state.descriptors==null || state.diagnosticOperationRunning || integratedClient!=null)
             throw UsbIntegratedStartException("DIRECT_USB_CONFIGURATION_FAILED")
-        val client=UsbFullPlaybackClient(progress,control); integratedClient=client
+        val client=UsbFullPlaybackClient(progress,control,requireNotNull(reservation.owner),selection); integratedClient=client
         try {
             runConfigurationDiagnostic(selected.identity,true,UsbPcmDiagnosticMode.FLAC_FULL,uri,client)
-            client.result?.let { return@withContext it }
-            val job=readJob ?: throw UsbIntegratedStartException("DIRECT_USB_CONFIGURATION_FAILED")
-            withContext(NonCancellable) { job.join() }
-            client.result ?: throw UsbIntegratedStartException("DIRECT_RESOURCE_CLEANUP_UNVERIFIED")
+            return client.awaitResult { stopIntegratedFull() }
         } finally { control.finish();integratedClient=null }
     }
     override fun stopIntegratedFull() = onMain {
@@ -668,7 +670,7 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
             publish(if (silentRun) withExperiment(state, UsbSilentTransportExperimentResult(token.generation, stream,
                 requireNotNull(silentResolution), status = UsbSilentStatus.BLOCKED, configuration = blocked, detail = blocked.detail, mode = mode))
                 else state.copy(configurationExperiment = blocked))
-            if (client!=null) client.result=currentExperiment()
+            if (client!=null) currentExperiment()?.let(client::complete)
             return@onMain
         }
         readJob?.cancel()
@@ -677,17 +679,25 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
         publish(if (silentRun) withExperiment(state, UsbSilentTransportExperimentResult(token.generation, stream,
             requireNotNull(silentResolution), phase = if (mode.isFlac) UsbSilentPhase.PRIMING_SOURCE else UsbSilentPhase.CONFIGURING, mode = mode))
             else state.copy(configurationExperiment = UsbAudioConfigurationResult(token.generation, resolution, UsbConfigurationPhase.QUERYING)))
-        readJob = scope.launch {
+        // Enter the owned body before it can be cancelled. Authority/stop requests still stop
+        // forward work; cancellation cannot skip final evidence publication or create a second owner.
+        val operation: suspend () -> Unit = owned@ {
             var silentResult: UsbSilentTransportExperimentResult? = null
             var prefixSource: UsbFlacPrefixSource? = null
             var originalFlacFd: ParcelFileDescriptor? = null
             var originalFlacFdClosed = false
+            var connectionOpened = false
+            var earlyConnectionClosed = false
+            var endpointTransactionStarted = false
             fun finished(base: UsbAudioDiagnosticState, configuration: UsbAudioConfigurationResult): UsbAudioDiagnosticState {
                 if (!silentRun) return base.copy(configurationExperiment = configuration)
                 val value = (silentResult ?: UsbSilentTransportExperimentResult(token.generation, stream, requireNotNull(silentResolution),
                     status = if (mode.isFlac) UsbSilentStatus.USB_CONFIGURATION_FAILED
                         else if (configuration.targetStatus == UsbTargetConfigurationStatus.BLOCKED) UsbSilentStatus.BLOCKED else UsbSilentStatus.FAILED,
-                    detail = configuration.detail, mode = mode)).copy(configuration = configuration)
+                    detail = configuration.detail, mode = mode)).let {
+                    it.copy(configuration = if (earlyConnectionClosed) configuration.copy(closeStatus = UsbAudioCleanupStatus.SUCCEEDED) else configuration,
+                        nativeExecutionJoined = it.nativeExecutionJoined || !endpointTransactionStarted)
+                }
                 val finalValue = if (mode.isFlac) {
                     value.withFlacInputClosed(originalFlacFdClosed, prefixSource?.result)
                 } else value
@@ -748,6 +758,7 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
                         }
                         val opened = usb.openDevice(live) ?: return@withLock unavailable(
                             usbAccessFailure(token) ?: UsbClockQueryStatus.TRANSPORT_ERROR, "Android could not open the configuration connection.")
+                        connectionOpened = true
                         var runnerOwnsClose = false
                         try {
                             val accepted = synchronized(connectionLock) {
@@ -769,8 +780,13 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
                             // Runner checks cancellation on forward steps and uses this cancellation-free
                             // attachment check for best-effort restoration on the original connection.
                             if (silentRun) {
+                                endpointTransactionStarted = true
                                 val value = UsbSilentTransportExperiment.run(requireNotNull(silentResolution), token.generation, stream, transport,
-                                    factory = { target, _ -> transport.silentBackend(target, token.generation, stream, mode, prefixSource) { usbAccessFailure(token) }.also { it.progressListener=client?.progress;it.playbackControl=client?.control } },
+                                    factory = { target, _ -> transport.silentBackend(target, token.generation, stream, mode, prefixSource) { usbAccessFailure(token) }.also {
+                                        it.progressListener = client?.let { active -> { progress: UsbFullProgress ->
+                                            if (!closed && inspectionToken == token) active.progress(progress)
+                                        } };it.playbackControl=client?.control
+                                    } },
                                     onPhase = { phase -> withContext(Dispatchers.Main.immediate) {
                                         if (!closed && gate.accepts(token) && currentExperiment()?.streamGeneration == stream)
                                             publish(withExperiment(state, currentExperiment()?.copy(phase = phase)))
@@ -784,17 +800,18 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
                                 if (connection === opened) connection = null
                                 if (workerOwnedConnection === opened) { workerOwnedConnection = null; endpointStop = null; fullStop=null }
                             }
-                            if (!runnerOwnsClose) runCatching { opened.close() }
+                            if (!runnerOwnsClose) earlyConnectionClosed = runCatching { opened.close();true }.getOrDefault(false)
                         }
                     }
                 }
             } catch (cancelled: CancellationException) {
-                if (client==null) throw cancelled
-                UsbAudioConfigurationResult(token.generation,resolution).invalidate(UsbClockQueryStatus.STALE_GENERATION,"Integrated owner/attachment stopped; cleanup completed before result.")
+                if (client == null) throw cancelled
+                // Never replace actual terminal evidence with an empty cancellation result.
+                silentResult?.configuration ?: throw cancelled
             }
-            catch (_: SecurityException) { UsbAudioConfigurationResult(token.generation, resolution).invalidate(
+            catch (_: SecurityException) { (silentResult?.configuration ?: UsbAudioConfigurationResult(token.generation, resolution)).invalidate(
                 UsbClockQueryStatus.PERMISSION_LOST, "USB access denied during configuration setup.") }
-            catch (_: Exception) { UsbAudioConfigurationResult(token.generation, resolution,
+            catch (_: Exception) { silentResult?.configuration ?: UsbAudioConfigurationResult(token.generation, resolution,
                 targetStatus = UsbTargetConfigurationStatus.EXCEPTION, detail = "Configuration setup failed; no successful configuration inferred.") }
             finally {
                 withContext(NonCancellable + Dispatchers.IO) {
@@ -808,16 +825,24 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
                 }
             }
             if (client!=null) {
+                // Owner-matched ENODEV/absence evidence can precede Android's detach broadcast.
+                // Record it before sealing the result; permission/other transport failures do not qualify.
+                if (result.accessFailure == UsbClockQueryStatus.DEVICE_DISCONNECTED) client.detached(token)
                 val candidate=finished(state,result).integratedFlacUsbExperiment
-                val failure=if(closed || !gate.accepts(token)) UsbClockQueryStatus.STALE_GENERATION else usbAccessFailure(token)
-                client.result=if(failure!=null) candidate?.invalidate(failure) else candidate
+                val failure=if(client.detached) UsbClockQueryStatus.DEVICE_DISCONNECTED
+                    else if(closed || !gate.accepts(token)) UsbClockQueryStatus.STALE_GENERATION else usbAccessFailure(token)
+                val terminal=if(failure!=null) candidate?.invalidate(failure) else candidate
+                terminal?.copy(detachedResourceRelease=UsbDetachedResourceRelease.verified(
+                    client.owner,client.attachment,terminal,client.detached,sourceAbsent=prefixSource==null,
+                    inputAbsent=originalFlacFd==null,connectionAbsent=!connectionOpened,
+                    nativeRegistriesIdle=UsbFsDiagnostics.silentTransportIdle()))?.let(client::complete)
             }
             if (!closed && gate.accepts(token) && (!silentRun || currentExperiment()?.streamGeneration == stream)) {
                 if (result.accessFailure == UsbClockQueryStatus.DEVICE_DISCONNECTED) {
-                    invalidate(); refreshOnMain(excluded = identity); return@launch
+                    invalidate(detached = true); refreshOnMain(excluded = identity); return@owned
                 }
                 when (val failure = usbAccessFailure(token)) {
-                    UsbClockQueryStatus.DEVICE_DISCONNECTED -> { invalidate(); refreshOnMain(excluded = identity) }
+                    UsbClockQueryStatus.DEVICE_DISCONNECTED -> { invalidate(detached = true); refreshOnMain(excluded = identity) }
                     UsbClockQueryStatus.STALE_GENERATION -> Unit
                     UsbClockQueryStatus.PERMISSION_LOST -> publish(finished(state.copy(status = UsbAudioDiagnosticStatus.PERMISSION_REQUIRED,
                         descriptors = null, clockDiagnostics = null, usbFsDiagnostics = null, forcedExperiment = null,
@@ -828,6 +853,7 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
                 }
             }
         }
+        readJob = client?.launchOwned(scope, operation) ?: scope.launch { operation() }
     }
 
     /** Shared live-device validation for clock, claimed-control and native diagnostics. */
@@ -836,7 +862,10 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
         val usb = manager ?: return UsbClockQueryStatus.TRANSPORT_ERROR
         return try {
             val live = usb.deviceList.values.firstOrNull { it.diagnosticIdentity() == token.identity }
-                ?: return UsbClockQueryStatus.DEVICE_DISCONNECTED
+                ?: run {
+                    integratedClient?.detached(token)
+                    return UsbClockQueryStatus.DEVICE_DISCONNECTED
+                }
             if (!usb.hasPermission(live)) UsbClockQueryStatus.PERMISSION_LOST else null
         } catch (_: SecurityException) { UsbClockQueryStatus.PERMISSION_LOST }
         catch (_: RuntimeException) { UsbClockQueryStatus.TRANSPORT_ERROR }
@@ -871,12 +900,16 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
         UsbAudioDiagnosticBridge.publish(this, updated)
     }
 
-    private fun invalidate() {
+    private fun cancelInspection() {
+        if (integratedClient == null) { readJob?.cancel();readJob = null }
+    }
+
+    private fun invalidate(detached: Boolean = false) {
+        if (detached) gate.current?.let { integratedClient?.detached(it) }
         gate.select(null)
         inspectionToken = null
         cancelPermission()
-        readJob?.cancel()
-        readJob = null
+        cancelInspection()
         closeConnection()
         state = state.copy(selectedIdentity = null, descriptors = null, clockDiagnostics = null, usbFsDiagnostics = null, forcedExperiment = null, configurationExperiment = null, silentExperiment = null, referenceExperiment = null, flacUsbExperiment = null, fullFlacUsbExperiment = null, integratedFlacUsbExperiment = null, generation = gate.generation, message = null)
     }

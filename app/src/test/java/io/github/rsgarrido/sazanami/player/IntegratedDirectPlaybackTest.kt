@@ -96,6 +96,15 @@ class IntegratedDirectPlaybackTest {
         lease.complete(false);assertFalse(waiting.await())
         val clean=DirectTeardownLease();clean.complete(true);assertTrue(clean.awaitSafe())
     }
+    @Test fun finalLeaseCannotBeOverwrittenAndOlderLeaseCannotReplaceNewerOwner()=runBlocking {
+        val previous=DirectPlaybackTeardown.begin()
+        val recreated=async { previous.awaitSafe() };yield();assertFalse(recreated.isCompleted)
+        previous.complete(true);assertTrue(recreated.await())
+        previous.complete(false);assertTrue(previous.safe==true)
+        val newer=DirectPlaybackTeardown.begin()
+        previous.complete(false);assertSame(newer,DirectPlaybackTeardown.latest);assertNull(newer.safe)
+        newer.complete(false);newer.complete(true);assertFalse(newer.awaitSafe())
+    }
     @Test fun sameEngineIsUsedByBothClientsAndSourceIsLibraryUri() {
         val adapter=source("java/io/github/rsgarrido/sazanami/player/DirectUsbMediaPlayer.kt")
         val controller=source("java/io/github/rsgarrido/sazanami/player/usb/UsbAudioController.kt")

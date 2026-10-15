@@ -32,6 +32,7 @@ internal class DirectUsbMediaPlayer(
     private var worker: Job?=null
     private var stopRequested=false
     private var nextGeneration=0L
+    private var releasedDetachedGeneration: Long?=null
     private var control: UsbFullPlaybackControl?=null
     private var sourceStart: DirectSourceStart?=null
     private var startPositionMs=0L
@@ -206,7 +207,9 @@ internal class DirectUsbMediaPlayer(
     }
 
     private fun acceptSource(mediaItems: List<MediaItem>,index: Int,positionMs: Long,playing: Boolean,request: SourceRequest?=null,idleOnly: Boolean=false) {
-        check(evidence.cleanupSafe && worker?.isCompleted!=false)
+        // Only logical idle adoption may use the generation whose verified reservation was retired.
+        val retiredIdle=idleOnly && releasedDetachedGeneration==evidence.generation
+        check((evidence.cleanupSafe || retiredIdle) && worker?.isCompleted!=false)
         items=mediaItems.toList();selected=index
         source=request?.song ?: items.getOrNull(selected)?.mediaId?.let(librarySong)
         startPositionMs=positionMs;initialPlayingIntent=playing
@@ -276,7 +279,7 @@ internal class DirectUsbMediaPlayer(
     /** Reconstructing a logical queue does not acquire a native source or USB resources. */
     fun restoreIdleTimeline(mediaItems: List<MediaItem>,index: Int,positionMs: Long,shuffle: Boolean,repeat: Int,playing: Boolean=false) {
         verifyApplicationThread()
-        check(evidence.cleanupSafe && worker?.isCompleted!=false && pendingSource==null)
+        check((evidence.cleanupSafe || releasedDetachedGeneration==evidence.generation) && worker?.isCompleted!=false && pendingSource==null)
         require(positionMs>=0 && (mediaItems.isEmpty() || index in mediaItems.indices))
         logicalShuffle=shuffle;logicalRepeat=repeat;timelineConfirmed=true;runRequest=null
         acceptSource(mediaItems,if(mediaItems.isEmpty()) 0 else index,positionMs,playing,idleOnly=true)
@@ -426,7 +429,7 @@ internal class DirectUsbMediaPlayer(
         val commands=start.control;control=commands
         val generation=++nextGeneration
         request?.generation=generation
-        val preparing=evidence.copy(generation=generation,phase=IntegratedDirectPhase.PREPARING,completedFrames=0,totalFrames=0,sampleRateHz=0,error=null,notice=null,engine=null,cleanupSafe=false,playWhenReady=start.playWhenReady,stoppedForReplacement=false,
+        val preparing=evidence.copy(generation=generation,phase=IntegratedDirectPhase.PREPARING,completedFrames=0,totalFrames=0,sampleRateHz=0,error=null,notice=null,engine=null,cleanupSafe=false,detachedResourcesReleased=false,playWhenReady=start.playWhenReady,stoppedForReplacement=false,
             nativeTransportPhase=UsbFullTransportPhase.STARTING,pauseRequests=0,resumeRequests=0,nativePauseCounters=emptyMap(),
             sourcePositionFrame=0,sourceEpoch=0,seekCapable=false,pendingSeekSerial=0)
         worker=scope.launch(start=CoroutineStart.LAZY) {
@@ -633,6 +636,16 @@ internal class DirectUsbMediaPlayer(
         requestStop()
         withContext(NonCancellable) { transitionJob?.join();worker?.join() }
         return evidence.cleanupSafe
+    }
+    fun detachedResourcesReleased(owner: UsbActivationOwner): Boolean {
+        if (worker?.isCompleted==false || transitionJob?.isCompleted==false) return false
+        val result=evidence.engine ?: return false
+        return result.detachedResourceRelease?.matches(owner,result)==true
+    }
+    /** A fresh output activation may adopt idle state only after routing released the proven old reservation. */
+    fun retireDetachedOwner(owner: UsbActivationOwner) {
+        check(detachedResourcesReleased(owner))
+        releasedDetachedGeneration=evidence.generation
     }
     override fun handleStop(): ListenableFuture<*> { requestStop(); return Futures.immediateVoidFuture() }
     override fun handleSetRepeatMode(repeatMode: Int): ListenableFuture<*> {

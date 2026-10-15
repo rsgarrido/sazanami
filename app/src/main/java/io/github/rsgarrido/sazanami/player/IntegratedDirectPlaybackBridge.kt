@@ -14,7 +14,7 @@ internal object IntegratedDirectPlaybackBridge {
     val state=mutableState.asStateFlow()
     private val attempts=IntegratedDirectAttemptEvidence()
     val latestAttempt=attempts.latest
-    val reportState get()=state.value.takeIf { it.error!=null || it.switching!=null } ?: latestAttempt.value ?: state.value
+    val reportState get()=state.value.takeIf { it.error!=null || it.switching!=null || it.detachedResourcesReleased } ?: latestAttempt.value ?: state.value
     val directSelected get()=state.value.enabled
     fun attach(player: ExperimentalUsbPlaybackPlayer) { owner=player; publish(player,player.directState) }
     fun detach(player: ExperimentalUsbPlaybackPlayer) { if(owner===player) { owner=null; mutableState.value=IntegratedDirectPlaybackState() } }

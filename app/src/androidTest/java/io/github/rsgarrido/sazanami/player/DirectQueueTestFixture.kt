@@ -106,7 +106,7 @@ internal abstract class DirectQueueTestFixture {
         override fun stopIntegratedFull() { runs.lastOrNull()?.stopped?.complete(Unit) }
         suspend fun next()=withTimeout(5000) { started.receive() }
     }
-    protected inner class Fixture(private val playing: Boolean) {
+    protected inner class Fixture(private val playing: Boolean,androidPlayerFactory: (() -> Player)?=null) {
         val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
         val items=listOf(a.toPlayableMediaItem("a-first"),b.toPlayableMediaItem("b"),a.toPlayableMediaItem("a-second"))
         var baseSongs=listOf(a,a,b)
@@ -128,7 +128,10 @@ internal abstract class DirectQueueTestFixture {
             override fun releaseIntegratedSelection(owner: UsbActivationOwner,cleanupSafe: Boolean)=reservation.release(owner,cleanupSafe,engine.active>0)
         }
         val route=ExperimentalUsbPlaybackPlayer(normal,scope,engine,releaseNormal={ released=true;true },
-            recreateNormal={ recreations++;Physical(items,false) },selection=UsbOutputSelectionCallbacks { controller })
+            recreateNormal={
+                kotlin.check(engine.active==0) { "Android recreation must follow the native owner join" }
+                recreations++;androidPlayerFactory?.invoke() ?: Physical(items,false)
+            },selection=UsbOutputSelectionCallbacks { controller })
         val events=mutableListOf<Pair<String?,DirectListeningEvent>>()
         private val translator=DirectListeningEventTranslator()
         val database=Room.inMemoryDatabaseBuilder(InstrumentationRegistry.getInstrumentation().targetContext,AppDatabase::class.java).build()
@@ -287,10 +290,10 @@ internal abstract class DirectQueueTestFixture {
             finally { scope.cancel();database.close() }
         }
     }
-    protected fun check(playing: Boolean=true,block: suspend (Fixture)->Unit)=runBlocking {
+    protected fun check(playing: Boolean=true,androidPlayerFactory: (() -> Player)?=null,block: suspend (Fixture)->Unit)=runBlocking {
         withContext(Dispatchers.Main) {
             val oldSongs=PlaybackLibraryBridge.songs;PlaybackLibraryBridge.updateSongs(listOf(a,b,c))
-            val f=Fixture(playing)
+            val f=Fixture(playing,androidPlayerFactory)
             var primaryFailure: Throwable?=null
             try { withTimeout(15000) { f.initialize();block(f) } }
             catch(error: Throwable) { primaryFailure=error;throw error }

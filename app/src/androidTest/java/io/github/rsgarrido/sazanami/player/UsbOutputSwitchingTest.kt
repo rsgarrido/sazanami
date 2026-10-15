@@ -159,6 +159,7 @@ class UsbOutputSwitchingTest {
         var authorizationFailure: String? = null
         var attachmentFailure: String? = null
         var recreationFails = false
+        var predecessorSafe = true
         val reservation = UsbOutputReservation()
         val gate = UsbAudioGenerationGate()
         val identity = UsbAudioDeviceIdentity("fake", 1, 2, 3)
@@ -208,6 +209,7 @@ class UsbOutputSwitchingTest {
         val route = ExperimentalUsbPlaybackPlayer(normal, scope, engine,
             releaseNormal = { releases++;released.await() },
             recreateNormal = { listeningTrace += "recreate";recreations++;if (recreationFails) error("restore failed");Physical(if (emptyQueue) null else song.toPlayableMediaItem(), false) },
+            predecessorReleased = { predecessorSafe },
             selection = UsbOutputSelectionCallbacks { controller }).also {
                 it.attachDirectListeningObserver(listeningObserver)
             }
@@ -236,6 +238,109 @@ class UsbOutputSwitchingTest {
 
     private suspend fun settled(f: Fixture) {
         withTimeout(5000) { while (f.route.directState.switching != null) yield() }
+    }
+
+    private fun detachedTerminal(f: Fixture,owner: UsbActivationOwner=requireNotNull(f.reservation.owner)): UsbSilentTransportExperimentResult {
+        val result=terminal(false).copy(status=UsbSilentStatus.NON_AUTHORITATIVE,nativeExecutionJoined=true,
+            connectionCloseRequired=true,outstandingAfterConnectionClose=0,
+            configuration=terminal(false).configuration!!.copy(accessFailure=UsbClockQueryStatus.DEVICE_DISCONNECTED,
+                restorationStatus=UsbConfigurationRestorationStatus.INDETERMINATE),
+            flacSource=UsbFlacSourceResult(mapOf("generation" to f.token.generation,"streamGeneration" to 2L,
+                "totalSamples" to 441000L,"sampleRate" to 44100L,"producerStopped" to 1L,"producerJoined" to 1L,"decoderReleased" to 1L,
+                "nativeFlacFdClosed" to 1L,"queueReleased" to 1L)))
+        return result.copy(detachedResourceRelease=UsbDetachedResourceRelease.verified(owner,f.token,result,true,
+            sourceAbsent=false,inputAbsent=false,connectionAbsent=false,nativeRegistriesIdle=true))
+    }
+    private suspend fun detachAndRecover(f: Fixture,phase: UsbFullTransportPhase?) {
+        f.released.complete(true);f.route.selectDirect(true);settled(f)
+        f.route.setMediaItem(song.toPlayableMediaItem());f.route.prepare()
+        withTimeout(5000) { f.engine.started.receive() }
+        if(phase!=null) {
+            f.engine.progress(UsbFullProgress(44100,441000,44100))
+            if(phase==UsbFullTransportPhase.PAUSED) f.route.pauseDirectPlayback()
+            f.engine.progress(UsbFullProgress(44100,441000,44100,phase))
+        }
+        val finalResult=detachedTerminal(f);val oldProgress=f.engine.progress
+        f.attachmentFailure="DIRECT_USB_DEVICE_UNAVAILABLE";f.gate.select(null)
+        repeat(2) { f.route.usbSelectionChanged();f.route.selectDirect(false) }
+        assertEquals(0,f.recreations);assertFalse(f.reservationReleased)
+        assertEquals(DirectOutputSwitch.TO_ANDROID,f.route.directState.switching)
+        f.engine.terminal.complete(finalResult);settled(f)
+        f.forwarding { f.route.isCommandAvailable(Player.COMMAND_SET_MEDIA_ITEM) && f.route.currentMediaItem?.mediaId==song.id.toString() }
+        assertEquals(1,f.recreations);assertTrue(f.reservationReleased)
+        assertFalse(f.route.isDirectSelected);assertFalse(f.route.playWhenReady);assertEquals(2000L,f.route.currentPosition)
+        assertTrue(f.route.directState.detachedResourcesReleased);assertFalse(f.route.directState.cleanupSafe)
+        assertSame(finalResult,f.route.directState.engine)
+        assertEquals(UsbConfigurationRestorationStatus.INDETERMINATE,finalResult.configuration!!.restorationStatus)
+        oldProgress(UsbFullProgress(88200,441000,44100,UsbFullTransportPhase.FAILED));f.route.usbSelectionChanged();f.route.selectDirect(false)
+        assertFalse(f.engine.terminal.complete(terminal(false)))
+        assertEquals(1,f.recreations);assertFalse(f.route.isDirectSelected)
+        // Reconnection uses a fresh reservation, with idle adoption rather than reusing the old native run.
+        f.token=f.gate.select(f.identity)!!;f.attachmentFailure=null
+        f.route.selectDirect(true);settled(f)
+        assertTrue("Reactivation failed: ${f.route.directState.error}; reservation=${f.route.directState.activation?.reservation}",
+            f.route.directState.confirmedDirect)
+        assertEquals(1,f.engine.starts)
+        assertNull(f.route.directState.activation?.failure)
+        assertNull(f.route.directState.engine)
+        assertFalse(finalResult.integratedCleanupSafe()) // The old DAC restoration is still unverified.
+        assertFalse(f.route.directState.detachedResourcesReleased)
+        oldProgress(UsbFullProgress(88200,441000,44100,UsbFullTransportPhase.FAILED))
+        assertEquals(IntegratedDirectPhase.IDLE,f.route.directState.phase)
+    }
+    @Test fun detachPlayingWaitsForDisposalThenRestoresAndroidOnce()=checkRoute { detachAndRecover(it,UsbFullTransportPhase.PLAYING) }
+    @Test fun detachPausedWaitsForDisposalThenRestoresAndroidOnce()=checkRoute { detachAndRecover(it,UsbFullTransportPhase.PAUSED) }
+    @Test fun detachPreparingWaitsForDisposalThenRestoresAndroidOnce()=checkRoute { detachAndRecover(it,null) }
+
+    @Test fun mismatchedDetachedProofCannotReleaseCurrentReservation()=checkRoute { f ->
+        f.released.complete(true);f.route.selectDirect(true);settled(f)
+        f.route.setMediaItem(song.toPlayableMediaItem());f.route.prepare()
+        withTimeout(5000) { f.engine.started.receive() }
+        val obsolete=detachedTerminal(f,UsbActivationOwner(f.reservation.owner!!.serial))
+        f.attachmentFailure="DIRECT_USB_DEVICE_UNAVAILABLE";f.route.usbSelectionChanged()
+        f.engine.terminal.complete(obsolete);settled(f)
+        assertTrue(f.route.isDirectSelected);assertFalse(f.reservationReleased);assertEquals(0,f.recreations)
+        assertEquals("DIRECT_RESOURCE_CLEANUP_UNVERIFIED",f.route.directState.error)
+    }
+    @Test fun detachDuringAndroidSwitchUsesLateDisposalAndShutdownDoesNotRecreateAndroid()=checkRoute { f ->
+        f.released.complete(true);f.route.selectDirect(true);settled(f)
+        f.route.setMediaItem(song.toPlayableMediaItem());f.route.prepare()
+        withTimeout(5000) { f.engine.started.receive() }
+        val terminal=detachedTerminal(f)
+        f.route.selectDirect(false);f.attachmentFailure="DIRECT_USB_DEVICE_UNAVAILABLE";f.route.usbSelectionChanged()
+        val shutdown=f.scope.async(start=CoroutineStart.UNDISPATCHED) { f.route.shutdown() }
+        assertFalse(shutdown.isCompleted);assertEquals(0,f.recreations)
+        f.engine.terminal.complete(terminal)
+        assertTrue(withTimeout(5000) { shutdown.await() });assertTrue(f.reservationReleased);assertEquals(0,f.recreations)
+    }
+    @Test fun predecessorKeepsCommandsUnavailableUntilItsFinalJoinedAcknowledgment()=checkRoute { f ->
+        val previous=DirectTeardownLease();f.predecessorSafe=false;f.route.predecessorCleanupCompleted()
+        assertFalse(f.route.isCommandAvailable(Player.COMMAND_SET_MEDIA_ITEM))
+        assertFalse(f.route.isCommandAvailable(Player.COMMAND_PREPARE))
+        assertEquals("DIRECT_PREDECESSOR_CLEANUP_PENDING",f.route.playerError?.message)
+        assertFalse(f.route.playWhenReady)
+        val waiting=f.scope.launch(start=CoroutineStart.UNDISPATCHED) {
+            if(previous.awaitSafe()) { f.predecessorSafe=true;f.route.predecessorCleanupCompleted() }
+        }
+        assertFalse(waiting.isCompleted);assertEquals(0,f.releases)
+        previous.complete(true);waiting.join()
+        f.forwarding { f.route.isCommandAvailable(Player.COMMAND_SET_MEDIA_ITEM) && f.route.isCommandAvailable(Player.COMMAND_PREPARE) }
+        assertNull(f.route.playerError)
+        previous.complete(false);assertTrue(previous.safe==true)
+    }
+    @Test fun cancelledShutdownWaiterPublishesFinalDetachedLeaseOnlyAfterResourceJoin()=checkRoute { f ->
+        f.released.complete(true);f.route.selectDirect(true);settled(f)
+        f.route.setMediaItem(song.toPlayableMediaItem());f.route.prepare()
+        withTimeout(5000) { f.engine.started.receive() }
+        val finalResult=detachedTerminal(f);val lease=DirectTeardownLease()
+        val shutdown=f.scope.launch(start=CoroutineStart.UNDISPATCHED) { lease.complete(f.route.shutdown()) }
+        shutdown.cancel()
+        val recreated=f.scope.async(start=CoroutineStart.UNDISPATCHED) { lease.awaitSafe() }
+        assertNull(lease.safe);assertFalse(recreated.isCompleted);assertFalse(f.reservationReleased)
+        f.engine.terminal.complete(finalResult)
+        assertTrue(withTimeout(5000) { recreated.await() });shutdown.join()
+        assertTrue(f.reservationReleased);assertEquals(0,f.recreations)
+        assertTrue(f.route.shutdown())
     }
 
     @Test fun internalReplacementKeepsProtectedDirectOutputAndOriginalAndroidRestoration() = checkRoute { f ->
@@ -452,7 +557,7 @@ class UsbOutputSwitchingTest {
     @Test fun recreationFailureRemainsVisibleAndFreshRouteDefaultsToAndroid() = checkRoute { f ->
         f.released.complete(true);f.route.selectDirect(true);yield()
         f.recreationFails = true;f.route.selectDirect(false);settled(f)
-        assertTrue(f.route.directState.enabled);assertFalse(f.reservationReleased)
+        assertTrue(f.route.directState.enabled);assertTrue(f.reservationReleased)
         assertEquals("NORMAL_BACKEND_RECREATION_FAILED", f.route.directState.error)
         val fresh = Fixture()
         try { assertFalse(fresh.route.directState.enabled);assertEquals(0, fresh.engine.starts) }

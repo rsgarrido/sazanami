@@ -584,6 +584,31 @@ class UsbSilentTransportTest {
         val fake = ConfigurationFake(); val backend = BackendFake(fake.events).apply { result = native("integrityMask" to (1L shl 13)).copy(authorityFailure = UsbClockQueryStatus.DEVICE_DISCONNECTED) }
         val result = experiment(fake, backend); assertEquals(UsbSilentStatus.NON_AUTHORITATIVE, result.status); assertFalse(fake.events.contains("restoreClock"))
     }
+    @Test fun detachedDisposalAfterConnectionCloseRetainsFailedIntegrityAndIndeterminateRestoration() {
+        val fake=ConfigurationFake()
+        val backend=BackendFake(fake.events).apply {
+            safe=false
+            result=native("outstandingUrbsFinal" to 1L,"integrityMask" to ((1L shl 13) or (1L shl 16)))
+                .copy(authorityFailure=UsbClockQueryStatus.DEVICE_DISCONNECTED)
+        }
+        val result=experiment(fake,backend)
+        assertEquals(UsbSilentStatus.NON_AUTHORITATIVE,result.status)
+        assertEquals(UsbConfigurationRestorationStatus.INDETERMINATE,result.configuration!!.restorationStatus)
+        assertTrue(result.nativeExecutionJoined);assertTrue(result.nativeMemoryReleased)
+        assertTrue(result.connectionCloseRequired);assertFalse(result.integratedCleanupSafe())
+        assertEquals(1L,result.transport!!.count("outstandingUrbsFinal"));assertEquals(0L,result.outstandingAfterConnectionClose)
+        assertTrue(fake.events.indexOf("nativeStopped")<fake.events.indexOf("close"))
+        assertTrue(fake.events.indexOf("close")<fake.events.indexOf("poolReleasedAfterClose"))
+        assertFalse(fake.events.contains("restoreClock"));assertFalse(fake.events.contains("releaseAC"))
+    }
+    @Test fun missingPostCloseDisposalRemainsUnverified() {
+        val fake=ConfigurationFake()
+        val backend=BackendFake(fake.events).apply { safe=false;disposeAfterClose=false;result=native("outstandingUrbsFinal" to 1L) }
+        val result=experiment(fake,backend)
+        assertTrue(result.nativeExecutionJoined);assertFalse(result.nativeMemoryReleased)
+        assertFalse(result.integratedCleanupSafe());assertNull(result.detachedResourceRelease)
+        assertNotEquals(0L,result.outstandingAfterConnectionClose)
+    }
     @Test fun nativeBadFdAuthorityPreventsAnyRestorationWrites() {
         val fake = ConfigurationFake(); val backend = BackendFake(fake.events).apply { result = native("integrityMask" to 2).copy(authorityFailure = UsbClockQueryStatus.TRANSPORT_ERROR) }
         assertEquals(UsbSilentStatus.NON_AUTHORITATIVE, experiment(fake, backend).status); assertFalse(fake.events.contains("restoreClock")); assertEquals(1, fake.events.count { it == "setAlt:0" })
@@ -1427,10 +1452,12 @@ class UsbSilentTransportTest {
     private fun rejects(packet: UsbIsoNativeSnapshot) { try { UsbIsoNativeStats.decode(packet, 17, 23); fail("Malformed evidence accepted") } catch (_: IllegalArgumentException) {} }
     private inner class BackendFake(private val events: MutableList<String>) : UsbSilentTransportBackend {
         var result = native(); var safe = true
+        var disposeAfterClose = true
+        override var executionJoined = false
         override val usbCleanupSafe get() = safe
         override var memoryReleased = true
-        override suspend fun run(): UsbIsoTransportResult { events += "native"; events += "nativeStopped"; memoryReleased = safe; return result }
-        override fun connectionClosed(succeeded: Boolean) { if (succeeded && !safe) { events += "poolReleasedAfterClose"; memoryReleased = true } }
+        override suspend fun run(): UsbIsoTransportResult { events += "native"; events += "nativeStopped"; executionJoined=true;memoryReleased = safe; return result }
+        override fun connectionClosed(succeeded: Boolean) { if (succeeded && !safe && disposeAfterClose) { events += "poolReleasedAfterClose"; memoryReleased = true } }
     }
     private inner class ConfigurationFake : UsbAudioConfigurationTransport {
         var selectedPlan=configurationPlan

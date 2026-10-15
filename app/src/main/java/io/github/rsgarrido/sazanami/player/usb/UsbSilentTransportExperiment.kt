@@ -16,6 +16,7 @@ internal interface UsbSilentTransportBackend {
     suspend fun run(): UsbIsoTransportResult
     val usbCleanupSafe: Boolean
     val memoryReleased: Boolean
+    val executionJoined: Boolean get() = false
     fun connectionClosed(succeeded: Boolean)
 }
 
@@ -98,6 +99,6 @@ internal object UsbSilentTransportExperiment {
             nativeMemoryReleased = backend?.memoryReleased ?: true, connectionCloseRequired = closeRequired || !work.usbCleanupSafe,
             connectionCloseDisposedUrbs = if (closedAndReleased && closeRequired) pendingAtWorkerStop else null,
             outstandingAfterConnectionClose = if (closedAndReleased) 0 else pendingAtWorkerStop, mode = mode, preflight = reference,
-            flacSource = prefixSource?.result)
+            flacSource = prefixSource?.result, nativeExecutionJoined = backend?.executionJoined ?: !endpointStarted)
     }
 }

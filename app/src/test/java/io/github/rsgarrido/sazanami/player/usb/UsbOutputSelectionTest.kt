@@ -79,6 +79,28 @@ class UsbOutputSelectionTest {
         assertTrue(reservation.owns(owner))
         assertTrue(reservation.release(owner, cleanupSafe = true, workerActive = false))
     }
+    @Test fun detachRetainsCleanupOwnerUntilJoinAndDuplicateReleaseCannotAffectFreshAttachment() {
+        val controller=Controller();val old=UsbActivationOwner(1)
+        val token=controller.gate.select(identity)!!
+        assertTrue(controller.reservation.acquire(old,token));assertTrue(controller.reservation.commit(old))
+        controller.workerActive=true;controller.gate.select(null)
+        assertSame(old,controller.reservation.owner)
+        assertFalse(controller.releaseIntegratedSelection(old,true))
+        controller.workerActive=false;assertTrue(controller.releaseIntegratedSelection(old,true))
+        val next=UsbActivationOwner(2);val attachment=controller.gate.select(identity)!!
+        assertTrue(controller.reservation.acquire(next,attachment));assertTrue(controller.reservation.commit(next))
+        assertFalse(controller.releaseIntegratedSelection(old,true))
+        assertSame(next,controller.reservation.owner);assertEquals(attachment,controller.reservation.token)
+    }
+    @Test fun staleDetachBroadcastCannotInvalidatePresentReusedIdentityOrAnotherAttachment() {
+        val token=UsbAudioInspectionToken(identity,2)
+        val other=identity.copy(deviceId=4)
+        assertFalse(acceptsUsbDetach(token,identity,setOf(identity)))
+        assertFalse(acceptsUsbDetach(token,other,setOf(identity)))
+        assertFalse(acceptsUsbDetach(token,identity,null))
+        assertFalse(acceptsUsbDetach(null,identity,emptySet()))
+        assertTrue(acceptsUsbDetach(token,identity,emptySet()))
+    }
     @Test fun rejectedActivationThenDetachReconnectCanReserveWithoutRestartAndOldPermissionIsRejected() {
         val controller = Controller();val callbacks = UsbOutputSelectionCallbacks { controller }
         val first = controller.gate.select(identity)!!;val oldRequest = UsbAudioPermissionRequest("old", first)

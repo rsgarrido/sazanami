@@ -11,6 +11,7 @@ internal data class IntegratedDirectPlaybackState(
     val generation: Long=0, val libraryId: Long?=null, val completedFrames: Long=0, val totalFrames: Long=0,
     val metadataDurationMs: Long=0, val error: String?=null, val notice: String?=null,
     val normalReleased: Boolean=false, val cleanupSafe: Boolean=true,
+    val detachedResourcesReleased: Boolean=false,
     val engine: UsbSilentTransportExperimentResult?=null,
     val sampleRateHz: Long=0, // Unknown until accepted STREAMINFO; never infer it from library duration.
     val playWhenReady: Boolean=true,
@@ -103,7 +104,8 @@ internal fun integratedTerminalState(previous: IntegratedDirectPlaybackState,res
         result.flacSource?.seekComplete==true && result.transport?.count("sourcePositionFrame")==total
     val stopped=result.status==UsbSilentStatus.CANCELLED && safe
     val nativePhase=result.transport?.counters?.get("playbackTransportState")?.let { UsbFullTransportPhase.entries.getOrNull(it.toInt()) } ?: previous.nativeTransportPhase
-    return previous.copy(engine=result,sampleRateHz=sourceRate,totalFrames=total,completedFrames=completed,cleanupSafe=safe,playWhenReady=false,nativeTransportPhase=nativePhase,
+    return previous.copy(engine=result,sampleRateHz=sourceRate,totalFrames=total,completedFrames=completed,cleanupSafe=safe,
+        detachedResourcesReleased=result.detachedResourceRelease!=null,playWhenReady=false,nativeTransportPhase=nativePhase,
         nativePauseCounters=result.transport?.counters?.filterKeys { it in UsbIsoNativeStats.controlFields || it in UsbIsoNativeStats.seekFields } ?: previous.nativePauseCounters,
         sourcePositionFrame=if((result.transport?.count("seekConfirmed") ?: 0L)>0L) result.transport?.counters?.get("sourcePositionFrame") ?: previous.sourcePositionFrame else completed,
         phase=if(success || referenceUnavailableSuccess || seekSuccess) IntegratedDirectPhase.ENDED else if(stopped) IntegratedDirectPhase.STOPPED else IntegratedDirectPhase.ERROR,

@@ -22,6 +22,7 @@ internal class UsbNativeSilentTransport(private val borrowedFd: Int, private val
     @Volatile private var stopRequested = 0
     override var usbCleanupSafe = true; private set
     override var memoryReleased = true; private set
+    override var executionJoined = true; private set
     fun requestStop(authority: Boolean = true) {
         stopRequested = if (authority) 2 else 1
         prefixSource?.requestStop()
@@ -50,6 +51,7 @@ internal class UsbNativeSilentTransport(private val borrowedFd: Int, private val
                 }
                 check(created > 0L)
                 handle = created
+                executionJoined = false
                 usbCleanupSafe = false; memoryReleased = false
                 if (stopRequested != 0) requestStop(stopRequested == 2)
                 playbackControl?.bind({ intent -> UsbFsDiagnostics.setFullPlayWhenReady(handle,generation,stream,intent) },{ requestStop(authority=false) })
@@ -77,9 +79,14 @@ internal class UsbNativeSilentTransport(private val borrowedFd: Int, private val
                     } catch(error: LinkageError) {
                         playbackControl?.recordFailure(error);throw error
                     } finally {
-                        if (!worker.isCompleted) requestStop(authority = false)
-                        // Join even when monitoring or JNI snapshot decoding throws.
-                        runCatching { worker.await() }.getOrNull()?.let { result = it }
+                        withContext(NonCancellable) {
+                            if (!worker.isCompleted) requestStop(authority = false)
+                            // A failed child can cancel coroutineScope even inside the outer shield.
+                            // Preserve join evidence when monitoring or JNI snapshot decoding throws.
+                            runCatching { worker.await() }.getOrNull()?.let { result = it }
+                            worker.join()
+                            executionJoined = true
+                        }
                     }
                 }
             } catch (error: Exception) { result = result.copy(exceptionType = error.javaClass.simpleName) }

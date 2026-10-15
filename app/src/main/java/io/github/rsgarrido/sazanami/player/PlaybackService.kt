@@ -75,8 +75,10 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.SupervisorJob
@@ -780,6 +782,7 @@ class PlaybackService : MediaLibraryService() {
         playbackQueueRestorationJob = serviceScope.launch {
             try {
                 if(previousDirectTeardown!=null && !previousDirectTeardown.awaitSafe()) return@launch
+                sessionPlayer.predecessorCleanupCompleted()
                 playbackQueueCoordinator.initialize()
                 playbackQueueRestorationComplete = true
                 nowPlayingWidgetPublisher?.onQueueRestorationCompleted()
@@ -882,17 +885,27 @@ class PlaybackService : MediaLibraryService() {
         nowPlayingWidgetPublisher = null
         mediaSession?.release()
         mediaSession = null
-        shutdownJob=serviceScope.launch {
-            val safe=try {
-                sessionPlayer.shutdown()
+        shutdownJob=serviceScope.launch(start=CoroutineStart.UNDISPATCHED) {
+          withContext(NonCancellable) {
+            var safe=false
+            try {
+                safe=sessionPlayer.shutdown()
+            } catch(error: Exception) {
+                safe=false
+                AndroidAutoDiagnostics.log("Direct teardown unresolved type=${error.javaClass.simpleName}")
             } finally {
+                try {
+                    try { usbAudioController?.close() } finally { usbAudioController?.awaitIdle() }
+                    usbAudioController=null
+                } catch(error: Exception) {
+                    safe=false
+                    AndroidAutoDiagnostics.log("USB owner teardown unresolved type=${error.javaClass.simpleName}")
+                }
+                // Publish only the final joined outcome, even if the playback/service waiter was cancelled.
+                teardownLease?.complete(safe)
                 sessionPlayer.detachDirectListeningObserver()
                 if (awaitDirectListeningTerminal) listeningAdapter.closeGracefully()
             }
-            usbAudioController?.close()
-            usbAudioController?.awaitIdle()
-            usbAudioController=null
-            teardownLease?.complete(safe)
             releaseDirectFocus()
             sessionPlayer.releaseTransitionResources()
             physicalPlayers.release()
@@ -901,6 +914,7 @@ class PlaybackService : MediaLibraryService() {
             spectrumAnalyzerRuntime.close()
             AdvancedAudioRuntimeBridge.disconnect()
             serviceScope.cancel()
+          }
         }
         super.onDestroy()
     }

@@ -598,6 +598,8 @@ class UsbAudioConfigurationExperimentTest {
         assertEquals(listOf(44_100L), fake.clockWrites)
         assertEquals(true, result.asRelease.returned)
         assertEquals(true, result.acRelease.returned)
+        assertEquals(UsbConfigurationRestorationStatus.INDETERMINATE,result.restorationStatus)
+        assertEquals(UsbAudioCleanupStatus.SUCCEEDED,result.closeStatus)
         assertEquals("close", fake.events.last())
     }
 

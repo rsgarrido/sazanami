@@ -3,6 +3,11 @@ package io.github.rsgarrido.sazanami.player.usb
 /** Reference identity prevents another attempt (even with the same serial) releasing this lease. */
 internal class UsbActivationOwner(val serial: Long)
 
+/** A stale broadcast (including a reused bus ID) cannot revoke a currently present attachment. */
+internal fun acceptsUsbDetach(current: UsbAudioInspectionToken?, detached: UsbAudioDeviceIdentity?,
+    present: Set<UsbAudioDeviceIdentity>?): Boolean = current != null && detached != null && detached == current.identity &&
+        present != null && detached !in present
+
 internal interface UsbOutputSelectionController {
     fun authorizeIntegratedSelection(owner: UsbActivationOwner, identity: UsbAudioDeviceIdentity?, generation: Long): String?
     fun integratedSelectionFailure(owner: UsbActivationOwner): String?
@@ -37,7 +42,7 @@ internal class UsbOutputSelectionCallbacks(private val controller: () -> UsbOutp
 
 /** Controller-owned reservation state; detachment invalidates authority, never cleanup ownership. */
 internal class UsbOutputReservation {
-    private var owner: UsbActivationOwner? = null
+    var owner: UsbActivationOwner? = null; private set
     var token: UsbAudioInspectionToken? = null; private set
     var handedOff: Boolean = false; private set
     fun owns(attempt: UsbActivationOwner) = owner === attempt
