@@ -3,6 +3,8 @@ package io.github.rsgarrido.sazanami.player
 import androidx.media3.common.MediaItem
 import io.github.rsgarrido.sazanami.data.PlaybackQueueEntryDraft
 import io.github.rsgarrido.sazanami.data.PlaybackQueueRepository
+import io.github.rsgarrido.sazanami.data.PlaybackQueueWorkingOutput
+import io.github.rsgarrido.sazanami.data.workingOutput
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.membershipKey
 import io.github.rsgarrido.sazanami.data.toSongReference
@@ -180,6 +182,20 @@ internal interface PlaybackQueuePersistence {
     suspend fun setActiveQueue(queueId: String?)
     suspend fun loadQueue(queueId: String): PlaybackQueueWithEntries?
 
+    /** Commits contents, managed ownership and active identity in one guarded transaction. */
+    suspend fun commitWorkingQueue(
+        output: PlaybackQueueWorkingOutput,
+        queueId: String,
+        displayName: String,
+        entries: List<PlaybackQueueEntryDraft>,
+        currentEntryId: String?,
+        currentPositionMs: Long,
+        shuffleEnabled: Boolean,
+        repeatMode: PersistedQueueRepeatMode,
+        protectedQueueId: String? = null,
+        canCommit: () -> Boolean
+    ): PlaybackQueueWithEntries?
+
     suspend fun createQueue(
         queueId: String,
         displayName: String,
@@ -246,6 +262,22 @@ internal class RepositoryPlaybackQueuePersistence(
 
     override suspend fun loadQueue(queueId: String): PlaybackQueueWithEntries? =
         repository.loadQueue(queueId)
+
+    override suspend fun commitWorkingQueue(
+        output: PlaybackQueueWorkingOutput,
+        queueId: String,
+        displayName: String,
+        entries: List<PlaybackQueueEntryDraft>,
+        currentEntryId: String?,
+        currentPositionMs: Long,
+        shuffleEnabled: Boolean,
+        repeatMode: PersistedQueueRepeatMode,
+        protectedQueueId: String?,
+        canCommit: () -> Boolean
+    ): PlaybackQueueWithEntries? = repository.commitWorkingQueue(
+        output, queueId, displayName, entries, currentEntryId, currentPositionMs,
+        shuffleEnabled, repeatMode, protectedQueueId, canCommit
+    )
 
     override suspend fun createQueue(
         queueId: String,
@@ -331,7 +363,7 @@ internal class RepositoryPlaybackQueuePersistence(
     )
 }
 
-/** Owns the mapping between the one live Media3 timeline and inactive Room-backed queues. */
+/** Maps service-owned playback timelines to Room-backed working and saved queues. */
 internal class PlaybackQueueCoordinator(
     private val persistence: PlaybackQueuePersistence,
     private val trackAccess: PlaybackQueueTrackAccess,
@@ -342,19 +374,22 @@ internal class PlaybackQueueCoordinator(
 ) : PlaybackQueueOutputObserver {
     private val mutex = Mutex()
     private var operationSerial=0L
-    private var contextIntentSerial=0L
+    @Volatile private var contextIntentSerial=0L
     private var playbackIntentSerial=0L
     private var playbackIntent=false
-    private var outputEpoch=0L
-    private var pendingOperation: QueueOperation?=null
+    @Volatile private var outputEpoch=0L
+    @Volatile private var pendingOperation: QueueOperation?=null
     private var queueStateConfirmed=true
+    // A completed output restoration can be playable without owning its old Room row.
+    // Keep this persistence protection separate from unacknowledged playback transactions.
+    private var unassignedRestoredSnapshot=false
     private var outputCheckpointFrozen=false
     private var androidQueue: OutputQueueSnapshot?=null
     private var leavingDirectSnapshot: LivePlaybackQueueSnapshot?=null
     private data class QueueOperation(val serial: Long,val epoch: Long,val activation: Boolean,val contextIntent: Long?=null,
         val finished: CompletableDeferred<Unit> = CompletableDeferred())
     private data class OutputQueueSnapshot(var queueId: String?,val live: LivePlaybackQueueSnapshot?,
-        val baseSongs: List<Song>,var signature: LiveQueueSignature?,var baseIds: List<String>)
+        val baseSongs: List<Song>,var signature: LiveQueueSignature?,var baseIds: List<String>,val unassigned: Boolean)
     @Volatile
     private var activeQueueId: String? = null
     @Volatile
@@ -405,6 +440,7 @@ internal class PlaybackQueueCoordinator(
             if (databaseCommitted) {
                 runtime.completeBackupRestore()
                 activeQueueId = null
+                unassignedRestoredSnapshot = false
                 lastLiveSignature = null
                 rememberedBaseEntryIds = emptyList()
                 pendingCanonicalBaseEntryIds = emptyList()
@@ -454,7 +490,7 @@ internal class PlaybackQueueCoordinator(
     fun getActiveQueueId(): String? = activeQueueId
 
     fun captureActiveQueueSnapshot(): LivePlaybackQueueSnapshot? =
-        if(pendingOperation!=null || !queueStateConfirmed || outputCheckpointFrozen) null
+        if(pendingOperation!=null || !queueStateConfirmed || outputCheckpointFrozen || unassignedRestoredSnapshot) null
         else runtime.captureSnapshot()?.withAuthoritativeBaseOrder()
 
     fun prepareNewPlaybackContext(baseEntryIds: List<String>) {
@@ -464,6 +500,7 @@ internal class PlaybackQueueCoordinator(
         require(baseEntryIds.distinct().size == baseEntryIds.size) {
             "Queue entry IDs must identify distinct occurrences"
         }
+        contextIntentSerial++
         pendingCanonicalBaseEntryIds = baseEntryIds.toList()
     }
 
@@ -533,6 +570,7 @@ internal class PlaybackQueueCoordinator(
         if(!owns(operation)) return@withLock null
         if(!setActiveQueueWhileOwned(queueId,operation)) return@withLock null
         activeQueueId = queueId
+        unassignedRestoredSnapshot = false
         lastLiveSignature = LiveQueueSignature(
             queueId = queueId,
             entries = restoration.entries.map { it.persistedEntry.entryId to it.song.membershipKey() },
@@ -591,9 +629,9 @@ internal class PlaybackQueueCoordinator(
                 if(contextIntent!=contextIntentSerial || !owns(operation) || !runtime.canCheckpoint() || runtime.captureSnapshot()?.currentEntryId!=restoration.currentEntryId) return@withLock false
                 pendingCanonicalBaseEntryIds=baseEntryIds.toList()
                 val accepted=runtime.captureSnapshot() ?: return@withLock false
-                // Library contexts carry fresh occurrences; preserve every previous saved owner.
+                // Fresh occurrences replace the output's managed working contents only after ack.
                 persistActiveQueueSnapshotLocked(accepted,frozenOutputSnapshot=true,operation=operation,
-                    createNewQueue=runtime.usesDirectOutput())
+                    useWorkingOwner=true) ?: return@withLock false
                 if(!owns(operation)) return@withLock false
                 pendingOperation=null;queueStateConfirmed=true
                 onActiveQueueChanged(activeQueueId)
@@ -797,7 +835,7 @@ internal class PlaybackQueueCoordinator(
     }
 
     suspend fun switchToQueue(queueId: String): Boolean {
-        contextIntentSerial++
+        val contextIntent=++contextIntentSerial
         runtime.invalidateAutomaticAdvance()
         runtime.beginContextPreparation()
         val (restoration,operation)=try { mutex.withLock {
@@ -834,8 +872,8 @@ internal class PlaybackQueueCoordinator(
             repeatMode = target.queue.repeatMode
         )
 
-        if (!runtime.canActivate(restoration) || epoch!=outputEpoch) return false
-        restoration to beginQueueOperation(activation=true)
+        if (!runtime.canActivate(restoration) || epoch!=outputEpoch || contextIntent!=contextIntentSerial) return false
+        restoration to beginQueueOperation(activation=true,contextIntent=contextIntent)
         } } finally { runtime.endContextPreparation() }
         try {
         if(!runtime.replaceTimelineAndAwait(restoration)) return false
@@ -854,6 +892,7 @@ internal class PlaybackQueueCoordinator(
         if(!owns(operation)) return@withLock false
         if(!setActiveQueueWhileOwned(queueId,operation)) return@withLock false
         activeQueueId = queueId
+        unassignedRestoredSnapshot = false
         lastLiveSignature = LiveQueueSignature(
             queueId = queueId,
             entries = resolved.map { item ->
@@ -996,14 +1035,15 @@ internal class PlaybackQueueCoordinator(
     override fun onDirectRequested(): Boolean {
         if(backupRestoreInProgress || pendingOperation!=null || outputCheckpointFrozen || !queueStateConfirmed) return false
         androidQueue=OutputQueueSnapshot(activeQueueId,runtime.captureSnapshot()?.withAuthoritativeBaseOrder(),
-            runtime.captureBaseSongs(),lastLiveSignature,rememberedBaseEntryIds)
+            runtime.captureBaseSongs(),lastLiveSignature,rememberedBaseEntryIds,unassignedRestoredSnapshot)
         outputCheckpointFrozen=true
         return true
     }
     override suspend fun beforeDirectRelease() = mutex.withLock {
         val original=androidQueue ?: return@withLock
         outputEpoch++ // Drain earlier Android persistence before changing output transaction authority.
-        original.live?.let { persistActiveQueueSnapshotLocked(it,frozenOutputSnapshot=true) }
+        original.live?.let { persistActiveQueueSnapshotLocked(it,frozenOutputSnapshot=true,
+            workingOutput=PlaybackQueueWorkingOutput.ANDROID) }
         original.queueId=activeQueueId;original.signature=lastLiveSignature;original.baseIds=rememberedBaseEntryIds
         queueStateConfirmed=true;outputCheckpointFrozen=false
     }
@@ -1037,7 +1077,10 @@ internal class PlaybackQueueCoordinator(
         lastLiveSignature=original.signature.takeIf { sameStructure }
         rememberedBaseEntryIds=original.baseIds;pendingCanonicalBaseEntryIds=emptyList()
         runtime.restoreBaseSongs(original.baseSongs,original.live?.shuffleEnabled ?: false)
-        outputCheckpointFrozen=false;queueStateConfirmed=sameStructure || original.live==null;androidQueue=null
+        // Physical Android restoration has completed. A changed/deleted Room owner is
+        // unassigned, not an outstanding native transaction that should block reactivation.
+        unassignedRestoredSnapshot=!sameStructure && (original.unassigned || original.live!=null)
+        outputCheckpointFrozen=false;queueStateConfirmed=true;androidQueue=null
         onActiveQueueChanged(activeQueueId)
         // With changed/deleted saved ownership, retain the approved physical snapshot unassigned.
         // Its old occurrence IDs must not be inserted into or overwrite a different saved queue.
@@ -1052,13 +1095,23 @@ internal class PlaybackQueueCoordinator(
         useSuppliedBaseOrder: Boolean = false,
         frozenOutputSnapshot: Boolean = false,
         operation: QueueOperation? = null,
-        createNewQueue: Boolean = false
+        useWorkingOwner: Boolean = false,
+        workingOutput: PlaybackQueueWorkingOutput = if (runtime.usesDirectOutput())
+            PlaybackQueueWorkingOutput.DIRECT else PlaybackQueueWorkingOutput.ANDROID
     ): String? {
         if(operation!=null && !owns(operation)) return activeQueueId
         if(!frozenOutputSnapshot && (pendingOperation!=null || outputCheckpointFrozen || !runtime.canCheckpoint())) return activeQueueId
         if (backupRestoreInProgress) return null
         val captured = suppliedSnapshot ?: runtime.captureSnapshot() ?: return activeQueueId
         val snapshotEpoch=outputEpoch
+        val snapshotIntent=contextIntentSerial
+        val snapshotJob=currentCoroutineContext()[kotlinx.coroutines.Job]
+        val previousOwner=activeQueueId
+        val canCommit = {
+            snapshotEpoch==outputEpoch && snapshotIntent==contextIntentSerial &&
+                snapshotJob?.isActive!=false && previousOwner==activeQueueId &&
+                (operation==null || owns(operation))
+        }
         if(!frozenOutputSnapshot && !queueStateConfirmed) {
             // Only a fresh, accepted Android context may adopt an unassigned restored snapshot.
             if(runtime.usesDirectOutput() || captured.matchingPendingCanonicalBaseOrder()==null) return activeQueueId
@@ -1066,6 +1119,9 @@ internal class PlaybackQueueCoordinator(
         }
         val pendingCanonicalBase = captured.matchingPendingCanonicalBaseOrder()
         val capturesNewPlaybackContext = !useSuppliedBaseOrder && pendingCanonicalBase != null
+        // This includes supplied/frozen snapshots and idle Direct adoption. Their occurrence
+        // IDs may still belong to an edited saved Queue; only a fresh context may claim an owner.
+        if(unassignedRestoredSnapshot && !capturesNewPlaybackContext && !useWorkingOwner) return activeQueueId
         val snapshot = when {
             useSuppliedBaseOrder -> captured
             capturesNewPlaybackContext -> captured.copy(baseEntryIds = pendingCanonicalBase)
@@ -1073,17 +1129,20 @@ internal class PlaybackQueueCoordinator(
         }
         if (snapshot.entries.isEmpty()) return activeQueueId
 
-        // A fresh Direct context has fresh occurrence IDs and needs separate saved ownership.
-        // An in-place edit retains occurrences; copying those globally unique IDs to another
-        // queue would steal its rows. Its existing owner records the edit, and Android's edited-
-        // original protection below restores the frozen playback snapshot unassigned if needed.
+        // Saved/legacy rows retain their ownership. Only fresh contexts move to a managed row;
+        // explicit Queue Hub edits keep the current owner and globally unique occurrence IDs.
         val original=androidQueue
         val originalEntryIds=original?.live?.entries?.mapTo(hashSetOf()) { it.entryId }.orEmpty()
-        val queueId = activeQueueId.takeUnless { id ->
-            createNewQueue ||
-            id!=null && runtime.usesDirectOutput() && original?.queueId==id &&
-                snapshot.entries.none { it.entryId in originalEntryIds }
-        }
+        val existing=activeQueueId?.let { persistence.loadQueue(it) }
+        if(!canCommit()) return null
+        val freshOccurrences=existing?.entries?.takeIf { it.isNotEmpty() }?.let { entries ->
+            val ownedIds=entries.mapTo(hashSetOf()) { it.entryId }
+            snapshot.entries.none { it.entryId in ownedIds }
+        } == true
+        val managedContext=useWorkingOwner || capturesNewPlaybackContext || activeQueueId==null || freshOccurrences ||
+            (workingOutput==PlaybackQueueWorkingOutput.DIRECT && original?.queueId==activeQueueId &&
+                snapshot.entries.none { it.entryId in originalEntryIds })
+        val queueId=activeQueueId
         val rawSignature = LiveQueueSignature(
             queueId = queueId,
             entries = snapshot.entries.map { item ->
@@ -1091,7 +1150,7 @@ internal class PlaybackQueueCoordinator(
             },
             baseEntryIds = normalizedLiveBaseEntryIds(snapshot)
         )
-        if (queueId != null && rawSignature == lastLiveSignature) {
+        if (!managedContext && queueId != null && rawSignature == lastLiveSignature) {
             val currentEntryId = snapshot.currentEntryId
                 ?.takeIf { id -> snapshot.entries.any { it.entryId == id } }
             persistence.updateSavedPlaybackState(
@@ -1107,14 +1166,28 @@ internal class PlaybackQueueCoordinator(
         }
 
         val identified = trackAccess.identify(snapshot.entries)
+        if(!canCommit()) return null
+        if(useWorkingOwner && identified.size!=snapshot.entries.size) return null
         if (identified.isEmpty()) return activeQueueId
         val identifiedByLiveId = identified.associateBy { it.liveItem.entryId }
         val currentEntryId = snapshot.currentEntryId
             ?.takeIf(identifiedByLiveId::containsKey)
         val position = snapshot.currentPositionMs.takeIf { currentEntryId != null } ?: 0L
 
-        if (queueId == null) {
-            val newQueueId = queueIdFactory()
+        if (managedContext) {
+            // Discovery is durable and independent of the active/saved Queue. The repository
+            // repeats it inside the transaction, making allocation bounded across recreation.
+            val protectedQueueId=androidQueue?.queueId.takeIf { workingOutput==PlaybackQueueWorkingOutput.DIRECT }
+            val managedOwners=persistence.listQueues().filter { it.workingOutput!=null }
+            val desiredOwner=managedOwners.singleOrNull { it.workingOutput==workingOutput }
+            // A managed Queue can be Hub-activated on the other output (or cold-restored
+            // there). Keep its frozen occurrences; swap the two managed roles atomically.
+            val owner=if(desiredOwner!=null && desiredOwner.queueId==protectedQueueId)
+                managedOwners.singleOrNull { it.workingOutput!=workingOutput }
+            else desiredOwner
+            val newQueueId=owner?.queueId ?: queueIdFactory()
+            val displayName=owner?.displayName ?: nextDefaultQueueNameLocked()
+            if(!canCommit()) return null
             val baseOrderById = normalizedBaseEntryIds(snapshot, identified)
                 .withIndex()
                 .associate { indexed -> indexed.value to indexed.index }
@@ -1124,25 +1197,35 @@ internal class PlaybackQueueCoordinator(
                     playbackOrder = playbackOrder
                 )
             }
-            persistence.createQueue(
-                queueId = newQueueId,
-                displayName = generatedQueueName(1),
-                entries = drafts,
-                currentEntryId = currentEntryId,
-                currentPositionMs = position,
-                shuffleEnabled = snapshot.shuffleEnabled,
-                repeatMode = snapshot.repeatMode
-            )
-            if(snapshotEpoch!=outputEpoch || !setActiveQueueWhileOwned(newQueueId,operation)) return activeQueueId
-            activeQueueId = newQueueId
-            lastLiveSignature = rawSignature.copy(queueId = newQueueId)
-            rememberedBaseEntryIds = rawSignature.baseEntryIds
-            clearPendingCanonicalBaseOrder(pendingCanonicalBase)
-            onActiveQueueChanged(newQueueId)
-            return newQueueId
+            return withContext(NonCancellable) {
+                // Keep delivery of an already committed result together with its adoption.
+                // The guard still checks the original caller's Job, so cancellation before
+                // the transaction's final check rolls back every Queue write.
+                val committed=persistence.commitWorkingQueue(
+                    output = workingOutput,
+                    queueId = newQueueId,
+                    displayName = displayName,
+                    entries = drafts,
+                    currentEntryId = currentEntryId,
+                    currentPositionMs = position,
+                    shuffleEnabled = snapshot.shuffleEnabled,
+                    repeatMode = snapshot.repeatMode,
+                    protectedQueueId = protectedQueueId,
+                    canCommit = canCommit
+                ) ?: return@withContext null
+                // The guarded transaction is the commit point. Adopt its durable identity
+                // even if a newer intent arrived while Room returned; it waits on this mutex.
+                activeQueueId = committed.queue.queueId
+                unassignedRestoredSnapshot = false
+                lastLiveSignature = rawSignature.copy(queueId = activeQueueId)
+                rememberedBaseEntryIds = rawSignature.baseEntryIds
+                clearPendingCanonicalBaseOrder(pendingCanonicalBase)
+                onActiveQueueChanged(activeQueueId)
+                activeQueueId
+            }
         }
 
-        val existing = persistence.loadQueue(queueId)
+        requireNotNull(queueId)
         val drafts = buildReplacementDrafts(
             liveItems = identified,
             existingEntries = if (capturesNewPlaybackContext) {

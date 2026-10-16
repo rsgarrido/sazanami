@@ -26,7 +26,7 @@ internal abstract class DirectQueueTestFixture {
     protected val a=song(1)
     protected val b=song(2)
     protected val c=song(3)
-    private fun song(id: Long)=Song(id,"Track $id","Artist","Album",1,10000,
+    private fun song(id: Long)=Song(id,"Track $id","Artist",if(id==3L) "Other Album" else "Album",1,10000,
         Uri.parse("content://media/external/audio/media/$id"),"private","private",null)
 
     protected class Physical(items: List<MediaItem>,playing: Boolean) : SimpleBasePlayer(Looper.getMainLooper()) {
@@ -116,7 +116,8 @@ internal abstract class DirectQueueTestFixture {
         var recreations=0
         var attachmentFailure: String?=null
         val gate=UsbAudioGenerationGate()
-        val token=gate.select(UsbAudioDeviceIdentity("fake",1,2,3))!!
+        val identity=UsbAudioDeviceIdentity("fake",1,2,3)
+        var token=gate.select(identity)!!
         val reservation=UsbOutputReservation()
         private val controller=object : UsbOutputSelectionController {
             override fun authorizeIntegratedSelection(owner: UsbActivationOwner,identity: UsbAudioDeviceIdentity?,generation: Long)=
@@ -154,7 +155,16 @@ internal abstract class DirectQueueTestFixture {
                 return if(resolutionUnavailable) emptyList() else roomTracks.resolve(entries)
             }
         }
-        val coordinator=PlaybackQueueCoordinator(repository.asPlaybackQueuePersistence(),tracks,
+        var beforeCheckpoint: (suspend (String)->Unit)?=null
+        private val roomPersistence=repository.asPlaybackQueuePersistence()
+        private val persistence=object : PlaybackQueuePersistence by roomPersistence {
+            override suspend fun updateSavedPlaybackState(queueId: String,currentEntryId: String?,currentPositionMs: Long,
+                shuffleEnabled: Boolean,repeatMode: PersistedQueueRepeatMode) {
+                beforeCheckpoint?.invoke(queueId)
+                roomPersistence.updateSavedPlaybackState(queueId,currentEntryId,currentPositionMs,shuffleEnabled,repeatMode)
+            }
+        }
+        val coordinator=PlaybackQueueCoordinator(persistence,tracks,
             runtime,{ "Queue $it" },queueIdFactory={ "queue-${++queueSerial}" },onActiveQueueChanged=PlaybackQueueRuntimeBridge::updateActiveQueueId)
         lateinit var originalId: String
         val contextResults=Channel<Boolean>(Channel.UNLIMITED)

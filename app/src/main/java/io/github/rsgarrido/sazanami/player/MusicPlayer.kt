@@ -149,8 +149,6 @@ class MusicPlayer(private val context: Context) {
                 canonicalReferenceKeys = canonicalSongs.map(Song::membershipKey),
                 playbackEntries = playbackEntries
             ))
-            if (!IntegratedDirectPlaybackBridge.directSelected)
-                PlaybackQueueRuntimeBridge.prepareNewPlaybackContext(canonicalBaseEntryIds)
             contextBaseEntryIds=canonicalBaseEntryIds
         }
 
@@ -165,6 +163,7 @@ class MusicPlayer(private val context: Context) {
                 IntegratedDirectPlaybackBridge.reject("Track selection")
         } else {
             val playerController = controller ?: return
+            PlaybackQueueRuntimeBridge.prepareNewPlaybackContext(contextBaseEntryIds)
             playerController.setMediaItems(mediaItems,startIndex,startPosition.toLong())
             playerController.prepare()
             if (shouldStart) playerController.play()

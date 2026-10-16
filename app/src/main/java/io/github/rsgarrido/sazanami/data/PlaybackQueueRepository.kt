@@ -68,6 +68,108 @@ class PlaybackQueueRepository(
         checkNotNull(loadQueueWithinTransaction(queueId))
     }
 
+    /** Commits an acknowledged library context without ever adopting a saved queue. */
+    suspend fun commitWorkingQueue(
+        output: PlaybackQueueWorkingOutput,
+        queueId: String,
+        displayName: String,
+        entries: List<PlaybackQueueEntryDraft>,
+        currentEntryId: String?,
+        currentPositionMs: Long,
+        shuffleEnabled: Boolean,
+        repeatMode: PersistedQueueRepeatMode,
+        protectedQueueId: String? = null,
+        canCommit: () -> Boolean
+    ): PlaybackQueueWithEntries? = try {
+        database.withTransaction {
+            val queues = dao.getQueues()
+            val owners = queues.filter { it.workingOutput == output }
+            check(owners.size <= 1) { "Multiple managed working queues for $output" }
+            val frozenOwner = owners.singleOrNull()?.takeIf { it.queueId == protectedQueueId }
+            val oppositeOutput = PlaybackQueueWorkingOutput.entries.single { it != output }
+            val owner = if (frozenOwner == null) {
+                owners.singleOrNull()
+            } else {
+                val oppositeOwners = queues.filter { it.workingOutput == oppositeOutput }
+                check(oppositeOwners.size <= 1) { "Multiple managed working queues for $oppositeOutput" }
+                oppositeOwners.singleOrNull()
+            }
+            val workingQueueId = owner?.queueId ?: queueId
+            val safeName = if (owner == null) requireDisplayName(displayName) else owner.displayName
+            if (owner == null) {
+                require(queueId.isNotBlank()) { "Queue ID cannot be blank" }
+                require(dao.getQueue(queueId) == null) { "Queue $queueId already exists" }
+            }
+            validateEntries(entries, currentEntryId, currentPositionMs)
+            validateTrackReferences(entries)
+            if (!canCommit()) throw WorkingQueueCommitSupersededException()
+
+            val now = nowMillis()
+            if (frozenOwner != null) {
+                // A managed Direct queue may have been restored/activated on Android.
+                // Exchange only known managed roles, preserving the frozen row's contents.
+                check(
+                    dao.updateWorkingOutput(
+                        queueId = frozenOwner.queueId,
+                        sourceType = PLAYBACK_QUEUE_WORKING_SOURCE_TYPE,
+                        previousSourceKey = output.storageKey,
+                        sourceKey = oppositeOutput.storageKey
+                    ) == 1
+                )
+                if (owner != null) {
+                    check(
+                        dao.updateWorkingOutput(
+                            queueId = owner.queueId,
+                            sourceType = PLAYBACK_QUEUE_WORKING_SOURCE_TYPE,
+                            previousSourceKey = oppositeOutput.storageKey,
+                            sourceKey = output.storageKey
+                        ) == 1
+                    )
+                }
+            }
+            if (owner == null) {
+                dao.insertQueue(
+                    PlaybackQueueEntity(
+                        queueId = workingQueueId,
+                        displayName = safeName,
+                        createdAt = now,
+                        updatedAt = now,
+                        lastActiveAt = now,
+                        sourceType = PLAYBACK_QUEUE_WORKING_SOURCE_TYPE,
+                        sourceKey = output.storageKey,
+                        currentEntryId = currentEntryId,
+                        currentPositionMs = currentPositionMs,
+                        shuffleEnabled = shuffleEnabled,
+                        repeatMode = repeatMode
+                    )
+                )
+            } else {
+                dao.deleteEntries(workingQueueId)
+            }
+            dao.insertEntries(entries.map { it.toEntity(workingQueueId) })
+            if (owner != null) {
+                check(
+                    dao.updateSavedPlaybackState(
+                        queueId = workingQueueId,
+                        currentEntryId = currentEntryId,
+                        currentPositionMs = currentPositionMs,
+                        shuffleEnabled = shuffleEnabled,
+                        repeatMode = repeatMode,
+                        updatedAt = now,
+                        lastActiveAt = now
+                    ) == 1
+                )
+            }
+            dao.setQueueState(PlaybackQueueStateEntity(activeQueueId = workingQueueId))
+            val committed = checkNotNull(loadQueueWithinTransaction(workingQueueId))
+            // Throw inside Room's transaction: entries, metadata, and active identity roll back.
+            if (!canCommit()) throw WorkingQueueCommitSupersededException()
+            committed
+        }
+    } catch (_: WorkingQueueCommitSupersededException) {
+        null
+    }
+
     suspend fun duplicateQueue(
         sourceQueueId: String,
         displayName: String,
@@ -96,6 +198,12 @@ class PlaybackQueueRepository(
                 displayName = safeName,
                 createdAt = now,
                 updatedAt = now,
+                sourceType = source.queue.sourceType.takeUnless {
+                    it == PLAYBACK_QUEUE_WORKING_SOURCE_TYPE
+                },
+                sourceKey = source.queue.sourceKey.takeUnless {
+                    source.queue.sourceType == PLAYBACK_QUEUE_WORKING_SOURCE_TYPE
+                },
                 currentEntryId = source.queue.currentEntryId?.let(copiedEntryIds::get)
             )
         )
@@ -432,6 +540,8 @@ class PlaybackQueueRepository(
         playbackOrder = playbackOrder
     )
 }
+
+private class WorkingQueueCommitSupersededException : RuntimeException()
 
 private fun List<PlaybackQueueEntryEntity>.renumberOrders(): List<PlaybackQueueEntryEntity> {
     val baseOrderById = sortedBy { it.baseOrder }

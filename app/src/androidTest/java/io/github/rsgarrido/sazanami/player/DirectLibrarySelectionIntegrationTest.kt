@@ -4,7 +4,9 @@ import android.net.Uri
 import androidx.media3.common.Player
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import io.github.rsgarrido.sazanami.data.PlaybackQueueWorkingOutput
 import io.github.rsgarrido.sazanami.data.local.PersistedQueueRepeatMode
+import io.github.rsgarrido.sazanami.data.workingOutput
 import io.github.rsgarrido.sazanami.player.usb.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
@@ -80,7 +82,7 @@ internal class DirectLibrarySelectionIntegrationTest : DirectQueueTestFixture() 
         assertEquals(1,f.engine.maximumActive);assertEquals(0,f.recreations)
     } }
 
-    @Test fun successiveLibraryContextsPreserveBothSavedDirectQueuesAndFrozenAndroid()=check { f -> f.withController { controller ->
+    @Test fun successiveLibraryContextsReuseWorkingQueueAndPreserveFrozenAndroid()=check { f -> f.withController { controller ->
         val first=f.startAt()
         controller.playSelectedSong(b,listOf(a,b,a))
         first.stopped.await();first.terminal.complete(terminal(first))
@@ -94,15 +96,160 @@ internal class DirectLibrarySelectionIntegrationTest : DirectQueueTestFixture() 
         val third=f.engine.next();f.confirm(third)
         assertTrue(withTimeout(5000) { f.contextResults.receive() })
         val thirdId=checkNotNull(f.coordinator.getActiveQueueId())
-        assertEquals(3,setOf(f.originalId,secondId,thirdId).size)
-        assertEquals(secondEntries,f.repository.loadQueue(secondId)?.entries?.map { it.entryId })
-        assertEquals(2000L,f.repository.loadQueue(secondId)?.queue?.currentPositionMs)
+        assertNotEquals(f.originalId,secondId)
+        assertEquals(secondId,thirdId)
+        assertEquals(PlaybackQueueWorkingOutput.DIRECT,f.repository.loadQueue(thirdId)?.queue?.workingOutput)
+        assertEquals(PlaybackQueueWorkingOutput.ANDROID,f.repository.loadQueue(f.originalId)?.queue?.workingOutput)
         val thirdEntries=checkNotNull(f.repository.loadQueue(thirdId)).entries
         assertTrue(secondEntries.none { id -> thirdEntries.any { it.entryId==id } })
+        assertEquals(listOf(3L,2L),f.coordinator.captureActiveQueueSnapshot()?.entries?.map { it.evidence.reference.mediaStoreId })
+        assertEquals(2,f.repository.listQueues().size)
+        f.hubOwns(thirdId)
+        assertEquals(setOf(f.originalId,thirdId),f.hub.state.value.queues.map { it.queueId }.toSet())
         f.route.selectDirect(false);third.stopped.await();third.terminal.complete(terminal(third))
         f.settled();f.assertRestoredAndroid()
+        assertEquals(2,f.repository.listQueues().size)
+        assertEquals(thirdEntries,f.repository.loadQueue(thirdId)?.entries)
+        // Re-entering Direct keeps the established Android adoption policy. A later library
+        // context must recover its existing working owner instead of allocating another row.
+        f.route.selectDirect(true);f.settled()
+        assertEquals(f.originalId,f.coordinator.getActiveQueueId())
+        controller.playSelectedSong(b,listOf(b,a))
+        val fourth=f.engine.next();f.confirm(fourth)
+        assertTrue(withTimeout(5000) { f.contextResults.receive() })
+        assertEquals(thirdId,f.coordinator.getActiveQueueId())
+        assertEquals(2,f.repository.listQueues().size)
+        assertEquals(listOf("a-first","b","a-second"),f.repository.loadQueue(f.originalId)?.entries?.map { it.entryId })
+    } }
+
+    @Test fun repeatedAlbumSongsAndArtistSelectionsReuseOneWorkingOwnerForBothPlaybackIntents() {
+        for(playing in listOf(true,false)) check(playing) { f -> f.withController { controller ->
+            var current=f.startAt()
+            var workingId: String?=null
+            var previousEntryIds=emptySet<String>()
+            // The controller receives the same context lists supplied by album, Songs and
+            // artist views, including duplicate occurrences in the album and artist contexts.
+            val selections=listOf(
+                b to listOf(a,b,a),
+                a to listOf(a,b,a),
+                c to listOf(c),
+                b to listOf(a,b,a),
+                c to listOf(c),
+                a to listOf(a,b,c),
+                b to listOf(c,a,b,a)
+            )
+            for((selectedSong,context) in selections) {
+                if(!playing) {
+                    controller.pausePlayback();current.emit(UsbFullTransportPhase.PAUSED)
+                    f.forwarding { f.route.playbackState==Player.STATE_READY && !f.route.playWhenReady }
+                }
+                val previousId=f.repository.getActiveQueueId()
+                val previousCount=f.repository.listQueues().size
+                controller.playSelectedSong(selectedSong,context)
+                current.stopped.await();current.terminal.complete(terminal(current))
+                current=f.engine.next()
+                assertEquals(selectedSong.uri,current.uri)
+                assertFalse(f.route.directQueueCheckpointAllowed)
+                assertEquals(previousId,f.repository.getActiveQueueId())
+                assertEquals(previousCount,f.repository.listQueues().size)
+                f.confirm(current)
+                assertTrue(withTimeout(5000) { f.contextResults.receive() })
+                val accepted=checkNotNull(f.coordinator.captureActiveQueueSnapshot())
+                val queueId=checkNotNull(f.coordinator.getActiveQueueId())
+                if(workingId==null) workingId=queueId else assertEquals(workingId,queueId)
+                val entryIds=accepted.entries.map { it.entryId }
+                assertEquals(context.size,entryIds.distinct().size)
+                assertTrue(previousEntryIds.intersect(entryIds.toSet()).isEmpty())
+                previousEntryIds=entryIds.toSet()
+                assertEquals(selectedSong.id,accepted.entries.first().evidence.reference.mediaStoreId)
+                assertEquals(entryIds.first(),accepted.currentEntryId)
+                assertEquals(context.map { it.id },accepted.baseEntryIds.map { id ->
+                    accepted.entries.single { it.entryId==id }.evidence.reference.mediaStoreId
+                })
+                assertEquals(context.map { it.id }.sorted(),accepted.entries.map { it.evidence.reference.mediaStoreId!! }.sorted())
+                assertEquals(2,f.repository.listQueues().size)
+                assertEquals(setOf(PlaybackQueueWorkingOutput.ANDROID,PlaybackQueueWorkingOutput.DIRECT),
+                    f.repository.listQueues().map { it.workingOutput }.toSet())
+                withTimeout(5000) { f.hub.state.first { state ->
+                    !state.isLoading && state.activeQueueId==queueId && state.queues.size==2 &&
+                        state.activeEntries.map { it.entryId }==entryIds
+                } }
+                assertEquals(listOf("a-first","b","a-second"),f.repository.loadQueue(f.originalId)?.entries?.map { it.entryId })
+            }
+            val duplicateItems=listOf(a.toPlayableMediaItem("selected-a-first"),b.toPlayableMediaItem("selected-b"),
+                a.toPlayableMediaItem("selected-a-second"))
+            assertTrue(PlaybackQueueRuntimeBridge.requestPlaybackContext(listOf(a,b,a),duplicateItems,2,0,true,
+                listOf("selected-a-first","selected-b","selected-a-second"),false,PersistedQueueRepeatMode.OFF))
+            current.stopped.await();current.terminal.complete(terminal(current))
+            current=f.engine.next();assertEquals(a.uri,current.uri)
+            f.confirm(current);assertTrue(withTimeout(5000) { f.contextResults.receive() })
+            assertEquals(workingId,f.repository.getActiveQueueId())
+            assertEquals("selected-a-second",f.coordinator.captureActiveQueueSnapshot()?.currentEntryId)
+            assertEquals("selected-a-second",f.repository.loadQueue(checkNotNull(workingId))?.queue?.currentEntryId)
+            assertEquals(2,f.route.queuePlayer.currentMediaItemIndex)
+            assertEquals(2,f.repository.listQueues().size)
+            assertNotEquals(f.originalId,workingId)
+            assertEquals(1,f.engine.maximumActive);assertEquals(0,f.recreations)
+        } }
+    }
+
+    @Test fun explicitHubSaveAndActivationKeepIndependentCopiesWhenLibraryReturnsToWorkingOwner()=check { f -> f.withController { controller ->
+        val initial=f.startAt()
+        controller.playSelectedSong(b,listOf(a,b,a))
+        initial.stopped.await();initial.terminal.complete(terminal(initial))
+        val workingRun=f.engine.next();f.confirm(workingRun)
+        assertTrue(withTimeout(5000) { f.contextResults.receive() })
+        val workingId=checkNotNull(f.coordinator.getActiveQueueId())
+        val working=checkNotNull(f.repository.loadQueue(workingId))
+        assertEquals(PlaybackQueueWorkingOutput.DIRECT,working.queue.workingOutput)
+        f.hubOwns(workingId)
+        val expectedFirstName="Queue ${nextDefaultQueueNumber(f.repository.listQueues().map { it.displayName }) { "Queue $it" }}"
+        f.hub.createQueueFromCurrent().join()
+        val savedId=checkNotNull(f.hub.state.value.selectedQueueId)
+        val saved=checkNotNull(f.repository.loadQueue(savedId))
+        assertNotEquals(workingId,savedId);assertEquals(expectedFirstName,saved.queue.displayName)
+        assertNull(saved.queue.workingOutput)
+        assertEquals(workingId,f.repository.getActiveQueueId())
+        assertEquals(working.entries.map { it.trackIdentityId },saved.entries.map { it.trackIdentityId })
+        assertTrue(working.entries.none { source -> saved.entries.any { it.entryId==source.entryId } })
         assertEquals(3,f.repository.listQueues().size)
-        assertEquals(secondEntries,f.repository.loadQueue(secondId)?.entries?.map { it.entryId })
+
+        val activation=f.hub.switchSelectedQueue()
+        workingRun.stopped.await();workingRun.terminal.complete(terminal(workingRun))
+        val savedRun=f.engine.next()
+        assertEquals(workingId,f.repository.getActiveQueueId())
+        f.confirm(savedRun);activation.join();f.hubOwns(savedId)
+        assertEquals(saved.entries.map { it.entryId },f.coordinator.captureActiveQueueSnapshot()?.entries?.map { it.entryId })
+        val savedCheckpoint=checkNotNull(f.repository.loadQueue(savedId))
+
+        controller.playSelectedSong(c,listOf(c,b))
+        savedRun.stopped.await();savedRun.terminal.complete(terminal(savedRun))
+        val replacement=f.engine.next()
+        assertEquals(savedId,f.repository.getActiveQueueId())
+        assertEquals(working.entries,f.repository.loadQueue(workingId)?.entries)
+        f.confirm(replacement);assertTrue(withTimeout(5000) { f.contextResults.receive() })
+        assertEquals(workingId,f.coordinator.getActiveQueueId())
+        assertEquals(savedCheckpoint.entries,f.repository.loadQueue(savedId)?.entries)
+        assertEquals(savedCheckpoint.queue.currentEntryId,f.repository.loadQueue(savedId)?.queue?.currentEntryId)
+        assertEquals(savedCheckpoint.queue.currentPositionMs,f.repository.loadQueue(savedId)?.queue?.currentPositionMs)
+        assertEquals(savedCheckpoint.queue.shuffleEnabled,f.repository.loadQueue(savedId)?.queue?.shuffleEnabled)
+        assertEquals(savedCheckpoint.queue.repeatMode,f.repository.loadQueue(savedId)?.queue?.repeatMode)
+        assertEquals(3,f.repository.listQueues().size)
+        f.hubOwns(workingId)
+        val expectedSecondName="Queue ${nextDefaultQueueNumber(f.repository.listQueues().map { it.displayName }) { "Queue $it" }}"
+        f.hub.createQueueFromCurrent().join()
+        val secondSavedId=checkNotNull(f.hub.state.value.selectedQueueId)
+        val secondSaved=checkNotNull(f.repository.loadQueue(secondSavedId))
+        assertEquals(expectedSecondName,secondSaved.queue.displayName)
+        assertNull(secondSaved.queue.workingOutput)
+        assertEquals(4,setOf(f.originalId,workingId,savedId,secondSavedId).size)
+        assertEquals(4,f.repository.listQueues().size)
+        assertEquals(2,f.repository.listQueues().count { it.workingOutput==null })
+        assertEquals(4,f.hub.state.value.queues.size)
+        assertEquals(saved.entries,f.repository.loadQueue(savedId)?.entries)
+        assertEquals(checkNotNull(f.repository.loadQueue(workingId)).entries.map { it.trackIdentityId },
+            secondSaved.entries.map { it.trackIdentityId })
+        assertEquals(1,f.engine.maximumActive);assertEquals(0,f.recreations)
     } }
 
     @Test fun rapidLibrarySelectionSupersedesPreparationWithoutFalseHistoryOrCheckpoint()=check { f -> f.withController { controller ->
@@ -282,6 +429,32 @@ internal class DirectLibrarySelectionIntegrationTest : DirectQueueTestFixture() 
         assertEquals(1,f.repository.listQueues().size);assertEquals(2,f.engine.runs.size)
         assertEquals(1,f.engine.maximumActive);assertFalse(f.route.isPlaying)
         assertEquals(1,f.events.count { it.second==DirectListeningEvent.PLAYING })
+    } }
+
+    @Test fun shutdownDuringLibraryPreparationCannotCreateWorkingOwnerBeforeNativeAcknowledgment()=check { f -> f.withController { controller ->
+        val old=f.startAt()
+        val original=checkNotNull(f.repository.loadQueue(f.originalId))
+        controller.playSelectedSong(b,listOf(b,c))
+        old.stopped.await();old.terminal.complete(terminal(old))
+        val preparing=f.engine.next()
+        assertFalse(f.route.directQueueCheckpointAllowed)
+        assertEquals(f.originalId,f.repository.getActiveQueueId())
+        assertEquals(1,f.repository.listQueues().size)
+        val shutdown=f.scope.async { f.route.shutdown() }
+        preparing.stopped.await()
+        assertFalse(withTimeout(5000) { f.contextResults.receive() })
+        assertFalse(shutdown.isCompleted)
+        assertEquals(0,f.recreations)
+        preparing.terminal.complete(terminal(preparing))
+        assertTrue(withTimeout(5000) { shutdown.await() })
+        preparing.emit(UsbFullTransportPhase.PLAYING)
+        assertEquals(f.originalId,f.coordinator.getActiveQueueId())
+        assertEquals(f.originalId,f.repository.getActiveQueueId())
+        assertEquals(original.entries,f.repository.loadQueue(f.originalId)?.entries)
+        assertEquals(original.queue.currentEntryId,f.repository.loadQueue(f.originalId)?.queue?.currentEntryId)
+        assertEquals(1,f.repository.listQueues().size)
+        assertFalse(f.repository.listQueues().any { it.workingOutput==PlaybackQueueWorkingOutput.DIRECT })
+        assertEquals(0,f.engine.active);assertEquals(1,f.engine.maximumActive);assertEquals(0,f.recreations)
     } }
 
     @Test fun unsupportedLibrarySourcesFailWithoutFallbackSkipOrAcceptedQueue() {
