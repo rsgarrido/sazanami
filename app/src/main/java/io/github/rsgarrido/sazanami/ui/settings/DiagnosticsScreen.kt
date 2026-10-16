@@ -733,8 +733,11 @@ internal fun DiagnosticsScreen(
             ) { Text(stringResource(R.string.diagnostics_refresh)) }
             OutlinedButton(
                 onClick = {
-                    context.copyToClipboard(formatDiagnosticsSummary(snapshot) + if(BuildConfig.DEBUG) "\n"+io.github.rsgarrido.sazanami.player.formatIntegratedDirectPlayback(io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackBridge.reportState,reportLocale) else "")
-                    statusMessage = copiedMessage
+                    scope.launch {
+                        if(BuildConfig.DEBUG) io.github.rsgarrido.sazanami.player.usb.UsbTransportTelemetryBridge.capture()
+                        context.copyToClipboard(formatDiagnosticsSummary(snapshot) + if(BuildConfig.DEBUG) "\n"+io.github.rsgarrido.sazanami.player.formatIntegratedDirectPlayback(io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackBridge.reportState,reportLocale) else "")
+                        statusMessage = copiedMessage
+                    }
                 },
                 modifier = Modifier.weight(1f)
             ) { Text(stringResource(R.string.diagnostics_copy)) }

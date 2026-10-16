@@ -1,4 +1,5 @@
 <resources>
+    <string name="usb_diagnostics_capture_live">Capture live USB transport snapshot</string>
     <string name="app_name">Sazanami</string>
     <string name="external_audio_title">External audio</string>
     <string name="external_audio_app_icon">Sazanami app icon</string>

@@ -11,6 +11,7 @@ import io.github.rsgarrido.sazanami.player.usb.formatFeedbackDiagnostics
 import java.util.Locale
 
 internal fun formatIntegratedDirectPlayback(state: IntegratedDirectPlaybackState,locale: Locale=Locale.getDefault()): String=buildString {
+    append(io.github.rsgarrido.sazanami.player.usb.formatUsbTransportTelemetry())
     appendLine("Integrated Direct USB Playback — Session 17")
     appendLine("experimental direct USB enabled=${state.enabled}; requested backend=${if(state.enabled) "DIRECT_USB" else "NORMAL"}; authoritative backend=${if(state.enabled && !state.normalReleased) "NONE_BLOCKED" else if(state.enabled) "DIRECT_USB" else "NORMAL"}")
     appendLine("safe library ID=${state.libraryId ?: "none"}; request generation=${state.generation}; current track only; no raw URI/path")

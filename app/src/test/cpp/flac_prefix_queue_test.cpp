@@ -8,7 +8,9 @@ static bool available(PrefixQueue& q, uint8_t* payload, uint64_t count) { return
 static const uint8_t a[4]{0,128,255,127}, b[4]{1,0,255,255};
 static void transactionalSubmission() {
     PrefixQueue q;
+    assert(q.firstPcmAtUs.load()==0);
     assert(q.push(0,a) && q.push(1,b));
+    const auto firstPcm=q.firstPcmAtUs.load();assert(firstPcm>0);
     uint8_t payload[12]{}; payload[8]=165;
     assert(available(q,payload,2) && q.validate(payload,8));
     // Failed SUBMITURB: owner does NOT call commit. Cursor and hash remain unchanged.
@@ -19,15 +21,18 @@ static void transactionalSubmission() {
     assert(q.head.load()==2 && q.prepared==0 && q.depth()==0 && q.consumedHash==usbHash);
     assert(q.examples[0][1]==-32768 && q.examples[0][2]==32767);
     assert(q.push(2,a)); // prefetched PCM does not enter committed hash
+    assert(q.firstPcmAtUs.load()==firstPcm); // Ring reuse does not restart the milestone clock.
     assert(q.consumedHash==usbHash && q.enqueuedHash!=usbHash && q.depth()==1);
     q.requestStop(); assert(!available(q,payload,1));
 }
 static void noConcealmentOrMutation() {
     PrefixQueue empty; uint8_t out[8]{165,165,165,165,165,165,165,165};
     assert(!available(empty,out,1) && empty.underruns==1 && empty.emptyEvents==1);
+    assert(empty.shortageDepth.load()==0 && empty.shortageRequested.load()==1 && empty.shortageAtUs.load()>0);
     for (auto byte:out) assert(byte==165); // no zero/repeat/interpolation fill
     assert(empty.faults.load() & PrefixUnderrun);
     PrefixQueue partial; assert(partial.push(0,a)); assert(!available(partial,out,2));
+    assert(partial.shortageDepth.load()==1 && partial.shortageRequested.load()==2 && partial.shortageAtUs.load()>0);
     assert(partial.head.load()==0 && partial.consumedHash==kOffset);
     PrefixQueue mutated; assert(mutated.push(0,a) && mutated.push(1,b) && available(mutated,out,2));
     const auto expected=hashBytes(kOffset,out,8); out[0]^=1;

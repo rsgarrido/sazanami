@@ -676,6 +676,7 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
         readJob?.cancel()
         inspectionToken = token
         closeConnection()
+        if(silentRun) runCatching { UsbTransportTelemetryBridge.store.begin(UsbTelemetrySession(token.generation, stream)) }
         publish(if (silentRun) withExperiment(state, UsbSilentTransportExperimentResult(token.generation, stream,
             requireNotNull(silentResolution), phase = if (mode.isFlac) UsbSilentPhase.PRIMING_SOURCE else UsbSilentPhase.CONFIGURING, mode = mode))
             else state.copy(configurationExperiment = UsbAudioConfigurationResult(token.generation, resolution, UsbConfigurationPhase.QUERYING)))
@@ -821,6 +822,7 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
                             originalFlacFdClosed = runCatching { input.close(); true }.getOrDefault(false)
                         }
                         synchronized(connectionLock) { if (inspectionToken == token) { endpointStop = null; fullStop=null } }
+                        if(silentRun) runCatching { UsbTransportTelemetryBridge.store.finish(UsbTelemetrySession(token.generation, stream)) }
                     }
                 }
             }

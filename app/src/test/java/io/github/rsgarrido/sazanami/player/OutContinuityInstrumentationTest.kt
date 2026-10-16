@@ -120,7 +120,12 @@ class OutContinuityInstrumentationTest {
     }
     @Test fun hooksPreserveSourceTransactionErrorAccountingEofAndCleanup() {
         val native=source("cpp/usb_iso_transport.cpp")
-        val submit="    bool submit("+native.substringAfter("    bool submit(").substringBefore("    void packetExample(")
+        val rawSubmit="    bool submit("+native.substringAfter("    bool submit(").substringBefore("    void packetExample(")
+        // Session 25 shares this successful-submit timestamp with its gap/startup recorder.
+        // Restore only the exact reviewed wrapper before checking the original continuity pin.
+        val submit=session25LiveDiagnosticSourceEquivalent(rawSubmit)
+        assertTrue(rawSubmit.contains("liveDiagnostics.milestone(SSubmit,observed)"))
+        assertTrue(rawSubmit.contains("outContinuity.submitted(observed,slot.packets,slot.outReapedAt)"))
         val submissionHook="        if (!slot.feedback) outContinuity.submitted(monotonicUs(),slot.packets,slot.outReapedAt);\n"
         assertTrue(submit.contains(submissionHook))
         assertEquals("bf565b4d38f31e1bb7e8ba7b8dc36b82e6752cd51ed5989d1c2c82e73dd5d5b8",digest(submit.replace(submissionHook,"")))
@@ -151,5 +156,30 @@ class OutContinuityInstrumentationTest {
         for (fatal in listOf("fail(UrbError, Stop::Worker)","fail(PacketError, Stop::Worker)",
             "saved == ENODEV ? DeviceDetached : SubmitError","fail(QueueUnderrun | FlacSourceFault, Stop::Underrun)"))
             assertTrue(fatal,native.contains(fatal))
+    }
+
+    @Test fun liveDiagnosticNormalizationCannotHideTransportOrHookChanges() {
+        val native=source("cpp/usb_iso_transport.cpp")
+        val submit="    bool submit("+native.substringAfter("    bool submit(").substringBefore("    void packetExample(")
+        val reap="    bool reapOne()"+native.substringAfter("    bool reapOne()").substringBefore("    void cancel(")
+        for((body,mutations) in listOf(submit to listOf(
+            "USBDEVFS_SUBMITURB" to "USBDEVFS_DISCARDURB",
+            "scheduler.next(" to "scheduler.changed(",
+            "prefix->queue.commit()" to "prefix->queue.abandonReservation()",
+            "outContinuity.submitted(observed,slot.packets,slot.outReapedAt)" to "outContinuity.submitted(observed,kOutPackets,slot.outReapedAt)",
+            "playback.submitted();" to "playback.pause(0);"),
+            reap to listOf(
+                "slot.identity.complete(attachment, stream)" to "slot.identity.complete(attachment+1, stream)",
+                "stats[CompletedFrames] += slot.frames[i]" to "stats[CompletedFrames] -= slot.frames[i]",
+                "fail(ShortPacket, Stop::Worker)" to "fail(PacketError, Stop::Worker)",
+                "successfulOutCompletion &= packet.status==0" to "successfulOutCompletion &= packet.status!=0"))) {
+            val equivalent=session25LiveDiagnosticSourceEquivalent(body)
+            assertNotEquals("Current live hooks must be recognized",body,equivalent)
+            assertEquals("Normalization must be idempotent",equivalent,session25LiveDiagnosticSourceEquivalent(equivalent))
+            for((original,changed) in mutations) {
+                assertEquals("One audited mutation site: $original",1,Regex(Regex.escape(original)).findAll(body).count())
+                assertNotEquals("Protected change must still break its pin: $original",digest(body),digest(body.replace(original,changed)))
+            }
+        }
     }
 }

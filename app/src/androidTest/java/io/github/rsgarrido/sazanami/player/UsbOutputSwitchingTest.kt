@@ -18,6 +18,42 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class UsbOutputSwitchingTest {
+    @Test fun liveDiagnosticCaptureWhilePlayingAndPausedDoesNotChangeRoutingOrControls() = checkRoute { f ->
+        f.released.complete(true);f.route.selectDirect(true);settled(f)
+        f.route.setMediaItem(song.toPlayableMediaItem());f.route.prepare();yield()
+        val store = UsbTransportTelemetryStore();val key = UsbTelemetrySession(1, 2);store.begin(key)
+        for(phase in listOf(UsbFullTransportPhase.PLAYING, UsbFullTransportPhase.PAUSED)) {
+            if(phase == UsbFullTransportPhase.PAUSED) f.route.pauseDirectPlayback()
+            f.engine.progress(UsbFullProgress(44100, 441000, 44100, phase))
+            val out = if(phase == UsbFullTransportPhase.PAUSED) 0L else 3L
+            val frames = if(out == 0L) 0L else 132L
+            val values = mapOf("version" to 1L, "generation" to 1L, "stream" to 2L,
+                "capturedAtUs" to 100000L, "readAtUs" to 100100L, "transportState" to 4L,
+                "playbackPhase" to phase.ordinal.toLong(), "sampleRateHz" to 44100L,
+                "channels" to 2L, "bits" to 16L, "bytesPerFrame" to 4L, "startedAtUs" to 1000L,
+                "outPool" to 21L, "outSubmitted" to 10L, "outCompleted" to 10L - out,
+                "outOutstanding" to out, "outFree" to 21L - out, "pendingPayloadFrames" to frames,
+                "pendingPayloadDurationUs" to frames * 1000000 / 44100, "nominalCoverageUs" to 21000L,
+                "pcmDepth" to 8192L, "pcmCapacity" to 16384L, "pcmMinDepth" to 4096L,
+                "pcmShortageDepth" to -1L, "pcmShortageRequested" to -1L, "pcmShortageAgeUs" to -1L)
+            val words = LongArray(UsbTransportTelemetrySchema.WORDS)
+            UsbTransportTelemetrySchema.fields.forEachIndexed { i, name -> words[i] = values[name] ?: 0L }
+            val snapshot = UsbTransportTelemetrySchema.decode(words, key)
+            store.bind(key) { snapshot }
+            val before = f.route.directState.copy();val intent = f.engine.control.intent()
+            val item = f.route.currentMediaItem;val normalStops = f.physical.stopped
+            val starts = f.engine.starts;val stops = f.engine.stops;val recreations = f.recreations
+            repeat(3) {
+                val report = withContext(Dispatchers.IO) { formatUsbTransportTelemetry(store.capture()) }
+                assertTrue(report.contains("playback=${phase.name}"));assertEquals(before, f.route.directState)
+                assertEquals(intent, f.engine.control.intent());assertEquals(item, f.route.currentMediaItem)
+                assertEquals(starts, f.engine.starts);assertEquals(stops, f.engine.stops)
+                assertEquals(recreations, f.recreations);assertEquals(normalStops, f.physical.stopped)
+            }
+        }
+        store.finish(key);assertEquals("TERMINAL", store.capture().status)
+    }
+
     @Test fun activeDirectRuntimeRequiresNativeAcknowledgmentAndKeepsEditingGuarded() = checkRoute { f ->
         f.released.complete(true);f.route.selectDirect(true);settled(f)
         f.route.setMediaItem(song.toPlayableMediaItem());f.route.prepare();yield()

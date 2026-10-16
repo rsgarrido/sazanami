@@ -18,7 +18,7 @@ class IntegratedDirectDiagnosticAccessTest {
             .substringBefore("internal fun dismissExpandedPlayerPresentation")
         val presentation=source("ui/MusicPlayerPresentation.kt")
         val banner=source("ui/settings/IntegratedDirectPlaybackSection.kt").substringAfter("internal fun IntegratedDirectPlaybackBanner(")
-            .substringBefore("private fun Context.copyIntegratedDirectReport")
+            .substringBefore("private suspend fun Context.copyIntegratedDirectReport")
         assertTrue(root.contains("Column(modifier = modifier.fillMaxSize().appShellBackground())"))
         assertTrue(root.contains("Modifier.weight(1f).fillMaxWidth()"))
         assertEquals(1,Regex("PlayerMorphHost\\(").findAll(root).count())
@@ -37,7 +37,7 @@ class IntegratedDirectDiagnosticAccessTest {
 
     @Test fun statusHasBoundedTextAndOnlyVisibleControlsConsumeInput() {
         val banner=source("ui/settings/IntegratedDirectPlaybackSection.kt").substringAfter("internal fun IntegratedDirectPlaybackBanner(")
-            .substringBefore("private fun Context.copyIntegratedDirectReport")
+            .substringBefore("private suspend fun Context.copyIntegratedDirectReport")
         assertTrue(banner.contains("heightIn(max=144.dp)"))
         assertTrue(banner.contains("maxLines=1,overflow=TextOverflow.Ellipsis"))
         assertTrue(banner.contains("Modifier.weight(1f)")) // action labels share width, not remaining zero width
@@ -100,7 +100,9 @@ class IntegratedDirectDiagnosticAccessTest {
 
     @Test fun copyUsesTheExistingReportFormatterAndDoesNotChangePlayback() {
         val section=source("ui/settings/IntegratedDirectPlaybackSection.kt")
-        val copy=section.substringAfter("private fun Context.copyIntegratedDirectReport()")
+        val copy=section.substringAfter("private suspend fun Context.copyIntegratedDirectReport()")
+        assertTrue(copy.contains("UsbTransportTelemetryBridge.capture()"))
+        assertTrue(copy.indexOf("UsbTransportTelemetryBridge.capture()")<copy.indexOf("setPrimaryClip"))
         // The copy path delegates retained evidence plus an explicit locale, rather than pinning a one-argument signature.
         assertTrue("Copy must delegate retained evidence to the shared formatter",Regex(
             """formatIntegratedDirectPlayback\s*\(\s*IntegratedDirectPlaybackBridge\.reportState\s*,""").containsMatchIn(copy))

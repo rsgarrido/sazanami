@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="usb_diagnostics_capture_live">Capturar estado del transporte USB en vivo</string>
     <string name="settings_help_section_title">Ayuda y acerca de</string>
     <string name="settings_help_section_summary">Consejos, enlaces del proyecto e información de la app.</string>
     <string name="settings_help_tips_title">Consejos y ayuda</string>

@@ -110,6 +110,11 @@ internal object UsbFsDiagnostics {
         return UsbFullProgress(values[0],values[1],values[2],UsbFullTransportPhase.entries[values[3].toInt()],control)
     }
     private external fun nativeFullProgress(handle: Long,generation: Long,stream: Long): LongArray
+    fun liveDiagnostics(handle: Long, generation: Long, stream: Long): UsbTransportTelemetry? =
+        nativeLiveDiagnostics(handle, generation, stream)?.let {
+            UsbTransportTelemetrySchema.decode(it, UsbTelemetrySession(generation, stream))
+        }
+    private external fun nativeLiveDiagnostics(handle: Long, generation: Long, stream: Long): LongArray?
     fun setFullPlayWhenReady(handle: Long,generation: Long,stream: Long,intent: UsbFullControlIntent): Boolean =
         nativeSetFullPlayWhenReady(handle,generation,stream,intent.play,intent.sequence,intent.pauses,intent.resumes,intent.seeks,intent.seekSerial,intent.targetFrame,intent.firstTargetFrame)
     private external fun nativeSetFullPlayWhenReady(handle: Long,generation: Long,stream: Long,play: Boolean,sequence: Long,pauses: Long,resumes: Long,seeks: Long,seekSerial: Long,targetFrame: Long,firstTargetFrame: Long): Boolean

@@ -1,7 +1,11 @@
-// Standalone C++17 CPU suite. No USB, threads, libFLAC linkage or Gradle integration.
+// Standalone C++17 CPU suite. No USB, libFLAC linkage or Gradle integration.
 #include "../../main/cpp/usb_feedback_diagnostics.h"
+#include "../../main/cpp/usb_live_diagnostics.h"
 #include "../../main/cpp/usb_iso_stop.h"
 #include <cassert>
+#include <memory>
+#include <thread>
+#include <vector>
 using namespace sazanami::usbiso;
 static FeedbackObservation row(uint32_t raw,uint64_t at,int phase=1,int64_t epoch=0,int64_t serial=0) {
     std::array<uint8_t,4> bytes{};for(unsigned i=0;i<4;++i) bytes[i]=raw>>(8*i);
@@ -78,4 +82,76 @@ static void suddenMalformedTimeoutAndUnavailableTimes() {
     {FeedbackDiagnostics owner;owner.observe(row(0,3000));owner.freeze(f);retained=owner.serialized();}
     assert(retained[FExists]==1 && retained[FHistoryCount]==1);
 }
-int main() {rollingAndZeroEvidence();recoverThenFreezeAtThirdNotEleventh();suddenMalformedTimeoutAndUnavailableTimes();}
+static void liveOutputPoolAndUnits() {
+    struct TestSlot { Identity identity;bool feedback=false;unsigned packets=0;std::array<uint32_t,kOutPackets> frames{}; };
+    std::array<TestSlot,4> slots{};slots[3].feedback=true;
+    LiveWords w{};int64_t submitted=0,completed=0;
+    captureOutPool(w,slots,3,44100,submitted,completed);
+    assert(w[LOutOutstanding]==0 && w[LOutFree]==3 && w[LOutPendingFrames]==0);
+    for(unsigned i=0;i<2;++i) {
+        slots[i].packets=8;slots[i].frames.fill(6);assert(slots[i].identity.submit(2,9,i+1));++submitted;
+    }
+    // Short final request: only its actual two packets contribute, not stale frame-array capacity.
+    slots[2].packets=2;slots[2].frames.fill(1000);slots[2].frames[0]=5;slots[2].frames[1]=4;
+    assert(slots[2].identity.submit(2,9,3));++submitted;
+    assert(slots[3].identity.submit(2,9,4));slots[3].frames.fill(999);slots[3].packets=1;
+    captureOutPool(w,slots,3,48000,submitted,completed);
+    assert(w[LOutSubmitted]==3 && w[LOutCompleted]==0 && w[LOutOutstanding]==3 && w[LOutFree]==0);
+    assert(w[LOutPendingFrames]==105 && w[LOutPayloadDuration]==2187); // floor(105 * 1e6 / 48000)
+    assert(!slots[0].identity.complete(3,9)); // Stale attachment cannot advance pool accounting.
+    assert(slots[0].identity.complete(2,9));++completed;
+    captureOutPool(w,slots,3,96000,submitted,completed);
+    assert(w[LOutSubmitted]==3 && w[LOutCompleted]==1 && w[LOutOutstanding]==2 && w[LOutFree]==1);
+    assert(w[LOutPendingFrames]==57 && w[LOutPayloadDuration]==593);
+    assert(payloadDurationUs(44100,44100)==1000000 && payloadDurationUs(1,44100)==22);
+    assert(payloadDurationUs(1,0)==-1 && payloadDurationUs(UINT64_MAX,44100)==-1);
+}
+static void liveGapsStartupAndSparseRejections() {
+    LiveDiagnostics d;d.beginSource(0,0,1000,0);d.milestone(SMetadata,1100);d.milestone(SPcm,1200);
+    d.milestone(SReady,1300);d.milestone(SSubmit,1500);d.milestone(SComplete,2500);d.milestone(SActive,1501);
+    d.milestone(SSubmit,9000);assert(d.startups.latest()[SSubmit]==500); // First evidence only.
+    for(unsigned i=0;i<40;++i) d.gap(1000,3000+i,1,22000,21,i%2?0:8192,0,0);
+    std::array<int64_t,kLiveGapCapacity*kLiveGapWords> gaps{};d.gaps.copyTo(gaps.data());
+    assert(d.gaps.count==16 && gaps[0]==25 && gaps[8*15]==40 && gaps[5]==8192 && gaps[13]==0);
+    // A long scheduling interval with PCM remains distinct from no decoded PCM; neither asserts audible dropout.
+    d.lastSubmit=d.submissionGapBase=4000;d.lastWake=5000;d.suspend();
+    assert(!d.lastWake && !d.submissionGapBase && d.lastSubmit==4000);
+    for(unsigned epoch=1;epoch<=12;++epoch) {d.beginSource(epoch,epoch+5,10000+epoch,epoch*100);d.milestone(SPcm,11000+epoch);}
+    std::array<int64_t,kLiveStartupCapacity*kLiveStartupWords> starts{};d.startups.copyTo(starts.data());
+    assert(d.startups.count==8 && starts[SEpoch]==5 && starts[7*10+SEpoch]==12 && starts[SPcm]==1000);
+    assert(starts[SMetadata]==-1 && starts[SSubmit]==-1); // Seek/restart does not inherit old startup milestones.
+    FeedbackDiagnostics feedback;
+    for(unsigned i=1;i<=12;++i) {
+        feedback.observe(row(379616,20000+i*2));d.feedback(*feedback.latest());
+        for(unsigned n=0;n<20;++n) {feedback.observe(row(361264,20000+i*2));d.feedback(*feedback.latest());}
+    }
+    assert(d.rejected.count==8 && d.rejected.latest()[DRaw]==379616 && d.rejected.latest()[DAccepted]==0);
+    assert(feedback.latest() && (*feedback.latest())[DRaw]==361264);
+    assert(d.feedbackAccepted==240 && d.feedbackRejected==12 && d.feedbackIgnored==0);
+    auto quiet=row(361264,30000,3);quiet[DRejection]=7;quiet[DAccepted]=0;d.feedback(quiet);
+    assert(d.feedbackAccepted==240 && d.feedbackIgnored==1 && d.feedbackRejected==12);
+    LiveDiagnostics recreated;assert(!recreated.gaps.count && !recreated.startups.count && !recreated.rejected.count);
+}
+static void concurrentLivePublicationAndRetainedLifetime() {
+    auto owner=std::make_shared<PublishedLiveDiagnostics>();LiveWords first{};first.fill(1);first[LTerminal]=0;
+    assert(owner->tryPublish(first));std::atomic<bool> start{false};std::vector<std::thread> readers;
+    // Exercise concurrent retrieval, the exact production publisher, and resource-free copies.
+    for(unsigned i=0;i<3;++i) readers.emplace_back([pin=owner,&start] {
+        while(!start.load(std::memory_order_acquire)) std::this_thread::yield();
+        int64_t previous=0;
+        for(unsigned n=0;n<3000;++n) {
+            const auto copy=pin->read();const auto sequence=copy[LCapturedAt];
+            assert(sequence>=previous);previous=sequence;
+            for(size_t field=0;field<copy.size();++field) if(field!=LTerminal) assert(copy[field]==sequence);
+        }
+    });
+    start.store(true,std::memory_order_release);
+    for(int64_t n=2;n<20000;++n) {LiveWords value{};value.fill(n);value[LTerminal]=0;owner->tryPublish(value);}
+    LiveWords terminal{};terminal.fill(20000);terminal[LTerminal]=1;owner->publishQuiescent(terminal);
+    auto pinned=owner;owner.reset(); // The JNI registry's shared_ptr pin follows this lifetime pattern.
+    for(auto& reader:readers) reader.join();
+    auto retained=pinned->read();pinned.reset();assert(retained[LTerminal]==1 && retained[LCapturedAt]==20000);
+    PublishedLiveDiagnostics newSession;assert(newSession.read()[LVersion]==0); // No inherited terminal data.
+}
+int main() {rollingAndZeroEvidence();recoverThenFreezeAtThirdNotEleventh();suddenMalformedTimeoutAndUnavailableTimes();
+    liveOutputPoolAndUnits();liveGapsStartupAndSparseRejections();concurrentLivePublicationAndRetainedLifetime();}

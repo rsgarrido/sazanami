@@ -1,5 +1,29 @@
 package io.github.rsgarrido.sazanami.player
 
+/** Restore only five reviewed Session 25 diagnostic additions to their Session 24 source form.
+ * Exact blocks, including the preserved continuity/control calls, must match; altered guards,
+ * arguments, accounting or extra statements remain visible to the original digest constants. */
+internal fun session25LiveDiagnosticSourceEquivalent(text: String): String = text.replace("\r\n","\n")
+    .replace("        if (!slot.feedback) {\n" +
+        "            const auto observed=monotonicUs();\n" +
+        "            if(liveDiagnostics.submissionGapBase && observed-liveDiagnostics.submissionGapBase>outContinuity.nominalCoverageUs)\n" +
+        "                liveDiagnostics.gap(started,observed,2,observed-liveDiagnostics.submissionGapBase,outstanding(false),pcmDepth(),sourceEpoch(),activeSeekSerial);\n" +
+        "            liveDiagnostics.lastSubmit=liveDiagnostics.submissionGapBase=observed;liveDiagnostics.milestone(SSubmit,observed);\n" +
+        "            outContinuity.submitted(observed,slot.packets,slot.outReapedAt);\n" +
+        "        }\n", "        if (!slot.feedback) outContinuity.submitted(monotonicUs(),slot.packets,slot.outReapedAt);\n")
+    .replace("            if(fullTrack) {\n" +
+        "                playback.submitted();\n" +
+        "                if(liveDiagnostics.startups.count && liveDiagnostics.startups.latest()[SActive]<0) liveDiagnostics.milestone(SActive,monotonicUs());\n" +
+        "                publishPlayback();\n" +
+        "            }\n", "            if(fullTrack) { playback.submitted();publishPlayback(); }\n")
+    .replace("        bool successfulOutCompletion=!slot.feedback && !cancelled && status==0 && slot.urb->error_count==0;\n", "")
+    .replace("            successfulOutCompletion &= packet.status==0 && packet.actual_length==packet.length;\n", "")
+    .replace("        if (!slot.feedback) {\n" +
+        "            lastOutCompletion = monotonicUs();liveDiagnostics.lastCompletion=lastOutCompletion;\n" +
+        "            if(successfulOutCompletion)\n" +
+        "                liveDiagnostics.milestone(SComplete,lastOutCompletion);\n" +
+        "        }\n", "        if (!slot.feedback) lastOutCompletion = monotonicUs();\n")
+
 /** Only six exact, read-only diagnostic hooks are removed for historical algorithm pins.
  * The original digest constants remain; any surrounding policy/accounting change still fails them.
  * UsbFeedbackDiagnosticsTest and the standalone native suite separately protect the appended evidence. */
@@ -18,7 +42,8 @@ internal fun feedbackDiagnosticSourceEquivalent(text: String): String {
 /** Keep historical source pins for uninterrupted ordering/accounting. Normalize ONLY audited width/control hooks.
  * PCM24 packing/queue/byte behavior is separately exercised by the new semantic native/JVM tests.
  * Any change outside these explicit substitutions still fails the historical source digest. */
-internal fun pcm16WidthSourceEquivalent(text: String): String = session17NoSeekSourceEquivalent(feedbackDiagnosticSourceEquivalent(text))
+internal fun pcm16WidthSourceEquivalent(text: String): String = session17NoSeekSourceEquivalent(
+    feedbackDiagnosticSourceEquivalent(session25LiveDiagnosticSourceEquivalent(text)))
     // Conditional control branches are inactive for uninterrupted intent; the added publication only reports state.
     // PauseMachine/queue/transition tests protect these hooks. Other active algorithm changes still fail old hashes.
     .replace("        if(pauseAdmission()) return false;\n", "")

@@ -17,12 +17,15 @@ import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.BuildConfig
 import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.player.*
+import io.github.rsgarrido.sazanami.player.usb.UsbTransportTelemetryBridge
+import kotlinx.coroutines.launch
 
 /** Requests only; playback/cleanup lifetime belongs to PlaybackService. */
 @Composable internal fun IntegratedDirectPlaybackSection(showModeSwitch: Boolean=true) {
     val state by IntegratedDirectPlaybackBridge.state.collectAsState()
     val latest by IntegratedDirectPlaybackBridge.latestAttempt.collectAsState()
     val context=LocalContext.current
+    val reportScope=rememberCoroutineScope()
     if(!showModeSwitch && !state.enabled) return
     Text(stringResource(R.string.usb_integrated_title),style=MaterialTheme.typography.titleMedium)
     if(showModeSwitch && BuildConfig.DEBUG) {
@@ -47,7 +50,7 @@ import io.github.rsgarrido.sazanami.player.*
         attempt.error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
     }
     if (state.enabled || latest!=null) {
-        OutlinedButton(onClick={ context.copyIntegratedDirectReport() }) {
+        OutlinedButton(onClick={ reportScope.launch { context.copyIntegratedDirectReport() } }) {
             Text(stringResource(R.string.usb_integrated_copy_report))
         }
     }
@@ -59,6 +62,7 @@ import io.github.rsgarrido.sazanami.player.*
     val state by IntegratedDirectPlaybackBridge.state.collectAsState()
     if(!state.enabled) return
     val context=LocalContext.current
+    val reportScope=rememberCoroutineScope()
     Column(modifier=modifier.fillMaxWidth().heightIn(max=144.dp)
         .clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.surfaceContainerHigh)
         .padding(horizontal=12.dp,vertical=4.dp)) {
@@ -71,7 +75,7 @@ import io.github.rsgarrido.sazanami.player.*
             color=if(state.error!=null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines=1,overflow=TextOverflow.Ellipsis) }
         Row(modifier=Modifier.fillMaxWidth()) {
-            TextButton(onClick={ context.copyIntegratedDirectReport() },modifier=Modifier.weight(1f)) {
+            TextButton(onClick={ reportScope.launch { context.copyIntegratedDirectReport() } },modifier=Modifier.weight(1f)) {
                 Text(stringResource(R.string.usb_integrated_copy_report),maxLines=1,overflow=TextOverflow.Ellipsis)
             }
             if(state.busy) TextButton(onClick=IntegratedDirectPlaybackBridge::stop,modifier=Modifier.weight(1f)) {
@@ -81,7 +85,8 @@ import io.github.rsgarrido.sazanami.player.*
     }
 }
 
-private fun Context.copyIntegratedDirectReport() {
+private suspend fun Context.copyIntegratedDirectReport() {
+    UsbTransportTelemetryBridge.capture()
     val clipboard=getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
     clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.usb_integrated_title),
         formatIntegratedDirectPlayback(IntegratedDirectPlaybackBridge.reportState,resources.configuration.locales[0])))

@@ -28,6 +28,8 @@ import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.BuildConfig
 import io.github.rsgarrido.sazanami.player.usb.UsbAudioDiagnosticBridge
 import io.github.rsgarrido.sazanami.player.usb.UsbAudioDiagnosticReport
+import io.github.rsgarrido.sazanami.player.usb.UsbTransportTelemetryBridge
+import kotlinx.coroutines.launch
 import io.github.rsgarrido.sazanami.player.usb.UsbAudioDiagnosticStatus
 import io.github.rsgarrido.sazanami.player.usb.UsbClockDiagnosticPhase
 import io.github.rsgarrido.sazanami.player.usb.UsbFsProbeStatus
@@ -47,6 +49,7 @@ import io.github.rsgarrido.sazanami.player.bitperfect.flac.FlacVerificationRepor
 @Composable
 internal fun UsbAudioDiagnosticsSection() {
     val state by UsbAudioDiagnosticBridge.state.collectAsStateWithLifecycle()
+    val telemetry by UsbTransportTelemetryBridge.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val diagnosticsTitle = stringResource(R.string.usb_diagnostics_title)
     val verificationScope = rememberCoroutineScope()
@@ -56,8 +59,9 @@ internal fun UsbAudioDiagnosticsSection() {
     DisposableEffect(flacController) { onDispose { flacController.close() } }
     val flacState by flacController.state.collectAsStateWithLifecycle()
     var copied by remember(state, flacState) { mutableStateOf(false) }
+    var capturing by remember { mutableStateOf(false) }
     val flacReport = if (BuildConfig.DEBUG) FlacVerificationReport.format(flacState.result, flacState.running) else ""
-    val parsedReport = remember(state, flacReport) { UsbAudioDiagnosticReport.format(state, includeRaw = false) + flacReport }
+    val parsedReport = remember(state, flacReport, telemetry) { UsbAudioDiagnosticReport.format(state, includeRaw = false) + flacReport }
     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -70,6 +74,14 @@ internal fun UsbAudioDiagnosticsSection() {
         }
         Text(diagnosticsTitle, style = MaterialTheme.typography.titleMedium)
         Text(stringResource(R.string.usb_diagnostics_note), style = MaterialTheme.typography.bodySmall)
+        OutlinedButton(onClick = {
+            capturing = true
+            verificationScope.launch {
+                try { UsbTransportTelemetryBridge.capture() } finally { capturing = false }
+            }
+        }, enabled = state.serviceAvailable && !capturing, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.usb_diagnostics_capture_live))
+        }
         if (!state.serviceAvailable) {
             Text(stringResource(R.string.usb_diagnostics_service_unavailable))
         }
@@ -283,11 +295,18 @@ internal fun UsbAudioDiagnosticsSection() {
         }
         OutlinedButton(
             onClick = {
-                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                clipboard?.setPrimaryClip(ClipData.newPlainText(
-                    diagnosticsTitle, UsbAudioDiagnosticReport.format(state) + flacReport))
-                copied = clipboard != null
+                capturing = true
+                verificationScope.launch {
+                    try {
+                        UsbTransportTelemetryBridge.capture()
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                        clipboard?.setPrimaryClip(ClipData.newPlainText(diagnosticsTitle,
+                            UsbAudioDiagnosticReport.format(UsbAudioDiagnosticBridge.state.value) + flacReport))
+                        copied = clipboard != null
+                    } finally { capturing = false }
+                }
             },
+            enabled = !capturing,
             modifier = Modifier.fillMaxWidth()
         ) { Text(stringResource(R.string.usb_diagnostics_copy)) }
         if (copied) Text(stringResource(R.string.usb_diagnostics_copied), color = MaterialTheme.colorScheme.primary)

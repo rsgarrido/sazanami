@@ -3,12 +3,13 @@ package io.github.rsgarrido.sazanami.player.usb
 /** Offline, plain-text evidence. No serial strings, Android bus paths, music paths, or remote lookup. */
 internal object UsbAudioDiagnosticReport {
     fun format(state: UsbAudioDiagnosticState, includeRaw: Boolean = true): String = buildString {
-        appendLine("SAZANAMI USB AUDIO DIAGNOSTIC — SESSION 11")
-        appendLine("Descriptors, ownership, clock, configuration and independent debug PCM diagnostics. Normal-player direct USB integration is not implemented.")
+        appendLine("SAZANAMI USB AUDIO DIAGNOSTIC — SESSION 25")
+        appendLine("Descriptors, ownership, clock, configuration and native transport observations.")
         appendLine("Service: ${if (state.serviceAvailable) "available" else "unavailable"}")
         appendLine("Status: ${statusText(state.status)}")
         appendLine("Connection generation: ${state.generation}")
         state.message?.let { appendLine("Note: $it") }
+        append(formatUsbTransportTelemetry())
         section("Device")
         val selected = state.selectedDevice
         if (selected == null) {

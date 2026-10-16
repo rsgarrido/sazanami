@@ -3,6 +3,7 @@
 #include "usb_iso_tail.h"
 #include "usb_feedback_policy.h"
 #include "usb_feedback_diagnostics.h"
+#include "usb_live_diagnostics.h"
 #include "usb_out_queue_policy.h"
 #include "usb_out_continuity.h"
 #include "usb_pause_control.h"
@@ -133,6 +134,11 @@ struct Session {
     uint64_t diagnosticSeekConfirmed=0,diagnosticOutResumed=0,diagnosticFreshPrime=0;
     uint64_t diagnosticAdmissionStopped=0,diagnosticPoolsDrained=0;
     OutContinuity outContinuity;
+    LiveDiagnostics liveDiagnostics; // Worker-owned; never read directly across JNI.
+    PublishedLiveDiagnostics publishedDiagnostics;
+    uint64_t lastDiagnosticPublish=0;
+    int lastDiagnosticPhase=-2;
+    uint64_t lastDiagnosticEpoch=UINT64_MAX;
     uint32_t acceptedFeedback = 0;
     unsigned invalidStreak = 0;
     bool stopping = false, ran = false;
@@ -240,6 +246,75 @@ struct Session {
             i >= outUrbs ? 1 : static_cast<unsigned>(kOutPackets), i >= outUrbs ? 4 : payload);
         if(fullTrack) std::atomic_store(&prefix->queue.workerWake,controlWake);
         move(State::Configured);
+        if(prefix) liveDiagnostics.beginSource(0,0,prefix->admittedAtUs,0);
+        publishDiagnostics(true);
+    }
+    int64_t pcmDepth() const { return prefix ? static_cast<int64_t>(prefix->queue.depth()) : -1; }
+    uint64_t sourceEpoch() const { return fullTrack ? prefix->queue.sourceEpoch.load() : 0; }
+    LiveWords diagnosticSnapshot(uint64_t now,bool terminal) {
+        LiveWords v{};
+        v[LVersion]=1;v[LAttachment]=attachment;v[LStream]=stream;v[LEpoch]=sourceEpoch();v[LSeekSerial]=activeSeekSerial;
+        v[LCapturedAt]=now;v[LReadAt]=now;v[LTerminal]=terminal;v[LTransportState]=static_cast<int>(state);
+        v[LPlaybackPhase]=fullTrack ? static_cast<int>(playback.phase) : -1;
+        v[LRate]=sampleRateHz;v[LChannels]=format->channels;v[LBits]=format->bitsPerSample;v[LFrameBytes]=frameBytes();v[LStartedAt]=started?static_cast<int64_t>(started):-1;
+        captureOutPool(v,slots,outUrbs,sampleRateHz,stats[OutSubmitted],stats[OutCompleted]);
+        v[LEstimatedCoverage]=outContinuity.estimatedCoverage(now);v[LNominalCoverage]=outContinuity.nominalCoverageUs;
+        v[LLastSubmitAge]=diagnosticElapsed(liveDiagnostics.lastSubmit,now);v[LLastCompletionAge]=diagnosticElapsed(liveDiagnostics.lastCompletion,now);
+        v[LMaxSubmitGap]=outContinuity.maxSubmissionGapUs;v[LMaxBatchGap]=outContinuity.maxBatchGapUs;
+        v[LMaxCompletionGap]=outContinuity.maxCompletionGapUs;v[LMaxWorkerGap]=outContinuity.maxWorkerLoopGapUs;
+        v[LMaxRefillGap]=outContinuity.maxRefillOpportunityGapUs;v[LMaxRefillLatency]=outContinuity.maxRefillLatencyUs;
+        v[LPoolStalls]=stats[PoolStalls];v[LEmptyAfterReap]=stats[EmptyAfterReap];v[LOutUrbErrors]=stats[OutUrbErrors];v[LOutPacketErrors]=stats[OutPacketErrors];
+        v[LCancelled]=stats[OutCancelled];v[LSubmitErrno]=stats[SubmitErrno];v[LReapErrno]=stats[ReapErrno];
+        for(size_t i=LPcmDepth;i<=LSourceFaults;++i) v[i]=-1;
+        v[LPcmShortageDepth]=v[LPcmShortageRequested]=v[LPcmShortageAge]=-1;
+        if(prefix) {
+            const auto& q=prefix->queue;
+            v[LPcmDepth]=pcmDepth();v[LPcmCapacity]=fv::kPrefixCapacity;v[LPcmMinDepth]=started?static_cast<int64_t>(q.minDepth.load()):-1;
+            v[LPcmEmpty]=q.emptyEvents.load();v[LPcmUnderruns]=q.underruns.load();v[LProducerFullWaits]=q.fullWaits.load();
+            v[LPcmPrepared]=q.prepared;v[LSourceFaults]=q.faults.load();
+            const auto shortageAt=q.shortageAtUs.load();
+            if(shortageAt) {
+                v[LPcmShortageDepth]=q.shortageDepth.load();v[LPcmShortageRequested]=q.shortageRequested.load();
+                v[LPcmShortageAge]=diagnosticElapsed(shortageAt,now);
+            }
+            if(sourceEpoch()==0) {
+                liveDiagnostics.milestone(SMetadata,prefix->metadataAtUs.load(std::memory_order_acquire));
+                liveDiagnostics.milestone(SReady,prefix->readyAtUs.load(std::memory_order_acquire));
+            }
+            liveDiagnostics.milestone(SPcm,q.firstPcmAtUs.load(std::memory_order_acquire));
+        }
+        v[LWaitingForEof]=waitingForEof;v[LFeedbackValid]=stats[FeedbackValid];v[LFeedbackInvalid]=stats[FeedbackInvalid];
+        v[LInvalidStreak]=invalidStreak;v[LAcceptedRaw]=acceptedFeedback;v[LFeedbackOutstanding]=outstanding(true);
+        v[LFeedbackLastAcceptedAge]=diagnosticElapsed(feedbackClock.lastObserved,now);v[LFeedbackHoldover]=stats[FeedbackHoldover];
+        v[LFeedbackTimeouts]=stats[FeedbackTimeouts];v[LFeedbackErrors]=stats[FeedbackUrbErrors];
+        const auto* latest=feedbackDiagnostics.latest();
+        v[LFeedbackLastObservationAge]=latest && (*latest)[DElapsed]>=0 ? diagnosticElapsed(started+(*latest)[DElapsed],now) : -1;
+        v[LRefillDemand]=!terminal && !stopping && !stopCause.chosen && (!fullTrack || playback.admitsOut()) && (!fullTrack || !fullSubmitted());
+        v[LIntegrity]=integrity.reasons;v[LStopReason]=static_cast<int>(stopCause.value);
+        v[LGapCount]=liveDiagnostics.gaps.count;v[LStartupCount]=liveDiagnostics.startups.count;v[LRejectedCount]=liveDiagnostics.rejected.count;
+        v[LFeedbackRecoveredGaps]=stats[FeedbackRecoveredGaps];
+        v[LFeedbackAcceptedDecisions]=liveDiagnostics.feedbackAccepted;v[LFeedbackRejectedDecisions]=liveDiagnostics.feedbackRejected;
+        v[LFeedbackIgnoredDecisions]=liveDiagnostics.feedbackIgnored;
+        const auto feedback=feedbackDiagnostics.serialized();std::copy(feedback.begin(),feedback.end(),v.begin()+kLiveFeedbackOffset);
+        liveDiagnostics.rejected.copyTo(v.data()+kLiveRejectedOffset);
+        liveDiagnostics.gaps.copyTo(v.data()+kLiveGapOffset);liveDiagnostics.startups.copyTo(v.data()+kLiveStartupOffset);
+        // End-of-sampling timestamp includes any concurrently published first-PCM milestone.
+        const auto captured=monotonicUs();v[LCapturedAt]=v[LReadAt]=static_cast<int64_t>(captured);
+        for(auto field:{LLastSubmitAge,LLastCompletionAge,LFeedbackLastAcceptedAge,LFeedbackLastObservationAge,LPcmShortageAge})
+            if(v[field]>=0) v[field]+=static_cast<int64_t>(captured-now);
+        v[LEstimatedCoverage]=outContinuity.estimatedCoverage(captured);
+        return v;
+    }
+    void publishDiagnostics(bool force=false,bool terminal=false,uint64_t observedAt=0) noexcept {
+        try {
+        const auto now=observedAt?observedAt:monotonicUs();const int phase=fullTrack?static_cast<int>(playback.phase):-1;
+        if(!force && phase==lastDiagnosticPhase && sourceEpoch()==lastDiagnosticEpoch && now-lastDiagnosticPublish<250000) return;
+        const auto value=diagnosticSnapshot(now,terminal);
+        const bool drainedPause=fullTrack && playback.phaseIs(PlaybackPhase::Paused) && !outstanding(false) && !outstanding(true);
+        if(terminal || drainedPause) publishedDiagnostics.publishQuiescent(value);
+        else if(!publishedDiagnostics.tryPublish(value)) return;
+        lastDiagnosticPublish=now;lastDiagnosticPhase=phase;lastDiagnosticEpoch=sourceEpoch();
+        } catch (...) { /* Retain previous observation; diagnostics never choose a transport failure. */ }
     }
     void move(State next) {
         if (!transition(state, next)) integrity.compromise(SchedulerInvalid);
@@ -278,6 +353,7 @@ struct Session {
         return count;
     }
     void waitPlayback(int timeout,bool drain=false) {
+        publishDiagnostics(); // Publish phase boundaries before the existing potentially indefinite wait.
         pollfd descriptors[2]{{fd,static_cast<short>(drain ? POLLOUT : 0),0},{controlWake->fd,POLLIN,0}};
         const auto returned=::poll(descriptors,2,timeout);
         if(returned<0 && errno!=EINTR) fail(ReapError,Stop::Reap);
@@ -305,6 +381,7 @@ struct Session {
         if((playback.quiet() || playback.phaseIs(PlaybackPhase::Resuming) || !wanted.play) && naturalComplete()) return true;
         if(!wanted.play && playback.admitsOut()) {
             diagnosticAdmissionStopped=now;
+            liveDiagnostics.suspend();
             outContinuity.suspendSegment(wanted.pauseAt,outstanding(false),outstanding(true),!fullSubmitted(),static_cast<uint64_t>(stats[CompletedFrames]));
             playback.pause(now);publishPlayback();
         }
@@ -352,6 +429,7 @@ struct Session {
             acceptedFeedback=0;invalidStreak=0;stats[InvalidStreak]=0;feedbackClock={};feedbackClock.started=monotonicUs();
             feedbackDiagnostics.recovered();diagnosticFreshPrime=feedbackClock.started;diagnosticOutResumed=0;
             lastOutCompletion=feedbackClock.started;outContinuity.resumeSegment();
+            liveDiagnostics.suspend();
             for(auto& slot:slots) slot.outReapedAt=0;
             resumePrepared=true;playback.resumeReadiness=1;
             for(size_t i=outUrbs;i<slots.size() && integrity.valid() && !stopCause.chosen;++i) submit(slots[i]);
@@ -373,6 +451,7 @@ struct Session {
             else {
                 frozenPosition=sourcePosition();seekWasPaused=playback.phaseIs(PlaybackPhase::Paused);
                 if(playback.admitsOut()) diagnosticAdmissionStopped=now;
+                liveDiagnostics.suspend();
                 if(seekWasPaused) {playback.pausedUs+=now-playback.pausedStarted;playback.pausedStarted=0;}
                 outContinuity.suspendSegment(wanted.seekAt,outstanding(false),outstanding(true),!fullSubmitted(),stats[CompletedFrames]);
                 playback.phase=PlaybackPhase::SeekDraining;playback.drainStarted=now;seekSealed=false;
@@ -411,6 +490,7 @@ struct Session {
                 auto& q=prefix->queue;
                 if(!seekSealed || outstanding(false) || outstanding(true) || q.prepared) {fail(TerminalAccounting,Stop::Accounting);return true;}
                 if(!q.resetEpoch(activeSeekTarget,q.sourceEpoch.load()+1)) {fail(TerminalAccounting,Stop::Accounting);return true;}
+                liveDiagnostics.beginSource(q.sourceEpoch.load(),activeSeekSerial,seekStarted,activeSeekTarget);
                 uint64_t invalid=q.invalidatedQueued.load();
                 for(auto count:{prefix->decoder.unpublishedCanonical,prefix->decoder.unpublishedRaw,prefix->stagedDiscarded.load()}) {
                     if(!fv::canAdd(invalid,count)) {fail(TerminalAccounting,Stop::Accounting);return true;}invalid+=count;
@@ -439,6 +519,7 @@ struct Session {
             if(!fv::canAdd(distance,delta)) {fail(TerminalAccounting,Stop::Accounting);return true;}distance+=delta;
             ++stats[SeekConfirmed];stats[ConfirmedSeekTarget]=activeSeekTarget;stats[SeekSourceReady]=1;
             diagnosticSeekConfirmed=monotonicUs();
+            liveDiagnostics.milestone(SReady,diagnosticSeekConfirmed);
             prefix->beginStreaming();
             confirmedSeekSerial=activeSeekSerial;confirmedEpoch=segments.epoch;seekOutcome=SeekOutcome::Confirmed;seekSealed=false;
             if(current.play) {playback.phase=PlaybackPhase::Resuming;playback.resumeStarted=monotonicUs();playback.countResume=playback.resumeOutcome==ControlOutcome::Requested;resumePrepared=false;}
@@ -613,7 +694,13 @@ struct Session {
         if (!slot.identity.submit(attachment, stream, ++serial)) { fail(SchedulerInvalid, Stop::Accounting); return false; }
         ++stats[slot.feedback ? FeedbackSubmitted : OutSubmitted];
         if(prefix && !slot.feedback && frameCount && !diagnosticOutResumed) diagnosticOutResumed=slot.submittedAt;
-        if (!slot.feedback) outContinuity.submitted(monotonicUs(),slot.packets,slot.outReapedAt);
+        if (!slot.feedback) {
+            const auto observed=monotonicUs();
+            if(liveDiagnostics.submissionGapBase && observed-liveDiagnostics.submissionGapBase>outContinuity.nominalCoverageUs)
+                liveDiagnostics.gap(started,observed,2,observed-liveDiagnostics.submissionGapBase,outstanding(false),pcmDepth(),sourceEpoch(),activeSeekSerial);
+            liveDiagnostics.lastSubmit=liveDiagnostics.submissionGapBase=observed;liveDiagnostics.milestone(SSubmit,observed);
+            outContinuity.submitted(observed,slot.packets,slot.outReapedAt);
+        }
         if (!slot.feedback) {
             if (prefix) {
                 submittedPrefixHash = fv::hashBytes(submittedPrefixHash, slot.buffer.data(), length);
@@ -627,7 +714,11 @@ struct Session {
                 if(slot.terminal && stats[SeekConfirmed]) {stats[SeekTailFrames]+=frameCount;stats[SeekTailPackets]+=slot.packets;++stats[SeekTailUrbs];}
             }
             stats[SubmittedFrames] += frameCount; stats[OutBytesSubmitted] += length; stats[OutPacketsSubmitted] += slot.packets;
-            if(fullTrack) { playback.submitted();publishPlayback(); }
+            if(fullTrack) {
+                playback.submitted();
+                if(liveDiagnostics.startups.count && liveDiagnostics.startups.latest()[SActive]<0) liveDiagnostics.milestone(SActive,monotonicUs());
+                publishPlayback();
+            }
         }
         return true;
     }
@@ -661,6 +752,7 @@ struct Session {
             packet.length,packet.actual_length,urbStatus,static_cast<int>(packet.status),rejection==FeedbackRejection::None,
             diagnosticElapsed(slot.submittedAt,observed),fullTrack?static_cast<int>(playback.phase):-1,
             fullTrack?static_cast<int64_t>(segments.epoch):-1,fullTrack?static_cast<int64_t>(confirmedSeekSerial):-1,slot.urb->error_count});
+        liveDiagnostics.feedback(*feedbackDiagnostics.latest());
     }
     void freezeFeedback(FeedbackFatalReason reason,uint64_t observed,bool sample,int timeoutKind=0) {
         // Called BEFORE fail() changes terminal/lifecycle state. An unrelated earlier failure is not relabelled.
@@ -799,11 +891,13 @@ struct Session {
             if(slot.feedback) {const auto observed=monotonicUs();observeFeedback(slot,status,observed);freezeFeedback(FeedbackFatalReason::UrbCompletion,observed,true);}
             fail(UrbError, Stop::Worker);
         }
+        bool successfulOutCompletion=!slot.feedback && !cancelled && status==0 && slot.urb->error_count==0;
         uint64_t sourceOffset=0;
         for (unsigned i = 0; i < slot.packets; ++i) {
             const auto& packet = slot.urb->iso_frame_desc[i];
             packetExample(slot, i, status);
             if (slot.feedback) continue;
+            successfulOutCompletion &= packet.status==0 && packet.actual_length==packet.length;
             if(fullTrack && (!fv::canAdd(stats[OutPacketsCompleted],1) || !fv::canAdd(stats[KernelOutActualBytes],packet.actual_length))) {
                 fail(TerminalAccounting,Stop::Accounting);continue;
             }
@@ -827,7 +921,11 @@ struct Session {
             }
             sourceOffset+=slot.frames[i];
         }
-        if (!slot.feedback) lastOutCompletion = monotonicUs();
+        if (!slot.feedback) {
+            lastOutCompletion = monotonicUs();liveDiagnostics.lastCompletion=lastOutCompletion;
+            if(successfulOutCompletion)
+                liveDiagnostics.milestone(SComplete,lastOutCompletion);
+        }
         if (slot.feedback && !cancelled) feedbackPacket(slot, status);
         return true;
     }
@@ -951,10 +1049,14 @@ struct Session {
             while (integrity.valid() && !stopCause.chosen) {
                 waitingForEof=false;
                 const uint64_t now = monotonicUs();
+                publishDiagnostics(false,false,now);
                 if (prefix && prefix->queue.faults.load()) { failSource(); break; }
                 if (requestedStop.load()) { fail(AuthorityChanged, requestedStop.load() == 2 ? Stop::AuthorityLost : Stop::Requested); break; }
                 if (durationReached(started, now, durationUs)) { stopCause.choose(Stop::Duration); break; }
                 if(playbackStep(now)) continue;
+                if(liveDiagnostics.lastWake && now-liveDiagnostics.lastWake>outContinuity.nominalCoverageUs && (!fullTrack || !fullSubmitted()))
+                    liveDiagnostics.gap(started,now,1,now-liveDiagnostics.lastWake,outstanding(false),pcmDepth(),sourceEpoch(),activeSeekSerial);
+                liveDiagnostics.lastWake=now;
                 outContinuity.wake(now,outstanding(false),outstanding(true),!fullTrack || !fullSubmitted(),
                     static_cast<uint64_t>(stats[CompletedFrames]));
                 const auto feedbackCompletedBefore=stats[FeedbackCompleted];
@@ -1035,6 +1137,7 @@ struct Session {
             stats[SourceContinuityAcrossPause]=integrity.valid() && !stats[PauseDrainFailures] && !playback.resumeFailure;
             publishPlayback();
         }
+        publishDiagnostics(true,true);
         // No execution context returns while continuing to submit/reap in the background.
     }
 };
@@ -1179,6 +1282,23 @@ Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeFullProgress
     auto result=env->NewLongArray(values.size());
     if (result) env->SetLongArrayRegion(result,0,values.size(),values.data());
     return result;
+}
+
+// Pin the registry entry, copy only its resource-free publication, release every
+// diagnostic lock before JNI allocation. Stale/destroyed generations return unavailable.
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeLiveDiagnostics(JNIEnv* env,jobject,jlong handle,jlong attachment,jlong stream) {
+    try {
+    const auto session=lookup(handle,attachment,stream);
+    if(!session) return nullptr;
+    auto copy=session->publishedDiagnostics.read();
+    if(copy[LVersion]!=1) return nullptr;
+    copy[LReadAt]=static_cast<int64_t>(monotonicUs());
+    std::array<jlong,kLiveWords> words{};std::copy(copy.begin(),copy.end(),words.begin());
+    auto result=env->NewLongArray(static_cast<jsize>(words.size()));
+    if(result) env->SetLongArrayRegion(result,0,static_cast<jsize>(words.size()),words.data());
+    return result;
+    } catch (...) { return nullptr; } // Retrieval cannot alter transport state or leak a C++ exception through JNI.
 }
 
 extern "C" JNIEXPORT void JNICALL

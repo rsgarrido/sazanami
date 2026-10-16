@@ -20,6 +20,11 @@ internal class UsbNativeSilentTransport(private val borrowedFd: Int, private val
     var playbackControl: UsbFullPlaybackControl?=null
     @Volatile private var handle = 0L
     @Volatile private var stopRequested = 0
+    private val telemetrySession = UsbTelemetrySession(generation, stream)
+    private fun captureTelemetry(): UsbTransportTelemetry? {
+        val current = handle
+        return if(current == 0L) null else UsbFsDiagnostics.liveDiagnostics(current, generation, stream)
+    }
     override var usbCleanupSafe = true; private set
     override var memoryReleased = true; private set
     override var executionJoined = true; private set
@@ -51,6 +56,7 @@ internal class UsbNativeSilentTransport(private val borrowedFd: Int, private val
                 }
                 check(created > 0L)
                 handle = created
+                runCatching { UsbTransportTelemetryBridge.store.bind(telemetrySession, ::captureTelemetry) }
                 executionJoined = false
                 usbCleanupSafe = false; memoryReleased = false
                 if (stopRequested != 0) requestStop(stopRequested == 2)
@@ -92,6 +98,10 @@ internal class UsbNativeSilentTransport(private val borrowedFd: Int, private val
             } catch (error: Exception) { result = result.copy(exceptionType = error.javaClass.simpleName) }
             catch (error: LinkageError) { result = result.copy(exceptionType = error.javaClass.simpleName) }
             finally {
+                // Observation failures never become playback/control failures. Capture after worker
+                // join and before registry destruction; the store retains only immutable values.
+                val terminalTelemetry = runCatching { captureTelemetry() }.getOrNull()
+                runCatching { UsbTransportTelemetryBridge.store.finish(telemetrySession, terminalTelemetry) }
                 playbackControl?.finish()
                 if (handle != 0L) {
                     memoryReleased = runCatching { UsbFsDiagnostics.destroySilentTransport(handle, generation, stream, false) }.getOrDefault(false)

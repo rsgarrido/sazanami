@@ -9,6 +9,10 @@
 #include "../usb_wake_signal.h"
 
 namespace sazanami::flacverify {
+inline uint64_t sourceObservationUs() noexcept {
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+}
 constexpr size_t kPrefixCapacity = 16384, kPrefixPrebuffer = 8192;
 constexpr uint64_t kPrefixDurationUs = 5000000;
 enum PrefixFault : uint64_t { PrefixDecode = 1, PrefixInit = 2, PrefixFormat = 4, PrefixRange = 8,
@@ -38,6 +42,8 @@ struct PrefixQueue {
     std::array<uint64_t, kPrefixCapacity> indices{};
     std::atomic<uint64_t> head{0}, tail{0}, faults{0}, decoded{0}, fullWaits{0}, emptyEvents{0}, underruns{0};
     std::atomic<uint64_t> sourceBase{0},sourceEpoch{0},enqueuedTotal{0},consumedTotal{0},invalidatedQueued{0};
+    std::atomic<uint64_t> firstPcmAtUs{0}; // One clock read per epoch, after its first successful publication.
+    std::atomic<uint64_t> shortageDepth{0},shortageRequested{0},shortageAtUs{0}; // Consumer-only writes, on a failed reservation only.
     std::atomic<bool> quiesceRequested{false};
     uint64_t segmentConsumedHash=kOffset;
     uint64_t sourceHead() const { return sourceBase.load()+head.load(); }
@@ -47,7 +53,7 @@ struct PrefixQueue {
         const auto obsolete=depth();
         if(!canAdd(invalidatedQueued.load(),obsolete)) return false;
         invalidatedQueued.fetch_add(obsolete);head=0;tail=0;reservedStart=0;sourceBase=target;sourceEpoch=epoch;
-        segmentConsumedHash=kOffset;eofReached=false;streaming=false;return true;
+        segmentConsumedHash=kOffset;eofReached=false;streaming=false;firstPcmAtUs=0;return true;
     }
     std::atomic<uint64_t> gaps{0}, duplicates{0}, orderErrors{0}, minDepth{kPrefixCapacity}, maxDepth{0};
     std::atomic<bool> stop{false}, streaming{false};
@@ -96,6 +102,7 @@ struct PrefixQueue {
         std::memcpy(bytes.data()+slot*frameBytes(), canonical, frameBytes()); indices[slot] = index;
         enqueuedHash = hashBytes(enqueuedHash, canonical, frameBytes());
         tail.store(position + 1, std::memory_order_release);
+        if(position==0) firstPcmAtUs.store(sourceObservationUs(),std::memory_order_release);
         enqueuedTotal.fetch_add(1);
         const auto publishedDepth=depth();trackDepth(publishedDepth);changed.notify_all();
         if(publishedDepth==kPrefixPrebuffer) wakeWorker();
@@ -114,10 +121,12 @@ struct PrefixQueue {
         if (state!=ReserveResult::Available) return state;
         if (!count || count>kPrefixCapacity || (fullTrack && (sourceHead()>expectedTotal.load() || count>expectedTotal.load()-sourceHead())))
             return ReserveResult::InvalidState;
-        if (depth()>=count) return ReserveResult::Available;
+        const auto available=depth();
+        if (available>=count) return ReserveResult::Available;
         const auto current=availability();
         if (current!=ReserveResult::Available) return current;
         if (fullTrack && eofReached.load(std::memory_order_acquire)) return ReserveResult::EndOfSource;
+        shortageDepth.store(available);shortageRequested.store(count);shortageAtUs.store(sourceObservationUs());
         ++emptyEvents; ++underruns; fail(PrefixUnderrun); return ReserveResult::InsufficientFrames;
     }
     ReserveResult reserve(uint8_t* payload, uint64_t count) {
@@ -168,6 +177,8 @@ struct PrefixQueue {
 struct PrefixSource {
     const uint64_t attachment, stream;
     const bool fullTrack;
+    const uint64_t admittedAtUs=sourceObservationUs();
+    std::atomic<uint64_t> metadataAtUs{0},readyAtUs{0};
     PrefixQueue queue;
     Verification decoder;
     std::array<int64_t, FieldCount> metadataFacts{};
@@ -299,7 +310,8 @@ struct PrefixSource {
                 if (!v.facts[Total] || static_cast<uint64_t>(v.facts[Total])>kCounterMax/queue.frameBytes()) { queue.fail(PrefixTotal); return; }
                 queue.expectedTotal.store(static_cast<uint64_t>(v.facts[Total]));
             }
-            metadataFacts=v.facts; metadataReady.store(true,std::memory_order_release); queue.changed.notify_all();
+            metadataFacts=v.facts; metadataAtUs.store(sourceObservationUs(),std::memory_order_release);
+            metadataReady.store(true,std::memory_order_release); queue.changed.notify_all();
         };
         decoder.consumeCanonical=[this](uint64_t frame,const uint8_t* bytes){return queue.push(frame,bytes);};
         decoder.failureObserved=[this](Outcome value) {
@@ -356,7 +368,7 @@ struct PrefixSource {
             }
         }
         if (ready()) {
-            primed=queue.depth(); return true;
+            primed=queue.depth(); readyAtUs.store(sourceObservationUs(),std::memory_order_release);return true;
         }
         return false;
     }

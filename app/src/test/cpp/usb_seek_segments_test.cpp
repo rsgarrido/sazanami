@@ -17,6 +17,7 @@ int main() {
             return bytes;
         };
         for(uint64_t i=0;i<100;++i) {auto bytes=frame(i);assert(q.push(i,bytes.data()));}
+        const auto initialPcmAt=q.firstPcmAtUs.load();assert(initialPcmAt>0);
         std::array<uint8_t,6000> payload{};
         assert(q.reserve(payload.data(),20)==ReserveResult::Available && q.validate(payload.data(),20*format->bytesPerFrame));
         q.abandonReservation();assert(q.head==0 && q.consumedTotal==0);
@@ -24,10 +25,12 @@ int main() {
         SeekSegments ledger;
         const auto hash=hashBytes(kOffset,payload.data(),20*format->bytesPerFrame);
         assert(ledger.seal(20,20,20,20*format->bytesPerFrame,20*format->bytesPerFrame,q.segmentConsumedHash,hash,format->bytesPerFrame,1000,false));
-        assert(!q.resetEpoch(500,1));q.quiesceRequested=true;
+        assert(!q.resetEpoch(500,1));assert(q.firstPcmAtUs.load()==initialPcmAt);q.quiesceRequested=true;
         assert(q.resetEpoch(500,1) && q.invalidatedQueued==80 && q.sourceHead()==500 && q.consumedTotal==20);
+        assert(q.firstPcmAtUs.load()==0);
         q.quiesceRequested=false;ledger.begin(1,500,20,20,20*format->bytesPerFrame,20*format->bytesPerFrame);ledger.targetProven=true;
         for(uint64_t i=500;i<550;++i) {auto bytes=frame(i);assert(q.push(i,bytes.data()));}
+        assert(q.firstPcmAtUs.load()>=initialPcmAt);
         assert(q.reserve(payload.data(),50)==ReserveResult::Available && q.validate(payload.data(),50*format->bytesPerFrame));
         assert(sazanami::directpcm::unpackSample(payload.data(),format->bytesPerSample)==500);assert(q.commit());
         const auto second=hashBytes(kOffset,payload.data(),50*format->bytesPerFrame);
