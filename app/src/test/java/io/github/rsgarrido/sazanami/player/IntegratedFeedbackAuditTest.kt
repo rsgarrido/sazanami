@@ -104,7 +104,11 @@ class IntegratedFeedbackAuditTest {
         assertTrue(policy.contains("std::max<uint64_t>(20000, interval * 4)"))
         assertTrue(core.contains("now - lastValid > holdover"));assertTrue(core.contains("now - started >= kBootstrapUs"))
         assertTrue(native.contains("feedbackClock.accept(slot.submittedAt,observed)"))
-        assertTrue(native.contains("feedbackTimeout(feedbackReapPass.timeout,feedbackReapPass.evaluatedAt)"))
+        // Session 26B forwards the evaluated pass explicitly; timeout failure remains fatal.
+        assertTrue(native.contains("feedbackTimeout(feedbackReapPass.timeout,feedbackReapPass.evaluatedAt,0,&feedbackReapPass)"))
+        val timeout=section(native,"void feedbackTimeout(","void feedbackPacket(")
+        assertTrue(timeout.contains("timeoutReapEvidence(kind,observed,pass)"))
+        assertTrue(timeout.contains("fail(FeedbackTimeout,Stop::Feedback)"))
         assertFalse(native.contains("if (stale)"))
         assertTrue(native.contains("if (invalidStreak >= kInvalidFeedbackLimit) fail(InvalidFeedback, Stop::Feedback)"))
         assertTrue(native.contains("fail(MalformedFeedback, Stop::Feedback)"))

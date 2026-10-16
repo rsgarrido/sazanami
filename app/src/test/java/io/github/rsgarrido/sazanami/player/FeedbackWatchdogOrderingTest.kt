@@ -93,5 +93,11 @@ class FeedbackWatchdogOrderingTest {
         val missing=formatIntegratedDirectPlayback(IntegratedDirectPlaybackState(engine=engine.copy(
             transport=UsbIsoTransportResult(1,2,mapOf("integrityMask" to (1L shl 7))))))
         assertTrue(missing.contains("pre-watchdog reap at fault: attempted=unavailable"))
+        val absent = numbers + UsbIsoNativeStats.historicalFields.subList(131,139).associateWith { -1L }
+        val noPass = UsbIsoNativeStats.decode(UsbIsoNativeSnapshot(UsbIsoNativeStats.fields.map { absent[it] ?: 0L }.toLongArray(),
+            longArrayOf(),longArrayOf()),1,2)
+        val directReport = formatIntegratedDirectPlayback(IntegratedDirectPlaybackState(engine=engine.copy(transport=noPass)))
+        assertTrue(directReport.contains("valid refresh=unavailable")); assertTrue(directReport.contains("fired=unavailable"))
+        assertFalse(directReport.contains("attempted=-1"))
     }
 }

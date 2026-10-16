@@ -147,7 +147,7 @@ static void concurrentLivePublicationAndRetainedLifetime() {
     });
     start.store(true,std::memory_order_release);
     for(int64_t n=2;n<20000;++n) {LiveWords value{};value.fill(n);value[LTerminal]=0;owner->tryPublish(value);}
-    LiveWords terminal{};terminal.fill(20000);terminal[LTerminal]=1;owner->publishQuiescent(terminal);
+    LiveWords terminal{};terminal.fill(20000);terminal[LTerminal]=1;owner->publishTerminal(terminal);
     auto pinned=owner;owner.reset(); // The JNI registry's shared_ptr pin follows this lifetime pattern.
     for(auto& reader:readers) reader.join();
     auto retained=pinned->read();pinned.reset();assert(retained[LTerminal]==1 && retained[LCapturedAt]==20000);

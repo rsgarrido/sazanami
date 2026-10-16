@@ -1,9 +1,34 @@
 package io.github.rsgarrido.sazanami.player
 
+/** Session 26B: exact diagnostic hooks, plus ONE reviewed semantic exception:
+ * explicit completion ENODEV classification. Its complete guard must match and
+ * Session26ReliabilitySourceTest/native usb_reliability_test protect the new path.
+ * All historical digest constants and non-ENODEV transport algorithms stay pinned. */
+internal fun session26ReviewedSourceEquivalent(text: String): String {
+    var result=text.replace("\r\n","\n")
+    for(line in listOf(
+        "        liveDiagnostics.timings.span(TSubmitSyscall,slot.submittedAt,monotonicUs(),returned<0?-saved:returned,sourceEpoch(),activeSeekSerial,serial+1);",
+        "        const TimingScope feedbackTiming(liveDiagnostics.timings,TFeedbackProcessing,monotonicUs,sourceEpoch(),activeSeekSerial,slot.identity.submission);",
+        "        liveDiagnostics.accepted(monotonicUs(),slot.identity.submission);",
+        "        const auto reapEntered=monotonicUs();",
+        "        liveDiagnostics.timings.probe(reapEntered,monotonicUs(),returned,saved,sourceEpoch(),activeSeekSerial);",
+        "        liveDiagnostics.timings.span(TPoll,entered,monotonicUs(),returned<0?-saved:descriptor.revents,sourceEpoch(),activeSeekSerial);")) result=result.replace(line+"\n","")
+    return result.replace("    void pollCompletion() {\n        const auto entered=monotonicUs();\n", "    void pollCompletion() {\n")
+        .replace("        const auto entered=monotonicUs();\n" +
+        "        std::unique_lock<std::mutex> eofBoundary(controlMutex);\n" +
+        "        liveDiagnostics.timings.span(TControlLock,entered,monotonicUs(),3,sourceEpoch(),activeSeekSerial);\n",
+        "        std::unique_lock<std::mutex> eofBoundary(controlMutex);\n")
+        .replace("        // Classify this completion before generic handlers, retaining all raw accounting below.\n" +
+            "        for(unsigned i=0;i<slot.packets;++i) if(completionIndicatesDetach(status,static_cast<int>(slot.urb->iso_frame_desc[i].status),cancelled)) {\n" +
+            "            liveDiagnostics.explicitDetach(status,static_cast<int>(slot.urb->iso_frame_desc[i].status),slot.identity.submission,monotonicUs(),slot.feedback);\n" +
+            "            fail(DeviceDetached,Stop::Detached);break;\n" +
+            "        }\n", "")
+}
+
 /** Restore only five reviewed Session 25 diagnostic additions to their Session 24 source form.
  * Exact blocks, including the preserved continuity/control calls, must match; altered guards,
  * arguments, accounting or extra statements remain visible to the original digest constants. */
-internal fun session25LiveDiagnosticSourceEquivalent(text: String): String = text.replace("\r\n","\n")
+internal fun session25LiveDiagnosticSourceEquivalent(text: String): String = session26ReviewedSourceEquivalent(text)
     .replace("        if (!slot.feedback) {\n" +
         "            const auto observed=monotonicUs();\n" +
         "            if(liveDiagnostics.submissionGapBase && observed-liveDiagnostics.submissionGapBase>outContinuity.nominalCoverageUs)\n" +

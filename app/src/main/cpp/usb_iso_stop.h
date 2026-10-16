@@ -1,6 +1,13 @@
 #pragma once
 #include "usb_iso_core.h"
+#include <cerrno>
 namespace sazanami::usbiso {
+// A cancellation acknowledgement is not evidence of physical removal. Inspect
+// explicit statuses only; neither generic packet errors nor later cleanup may
+// retroactively replace the first authoritative cause.
+inline bool completionIndicatesDetach(int urbStatus,int packetStatus,bool cancelled) noexcept {
+    return !cancelled && (urbStatus==-ENODEV || packetStatus==-ENODEV);
+}
 // First observed authoritative cause wins. Cleanup still accumulates integrity evidence.
 struct StopCause {
     bool chosen = false;

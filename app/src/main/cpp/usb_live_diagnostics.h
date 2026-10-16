@@ -1,10 +1,12 @@
 #pragma once
 #include "usb_feedback_diagnostics.h"
+#include "usb_feedback_policy.h"
 #include <atomic>
 #include <mutex>
 
 namespace sazanami::usbiso {
-// Independent v1 wire schema. All times are steady_clock microseconds; -1 is unavailable.
+// Independent v2 wire schema. The v1 prefix/row offsets remain fixed.
+// All times are steady_clock microseconds; -1 is unavailable.
 // No resource pointers, strings, allocation, or transport/control locks in this block.
 enum LiveField : size_t {
     LVersion, LAttachment, LStream, LEpoch, LSeekSerial, LCapturedAt, LReadAt, LTerminal,
@@ -33,7 +35,28 @@ constexpr size_t kLiveFeedbackOffset=LFieldCount;
 constexpr size_t kLiveRejectedOffset=kLiveFeedbackOffset+kFeedbackDiagnosticWords;
 constexpr size_t kLiveGapOffset=kLiveRejectedOffset+kLiveRejectedCapacity*kFeedbackObservationWords;
 constexpr size_t kLiveStartupOffset=kLiveGapOffset+kLiveGapCapacity*kLiveGapWords;
-constexpr size_t kLiveWords=kLiveStartupOffset+kLiveStartupCapacity*kLiveStartupWords;
+enum ReliabilityField : size_t {
+    RCollectionStarted, RCollectionDuration, RIteration, RTimingEventCount, RCorrelationCount,
+    RWatchdogPresent, RFatalWatchdogPresent, RUsbSpeed, RAcInterface, RAsInterface, RAlternate, RIdleAlternate,
+    RDataEndpoint, RDataAttributes, RDataMaxPacket, RDataBInterval,
+    RFeedbackEndpoint, RFeedbackAttributes, RFeedbackMaxPacket, RFeedbackBInterval,
+    RDetachUrbStatus, RDetachPacketStatus, RDetachRequest, RDetachObserved, RDetachFeedback, RFieldCount
+};
+enum TimingPhase : size_t { TIteration, TControlStep, TControlLock, TReapPass, TReapSyscall,
+    TFeedbackProcessing, TRefill, TSubmitSyscall, TPoll, TSnapshot, TPublication, TProgressPublication, TPhaseCount };
+constexpr size_t kTimingCapacity=16,kTimingWords=9,kPhaseWords=6,kCorrelationCapacity=16,kCorrelationWords=9;
+constexpr uint64_t kTimingEventThresholdUs=5000; // Observation filter, never a playback deadline.
+// Watchdog: iteration, epoch, seek, loop timestamp, actual pass entry, last valid observation,
+// acceptance publication, accepted request serial, final ioctl entry/return/result/errno,
+// evaluation, loop-top age, evaluation age, reaped, feedback completions, refreshed, timeout.
+constexpr size_t kWatchdogWords=19;
+constexpr size_t kLiveReliabilityOffset=kLiveStartupOffset+kLiveStartupCapacity*kLiveStartupWords;
+constexpr size_t kLivePhaseOffset=kLiveReliabilityOffset+RFieldCount;
+constexpr size_t kLiveTimingOffset=kLivePhaseOffset+TPhaseCount*kPhaseWords;
+constexpr size_t kLiveCorrelationOffset=kLiveTimingOffset+kTimingCapacity*kTimingWords;
+constexpr size_t kLiveWatchdogOffset=kLiveCorrelationOffset+kCorrelationCapacity*kCorrelationWords;
+constexpr size_t kLiveFatalWatchdogOffset=kLiveWatchdogOffset+kWatchdogWords;
+constexpr size_t kLiveWords=kLiveFatalWatchdogOffset+kWatchdogWords;
 using LiveWords=std::array<int64_t,kLiveWords>;
 
 template<size_t Capacity,size_t Width> struct DiagnosticHistory {
@@ -46,6 +69,42 @@ template<size_t Capacity,size_t Width> struct DiagnosticHistory {
         const auto first=(next+Capacity-count)%Capacity;
         for(size_t i=0;i<count;++i) std::copy(rows[(first+i)%Capacity].begin(),rows[(first+i)%Capacity].end(),destination+i*Width);
     }
+};
+
+// Worker-only, fixed storage. Durations are wall time, including any preemption.
+// A lock-acquisition span cannot by itself separate contention from descheduling.
+struct WorkerTimings {
+    // Per phase: count, last begin/end, maximum begin/end, result at maximum.
+    std::array<std::array<int64_t,kPhaseWords>,TPhaseCount> phases{};
+    DiagnosticHistory<kTimingCapacity,kTimingWords> events;
+    std::array<int64_t,4> lastProbe{}; // begin, end, syscall return, errno
+    uint64_t iteration=0,iterationAt=0;
+    int64_t sequence=0;
+    bool frozen=false;
+    void span(TimingPhase phase,uint64_t begin,uint64_t end,int64_t result,uint64_t epoch,uint64_t seek,uint64_t request=0) noexcept {
+        if(end<begin || end>static_cast<uint64_t>(INT64_MAX)) return;
+        auto& p=phases[phase];if(p[0]<INT64_MAX) ++p[0];p[1]=begin;p[2]=end;
+        if(p[0]==1 || end-begin>static_cast<uint64_t>(p[4]-p[3])) {p[3]=begin;p[4]=end;p[5]=result;}
+        if(frozen || !iteration || end-begin<kTimingEventThresholdUs || sequence==INT64_MAX) return;
+        events.add({++sequence,static_cast<int64_t>(iteration),static_cast<int64_t>(phase),static_cast<int64_t>(begin),
+            static_cast<int64_t>(end),result,static_cast<int64_t>(epoch),static_cast<int64_t>(seek),static_cast<int64_t>(request)});
+    }
+    void boundary(uint64_t at,uint64_t epoch,uint64_t seek) noexcept {
+        if(iteration<static_cast<uint64_t>(INT64_MAX)) ++iteration;
+        if(iterationAt) span(TIteration,iterationAt,at,0,epoch,seek);
+        iterationAt=at;
+    }
+    void probe(uint64_t begin,uint64_t end,int returned,int saved,uint64_t epoch,uint64_t seek) noexcept {
+        lastProbe={{static_cast<int64_t>(begin),static_cast<int64_t>(end),returned,saved}};
+        span(TReapSyscall,begin,end,returned<0?-saved:returned,epoch,seek);
+    }
+};
+struct TimingScope {
+    WorkerTimings& timings;TimingPhase phase;uint64_t (*now)();
+    const uint64_t begin,epoch,seek,request;
+    TimingScope(WorkerTimings& t,TimingPhase p,uint64_t (*clock)(),uint64_t e,uint64_t s,uint64_t r=0)
+        :timings(t),phase(p),now(clock),begin(clock()),epoch(e),seek(s),request(r) {}
+    ~TimingScope() {timings.span(phase,begin,now(),0,epoch,seek,request);}
 };
 
 inline int64_t payloadDurationUs(uint64_t frames,uint32_t rate) noexcept {
@@ -68,6 +127,14 @@ template<class Slots> void captureOutPool(LiveWords& words,const Slots& slots,si
 
 // Single worker writer. Only observations missing from the established counters live here.
 struct LiveDiagnostics {
+    WorkerTimings timings;
+    // Observation sequence, submitted request serial, submission/observation/acceptance
+    // times, raw LE32 (-1 if unavailable), rejection, source epoch, active seek.
+    DiagnosticHistory<kCorrelationCapacity,kCorrelationWords> correlations;
+    std::array<int64_t,kWatchdogWords> watchdog{},fatalWatchdog{};
+    bool haveWatchdog=false,haveFatalWatchdog=false;
+    uint64_t lastAcceptedAt=0,lastAcceptedRequest=0;
+    std::array<int64_t,5> detach{}; // First explicit removal completion; independent of first stop cause.
     DiagnosticHistory<kLiveGapCapacity,kLiveGapWords> gaps;
     DiagnosticHistory<kLiveStartupCapacity,kLiveStartupWords> startups;
     // Sparse rejected observations survive normal feedback churn in the existing recent-16 ring.
@@ -97,20 +164,63 @@ struct LiveDiagnostics {
         else ++feedbackIgnored;
     }
     // Intentional pause/reposition intervals are excluded from scheduling gap history.
-    void suspend() noexcept { lastWake=submissionGapBase=0; }
+    void suspend() noexcept { lastWake=submissionGapBase=timings.iterationAt=0; }
+    void correlate(const FeedbackObservation& row,uint64_t request,uint64_t submitted,uint64_t observed,uint64_t epoch,uint64_t seek) noexcept {
+        if(timings.frozen) return;
+        correlations.add({row[DSequence],static_cast<int64_t>(request),static_cast<int64_t>(submitted),
+            static_cast<int64_t>(observed),-1,row[DRaw],row[DRejection],static_cast<int64_t>(epoch),static_cast<int64_t>(seek)});
+    }
+    void accepted(uint64_t at,uint64_t request) noexcept {
+        lastAcceptedAt=at;lastAcceptedRequest=request;
+        if(!timings.frozen && correlations.count) correlations.latest()[4]=static_cast<int64_t>(at);
+    }
+    void watchdogPass(const FeedbackReapPass& pass,uint64_t loop,uint64_t epoch,uint64_t seek,uint64_t observed) noexcept {
+        if(timings.frozen) return;
+        const auto& p=timings.lastProbe;
+        watchdog={{static_cast<int64_t>(timings.iteration),static_cast<int64_t>(epoch),static_cast<int64_t>(seek),
+            static_cast<int64_t>(loop),static_cast<int64_t>(pass.enteredAt),static_cast<int64_t>(observed),
+            static_cast<int64_t>(lastAcceptedAt),static_cast<int64_t>(lastAcceptedRequest),p[0],p[1],p[2],p[3],
+            static_cast<int64_t>(pass.evaluatedAt),static_cast<int64_t>(pass.ageBefore),static_cast<int64_t>(pass.ageAfter),
+            static_cast<int64_t>(pass.reaped),static_cast<int64_t>(pass.feedbackCompletions),pass.refreshed,
+            pass.watchdogEvaluated?static_cast<int64_t>(pass.timeout):-1}};
+        haveWatchdog=true;
+    }
+    void timeoutEvidence(const FeedbackReapPass* pass,uint64_t observed,FeedbackTimeoutKind kind) noexcept {
+        // The current row must identify the same evaluation, never a prior seek/pass.
+        haveFatalWatchdog=timeoutReapEvidence(kind,observed,pass)[0]>=0 && haveWatchdog && watchdog[12]==static_cast<int64_t>(observed);
+        if(haveFatalWatchdog) fatalWatchdog=watchdog;
+    }
+    void explicitDetach(int urb,int packet,uint64_t request,uint64_t observed,bool feedback) noexcept {
+        if(!detach[2]) detach={{urb,packet,static_cast<int64_t>(request),static_cast<int64_t>(observed),feedback}};
+    }
+    void reliability(LiveWords& v) const noexcept {
+        v[kLiveReliabilityOffset+RIteration]=timings.iteration;
+        v[kLiveReliabilityOffset+RTimingEventCount]=timings.events.count;
+        v[kLiveReliabilityOffset+RCorrelationCount]=correlations.count;
+        v[kLiveReliabilityOffset+RWatchdogPresent]=haveWatchdog;
+        v[kLiveReliabilityOffset+RFatalWatchdogPresent]=haveFatalWatchdog;
+        std::copy(detach.begin(),detach.end(),v.begin()+kLiveReliabilityOffset+RDetachUrbStatus);
+        for(size_t i=0;i<TPhaseCount;++i) std::copy(timings.phases[i].begin(),timings.phases[i].end(),v.begin()+kLivePhaseOffset+i*kPhaseWords);
+        timings.events.copyTo(v.data()+kLiveTimingOffset);correlations.copyTo(v.data()+kLiveCorrelationOffset);
+        if(haveWatchdog) std::copy(watchdog.begin(),watchdog.end(),v.begin()+kLiveWatchdogOffset);
+        if(haveFatalWatchdog) std::copy(fatalWatchdog.begin(),fatalWatchdog.end(),v.begin()+kLiveFatalWatchdogOffset);
+    }
 };
 
 // Two bounded slots, one writer. Serialized readers hold at most one slot.
 // Active publication NEVER waits: try the other slot, then the current one. A reader copies a
 // complete value under its slot lock, then releases it before JNI allocation/formatting.
-// PCM atomics are sampled by the worker over a bounded interval, not one producer-wide transaction.
+// PCM atomics are sampled over the reported collection interval, not one producer-wide transaction.
 class PublishedLiveDiagnostics {
     struct Slot { mutable std::mutex mutex;LiveWords words{}; };
     std::array<Slot,2> slots;
     mutable std::mutex readers;
     std::atomic<unsigned> current{0};
+    LiveWords terminal{};
+    std::atomic<bool> terminalReady{false}; // One immutable terminal write, no diagnostic lock acquisition.
 public:
     bool tryPublish(const LiveWords& value) {
+        if(terminalReady.load(std::memory_order_relaxed)) return false;
         const unsigned other=1-current.load(std::memory_order_relaxed);
         for(unsigned index:{other,1-other}) {
             std::unique_lock<std::mutex> lock(slots[index].mutex,std::try_to_lock);
@@ -119,20 +229,20 @@ public:
         }
         return false; // try_lock may also fail spuriously; retain the previous complete publication.
     }
-    // Only after shutdown, or fully drained PAUSED before its indefinite wait.
-    // No audio is in flight in PAUSED; readers hold a slot only for the fixed copy.
-    void publishQuiescent(const LiveWords& value) {
-        const auto index=1-current.load(std::memory_order_relaxed);
-        std::lock_guard<std::mutex> lock(slots[index].mutex);
-        slots[index].words=value;current.store(index,std::memory_order_release);
+    void publishTerminal(const LiveWords& value) {
+        if(terminalReady.load(std::memory_order_relaxed)) return;
+        terminal=value;terminalReady.store(true,std::memory_order_release);
     }
     LiveWords read() const {
+        if(terminalReady.load(std::memory_order_acquire)) return terminal;
         std::lock_guard<std::mutex> oneReader(readers);
         const auto index=current.load(std::memory_order_acquire);
         std::lock_guard<std::mutex> lock(slots[index].mutex);return slots[index].words;
     }
 };
 static_assert(std::atomic<unsigned>::is_always_lock_free);
+static_assert(std::atomic<bool>::is_always_lock_free);
 static_assert(LFieldCount==71 && SActive+1==kLiveStartupWords);
-static_assert(sizeof(LiveWords)<6000);
+static_assert(RFieldCount==25 && TPhaseCount==12 && kLiveWords==1094);
+static_assert(sizeof(LiveWords)<9000);
 } // namespace sazanami::usbiso

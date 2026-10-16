@@ -729,6 +729,23 @@ class UsbAudioConfigurationExperimentTest {
     private fun run(fake: Fake, selected: UsbAudioConfigurationResolution = resolution, access: () -> UsbClockQueryStatus? = { null }) =
         runBlocking { UsbAudioConfigurationExperiment.run(selected, 3, fake, access) }
 
+    @Test fun liveTelemetryKeepsOnlyVerifiedClockFactsForItsOwnAttachment() {
+        val verified=run(Fake())
+        assertEquals(UsbTargetConfigurationStatus.TARGET_CONFIGURATION_VERIFIED,verified.targetStatus)
+        val key=UsbTelemetrySession(3,8);val store=UsbTransportTelemetryStore();store.begin(key)
+        store.configured(UsbTelemetrySession(4,8),verified);assertNull(store.state.value.clockFacts)
+        store.configured(key,verified.copy(targetStatus=UsbTargetConfigurationStatus.FAILED));assertNull(store.state.value.clockFacts)
+        store.configured(key,verified.copy(configuredClockReadback=verified.configuredClockReadback!!.copy(currentFrequencyHz=96000)))
+        assertNull(store.state.value.clockFacts)
+        store.configured(key,verified)
+        assertEquals(plan.clock.clockEntityId,store.state.value.clockFacts!!.entity)
+        assertEquals(plan.sampleRateHz,store.state.value.clockFacts!!.configuredReadbackHz)
+        assertTrue(store.state.value.clockFacts!!.configuredValid)
+        store.finish(key);assertEquals(plan.sampleRateHz,store.state.value.clockFacts!!.targetReadbackHz)
+        store.begin(UsbTelemetrySession(4,9));assertNull(store.state.value.clockFacts)
+        store.configured(UsbTelemetrySession(4,9),verified);assertNull(store.state.value.clockFacts)
+    }
+
     @Test fun rawZeroOneAndFourAreUnsignedAndDescriptorDeclared() {
         val declared = zeroThroughFourPlan()
         listOf(0, 1, 4).forEach { raw ->

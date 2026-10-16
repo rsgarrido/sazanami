@@ -46,6 +46,7 @@ internal object UsbSilentTransportExperiment {
             }
             override suspend fun runConfigured(configuration: UsbAudioConfigurationResult) {
                 require(configuration.targetStatus == UsbTargetConfigurationStatus.TARGET_CONFIGURATION_VERIFIED)
+                runCatching { UsbTransportTelemetryBridge.store.configured(UsbTelemetrySession(generation, stream), configuration) }
                 val selectedRate = requireNotNull(plan).configurationPlan.sampleRateHz
                 val sourceRate = if (mode.isFlac) requireNotNull(prefixSource).result.count("sampleRate") else selectedRate
                 val sourceChannels=if(mode.isFlac) requireNotNull(prefixSource).result.count("channels") else 2L

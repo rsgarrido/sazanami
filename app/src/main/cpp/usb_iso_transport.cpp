@@ -134,7 +134,8 @@ struct Session {
     uint64_t diagnosticSeekConfirmed=0,diagnosticOutResumed=0,diagnosticFreshPrime=0;
     uint64_t diagnosticAdmissionStopped=0,diagnosticPoolsDrained=0;
     OutContinuity outContinuity;
-    LiveDiagnostics liveDiagnostics; // Worker-owned; never read directly across JNI.
+    mutable LiveDiagnostics liveDiagnostics; // Worker-owned; const intent() records only its own acquisition.
+    std::array<int64_t,12> diagnosticEndpointFacts{}; // Already validated configuration[0..11].
     PublishedLiveDiagnostics publishedDiagnostics;
     uint64_t lastDiagnosticPublish=0;
     int lastDiagnosticPhase=-2;
@@ -161,10 +162,18 @@ struct Session {
     SeekOutcome seekOutcome=SeekOutcome::None;
     uint64_t sourcePosition() const {return activeSeekSerial>confirmedSeekSerial?frozenPosition:segments.start+static_cast<uint64_t>(stats[CompletedFrames])-segments.completedBase;}
     bool hasPendingSeek() const {return fullTrack && intent().seekSerial>activeSeekSerial;}
-    Command intent() const { std::lock_guard<std::mutex> lock(controlMutex);return command; }
+    Command intent() const {
+        const auto entered=monotonicUs();
+        std::lock_guard<std::mutex> lock(controlMutex);
+        liveDiagnostics.timings.span(TControlLock,entered,monotonicUs(),1,sourceEpoch(),activeSeekSerial);
+        return command;
+    }
     bool pauseAdmission() const { return fullTrack && (!intent().play || playback.quiet() || hasPendingSeek()); }
     void publishPlayback() {
+        const TimingScope publicationTiming(liveDiagnostics.timings,TProgressPublication,monotonicUs,sourceEpoch(),activeSeekSerial);
+        const auto entered=monotonicUs();
         std::lock_guard<std::mutex> lock(controlMutex);
+        liveDiagnostics.timings.span(TControlLock,entered,monotonicUs(),2,sourceEpoch(),activeSeekSerial);
         livePlayback={static_cast<uint64_t>(stats[CompletedFrames]),static_cast<uint64_t>(playback.phase)};
         liveControl={static_cast<jlong>(playback.phase),static_cast<jlong>(command.pauses),static_cast<jlong>(playback.pauses),
             static_cast<jlong>(command.resumes),static_cast<jlong>(playback.resumes),static_cast<jlong>(playback.pauseOutcome),
@@ -245,6 +254,7 @@ struct Session {
         for (size_t i = 0; i < slots.size(); ++i) slots[i].allocate(i >= outUrbs,
             i >= outUrbs ? 1 : static_cast<unsigned>(kOutPackets), i >= outUrbs ? 4 : payload);
         if(fullTrack) std::atomic_store(&prefix->queue.workerWake,controlWake);
+        std::copy(config.begin(),config.begin()+12,diagnosticEndpointFacts.begin());
         move(State::Configured);
         if(prefix) liveDiagnostics.beginSource(0,0,prefix->admittedAtUs,0);
         publishDiagnostics(true);
@@ -252,8 +262,9 @@ struct Session {
     int64_t pcmDepth() const { return prefix ? static_cast<int64_t>(prefix->queue.depth()) : -1; }
     uint64_t sourceEpoch() const { return fullTrack ? prefix->queue.sourceEpoch.load() : 0; }
     LiveWords diagnosticSnapshot(uint64_t now,bool terminal) {
+        const auto collectionStarted=monotonicUs();
         LiveWords v{};
-        v[LVersion]=1;v[LAttachment]=attachment;v[LStream]=stream;v[LEpoch]=sourceEpoch();v[LSeekSerial]=activeSeekSerial;
+        v[LVersion]=2;v[LAttachment]=attachment;v[LStream]=stream;v[LEpoch]=sourceEpoch();v[LSeekSerial]=activeSeekSerial;
         v[LCapturedAt]=now;v[LReadAt]=now;v[LTerminal]=terminal;v[LTransportState]=static_cast<int>(state);
         v[LPlaybackPhase]=fullTrack ? static_cast<int>(playback.phase) : -1;
         v[LRate]=sampleRateHz;v[LChannels]=format->channels;v[LBits]=format->bitsPerSample;v[LFrameBytes]=frameBytes();v[LStartedAt]=started?static_cast<int64_t>(started):-1;
@@ -298,8 +309,14 @@ struct Session {
         const auto feedback=feedbackDiagnostics.serialized();std::copy(feedback.begin(),feedback.end(),v.begin()+kLiveFeedbackOffset);
         liveDiagnostics.rejected.copyTo(v.data()+kLiveRejectedOffset);
         liveDiagnostics.gaps.copyTo(v.data()+kLiveGapOffset);liveDiagnostics.startups.copyTo(v.data()+kLiveStartupOffset);
+        liveDiagnostics.reliability(v);
+        v[kLiveReliabilityOffset+RUsbSpeed]=3; // nativeCreate verified USBDEVFS_GET_SPEED; no new request.
+        std::copy(diagnosticEndpointFacts.begin(),diagnosticEndpointFacts.end(),v.begin()+kLiveReliabilityOffset+RAcInterface);
         // End-of-sampling timestamp includes any concurrently published first-PCM milestone.
         const auto captured=monotonicUs();v[LCapturedAt]=v[LReadAt]=static_cast<int64_t>(captured);
+        v[kLiveReliabilityOffset+RCollectionStarted]=collectionStarted;
+        v[kLiveReliabilityOffset+RCollectionDuration]=captured-collectionStarted;
+        liveDiagnostics.timings.span(TSnapshot,collectionStarted,captured,0,sourceEpoch(),activeSeekSerial);
         for(auto field:{LLastSubmitAge,LLastCompletionAge,LFeedbackLastAcceptedAge,LFeedbackLastObservationAge,LPcmShortageAge})
             if(v[field]>=0) v[field]+=static_cast<int64_t>(captured-now);
         v[LEstimatedCoverage]=outContinuity.estimatedCoverage(captured);
@@ -310,9 +327,12 @@ struct Session {
         const auto now=observedAt?observedAt:monotonicUs();const int phase=fullTrack?static_cast<int>(playback.phase):-1;
         if(!force && phase==lastDiagnosticPhase && sourceEpoch()==lastDiagnosticEpoch && now-lastDiagnosticPublish<250000) return;
         const auto value=diagnosticSnapshot(now,terminal);
-        const bool drainedPause=fullTrack && playback.phaseIs(PlaybackPhase::Paused) && !outstanding(false) && !outstanding(true);
-        if(terminal || drainedPause) publishedDiagnostics.publishQuiescent(value);
-        else if(!publishedDiagnostics.tryPublish(value)) return;
+        const auto publishing=monotonicUs();
+        bool published=true;
+        if(terminal) publishedDiagnostics.publishTerminal(value);
+        else published=publishedDiagnostics.tryPublish(value);
+        liveDiagnostics.timings.span(TPublication,publishing,monotonicUs(),published?1:0,sourceEpoch(),activeSeekSerial);
+        if(!published) return;
         lastDiagnosticPublish=now;lastDiagnosticPhase=phase;lastDiagnosticEpoch=sourceEpoch();
         } catch (...) { /* Retain previous observation; diagnostics never choose a transport failure. */ }
     }
@@ -338,6 +358,7 @@ struct Session {
         if(fullTrack && fatal && (playback.phaseIs(PlaybackPhase::Resuming) || (playback.resumes && playback.resumeReadiness==1))) {
             if(!playback.resumeFailure) playback.resumeFailure=3;playback.resumeOutcome=ControlOutcome::Failed;
         }
+        if(!stopping && !stopCause.chosen) liveDiagnostics.timings.frozen=true;
         integrity.compromise(reason); if (!stopping) stopCause.choose(stop);
     }
     void failSource() {
@@ -427,6 +448,7 @@ struct Session {
                 playback.resumeFailure=2;fail(SchedulerInvalid,Stop::Accounting);return true;
             }
             acceptedFeedback=0;invalidStreak=0;stats[InvalidStreak]=0;feedbackClock={};feedbackClock.started=monotonicUs();
+            liveDiagnostics.lastAcceptedAt=liveDiagnostics.lastAcceptedRequest=0;liveDiagnostics.haveWatchdog=false;
             feedbackDiagnostics.recovered();diagnosticFreshPrime=feedbackClock.started;diagnosticOutResumed=0;
             lastOutCompletion=feedbackClock.started;outContinuity.resumeSegment();
             liveDiagnostics.suspend();
@@ -546,7 +568,9 @@ struct Session {
     }
     bool naturalComplete() {
         if (!fullTrack || stopCause.chosen || requestedStop.load() || prefix->queue.faults.load()) return false;
+        const auto entered=monotonicUs();
         std::unique_lock<std::mutex> eofBoundary(controlMutex);
+        liveDiagnostics.timings.span(TControlLock,entered,monotonicUs(),3,sourceEpoch(),activeSeekSerial);
         if(command.seekSerial>activeSeekSerial || requestedStop.load()) return false;
         if(stats[SeekConfirmed]) return seekNaturalComplete();
         const auto& q=prefix->queue;
@@ -687,6 +711,7 @@ struct Session {
         slot.submittedAt = monotonicUs();
         const int returned = ::ioctl(fd, USBDEVFS_SUBMITURB, urb);
         const int saved = returned < 0 ? errno : 0;
+        liveDiagnostics.timings.span(TSubmitSyscall,slot.submittedAt,monotonicUs(),returned<0?-saved:returned,sourceEpoch(),activeSeekSerial,serial+1);
         if (returned != 0) {
             stats[SubmitErrno] = saved; stats[NotSubmittedFrames] += frameCount;
             fail(saved == ENODEV ? DeviceDetached : SubmitError, saved == ENODEV ? Stop::Detached : Stop::Submit); return false;
@@ -753,6 +778,7 @@ struct Session {
             diagnosticElapsed(slot.submittedAt,observed),fullTrack?static_cast<int>(playback.phase):-1,
             fullTrack?static_cast<int64_t>(segments.epoch):-1,fullTrack?static_cast<int64_t>(confirmedSeekSerial):-1,slot.urb->error_count});
         liveDiagnostics.feedback(*feedbackDiagnostics.latest());
+        liveDiagnostics.correlate(*feedbackDiagnostics.latest(),slot.identity.submission,slot.submittedAt,observed,sourceEpoch(),activeSeekSerial);
     }
     void freezeFeedback(FeedbackFatalReason reason,uint64_t observed,bool sample,int timeoutKind=0) {
         // Called BEFORE fail() changes terminal/lifecycle state. An unrelated earlier failure is not relabelled.
@@ -781,7 +807,7 @@ struct Session {
         context[FOutResumed]=diagnosticElapsed(started,diagnosticOutResumed);context[FAcceptedRaw]=acceptedFeedback;context[FTimeoutKind]=timeoutKind;
         feedbackDiagnostics.freeze(context);
     }
-    void feedbackTimeout(FeedbackTimeoutKind kind,uint64_t observed,uint64_t offendingSubmitted=0) {
+    void feedbackTimeout(FeedbackTimeoutKind kind,uint64_t observed,uint64_t offendingSubmitted=0,const FeedbackReapPass* pass=nullptr) {
         if (stopping || kind==FeedbackTimeoutKind::None) return;
         ++stats[FeedbackTimeouts];
         ++stats[kind==FeedbackTimeoutKind::Bootstrap ? BootstrapTimeouts :
@@ -796,20 +822,19 @@ struct Session {
             size_t reaped=0;
             for (const auto& slot : slots) if (slot.feedback && !slot.identity.outstanding && slot.identity.submission) ++reaped;
             stats[TimeoutReapedNotRearmed]=static_cast<jlong>(reaped); stats[TimeoutAcceptedRaw]=acceptedFeedback;
-            stats[TimeoutReapAttempted]=feedbackReapPass.attempted;
-            stats[TimeoutReapCount]=static_cast<jlong>(feedbackReapPass.reaped);
-            stats[TimeoutReapFeedbackCount]=static_cast<jlong>(feedbackReapPass.feedbackCompletions);
-            stats[TimeoutReapRefreshed]=feedbackReapPass.refreshed;
-            stats[TimeoutAgeBeforeReap]=static_cast<jlong>(feedbackReapPass.ageBefore);
-            stats[TimeoutAgeAfterReap]=static_cast<jlong>(feedbackReapPass.ageAfter);
-            stats[TimeoutWatchdogEvaluated]=feedbackReapPass.watchdogEvaluated;
-            stats[TimeoutWatchdogFired]=feedbackReapPass.timeout!=FeedbackTimeoutKind::None;
+            const auto evidence=timeoutReapEvidence(kind,observed,pass);
+            stats[TimeoutReapAttempted]=evidence[0];stats[TimeoutReapCount]=evidence[1];
+            stats[TimeoutReapFeedbackCount]=evidence[2];stats[TimeoutReapRefreshed]=evidence[3];
+            stats[TimeoutAgeBeforeReap]=evidence[4];stats[TimeoutAgeAfterReap]=evidence[5];
+            stats[TimeoutWatchdogEvaluated]=evidence[6];stats[TimeoutWatchdogFired]=evidence[7];
+            liveDiagnostics.timeoutEvidence(pass,observed,kind);
         }
         freezeFeedback(kind==FeedbackTimeoutKind::Bootstrap?FeedbackFatalReason::BootstrapTimeout:
             kind==FeedbackTimeoutKind::LastValidWatchdog?FeedbackFatalReason::WatchdogTimeout:FeedbackFatalReason::ReapedTimeout,observed,false,static_cast<int>(kind));
         fail(FeedbackTimeout,Stop::Feedback);
     }
     void feedbackPacket(Slot& slot, int urbStatus) {
+        const TimingScope feedbackTiming(liveDiagnostics.timings,TFeedbackProcessing,monotonicUs,sourceEpoch(),activeSeekSerial,slot.identity.submission);
         if(fullTrack && playback.quiet()) {
             observeFeedback(slot,urbStatus,monotonicUs());
             const auto& packet=slot.urb->iso_frame_desc[0];++stats[FeedbackPacketsCompleted];
@@ -853,6 +878,7 @@ struct Session {
         feedbackDiagnostics.recovered();
         invalidStreak = 0; stats[InvalidStreak] = 0; acceptedFeedback = decoded.raw;
         feedbackClock.accept(slot.submittedAt,observed);
+        liveDiagnostics.accepted(monotonicUs(),slot.identity.submission);
         if(fullTrack && playback.resumeReadiness) playback.resumeReadiness=2;
         stats[LastAcceptedSubmittedUs]=static_cast<jlong>(slot.submittedAt);
         stats[LastAcceptedObservedUs]=static_cast<jlong>(observed); stats[LastAcceptedRequestAgeUs]=static_cast<jlong>(age);
@@ -860,8 +886,10 @@ struct Session {
     }
     bool reapOne() {
         void* completed = nullptr;
+        const auto reapEntered=monotonicUs();
         const int returned = ::ioctl(fd, USBDEVFS_REAPURBNDELAY, &completed);
         const int saved = returned < 0 ? errno : 0;
+        liveDiagnostics.timings.probe(reapEntered,monotonicUs(),returned,saved,sourceEpoch(),activeSeekSerial);
         if (returned < 0) {
             if (saved == EAGAIN || saved == EINTR) return false;
             stats[ReapErrno] = saved; fail(saved == ENODEV ? DeviceDetached : ReapError, saved == ENODEV ? Stop::Detached : Stop::Reap); return false;
@@ -881,6 +909,11 @@ struct Session {
         ++stats[slot.feedback ? FeedbackCompleted : OutCompleted];
         const int status = slot.urb->status;
         const bool cancelled = slot.identity.discardRequested && (status == -ENOENT || status == -ECONNRESET);
+        // Classify this completion before generic handlers, retaining all raw accounting below.
+        for(unsigned i=0;i<slot.packets;++i) if(completionIndicatesDetach(status,static_cast<int>(slot.urb->iso_frame_desc[i].status),cancelled)) {
+            liveDiagnostics.explicitDetach(status,static_cast<int>(slot.urb->iso_frame_desc[i].status),slot.identity.submission,monotonicUs(),slot.feedback);
+            fail(DeviceDetached,Stop::Detached);break;
+        }
         if (cancelled) {
             ++stats[CancellationCompletions]; ++stats[slot.feedback ? FeedbackCancelled : OutCancelled];
             if (!slot.feedback) { for (unsigned i = 0; i < slot.packets; ++i) stats[CancelledFrames] += slot.frames[i]; }
@@ -939,9 +972,11 @@ struct Session {
         // EINVAL is a possible completion race; identity remains outstanding until actual reap.
     }
     void pollCompletion() {
+        const auto entered=monotonicUs();
         pollfd descriptor{fd, POLLOUT, 0};
         const int returned = ::poll(&descriptor, 1, 1);
         const int saved = returned < 0 ? errno : 0;
+        liveDiagnostics.timings.span(TPoll,entered,monotonicUs(),returned<0?-saved:descriptor.revents,sourceEpoch(),activeSeekSerial);
         if (returned < 0 && saved != EINTR) fail(ReapError, Stop::Reap);
         if (returned > 0 && (descriptor.revents & (POLLERR | POLLHUP | POLLNVAL))) fail(DeviceDetached, Stop::Detached);
     }
@@ -1049,11 +1084,14 @@ struct Session {
             while (integrity.valid() && !stopCause.chosen) {
                 waitingForEof=false;
                 const uint64_t now = monotonicUs();
+                liveDiagnostics.timings.boundary(now,sourceEpoch(),activeSeekSerial);
                 publishDiagnostics(false,false,now);
                 if (prefix && prefix->queue.faults.load()) { failSource(); break; }
                 if (requestedStop.load()) { fail(AuthorityChanged, requestedStop.load() == 2 ? Stop::AuthorityLost : Stop::Requested); break; }
                 if (durationReached(started, now, durationUs)) { stopCause.choose(Stop::Duration); break; }
+                const auto controlEntered=monotonicUs();
                 if(playbackStep(now)) continue;
+                liveDiagnostics.timings.span(TControlStep,controlEntered,monotonicUs(),0,sourceEpoch(),activeSeekSerial);
                 if(liveDiagnostics.lastWake && now-liveDiagnostics.lastWake>outContinuity.nominalCoverageUs && (!fullTrack || !fullSubmitted()))
                     liveDiagnostics.gap(started,now,1,now-liveDiagnostics.lastWake,outstanding(false),pcmDepth(),sourceEpoch(),activeSeekSerial);
                 liveDiagnostics.lastWake=now;
@@ -1061,12 +1099,15 @@ struct Session {
                     static_cast<uint64_t>(stats[CompletedFrames]));
                 const auto feedbackCompletedBefore=stats[FeedbackCompleted];
                 const bool hadValidFeedback=feedbackClock.lastObserved!=0;
+                liveDiagnostics.timings.lastProbe={};
                 feedbackReapPass=reapBeforeFeedbackWatchdog(feedbackClock,
                     static_cast<uint64_t>(stats[FeedbackHoldover]),now,slots.size(),
                     [this] { return reapOne(); }, [] { return monotonicUs(); },
                     [this] { return integrity.valid() && !stopCause.chosen && !requestedStop.load() &&
                         !(prefix && prefix->queue.faults.load()); });
                 feedbackReapPass.feedbackCompletions=static_cast<size_t>(stats[FeedbackCompleted]-feedbackCompletedBefore);
+                liveDiagnostics.timings.span(TReapPass,feedbackReapPass.enteredAt,feedbackReapPass.evaluatedAt,feedbackReapPass.watchdogEvaluated?static_cast<int>(feedbackReapPass.timeout):-1,sourceEpoch(),activeSeekSerial);
+                liveDiagnostics.watchdogPass(feedbackReapPass,now,sourceEpoch(),activeSeekSerial,feedbackClock.lastObserved);
                 if (hadValidFeedback && feedbackReapPass.ageBefore>static_cast<uint64_t>(stats[FeedbackHoldover]) &&
                     feedbackReapPass.refreshed && feedbackReapPass.watchdogEvaluated &&
                     feedbackReapPass.timeout==FeedbackTimeoutKind::None &&
@@ -1079,7 +1120,7 @@ struct Session {
                 if (requestedStop.load()) { fail(AuthorityChanged, requestedStop.load() == 2 ? Stop::AuthorityLost : Stop::Requested); break; }
                 if(pauseAdmission()) continue; // Process a command arriving during reap before active watchdog evaluation.
                 if (feedbackReapPass.timeout!=FeedbackTimeoutKind::None) {
-                    feedbackTimeout(feedbackReapPass.timeout,feedbackReapPass.evaluatedAt); break;
+                    feedbackTimeout(feedbackReapPass.timeout,feedbackReapPass.evaluatedAt,0,&feedbackReapPass); break;
                 }
                 if (naturalComplete()) break;
                 if (durationReached(started, monotonicUs(), durationUs)) { stopCause.choose(Stop::Duration); break; }
@@ -1092,7 +1133,9 @@ struct Session {
                 outContinuity.observe(monotonicUs(),outstanding(false),outstanding(true),!fullTrack || !fullSubmitted(),
                     static_cast<uint64_t>(stats[CompletedFrames]),OutObservationStage::BeforeRefill);
                 outContinuity.beginRefill(monotonicUs());
+                const auto refillEntered=monotonicUs();
                 for (auto& slot : slots) if (!slot.identity.outstanding && integrity.valid() && !stopCause.chosen) submit(slot);
+                liveDiagnostics.timings.span(TRefill,refillEntered,monotonicUs(),0,sourceEpoch(),activeSeekSerial);
                 if (!integrity.valid() || stopCause.chosen) break;
                 if(pauseAdmission()) continue;
                 outContinuity.observe(monotonicUs(),outstanding(false),outstanding(true),!fullTrack || !fullSubmitted(),
@@ -1111,6 +1154,7 @@ struct Session {
                 pollCompletion();
             }
         } catch (...) { fail(WorkerFailure, Stop::Worker); }
+        liveDiagnostics.timings.frozen=true; // Preserve active histories through terminal drain, including natural EOF.
         if(fullTrack) {
             if(playback.seeking() && stopCause.value==Stop::Requested && !playbackFault) seekOutcome=SeekOutcome::Stopped;
             playback.finish(monotonicUs(),PlaybackPhase::Stopping);publishPlayback();
@@ -1292,7 +1336,7 @@ Java_io_github_rsgarrido_sazanami_player_usb_UsbFsDiagnostics_nativeLiveDiagnost
     const auto session=lookup(handle,attachment,stream);
     if(!session) return nullptr;
     auto copy=session->publishedDiagnostics.read();
-    if(copy[LVersion]!=1) return nullptr;
+    if(copy[LVersion]!=2) return nullptr;
     copy[LReadAt]=static_cast<int64_t>(monotonicUs());
     std::array<jlong,kLiveWords> words{};std::copy(copy.begin(),copy.end(),words.begin());
     auto result=env->NewLongArray(static_cast<jsize>(words.size()));

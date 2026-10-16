@@ -242,6 +242,9 @@ internal object UsbIsoNativeStats {
         validateControl(counters)
         validateSeek(counters)
         require(counters.getValue("feedbackTimeoutSubtype") in feedbackTimeoutSubtypes.indices.map { it.toLong() })
+        val reapEvidence = historicalFields.subList(131,139).map(counters::getValue)
+        require(reapEvidence.all { it == -1L } || (reapEvidence.all { it >= 0L } &&
+            listOf(0,3,6,7).all { reapEvidence[it] in 0L..1L } && reapEvidence[1] <= 182L && reapEvidence[2] <= reapEvidence[1]))
         require(counters.getValue("firstOutRiskStage") in outRiskStages.indices.map { it.toLong() })
         require(counters.getValue("state") in states.indices.map { it.toLong() } && counters.getValue("stopReason") in stops.indices.map { it.toLong() })
         require(counters.getValue("sourceMode") in 0L..3L)

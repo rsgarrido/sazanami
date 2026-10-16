@@ -38,7 +38,7 @@ constexpr size_t kReadyReapLimit = std::max(kOutPool,kMaximumDirectOutUrbs) + kM
 struct FeedbackReapPass {
     bool attempted=false, refreshed=false, watchdogEvaluated=false;
     size_t reaped=0, feedbackCompletions=0;
-    uint64_t ageBefore=0, ageAfter=0, evaluatedAt=0;
+    uint64_t ageBefore=0, ageAfter=0, enteredAt=0, evaluatedAt=0;
     FeedbackTimeoutKind timeout=FeedbackTimeoutKind::None;
 };
 // reap must be nonblocking and process both OUT and feedback through normal
@@ -48,6 +48,7 @@ FeedbackReapPass reapBeforeFeedbackWatchdog(const FeedbackObservationClock& cloc
         uint64_t holdover,uint64_t before,size_t slotCount,Reap reap,Now now,Active active) {
     FeedbackReapPass pass;
     pass.ageBefore=clock.observationAge(before);
+    pass.enteredAt=now(); // Actual pass entry, distinct from the caller's loop-top timestamp.
     const auto previousObserved=clock.lastObserved;
     const auto limit=std::min(slotCount,kReadyReapLimit);
     pass.attempted=limit>0 && active();
@@ -58,5 +59,15 @@ FeedbackReapPass reapBeforeFeedbackWatchdog(const FeedbackObservationClock& cloc
     pass.watchdogEvaluated=active();
     if (pass.watchdogEvaluated) pass.timeout=clock.expired(pass.evaluatedAt,holdover);
     return pass;
+}
+// Evidence belongs only to the evaluation that selected this exact timeout.
+// Direct short-tail bootstrap expiry has no reap pass; -1 means unavailable.
+inline std::array<int64_t,8> timeoutReapEvidence(FeedbackTimeoutKind kind,uint64_t observed,
+                                               const FeedbackReapPass* pass) noexcept {
+    std::array<int64_t,8> result{};result.fill(-1);
+    if(kind==FeedbackTimeoutKind::None || !pass || !pass->watchdogEvaluated || pass->timeout!=kind || pass->evaluatedAt!=observed) return result;
+    return {{pass->attempted,static_cast<int64_t>(pass->reaped),static_cast<int64_t>(pass->feedbackCompletions),
+        pass->refreshed,static_cast<int64_t>(pass->ageBefore),static_cast<int64_t>(pass->ageAfter),
+        pass->watchdogEvaluated,pass->timeout!=FeedbackTimeoutKind::None}};
 }
 } // namespace sazanami::usbiso

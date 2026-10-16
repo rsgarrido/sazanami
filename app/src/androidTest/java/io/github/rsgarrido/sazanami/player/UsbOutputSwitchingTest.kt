@@ -27,17 +27,23 @@ class UsbOutputSwitchingTest {
             f.engine.progress(UsbFullProgress(44100, 441000, 44100, phase))
             val out = if(phase == UsbFullTransportPhase.PAUSED) 0L else 3L
             val frames = if(out == 0L) 0L else 132L
-            val values = mapOf("version" to 1L, "generation" to 1L, "stream" to 2L,
+            val values = mapOf("version" to 2L, "generation" to 1L, "stream" to 2L,
                 "capturedAtUs" to 100000L, "readAtUs" to 100100L, "transportState" to 4L,
                 "playbackPhase" to phase.ordinal.toLong(), "sampleRateHz" to 44100L,
                 "channels" to 2L, "bits" to 16L, "bytesPerFrame" to 4L, "startedAtUs" to 1000L,
                 "outPool" to 21L, "outSubmitted" to 10L, "outCompleted" to 10L - out,
                 "outOutstanding" to out, "outFree" to 21L - out, "pendingPayloadFrames" to frames,
                 "pendingPayloadDurationUs" to frames * 1000000 / 44100, "nominalCoverageUs" to 21000L,
+                "feedbackHoldoverUs" to 20000L,
                 "pcmDepth" to 8192L, "pcmCapacity" to 16384L, "pcmMinDepth" to 4096L,
-                "pcmShortageDepth" to -1L, "pcmShortageRequested" to -1L, "pcmShortageAgeUs" to -1L)
+                "pcmShortageDepth" to -1L, "pcmShortageRequested" to -1L, "pcmShortageAgeUs" to -1L,
+                "collectionStartedUs" to 70000L, "collectionDurationUs" to 30000L,
+                "verifiedUsbSpeed" to 3L, "acInterface" to 10L, "asInterface" to 11L, "alternate" to 9L,
+                "dataEndpoint" to 11L, "dataAttributes" to 5L, "dataMaxPacketRaw" to 776L, "dataBInterval" to 1L,
+                "feedbackEndpoint" to 142L, "feedbackAttributes" to 17L, "feedbackMaxPacketRaw" to 4L, "feedbackBInterval" to 4L)
             val words = LongArray(UsbTransportTelemetrySchema.WORDS)
             UsbTransportTelemetrySchema.fields.forEachIndexed { i, name -> words[i] = values[name] ?: 0L }
+            UsbTransportTelemetrySchema.reliabilityFields.forEachIndexed { i, name -> words[UsbTransportTelemetrySchema.RELIABILITY_OFFSET + i] = values[name] ?: 0L }
             val snapshot = UsbTransportTelemetrySchema.decode(words, key)
             store.bind(key) { snapshot }
             val before = f.route.directState.copy();val intent = f.engine.control.intent()
@@ -46,10 +52,22 @@ class UsbOutputSwitchingTest {
             repeat(3) {
                 val report = withContext(Dispatchers.IO) { formatUsbTransportTelemetry(store.capture()) }
                 assertTrue(report.contains("playback=${phase.name}"));assertEquals(before, f.route.directState)
+                assertTrue(report.contains("70000/100000/30000 us"))
+                assertTrue(report.contains("Last successful OUT submit / last OUT reap observation ages"))
+                assertTrue(report.contains("First timeout associated reap evaluation: unavailable"))
+                assertFalse(report.contains("content://"));assertFalse(report.contains("/storage/"))
                 assertEquals(intent, f.engine.control.intent());assertEquals(item, f.route.currentMediaItem)
                 assertEquals(starts, f.engine.starts);assertEquals(stops, f.engine.stops)
                 assertEquals(recreations, f.recreations);assertEquals(normalStops, f.physical.stopped)
             }
+            words.fill(0) // The decoded publication must survive loss of the JNI source array/provider.
+            store.finish(key, snapshot.copy(values = snapshot.values + mapOf("terminal" to 1L,
+                "transportState" to 7L, "playbackPhase" to UsbFullTransportPhase.STOPPED.ordinal.toLong(),
+                "outOutstanding" to 0L, "outCompleted" to 10L, "outFree" to 21L,
+                "pendingPayloadFrames" to 0L, "pendingPayloadDurationUs" to 0L, "refillDemand" to 0L)))
+            assertTrue(store.capture().snapshot!!.terminal)
+            assertEquals(30000L, store.capture().snapshot!!.n("collectionDurationUs"))
+            store.begin(key) // Clear the retained run before the next fake playback phase.
         }
         store.finish(key);assertEquals("TERMINAL", store.capture().status)
     }

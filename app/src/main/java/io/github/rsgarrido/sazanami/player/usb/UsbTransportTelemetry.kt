@@ -9,7 +9,9 @@ import kotlinx.coroutines.withContext
 internal data class UsbTelemetrySession(val generation: Long, val stream: Long)
 internal data class UsbTransportTelemetry(
     val values: Map<String, Long>, val feedback: UsbFeedbackDiagnosticEvidence,
-    val rejected: List<List<Long>>, val gaps: List<List<Long>>, val startups: List<List<Long>>
+    val rejected: List<List<Long>>, val gaps: List<List<Long>>, val startups: List<List<Long>>,
+    val timings: List<List<Long>>, val timingEvents: List<List<Long>>, val correlations: List<List<Long>>,
+    val watchdog: List<Long>?, val fatalWatchdog: List<Long>?
 ) {
     val session get() = UsbTelemetrySession(n("generation"), n("stream"))
     val terminal get() = n("terminal") == 1L
@@ -35,13 +37,27 @@ internal object UsbTransportTelemetrySchema {
     const val REJECTED_OFFSET = FEEDBACK_OFFSET + UsbFeedbackDiagnostics.WORDS
     const val GAP_OFFSET = REJECTED_OFFSET + 8 * UsbFeedbackDiagnostics.ROW_WORDS
     const val STARTUP_OFFSET = GAP_OFFSET + 16 * 8
-    const val WORDS = STARTUP_OFFSET + 8 * 10
+    val reliabilityFields = listOf("collectionStartedUs", "collectionDurationUs", "iteration", "timingEventCount", "correlationCount",
+        "watchdogPresent", "fatalWatchdogPresent", "verifiedUsbSpeed", "acInterface", "asInterface", "alternate", "idleAlternate",
+        "dataEndpoint", "dataAttributes", "dataMaxPacketRaw", "dataBInterval",
+        "feedbackEndpoint", "feedbackAttributes", "feedbackMaxPacketRaw", "feedbackBInterval",
+        "detachUrbStatus", "detachPacketStatus", "detachRequestSerial", "detachObservedUs", "detachFeedback")
+    val timingPhases = listOf("ITERATION_BOUNDARY", "CONTROL_STEP", "CONTROL_LOCK_ACQUIRE", "REAP_PASS", "REAP_SYSCALL",
+        "FEEDBACK_PROCESSING", "REFILL", "SUBMIT_SYSCALL", "POLL", "SNAPSHOT_COLLECTION", "PUBLICATION", "PROGRESS_PUBLICATION")
+    const val RELIABILITY_OFFSET = STARTUP_OFFSET + 8 * 10
+    const val PHASE_OFFSET = RELIABILITY_OFFSET + 25
+    const val TIMING_OFFSET = PHASE_OFFSET + 12 * 6
+    const val CORRELATION_OFFSET = TIMING_OFFSET + 16 * 9
+    const val WATCHDOG_OFFSET = CORRELATION_OFFSET + 16 * 9
+    const val FATAL_WATCHDOG_OFFSET = WATCHDOG_OFFSET + 19
+    const val WORDS = FATAL_WATCHDOG_OFFSET + 19
+    const val VERSION = 2
 
     fun decode(words: LongArray, session: UsbTelemetrySession): UsbTransportTelemetry {
-        require(fields.size == FIELD_COUNT && words.size == WORDS)
-        val values = fields.zip(words.take(FIELD_COUNT)).toMap()
+        require(fields.size == FIELD_COUNT && reliabilityFields.size == 25 && words.size == WORDS)
+        val values = (fields.zip(words.take(FIELD_COUNT)) + reliabilityFields.zip(words.slice(RELIABILITY_OFFSET until PHASE_OFFSET))).toMap()
         fun n(key: String) = values.getValue(key)
-        require(n("version") == 1L && session.generation > 0 && session.stream > 0 &&
+        require(n("version") == VERSION.toLong() && session.generation > 0 && session.stream > 0 &&
             n("generation") == session.generation && n("stream") == session.stream)
         require(n("capturedAtUs") > 0 && n("readAtUs") >= n("capturedAtUs"))
         require(n("terminal") in 0L..1L && n("playbackPhase") in -1L..11L && n("transportState") in 0L..7L &&
@@ -95,12 +111,78 @@ internal object UsbTransportTelemetrySchema {
             require(row.drop(4).all { it >= -1 && (it == -1L || it <= n("capturedAtUs") - row[2]) })
             if(index > 0) require(row[0] > startups[index - 1][0])
         }
-        return UsbTransportTelemetry(values, feedback, rejected, gaps, startups)
+        val captured = n("capturedAtUs")
+        if(n("fatalWatchdogPresent") == 1L) require((n("integrityMask") and (1L shl 7)) != 0L && n("stopReason") == 6L)
+        require(n("collectionStartedUs") in 1L..captured && n("collectionDurationUs") == captured - n("collectionStartedUs"))
+        require(n("iteration") >= 0 && n("verifiedUsbSpeed") == 3L)
+        require(n("acInterface") in 0L..255L && n("asInterface") in 0L..255L && n("acInterface") != n("asInterface"))
+        require(n("alternate") in 1L..255L && n("idleAlternate") in 0L..255L && n("alternate") != n("idleAlternate"))
+        require(n("dataEndpoint") in 1L..15L && n("dataAttributes") == 5L && n("dataBInterval") in 1L..3L &&
+            n("dataMaxPacketRaw") in 1L..65535L && UsbIsoTiming.highSpeedCapacity(n("dataMaxPacketRaw").toInt()) != null)
+        require(n("feedbackEndpoint") in 0x81L..0x8fL && n("feedbackAttributes") == 0x11L &&
+            n("feedbackMaxPacketRaw") == 4L && n("feedbackBInterval") in 1L..7L)
+        require(n("feedbackHoldoverUs") == maxOf(20000L, (125L shl (n("feedbackBInterval").toInt() - 1)) * 4L))
+        if(n("detachRequestSerial") == 0L) require(reliabilityFields.takeLast(5).all { n(it) == 0L })
+        else require(n("detachRequestSerial") > 0 && n("detachObservedUs") in 1L..captured && n("detachFeedback") in 0L..1L &&
+            n("detachUrbStatus") in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong() &&
+            n("detachPacketStatus") in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong() &&
+            (n("detachUrbStatus") == -19L || n("detachPacketStatus") == -19L) && (n("integrityMask") and (1L shl 13)) != 0L)
+        val timings = (timingPhases.indices).map { words.slice(PHASE_OFFSET + it * 6 until PHASE_OFFSET + (it + 1) * 6) }
+        timings.forEach { r ->
+            require(r[0] >= 0)
+            if(r[0] == 0L) require(r.all { it == 0L })
+            else require(r[1] in 1L..r[2] && r[2] <= captured && r[3] in 1L..r[4] && r[4] <= captured &&
+                r[4] - r[3] >= r[2] - r[1] && r[5] in -4095L..Int.MAX_VALUE.toLong())
+        }
+        val events = rows(TIMING_OFFSET, n("timingEventCount"), 16, 9)
+        events.forEachIndexed { i, r ->
+            require(r[0] > 0 && (i == 0 || r[0] == events[i - 1][0] + 1) && r[1] in 1L..n("iteration") &&
+                r[2] in timingPhases.indices.map(Int::toLong) && r[3] in 1L..r[4] && r[4] <= captured && r[4] - r[3] >= 5000L &&
+                r[5] in -4095L..Int.MAX_VALUE.toLong() && r[6] in 0L..n("sourceEpoch") && r[7] >= 0 && r[8] >= 0)
+        }
+        val correlations = rows(CORRELATION_OFFSET, n("correlationCount"), 16, 9)
+        correlations.forEachIndexed { i, r ->
+            require(r[0] > 0 && (i == 0 || r[0] > correlations[i - 1][0]) && r[1] > 0 && r[2] in 1L..r[3] && r[3] <= captured &&
+                (r[4] == -1L || r[4] in r[3]..captured) && r[5] in -1L..0xffffffffL && r[6] in 0L..8L &&
+                r[7] in 0L..n("sourceEpoch") && r[8] >= 0)
+            val plausible = r[5] > 0 && (r[5] and 0xf0000000L) == 0L && r[5] * 8000L * 100L in
+                n("sampleRateHz") * 65536L * 95L..n("sampleRateHz") * 65536L * 105L
+            when(r[6]) {
+                0L, 7L, 8L -> require(plausible)
+                1L -> require(r[5] == -1L)
+                2L -> require(r[5] == 0L)
+                3L -> require(r[5] >= 0 && (r[5] and 0xf0000000L) != 0L)
+                4L -> require(r[5] > 0 && (r[5] and 0xf0000000L) == 0L && !plausible)
+            }
+            if(r[4] >= 0) require(r[6] == 0L)
+        }
+        fun watchdog(offset: Int, present: Long, fatal: Boolean): List<Long>? {
+            require(present in 0L..1L)
+            val r = words.slice(offset until offset + 19)
+            if(present == 0L) { require(r.all { it == 0L }); return null }
+            require(r[0] in 1L..n("iteration") && r[1] in 0L..n("sourceEpoch") && r[2] >= 0 &&
+                r[3] in 1L..r[4] && r[4] <= r[12] && r[12] <= captured && r[5] in 0L..r[12] &&
+                r[6] in r[5]..r[12] && r[7] >= 0 && r[13] >= 0 && r[14] >= 0 &&
+                r[15] in 0L..182L && r[16] in 0L..r[15] && r[17] in 0L..1L && r[18] in -1L..3L)
+            if(r[5] == 0L) require(r[6] == 0L && r[7] == 0L)
+            else require(r[6] > 0 && r[7] > 0 && r[14] == r[12] - r[5])
+            if(r[8] == 0L) require(r.slice(8..11).all { it == 0L })
+            else require(r[8] in r[4]..r[9] && r[9] <= r[12] &&
+                ((r[10] == 0L && r[11] == 0L) || (r[10] == -1L && r[11] in 1L..4095L)))
+            if(fatal) require(r[18] in 1L..3L)
+            if(r[18] == 2L) require(r[5] > 0 && r[14] > n("feedbackHoldoverUs"))
+            if(r[18] == 1L) require(r[5] == 0L && r[14] >= 100000L)
+            return r
+        }
+        return UsbTransportTelemetry(values, feedback, rejected, gaps, startups, timings, events, correlations,
+            watchdog(WATCHDOG_OFFSET, n("watchdogPresent"), false), watchdog(FATAL_WATCHDOG_OFFSET, n("fatalWatchdogPresent"), true))
     }
 }
 
+internal data class UsbTelemetryClockFacts(val entity: Int, val targetReadbackHz: Long, val configuredReadbackHz: Long, val configuredValid: Boolean)
 internal data class UsbTransportTelemetryView(val session: UsbTelemetrySession? = null,
-    val status: String = "IDLE", val snapshot: UsbTransportTelemetry? = null, val captureFailure: String? = null)
+    val status: String = "IDLE", val snapshot: UsbTransportTelemetry? = null, val captureFailure: String? = null,
+    val clockFacts: UsbTelemetryClockFacts? = null)
 
 /** Only immutable copies survive a run. Never holds its monitor while invoking a native provider. */
 internal class UsbTransportTelemetryStore {
@@ -116,6 +198,17 @@ internal class UsbTransportTelemetryStore {
             provider = read
             if(current.status == "PREPARING") mutableState.value = current.copy(status = "AVAILABLE")
         }
+    }
+    @Synchronized fun configured(session: UsbTelemetrySession, configuration: UsbAudioConfigurationResult) {
+        val current = mutableState.value
+        if(current.session != session || current.status == "TERMINAL" || configuration.generation != session.generation ||
+            configuration.accessFailure != null || configuration.targetStatus != UsbTargetConfigurationStatus.TARGET_CONFIGURATION_VERIFIED) return
+        val plan = configuration.resolution.plan ?: return
+        val target = configuration.targetClockReadback?.takeIf { it.status == UsbClockQueryStatus.SUCCESS }?.currentFrequencyHz ?: return
+        val configured = configuration.configuredClockReadback?.takeIf { it.status == UsbClockQueryStatus.SUCCESS }?.currentFrequencyHz ?: return
+        val valid = configuration.configuredClockValidity?.takeIf { it.status == UsbClockQueryStatus.SUCCESS }?.clockValid ?: return
+        if(target != plan.sampleRateHz || configured != plan.sampleRateHz || !valid) return
+        mutableState.value = current.copy(clockFacts = UsbTelemetryClockFacts(plan.clock.clockEntityId, target, configured, valid))
     }
     fun capture(): UsbTransportTelemetryView {
         val request = synchronized(this) {
@@ -170,7 +263,7 @@ internal fun formatUsbTransportTelemetry(view: UsbTransportTelemetryView = UsbTr
     appendLine("USB OUT: submitted=${n("outSubmitted")}; reaped=${n("outCompleted")}; application outstanding=${n("outOutstanding")}; pool slots=${n("outPool")}; free=${n("outFree")}")
     appendLine("Pending payload=${n("pendingPayloadFrames")} frames / ${value("pendingPayloadDurationUs")} us at nominal rate; host FIFO timing estimate=${n("estimatedCoverageUs")} us; configured nominal coverage=${n("nominalCoverageUs")} us")
     appendLine("Actual kernel-armed queued audio duration: unavailable. Application outstanding includes completed but unreaped URBs; payload duration is not remaining wire audio.")
-    appendLine("Last successful OUT submit/reap ages at snapshot=${value("lastSubmitAgeUs")}/${value("lastCompletionAgeUs")} us; worker-phase refill demand=${n("refillDemand")} (pending control may still block admission)")
+    appendLine("Last successful OUT submit / last OUT reap observation ages at snapshot=${value("lastSubmitAgeUs")}/${value("lastCompletionAgeUs")} us; worker-phase refill demand=${n("refillDemand")} (pending control may still block admission)")
     appendLine("Maximum gaps us: submit=${n("maxSubmitGapUs")}; submission batch=${n("maxBatchGapUs")}; completion observation=${n("maxCompletionGapUs")}; worker wake=${n("maxWorkerGapUs")}; refill opportunity=${n("maxRefillGapUs")}; reap-to-refill latency=${n("maxRefillLatencyUs")}")
     appendLine("OUT pool stalls=${n("poolStalls")}; empty pool after reap=${n("emptyAfterReap")}; URB/packet errors=${n("outUrbErrors")}/${n("outPacketErrors")}; cancelled=${n("outCancelled")}; submit/reap errno=${n("submitErrno")}/${n("reapErrno")}; integrity mask=${n("integrityMask")}")
     appendLine("PCM: available=${value("pcmDepth")} frames; capacity=${value("pcmCapacity")} frames; streaming minimum=${value("pcmMinDepth")} frames; reserved=${value("pcmPrepared")} frames")
@@ -204,5 +297,31 @@ internal fun formatUsbTransportTelemetry(view: UsbTransportTelemetryView = UsbTr
     if(s.startups.isEmpty()) appendLine("Unavailable: no native FLAC source milestones published.")
     s.startups.forEach { row -> appendLine(row.joinToString(" | ") { if(it < 0) "unavailable" else it.toString() }) }
     appendLine("Source admission begins when native PrefixSource is constructed; seek origin is worker command admission. Metadata readiness is only measured for initial preparation. USB submit/reap and native Playing do not prove audible DAC output.")
-    appendLine("Snapshot publication is coherent; producer PCM atomics are sampled over a short interval. Quiet/blocked worker snapshots retain their capture time; capture age must be considered. Diagnostic capture performs no USB work and changes no player controls.")
+    appendLine("Snapshot collection start/end/duration=${n("collectionStartedUs")}/${n("capturedAtUs")}/${n("collectionDurationUs")} us. Producer fields were sampled within this interval; retrieval age alone does not bound their age.")
+    appendLine("Session 26B worker timing (schema ${n("version")}; wall time, includes preemption; no scheduler/CPU-time attribution):")
+    appendLine("Verified usbfs speed=${n("verifiedUsbSpeed")} (High Speed at creation); AC/AS=${n("acInterface")}/${n("asInterface")}; selected/idle alternate=${n("alternate")}/${n("idleAlternate")}")
+    appendLine("Descriptor facts: OUT address/attributes/maxPacketRaw/bInterval=${n("dataEndpoint")}/${n("dataAttributes")}/${n("dataMaxPacketRaw")}/${n("dataBInterval")}; feedback=${n("feedbackEndpoint")}/${n("feedbackAttributes")}/${n("feedbackMaxPacketRaw")}/${n("feedbackBInterval")}; feedback LE16.16 frames/microframe, independent of polling interval")
+    val clock = view.clockFacts
+    appendLine("Verified configured clock: ${clock?.let { "entity=${it.entity}; target/configured readback=${it.targetReadbackHz}/${it.configuredReadbackHz} Hz; valid=${it.configuredValid}" } ?: "unavailable (no matching verified configuration evidence)"}; no telemetry USB queries")
+    appendLine("First explicit removal completion: ${if(n("detachRequestSerial") == 0L) "unavailable" else "URB/packet status=${n("detachUrbStatus")}/${n("detachPacketStatus")}; request=${n("detachRequestSerial")}; observed=${n("detachObservedUs")} us; feedback=${n("detachFeedback")}"}. This observation does not replace an earlier stop cause.")
+    appendLine("phase | count | last begin/end/duration us | maximum begin/end/duration us | result at maximum")
+    s.timings.forEachIndexed { i, r ->
+        val times = if(r[0] == 0L) "unavailable | unavailable | unavailable" else
+            "${r[1]}/${r[2]}/${r[2] - r[1]} | ${r[3]}/${r[4]}/${r[4] - r[3]} | ${r[5]}"
+        appendLine("${UsbTransportTelemetrySchema.timingPhases[i]} | ${r[0]} | $times")
+    }
+    appendLine("Recent spans >=5000 us (maximum 16; frozen on failure/before terminal cleanup): seq | iteration | phase | begin/end/duration us | result | epoch | activeSeek | requestSerial")
+    s.timingEvents.forEach { r -> appendLine("${r[0]} | ${r[1]} | ${UsbTransportTelemetrySchema.timingPhases[r[2].toInt()]} | ${r[3]}/${r[4]}/${r[4] - r[3]} | ${r[5]} | ${r[6]} | ${r[7]} | ${r[8]}") }
+    appendLine("Phase results: syscall return or -errno; poll revents or -errno; reap pass timeout subtype (-1=not evaluated); lock site 1=intent,2=progress publication,3=EOF; publication 1=copied,0=skipped. Lock spans include acquisition and any intervening preemption, not proven contention. Completed collection/publication spans appear in the following snapshot; current collection duration is above. Phase maxima include cleanup; intentional quiet gaps are excluded from iteration boundaries.")
+    appendLine("Feedback correlation (maximum 16; request serial is host submission order, observation sequence is reap order): observationSeq | requestSerial | submitted/observed/accepted us | raw LE32 | rejection | epoch | activeSeek")
+    s.correlations.forEach { r -> appendLine("${r[0]} | ${r[1]} | ${r[2]}/${r[3]}/${if(r[4] < 0) "unavailable" else r[4]} | ${if(r[5] < 0) "unavailable" else r[5]} | ${r[6]} | ${r[7]} | ${r[8]}") }
+    fun watchdog(title: String, r: List<Long>?) {
+        if(r == null) { appendLine("$title: unavailable (no corresponding reap evaluation)"); return }
+        val valid = if(r[5] > 0) "${r[5]}/${r[6]}/${r[7]}" else "unavailable (bootstrap)"
+        val probe = if(r[8] > 0) "${r[8]}/${r[9]}/${r[10]}/${r[11]}" else "unavailable (no syscall in this pass)"
+        appendLine("$title: iteration/epoch/seek=${r[0]}/${r[1]}/${r[2]}; loop/pass entry=${r[3]}/${r[4]}; valid observation/acceptance/request=$valid; final reap ioctl entry/return/result/errno=$probe; decision=${r[12]}; loop-top/evaluation ages=${r[13]}/${r[14]}; reaped/feedback/refreshed=${r[15]}/${r[16]}/${r[17]}; timeout=${r[18]}")
+        appendLine("$title intervals us: pass entry to valid observation=${if(r[17] == 1L) r[5] - r[4] else "unavailable (no refresh)"}; valid observation to acceptance=${if(r[5] > 0) r[6] - r[5] else "unavailable"}; final probe to decision=${if(r[8] > 0) r[12] - r[9] else "unavailable"}; valid observation to decision=${if(r[5] > 0) r[12] - r[5] else "unavailable"}")
+    }
+    watchdog("Latest active reap evaluation", s.watchdog); watchdog("First timeout associated reap evaluation", s.fatalWatchdog)
+    appendLine("Final probe may return a completion, EAGAIN, EINTR, or an error; a slot-count bound does not require a no-ready probe. Timeout -1 means not evaluated. No kernel completion timestamp, kernel-armed duration, DAC buffer, or audible-output timestamp is measured. Snapshot publication is coherent; quiet/blocked copies retain their capture time. Diagnostic capture changes no player controls.")
 }
