@@ -43,6 +43,7 @@ Sazanami is designed around local playback and privacy. Your music library does 
 - **Manual and Smart Playlists** — Build traditional playlists or create rule-based collections using metadata, ratings, listening history, dates, play counts, and more.
 - **Real metadata editing** — Edit supported tags and artwork directly in your music files rather than maintaining app-only metadata.
 - **Advanced audio tools** — Graphic and parametric equalization, ReplayGain, crossfade, album-transition preservation, audio offload, waveform seeking, and a sleep timer.
+- **Experimental USB Direct playback** — Play supported FLAC files through compatible USB DACs using a native output path, with an explicit opt-in and standard Android audio as the fallback.
 - **Listening statistics** — Explore listening time, play counts, trends, top tracks, artists, and albums across configurable time ranges.
 - **Local lyrics** — Use your own `.lrc` files with synchronized line-by-line playback.
 - **Android integration** — Background playback, notification and lock-screen controls, Bluetooth/media buttons, Android Auto, and resizable home-screen widgets.
@@ -165,6 +166,14 @@ Sazanami includes Graphic and Parametric EQ modes with presets, import/export su
   <img src="docs/assets/readme/screens/equalizer.webp" width="360" alt="Sazanami parametric equalizer">
 </p>
 
+### Experimental USB Direct Playback
+
+Sazanami offers an optional native USB audio path for compatible USB DACs. It supports stereo FLAC files in **16-bit at 44.1/48 kHz** and **24-bit at 48/96 kHz**. USB Direct uses its own playback queue and supports player controls, seeking, and track navigation.
+
+To try it, open **Settings → USB Audio**, enable **Experimental USB Direct playback**, acknowledge the warning, and select USB Direct as the audio output. The feature is **off by default**; regular Android audio playback remains available, including with USB DACs.
+
+**USB Direct is experimental.** Compatibility and uninterrupted playback are not guaranteed: audio may stutter or stop on some devices. Bit-perfect output has not been independently verified.
+
 ### Edit Your Music Files
 
 Edit supported metadata such as title, artist, album, album artist, date/year, genre, composer, publisher, BPM, disc information, comments, copyright, and artwork.
@@ -276,6 +285,7 @@ Sazanami intentionally focuses on local music ownership rather than turning your
 - A/B EQ comparison
 - ReplayGain
 - Waveform seeking
+- Experimental USB Direct FLAC playback with compatible DACs
 - Local `.lrc` lyrics
 - Synced line-by-line lyrics
 - Lyrics folder scanning
@@ -371,7 +381,7 @@ Core technologies include:
 - **DataStore** — application preferences
 - **Jetpack Glance** — Android home-screen widgets
 - **MediaStore and Storage Access Framework** — local library and user-selected file/folder access
-- **C++ / Android media APIs** — offline waveform analysis
+- **C++ / Android media APIs** — offline waveform analysis and native USB Direct FLAC playback
 
 Sazanami uses a `MediaLibraryService` so playback and external controls remain independent of the main Compose UI.
 
@@ -417,7 +427,7 @@ Sazanami is licensed under the **GNU General Public License v3.0**.
 
 See [`LICENSE`](LICENSE) for the full license text.
 
-Bundled fonts and third-party resources retain their respective licenses.
+Bundled fonts and third-party resources retain their respective licenses. See [Third-Party Notices](docs/THIRD_PARTY_NOTICES.md) for libFLAC attribution and licensing information.
 
 ## Acknowledgements
 

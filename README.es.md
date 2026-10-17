@@ -43,6 +43,7 @@ Sazanami está diseñado en torno a la reproducción local y la privacidad. Tu b
 - **Listas de reproducción manuales e inteligentes** — Crea listas tradicionales o colecciones basadas en reglas que usan metadatos, calificaciones, historial de escucha, fechas, conteos de reproducciones y más.
 - **Edición directa de metadatos** — Edita las etiquetas y portadas compatibles directamente en tus archivos de música, en lugar de guardar metadatos solo dentro de la aplicación.
 - **Herramientas avanzadas de audio** — Ecualización gráfica y paramétrica, ReplayGain, transición entre canciones, conservación de las transiciones del álbum, procesamiento de audio por hardware, navegación por la forma de onda y temporizador de apagado.
+- **Reproducción experimental USB Direct** — Reproduce archivos FLAC compatibles mediante una salida USB nativa con determinados DAC USB, previa activación explícita y con el audio estándar de Android como alternativa.
 - **Estadísticas de escucha** — Explora el tiempo de escucha, los conteos de reproducciones, las tendencias y las canciones, artistas y álbumes más escuchados en intervalos de tiempo configurables.
 - **Letras locales** — Usa tus propios archivos `.lrc` con reproducción sincronizada línea por línea.
 - **Integración con Android** — Reproducción en segundo plano, controles en notificaciones y en la pantalla de bloqueo, botones de Bluetooth y multimedia, Android Auto y widgets de tamaño ajustable para la pantalla de inicio.
@@ -165,6 +166,14 @@ Sazanami incluye modos de ecualización gráfica y paramétrica con preajustes, 
   <img src="docs/assets/readme/screens/equalizer.webp" width="360" alt="Ecualizador paramétrico de Sazanami">
 </p>
 
+### Reproducción experimental USB Direct
+
+Sazanami ofrece una ruta de audio USB nativa opcional para DAC USB compatibles. Admite archivos FLAC estéreo de **16 bits a 44,1/48 kHz** y **24 bits a 48/96 kHz**. USB Direct mantiene una cola de reproducción independiente y permite usar los controles del reproductor, buscar dentro de una canción y cambiar de pista.
+
+Para probarla, abre **Ajustes → USB Audio**, activa **USB Direct experimental**, acepta la advertencia y selecciona USB Direct como salida de audio. La función está **desactivada de forma predeterminada**; la reproducción estándar de Android sigue disponible, incluso con DAC USB.
+
+**USB Direct es experimental.** No se garantiza la compatibilidad ni la reproducción ininterrumpida: el audio puede entrecortarse o detenerse en algunos dispositivos. La salida bit-perfect no se ha verificado de forma independiente.
+
 ### Edita tus archivos de música
 
 Edita metadatos compatibles como el título, el artista, el álbum, el artista del álbum, la fecha o el año, el género, el compositor, el editor, los BPM, la información del disco, los comentarios, los derechos de autor y la portada.
@@ -276,6 +285,7 @@ Sazanami se centra intencionalmente en la música local que te pertenece, en lug
 - Comparación A/B del ecualizador
 - ReplayGain
 - Navegación por la forma de onda
+- Reproducción experimental USB Direct de archivos FLAC con DAC compatibles
 - Letras locales en archivos `.lrc`
 - Letras sincronizadas línea por línea
 - Búsqueda de letras en carpetas
@@ -371,7 +381,7 @@ Sus principales tecnologías incluyen:
 - **DataStore** — preferencias de la aplicación
 - **Jetpack Glance** — widgets para la pantalla de inicio de Android
 - **MediaStore y Storage Access Framework** — biblioteca local y acceso a archivos y carpetas seleccionados por el usuario
-- **C++ / API multimedia de Android** — análisis de formas de onda sin conexión
+- **C++ / API multimedia de Android** — análisis de formas de onda sin conexión y reproducción nativa de archivos FLAC mediante USB Direct
 
 Sazanami usa un `MediaLibraryService` para que la reproducción y los controles externos sean independientes de la interfaz principal de Compose.
 
@@ -417,7 +427,7 @@ Sazanami se distribuye bajo la **GNU General Public License v3.0**.
 
 Consulta [`LICENSE`](LICENSE) para ver el texto completo de la licencia.
 
-Las fuentes incluidas y los recursos de terceros conservan sus respectivas licencias.
+Las fuentes incluidas y los recursos de terceros conservan sus respectivas licencias. Consulta los [avisos de terceros](docs/THIRD_PARTY_NOTICES.md) para conocer la atribución y la licencia de libFLAC.
 
 ## Agradecimientos
 
