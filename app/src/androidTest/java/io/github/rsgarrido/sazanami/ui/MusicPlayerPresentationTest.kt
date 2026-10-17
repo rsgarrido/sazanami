@@ -38,6 +38,7 @@ import io.github.rsgarrido.sazanami.lyrics.LyricsPlaybackUiState
 import io.github.rsgarrido.sazanami.player.RepeatMode
 import io.github.rsgarrido.sazanami.ui.player.ArtworkViewerEntryTag
 import io.github.rsgarrido.sazanami.ui.player.PlayerEndpointBounds
+import io.github.rsgarrido.sazanami.ui.player.PlayerBoundsMeasurement
 import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsTransitionState
 import io.github.rsgarrido.sazanami.ui.player.PlayerMorphHost
 import io.github.rsgarrido.sazanami.ui.player.PlayerMorphState
@@ -52,6 +53,7 @@ import io.github.rsgarrido.sazanami.ui.player.rememberPlayerMorphState
 import io.github.rsgarrido.sazanami.ui.player.theme.defaultTokens
 import io.github.rsgarrido.sazanami.ui.state.PlaybackProgressUiState
 import io.github.rsgarrido.sazanami.ui.theme.SazanamiTheme
+import io.github.rsgarrido.sazanami.ui.navigation.MainDestination
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -299,6 +301,110 @@ class MusicPlayerPresentationTest {
         assertAnchorsInsideHost()
     }
 
+    @Test
+    fun railMiniAndContentStayBesideChromeAndSourceDoesNotMoveWhenPlayerExpands() {
+        val fixture = Fixture(PlayerPresentation.Collapsed).apply {
+            miniVisible.value = true
+            adaptiveNavigation.value = true
+            shellLayout.value = MusicShellLayout(MusicNavigationMode.Rail,
+                MusicShellInsets(left = 12.dp, top = 24.dp, right = 16.dp, bottom = 24.dp))
+        }
+        composeRule.setContent { fixture.Content() }
+        val host = composeRule.onNodeWithTag("player-host").fetchSemanticsNode().boundsInRoot
+        val pane = composeRule.onNodeWithTag("body-pane").fetchSemanticsNode().boundsInRoot
+        val source = composeRule.runOnIdle { (fixture.endpoints.mini as PlayerBoundsMeasurement.Measured).bounds }
+        val generation = composeRule.runOnIdle { fixture.endpoints.layoutFrame!!.generation }
+        val home = composeRule.onNodeWithContentDescription(text(R.string.navigation_home))
+            .fetchSemanticsNode().boundsInRoot
+        val pixelsPerDp = fixture.contentPaddingPx / 16f
+        assertEquals(host.left + 110f * pixelsPerDp, pane.left, 1f)
+        assertEquals(host.right - 16f * pixelsPerDp, pane.right, 1f)
+        assertTrue(home.right < pane.left)
+        assertTrue(source.left >= pane.left)
+        assertTrue(source.right <= pane.right)
+        assertTrue(source.width <= 840f * pixelsPerDp + 1f)
+        assertTrue(source.bottom <= host.bottom - 32f * pixelsPerDp + 1f)
+
+        mini(fixture).performClick()
+        composeRule.onNodeWithContentDescription(text(R.string.navigation_home)).assertDoesNotExist()
+        val artwork = composeRule.onNodeWithTag(ArtworkViewerEntryTag).fetchSemanticsNode().boundsInRoot
+        val playPause = composeRule.onNodeWithContentDescription(text(R.string.player_play))
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals(host.center.x, artwork.center.x, 1f)
+        assertEquals(host.center.x, playPause.center.x, 1f)
+        composeRule.runOnIdle {
+            assertEquals(generation, fixture.endpoints.layoutFrame!!.generation)
+            assertEquals(source, (fixture.endpoints.mini as PlayerBoundsMeasurement.Measured).bounds)
+            assertEquals(1f, fixture.morph.progress, 0f)
+            assertTrue(fixture.calls.isEmpty())
+            fixture.morph.collapse()
+        }
+        mini(fixture).assertExists()
+        composeRule.onNodeWithContentDescription(text(R.string.navigation_home)).assertExists()
+        composeRule.runOnIdle {
+            assertEquals(source, (fixture.endpoints.mini as PlayerBoundsMeasurement.Measured).bounds)
+        }
+    }
+
+    @Test
+    fun shellSwitchesWhileExpandedKeepFullHostAlignmentAndPresentationOwners() {
+        val fixture = Fixture(PlayerPresentation.Expanded).apply { miniVisible.value = true }
+        composeRule.setContent { fixture.Content() }
+        val morph = fixture.morph
+        val lyrics = fixture.lyrics
+        val endpoints = fixture.endpoints
+        for (layout in listOf(
+            MusicShellLayout(MusicNavigationMode.Rail),
+            MusicShellLayout(),
+            MusicShellLayout(MusicNavigationMode.Rail, MusicShellInsets(right = 16.dp, bottom = 24.dp))
+        )) {
+            val generation = composeRule.runOnIdle { fixture.endpoints.layoutFrame!!.generation }
+            composeRule.runOnIdle { fixture.shellLayout.value = layout }
+            val host = composeRule.onNodeWithTag("player-host").fetchSemanticsNode().boundsInRoot
+            val artwork = composeRule.onNodeWithTag(ArtworkViewerEntryTag).fetchSemanticsNode().boundsInRoot
+            assertEquals(host.center.x, artwork.center.x, 1f)
+            composeRule.runOnIdle {
+                assertSame(morph, fixture.morph)
+                assertSame(lyrics, fixture.lyrics)
+                assertSame(endpoints, fixture.endpoints)
+                assertTrue(fixture.endpoints.layoutFrame!!.generation > generation)
+                assertTrue(fixture.endpoints.mini is PlayerBoundsMeasurement.Measured)
+                assertEquals(1f, fixture.morph.progress, 0f)
+                assertTrue(fixture.calls.isEmpty())
+            }
+        }
+    }
+
+    @Test
+    fun shellBoundaryDuringMiniDragKeepsProgressInputOwnershipAndReleaseTarget() {
+        val fixture = Fixture(PlayerPresentation.Collapsed).apply {
+            miniVisible.value = true
+            adaptiveNavigation.value = true
+        }
+        composeRule.setContent { fixture.Content() }
+        composeRule.runOnIdle { fixture.morph.beginDragWithRange(500f) }
+        composeRule.runOnIdle { fixture.morph.dragBy(-180f) }
+        val progress = composeRule.runOnIdle { fixture.morph.progress }
+        composeRule.runOnIdle {
+            fixture.shellLayout.value = MusicShellLayout(MusicNavigationMode.Rail)
+            fixture.hostEndInset.value = 24.dp
+        }
+        mini(fixture).assertDoesNotExist() // The composed source yields semantics/input to the morph.
+        composeRule.onNodeWithContentDescription(text(R.string.navigation_home)).assertDoesNotExist()
+        composeRule.runOnIdle {
+            assertEquals(progress, fixture.morph.progress, 0f)
+            assertTrue(fixture.morph.isDragging)
+            assertTrue(fixture.endpoints.mini is PlayerBoundsMeasurement.Measured)
+            assertTrue(fixture.calls.isEmpty())
+            fixture.morph.endDrag(0f)
+        }
+        composeRule.runOnIdle {
+            assertEquals(PlayerPresentation.Expanded, fixture.morph.settledPresentation)
+            assertEquals(1f, fixture.morph.progress, 0f)
+            assertTrue(fixture.calls.isEmpty())
+        }
+    }
+
     private fun mount(initial: PlayerPresentation = PlayerPresentation.Collapsed) =
         Fixture(initial).also { fixture -> composeRule.setContent { fixture.Content() } }
 
@@ -353,6 +459,8 @@ class MusicPlayerPresentationTest {
         val hostStartInset = mutableStateOf(0.dp)
         val hostTopInset = mutableStateOf(0.dp)
         val hostEndInset = mutableStateOf(0.dp)
+        val shellLayout = mutableStateOf(MusicShellLayout())
+        val adaptiveNavigation = mutableStateOf(false)
         var contentPaddingPx = 0f
         var receivedPadding: Dp? = null
         val progress = MutableStateFlow(PlaybackProgressUiState(duration = 180_000))
@@ -417,11 +525,26 @@ class MusicPlayerPresentationTest {
                 shouldShowMetadataEditor = metadataVisible.value,
                 shouldComposePlayerOverlays = overlaysVisible.value,
                 targetBottomContentPadding = padding.value,
-                bodyPresentation = { value -> receivedPadding = value; Text("Body", Modifier.testTag("body")) },
+                bodyPresentation = { value ->
+                    receivedPadding = value
+                    Box(Modifier.fillMaxSize().testTag("body-pane")) {
+                        Text("Body", Modifier.testTag("body"))
+                    }
+                },
                 metadataEditorContent = { Text("Editor", Modifier.testTag("editor")) },
                 metadataDialogContent = { Text("Metadata dialog", Modifier.testTag("metadata-dialog")) },
                 transientOverlayContent = { Text("Transient", Modifier.testTag("transient")) },
-                bottomNavigationContent = { if (navigationVisible.value) Text("Navigation", Modifier.align(Alignment.BottomCenter).testTag("navigation")) },
+                bottomNavigationContent = {
+                    if (adaptiveNavigation.value) {
+                        AppNavigationChrome(
+                            shellLayout.value,
+                            navigationVisible.value && !morph.isExpandedOrTransitioning,
+                            MainDestination.HOME
+                        ) { calls += "navigate-$it" }
+                    } else if (navigationVisible.value) {
+                        Text("Navigation", Modifier.align(Alignment.BottomCenter).testTag("navigation"))
+                    }
+                },
                 onOpenMiniUpNext = { calls += "up-next" },
                 onShowQueueHub = { calls += "queue" },
                 onOpenSleepTimer = { calls += "sleep" },
@@ -431,12 +554,15 @@ class MusicPlayerPresentationTest {
                 onOpenCurrentArtistClick = { openedArtists += it },
                 onTrackInfoClick = { trackInfo += it },
                 onViewArtwork = { artworks += it },
+                shellLayout = shellLayout.value,
             )
             SazanamiTheme {
                 Box(Modifier.fillMaxSize().padding(
                     start = hostStartInset.value, top = hostTopInset.value, end = hostEndInset.value
                 )) {
-                    PlayerMorphHost(morph, Modifier.fillMaxSize().testTag("player-host")) { measuredEndpoints ->
+                    PlayerMorphHost(
+                        morph, Modifier.fillMaxSize().testTag("player-host"), shellLayout.value
+                    ) { measuredEndpoints ->
                         endpoints = measuredEndpoints
                         player(measuredEndpoints)
                     }

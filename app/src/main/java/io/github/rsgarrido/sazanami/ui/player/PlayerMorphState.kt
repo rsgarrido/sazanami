@@ -49,7 +49,8 @@ internal data class PlayerMorphLayoutFrame(
     val originInRoot: Offset,
     val rootSize: IntSize,
     val density: Float,
-    val fontScale: Float
+    val fontScale: Float,
+    val layoutBoundary: Any? = null
 )
 
 @Stable
@@ -71,7 +72,8 @@ class PlayerEndpointBounds internal constructor() {
         originInRoot: Offset,
         rootSize: IntSize,
         density: Float,
-        fontScale: Float
+        fontScale: Float,
+        layoutBoundary: Any? = null
     ) {
         if (!boundsInRoot.isUsablePlayerBounds() ||
             !originInRoot.x.isFinite() || !originInRoot.y.isFinite() ||
@@ -81,7 +83,8 @@ class PlayerEndpointBounds internal constructor() {
         if (current == null ||
             !current.boundsInRoot.nearlyEquals(boundsInRoot) ||
             current.originInRoot != originInRoot || current.rootSize != rootSize ||
-            current.density != density || current.fontScale != fontScale
+            current.density != density || current.fontScale != fontScale ||
+            current.layoutBoundary != layoutBoundary
         ) {
             layoutFrame = PlayerMorphLayoutFrame(
                 generation = (current?.generation ?: 0L) + 1L,
@@ -89,7 +92,8 @@ class PlayerEndpointBounds internal constructor() {
                 originInRoot = originInRoot,
                 rootSize = rootSize,
                 density = density,
-                fontScale = fontScale
+                fontScale = fontScale,
+                layoutBoundary = layoutBoundary
             )
             markMiniStale()
         }

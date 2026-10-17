@@ -63,23 +63,12 @@ fun AppBottomNavigation(
     onDestinationSelected: (MainDestination) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val lightShell = MaterialTheme.colorScheme.background.luminance() > 0.5f
     Box(
         modifier = modifier
             .fillMaxWidth()
             .padding(start = 16.dp, end = 16.dp, bottom = 10.dp)
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            border = BorderStroke(
-                1.dp,
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
-            ),
-            tonalElevation = 4.dp,
-            shadowElevation = 14.dp
-        ) {
+        AppFloatingNavigationSurface(Modifier.fillMaxWidth()) {
             BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -102,20 +91,13 @@ fun AppBottomNavigation(
                     label = "bottomNavigationIndicatorOffset"
                 )
 
-                Surface(
+                AppNavigationIndicator(
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .offset(x = indicatorOffset)
                         .width(itemWidth)
-                        .height(AppBottomNavigationItemHeight),
-                    color = AppShellAccent.copy(alpha = if (lightShell) 0.22f else 0.16f),
-                    shape = RoundedCornerShape(20.dp),
-                    border = if (lightShell) {
-                        BorderStroke(1.dp, AppShellAccent.copy(alpha = 0.32f))
-                    } else {
-                        null
-                    }
-                ) {}
+                        .height(AppBottomNavigationItemHeight)
+                )
 
                 Row(
                     modifier = Modifier
@@ -127,7 +109,7 @@ fun AppBottomNavigation(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     appNavigationItems.forEach { item ->
-                        AppBottomNavigationItem(
+                        AppNavigationDestination(
                             item = item,
                             selected = selectedDestination == item.destination,
                             onClick = { onDestinationSelected(item.destination) },
@@ -141,11 +123,12 @@ fun AppBottomNavigation(
 }
 
 @Composable
-private fun AppBottomNavigationItem(
+private fun AppNavigationDestination(
     item: AppNavigationItem,
     selected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showLabel: Boolean = true
 ) {
     val label = stringResource(item.labelRes)
     val itemShape = RoundedCornerShape(20.dp)
@@ -183,12 +166,76 @@ private fun AppBottomNavigationItem(
                 modifier = Modifier.size(21.dp),
                 tint = contentColor
             )
-            Text(
-                text = label.uppercase(),
-                style = AppShellTypography.NavigationLabel,
-                color = contentColor,
-                maxLines = 1
-            )
+            if (showLabel) {
+                Text(
+                    text = label.uppercase(),
+                    style = AppShellTypography.NavigationLabel,
+                    color = contentColor,
+                    maxLines = 1
+                )
+            }
         }
     }
+}
+
+/** The existing floating bar's destinations, selected surface and motion, arranged vertically. */
+@Composable
+internal fun AppFloatingNavigationRail(
+    selectedDestination: MainDestination,
+    onDestinationSelected: (MainDestination) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val selectedIndex = appNavigationItems.indexOfFirst {
+        it.destination == selectedDestination
+    }.coerceAtLeast(0)
+    val indicatorOffset by animateDpAsState(
+        targetValue = (AppBottomNavigationItemHeight + AppBottomNavigationItemSpacing) * selectedIndex,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "railNavigationIndicatorOffset"
+    )
+    AppFloatingNavigationSurface(modifier.width(AppNavigationRailWidth)) {
+        Box(Modifier.padding(8.dp)) {
+            AppNavigationIndicator(Modifier.offset(y = indicatorOffset).size(AppBottomNavigationItemHeight))
+            Column(
+                modifier = Modifier.selectableGroup(),
+                verticalArrangement = Arrangement.spacedBy(AppBottomNavigationItemSpacing)
+            ) {
+                appNavigationItems.forEach { item ->
+                    AppNavigationDestination(
+                        item, selectedDestination == item.destination,
+                        onClick = { onDestinationSelected(item.destination) },
+                        modifier = Modifier.width(AppBottomNavigationItemHeight),
+                        showLabel = false
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppFloatingNavigationSurface(modifier: Modifier, content: @Composable () -> Unit) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)),
+        tonalElevation = 4.dp,
+        shadowElevation = 14.dp,
+        content = content
+    )
+}
+
+@Composable
+private fun AppNavigationIndicator(modifier: Modifier) {
+    val lightShell = MaterialTheme.colorScheme.background.luminance() > 0.5f
+    Surface(
+        modifier = modifier,
+        color = AppShellAccent.copy(alpha = if (lightShell) 0.22f else 0.16f),
+        shape = RoundedCornerShape(20.dp),
+        border = if (lightShell) BorderStroke(1.dp, AppShellAccent.copy(alpha = 0.32f)) else null
+    ) {}
 }

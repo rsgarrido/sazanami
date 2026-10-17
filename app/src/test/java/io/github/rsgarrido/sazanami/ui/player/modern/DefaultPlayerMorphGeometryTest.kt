@@ -378,6 +378,35 @@ class DefaultPlayerMorphGeometryTest {
     }
 
     @Test
+    fun sameSizeShellSwitchRequiresFreshDestinationsEvenWhenTheyHaveNotMoved() {
+        val endpoints = framedEndpoints(Offset.Zero)
+        val elements = framedElements(endpoints)
+        publishMini(elements, Offset.Zero)
+        publishExpanded(elements, Offset.Zero)
+        resolveDefaultPlayerMorphGeometry(0.5f, endpoints, elements)
+
+        endpoints.updateLayoutFrame(frameSurface, Offset.Zero, IntSize(560, 900), 1f, 1f, "rail")
+        val newSource = Offset(98f, 82f)
+        endpoints.updateMini(frameMiniSurface.translate(newSource))
+        publishMini(elements, newSource)
+        elements.updateExpandedArtwork(frameExpandedArtwork)
+        // Live reversals still use the previous complete set until *all* unchanged placeholders
+        // have re-reported within the new boundary. No mixed source/destination set is promoted.
+        for (progress in listOf(0.8f, 0.2f, 1f, 0f)) {
+            assertEquals(expectedFramedGeometry(progress),
+                resolveDefaultPlayerMorphGeometry(progress, endpoints, elements))
+        }
+        publishExpanded(elements, Offset.Zero)
+        val progress = 0.5f
+        assertEquals(DefaultPlayerMorphGeometry(
+            interpolateMorphRect(frameMiniSurface.translate(newSource), frameSurface, progress),
+            interpolateMorphRect(frameMiniArtwork.translate(newSource), frameExpandedArtwork, progress),
+            interpolateMorphRect(frameMiniText.translate(newSource), frameExpandedText, progress),
+            interpolateMorphRect(frameMiniPlayPause.translate(newSource), frameExpandedPlayPause, progress)
+        ), resolveDefaultPlayerMorphGeometry(progress, endpoints, elements))
+    }
+
+    @Test
     fun firstDragUsesTheMeasuredSurfaceTravelBeforeDestinationsExist() {
         val origin = Offset(80f, 30f)
         val endpoints = framedEndpoints(origin)

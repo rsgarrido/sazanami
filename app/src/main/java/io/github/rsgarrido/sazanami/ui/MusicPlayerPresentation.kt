@@ -8,8 +8,13 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.absolutePadding
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -130,6 +135,7 @@ internal fun prepareMusicPlayerPresentation(
     onOpenCurrentArtistClick: (Song) -> Unit,
     onTrackInfoClick: (Song) -> Unit,
     onViewArtwork: (Song) -> Unit,
+    shellLayout: MusicShellLayout = MusicShellLayout(),
 ): @Composable BoxScope.(PlayerEndpointBounds) -> Unit {
     return { playerEndpointBounds ->
         val defaultMorphBounds = rememberMusicPlayerDefaultMorphBounds(playerEndpointBounds)
@@ -311,75 +317,91 @@ internal fun prepareMusicPlayerPresentation(
             label = "libraryChromeBottomPadding"
         )
 
-        if (shouldShowMetadataEditor) {
-            metadataEditorContent()
-        } else {
-            bodyPresentation(bottomContentPadding)
+        // Always use the same pane/slot, across breakpoints and while chrome yields to the player.
+        // Only destination content is inset. The player overlays below still fill the logical host.
+        Box(Modifier.fillMaxSize().musicContentPane(shellLayout)) {
+            if (shouldShowMetadataEditor) {
+                metadataEditorContent()
+            } else {
+                bodyPresentation(bottomContentPadding)
+            }
         }
 
-        AnimatedVisibility(
-            visible = shouldShowBottomMiniPlayer,
-            enter = slideInVertically(tween(220)) { height -> height } +
-                fadeIn(tween(160)),
-            exit = slideOutVertically(tween(200)) { height -> height } +
-                fadeOut(tween(140)),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = AppBottomNavigationHeight)
-        ) {
-            PlaybackProgress(playbackProgressUiState) { progress ->
-                MiniPlayerSection(
-                    currentSong = currentSong,
-                    isPlaying = isPlaying,
-                    isShuffleEnabled = isShuffleEnabled,
-                    repeatMode = repeatMode,
-                    currentPosition = progress.currentPosition,
-                    duration = progress.duration,
-                    selectedPlayerTheme = selectedPlayerTheme,
-                    selectedPlayerThemeTokens = selectedPlayerThemeTokens,
-                    playerMorphState = playerMorphState,
-                    favoriteMembershipKeys = favoriteMembershipKeys,
-                    onPlayPauseClick = onPlayPauseClick,
-                    onPreviousClick = onPreviousClick,
-                    onNextClick = onNextClick,
-                    onSeekChange = onSeekChange,
-                    onShuffleClick = onShuffleClick,
-                    onRepeatClick = onRepeatClick,
-                    onExpandClick = {
-                        playerMorphState.expand()
-                    },
-                    onOpenUpNextClick = onOpenMiniUpNext,
-                    onOpenQueueHubClick = onShowQueueHub,
-                    onToggleFavoriteClick = onToggleFavoriteClick,
-                    isSleepTimerActive = isSleepTimerActive,
-                    sleepTimerDisplayText = sleepTimerDisplayText,
-                    onSleepTimerClick = onOpenSleepTimer,
-                    onMiniPlayerBoundsChanged = playerEndpointBounds::updateMini,
-                    defaultMorphBounds = defaultMorphBounds,
-                    classicMorphBounds = classicMorphBounds,
-                    retroRackMorphBounds = retroRackMorphBounds,
-                    pocketFlipMorphBounds = pocketFlipMorphBounds,
-                    pocketCassetteMorphBounds = pocketCassetteMorphBounds,
-                    pocketDiscMorphBounds = pocketDiscMorphBounds,
-                    defaultMorphCallbacks = when (selectedPlayerTheme) {
-                        PlayerTheme.DEFAULT -> defaultMiniMorphCallbacks
-                        PlayerTheme.CLASSIC_WHEEL -> classicMiniMorphCallbacks
-                        PlayerTheme.RETRO_RACK -> retroRackMiniMorphCallbacks
-                        PlayerTheme.POCKET_FLIP -> pocketFlipMiniMorphCallbacks
-                        PlayerTheme.POCKET_CASSETTE -> pocketCassetteMiniMorphCallbacks
-                        PlayerTheme.POCKET_DISC -> pocketDiscMiniMorphCallbacks
-                    },
-                    morphOwnsVisuals = defaultMorphOwnsVisuals ||
-                            classicWheelMorphOwnsVisuals ||
-                            retroRackMorphOwnsVisuals ||
-                            pocketFlipMorphOwnsVisuals ||
-                            pocketCassetteMorphOwnsVisuals ||
-                            pocketDiscMorphOwnsVisuals,
-                    modifier = Modifier.playerEndpointInput(
-                        playerMorphState.isCollapsedAndIdle
+        Box(
+            modifier = Modifier.align(Alignment.BottomCenter).then(
+                if (shellLayout.usesRail) {
+                    Modifier.fillMaxWidth().absolutePadding(
+                        left = shellLayout.contentLeft,
+                        right = shellLayout.contentRight,
+                        bottom = shellLayout.insets.bottom + shellLayout.miniPlayerBottomGap
                     )
-                )
+                } else {
+                    Modifier.navigationBarsPadding().padding(bottom = AppBottomNavigationHeight)
+                }
+            ),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            AnimatedVisibility(
+                visible = shouldShowBottomMiniPlayer,
+                enter = slideInVertically(tween(220)) { height -> height } +
+                    fadeIn(tween(160)),
+                exit = slideOutVertically(tween(200)) { height -> height } +
+                    fadeOut(tween(140)),
+                modifier = Modifier.widthIn(max = shellLayout.miniPlayerMaxWidth).fillMaxWidth()
+            ) {
+                PlaybackProgress(playbackProgressUiState) { progress ->
+                    MiniPlayerSection(
+                        currentSong = currentSong,
+                        isPlaying = isPlaying,
+                        isShuffleEnabled = isShuffleEnabled,
+                        repeatMode = repeatMode,
+                        currentPosition = progress.currentPosition,
+                        duration = progress.duration,
+                        selectedPlayerTheme = selectedPlayerTheme,
+                        selectedPlayerThemeTokens = selectedPlayerThemeTokens,
+                        playerMorphState = playerMorphState,
+                        favoriteMembershipKeys = favoriteMembershipKeys,
+                        onPlayPauseClick = onPlayPauseClick,
+                        onPreviousClick = onPreviousClick,
+                        onNextClick = onNextClick,
+                        onSeekChange = onSeekChange,
+                        onShuffleClick = onShuffleClick,
+                        onRepeatClick = onRepeatClick,
+                        onExpandClick = {
+                            playerMorphState.expand()
+                        },
+                        onOpenUpNextClick = onOpenMiniUpNext,
+                        onOpenQueueHubClick = onShowQueueHub,
+                        onToggleFavoriteClick = onToggleFavoriteClick,
+                        isSleepTimerActive = isSleepTimerActive,
+                        sleepTimerDisplayText = sleepTimerDisplayText,
+                        onSleepTimerClick = onOpenSleepTimer,
+                        onMiniPlayerBoundsChanged = playerEndpointBounds::updateMini,
+                        defaultMorphBounds = defaultMorphBounds,
+                        classicMorphBounds = classicMorphBounds,
+                        retroRackMorphBounds = retroRackMorphBounds,
+                        pocketFlipMorphBounds = pocketFlipMorphBounds,
+                        pocketCassetteMorphBounds = pocketCassetteMorphBounds,
+                        pocketDiscMorphBounds = pocketDiscMorphBounds,
+                        defaultMorphCallbacks = when (selectedPlayerTheme) {
+                            PlayerTheme.DEFAULT -> defaultMiniMorphCallbacks
+                            PlayerTheme.CLASSIC_WHEEL -> classicMiniMorphCallbacks
+                            PlayerTheme.RETRO_RACK -> retroRackMiniMorphCallbacks
+                            PlayerTheme.POCKET_FLIP -> pocketFlipMiniMorphCallbacks
+                            PlayerTheme.POCKET_CASSETTE -> pocketCassetteMiniMorphCallbacks
+                            PlayerTheme.POCKET_DISC -> pocketDiscMiniMorphCallbacks
+                        },
+                        morphOwnsVisuals = defaultMorphOwnsVisuals ||
+                                classicWheelMorphOwnsVisuals ||
+                                retroRackMorphOwnsVisuals ||
+                                pocketFlipMorphOwnsVisuals ||
+                                pocketCassetteMorphOwnsVisuals ||
+                                pocketDiscMorphOwnsVisuals,
+                        modifier = Modifier.playerEndpointInput(
+                            playerMorphState.isCollapsedAndIdle
+                        )
+                    )
+                }
             }
         }
 

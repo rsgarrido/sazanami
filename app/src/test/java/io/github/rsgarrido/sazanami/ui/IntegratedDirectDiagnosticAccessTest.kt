@@ -23,7 +23,7 @@ class IntegratedDirectDiagnosticAccessTest {
         assertTrue(root.contains("Modifier.weight(1f).fillMaxWidth()"))
         assertEquals(1,Regex("PlayerMorphHost\\(").findAll(root).count())
         assertTrue(root.indexOf("IntegratedDirectPlaybackBanner(")<root.indexOf("PlayerMorphHost("))
-        assertTrue(Regex("}\\s*PlayerMorphHost\\(").containsMatchIn(root))
+        assertTrue(Regex("}\\s*BoxWithConstraints\\(").containsMatchIn(root))
         assertTrue(presentation.contains("bodyPresentation(bottomContentPadding)"))
         assertTrue(presentation.contains("bottomNavigationContent()"))
         assertFalse(presentation.contains("IntegratedDirectPlaybackBanner"))

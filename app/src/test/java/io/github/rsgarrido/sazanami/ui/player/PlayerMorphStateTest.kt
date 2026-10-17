@@ -176,6 +176,29 @@ class PlayerMorphStateTest {
     }
 
     @Test
+    fun sameViewportArrangementChangesInvalidateSourceWithoutReplacingTheOwner() {
+        val bounds = PlayerEndpointBounds()
+        val surface = Rect(0f, 0f, 1200f, 800f)
+        fun publish(arrangement: String) = bounds.updateLayoutFrame(
+            surface, Offset.Zero, IntSize(1200, 800), 1f, 1f, arrangement
+        )
+        publish("bottom")
+        bounds.updateMini(Rect(12f, 630f, 1188f, 698f))
+        val generation = bounds.layoutFrame!!.generation
+
+        publish("rail")
+        assertEquals(generation + 1, bounds.layoutFrame!!.generation)
+        assertTrue(bounds.mini is PlayerBoundsMeasurement.Stale)
+        bounds.updateMini(Rect(200f, 700f, 1000f, 768f))
+        publish("rail") // Hiding chrome keeps the arrangement key and valid source unchanged.
+        assertEquals(generation + 1, bounds.layoutFrame!!.generation)
+        assertTrue(bounds.mini is PlayerBoundsMeasurement.Measured)
+        publish("bottom")
+        assertEquals(generation + 2, bounds.layoutFrame!!.generation)
+        assertTrue(bounds.mini is PlayerBoundsMeasurement.Stale)
+    }
+
+    @Test
     fun expandedCompatibilityValueIsDerivedFromAuthoritativeState() {
         val state = state(PlayerPresentation.Collapsed)
         assertFalse(state.isExpandedOrTransitioning)
