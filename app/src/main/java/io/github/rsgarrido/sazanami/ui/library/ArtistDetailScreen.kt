@@ -1,5 +1,7 @@
 package io.github.rsgarrido.sazanami.ui.library
 
+import io.github.rsgarrido.sazanami.ui.readableContentWidth
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -46,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -196,201 +199,205 @@ fun ArtistDetailScreen(
             }
         )
 
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            state = gridState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = 16.dp,
-                end = 16.dp,
-                bottom = bottomContentPadding
-            ),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
-        ) {
-            item(
-                key = "artist-detail-header",
-                span = { GridItemSpan(maxLineSpan) }
+        val fontScale = LocalDensity.current.fontScale
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(artistAlbumGridColumns(maxWidth, fontScale)),
+                state = gridState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    bottom = bottomContentPadding
+                ),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 6.dp, bottom = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                item(
+                    key = "artist-detail-header",
+                    span = { GridItemSpan(maxLineSpan) }
                 ) {
-                    BoxWithConstraints(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = Alignment.Center
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .readableContentWidth()
+                            .padding(top = 6.dp, bottom = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        val artistImageSize = artistDetailHeroImageSize(maxWidth)
-                        ArtistPicture(
-                            identity = artistGroup.identity,
-                            fallbackModel = artistSongs.firstOrNull()?.albumArtUri,
-                            contentDescription = stringResource(R.string.library_artist_picture_of, artistName),
-                            modifier = Modifier
-                                .size(artistImageSize)
-                                .librarySharedArtwork(
-                                    artistDetailSharedArtworkKey(artistGroup.key)
-                                )
-                                .clip(RoundedCornerShape(26.dp)),
-                            variant = VisualAssetVariant.DISPLAY
-                        )
-                    }
-                    Text(
-                        text = artistName,
-                        style = MaterialTheme.typography.headlineLarge,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(18.dp),
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        LibraryDetailAction(
-                            icon = Icons.Filled.PlayArrow,
-                            label = stringResource(R.string.playlist_play),
-                            enabled = artistSongs.isNotEmpty(),
-                            onClick = onPlayAllClick
-                        )
-
-                        Box {
-                            LibraryDetailAction(
-                                icon = Icons.Filled.Shuffle,
-                                label = stringResource(R.string.playlist_shuffle),
-                                enabled = artistSongs.isNotEmpty(),
-                                trailingIcon = Icons.Filled.KeyboardArrowDown,
-                                onClick = {
-                                    shuffleMenuExpanded = true
-                                }
+                        BoxWithConstraints(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            val artistImageSize = artistDetailHeroImageSize(maxWidth)
+                            ArtistPicture(
+                                identity = artistGroup.identity,
+                                fallbackModel = artistSongs.firstOrNull()?.albumArtUri,
+                                contentDescription = stringResource(R.string.library_artist_picture_of, artistName),
+                                modifier = Modifier
+                                    .size(artistImageSize)
+                                    .librarySharedArtwork(
+                                        artistDetailSharedArtworkKey(artistGroup.key)
+                                    )
+                                    .clip(RoundedCornerShape(26.dp)),
+                                variant = VisualAssetVariant.DISPLAY
                             )
-                            DropdownMenu(
-                                expanded = shuffleMenuExpanded,
-                                onDismissRequest = {
-                                    shuffleMenuExpanded = false
-                                },
-                                modifier = Modifier.widthIn(min = 300.dp),
-                                properties = PopupProperties(
-                                    focusable = false,
-                                    dismissOnBackPress = true,
-                                    dismissOnClickOutside = true
-                                )
-                            ) {
-                                DropdownMenuItem(
-                                    text = {
-                                        ShuffleModeMenuText(
-                                            title = stringResource(R.string.library_artist_shuffle_songs),
-                                            subtitle = stringResource(R.string.library_artist_shuffle_songs_summary)
-                                        )
-                                    },
+                        }
+                        Text(
+                            text = artistName,
+                            style = MaterialTheme.typography.headlineLarge,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+    
+                        Spacer(modifier = Modifier.height(4.dp))
+    
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(18.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            LibraryDetailAction(
+                                icon = Icons.Filled.PlayArrow,
+                                label = stringResource(R.string.playlist_play),
+                                enabled = artistSongs.isNotEmpty(),
+                                onClick = onPlayAllClick
+                            )
+    
+                            Box {
+                                LibraryDetailAction(
+                                    icon = Icons.Filled.Shuffle,
+                                    label = stringResource(R.string.playlist_shuffle),
+                                    enabled = artistSongs.isNotEmpty(),
+                                    trailingIcon = Icons.Filled.KeyboardArrowDown,
                                     onClick = {
-                                        shuffleMenuExpanded = false
-                                        onShuffleSongsClick()
+                                        shuffleMenuExpanded = true
                                     }
                                 )
-                                DropdownMenuItem(
-                                    text = {
-                                        ShuffleModeMenuText(
-                                            title = stringResource(R.string.library_artist_shuffle_albums),
-                                            subtitle = stringResource(R.string.library_artist_shuffle_albums_summary)
-                                        )
-                                    },
-                                    onClick = {
+                                DropdownMenu(
+                                    expanded = shuffleMenuExpanded,
+                                    onDismissRequest = {
                                         shuffleMenuExpanded = false
-                                        onShuffleAlbumsClick()
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = {
-                                        ShuffleModeMenuText(
-                                            title = stringResource(R.string.library_artist_shuffle_both),
-                                            subtitle = stringResource(R.string.library_artist_shuffle_both_summary)
-                                        )
                                     },
-                                    onClick = {
-                                        shuffleMenuExpanded = false
-                                        onShuffleAlbumsAndSongsClick()
-                                    }
-                                )
+                                    modifier = Modifier.widthIn(min = 300.dp),
+                                    properties = PopupProperties(
+                                        focusable = false,
+                                        dismissOnBackPress = true,
+                                        dismissOnClickOutside = true
+                                    )
+                                ) {
+                                    DropdownMenuItem(
+                                        text = {
+                                            ShuffleModeMenuText(
+                                                title = stringResource(R.string.library_artist_shuffle_songs),
+                                                subtitle = stringResource(R.string.library_artist_shuffle_songs_summary)
+                                            )
+                                        },
+                                        onClick = {
+                                            shuffleMenuExpanded = false
+                                            onShuffleSongsClick()
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = {
+                                            ShuffleModeMenuText(
+                                                title = stringResource(R.string.library_artist_shuffle_albums),
+                                                subtitle = stringResource(R.string.library_artist_shuffle_albums_summary)
+                                            )
+                                        },
+                                        onClick = {
+                                            shuffleMenuExpanded = false
+                                            onShuffleAlbumsClick()
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = {
+                                            ShuffleModeMenuText(
+                                                title = stringResource(R.string.library_artist_shuffle_both),
+                                                subtitle = stringResource(R.string.library_artist_shuffle_both_summary)
+                                            )
+                                        },
+                                        onClick = {
+                                            shuffleMenuExpanded = false
+                                            onShuffleAlbumsAndSongsClick()
+                                        }
+                                    )
+                                }
                             }
                         }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Text(
-                        text = stringResource(R.string.library_artist_albums_heading),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = AppShellAccent
-                    )
-                }
-            }
-
-            items(
-                items = albums,
-                key = { album -> album.key }
-            ) { album ->
-                val firstSong = album.songs.firstOrNull()
-                val albumSongCount = pluralStringResource(
-                    R.plurals.song_count,
-                    album.songs.size,
-                    album.songs.size
-                )
-                val releaseYear = releaseYears[album.key]
-                val albumSubtitle = buildList {
-                    releaseYear?.let { year ->
-                        add(year.toString())
-                    }
-                    add(albumSongCount)
-                }.joinToString(separator = " • ")
-                val actionSheetSubtitle = buildList {
-                    add(album.artistText)
-                    releaseYear?.let { year ->
-                        add(year.toString())
-                    }
-                    add(albumSongCount)
-                }.joinToString(separator = " • ")
-
-                ArtistAlbumCard(
-                    album = album,
-                    subtitle = albumSubtitle,
-                    onClick = {
-                        onAlbumClick(album.key)
-                    },
-                    onShowActions = {
-                        actionSheetTarget = albumActionSheetTarget(
-                            albumTitle = album.title,
-                            subtitle = actionSheetSubtitle,
-                            artworkUri = firstSong?.albumArtUri,
-                            albumSongs = album.songs,
-                            onPlayClick = { _, songs ->
-                                onPlayAlbumClick(songs)
-                            },
-                            onShuffleClick = { _, songs ->
-                                onShuffleAlbumClick(songs)
-                            },
-                            onPlayNextClick = onPlayNextSongsClick,
-                            onAddToQueueClick = onAddSongsToQueueClick,
-                            onAddToAnotherQueueClick = libraryQueueUi.onAddToAnotherQueue,
-                            onPlayInNewQueueClick = libraryQueueUi.onPlayInNewQueue,
-                            onAddToPlaylistClick = { _, songs ->
-                                onAddSongsToPlaylistClick(songs)
-                            },
-                            homePinAction = homePinUi.actionForAlbum(album),
-                            resolveString = resources::getString,
-                            resolveArtworkDescription = { resources.getString(R.string.library_album_art_for, it) }
+    
+                        Spacer(modifier = Modifier.height(10.dp))
+    
+                        Text(
+                            text = stringResource(R.string.library_artist_albums_heading),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = AppShellAccent
                         )
                     }
-                )
+                }
+    
+                items(
+                    items = albums,
+                    key = { album -> album.key }
+                ) { album ->
+                    val firstSong = album.songs.firstOrNull()
+                    val albumSongCount = pluralStringResource(
+                        R.plurals.song_count,
+                        album.songs.size,
+                        album.songs.size
+                    )
+                    val releaseYear = releaseYears[album.key]
+                    val albumSubtitle = buildList {
+                        releaseYear?.let { year ->
+                            add(year.toString())
+                        }
+                        add(albumSongCount)
+                    }.joinToString(separator = " • ")
+                    val actionSheetSubtitle = buildList {
+                        add(album.artistText)
+                        releaseYear?.let { year ->
+                            add(year.toString())
+                        }
+                        add(albumSongCount)
+                    }.joinToString(separator = " • ")
+    
+                    ArtistAlbumCard(
+                        album = album,
+                        subtitle = albumSubtitle,
+                        onClick = {
+                            onAlbumClick(album.key)
+                        },
+                        onShowActions = {
+                            actionSheetTarget = albumActionSheetTarget(
+                                albumTitle = album.title,
+                                subtitle = actionSheetSubtitle,
+                                artworkUri = firstSong?.albumArtUri,
+                                albumSongs = album.songs,
+                                onPlayClick = { _, songs ->
+                                    onPlayAlbumClick(songs)
+                                },
+                                onShuffleClick = { _, songs ->
+                                    onShuffleAlbumClick(songs)
+                                },
+                                onPlayNextClick = onPlayNextSongsClick,
+                                onAddToQueueClick = onAddSongsToQueueClick,
+                                onAddToAnotherQueueClick = libraryQueueUi.onAddToAnotherQueue,
+                                onPlayInNewQueueClick = libraryQueueUi.onPlayInNewQueue,
+                                onAddToPlaylistClick = { _, songs ->
+                                    onAddSongsToPlaylistClick(songs)
+                                },
+                                homePinAction = homePinUi.actionForAlbum(album),
+                                resolveString = resources::getString,
+                                resolveArtworkDescription = { resources.getString(R.string.library_album_art_for, it) }
+                            )
+                        }
+                    )
+                }
             }
         }
     }

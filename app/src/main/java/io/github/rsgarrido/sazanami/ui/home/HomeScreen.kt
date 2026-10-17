@@ -5,6 +5,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,6 +25,7 @@ import androidx.compose.material.icons.rounded.QueryStats
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
@@ -95,33 +98,7 @@ internal fun HomeScreen(
                     modifier = Modifier.statusBarsPadding()
                 )
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    HomeStatBadge(
-                        count = songCount,
-                        label = pluralStringResource(R.plurals.song_label, songCount),
-                        modifier = Modifier.weight(1f)
-                    )
-                    HomeStatBadge(
-                        count = albumCount,
-                        label = pluralStringResource(R.plurals.album_label, albumCount),
-                        modifier = Modifier.weight(1f)
-                    )
-                    HomeStatBadge(
-                        count = artistCount,
-                        label = pluralStringResource(R.plurals.artist_label, artistCount),
-                        modifier = Modifier.weight(1f)
-                    )
-                    HomeStatBadge(
-                        count = playlistCount,
-                        label = pluralStringResource(R.plurals.playlist_label, playlistCount),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+                HomeStatistics(songCount, albumCount, artistCount, playlistCount)
             }
         }
 
@@ -259,6 +236,32 @@ internal fun HomeHeader(
             )
         }
     )
+}
+
+@Composable
+internal fun HomeStatistics(songCount: Int, albumCount: Int, artistCount: Int, playlistCount: Int) {
+    val statistics = listOf(
+        songCount to pluralStringResource(R.plurals.song_label, songCount),
+        albumCount to pluralStringResource(R.plurals.album_label, albumCount),
+        artistCount to pluralStringResource(R.plurals.artist_label, artistCount),
+        playlistCount to pluralStringResource(R.plurals.playlist_label, playlistCount)
+    )
+    val fontScale = LocalDensity.current.fontScale
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        val columns = homeStatisticsColumns(maxWidth, fontScale)
+        Column(
+            Modifier.widthIn(max = homeStatisticsMaximumWidth(fontScale)).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            statistics.chunked(columns).forEach { row ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    row.forEach { (count, label) ->
+                        HomeStatBadge(count, label, Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

@@ -1,5 +1,7 @@
 package io.github.rsgarrido.sazanami.ui.library
 
+import io.github.rsgarrido.sazanami.ui.readableContentWidth
+
 import android.R
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -89,7 +91,7 @@ fun AlbumListScreen(
     }
     val resolvedSelectedSongs = { resolvedSelectedAlbums().flatMap(LibraryAlbumGroup::songs) }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    Column(modifier = modifier.fillMaxSize().readableContentWidth()) {
         if (selectionEnabled) {
             LibrarySelectionHeader(
                 entity = LibrarySelectionEntity.ALBUM,

@@ -46,6 +46,7 @@ import io.github.rsgarrido.sazanami.data.membershipKey
 import io.github.rsgarrido.sazanami.data.stableUiKey
 import io.github.rsgarrido.sazanami.data.visual.VisualAssetVariant
 import io.github.rsgarrido.sazanami.ui.AppShellIcons
+import io.github.rsgarrido.sazanami.ui.centeredContentWidth
 import io.github.rsgarrido.sazanami.ui.AppShellAccent
 import io.github.rsgarrido.sazanami.ui.AppShellTypography
 import io.github.rsgarrido.sazanami.ui.ratings.CompactRatingIndicator
@@ -95,7 +96,9 @@ fun SongGrid(
         resolveSelectedSongs(selectionUi.state.selectedKeys, songs, selectionUi.allSongs)
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    Column(modifier = modifier.fillMaxSize().centeredContentWidth(
+        exactLibraryGridMaximumWidth(gridColumnCount, gridMetrics.horizontalSpacing, gridMetrics.contentHorizontalPadding)
+    )) {
         if (selectionEnabled) {
             LibrarySelectionHeader(
                 entity = LibrarySelectionEntity.SONG,
@@ -278,7 +281,9 @@ fun AlbumGridScreen(
     }
     val resolvedSelectedSongs = { resolvedSelectedAlbums().flatMap(LibraryAlbumGroup::songs) }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    Column(modifier = modifier.fillMaxSize().centeredContentWidth(
+        exactLibraryGridMaximumWidth(gridColumnCount, gridMetrics.horizontalSpacing, gridMetrics.contentHorizontalPadding)
+    )) {
         if (selectionEnabled) {
             LibrarySelectionHeader(
                 entity = LibrarySelectionEntity.ALBUM,
@@ -479,7 +484,9 @@ fun ArtistGridScreen(
         columns = gridMetrics.columnCount,
         enabled = true,
         sessionKey = sortState to fastScrollSessionKey,
-        modifier = modifier.fillMaxSize()
+        modifier = modifier.fillMaxSize().centeredContentWidth(
+            exactLibraryGridMaximumWidth(gridColumnCount, gridMetrics.horizontalSpacing, gridMetrics.contentHorizontalPadding)
+        )
     ) {
     LazyVerticalGrid(
         state = activeGridState,

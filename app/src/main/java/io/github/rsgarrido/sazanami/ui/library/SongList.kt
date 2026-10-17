@@ -1,5 +1,7 @@
 package io.github.rsgarrido.sazanami.ui.library
 
+import io.github.rsgarrido.sazanami.ui.readableContentWidth
+
 import android.R
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -107,7 +109,7 @@ fun SongList(
         resolveSelectedSongs(selectionUi.state.selectedKeys, songs, selectionUi.allSongs)
     }
 
-    Column(modifier = modifier) {
+    Column(modifier = modifier.readableContentWidth()) {
         if (selectionEnabled) {
             LibrarySelectionHeader(
                 entity = LibrarySelectionEntity.SONG,

@@ -1,4 +1,8 @@
 package io.github.rsgarrido.sazanami.ui.playlist
+
+import io.github.rsgarrido.sazanami.ui.BoundedArtworkFrame
+
+import io.github.rsgarrido.sazanami.ui.readableContentWidth
 import android.util.Log
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
@@ -10,12 +14,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
@@ -225,7 +227,7 @@ fun PlaylistDetailScreen(
         )
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    Column(modifier = modifier.fillMaxSize().readableContentWidth()) {
         LibraryDetailTopBar(
             title = playlist.name,
             showTitle = isLoading || isEditingOrder || showCompactTitle,
@@ -440,18 +442,17 @@ private fun PlaylistDetailHero(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(9.dp)
     ) {
-        PlaylistArtwork(
-            playlist = playlist,
-            contentDescription = stringResource(R.string.playlist_artwork_for, playlist.name),
-            modifier = Modifier
-                .fillMaxWidth(0.72f)
-                .widthIn(max = 320.dp)
-                .aspectRatio(1f)
-                .librarySharedArtwork(
-                    playlistDetailSharedArtworkKey(playlist.playlistId)
-                ),
-            variant = VisualAssetVariant.DISPLAY
-        )
+        BoundedArtworkFrame(fraction = 0.72f, maximum = 320.dp) { artworkModifier ->
+            PlaylistArtwork(
+                playlist = playlist,
+                contentDescription = stringResource(R.string.playlist_artwork_for, playlist.name),
+                modifier = artworkModifier
+                    .librarySharedArtwork(
+                        playlistDetailSharedArtworkKey(playlist.playlistId)
+                    ),
+                variant = VisualAssetVariant.DISPLAY
+            )
+        }
 
         Column(
             modifier = Modifier

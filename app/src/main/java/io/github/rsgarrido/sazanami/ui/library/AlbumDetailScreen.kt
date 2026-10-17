@@ -1,5 +1,8 @@
 package io.github.rsgarrido.sazanami.ui.library
 
+import io.github.rsgarrido.sazanami.ui.BoundedArtworkFrame
+import io.github.rsgarrido.sazanami.ui.readableContentWidth
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -16,7 +19,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,7 +26,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -215,7 +216,7 @@ fun AlbumDetailScreen(
         }
 
         Column(
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize().readableContentWidth()
         ) {
             LibraryDetailTopBar(
                 title = album.title,
@@ -370,28 +371,27 @@ private fun AlbumDetailHero(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(9.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.84f)
-                .widthIn(max = 360.dp)
-                .aspectRatio(1f)
-                .librarySharedArtwork(albumDetailSharedArtworkKey(album.key))
-                .clip(RoundedCornerShape(26.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = AppShellIcons.AlbumStack,
-                contentDescription = null,
-                modifier = Modifier.size(54.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f)
-            )
-            AsyncImage(
-                model = artworkRequest,
-                contentDescription = stringResource(R.string.library_album_art_for, album.title),
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
+        BoundedArtworkFrame(fraction = 0.84f, maximum = 360.dp) { artworkModifier ->
+            Box(
+                modifier = artworkModifier
+                    .librarySharedArtwork(albumDetailSharedArtworkKey(album.key))
+                    .clip(RoundedCornerShape(26.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = AppShellIcons.AlbumStack,
+                    contentDescription = null,
+                    modifier = Modifier.size(54.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f)
+                )
+                AsyncImage(
+                    model = artworkRequest,
+                    contentDescription = stringResource(R.string.library_album_art_for, album.title),
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(5.dp))

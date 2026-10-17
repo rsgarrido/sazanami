@@ -1,5 +1,7 @@
 package io.github.rsgarrido.sazanami.ui.library
 
+import io.github.rsgarrido.sazanami.ui.readableContentWidth
+
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.fillMaxSize
@@ -72,7 +74,7 @@ fun ArtistListScreen(
         state = activeListState,
         enabled = true,
         sessionKey = sortState to fastScrollSessionKey,
-        modifier = modifier.fillMaxSize()
+        modifier = modifier.fillMaxSize().readableContentWidth()
     ) {
     LazyColumn(
         state = activeListState,

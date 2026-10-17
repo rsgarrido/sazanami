@@ -1,5 +1,7 @@
 package io.github.rsgarrido.sazanami.ui.library
 
+import io.github.rsgarrido.sazanami.ui.readableContentWidth
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -140,7 +142,7 @@ fun LibrarySearchContent(
             }
     }
 
-    Column(modifier) {
+    Column(modifier.readableContentWidth()) {
         if (!idle) {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
