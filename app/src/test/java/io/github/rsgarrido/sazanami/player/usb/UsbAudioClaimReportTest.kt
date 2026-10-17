@@ -85,9 +85,9 @@ class UsbAudioClaimReportTest {
         // Session 25 reports telemetry availability; the old pre-integration capability
         // disclaimer is obsolete. A clock-claim query alone still proves no playback state.
         for(text in listOf(report,idle)) {
-            assertTrue(text.contains("SAZANAMI USB AUDIO DIAGNOSTIC — SESSION 25"))
-            assertTrue(text.contains("Live native USB transport diagnostics — Session 25\n"))
-            val telemetry=text.substringAfter("Live native USB transport diagnostics — Session 25\n").substringBefore("\nDevice\n")
+            assertTrue(text.contains("SAZANAMI USB AUDIO DIAGNOSTIC"))
+            assertTrue(text.contains("Native USB transport diagnostics\n"))
+            val telemetry=text.substringAfter("Native USB transport diagnostics\n").substringBefore("\nDevice\n")
             assertTrue(telemetry.contains("Capture status: IDLE"))
             assertTrue(telemetry.contains("attachment generation=unavailable; native stream/session=unavailable"))
             assertTrue(telemetry.contains("Snapshot unavailable:"))

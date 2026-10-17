@@ -12,15 +12,15 @@ import java.util.Locale
 
 internal fun formatIntegratedDirectPlayback(state: IntegratedDirectPlaybackState,locale: Locale=Locale.getDefault()): String=buildString {
     append(io.github.rsgarrido.sazanami.player.usb.formatUsbTransportTelemetry())
-    appendLine("Integrated Direct USB Playback — Session 17")
+    appendLine("Integrated Direct USB Playback")
     appendLine("experimental direct USB enabled=${state.enabled}; requested backend=${if(state.enabled) "DIRECT_USB" else "NORMAL"}; authoritative backend=${if(state.enabled && !state.normalReleased) "NONE_BLOCKED" else if(state.enabled) "DIRECT_USB" else "NORMAL"}")
     appendLine("safe library ID=${state.libraryId ?: "none"}; request generation=${state.generation}; current track only; no raw URI/path")
     appendLine("normal pipelines synchronously released=${state.normalReleased}; standby/preload inactive=${state.normalReleased}; crossfade inactive=${state.normalReleased}")
     appendLine("integrated state=${state.phase}; completed frames=${state.completedFrames} (cumulative delivered); original source frame=${state.sourcePositionFrame ?: state.completedFrames}; source epoch=${state.sourceEpoch}; position ms=${state.positionMs}; duration ms=${state.durationMs}; STREAMINFO total=${state.totalFrames}")
     appendLine("requested playWhenReady=${state.playWhenReady}; latest native lifecycle=${state.nativeTransportPhase}; app Pause/Resume requests=${state.pauseRequests}/${state.resumeRequests} (native confirmations below require snapshot evidence)")
     appendLine("error=${state.error ?: "none"}; command notice=${state.notice ?: "none"}")
-    appendLine("direct resources/restoration safe=${state.cleanupSafe}; detached native resources independently released=${state.detachedResourcesReleased}; production Bit-perfect: NOT YET COMPLETE")
-    appendLine("Single track; native Pause/Resume and absolute seek on capable sources; no next/previous/repeat/shuffle, DSP/gain, Android audio sink or mixer; physical KA15 volume only")
+    appendLine("direct resources/restoration safe=${state.cleanupSafe}; detached native resources independently released=${state.detachedResourcesReleased}; DAC-internal bit-perfect output: NOT INDEPENDENTLY VERIFIED")
+    appendLine("Integrated Direct Queue playback; native Pause/Resume and absolute seek on capable sources; no DSP/gain, Android audio sink or mixer; physical DAC volume controls output")
     val controlCounters=state.engine?.transport?.counters ?: state.nativePauseCounters
     fun control(name: String)=controlCounters[name]?.toString() ?: "unavailable"
     val phase=controlCounters["playbackTransportState"]?.let { UsbFullTransportPhase.entries.getOrNull(it.toInt()) }
@@ -47,7 +47,7 @@ internal fun formatIntegratedDirectPlayback(state: IntegratedDirectPlaybackState
         appendLine("Pause frame telemetry remains cumulative delivered frames after seeking. Confirmed source base + current-epoch successful completions drives position; queued PCM and scrub previews are not completions.")
     }
     state.engine?.let { result ->
-        appendLine("underlying Session 11 engine result=${result.status}; original descriptor closed=${result.originalFlacFdClosed}; native memory released=${result.nativeMemoryReleased}; native execution joined=${result.nativeExecutionJoined}")
+        appendLine("native engine result=${result.status}; original descriptor closed=${result.originalFlacFdClosed}; native memory released=${result.nativeMemoryReleased}; native execution joined=${result.nativeExecutionJoined}")
         result.flacSource?.let { source ->
             appendLine("format=${source.count("sampleRate")}/${source.count("channels")}/${source.count("bitsPerSample")}; accepted=${source.count("metadataAccepted")}; MD5=${source.md5Report}; true EOF=${source.count("trueEofReached")}")
             appendLine("STREAMINFO MD5 reference available=${source.decoder?.counters?.get("md5ReferenceAvailable") ?: "unavailable"}; whole-file verification scope=${if(source.count("sourceSeekAttempts")>0L) "INVALIDATED_BY_SEEK" else "SEQUENTIAL"}")
@@ -110,7 +110,10 @@ internal fun formatIntegratedDirectPlayback(state: IntegratedDirectPlaybackState
             appendLine("hash agreement=${hashes.all { native.counters.containsKey(it) && native.counters[it]==native.counters["submittedPcmHash"] }}")
             if(native.count("sourceSeekAttempts")>0L) appendLine("Seek-aware delivered-byte hashes above reconcile consumption with successful submission. Decoder-ahead/enqueued hashes include intentionally invalidated PCM and are not whole-track output evidence.")
         }
-        result.configuration?.let { appendLine("USB configuration=${it.targetStatus}; restoration=${it.restorationStatus}; AS release=${it.asRelease.returned}; AC release=${it.acRelease.returned}; connection close=${it.closeStatus}") }
+        result.configuration?.let {
+            appendLine("USB configuration=${it.targetStatus}; restoration=${it.restorationStatus}; AS release=${it.asRelease.returned}; AC release=${it.acRelease.returned}; connection close=${it.closeStatus}")
+            append(io.github.rsgarrido.sazanami.player.usb.UsbAudioDiagnosticReport.formatIntegratedConfiguration(it))
+        }
     }
     appendLine("Completed frames are host USB evidence; DAC-internal reconstruction and listening are not measured.")
 }

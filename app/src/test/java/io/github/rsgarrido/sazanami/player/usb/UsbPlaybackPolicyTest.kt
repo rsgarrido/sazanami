@@ -15,11 +15,16 @@ class UsbPlaybackPolicyTest {
     private val selected = UsbAudioDiagnosticState(serviceAvailable = true,
         status = UsbAudioDiagnosticStatus.PERMISSION_REQUIRED, devices = listOf(device), selectedIdentity = identity, generation = 7)
 
-    @Test fun releaseRequiresExplicitAuthorizationAndDoesNotAuthorizeExperiments() {
+    @Test fun everyBuildRequiresPersistedOptInAndSessionAuthorizationForIntegratedPlayback() {
         for (debug in listOf(false, true)) {
             assertFalse(UsbPlaybackPolicy.allows(UsbPlaybackOperation.INTEGRATED_PLAYBACK, debug))
-            assertTrue(UsbPlaybackPolicy.allows(UsbPlaybackOperation.INTEGRATED_PLAYBACK, debug, authorized = true))
-            assertEquals(debug, UsbPlaybackPolicy.allows(UsbPlaybackOperation.DEVELOPER_EXPERIMENT, debug, authorized = true))
+            for (optIn in listOf(false, true)) for (authorized in listOf(false, true)) {
+                assertEquals("debug=$debug optIn=$optIn authorized=$authorized", optIn && authorized,
+                    UsbPlaybackPolicy.allows(UsbPlaybackOperation.INTEGRATED_PLAYBACK, debug,
+                        authorized = authorized, experimentalOptIn = optIn))
+                assertEquals(debug, UsbPlaybackPolicy.allows(UsbPlaybackOperation.DEVELOPER_EXPERIMENT, debug,
+                    authorized = authorized, experimentalOptIn = optIn))
+            }
         }
         for (internal in listOf(false, true)) {
             assertTrue(allowsDirectCommand(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM, internal))
@@ -36,6 +41,16 @@ class UsbPlaybackPolicyTest {
         assertNull(multiple.selectedDevice)
         assertEquals("DIRECT_USB_SELECTION_REQUIRED", multiple.activationFailure(null, 7))
         assertEquals(device, selected.selectedDevice)
+    }
+
+    @Test fun fullFlacNativeSourceCreationRequiresOptInBeforeLoadingOrCallingJni() {
+        try {
+            UsbFlacPrefixNative.create(-1, 1, 2, fullTrack = true,
+                operation = UsbPlaybackOperation.INTEGRATED_PLAYBACK, experimentalOptIn = false)
+            fail("An integrated full-track request cannot replace persisted consent")
+        } catch (failure: UsbIntegratedStartException) {
+            assertEquals("DIRECT_EXPERIMENTAL_OPT_IN_REQUIRED", failure.reason)
+        }
     }
 
     @Test fun permissionAndDescriptorEvidenceArePrerequisitesNotActivation() {
@@ -103,6 +118,8 @@ class UsbPlaybackPolicyTest {
         val permission = controller.substringAfter("fun permissionResult(").substringBefore("private fun inspect(")
         assertTrue(permission.contains("request.matches(requestId, identity, gate)"))
         assertTrue(permission.contains("manager?.hasPermission(device) == true"))
+        assertTrue(permission.contains("if (!inspectionAllowed()) return@onMain"))
+        assertTrue(permission.indexOf("if (!inspectionAllowed()) return@onMain") < permission.indexOf("else inspect(request.token)"))
         assertFalse(permission.contains("authorizeIntegratedSelection"))
         val player = source("java/io/github/rsgarrido/sazanami/player/ExperimentalUsbPlaybackPlayer.kt")
         assertTrue(player.indexOf("selection.authorize(owner,identity,generation)") < player.indexOf("releaseNormal()"))
@@ -112,9 +129,37 @@ class UsbPlaybackPolicyTest {
         assertFalse(bridge.contains("BuildConfig.DEBUG"))
         assertTrue(bridge.contains("if(owner===player)"))
         val service = source("java/io/github/rsgarrido/sazanami/player/PlaybackService.kt")
-        assertTrue(service.contains("selection=io.github.rsgarrido.sazanami.player.usb.UsbOutputSelectionCallbacks { usbAudioController }"))
+        assertTrue(service.contains("selection=io.github.rsgarrido.sazanami.player.usb.UsbOutputSelectionCallbacks("))
+        assertTrue(service.contains("experimentalOptIn={ appPreferencesRepository.isExperimentalUsbDirectAllowed }) { usbAudioController }"))
+        assertTrue(service.contains("appPreferencesRepository.experimentalUsbDirectAccess.collect {"))
+        val preferenceObserver = service.substringAfter("appPreferencesRepository.experimentalUsbDirectAccess.collect {")
+            .substringBefore("serviceScope.launch {")
+        assertTrue(preferenceObserver.contains("usbAudioController?.experimentalAccessChanged()"))
+        assertTrue(preferenceObserver.contains("sessionPlayer.usbSelectionChanged()"))
+        assertFalse(service.contains("selectDirect(true"))
         assertFalse(service.contains("usbAudioController?.authorizeIntegratedSelection"))
         assertFalse(service.contains("usbAudioController?.integratedSelectionFailure"))
         assertFalse(source("../../build.gradle.kts").contains("DEBUG=true"))
+    }
+
+    @Test fun everyAsyncForwardBoundaryRechecksAccessWithoutChangingCleanupAuthority() {
+        fun source(name: String) = listOf(Paths.get("src/main", name), Paths.get("app/src/main", name))
+            .first { Files.isRegularFile(it) }.toFile().readText()
+        fun precedes(text: String, gate: String, operation: String) {
+            assertTrue(gate, text.indexOf(gate) >= 0)
+            assertTrue(operation, text.indexOf(operation) > text.indexOf(gate))
+        }
+        val controller = source("java/io/github/rsgarrido/sazanami/player/usb/UsbAudioController.kt")
+        val authorize = controller.substringAfter("override fun authorizeIntegratedSelection(")
+            .substringBefore("override fun integratedSelectionFailure(")
+        precedes(authorize, "integratedAccessFailure()", "reservation.acquire(owner, token)")
+        val engine = controller.substringAfter("override suspend fun runIntegratedFull(").substringBefore("override fun stopIntegratedFull()")
+        precedes(engine, "integratedAccessFailure()", "val selection = integratedSelection")
+        val transport = source("java/io/github/rsgarrido/sazanami/player/usb/UsbNativeSilentTransport.kt")
+        precedes(transport, "startAuthorizationFailure()?.let", "UsbFsDiagnostics.createSilentTransport(")
+        val experiment = source("java/io/github/rsgarrido/sazanami/player/usb/UsbSilentTransportExperiment.kt")
+        assertTrue(experiment.contains("override fun forwardIssue() = forwardAuthorizationFailure()"))
+        assertTrue(experiment.contains("override val authorityFailure get() = native?.authorityFailure"))
+        assertTrue(experiment.contains("override suspend fun beforeRestoration() { prefixSource?.finish() }"))
     }
 }

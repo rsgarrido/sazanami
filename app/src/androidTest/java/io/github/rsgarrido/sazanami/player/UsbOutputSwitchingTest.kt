@@ -18,6 +18,154 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class UsbOutputSwitchingTest {
+    @Test fun acknowledgedPreferenceAloneNeverSelectsOrStartsDirectOnNewPlayer() = checkRoute { f ->
+        assertTrue(f.experimentalOptIn)
+        assertFalse(f.route.isDirectSelected)
+        assertEquals(song.id.toString(), f.route.currentMediaItem?.mediaId)
+        assertEquals(0, f.authorizations);assertEquals(0, f.releases)
+        assertEquals(0, f.engine.starts);assertTrue(f.reservationReleased)
+    }
+
+    @Test fun disabledFeatureRejectsBridgeAndInternalActivationWithoutTouchingAndroid() = checkRoute(optedIn = false) { f ->
+        val item = f.route.currentMediaItem
+        IntegratedDirectPlaybackBridge.attach(f.route)
+        try {
+            IntegratedDirectPlaybackBridge.select(true, f.identity, f.token.generation)
+            IntegratedDirectPlaybackBridge.start();IntegratedDirectPlaybackBridge.togglePlayPause()
+            IntegratedDirectPlaybackBridge.seek(1000);IntegratedDirectPlaybackBridge.next()
+            IntegratedDirectPlaybackBridge.previous()
+            val rejected = f.route.replaceDirectSource(song.toPlayableMediaItem("blocked"), true).await()
+            assertEquals(DirectSourceTransitionStatus.REJECTED, rejected.status)
+            assertEquals("DIRECT_EXPERIMENTAL_OPT_IN_REQUIRED", rejected.error)
+            assertEquals("DIRECT_EXPERIMENTAL_OPT_IN_REQUIRED", f.route.directState.activation?.failure)
+            assertFalse(f.route.isDirectSelected);assertEquals(item, f.route.currentMediaItem)
+            assertTrue(f.route.playWhenReady)
+            assertEquals(0, f.authorizations);assertEquals(0, f.releases)
+            assertEquals(0, f.physical.stopped);assertEquals(0, f.engine.starts)
+            assertTrue(f.reservationReleased)
+        } finally { IntegratedDirectPlaybackBridge.detach(f.route) }
+    }
+
+    @Test fun revocationDuringAndroidReleaseRollsBackBeforeNativeHandoffAndRestoresPaused() = checkRoute { f ->
+        f.route.selectDirect(true, f.identity, f.token.generation)
+        assertEquals(DirectOutputSwitch.TO_USB, f.route.directState.switching)
+        assertFalse(f.reservationReleased)
+        f.experimentalOptIn = false;f.route.usbSelectionChanged()
+        assertEquals(0, f.engine.starts);assertEquals(0, f.recreations)
+        f.released.complete(true);settled(f)
+        f.forwarding { !f.route.isDirectSelected && f.route.currentMediaItem?.mediaId == song.id.toString() }
+        assertEquals("DIRECT_EXPERIMENTAL_OPT_IN_REQUIRED", f.route.directState.activation?.failure)
+        assertTrue(f.reservationReleased);assertEquals(0, f.engine.starts)
+        assertEquals(1, f.recreations);assertFalse(f.route.playWhenReady)
+        assertEquals(2000L, f.route.currentPosition)
+    }
+
+    @Test fun revocationWhileIdleBlocksSourceAndMediaCommandsBeforeObserverRuns() = checkRoute { f ->
+        f.released.complete(true);f.route.selectDirect(true);settled(f)
+        f.experimentalOptIn = false
+        val rejected = f.route.replaceDirectSource(song.toPlayableMediaItem("revoked"), true).await()
+        assertEquals(DirectSourceTransitionStatus.REJECTED, rejected.status)
+        assertEquals("DIRECT_EXPERIMENTAL_OPT_IN_REQUIRED", rejected.error)
+        f.route.restartDirectPlayback();f.route.toggleDirectPlayback();f.route.prepare();yield()
+        assertEquals(0, f.engine.starts)
+        f.route.usbSelectionChanged();settled(f)
+        f.forwarding { !f.route.isDirectSelected && f.route.isCommandAvailable(Player.COMMAND_SET_MEDIA_ITEM) }
+        assertFalse(f.route.playWhenReady);assertTrue(f.reservationReleased)
+    }
+
+    @Test fun activeOptOutJoinsNativeBeforeAndroidAndNeverStartsSpeakerPlayback() {
+        for (phase in listOf(UsbFullTransportPhase.PLAYING, UsbFullTransportPhase.PAUSED)) checkRoute { f ->
+            f.released.complete(true);f.route.selectDirect(true);settled(f)
+            f.route.setMediaItem(song.toPlayableMediaItem());f.route.prepare()
+            withTimeout(5000) { f.engine.started.receive() }
+            if (phase == UsbFullTransportPhase.PAUSED) f.route.pauseDirectPlayback()
+            f.engine.progress(UsbFullProgress(44100, 441000, 44100, phase))
+            val oldProgress = f.engine.progress
+            f.experimentalOptIn = false
+            repeat(2) { f.route.usbSelectionChanged() }
+            assertEquals(DirectOutputSwitch.TO_ANDROID, f.route.directState.switching)
+            assertEquals(0, f.recreations);assertFalse(f.reservationReleased)
+            f.engine.terminal.complete(terminal(true));settled(f)
+            f.forwarding { !f.route.isDirectSelected && f.route.isCommandAvailable(Player.COMMAND_SET_MEDIA_ITEM) }
+            assertTrue(f.reservationReleased);assertEquals(1, f.recreations)
+            assertFalse(f.route.playWhenReady);assertEquals(2000L, f.route.currentPosition)
+            oldProgress(UsbFullProgress(88200, 441000, 44100, UsbFullTransportPhase.PLAYING))
+            f.route.selectDirect(true);settled(f)
+            assertFalse(f.route.isDirectSelected);assertEquals(1, f.engine.starts)
+            assertFalse(f.route.playWhenReady)
+        }
+    }
+
+    @Test fun cachedMediaSessionPlayCommandCannotResumeNativeAfterConsentIsWithdrawn() = checkRoute { f ->
+        f.released.complete(true);f.route.selectDirect(true);settled(f)
+        f.route.setMediaItem(song.toPlayableMediaItem());f.route.prepare()
+        withTimeout(5000) { f.engine.started.receive() }
+        f.engine.progress(UsbFullProgress(44100, 441000, 44100, UsbFullTransportPhase.PLAYING))
+        f.route.pauseDirectPlayback()
+        f.engine.progress(UsbFullProgress(44100, 441000, 44100, UsbFullTransportPhase.PAUSED))
+        f.forwarding { !f.route.playWhenReady && f.route.playbackState == Player.STATE_READY }
+        val logicalPlayer = f.route.queuePlayer
+        assertTrue(logicalPlayer.isCommandAvailable(Player.COMMAND_PLAY_PAUSE))
+        val pausedIntent = f.engine.control.intent()
+        assertFalse(pausedIntent.play)
+        f.experimentalOptIn = false
+        // Exercise the actual Media3 player before the service's access observer can run.
+        logicalPlayer.play();f.route.toggleDirectPlayback()
+        assertEquals(pausedIntent, f.engine.control.intent())
+        f.route.usbSelectionChanged();f.engine.terminal.complete(terminal(true));settled(f)
+        assertFalse(f.route.isDirectSelected);assertFalse(f.route.playWhenReady)
+        assertTrue(f.reservationReleased)
+    }
+
+    @Test fun optOutCannotDiscardUnverifiedNativeResourcesOrRestoreAndroidPrematurely() = checkRoute { f ->
+        f.released.complete(true);f.route.selectDirect(true);settled(f)
+        f.route.setMediaItem(song.toPlayableMediaItem());f.route.prepare()
+        withTimeout(5000) { f.engine.started.receive() }
+        val owner = checkNotNull(f.reservation.owner)
+        val terminalResult = terminal(false)
+        f.experimentalOptIn = false;f.route.usbSelectionChanged()
+        assertTrue(f.engine.control.stopped)
+        f.engine.terminal.complete(terminalResult);settled(f)
+        assertFalse(f.reservationReleased);assertEquals(0, f.recreations)
+        assertEquals(UsbActivationRestoration.BLOCKED, f.route.directState.activation?.restoration)
+        assertEquals("DIRECT_RESOURCE_CLEANUP_UNVERIFIED", f.route.directState.error)
+        assertSame(terminalResult, f.route.directState.engine)
+        assertFalse(f.route.directState.cleanupSafe);assertFalse(f.route.directState.playWhenReady)
+        // The switch job has joined, but Media3 forwards its terminal state via posted onEvents.
+        // Wait for that error/idle publication independently of the playWhenReady assertion.
+        f.forwarding { f.route.playerError != null && f.route.playbackState == Player.STATE_IDLE }
+        assertFalse(f.route.playWhenReady)
+        assertSame(owner, f.reservation.owner);assertTrue(f.reservation.handedOff)
+        assertEquals(0, f.recreations);assertTrue(f.route.isDirectSelected)
+        assertEquals("DIRECT_EXPERIMENTAL_OPT_IN_REQUIRED", f.route.directState.activation?.failure)
+    }
+
+    @Test fun detachReconnectAndLatePermissionCannotRestoreAccessAfterOptOut() = checkRoute(optedIn = false) { f ->
+        val pending = UsbAudioPermissionRequest("permission", f.token)
+        assertTrue(pending.matches("permission", f.identity, f.gate))
+        f.route.selectDirect(true);assertTrue(f.reservationReleased)
+        f.gate.select(null);f.route.usbSelectionChanged()
+        f.token = f.gate.select(f.identity)!!;f.route.usbSelectionChanged()
+        assertFalse(pending.matches("permission", f.identity, f.gate))
+        f.route.selectDirect(true, f.identity, f.token.generation)
+        assertFalse(f.route.isDirectSelected);assertEquals(0, f.authorizations)
+        assertEquals(0, f.releases);assertEquals(0, f.engine.starts)
+        f.experimentalOptIn = true;yield()
+        assertFalse(f.route.isDirectSelected);assertEquals(0, f.engine.starts)
+        f.released.complete(true);f.route.selectDirect(true, f.identity, f.token.generation);settled(f)
+        assertTrue(f.route.directState.confirmedDirect);assertEquals(0, f.engine.starts)
+    }
+
+    @Test fun unsupportedHardwareFailureLeavesOrdinaryAndroidAvailable() = checkRoute { f ->
+        f.authorizationFailure = "DIRECT_USB_INCOMPATIBLE"
+        f.route.selectDirect(true, f.identity, f.token.generation)
+        assertEquals("DIRECT_USB_INCOMPATIBLE", f.route.directState.activation?.failure)
+        assertFalse(f.route.isDirectSelected);assertTrue(f.route.playWhenReady)
+        assertEquals(0, f.engine.starts);assertEquals(0, f.releases)
+        assertEquals(song.id.toString(), f.route.currentMediaItem?.mediaId)
+        assertTrue(f.reservationReleased)
+    }
+
     @Test fun liveDiagnosticCaptureWhilePlayingAndPausedDoesNotChangeRoutingOrControls() = checkRoute { f ->
         f.released.complete(true);f.route.selectDirect(true);settled(f)
         f.route.setMediaItem(song.toPlayableMediaItem());f.route.prepare();yield()
@@ -201,7 +349,7 @@ class UsbOutputSwitchingTest {
         transport = UsbIsoTransportResult(1, 2, mapOf("workerStopped" to 1L, "outstandingUrbsFinal" to 0L, "framesCompleted" to 100L)),
         originalFlacFdClosed = true, flacSource = UsbFlacSourceResult(mapOf("totalSamples" to 441000L, "producerJoined" to 1L)))
 
-    private inner class Fixture(playing: Boolean = true, emptyQueue: Boolean = false) {
+    private inner class Fixture(playing: Boolean = true, emptyQueue: Boolean = false, optedIn: Boolean = true) {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val physical = Physical(if (emptyQueue) null else song.toPlayableMediaItem(), playing)
         val normal = SmoothPlaybackPlayer(physical)
@@ -210,6 +358,8 @@ class UsbOutputSwitchingTest {
         var releases = 0
         var recreations = 0
         var authorizations = 0
+        // Every legacy Direct scenario explicitly acknowledges the feature in its fake boundary.
+        var experimentalOptIn = optedIn
         var authorizationFailure: String? = null
         var attachmentFailure: String? = null
         var recreationFails = false
@@ -264,7 +414,7 @@ class UsbOutputSwitchingTest {
             releaseNormal = { releases++;released.await() },
             recreateNormal = { listeningTrace += "recreate";recreations++;if (recreationFails) error("restore failed");Physical(if (emptyQueue) null else song.toPlayableMediaItem(), false) },
             predecessorReleased = { predecessorSafe },
-            selection = UsbOutputSelectionCallbacks { controller }).also {
+            selection = UsbOutputSelectionCallbacks(experimentalOptIn = { experimentalOptIn }) { controller }).also {
                 it.attachDirectListeningObserver(listeningObserver)
             }
         suspend fun close() {
@@ -281,11 +431,12 @@ class UsbOutputSwitchingTest {
             finally { route.removeListener(listener) }
         }
     }
-    private fun checkRoute(playing: Boolean = true, emptyQueue: Boolean = false, block: suspend (Fixture) -> Unit) = runBlocking {
+    private fun checkRoute(playing: Boolean = true, emptyQueue: Boolean = false, optedIn: Boolean = true,
+        block: suspend (Fixture) -> Unit) = runBlocking {
         withContext(Dispatchers.Main) {
             val oldSongs = PlaybackLibraryBridge.songs
             PlaybackLibraryBridge.updateSongs(listOf(song))
-            val f = Fixture(playing, emptyQueue)
+            val f = Fixture(playing, emptyQueue, optedIn)
             try { block(f) } finally { f.close();PlaybackLibraryBridge.updateSongs(oldSongs) }
         }
     }

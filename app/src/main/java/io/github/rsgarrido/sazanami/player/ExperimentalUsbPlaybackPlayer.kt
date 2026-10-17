@@ -58,7 +58,9 @@ internal class ExperimentalUsbPlaybackPlayer(
     },acquireFocus=acquireFocus,releaseFocus=releaseFocus,listeningChanged={ item, state, terminal ->
         if(directListeningOwned) directListeningObserver?.onObservation(item,state,terminal)
     },sourceAdmissionFailure=::directSourceAdmissionFailure)
-    private fun directSourceAdmissionFailure(): String? = when {
+    private fun directSourceAdmissionFailure(): String? {
+        selection.accessFailure()?.let { return it }
+        return when {
         shuttingDown || !scope.isActive -> "DIRECT_SERVICE_UNAVAILABLE"
         !predecessorReleased() -> "DIRECT_PREDECESSOR_CLEANUP_PENDING"
         switching!=null || !selectedDirect -> "DIRECT_SWITCH_PENDING"
@@ -68,6 +70,7 @@ internal class ExperimentalUsbPlaybackPlayer(
         !selectionHandedOff -> "DIRECT_USB_NOT_AUTHORIZED"
         else -> if(selectionOwner==null) "DIRECT_USB_NOT_AUTHORIZED"
             else selection.failure(requireNotNull(selectionOwner))
+        }
     }
 
     /** Internal Stage A contract; production queue and library-selection guards stay in place. */
@@ -79,6 +82,9 @@ internal class ExperimentalUsbPlaybackPlayer(
     val queuePlayer: Player get()=if(selectedDirect) direct else this
     val directQueueCheckpointAllowed get()=selectedDirect && switching==null && !shuttingDown &&
         direct.canCheckpointTimeline && direct.evidence.phase!=IntegratedDirectPhase.ERROR && directSourceAdmissionFailure()==null
+    // Used only by the outgoing Queue checkpoint; it cannot admit edits, sources or playback.
+    val canCaptureDirectExitSnapshot get()=selectedDirect && switching==null && !shuttingDown &&
+        normalReleaseSafe && selectionHandedOff && direct.canCheckpointTimeline && direct.evidence.phase!=IntegratedDirectPhase.ERROR
     val directRequestedPlaying get()=direct.requestedPlaying
     fun canReplaceDirectTimeline()=selectedDirect && direct.canReplaceTimeline()
     fun canAdmitDirectTimeline(items: List<MediaItem>,index: Int,positionMs: Long,repeat: Int)=

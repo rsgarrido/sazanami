@@ -20,7 +20,7 @@ class UsbPauseResumeTest {
         val report=formatIntegratedDirectPlayback(state)
         for(expected in listOf("native transport state=PAUSED","Pause requests=1; confirmed=1",
             "last Pause outcome=CONFIRMED","confirmed paused frame=48100","intentional paused duration us=12345000",
-            "pending source-bearing OUT at confirmed pause=0","drain outcome=1","production Bit-perfect: NOT YET COMPLETE"))
+            "pending source-bearing OUT at confirmed pause=0","drain outcome=1","DAC-internal bit-perfect output: NOT INDEPENDENTLY VERIFIED"))
             assertTrue(expected,report.contains(expected))
         assertNull(state.engine);assertEquals(counters,state.nativePauseCounters)
         assertFalse(report.contains("FULL_FLAC_USB_TRANSPORT_VERIFIED"))

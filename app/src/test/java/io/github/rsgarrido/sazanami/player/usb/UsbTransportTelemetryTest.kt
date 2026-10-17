@@ -169,6 +169,37 @@ class UsbTransportTelemetryTest {
         assertTrue(formatUsbTransportTelemetry(store.state.value).contains("retained last live observation is historical"))
     }
 
+    @Test fun captureAcknowledgmentDistinguishesReadSuccessFailureAndRetainedEvidence() {
+        val store = UsbTransportTelemetryStore()
+        assertEquals(UsbTelemetryCaptureOutcome.UNAVAILABLE, store.captureResult().outcome)
+        store.begin(session)
+        assertEquals(UsbTelemetryCaptureOutcome.UNAVAILABLE, store.captureResult().outcome)
+        var reads = 0
+        val live = decode(packet(captured = 2_000_000))
+        store.bind(session) { reads++; live }
+        assertEquals(UsbTelemetryCaptureOutcome.CAPTURED, store.captureResult().outcome)
+        // A coherent paused publication can retain its timestamp and still be read successfully.
+        assertEquals(UsbTelemetryCaptureOutcome.CAPTURED, store.captureResult().outcome)
+        store.bind(session) { reads++; null }
+        val failed = store.captureResult()
+        assertEquals(UsbTelemetryCaptureOutcome.FAILED, failed.outcome)
+        assertSame(live, failed.view.snapshot)
+        store.bind(session) { error("/private/music/song.flac") }
+        assertEquals(UsbTelemetryCaptureOutcome.FAILED, store.captureResult().outcome)
+        assertFalse(formatUsbTransportTelemetry(store.state.value).contains("/private/music/song.flac"))
+        store.bind(session) { decode(packet(captured = 1_000_000)) }
+        assertEquals(UsbTelemetryCaptureOutcome.FAILED, store.captureResult().outcome)
+        store.finish(session)
+        val historical = store.captureResult()
+        assertEquals(UsbTelemetryCaptureOutcome.HISTORICAL, historical.outcome)
+        assertSame(live, historical.view.snapshot)
+        assertEquals(3, reads) // No provider is called after terminal cleanup.
+        assertTrue(formatUsbTransportTelemetry(historical.view).contains("TERMINAL HISTORICAL"))
+        val emptyTerminal = UsbTransportTelemetryStore()
+        emptyTerminal.begin(session); emptyTerminal.finish(session)
+        assertEquals(UsbTelemetryCaptureOutcome.UNAVAILABLE, emptyTerminal.captureResult().outcome)
+    }
+
     @Test fun jniCaptureReadsOnlyPinnedPublicationsAndCopyActionsCaptureBeforeFormatting() {
         fun source(path: String) = listOf(Paths.get("src/main", path), Paths.get("app/src/main", path))
             .first { Files.isRegularFile(it) }.toFile().readText()

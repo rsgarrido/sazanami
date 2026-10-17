@@ -635,6 +635,7 @@ class PlaybackService : MediaLibraryService() {
         val serviceStarted = SystemClock.elapsedRealtime()
         super.onCreate()
         SpectrumAnalyzerRuntimeBridge.attach(spectrumAnalyzerRuntime)
+        appPreferencesRepository = AppPreferencesRepository.getInstance(this)
         usbAudioController = UsbAudioController(this).also { it.start() }
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
@@ -674,8 +675,16 @@ class PlaybackService : MediaLibraryService() {
                 physicalPlayers.logicalPhysicalPlayer
             },acquireFocus=::acquireDirectFocus,releaseFocus=::releaseDirectFocus,
             predecessorReleased={ previousDirectTeardown==null || previousDirectTeardown.safe==true },
-            selection=io.github.rsgarrido.sazanami.player.usb.UsbOutputSelectionCallbacks { usbAudioController })
+            selection=io.github.rsgarrido.sazanami.player.usb.UsbOutputSelectionCallbacks(
+                experimentalOptIn={ appPreferencesRepository.isExperimentalUsbDirectAllowed }) { usbAudioController })
         IntegratedDirectPlaybackBridge.attach(sessionPlayer)
+        serviceScope.launch {
+            appPreferencesRepository.experimentalUsbDirectAccess.collect {
+                usbAudioController?.experimentalAccessChanged()
+                // The existing transition joins native work and restores Android paused.
+                sessionPlayer.usbSelectionChanged()
+            }
+        }
         serviceScope.launch {
             io.github.rsgarrido.sazanami.player.usb.UsbAudioDiagnosticBridge.state.collect {
                 sessionPlayer.usbSelectionChanged()
@@ -685,7 +694,6 @@ class PlaybackService : MediaLibraryService() {
             player = normalSessionPlayer,
             integration = activePlayerIntegration
         )
-        appPreferencesRepository = AppPreferencesRepository.getInstance(this)
         audioManager = getSystemService(AudioManager::class.java)
         playerStateStorage = PlayerStateStorage(this)
         sessionPlayer.setLogicalShuffleModeEnabled(

@@ -394,7 +394,6 @@ internal fun DiagnosticsScreen(
         }
 
         DiagnosticValue(stringResource(R.string.diagnostics_app_version), "${version.first} (${version.second})")
-        IntegratedDirectPlaybackSection()
         UsbAudioDiagnosticsSection()
         DiagnosticValue(
             stringResource(R.string.diagnostics_library),

@@ -184,6 +184,10 @@ internal data class UsbTransportTelemetryView(val session: UsbTelemetrySession? 
     val status: String = "IDLE", val snapshot: UsbTransportTelemetry? = null, val captureFailure: String? = null,
     val clockFacts: UsbTelemetryClockFacts? = null)
 
+/** Presentation acknowledgment only; snapshot contents and native collection semantics are unchanged. */
+internal enum class UsbTelemetryCaptureOutcome { CAPTURED, HISTORICAL, UNAVAILABLE, FAILED }
+internal data class UsbTelemetryCaptureResult(val view: UsbTransportTelemetryView, val outcome: UsbTelemetryCaptureOutcome)
+
 /** Only immutable copies survive a run. Never holds its monitor while invoking a native provider. */
 internal class UsbTransportTelemetryStore {
     private val mutableState = MutableStateFlow(UsbTransportTelemetryView())
@@ -210,13 +214,20 @@ internal class UsbTransportTelemetryStore {
         if(target != plan.sampleRateHz || configured != plan.sampleRateHz || !valid) return
         mutableState.value = current.copy(clockFacts = UsbTelemetryClockFacts(plan.clock.clockEntityId, target, configured, valid))
     }
-    fun capture(): UsbTransportTelemetryView {
+    fun capture(): UsbTransportTelemetryView = captureResult().view
+    fun captureResult(): UsbTelemetryCaptureResult {
         val request = synchronized(this) {
             mutableState.value.takeUnless { it.status == "TERMINAL" }?.session?.let { it to provider }
         }
         val result = request?.second?.let { runCatching(it) }
         synchronized(this) {
             val current = mutableState.value
+            var outcome = when {
+                current.status == "TERMINAL" && current.snapshot != null -> UsbTelemetryCaptureOutcome.HISTORICAL
+                request != null && current.session != request.first -> UsbTelemetryCaptureOutcome.FAILED
+                current.snapshot != null -> UsbTelemetryCaptureOutcome.HISTORICAL
+                else -> UsbTelemetryCaptureOutcome.UNAVAILABLE
+            }
             if(request != null && current.session == request.first && current.status != "TERMINAL" && result != null) {
                 val value = result.getOrNull()?.takeIf { it.session == request.first }
                 val prior = current.snapshot
@@ -225,9 +236,10 @@ internal class UsbTransportTelemetryStore {
                     status = if(value.terminal) "TERMINAL" else "LIVE", captureFailure = null)
                 else if(value == null) current.copy(captureFailure = "Native snapshot unavailable; any prior copy is retained with its original capture time.")
                 else current
+                outcome = if(value != null && ordered) UsbTelemetryCaptureOutcome.CAPTURED else UsbTelemetryCaptureOutcome.FAILED
                 if(value != null && ordered && value.terminal) provider = null
             }
-            return mutableState.value
+            return UsbTelemetryCaptureResult(mutableState.value, outcome)
         }
     }
     @Synchronized fun finish(session: UsbTelemetrySession, terminal: UsbTransportTelemetry? = null) {
@@ -244,10 +256,11 @@ internal object UsbTransportTelemetryBridge {
     val store = UsbTransportTelemetryStore()
     val state get() = store.state
     suspend fun capture() = withContext(Dispatchers.IO) { store.capture() }
+    suspend fun captureResult() = withContext(Dispatchers.IO) { store.captureResult() }
 }
 
 internal fun formatUsbTransportTelemetry(view: UsbTransportTelemetryView = UsbTransportTelemetryBridge.state.value): String = buildString {
-    appendLine("Live native USB transport diagnostics — Session 25")
+    appendLine("Native USB transport diagnostics")
     appendLine("Capture status: ${view.status}; attachment generation=${view.session?.generation ?: "unavailable"}; native stream/session=${view.session?.stream ?: "unavailable"}")
     view.captureFailure?.let { appendLine(it) }
     val s = view.snapshot

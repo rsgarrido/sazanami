@@ -123,6 +123,8 @@ internal interface PlaybackQueueRuntime {
     fun canActivate(restoration: PlaybackQueueRestoration): Boolean = canReplaceTimeline()
     fun canSelectEntry(entryId: String): Boolean = true
     fun captureSnapshot(): LivePlaybackQueueSnapshot?
+    /** Read-only final checkpoint of an accepted output, even after playback authority is revoked. */
+    fun captureOutputExitSnapshot(): LivePlaybackQueueSnapshot? = captureSnapshot()
     fun replaceTimeline(restoration: PlaybackQueueRestoration)
     /** Direct acknowledgment must come from its native request, never a Media3 placeholder. */
     suspend fun replaceTimelineAndAwait(restoration: PlaybackQueueRestoration): Boolean {
@@ -1052,7 +1054,7 @@ internal class PlaybackQueueCoordinator(
     }
     override fun onAndroidRequested() {
         leavingDirectSnapshot=if(pendingOperation==null && queueStateConfirmed)
-            runtime.captureSnapshot()?.withAuthoritativeBaseOrder() else null
+            runtime.captureOutputExitSnapshot()?.withAuthoritativeBaseOrder() else null
         outputEpoch++;operationSerial++;pendingOperation=null
         outputCheckpointFrozen=true;queueStateConfirmed=false
     }

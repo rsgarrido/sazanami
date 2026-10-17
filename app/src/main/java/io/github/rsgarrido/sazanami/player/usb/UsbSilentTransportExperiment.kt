@@ -27,6 +27,7 @@ internal object UsbSilentTransportExperiment {
         mode: UsbPcmDiagnosticMode = UsbPcmDiagnosticMode.ZERO,
         preflight: () -> UsbReferencePreflight = UsbFsDiagnostics::referencePreflight,
         prefixSource: UsbFlacSourceLifecycle? = null,
+        forwardAuthorizationFailure: () -> String? = { null },
         accessFailure: () -> UsbClockQueryStatus? = { null }): UsbSilentTransportExperimentResult {
         val plan = resolution.plan
         var timing: UsbIsoTiming? = null
@@ -65,6 +66,7 @@ internal object UsbSilentTransportExperiment {
                         native?.count("formatAlternate")!=plan.configurationPlan.streaming.alternate.toLong()))
                         native = native?.copy(exceptionType = "SelectedRateMismatch")
                 } catch (cancelled: CancellationException) { throw cancelled }
+                catch (denied: UsbIntegratedStartException) { throw denied }
                 catch (error: Exception) { native = UsbIsoTransportResult(generation, stream, exceptionType = error.javaClass.simpleName) }
                 finally {
                     closeRequired = backend?.usbCleanupSafe == false
@@ -72,7 +74,8 @@ internal object UsbSilentTransportExperiment {
                     onPhase(UsbSilentPhase.RESTORING_USB)
                 }
             }
-            override fun forwardIssue() = if (mode.isFlac && !endpointStarted && prefixSource?.healthy() != true)
+            // Consent stops forward work only. Attachment authority remains valid for restoration.
+            override fun forwardIssue() = forwardAuthorizationFailure() ?: if (mode.isFlac && !endpointStarted && prefixSource?.healthy() != true)
                 "FLAC source lost primed/healthy state before endpoint start; forward configuration stopped." else null
             override val usbCleanupSafe get() = backend?.usbCleanupSafe ?: true
             override suspend fun beforeRestoration() { prefixSource?.finish() }

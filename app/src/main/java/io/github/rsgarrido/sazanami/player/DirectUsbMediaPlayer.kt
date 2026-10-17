@@ -522,6 +522,11 @@ internal class DirectUsbMediaPlayer(
         invalidateState()
     }
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
+        // Media3 can still hold cached command availability while consent withdrawal is queued.
+        // Pause/stop remain usable for orderly teardown; resuming must revalidate access now.
+        if(playWhenReady) sourceAdmissionFailure()?.let {
+            return Futures.immediateFailedFuture<Unit>(IllegalStateException(it))
+        }
         val commands=control ?: run {
             if(!playWhenReady) {
                 playWhenReadyRequested?.invoke(false)
@@ -579,6 +584,7 @@ internal class DirectUsbMediaPlayer(
     private fun seekWithinCurrent(positionMs: Long): Deferred<DirectSourceTransitionResult> {
         fun rejected(reason: String)=CompletableDeferred(DirectSourceTransitionResult(++nextRequestId,
             DirectSourceTransitionStatus.REJECTED,error=reason))
+        sourceAdmissionFailure()?.let { return rejected(it) }
         return try {
             val commands=control ?: return rejected("DIRECT_SEEK_UNAVAILABLE")
             val target=directSeekTargetFrame(positionMs,evidence.sampleRateHz,evidence.totalFrames)

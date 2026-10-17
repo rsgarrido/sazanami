@@ -18,6 +18,7 @@ internal class UsbNativeSilentTransport(private val borrowedFd: Int, private val
     private val prefixSource: UsbFlacSourceLifecycle? = null) : UsbSilentTransportBackend {
     var progressListener: ((UsbFullProgress)->Unit)?=null
     var playbackControl: UsbFullPlaybackControl?=null
+    var startAuthorizationFailure: () -> String? = { null }
     @Volatile private var handle = 0L
     @Volatile private var stopRequested = 0
     private val telemetrySession = UsbTelemetrySession(generation, stream)
@@ -46,6 +47,11 @@ internal class UsbNativeSilentTransport(private val borrowedFd: Int, private val
             try {
                 authority = accessFailure()
                 if (authority != null || !parent.isActive || stopRequested != 0) return@withContext
+                startAuthorizationFailure()?.let {
+                    // No native session exists. Let the transaction retain that fact while
+                    // restoring any configuration already changed before consent was withdrawn.
+                    throw UsbIntegratedStartException(it)
+                }
                 val created = UsbFsDiagnostics.createSilentTransport(borrowedFd, plan, generation, stream, mode, prefixSource?.handle ?: 0L)
                 if (created < 0) {
                     val errno = -created
@@ -95,7 +101,8 @@ internal class UsbNativeSilentTransport(private val borrowedFd: Int, private val
                         }
                     }
                 }
-            } catch (error: Exception) { result = result.copy(exceptionType = error.javaClass.simpleName) }
+            } catch (denied: UsbIntegratedStartException) { throw denied }
+            catch (error: Exception) { result = result.copy(exceptionType = error.javaClass.simpleName) }
             catch (error: LinkageError) { result = result.copy(exceptionType = error.javaClass.simpleName) }
             finally {
                 // Observation failures never become playback/control failures. Capture after worker

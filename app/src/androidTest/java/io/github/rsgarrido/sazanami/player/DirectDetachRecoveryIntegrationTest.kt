@@ -265,7 +265,7 @@ internal class DirectDetachRecoveryIntegrationTest : DirectQueueTestFixture() {
         assertEquals(0,f.engine.active);assertNull(f.reservation.owner)
         val report=formatIntegratedDirectPlayback(IntegratedDirectPlaybackBridge.reportState)
         assertTrue(report.contains("authoritative backend=NORMAL"))
-        assertTrue(report.contains("underlying Session 11 engine result=NON_AUTHORITATIVE"))
+        assertTrue(report.contains("native engine result=NON_AUTHORITATIVE"))
         assertTrue(report.contains("restoration=INDETERMINATE"))
         repeat(3) { f.route.selectDirect(false);f.route.usbSelectionChanged() }
         assertEquals(1,f.recreations)

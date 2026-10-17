@@ -191,6 +191,16 @@ class IntegratedDirectPlaybackTest {
         val state=integratedTerminalState(IntegratedDirectPlaybackState(enabled=true,libraryId=42,normalReleased=true),fullResult())
         val report=formatIntegratedDirectPlayback(state)
         for(text in listOf("authoritative backend=DIRECT_USB","standby/preload inactive=true","integrated state=ENDED","FULL_FLAC_USB_TRANSPORT_VERIFIED","NATURAL_EOF_COMPLETE","hash agreement=true","restoration=RESTORED")) assertTrue(text,report.contains(text))
-        assertFalse(report.contains("content://"));assertFalse(report.contains("file://"));assertTrue(report.lines().size<70)
+        assertFalse(report.contains("content://"));assertFalse(report.contains("file://"))
+        val lines=report.lines()
+        // The advanced report includes full configuration evidence; only the ordinary UI is compact.
+        assertEquals("Integrated Direct USB Playback",lines.single { it.startsWith("Integrated Direct USB Playback") })
+        assertEquals("USB configuration=TARGET_CONFIGURATION_VERIFIED; restoration=RESTORED; AS release=true; AC release=true; connection close=SUCCEEDED",
+            lines.single { it.startsWith("USB configuration=") })
+        assertEquals(1,lines.count { it=="Integrated USB configuration and resource release" })
+        assertEquals("Generation: 1; phase=FINISHED",lines.single { it.startsWith("Generation: ") })
+        assertEquals("Target configuration: TARGET_CONFIGURATION_VERIFIED",lines.single { it.startsWith("Target configuration: ") })
+        assertEquals("Configuration restoration: RESTORED (alt/clock only; releases/close are separate)",
+            lines.single { it.startsWith("Configuration restoration: ") })
     }
 }

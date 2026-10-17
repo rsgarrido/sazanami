@@ -50,6 +50,28 @@ import org.junit.Test
 
 class AppPreferencesStateTest {
     @Test
+    fun experimentalUsbDirectIsDisabledBeforeLoadingAndWhenAbsentAfterUpgrade() {
+        assertFalse(AppPreferencesState().experimentalUsbDirectEnabled)
+        assertFalse(decodeAppPreferences(mutablePreferencesOf()).experimentalUsbDirectEnabled)
+
+        // Existing app preferences and remembered playback intent cannot supply acknowledgment.
+        val upgraded = decodeAppPreferences(mutablePreferencesOf(
+            stringPreferencesKey("selected_player_theme") to PlayerTheme.RETRO_RACK.id,
+            booleanPreferencesKey("smooth_play_pause_enabled") to false
+        ))
+        assertFalse(upgraded.experimentalUsbDirectEnabled)
+        assertEquals(PlayerTheme.RETRO_RACK, upgraded.selectedPlayerTheme)
+        assertFalse(upgraded.smoothPlayPauseEnabled)
+    }
+
+    @Test
+    fun experimentalUsbDirectDecodesOnlyItsExplicitPersistedOptIn() {
+        val key = booleanPreferencesKey("experimental_usb_direct_enabled")
+        assertTrue(decodeAppPreferences(mutablePreferencesOf(key to true)).experimentalUsbDirectEnabled)
+        assertFalse(decodeAppPreferences(mutablePreferencesOf(key to false)).experimentalUsbDirectEnabled)
+    }
+
+    @Test
     fun appAppearanceUsesStableValuesAndFallsBackToDark() {
         val key = stringPreferencesKey("app_appearance")
         assertEquals(AppAppearance.DARK, decodeAppPreferences(mutablePreferencesOf()).appAppearance)

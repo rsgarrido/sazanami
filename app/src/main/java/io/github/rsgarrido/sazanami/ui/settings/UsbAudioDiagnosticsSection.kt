@@ -22,11 +22,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.BuildConfig
+import io.github.rsgarrido.sazanami.data.preferences.AppPreferencesRepository
+import io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackBridge
+import io.github.rsgarrido.sazanami.player.IntegratedDirectPhase
+import io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackState
+import io.github.rsgarrido.sazanami.player.DirectOutputSwitch
+import io.github.rsgarrido.sazanami.player.UsbActivationRestoration
+import io.github.rsgarrido.sazanami.player.usb.UsbTelemetryCaptureOutcome
+import io.github.rsgarrido.sazanami.player.usb.integratedCandidate
 import io.github.rsgarrido.sazanami.player.usb.UsbAudioDiagnosticBridge
+import io.github.rsgarrido.sazanami.player.usb.UsbAudioDiagnosticState
 import io.github.rsgarrido.sazanami.player.usb.UsbAudioDiagnosticReport
 import io.github.rsgarrido.sazanami.player.usb.UsbTransportTelemetryBridge
 import kotlinx.coroutines.launch
@@ -50,6 +62,113 @@ import io.github.rsgarrido.sazanami.player.bitperfect.flac.FlacVerificationRepor
 internal fun UsbAudioDiagnosticsSection() {
     val state by UsbAudioDiagnosticBridge.state.collectAsStateWithLifecycle()
     val telemetry by UsbTransportTelemetryBridge.state.collectAsStateWithLifecycle()
+    val output by IntegratedDirectPlaybackBridge.state.collectAsStateWithLifecycle()
+    val latest by IntegratedDirectPlaybackBridge.latestAttempt.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val diagnosticsTitle = stringResource(R.string.usb_diagnostics_title)
+    val preferences = remember(context.applicationContext) { AppPreferencesRepository.getInstance(context.applicationContext) }
+    val preferenceState by preferences.state.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    var advanced by remember { mutableStateOf(false) }
+    var legacy by remember { mutableStateOf(false) }
+    var capturing by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<Int?>(null) }
+    val report = remember(state, telemetry) { UsbAudioDiagnosticReport.format(state, includeRaw = false, includeLegacy = false) }
+    val status = usbDirectDiagnosticStatus(state, output, preferenceState.experimentalUsbDirectEnabled)
+    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(stringResource(R.string.usb_diagnostics_current_title), style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(status), modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+        state.selectedDevice?.let { selected ->
+            Text(stringResource(R.string.usb_diagnostics_device, selected.product ?: stringResource(R.string.usb_diagnostics_unnamed)))
+            Text(stringResource(if (selected.hasPermission) R.string.usb_diagnostics_permission_granted else R.string.usb_diagnostics_permission_missing))
+        }
+        Text(stringResource(R.string.usb_diagnostics_supported_formats), style = MaterialTheme.typography.bodySmall)
+        Text(stringResource(R.string.usb_diagnostics_summary_note), style = MaterialTheme.typography.bodySmall)
+        if (latest != null || telemetry.snapshot != null) {
+            Text(stringResource(R.string.usb_diagnostics_retained), style = MaterialTheme.typography.bodySmall)
+        }
+        OutlinedButton(onClick = { advanced = !advanced }, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(if (advanced) R.string.usb_diagnostics_hide_details else R.string.usb_diagnostics_advanced))
+        }
+        if (advanced) {
+            OutlinedButton(onClick = {
+                capturing = true
+                scope.launch {
+                    try { message = usbTelemetryCaptureMessage(UsbTransportTelemetryBridge.captureResult().outcome) }
+                    finally { capturing = false }
+                }
+            }, enabled = !capturing, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.usb_diagnostics_capture_live))
+            }
+            OutlinedButton(onClick = {
+                capturing = true
+                scope.launch {
+                    try {
+                        UsbTransportTelemetryBridge.capture()
+                        val copied = runCatching {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                            if (clipboard == null) false else {
+                                clipboard.setPrimaryClip(ClipData.newPlainText(diagnosticsTitle,
+                                    UsbAudioDiagnosticReport.format(UsbAudioDiagnosticBridge.state.value, includeLegacy = false)))
+                                true
+                            }
+                        }.getOrDefault(false)
+                        message = if (copied) R.string.usb_diagnostics_copied else R.string.usb_diagnostics_copy_failed
+                    } finally { capturing = false }
+                }
+            }, enabled = !capturing, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.usb_diagnostics_copy))
+            }
+            message?.let { Text(stringResource(it), modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
+            IntegratedDirectPlaybackSection()
+            Text(report, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+            if (BuildConfig.DEBUG) {
+                OutlinedButton(onClick = { legacy = !legacy }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(if (legacy) R.string.usb_diagnostics_legacy_hide else R.string.usb_diagnostics_legacy_show))
+                }
+                if (legacy) {
+                    Text(stringResource(R.string.usb_diagnostics_legacy), style = MaterialTheme.typography.titleMedium)
+                    LegacyUsbAudioDiagnosticsSection()
+                }
+            }
+        }
+    }
+}
+
+internal fun usbDirectDiagnosticStatus(state: UsbAudioDiagnosticState, output: IntegratedDirectPlaybackState,
+    experimentalEnabled: Boolean): Int {
+    val failure = output.error ?: output.activation?.failure
+    return when {
+        output.switching == DirectOutputSwitch.TO_ANDROID -> R.string.usb_settings_returning
+        output.switching == DirectOutputSwitch.TO_USB -> R.string.usb_settings_activating
+        output.activation?.restoration == UsbActivationRestoration.BLOCKED ||
+            (output.phase == IntegratedDirectPhase.ERROR && !output.cleanupSafe) -> R.string.usb_settings_cleanup_failed
+        !experimentalEnabled -> R.string.usb_diagnostics_output_disabled
+        failure?.contains("UNSUPPORTED") == true || failure == "DIRECT_USB_INCOMPATIBLE" -> R.string.usb_diagnostics_output_unsupported
+        failure?.contains("DEVICE_UNAVAILABLE") == true -> R.string.usb_diagnostics_output_disconnected
+        output.phase == IntegratedDirectPhase.ERROR || failure != null -> R.string.usb_diagnostics_output_failed
+        output.enabled && output.busy -> R.string.usb_diagnostics_output_active
+        state.devices.none { it.hasAudioInterface } -> R.string.usb_diagnostics_no_device
+        state.selectedDevice?.hasPermission == false -> R.string.usb_settings_permission_required
+        state.descriptors != null && state.integratedCandidate() == null -> R.string.usb_diagnostics_output_unsupported
+        else -> R.string.usb_diagnostics_output_idle
+    }
+}
+
+internal fun usbTelemetryCaptureMessage(outcome: UsbTelemetryCaptureOutcome): Int = when (outcome) {
+    UsbTelemetryCaptureOutcome.CAPTURED -> R.string.usb_diagnostics_capture_success
+    UsbTelemetryCaptureOutcome.HISTORICAL -> R.string.usb_diagnostics_capture_historical
+    UsbTelemetryCaptureOutcome.UNAVAILABLE -> R.string.usb_diagnostics_capture_unavailable
+    UsbTelemetryCaptureOutcome.FAILED -> R.string.usb_diagnostics_capture_failed
+}
+
+/** Historical experiments remain explicitly invoked, developer-only, and collapsed by default. */
+@Composable
+private fun LegacyUsbAudioDiagnosticsSection() {
+    val state by UsbAudioDiagnosticBridge.state.collectAsStateWithLifecycle()
+    val telemetry by UsbTransportTelemetryBridge.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val diagnosticsTitle = stringResource(R.string.usb_diagnostics_title)
     val verificationScope = rememberCoroutineScope()
@@ -60,6 +179,7 @@ internal fun UsbAudioDiagnosticsSection() {
     val flacState by flacController.state.collectAsStateWithLifecycle()
     var copied by remember(state, flacState) { mutableStateOf(false) }
     var capturing by remember { mutableStateOf(false) }
+    var captureMessage by remember { mutableStateOf<Int?>(null) }
     val flacReport = if (BuildConfig.DEBUG) FlacVerificationReport.format(flacState.result, flacState.running) else ""
     val parsedReport = remember(state, flacReport, telemetry) { UsbAudioDiagnosticReport.format(state, includeRaw = false) + flacReport }
     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
@@ -77,11 +197,13 @@ internal fun UsbAudioDiagnosticsSection() {
         OutlinedButton(onClick = {
             capturing = true
             verificationScope.launch {
-                try { UsbTransportTelemetryBridge.capture() } finally { capturing = false }
+                try { captureMessage = usbTelemetryCaptureMessage(UsbTransportTelemetryBridge.captureResult().outcome) }
+                finally { capturing = false }
             }
         }, enabled = state.serviceAvailable && !capturing, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.usb_diagnostics_capture_live))
         }
+        captureMessage?.let { Text(stringResource(it), modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
         if (!state.serviceAvailable) {
             Text(stringResource(R.string.usb_diagnostics_service_unavailable))
         }

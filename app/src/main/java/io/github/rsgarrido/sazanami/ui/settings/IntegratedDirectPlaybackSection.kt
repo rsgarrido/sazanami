@@ -87,8 +87,13 @@ import kotlinx.coroutines.launch
 
 private suspend fun Context.copyIntegratedDirectReport() {
     UsbTransportTelemetryBridge.capture()
-    val clipboard=getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
-    clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.usb_integrated_title),
-        formatIntegratedDirectPlayback(IntegratedDirectPlaybackBridge.reportState,resources.configuration.locales[0])))
-    Toast.makeText(this,R.string.diagnostics_copied,Toast.LENGTH_SHORT).show()
+    val copied = runCatching {
+        val clipboard=getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        if (clipboard == null) false else {
+            clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.usb_integrated_title),
+                formatIntegratedDirectPlayback(IntegratedDirectPlaybackBridge.reportState,resources.configuration.locales[0])))
+            true
+        }
+    }.getOrDefault(false)
+    Toast.makeText(this,if (copied) R.string.diagnostics_copied else R.string.usb_diagnostics_copy_failed,Toast.LENGTH_SHORT).show()
 }

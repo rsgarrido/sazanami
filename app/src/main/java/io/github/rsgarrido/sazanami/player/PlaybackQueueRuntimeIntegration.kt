@@ -214,6 +214,11 @@ internal class Media3PlaybackQueueRuntime(
         if(!canCheckpoint()) return null
         return captureSelectionSnapshot(useIntent=false)
     }
+    override fun captureOutputExitSnapshot(): LivePlaybackQueueSnapshot? {
+        val output=directOutput ?: return captureSnapshot()
+        if(!output.canCaptureDirectExitSnapshot) return null
+        return captureSelectionSnapshot(useIntent=false)
+    }
     override fun captureSelectionSnapshot(): LivePlaybackQueueSnapshot? {
         return captureSelectionSnapshot(useIntent=true)
     }

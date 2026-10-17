@@ -1,13 +1,19 @@
 package io.github.rsgarrido.sazanami.player.usb
 
-/** Build availability is separate from the service's per-session authorization. */
+/** Integrated playback always requires both persisted consent and per-session authorization. */
 internal enum class UsbPlaybackOperation { INTEGRATED_PLAYBACK, DEVELOPER_EXPERIMENT }
 internal object UsbPlaybackPolicy {
-    fun allows(operation: UsbPlaybackOperation, debug: Boolean, authorized: Boolean = false): Boolean =
+    fun allows(operation: UsbPlaybackOperation, debug: Boolean, authorized: Boolean = false,
+        experimentalOptIn: Boolean = false): Boolean =
         when (operation) {
-            UsbPlaybackOperation.INTEGRATED_PLAYBACK -> authorized
+            UsbPlaybackOperation.INTEGRATED_PLAYBACK -> experimentalOptIn && authorized
             UsbPlaybackOperation.DEVELOPER_EXPERIMENT -> debug
         }
+
+    fun integratedAccessFailure(experimentalOptIn: Boolean): String? =
+        if (allows(UsbPlaybackOperation.INTEGRATED_PLAYBACK, debug = false,
+                authorized = true, experimentalOptIn = experimentalOptIn)) null
+        else "DIRECT_EXPERIMENTAL_OPT_IN_REQUIRED"
 }
 
 /** Descriptor evidence only; clock, speed and actual track configuration are checked later. */

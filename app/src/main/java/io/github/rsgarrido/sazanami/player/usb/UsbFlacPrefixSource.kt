@@ -131,9 +131,14 @@ internal object UsbFlacSourceEvidence {
 @Keep internal object UsbFlacPrefixNative {
     private val available by lazy { runCatching { System.loadLibrary("sazanami_usb_diagnostics"); true }.getOrDefault(false) }
     fun create(fd: Int,generation: Long,stream: Long,fullTrack: Boolean=false,
-        operation: UsbPlaybackOperation=UsbPlaybackOperation.DEVELOPER_EXPERIMENT): Long {
-        check(available && UsbPlaybackPolicy.allows(operation, BuildConfig.DEBUG,
-            authorized = operation == UsbPlaybackOperation.INTEGRATED_PLAYBACK && fullTrack))
+        operation: UsbPlaybackOperation=UsbPlaybackOperation.DEVELOPER_EXPERIMENT,
+        experimentalOptIn: Boolean = false): Long {
+        if (!UsbPlaybackPolicy.allows(operation, BuildConfig.DEBUG,
+            authorized = operation == UsbPlaybackOperation.INTEGRATED_PLAYBACK && fullTrack,
+            experimentalOptIn = experimentalOptIn)) {
+            throw UsbIntegratedStartException("DIRECT_EXPERIMENTAL_OPT_IN_REQUIRED")
+        }
+        check(available)
         return nativeCreate(fd,generation,stream,fullTrack)
     }
     fun prime(handle: Long,generation: Long,stream: Long)=UsbFlacSourceEvidence.decode(nativePrime(handle,generation,stream),generation,stream)
@@ -156,7 +161,8 @@ internal interface UsbFlacSourceLifecycle {
 }
 /** One narrow source owner. Every native operation uses both attachment and stream identities. */
 internal class UsbFlacPrefixSource(private val fd: Int,private val generation: Long,private val stream: Long, private val fullTrack: Boolean=false,
-    private val operation: UsbPlaybackOperation=UsbPlaybackOperation.DEVELOPER_EXPERIMENT) : UsbFlacSourceLifecycle {
+    private val operation: UsbPlaybackOperation=UsbPlaybackOperation.DEVELOPER_EXPERIMENT,
+    private val experimentalOptIn: () -> Boolean = { false }) : UsbFlacSourceLifecycle {
     @Volatile override var handle=0L; private set
     override var result=UsbFlacSourceResult(); private set
     @Volatile private var stopRequested=false
@@ -166,7 +172,7 @@ internal class UsbFlacPrefixSource(private val fd: Int,private val generation: L
         val parent=currentCoroutineContext()
         withContext(NonCancellable) {
             try {
-                handle=UsbFlacPrefixNative.create(fd,generation,stream,fullTrack,operation)
+                handle=UsbFlacPrefixNative.create(fd,generation,stream,fullTrack,operation,experimentalOptIn())
                 if (handle<0) {
                     result=UsbFlacSourceResult(mapOf("sourceIntegrityMask" to 8192L,"createErrno" to -handle), exceptionType="NativeDuplicateFailed")
                     handle=0;return@withContext
@@ -180,7 +186,8 @@ internal class UsbFlacPrefixSource(private val fd: Int,private val generation: L
                         result=worker.await()
                     } finally { if(!worker.isCompleted)requestStop();runCatching { worker.await() }.getOrNull()?.let { result=it } }
                 }
-            } catch(error: Exception) { result=result.copy(exceptionType=error.javaClass.simpleName) }
+            } catch(denied: UsbIntegratedStartException) { result=result.copy(exceptionType=denied.reason) }
+            catch(error: Exception) { result=result.copy(exceptionType=error.javaClass.simpleName) }
             catch(error: LinkageError) { result=result.copy(exceptionType=error.javaClass.simpleName) }
         }
         return parent.isActive && access()==null && result.primed

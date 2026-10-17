@@ -17,6 +17,7 @@ import androidx.core.content.ContextCompat
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import io.github.rsgarrido.sazanami.BuildConfig
+import io.github.rsgarrido.sazanami.data.preferences.AppPreferencesRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,7 +33,11 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /** Service-owned USB diagnostics, including explicit temporary forced AC clock inspection. */
-internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClient, UsbOutputSelectionController {
+internal class UsbAudioController(context: Context,
+    private val experimentalOptIn: () -> Boolean = {
+        AppPreferencesRepository.getInstance(context).isExperimentalUsbDirectAllowed
+    }
+) : FullUsbPlaybackEngineClient, UsbOutputSelectionController {
     private val appContext = context.applicationContext
     private val manager = appContext.getSystemService(Context.USB_SERVICE) as? UsbManager
     private val handler = Handler(Looper.getMainLooper())
@@ -59,6 +64,32 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
     private var pending: UsbAudioPermissionRequest? = null
     private var permissionIntent: PendingIntent? = null
     private var permissionTimeout: Runnable? = null
+    private var lastExperimentalAccess = false
+
+    private fun integratedAccessFailure() = UsbPlaybackPolicy.integratedAccessFailure(experimentalOptIn())
+    private fun inspectionAllowed() = integratedAccessFailure() == null || developerOperationsAllowed()
+
+    /** Consent changes revoke pending requests, never the attachment needed for owned cleanup. */
+    fun experimentalAccessChanged() = onMain {
+        val allowed = integratedAccessFailure() == null
+        if (allowed == lastExperimentalAccess) return@onMain
+        lastExperimentalAccess = allowed
+        if (!allowed) {
+            cancelPermission()
+            if (integratedSelection == null && !developerOperationsAllowed()) {
+                cancelInspection()
+                closeConnection()
+                if (state.status == UsbAudioDiagnosticStatus.OPENING) {
+                    // A cancelled descriptor read must not leave OPENING stuck across re-enable.
+                    inspectionToken = null
+                    state = state.copy(status = UsbAudioDiagnosticStatus.PERMISSION_REQUIRED)
+                }
+            }
+            if (state.status == UsbAudioDiagnosticStatus.REQUESTING_PERMISSION)
+                state = state.copy(status = UsbAudioDiagnosticStatus.PERMISSION_REQUIRED)
+        }
+        if (integratedSelection == null) refreshOnMain()
+    }
 
     private data class InspectionResult(val model: UsbAudioDescriptorModel? = null, val error: String? = null)
 
@@ -128,7 +159,7 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
                     }
                     state.status == UsbAudioDiagnosticStatus.OPENING -> publish(state)
                     integratedSelection != null -> publish(state)
-                    forceInspection || state.descriptors == null -> inspect(current)
+                    (forceInspection || state.descriptors == null) && inspectionAllowed() -> inspect(current)
                     else -> publish(state)
                 }
                 return
@@ -162,10 +193,11 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
         inspectionToken = token
         publish(state.copy(selectedIdentity = identity, generation = token.generation,
             descriptors = null, clockDiagnostics = null, usbFsDiagnostics = null, forcedExperiment = null, configurationExperiment = null, silentExperiment = null, referenceExperiment = null, flacUsbExperiment = null, fullFlacUsbExperiment = null, integratedFlacUsbExperiment = null, message = null, status = UsbAudioDiagnosticStatus.PERMISSION_REQUIRED))
-        if (manager?.hasPermission(device) == true) inspect(token)
+        if (manager?.hasPermission(device) == true && inspectionAllowed()) inspect(token)
     }
 
     fun requestPermission(identity: UsbAudioDeviceIdentity) = onMain {
+        if (!inspectionAllowed()) return@onMain
         val usb = manager ?: return@onMain
         val token = gate.current ?: return@onMain
         if (integratedSelection != null || identity != token.identity || pending != null || state.diagnosticOperationRunning) return@onMain
@@ -204,6 +236,7 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
         val request = pending ?: return@onMain
         if (!request.matches(requestId, identity, gate)) return@onMain
         cancelPermission()
+        if (!inspectionAllowed()) return@onMain
         val device = runCatching { manager?.deviceList?.values?.firstOrNull { it.diagnosticIdentity() == identity } }.getOrNull()
         if (device == null) { invalidate(); refreshOnMain(); return@onMain }
         val actualPermission = runCatching { manager?.hasPermission(device) == true }.getOrDefault(false)
@@ -216,7 +249,7 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
     }
 
     private fun inspect(selection: UsbAudioInspectionToken) {
-        if (!gate.accepts(selection)) return
+        if (!gate.accepts(selection) || !inspectionAllowed()) return
         readJob?.cancel()
         // Refresh creates a new inspection generation too: a cancelled IO worker cannot
         // register its late openDevice result over a newer connection for the same device.
@@ -548,6 +581,7 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
     override fun authorizeIntegratedSelection(owner: UsbActivationOwner, identity: UsbAudioDeviceIdentity?, generation: Long): String? {
         check(Looper.myLooper() == handler.looper)
         if (closed) return "DIRECT_SERVICE_UNAVAILABLE"
+        integratedAccessFailure()?.let { return it }
         state.activationFailure(identity, generation)?.let { return it }
         if (pending != null) return "DIRECT_USB_PERMISSION_PENDING"
         if (integratedSelection != null) return "DIRECT_USB_RESERVATION_HELD"
@@ -572,6 +606,7 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
     }
 
     private fun currentSelectionFailure(): String? {
+        integratedAccessFailure()?.let { return it }
         val token = integratedSelection ?: return "DIRECT_USB_NOT_AUTHORIZED"
         if (closed) return "DIRECT_SERVICE_UNAVAILABLE"
         if (!gate.accepts(token)) return "DIRECT_USB_SELECTION_CHANGED"
@@ -613,10 +648,12 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
         // DirectUsbMediaPlayer owns this call on its application looper. Returning in that same
         // context avoids a dispatcher handoff discarding the terminal result after waiter cancellation.
         check(Looper.myLooper() == handler.looper)
+        integratedAccessFailure()?.let { throw UsbIntegratedStartException(it) }
         val selection = integratedSelection ?: throw UsbIntegratedStartException("DIRECT_USB_NOT_AUTHORIZED")
         if (!reservation.handedOff) throw UsbIntegratedStartException("DIRECT_USB_NOT_AUTHORIZED")
         currentSelectionFailure()?.let { throw UsbIntegratedStartException(it) }
-        check(UsbPlaybackPolicy.allows(UsbPlaybackOperation.INTEGRATED_PLAYBACK, BuildConfig.DEBUG, authorized = true))
+        check(UsbPlaybackPolicy.allows(UsbPlaybackOperation.INTEGRATED_PLAYBACK, BuildConfig.DEBUG,
+            authorized = true, experimentalOptIn = experimentalOptIn()))
         check(gate.accepts(selection))
         val selected=state.selectedDevice ?: throw UsbIntegratedStartException("DIRECT_USB_DEVICE_UNAVAILABLE")
         if (!selected.hasPermission) throw UsbIntegratedStartException("DIRECT_USB_PERMISSION_FAILED")
@@ -647,6 +684,7 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
     private fun runConfigurationDiagnostic(identity: UsbAudioDeviceIdentity, silentRun: Boolean, mode: UsbPcmDiagnosticMode = UsbPcmDiagnosticMode.ZERO, flacUri: Uri? = null, client: UsbFullPlaybackClient?=null) = onMain {
         if (client == null && !developerOperationsAllowed()) return@onMain
         if (client != null && (integratedSelection == null || mode != UsbPcmDiagnosticMode.FLAC_FULL || !silentRun)) return@onMain
+        fun forwardAuthorizationFailure() = if (client != null) integratedAccessFailure() else null
         fun currentExperiment() = if (client!=null) state.integratedFlacUsbExperiment else state.endpointExperiment(mode)
         fun withExperiment(base: UsbAudioDiagnosticState,value: UsbSilentTransportExperimentResult?) =
             if (client!=null) base.copy(integratedFlacUsbExperiment=value) else base.withEndpointExperiment(mode,value)
@@ -712,6 +750,8 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
                             UsbAudioConfigurationResult(token.generation, resolution).invalidate(failure, detail)
                         if (!UsbFsDiagnostics.silentTransportIdle()) return@withLock UsbAudioConfigurationResult(token.generation, resolution,
                             targetStatus = UsbTargetConfigurationStatus.BLOCKED, detail = "Prior endpoint buffers are retained/native API unavailable; configuration cannot begin.")
+                        forwardAuthorizationFailure()?.let { return@withLock UsbAudioConfigurationResult(token.generation, resolution,
+                            targetStatus = UsbTargetConfigurationStatus.BLOCKED, detail = it) }
                         usbAccessFailure(token)?.let { return@withLock unavailable(it, "Access check failed before Session 6 open.") }
                         val usb = manager ?: return@withLock unavailable(UsbClockQueryStatus.TRANSPORT_ERROR, "USB host API unavailable.")
                         val live = usb.deviceList.values.firstOrNull { it.diagnosticIdentity() == identity }
@@ -729,13 +769,21 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
                             catch (_: Exception) { return@withLock sourceBlocked(UsbSilentStatus.FLAC_INPUT_OPEN_FAILED, "Read-only SAF input could not be opened; no USB ownership attempted.") }
                             val input = originalFlacFd ?: return@withLock sourceBlocked(UsbSilentStatus.FLAC_INPUT_OPEN_FAILED, "SAF provider returned no descriptor; no USB ownership attempted.")
                             val source = UsbFlacPrefixSource(input.fd, token.generation, stream,mode==UsbPcmDiagnosticMode.FLAC_FULL,
-                                if (client != null) UsbPlaybackOperation.INTEGRATED_PLAYBACK else UsbPlaybackOperation.DEVELOPER_EXPERIMENT)
+                                if (client != null) UsbPlaybackOperation.INTEGRATED_PLAYBACK else UsbPlaybackOperation.DEVELOPER_EXPERIMENT,
+                                experimentalOptIn = experimentalOptIn)
                             prefixSource = source
                             if(client?.control?.stopped==true) source.requestStop()
                             synchronized(connectionLock) { endpointStop = source::requestStop; if (mode==UsbPcmDiagnosticMode.FLAC_FULL) fullStop=source::requestStop }
                             if (userStoppedStream==stream) source.requestStop()
                             if (!source.prepare { usbAccessFailure(token) } || !source.healthy()) {
                                 source.finish()
+                                if (source.handle == 0L && source.result.exceptionType == "DIRECT_EXPERIMENTAL_OPT_IN_REQUIRED") {
+                                    // The authorization gate ran before JNI creation. Preserve absence,
+                                    // rather than requiring producer-join counters from a source that never existed.
+                                    prefixSource = null
+                                    return@withLock sourceBlocked(UsbSilentStatus.CANCELLED,
+                                        "DIRECT_EXPERIMENTAL_OPT_IN_REQUIRED; native source not created, no USB ownership attempted.")
+                                }
                                 val status = if (mode==UsbPcmDiagnosticMode.FLAC_FULL) UsbFlacFullStatus.sourceFailure(source.result) else when {
                                     source.result.count("sourceIntegrityMask") and 16L != 0L -> UsbSilentStatus.SOURCE_EOF_BEFORE_DURATION
                                     source.result.exceptionType != null || source.result.count("sourceIntegrityMask") and 32L.inv() != 0L -> UsbSilentStatus.FLAC_SOURCE_FAILED
@@ -787,12 +835,15 @@ internal class UsbAudioController(context: Context) : FullUsbPlaybackEngineClien
                                         it.progressListener = client?.let { active -> { progress: UsbFullProgress ->
                                             if (!closed && inspectionToken == token) active.progress(progress)
                                         } };it.playbackControl=client?.control
+                                        it.startAuthorizationFailure = ::forwardAuthorizationFailure
                                     } },
                                     onPhase = { phase -> withContext(Dispatchers.Main.immediate) {
                                         if (!closed && gate.accepts(token) && currentExperiment()?.streamGeneration == stream)
                                             publish(withExperiment(state, currentExperiment()?.copy(phase = phase)))
                                     } },
-                                    mode = mode, prefixSource = prefixSource, accessFailure = { usbAccessFailure(token) })
+                                    mode = mode, prefixSource = prefixSource,
+                                    forwardAuthorizationFailure = ::forwardAuthorizationFailure,
+                                    accessFailure = { usbAccessFailure(token) })
                                 silentResult = value
                                 requireNotNull(value.configuration)
                             } else UsbAudioConfigurationExperiment.run(resolution, token.generation, transport) { usbAccessFailure(token) }

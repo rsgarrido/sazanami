@@ -131,7 +131,7 @@ class IntegratedDirectDiagnosticAccessTest {
         for((locale,title) in listOf(Locale.ENGLISH to "First fatal feedback decision",Locale("es") to "Primera decisión fatal de feedback")) {
             val report=formatIntegratedDirectPlayback(state,locale)
             assertTrue(report.contains(title));assertTrue(report.contains("DIRECT_TRANSPORT_FAILED"))
-            assertTrue(report.contains("production Bit-perfect: NOT YET COMPLETE"))
+            assertTrue(report.contains("DAC-internal bit-perfect output: NOT INDEPENDENTLY VERIFIED"))
             assertEquals(before,state);assertSame(result,state.engine);assertSame(transport,state.engine?.transport)
         }
     }

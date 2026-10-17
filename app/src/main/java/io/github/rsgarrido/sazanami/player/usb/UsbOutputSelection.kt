@@ -17,16 +17,23 @@ internal interface UsbOutputSelectionController {
 }
 
 /** Used by PlaybackService and routing tests. A null result from a present controller is success. */
-internal class UsbOutputSelectionCallbacks(private val controller: () -> UsbOutputSelectionController?) {
+internal class UsbOutputSelectionCallbacks(
+    private val experimentalOptIn: () -> Boolean = { false },
+    private val controller: () -> UsbOutputSelectionController?
+) {
+    fun accessFailure(): String? = UsbPlaybackPolicy.integratedAccessFailure(experimentalOptIn())
     fun authorize(owner: UsbActivationOwner, identity: UsbAudioDeviceIdentity?, generation: Long): String? {
+        accessFailure()?.let { return it }
         val current = controller()
         return if (current == null) "DIRECT_SERVICE_UNAVAILABLE" else current.authorizeIntegratedSelection(owner, identity, generation)
     }
     fun failure(owner: UsbActivationOwner): String? {
+        accessFailure()?.let { return it }
         val current = controller()
         return if (current == null) "DIRECT_SERVICE_UNAVAILABLE" else current.integratedSelectionFailure(owner)
     }
     fun commit(owner: UsbActivationOwner): String? {
+        accessFailure()?.let { return it }
         val current = controller()
         return if (current == null) "DIRECT_SERVICE_UNAVAILABLE" else current.commitIntegratedSelection(owner)
     }

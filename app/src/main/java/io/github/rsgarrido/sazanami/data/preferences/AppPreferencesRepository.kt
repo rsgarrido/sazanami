@@ -70,6 +70,10 @@ import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
@@ -93,6 +97,7 @@ data class AppPreferencesState(
     val activeModernAppearanceChoice: ModernAppearanceChoice = ModernAppearanceChoice.MY_PLAYER,
     val replayGainMode: ReplayGainMode = ReplayGainMode.OFF,
     val audioOffloadPreference: AudioOffloadPreference = AudioOffloadPreference.DISABLED,
+    val experimentalUsbDirectEnabled: Boolean = false,
     val smoothPlayPauseEnabled: Boolean = true,
     val crossfadeEnabled: Boolean = false,
     val crossfadeDurationMs: Int = CrossfadePreferences.DEFAULT_DURATION_MS,
@@ -122,6 +127,12 @@ class AppPreferencesRepository private constructor(
     private val dataStore: DataStore<Preferences>,
     scope: CoroutineScope
 ) {
+    // Withdrawing consent takes effect before the asynchronous disk write/StateFlow publication.
+    // This barrier never grants access; the loaded, persisted preference is always required.
+    private val experimentalUsbDirectRevoked = MutableStateFlow(false)
+    val isExperimentalUsbDirectAllowed: Boolean
+        get() = !experimentalUsbDirectRevoked.value && state.value.isLoaded && state.value.experimentalUsbDirectEnabled
+
     val state: StateFlow<AppPreferencesState> = dataStore.data
         .catch { error ->
             if (error is IOException) emit(emptyPreferences()) else throw error
@@ -129,7 +140,24 @@ class AppPreferencesRepository private constructor(
         .map(::decodeAppPreferences)
         .stateIn(scope, SharingStarted.Eagerly, AppPreferencesState())
 
+    // A revocation is observable even if saving fails. This is effective access, not another
+    // persisted setting; the existing DataStore is the only source of durable consent.
+    val experimentalUsbDirectAccess: StateFlow<Boolean> = combine(state, experimentalUsbDirectRevoked) { current, revoked ->
+        current.isLoaded && current.experimentalUsbDirectEnabled && !revoked
+    }.stateIn(scope, SharingStarted.Eagerly, false)
+
     suspend fun awaitLoadedState(): AppPreferencesState = state.filter { it.isLoaded }.first()
+
+    /** Call only from the explicit experimental-feature confirmation. Does not select an output. */
+    suspend fun acknowledgeExperimentalUsbDirect() = withContext(NonCancellable) {
+        experimentalUsbDirectRevoked.value = false
+        edit { it[Keys.experimentalUsbDirectEnabled] = true }
+    }
+
+    suspend fun disableExperimentalUsbDirect() {
+        experimentalUsbDirectRevoked.value = true
+        withContext(NonCancellable) { edit { it[Keys.experimentalUsbDirectEnabled] = false } }
+    }
 
     suspend fun setSelectedPlayerTheme(theme: PlayerTheme) = edit {
         it[Keys.selectedPlayerTheme] = theme.id
@@ -697,6 +725,7 @@ internal fun decodeAppPreferences(preferences: Preferences): AppPreferencesState
         audioOffloadPreference = AudioOffloadPreference.fromStorageValue(
             preferences[Keys.audioOffloadPreference]
         ),
+        experimentalUsbDirectEnabled = preferences[Keys.experimentalUsbDirectEnabled] ?: false,
         smoothPlayPauseEnabled = preferences[Keys.smoothPlayPauseEnabled] ?: true,
         crossfadeEnabled = preferences[Keys.crossfadeEnabled] ?: false,
         crossfadeDurationMs = CrossfadePreferences.clampDurationMs(
@@ -1238,6 +1267,7 @@ private object Keys {
     val modernShowAudioQualityBadge = booleanPreferencesKey("modern_show_audio_quality_badge")
     val replayGainMode = stringPreferencesKey("replay_gain_mode")
     val audioOffloadPreference = stringPreferencesKey("audio_offload_preference")
+    val experimentalUsbDirectEnabled = booleanPreferencesKey("experimental_usb_direct_enabled")
     val smoothPlayPauseEnabled = booleanPreferencesKey("smooth_play_pause_enabled")
     val crossfadeEnabled = booleanPreferencesKey("crossfade_enabled")
     val crossfadeDurationMs = intPreferencesKey("crossfade_duration_ms")

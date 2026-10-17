@@ -2,8 +2,14 @@ package io.github.rsgarrido.sazanami.player.usb
 
 /** Offline, plain-text evidence. No serial strings, Android bus paths, music paths, or remote lookup. */
 internal object UsbAudioDiagnosticReport {
-    fun format(state: UsbAudioDiagnosticState, includeRaw: Boolean = true): String = buildString {
-        appendLine("SAZANAMI USB AUDIO DIAGNOSTIC — SESSION 25")
+    /** Reuse the complete transaction evidence for active or retained integrated sessions. */
+    fun formatIntegratedConfiguration(result: UsbAudioConfigurationResult): String = buildString {
+        section("Integrated USB configuration and resource release")
+        appendConfigurationExperiment(result, result.generation, endpointWork = true, integratedPlayback = true)
+    }
+
+    fun format(state: UsbAudioDiagnosticState, includeRaw: Boolean = true, includeLegacy: Boolean = true): String = buildString {
+        appendLine("SAZANAMI USB AUDIO DIAGNOSTIC")
         appendLine("Descriptors, ownership, clock, configuration and native transport observations.")
         appendLine("Service: ${if (state.serviceAvailable) "available" else "unavailable"}")
         appendLine("Status: ${statusText(state.status)}")
@@ -43,27 +49,30 @@ internal object UsbAudioDiagnosticReport {
             }
         }
         section("UAC2 Clock Queries")
-        appendLine("Sessions 2/3 query evidence; Session 5 native reads have their own section below.")
         appendClockQueries(state.clockDiagnostics, state.generation)
-        section("AudioControl Claim Experiment")
-        appendClaimExperiment(state.clockDiagnostics?.claimExperiment, state.generation,
-            state.clockDiagnostics?.phase == UsbClockDiagnosticPhase.QUERYING)
         section("USBFS Ownership Diagnostics")
         appendUsbFs(state.usbFsDiagnostics, state.generation)
         section("Android AudioDeviceInfo")
         appendAndroidAudio(state.usbFsDiagnostics, state.generation)
-        section("Forced AudioControl Ownership Experiment — Session 5")
-        appendForcedExperiment(state.forcedExperiment, state.generation)
-        section("USB Configuration Experiment — Session 6")
-        appendConfigurationExperiment(state.configurationExperiment, state.generation)
-        section("Silent Direct USB Transport — Session 7")
-        appendSilentTransport(state.silentExperiment, state.generation)
-        section("Deterministic Direct USB PCM — Session 8")
-        appendSilentTransport(state.referenceExperiment, state.generation, UsbPcmDiagnosticMode.REFERENCE)
-        section("Bounded FLAC Direct USB Transport — Session 10")
-        appendSilentTransport(state.flacUsbExperiment, state.generation, UsbPcmDiagnosticMode.FLAC_PREFIX)
-        section("Full FLAC Direct USB Transport — Session 11")
-        appendSilentTransport(state.fullFlacUsbExperiment, state.generation, UsbPcmDiagnosticMode.FLAC_FULL)
+        if (includeLegacy) {
+            section("Developer / legacy experiments — historical diagnostic scope")
+            appendLine("These isolated experiments describe their own bounded scope; integrated USB Direct playback is reported separately.")
+            section("AudioControl Claim Experiment")
+            appendClaimExperiment(state.clockDiagnostics?.claimExperiment, state.generation,
+                state.clockDiagnostics?.phase == UsbClockDiagnosticPhase.QUERYING)
+            section("Forced AudioControl Ownership Experiment — Session 5")
+            appendForcedExperiment(state.forcedExperiment, state.generation)
+            section("USB Configuration Experiment — Session 6")
+            appendConfigurationExperiment(state.configurationExperiment, state.generation)
+            section("Silent Direct USB Transport — Session 7")
+            appendSilentTransport(state.silentExperiment, state.generation)
+            section("Deterministic Direct USB PCM — Session 8")
+            appendSilentTransport(state.referenceExperiment, state.generation, UsbPcmDiagnosticMode.REFERENCE)
+            section("Bounded FLAC Direct USB Transport — Session 10")
+            appendSilentTransport(state.flacUsbExperiment, state.generation, UsbPcmDiagnosticMode.FLAC_PREFIX)
+            section("Full FLAC Direct USB Transport — Session 11")
+            appendSilentTransport(state.fullFlacUsbExperiment, state.generation, UsbPcmDiagnosticMode.FLAC_FULL)
+        }
         val model = state.descriptors
         if (model == null) {
             section("Raw descriptors")
@@ -152,9 +161,11 @@ internal object UsbAudioDiagnosticReport {
         }
         section("Diagnostic scope / limitations")
         appendLine("Clock selectors list possible input pins; selected clock is unknown.")
-        appendLine("Sessions 3/4 use non-forced AC ownership. Explicit Session 5 force-owns only resolved AC through Android, then releases it.")
-        appendLine("Session 6 may force-own resolved AC + AS, set only the Clock Source sampling frequency and select only the resolved PCM16 / idle alternates, then restore.")
-        appendLine("Session 7 adds bounded all-zero PCM OUT and explicit feedback IN; Session 8 reuses it for a fixed low-level L/R reference on validated endpoints. No HID claim, reset or manual kernel detach/rebind.")
+        if (includeLegacy) {
+            appendLine("Sessions 3/4 use non-forced AC ownership. Explicit Session 5 force-owns only resolved AC through Android, then releases it.")
+            appendLine("Session 6 may force-own resolved AC + AS, set only the Clock Source sampling frequency and select only the resolved PCM16 / idle alternates, then restore.")
+            appendLine("Session 7 adds bounded all-zero PCM OUT and explicit feedback IN; Session 8 reuses it for a fixed low-level L/R reference on validated endpoints. No HID claim, reset or manual kernel detach/rebind.")
+        }
         section("Parser warnings / limitations")
         if (model.warnings.isEmpty()) appendLine("No structural parser warnings.")
         model.warnings.forEach { appendLine(it) }
@@ -170,7 +181,7 @@ internal object UsbAudioDiagnosticReport {
     }
 
     private fun StringBuilder.appendUsbFs(diagnostics: UsbFsOwnershipDiagnostics?, generation: Long) {
-        appendLine("Session 4 scope only (separate from Session 5):")
+        appendLine("Read-only ownership probe scope:")
         appendLine("Forced detach attempted: NO")
         appendLine("Native fd is borrowed synchronously; Kotlin retains connection ownership.")
         if (diagnostics == null) { appendLine("Not requested. Use Inspect kernel USB ownership."); return }
@@ -304,18 +315,25 @@ internal object UsbAudioDiagnosticReport {
         appendAndroidAudio(snapshot, generation)
     }
 
-    private fun StringBuilder.appendConfigurationExperiment(result: UsbAudioConfigurationResult?, generation: Long, endpointWork: Boolean = false) {
-        appendLine(if (endpointWork) "Configuration evidence from the reused Session 6 transaction; endpoint transport is separate." else "Development configuration experiment only; no stream is exercised.")
+    private fun StringBuilder.appendConfigurationExperiment(result: UsbAudioConfigurationResult?, generation: Long,
+        endpointWork: Boolean = false, integratedPlayback: Boolean = false) {
+        appendLine(when {
+            integratedPlayback -> "Integrated playback configuration/restoration evidence; endpoint transport is reported separately."
+            endpointWork -> "Configuration evidence from the reused Session 6 transaction; endpoint transport is separate."
+            else -> "Development configuration experiment only; no stream is exercised."
+        })
         if (!endpointWork) {
             appendLine("Data endpoint used: NO")
             appendLine("Feedback endpoint used: NO")
             appendLine("Audio transmitted: NO")
         } else appendLine("Endpoint activity is recorded by endpoint transport submissions/completions; configuration evidence alone does not establish transport.")
         appendLine("HID claimed: NO; Feature Unit writes: NO; reset/manual reconnect/rebind: NO")
-        appendLine("Bit-perfect active: NO")
+        appendLine(if (integratedPlayback) "DAC-internal reconstructed output: NOT INDEPENDENTLY VERIFIED" else "Bit-perfect active: NO")
         appendLine("Functional USB audio recovery: NOT_VERIFIED")
-        appendLine("After this configuration experiment, a physical DAC disconnect/reconnect may be required before normal Android USB audio playback works again.")
-        appendLine("Known manual test evidence only: ${UsbAudioForcedExperiment.MANUAL_HARDWARE_CAVEAT}")
+        if (!integratedPlayback) {
+            appendLine("After this configuration experiment, a physical DAC disconnect/reconnect may be required before normal Android USB audio playback works again.")
+            appendLine("Known manual test evidence only: ${UsbAudioForcedExperiment.MANUAL_HARDWARE_CAVEAT}")
+        }
         if (result == null) { appendLine("Not requested. Stop playback before Configure USB 16/44.1 (no audio)."); return }
         if (result.generation != generation) { appendLine("Stale generation; previous Session 6 transaction evidence omitted."); return }
         appendLine("Generation: ${result.generation}; phase=${result.phase}")
@@ -463,7 +481,7 @@ internal object UsbAudioDiagnosticReport {
         appendLine("Queue capacity frames=16384; prebuffer target frames=8192; shorter complete tracks prime min(total,8192) only after clean EOF and applicable MD5 checks. Prime before AC/AS ownership.")
         appendLine("Producer EOF preserves queued PCM. Consumer drains through totalSamples-1; exact terminal tail; no zero padding, repetition, interpolation or truncation.")
         appendLine("ACTIVE insufficient source frames = QUEUE_UNDERRUN; verified EOF tail is distinct. Refill precedes OUT_POOL_STALL. No-progress terminal verification timeout fails.")
-        appendLine("production Bit-perfect: NOT YET COMPLETE; integrated Session 17 adds native Pause/Resume and current-track seeking on capable sources; no multi-track or DSP. Manual listening: NOT AUTOMATICALLY VERIFIED.")
+        appendLine("DAC-internal bit-perfect output: NOT INDEPENDENTLY VERIFIED. Legacy full-track diagnostic scope only; integrated playback is reported separately. Manual listening: NOT AUTOMATICALLY VERIFIED.")
         appendLine("Kernel exact completions establish host USB transport evidence; DAC-internal reconstructed samples are not measured.")
         val source=result?.flacSource
         if (source==null) { appendLine("Full FLAC source evidence unavailable / not requested"); return }
@@ -506,7 +524,7 @@ internal object UsbAudioDiagnosticReport {
         appendLine("Producer-full waits are normal backpressure. Consumer requires exact frames immediately; no silence/repeat/interpolation concealment.")
         appendLine("Expected manual observation: approximately five seconds of the selected FLAC through the USB DAC; manual listening: NOT AUTOMATICALLY VERIFIED")
         appendLine("Source/queue -> copied exact payload -> successful kernel submission/completion. DAC-internal PCM is not measured.")
-        appendLine("Bit-perfect production playback: NOT IMPLEMENTED; full-track playback: NOT IMPLEMENTED; no Media3/AudioTrack fallback")
+        appendLine("Legacy bounded diagnostic scope: no full-track playback; integrated playback is reported separately; no Media3/AudioTrack fallback")
         val source = result?.flacSource
         if (source == null) { appendLine("FLAC source evidence unavailable / not requested"); return }
         appendLine("Source integrity: ${if (source.primed && source.count("sourceIntegrityMask")==0L && source.exceptionType==null) "VALID" else "COMPROMISED"}; reasons=${source.reasons.joinToString().ifEmpty { "none / boundary evidence unavailable" }}")
@@ -631,7 +649,7 @@ internal object UsbAudioDiagnosticReport {
         if (diagnostics == null) {
             appendLine("Not requested for this generation. Use Query UAC2 clock capabilities.")
             appendLine("Rate range not yet queried. No UAC2 class-control reads recorded in this query set.")
-            appendLine("This query set issues no SET request. Session 6 clock/alternate mutations are reported separately.")
+            appendLine("This query set issues no SET request. Legacy clock/alternate mutations are reported separately.")
             return
         }
         if (diagnostics.generation != currentGeneration) {
@@ -651,9 +669,9 @@ internal object UsbAudioDiagnosticReport {
         appendLine("Claim mode: ${diagnostics.claimMode}; automatic interface claim fallback is disabled.")
         appendLine(when {
             diagnostics.claimMode == UsbClockClaimMode.USB_CONFIGURATION_NATIVE ->
-                "Session 6 native pre-flight reads while resolved AC is force-owned; mutations are reported in the configuration section."
+                "Native pre-flight reads while resolved AC is force-owned; mutations are reported in the configuration evidence."
             diagnostics.claimMode == UsbClockClaimMode.AUDIOCONTROL_FORCED_NATIVE ->
-                "Session 5: these reads were issued only after Android force=true AC ownership; native USBDEVFS_CONTROL evidence follows."
+                "These reads were issued only after Android force=true AC ownership; native USBDEVFS_CONTROL evidence follows."
             diagnostics.claimMode == UsbClockClaimMode.AUDIOCONTROL_NON_FORCED ->
                 "Operation used temporary non-forced AudioControl ownership; see the experiment for query comparison and release status."
             diagnostics.phase == UsbClockDiagnosticPhase.COMPLETE -> "Claim needed: no, these reads completed without claiming any interface."
@@ -771,7 +789,7 @@ internal object UsbAudioDiagnosticReport {
             UsbAudioClaimComparison.CLAIM_DID_NOT_RESOLVE -> "The previously rejected/failed requests also failed while AC was claimed; claiming AC alone did not resolve those failures."
             UsbAudioClaimComparison.INDETERMINATE -> "Evidence is incomplete or mixed; inspect the per-stage request results."
         })
-        appendLine("This is temporary diagnostic ownership and read-only clock evidence. Direct USB song playback is not implemented; Sessions 7/8 transport has separate evidence.")
+        appendLine("This legacy claim experiment records temporary ownership and clock reads only; integrated USB Direct song playback is reported separately.")
     }
 
     fun statusText(status: UsbAudioDiagnosticStatus): String = when (status) {

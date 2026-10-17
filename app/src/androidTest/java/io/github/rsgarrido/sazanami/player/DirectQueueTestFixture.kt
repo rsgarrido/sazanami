@@ -119,6 +119,8 @@ internal abstract class DirectQueueTestFixture {
         val identity=UsbAudioDeviceIdentity("fake",1,2,3)
         var token=gate.select(identity)!!
         val reservation=UsbOutputReservation()
+        // Direct-specific fixtures must opt in explicitly; production callbacks remain default-off.
+        var experimentalOptIn=true
         private val controller=object : UsbOutputSelectionController {
             override fun authorizeIntegratedSelection(owner: UsbActivationOwner,identity: UsbAudioDeviceIdentity?,generation: Long)=
                 if(reservation.acquire(owner,token)) null else "DIRECT_USB_RESERVATION_HELD"
@@ -132,7 +134,7 @@ internal abstract class DirectQueueTestFixture {
             recreateNormal={
                 kotlin.check(engine.active==0) { "Android recreation must follow the native owner join" }
                 recreations++;androidPlayerFactory?.invoke() ?: Physical(items,false)
-            },selection=UsbOutputSelectionCallbacks { controller })
+            },selection=UsbOutputSelectionCallbacks(experimentalOptIn={ experimentalOptIn }) { controller })
         val events=mutableListOf<Pair<String?,DirectListeningEvent>>()
         private val translator=DirectListeningEventTranslator()
         val database=Room.inMemoryDatabaseBuilder(InstrumentationRegistry.getInstrumentation().targetContext,AppDatabase::class.java).build()
