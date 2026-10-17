@@ -1,6 +1,8 @@
 package io.github.rsgarrido.sazanami.ui.player
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.unit.IntSize
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
@@ -146,6 +148,31 @@ class PlayerMorphStateTest {
         assertTrue(second.generation > first.generation)
         assertEquals(Rect(0f, 20f, 120f, 100f), second.bounds)
         assertEquals(1f, state.progress, 0f)
+    }
+
+    @Test
+    fun layoutGenerationChangesOnlyWhenTheViewportOrDensityChanges() {
+        val bounds = PlayerEndpointBounds()
+        val surface = Rect(80f, 30f, 440f, 830f)
+        fun publish(density: Float = 1f, fontScale: Float = 1f) = bounds.updateLayoutFrame(
+            surface, Offset(80f, 30f), IntSize(600, 900), density, fontScale
+        )
+        publish()
+        val initial = bounds.layoutFrame!!
+        bounds.updateMini(Rect(92f, 730f, 428f, 798f))
+
+        publish()
+        assertEquals(initial, bounds.layoutFrame)
+        assertTrue(bounds.mini is PlayerBoundsMeasurement.Measured)
+
+        publish(density = 2f)
+        assertEquals(initial.generation + 1, bounds.layoutFrame!!.generation)
+        assertTrue(bounds.mini is PlayerBoundsMeasurement.Stale)
+        publish(density = 2f, fontScale = 1.3f)
+        assertEquals(initial.generation + 2, bounds.layoutFrame!!.generation)
+        // Returning to the same dimensions cannot reuse the initial epoch's elements.
+        publish()
+        assertEquals(initial.generation + 3, bounds.layoutFrame!!.generation)
     }
 
     @Test

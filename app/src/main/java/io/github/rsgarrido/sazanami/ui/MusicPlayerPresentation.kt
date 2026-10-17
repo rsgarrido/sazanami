@@ -22,7 +22,6 @@ import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.lyrics.LyricsPlaybackUiState
 import io.github.rsgarrido.sazanami.player.RepeatMode
-import io.github.rsgarrido.sazanami.ui.player.PlayerBoundsMeasurement
 import io.github.rsgarrido.sazanami.ui.player.PlayerEndpointBounds
 import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsTransitionState
 import io.github.rsgarrido.sazanami.ui.player.PlayerMorphState
@@ -37,11 +36,11 @@ import io.github.rsgarrido.sazanami.ui.player.classicwheel.resolveClassicWheelMo
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.resolveClassicWheelSharedGeometry
 import io.github.rsgarrido.sazanami.ui.player.mini.DefaultMiniPlayerMorphCallbacks
 import io.github.rsgarrido.sazanami.ui.player.modern.DefaultMorphMetadataOwner
-import io.github.rsgarrido.sazanami.ui.player.modern.DefaultMorphMinimumDragRangePx
 import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernArtworkTransitionStyle
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerAppearance
 import io.github.rsgarrido.sazanami.ui.player.modern.defaultMorphMetadataOwner
+import io.github.rsgarrido.sazanami.ui.player.modern.defaultMorphTravelDistance
 import io.github.rsgarrido.sazanami.ui.player.modern.resolveDefaultPlayerMorphGeometry
 import io.github.rsgarrido.sazanami.ui.player.playerEndpointInput
 import io.github.rsgarrido.sazanami.ui.player.pocketcassette.PocketCassetteMorphBounds
@@ -63,7 +62,6 @@ import io.github.rsgarrido.sazanami.ui.player.retrorack.retroRackMorphTravelDist
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 import io.github.rsgarrido.sazanami.ui.state.PlaybackProgress
 import io.github.rsgarrido.sazanami.ui.state.PlaybackProgressUiState
-import kotlin.math.abs
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -134,7 +132,7 @@ internal fun prepareMusicPlayerPresentation(
     onViewArtwork: (Song) -> Unit,
 ): @Composable BoxScope.(PlayerEndpointBounds) -> Unit {
     return { playerEndpointBounds ->
-        val defaultMorphBounds = rememberMusicPlayerDefaultMorphBounds()
+        val defaultMorphBounds = rememberMusicPlayerDefaultMorphBounds(playerEndpointBounds)
         val classicMorphBounds = rememberMusicPlayerClassicMorphBounds()
         val classicWheelMenuState = rememberMusicPlayerClassicWheelMenuState(
             selectedPlayerTheme,
@@ -287,24 +285,9 @@ internal fun prepareMusicPlayerPresentation(
         ) {
             DefaultMiniPlayerMorphCallbacks(
                 onDragStart = {
-                    val miniBounds = defaultMorphBounds.miniSurface ?: (
-                            playerEndpointBounds.mini as?
-                                    PlayerBoundsMeasurement.Measured
-                            )?.bounds
-                    val expandedBounds = (
-                            playerEndpointBounds.expanded as?
-                                    PlayerBoundsMeasurement.Measured
-                            )?.bounds
-                    val travelDistance = if (miniBounds != null &&
-                        expandedBounds != null
-                    ) {
-                        abs(miniBounds.top - expandedBounds.top)
-                    } else {
-                        DefaultMorphMinimumDragRangePx
-                    }
                     playerMorphState.beginDragWithRange(
-                        progressRangePx = travelDistance.coerceAtLeast(
-                            DefaultMorphMinimumDragRangePx
+                        progressRangePx = defaultMorphTravelDistance(
+                            playerEndpointBounds, defaultMorphBounds
                         )
                     )
                 },
@@ -474,8 +457,11 @@ internal fun prepareMusicPlayerPresentation(
 
 // Each call keeps its own remember group. Theme/menu resets must never replace these bounds.
 @Composable
-internal fun rememberMusicPlayerDefaultMorphBounds(): DefaultPlayerMorphBounds =
-    remember { DefaultPlayerMorphBounds() }
+internal fun rememberMusicPlayerDefaultMorphBounds(
+    endpointBounds: PlayerEndpointBounds? = null
+): DefaultPlayerMorphBounds = remember(endpointBounds) {
+    DefaultPlayerMorphBounds { endpointBounds?.layoutFrame }
+}
 
 @Composable
 internal fun rememberMusicPlayerClassicMorphBounds(): ClassicWheelMorphBounds =

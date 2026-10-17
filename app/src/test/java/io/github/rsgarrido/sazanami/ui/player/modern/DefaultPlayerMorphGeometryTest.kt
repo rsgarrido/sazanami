@@ -1,6 +1,8 @@
 package io.github.rsgarrido.sazanami.ui.player.modern
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.unit.IntSize
 import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.ui.player.PlayerEndpointBounds
 import io.github.rsgarrido.sazanami.ui.player.PlayerMorphState
@@ -228,6 +230,204 @@ class DefaultPlayerMorphGeometryTest {
         assertTrue(original === bounds.miniArtwork)
     }
 
+    @Test
+    fun rootAlignedHostPreservesEveryEndpointAndIntermediateRectangle() {
+        val endpoints = framedEndpoints(Offset.Zero)
+        val elements = framedElements(endpoints)
+        publishMini(elements, Offset.Zero)
+        publishExpanded(elements, Offset.Zero)
+
+        for (progress in listOf(0f, 0.25f, 0.5f, 1f)) {
+            assertEquals(
+                expectedFramedGeometry(progress),
+                resolveDefaultPlayerMorphGeometry(progress, endpoints, elements)
+            )
+        }
+    }
+
+    @Test
+    fun translatedHostConvertsAllRectanglesExactlyOnceBeforeInterpolation() {
+        for (origin in listOf(Offset(96f, 54f), Offset(-20f, 32f))) {
+            val endpoints = framedEndpoints(origin)
+            val elements = framedElements(endpoints)
+            publishMini(elements, origin)
+            publishExpanded(elements, origin)
+
+            for (progress in listOf(0f, 0.25f, 0.5f, 1f)) {
+                assertEquals(
+                    expectedFramedGeometry(progress),
+                    resolveDefaultPlayerMorphGeometry(progress, endpoints, elements)
+                )
+            }
+            // Source storage remains root-relative; drawing geometry is host-relative.
+            assertEquals(frameMiniSurface.translate(origin), elements.miniSurface)
+            assertEquals(
+                frameSurface,
+                resolveDefaultPlayerMorphGeometry(1f, endpoints, elements)?.surface
+            )
+        }
+    }
+
+    @Test
+    fun resizeKeepsCompleteEndpointsUntilAllNewMeasurementsArrive() {
+        val endpoints = framedEndpoints(Offset.Zero)
+        val elements = framedElements(endpoints)
+        publishMini(elements, Offset.Zero)
+        publishExpanded(elements, Offset.Zero)
+        assertEquals(expectedFramedGeometry(0.4f),
+            resolveDefaultPlayerMorphGeometry(0.4f, endpoints, elements))
+
+        val resizedSurface = Rect(0f, 0f, 720f, 600f)
+        val origin = Offset(80f, 30f)
+        updateFrame(endpoints, origin, resizedSurface)
+        publishMini(elements, origin)
+        endpoints.updateMini(frameMiniSurface.translate(origin))
+        elements.updateExpandedArtwork(frameExpandedArtwork.translate(origin))
+
+        // Both directions still interpolate the last coherent endpoints, not a frozen fraction
+        // or the resized surface combined with the old metadata/control destinations.
+        for (progress in listOf(0.7f, 0.2f, 1f, 0f)) {
+            assertEquals(expectedFramedGeometry(progress),
+                resolveDefaultPlayerMorphGeometry(progress, endpoints, elements))
+        }
+        // Unchanged element rectangles must also be re-stamped for the new frame.
+        publishExpanded(elements, origin)
+        assertEquals(
+            expectedFramedGeometry(0.5f).copy(
+                surface = interpolateMorphRect(frameMiniSurface, resizedSurface, 0.5f)
+            ),
+            resolveDefaultPlayerMorphGeometry(0.5f, endpoints, elements)
+        )
+    }
+
+    @Test
+    fun staleSourceCannotCompleteANewLayoutWithoutFreshMiniMeasurements() {
+        val endpoints = framedEndpoints(Offset.Zero)
+        val elements = framedElements(endpoints)
+        publishMini(elements, Offset.Zero)
+        publishExpanded(elements, Offset.Zero)
+
+        val origin = Offset(70f, 20f)
+        updateFrame(endpoints, origin)
+        publishExpanded(elements, origin)
+        assertNull(resolveDefaultPlayerMorphGeometry(0.5f, endpoints, elements))
+
+        endpoints.updateMini(frameMiniSurface.translate(origin))
+        // Updating just the generic mini endpoint must not validate cached Default elements.
+        assertNull(resolveDefaultPlayerMorphGeometry(0.5f, endpoints, elements))
+        publishMini(elements, origin)
+        assertEquals(expectedFramedGeometry(0.5f),
+            resolveDefaultPlayerMorphGeometry(0.5f, endpoints, elements))
+    }
+
+    @Test
+    fun invalidPlaceholderKeepsOnlyThePreviousCompleteSnapshotUntilItRecovers() {
+        val endpoints = framedEndpoints(Offset.Zero)
+        val elements = framedElements(endpoints)
+        publishMini(elements, Offset.Zero)
+        publishExpanded(elements, Offset.Zero)
+        resolveDefaultPlayerMorphGeometry(1f, endpoints, elements)
+
+        val origin = Offset(80f, 30f)
+        updateFrame(endpoints, origin)
+        publishMini(elements, origin)
+        endpoints.updateMini(frameMiniSurface.translate(origin))
+        elements.updateExpandedArtwork(Rect.Zero)
+        val newText = frameExpandedText.translate(0f, 24f)
+        elements.updateExpandedText(newText.translate(origin))
+        elements.updateExpandedPlayPause(frameExpandedPlayPause.translate(origin))
+        // Keep the existing last-valid rectangle API, without accepting it as a fresh layout.
+        assertEquals(frameExpandedArtwork, elements.expandedArtwork)
+        assertEquals(expectedFramedGeometry(1f),
+            resolveDefaultPlayerMorphGeometry(1f, endpoints, elements))
+
+        elements.updateExpandedArtwork(frameExpandedArtwork.translate(origin))
+        assertEquals(expectedFramedGeometry(1f).copy(text = newText),
+            resolveDefaultPlayerMorphGeometry(1f, endpoints, elements))
+    }
+
+    @Test
+    fun returningToAnEarlierViewportDoesNotReviveItsOldMeasurementGeneration() {
+        val endpoints = framedEndpoints(Offset.Zero)
+        val elements = framedElements(endpoints)
+        publishMini(elements, Offset.Zero)
+        publishExpanded(elements, Offset.Zero)
+        resolveDefaultPlayerMorphGeometry(1f, endpoints, elements)
+
+        updateFrame(endpoints, Offset(20f, 10f))
+        elements.updateExpandedArtwork(frameExpandedArtwork.translate(20f, 10f))
+        updateFrame(endpoints, Offset.Zero)
+        elements.updateExpandedArtwork(frameExpandedArtwork.translate(0f, 20f))
+        assertEquals(expectedFramedGeometry(1f),
+            resolveDefaultPlayerMorphGeometry(1f, endpoints, elements))
+    }
+
+    @Test
+    fun clearingExpandedMeasurementsAlsoClearsThePreviousVisualSnapshot() {
+        val endpoints = framedEndpoints(Offset.Zero)
+        val elements = framedElements(endpoints)
+        publishMini(elements, Offset.Zero)
+        publishExpanded(elements, Offset.Zero)
+        assertTrue(resolveDefaultPlayerMorphGeometry(1f, endpoints, elements) != null)
+
+        elements.clearExpanded()
+        assertNull(resolveDefaultPlayerMorphGeometry(1f, endpoints, elements))
+        publishExpanded(elements, Offset.Zero)
+        assertEquals(expectedFramedGeometry(1f),
+            resolveDefaultPlayerMorphGeometry(1f, endpoints, elements))
+    }
+
+    @Test
+    fun firstDragUsesTheMeasuredSurfaceTravelBeforeDestinationsExist() {
+        val origin = Offset(80f, 30f)
+        val endpoints = framedEndpoints(origin)
+        val elements = framedElements(endpoints)
+        publishMini(elements, origin)
+
+        assertNull(resolveDefaultPlayerMorphGeometry(0f, endpoints, elements))
+        assertEquals(700f, defaultMorphTravelDistance(endpoints, elements), 0f)
+    }
+
+    private fun framedEndpoints(origin: Offset) = PlayerEndpointBounds().apply {
+        updateFrame(this, origin)
+        updateMini(frameMiniSurface.translate(origin))
+    }
+
+    private fun updateFrame(
+        endpoints: PlayerEndpointBounds,
+        origin: Offset,
+        surface: Rect = frameSurface
+    ) {
+        endpoints.updateLayoutFrame(
+            surface.translate(origin), origin,
+            IntSize(surface.width.toInt() + 200, surface.height.toInt() + 100),
+            density = 1f, fontScale = 1f
+        )
+    }
+
+    private fun framedElements(endpoints: PlayerEndpointBounds) =
+        DefaultPlayerMorphBounds { endpoints.layoutFrame }
+
+    private fun publishMini(elements: DefaultPlayerMorphBounds, origin: Offset) {
+        elements.updateMiniSurface(frameMiniSurface.translate(origin))
+        elements.updateMiniArtwork(frameMiniArtwork.translate(origin))
+        elements.updateMiniText(frameMiniText.translate(origin))
+        elements.updateMiniPlayPause(frameMiniPlayPause.translate(origin))
+    }
+
+    private fun publishExpanded(elements: DefaultPlayerMorphBounds, origin: Offset) {
+        elements.updateExpandedArtwork(frameExpandedArtwork.translate(origin))
+        elements.updateExpandedText(frameExpandedText.translate(origin))
+        elements.updateExpandedPlayPause(frameExpandedPlayPause.translate(origin))
+    }
+
+    private fun expectedFramedGeometry(progress: Float) = DefaultPlayerMorphGeometry(
+        interpolateMorphRect(frameMiniSurface, frameSurface, progress),
+        interpolateMorphRect(frameMiniArtwork, frameExpandedArtwork, progress),
+        interpolateMorphRect(frameMiniText, frameExpandedText, progress),
+        interpolateMorphRect(frameMiniPlayPause, frameExpandedPlayPause, progress)
+    )
+
     private fun completeEndpointBounds() = PlayerEndpointBounds().apply {
         updateMini(collapsedRect)
         updateExpanded(expandedRect)
@@ -244,6 +444,14 @@ class DefaultPlayerMorphGeometryTest {
     }
 
     private companion object {
+        val frameSurface = Rect(0f, 0f, 360f, 800f)
+        val frameMiniSurface = Rect(12f, 700f, 348f, 768f)
+        val frameMiniArtwork = Rect(20f, 708f, 72f, 760f)
+        val frameMiniText = Rect(84f, 710f, 240f, 752f)
+        val frameMiniPlayPause = Rect(292f, 710f, 340f, 758f)
+        val frameExpandedArtwork = Rect(46f, 24f, 314f, 292f)
+        val frameExpandedText = Rect(16f, 320f, 344f, 384f)
+        val frameExpandedPlayPause = Rect(139f, 680f, 221f, 762f)
         val collapsedRect = Rect(0f, 20f, 280f, 100f)
         val expandedRect = Rect(100f, 200f, 240f, 740f)
     }

@@ -200,7 +200,7 @@ private fun DefaultMorphArtwork(
     val clippingPolicy = modernArtworkTransitionClippingPolicy()
     Box(
         modifier = Modifier
-            .placeInRootBounds(bounds)
+            .placeInHostBounds(bounds)
             .then(gestureModifier)
             .graphicsLayer {
                 clip = clippingPolicy.clipTransitionViewportToRestingBounds
@@ -247,7 +247,7 @@ private fun DefaultMorphTitleArtist(
         progress
     )
     Box(
-        modifier = Modifier.placeInRootBounds(bounds),
+        modifier = Modifier.placeInHostBounds(bounds),
         contentAlignment = if (useCenteredAlignment) Alignment.TopCenter else Alignment.TopStart
     ) {
         carouselPresentation.songs.items().forEach { item ->
@@ -386,7 +386,7 @@ private fun DefaultMorphPlayPause(
     }
     Box(
         modifier = Modifier
-            .placeInRootBounds(bounds)
+            .placeInHostBounds(bounds)
             .then(decoratedModifier),
         contentAlignment = Alignment.Center
     ) {
@@ -424,12 +424,12 @@ internal fun Modifier.suppressDefaultMorphSemantics(suppress: Boolean): Modifier
     if (suppress) clearAndSetSemantics { } else this
 
 @Composable
-private fun Modifier.placeInRootBounds(
+private fun Modifier.placeInHostBounds(
     bounds: androidx.compose.ui.geometry.Rect
 ): Modifier {
     val density = LocalDensity.current
     return with(density) {
-        this@placeInRootBounds
+        this@placeInHostBounds
             .offset {
                 IntOffset(
                     x = bounds.left.roundToInt(),

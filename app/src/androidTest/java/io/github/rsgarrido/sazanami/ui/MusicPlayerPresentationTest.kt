@@ -2,7 +2,9 @@ package io.github.rsgarrido.sazanami.ui
 
 import android.net.Uri
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
@@ -11,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -252,6 +255,50 @@ class MusicPlayerPresentationTest {
         composeRule.runOnIdle { assertEquals(listOf("next", "previous"), fixture.calls) }
     }
 
+    @Test
+    fun defaultMorphAnchorsFollowAnInsetHostWithoutReplacingPresentationOwners() {
+        val fixture = Fixture(PlayerPresentation.Expanded).apply { miniVisible.value = true }
+        composeRule.setContent { fixture.Content() }
+        val morph = fixture.morph
+        val lyrics = fixture.lyrics
+        val endpoints = fixture.endpoints
+
+        fun assertAnchorsInsideHost() {
+            val host = composeRule.onNodeWithTag("player-host").fetchSemanticsNode().boundsInRoot
+            val artwork = composeRule.onNodeWithTag(ArtworkViewerEntryTag)
+                .fetchSemanticsNode().boundsInRoot
+            val artist = composeRule.onNode(hasText(fixture.current.value!!.artist) and hasClickAction())
+                .fetchSemanticsNode().boundsInRoot
+            val playPause = composeRule.onNodeWithContentDescription(text(R.string.player_play))
+                .fetchSemanticsNode().boundsInRoot
+            assertEquals(host.center.x, artwork.center.x, 1f)
+            assertEquals(host.left + fixture.contentPaddingPx, artist.left, 1f)
+            assertEquals(host.center.x, playPause.center.x, 1f)
+            composeRule.runOnIdle {
+                assertSame(morph, fixture.morph)
+                assertSame(lyrics, fixture.lyrics)
+                assertSame(endpoints, fixture.endpoints)
+                assertEquals(1f, fixture.morph.progress, 0f)
+                assertEquals(PlayerPresentation.Expanded, fixture.morph.settledPresentation)
+                assertTrue(fixture.calls.isEmpty())
+            }
+        }
+
+        assertAnchorsInsideHost()
+        composeRule.runOnIdle {
+            fixture.hostStartInset.value = 32.dp
+            fixture.hostTopInset.value = 24.dp
+            fixture.hostEndInset.value = 16.dp
+        }
+        assertAnchorsInsideHost()
+        composeRule.runOnIdle {
+            fixture.hostStartInset.value = 16.dp
+            fixture.hostTopInset.value = 12.dp
+            fixture.hostEndInset.value = 8.dp
+        }
+        assertAnchorsInsideHost()
+    }
+
     private fun mount(initial: PlayerPresentation = PlayerPresentation.Collapsed) =
         Fixture(initial).also { fixture -> composeRule.setContent { fixture.Content() } }
 
@@ -303,6 +350,10 @@ class MusicPlayerPresentationTest {
         val timerActive = mutableStateOf(false)
         val lyricsVisible = mutableStateOf(false)
         val padding = mutableStateOf(37.dp)
+        val hostStartInset = mutableStateOf(0.dp)
+        val hostTopInset = mutableStateOf(0.dp)
+        val hostEndInset = mutableStateOf(0.dp)
+        var contentPaddingPx = 0f
         var receivedPadding: Dp? = null
         val progress = MutableStateFlow(PlaybackProgressUiState(duration = 180_000))
         val calls = mutableListOf<String>()
@@ -317,6 +368,7 @@ class MusicPlayerPresentationTest {
 
         @Composable
         fun Content() {
+            contentPaddingPx = with(LocalDensity.current) { 16.dp.toPx() }
             morph = rememberPlayerMorphState(initial)
             lyrics = rememberPlayerLyricsTransitionState(lyricsVisible.value) { lyricsVisible.value = it }
             val player = prepareMusicPlayerPresentation(
@@ -381,9 +433,13 @@ class MusicPlayerPresentationTest {
                 onViewArtwork = { artworks += it },
             )
             SazanamiTheme {
-                PlayerMorphHost(morph, Modifier.fillMaxSize()) { measuredEndpoints ->
-                    endpoints = measuredEndpoints
-                    player(measuredEndpoints)
+                Box(Modifier.fillMaxSize().padding(
+                    start = hostStartInset.value, top = hostTopInset.value, end = hostEndInset.value
+                )) {
+                    PlayerMorphHost(morph, Modifier.fillMaxSize().testTag("player-host")) { measuredEndpoints ->
+                        endpoints = measuredEndpoints
+                        player(measuredEndpoints)
+                    }
                 }
             }
         }
