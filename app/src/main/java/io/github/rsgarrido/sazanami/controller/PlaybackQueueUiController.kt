@@ -8,7 +8,9 @@ import io.github.rsgarrido.sazanami.data.membershipKey
 import io.github.rsgarrido.sazanami.data.local.PlaybackQueueEntity
 import io.github.rsgarrido.sazanami.data.local.PlaybackQueueEntryEntity
 import io.github.rsgarrido.sazanami.player.PlaybackController
+import io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackBridge
 import io.github.rsgarrido.sazanami.player.PlaybackQueueEntryRemoval
+import io.github.rsgarrido.sazanami.player.PlaybackQueueRuntimeBridge
 import io.github.rsgarrido.sazanami.player.RoomPlaybackQueueTrackAccess
 import io.github.rsgarrido.sazanami.ui.state.PlaybackUiState
 import kotlinx.coroutines.CoroutineScope
@@ -120,7 +122,8 @@ internal class RoomPlaybackQueueUiOperations(
 ) : PlaybackQueueUiOperations {
     private val trackAccess = RoomPlaybackQueueTrackAccess(database, catalogSongs)
 
-    override fun observeQueues(): Flow<List<PlaybackQueueEntity>> = repository.observeQueues()
+    override fun observeQueues(): Flow<List<PlaybackQueueEntity>> =
+        observeQueueOwnershipChanges(repository.observeQueues(),PlaybackQueueRuntimeBridge.revisions)
 
     override fun observeLiveActiveQueue(): Flow<LiveActiveQueueForUi?> =
         observeLiveActiveQueueForUi(
@@ -189,6 +192,12 @@ internal class RoomPlaybackQueueUiOperations(
     ): Boolean = playbackController.reorderQueueEntry(queueId, entryId, toPlaybackOrder)
 }
 
+/** Ownership-only updates (including clearing it) need not modify an observed queue row. */
+internal fun observeQueueOwnershipChanges(
+    queues: Flow<List<PlaybackQueueEntity>>,
+    ownershipRevisions: Flow<Long>
+): Flow<List<PlaybackQueueEntity>> = combine(queues,ownershipRevisions) { rows, _ -> rows }
+
 internal fun observeLiveActiveQueueForUi(
     playbackStates: Flow<PlaybackUiState>,
     timelineRevisions: Flow<Long>,
@@ -199,6 +208,7 @@ internal fun observeLiveActiveQueueForUi(
     playbackStates,
     timelineRevisions
 ) { state, _ ->
+    if(IntegratedDirectPlaybackBridge.directSelected && activeQueueEntryIds().isEmpty()) return@combine null
     val currentSong = state.currentSong
     if (!state.isConnected || currentSong == null) {
         null

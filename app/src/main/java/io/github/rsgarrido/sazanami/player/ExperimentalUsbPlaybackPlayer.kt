@@ -1,0 +1,477 @@
+package io.github.rsgarrido.sazanami.player
+
+import android.net.Uri
+import androidx.annotation.OptIn
+import androidx.media3.common.*
+import androidx.media3.common.util.UnstableApi
+import io.github.rsgarrido.sazanami.player.usb.*
+import android.os.Handler
+import kotlinx.coroutines.*
+
+/** One authoritative Player for the session. Normal commands retain the existing SmoothPlaybackPlayer. */
+@OptIn(UnstableApi::class)
+internal class ExperimentalUsbPlaybackPlayer(
+    private val normal: SmoothPlaybackPlayer, private val scope: CoroutineScope, usb: io.github.rsgarrido.sazanami.player.usb.FullUsbPlaybackEngineClient,
+    private val releaseNormal: suspend ()->Boolean, private val recreateNormal: ()->Player,
+    private val acquireFocus: ()->Boolean={true}, private val releaseFocus: ()->Unit={},
+    private val predecessorReleased: ()->Boolean={true},
+    private val selection: UsbOutputSelectionCallbacks=UsbOutputSelectionCallbacks { null }
+) : ForwardingSimpleBasePlayer(normal) {
+    var directState=IntegratedDirectPlaybackState();private set
+    private var selectedDirect=false
+    private var normalReleaseSafe=false
+    private var directResourcesReleased=false
+    private val predecessorError=PlaybackException("DIRECT_PREDECESSOR_CLEANUP_PENDING",null,PlaybackException.ERROR_CODE_UNSPECIFIED)
+    private var smoothEnabled=true
+    private var shuffleEnabled=false
+    private var modeJob: Job?=null
+    private var switching: DirectOutputSwitch?=null
+    private var safetyExitRequested=false
+    private var selectionOwner: UsbActivationOwner?=null
+    private var selectionHandedOff=false
+    private var activationSerial=0L
+    private var normalReleaseStarted=false
+    private val modeHandler=Handler(normal.applicationLooper)
+    private var safetyExitHandled=false
+    private var savedItems: List<MediaItem> = emptyList()
+    private var savedIndex=0
+    private var savedPosition=0L
+    private var savedVolume=1f
+    private var savedParameters=PlaybackParameters.DEFAULT
+    private var savedShuffle=false
+    private var savedRepeat=Player.REPEAT_MODE_OFF
+    private var savedPlaying=false
+    private var queueOutputObserver: PlaybackQueueOutputObserver?=null
+    private var idlePreparationJob: Job?=null
+    private var shuttingDown=false
+    private var directListeningObserver: DirectPlaybackListeningObserver?=null
+    private var directListeningOwned=false
+    private val direct=DirectUsbMediaPlayer(scope,usb,changed={ value ->
+        if(selectedDirect && switching != DirectOutputSwitch.TO_USB) {
+            directState=value.copy(switching=switching,normalReleased=normalReleaseSafe,cleanupSafe=value.cleanupSafe && normalReleaseSafe,
+                detachedResourcesReleased=selectionOwner?.let { owner ->
+                    value.engine?.let { it.detachedResourceRelease?.matches(owner,it) } }==true,
+                error=if(normalReleaseSafe) value.error else directState.error ?: "NORMAL_BACKEND_RELEASE_UNVERIFIED",
+                activation=directState.activation)
+            IntegratedDirectPlaybackBridge.publish(this,directState)
+        }
+    },acquireFocus=acquireFocus,releaseFocus=releaseFocus,listeningChanged={ item, state, terminal ->
+        if(directListeningOwned) directListeningObserver?.onObservation(item,state,terminal)
+    },sourceAdmissionFailure=::directSourceAdmissionFailure)
+    private fun directSourceAdmissionFailure(): String? {
+        selection.accessFailure()?.let { return it }
+        return when {
+        shuttingDown || !scope.isActive -> "DIRECT_SERVICE_UNAVAILABLE"
+        !predecessorReleased() -> "DIRECT_PREDECESSOR_CLEANUP_PENDING"
+        switching!=null || !selectedDirect -> "DIRECT_SWITCH_PENDING"
+        !normalReleaseSafe -> "NORMAL_BACKEND_RELEASE_UNVERIFIED"
+        directState.phase==IntegratedDirectPhase.ERROR && !directState.cleanupSafe ->
+            directState.error ?: "DIRECT_RESOURCE_CLEANUP_UNVERIFIED"
+        !selectionHandedOff -> "DIRECT_USB_NOT_AUTHORIZED"
+        else -> if(selectionOwner==null) "DIRECT_USB_NOT_AUTHORIZED"
+            else selection.failure(requireNotNull(selectionOwner))
+        }
+    }
+
+    /** Internal Stage A contract; production queue and library-selection guards stay in place. */
+    fun replaceDirectSource(item: MediaItem,playing: Boolean,startPositionMs: Long=0L): Deferred<DirectSourceTransitionResult> {
+        verifyApplicationThread()
+        return direct.replaceSource(item,playing,startPositionMs)
+    }
+    val isDirectSelected get()=selectedDirect
+    val queuePlayer: Player get()=if(selectedDirect) direct else this
+    val directQueueCheckpointAllowed get()=selectedDirect && switching==null && !shuttingDown &&
+        direct.canCheckpointTimeline && direct.evidence.phase!=IntegratedDirectPhase.ERROR && directSourceAdmissionFailure()==null
+    // Used only by the outgoing Queue checkpoint; it cannot admit edits, sources or playback.
+    val canCaptureDirectExitSnapshot get()=selectedDirect && switching==null && !shuttingDown &&
+        normalReleaseSafe && selectionHandedOff && direct.canCheckpointTimeline && direct.evidence.phase!=IntegratedDirectPhase.ERROR
+    val directRequestedPlaying get()=direct.requestedPlaying
+    fun canReplaceDirectTimeline()=selectedDirect && direct.canReplaceTimeline()
+    fun canAdmitDirectTimeline(items: List<MediaItem>,index: Int,positionMs: Long,repeat: Int)=
+        selectedDirect && direct.canAdmitTimeline(items,index,positionMs,repeat)
+    fun attachQueueOutputObserver(observer: PlaybackQueueOutputObserver) {
+        queueOutputObserver=observer
+        direct.stopRequestedObserver=observer::onDirectStop
+        direct.playWhenReadyRequested=observer::onDirectPlayWhenReady
+        direct.preparationAllowed=observer::canPrepareDirectCurrent
+        direct.preparationRequested=::prepareDirectPlayback
+        direct.preparationCancelled={ idlePreparationJob?.cancel() }
+        direct.navigationRequested={ command,generation ->
+            dispatchQueueOperation { observer.onDirectNavigation(command,generation) }
+        }
+        direct.shuffleRequested={ enabled ->
+            dispatchQueueOperation { observer.onDirectShuffle(enabled) }
+        }
+        direct.repeatRequested={ repeat ->
+            dispatchQueueOperation { observer.onDirectRepeat(repeat) }
+        }
+        direct.refreshCommandAvailability()
+    }
+    private fun prepareDirectPlayback(generation: Long) {
+        if(idlePreparationJob?.isActive==true) return
+        val job=scope.launch(start=CoroutineStart.LAZY) {
+            try { queueOutputObserver?.onDirectPrepare(generation) }
+            catch(cancelled: CancellationException) { throw cancelled }
+            catch(error: Exception) {
+                android.util.Log.w("DirectUsbPlayback","Source preparation failed",error)
+                direct.notice("Source preparation failed")
+            }
+        }
+        idlePreparationJob=job
+        job.invokeOnCompletion {
+            if(idlePreparationJob===job) idlePreparationJob=null
+            if(selectedDirect && !shuttingDown && scope.isActive) direct.refreshCommandAvailability()
+        }
+        job.start()
+    }
+    fun canPrepareDirectCurrent(generation: Long)=selectedDirect && direct.canPrepareCurrent(generation)
+    fun prepareDirectCurrent(generation: Long)=direct.prepareCurrent(generation)
+    private fun dispatchQueueOperation(operation: suspend ()->Unit) {
+        scope.launch(start=CoroutineStart.UNDISPATCHED) {
+            try { operation() }
+            catch(cancelled: CancellationException) { throw cancelled }
+            catch(error: Exception) {
+                android.util.Log.w("DirectUsbPlayback","Queue operation failed",error)
+                direct.notice("Queue operation failed")
+            }
+        }
+    }
+    fun invalidateAutomaticAdvance()=direct.invalidateAutomaticAdvance()
+    fun beginDirectContextPreparation()=direct.beginContextPreparation()
+    fun endDirectContextPreparation()=direct.endContextPreparation()
+    fun canAdvanceGeneration(generation: Long)=selectedDirect && !shuttingDown && switching==null && direct.canAdvanceGeneration(generation)
+    fun navigateDirect(command: Int,generation: Long?)=direct.navigate(command,generation)
+    val directIntentItems get()=direct.intentItems
+    val directIntentIndex get()=direct.intentIndex
+    val directIntentPositionMs get()=direct.intentPositionMs
+    fun setDirectRepeat(repeat: Int)=selectedDirect && direct.setQueueRepeat(repeat)
+    fun setDirectOrder(ids: List<String>,shuffle: Boolean)=selectedDirect && direct.setQueueOrder(ids,shuffle)
+    fun editDirectQueue(items: List<MediaItem>)=directQueueCheckpointAllowed && direct.editQueue(items)
+    fun requestDirectNavigation(command: Int) {
+        if(selectedDirect && canReplaceDirectTimeline()) {
+            direct.invalidateAutomaticAdvance()
+            direct.navigationRequested?.invoke(command,null)
+        }
+    }
+    fun requestDirectShuffle(enabled: Boolean) { if(selectedDirect) direct.shuffleRequested?.invoke(enabled) }
+    fun requestDirectRepeat(repeat: Int) { if(selectedDirect) direct.repeatRequested?.invoke(repeat) }
+    fun replaceDirectTimeline(items: List<MediaItem>,index: Int,playing: Boolean,positionMs: Long,
+        shuffle: Boolean,repeat: Int): Deferred<DirectSourceTransitionResult> {
+        verifyApplicationThread()
+        return direct.replaceTimeline(items,index,playing,positionMs,shuffle,repeat)
+    }
+    fun selectDirectQueueOccurrence(index: Int): Deferred<DirectSourceTransitionResult> {
+        verifyApplicationThread()
+        return direct.selectOccurrence(index,C.TIME_UNSET)
+    }
+    fun restoreDirectIdleTimeline(items: List<MediaItem>,index: Int,positionMs: Long,shuffle: Boolean,repeat: Int) {
+        check(canReplaceDirectTimeline())
+        direct.restoreIdleTimeline(items,index,positionMs,shuffle,repeat)
+    }
+    fun attachDirectListeningObserver(observer: DirectPlaybackListeningObserver) {
+        check(directListeningObserver==null && !directListeningOwned)
+        directListeningObserver=observer
+    }
+    fun detachDirectListeningObserver() {
+        endDirectListening()
+        directListeningObserver=null
+    }
+    private fun beginDirectListening() {
+        if(directListeningOwned) return
+        directListeningOwned=true
+        directListeningObserver?.onActivated()
+    }
+    private fun endDirectListening() {
+        if(!directListeningOwned) return
+        directListeningOwned=false
+        directListeningObserver?.onDeactivated()
+    }
+    private fun publish() {
+        directState=directState.copy(activation=directState.activation?.copy(output=when {
+            switching!=null -> UsbActivationOutput.SWITCHING
+            selectedDirect && normalReleaseSafe && selectionHandedOff -> UsbActivationOutput.DIRECT
+            selectedDirect -> UsbActivationOutput.BLOCKED
+            else -> UsbActivationOutput.ANDROID
+        }))
+        IntegratedDirectPlaybackBridge.publish(this,directState)
+    }
+    private fun stage(value: UsbActivationStage) {
+        directState=directState.copy(activation=directState.activation?.copy(stage=value))
+    }
+    private fun failure(reason: String, exception: Exception?=null) {
+        val previous=directState.activation
+        directState=directState.copy(error=reason,activation=previous?.copy(
+            failure=previous.failure ?: reason,failureStage=previous.failureStage ?: previous.stage,
+            exceptionClass=previous.exceptionClass ?: exception?.javaClass?.simpleName))
+    }
+    private fun rollback(owner: UsbActivationOwner): Boolean {
+        val safe=runCatching { selection.rollback(owner) }.getOrDefault(false)
+        if(directState.activation?.serial==owner.serial) {
+            directState=directState.copy(activation=directState.activation?.copy(reservation=
+                if(safe) UsbActivationReservation.RELEASED else UsbActivationReservation.RELEASE_UNVERIFIED))
+        }
+        if(safe && selectionOwner===owner) { selectionOwner=null;selectionHandedOff=false }
+        return safe
+    }
+    private fun launchSwitch(target: DirectOutputSwitch, block: suspend ()->Unit) {
+        val serial=directState.activation?.serial
+        val job=scope.launch(start=CoroutineStart.LAZY) { block() }
+        modeJob=job
+        // A cancelled lazy job may never enter its body/finally. Keep rollback on the player looper.
+        job.invokeOnCompletion { cause ->
+            if(cause!=null) modeHandler.post {
+                if(switching!=target || directState.activation?.serial!=serial) return@post
+                if(target==DirectOutputSwitch.TO_USB && !selectionHandedOff) {
+                    selectionOwner?.let(::rollback)
+                    if(!normalReleaseStarted && !shuttingDown) {
+                        val restored=runCatching { setPlayer(normal) }.isSuccess
+                        selectedDirect=!restored
+                        if(restored) queueOutputObserver?.onDirectAbandoned()
+                    }
+                }
+                switching=null;modeJob=null
+                failure("DIRECT_SWITCH_CANCELLED")
+                directState=directState.copy(enabled=selectedDirect,normalReleased=selectedDirect && normalReleaseSafe,
+                    switching=null,phase=IntegratedDirectPhase.ERROR,
+                    cleanupSafe=!selectedDirect,activation=directState.activation?.copy(restoration=
+                        if(selectedDirect) UsbActivationRestoration.BLOCKED else UsbActivationRestoration.NOT_REQUIRED))
+                publish()
+            }
+        }
+        job.start()
+    }
+    fun selectDirect(enabled: Boolean, identity: UsbAudioDeviceIdentity?=null, generation: Long=0) {
+        if(shuttingDown || switching!=null || modeJob?.isCompleted==false) return
+        if(!enabled && !selectedDirect) {
+            // Only an owned, uncommitted lease can be abandoned without native cleanup.
+            selectionOwner?.takeIf { !selectionHandedOff }?.let { rollback(it);publish() }
+            return
+        }
+        if(enabled==selectedDirect) return
+        if(enabled) {
+            val owner=UsbActivationOwner(++activationSerial)
+            directState=directState.copy(error=null,activation=UsbActivationEvidence(owner.serial))
+            if(!scope.isActive || !predecessorReleased()) {
+                failure(if(!scope.isActive) "DIRECT_SERVICE_UNAVAILABLE" else "DIRECT_PREDECESSOR_CLEANUP_PENDING");publish();return
+            }
+            stage(UsbActivationStage.PREFLIGHT)
+            val rejected=try { selection.authorize(owner,identity,generation) } catch(error: Exception) {
+                // No rollback of someone else's lease; the controller enforces owner identity.
+                val abandoned=runCatching { selection.rollback(owner) }.getOrDefault(false)
+                if(abandoned) directState=directState.copy(activation=directState.activation?.copy(reservation=UsbActivationReservation.RELEASED))
+                failure("DIRECT_AUTHORIZATION_FAILED",error);publish();return
+            }
+            if(rejected!=null) { failure(rejected);publish();return }
+            selectionOwner=owner;selectionHandedOff=false;normalReleaseStarted=false;normalReleaseSafe=false;directResourcesReleased=false
+            directState=directState.copy(activation=directState.activation?.copy(reservation=UsbActivationReservation.RESERVED))
+            stage(UsbActivationStage.SNAPSHOT)
+            try {
+                savedItems=(0 until normal.mediaItemCount).map(normal::getMediaItemAt)
+                savedIndex=normal.currentMediaItemIndex.coerceAtLeast(0);savedPosition=normal.currentPosition.coerceAtLeast(0)
+                savedVolume=normal.volume;savedParameters=normal.playbackParameters
+                savedShuffle=shuffleEnabled;savedRepeat=normal.repeatMode
+                savedPlaying=normal.playWhenReady
+                if(queueOutputObserver?.onDirectRequested()==false) {
+                    failure("DIRECT_QUEUE_TRANSACTION_PENDING");rollback(owner);publish();return
+                }
+            } catch(error: Exception) {
+                failure("DIRECT_NORMAL_SNAPSHOT_FAILED",error);rollback(owner);publish();return
+            }
+            safetyExitHandled=false;safetyExitRequested=false
+            switching=DirectOutputSwitch.TO_USB
+            stage(UsbActivationStage.SELECT_DIRECT)
+            try { setPlayer(direct);selectedDirect=true } catch(error: Exception) {
+                selectedDirect=!runCatching { setPlayer(normal) }.isSuccess
+                if(!selectedDirect) queueOutputObserver?.onDirectAbandoned()
+                switching=null
+                failure("DIRECT_BACKEND_SELECTION_FAILED",error);rollback(owner)
+                directState=directState.copy(enabled=selectedDirect,cleanupSafe=!selectedDirect);publish();return
+            }
+            directState=direct.evidence.copy(enabled=true,switching=switching,normalReleased=false,cleanupSafe=false,
+                activation=directState.activation)
+            publish()
+            var restoreAfterFailure=false
+            launchSwitch(DirectOutputSwitch.TO_USB) {
+                try {
+                    stage(UsbActivationStage.RELEASE_NORMAL);normalReleaseStarted=true
+                    // Stop and join normal renderers before allowing native source/USB work.
+                    val released=try { normal.stop();releaseNormal() } catch(cancelled: CancellationException) { throw cancelled }
+                        catch(error: Exception) { failure("NORMAL_BACKEND_RELEASE_UNVERIFIED",error);false }
+                    normalReleaseSafe=released
+                    directState=directState.copy(normalReleased=released,cleanupSafe=released)
+                    if(!released) {
+                        failure("NORMAL_BACKEND_RELEASE_UNVERIFIED");rollback(owner)
+                        directState=directState.copy(phase=IntegratedDirectPhase.ERROR,
+                            activation=directState.activation?.copy(restoration=UsbActivationRestoration.BLOCKED))
+                    } else if(shuttingDown) {
+                        stage(UsbActivationStage.SHUTDOWN);rollback(owner)
+                    } else {
+                        queueOutputObserver?.beforeDirectRelease()
+                        stage(UsbActivationStage.SELECT_DIRECT)
+                        val invalid=selection.failure(owner)
+                        val commitFailure=invalid ?: if(safetyExitRequested) "DIRECT_USB_SELECTION_CHANGED" else selection.commit(owner)
+                        if(commitFailure!=null) {
+                            failure(commitFailure);rollback(owner)
+                            restoreAfterFailure=true
+                        } else {
+                            selectionHandedOff=true
+                            direct.restoreIdleTimeline(savedItems,savedIndex,savedPosition,savedShuffle,savedRepeat,savedPlaying)
+                            beginDirectListening()
+                            directState=direct.evidence.copy(enabled=true,normalReleased=true,switching=switching,
+                                activation=directState.activation?.copy(stage=UsbActivationStage.ACTIVE,reservation=UsbActivationReservation.PROTECTED))
+                        }
+                    }
+                } catch(error: Exception) {
+                    failure(if(error is CancellationException) "DIRECT_SWITCH_CANCELLED" else "DIRECT_BACKEND_SELECTION_FAILED",error)
+                    if(!selectionHandedOff) rollback(owner)
+                    directState=directState.copy(phase=IntegratedDirectPhase.ERROR,
+                        activation=directState.activation?.copy(restoration=UsbActivationRestoration.BLOCKED))
+                    restoreAfterFailure=normalReleaseSafe && !shuttingDown && error !is CancellationException
+                } finally {
+                    switching=null;modeJob=null
+                    directState=directState.copy(switching=null)
+                    // Idle adoption was published while TO_USB still blocked source admission.
+                    // Recompute commands after that gate opens, even without native progress.
+                    if(selectedDirect) direct.refreshCommandAvailability()
+                    publish()
+                }
+                if(restoreAfterFailure && !shuttingDown) { safetyExitHandled=true;selectDirect(false) }
+            }
+        } else {
+            queueOutputObserver?.onAndroidRequested()
+            switching=DirectOutputSwitch.TO_ANDROID
+            direct.refreshCommandAvailability()
+            stage(UsbActivationStage.RESTORE_ANDROID)
+            directState=directState.copy(switching=switching,error=null,
+                activation=directState.activation?.copy(restoration=UsbActivationRestoration.PENDING))
+            publish()
+            launchSwitch(DirectOutputSwitch.TO_ANDROID) {
+                var restorationStarted=false
+                var restorationFailure="NORMAL_BACKEND_RECREATION_FAILED"
+                try {
+                    val restoredCleanup=direct.stopAndJoin()
+                    val detachedCleanup=selectionOwner?.let(direct::detachedResourcesReleased)==true
+                    if(!normalReleaseSafe || !(restoredCleanup || detachedCleanup || directResourcesReleased)) {
+                        failure("DIRECT_RESOURCE_CLEANUP_UNVERIFIED")
+                        directState=directState.copy(phase=IntegratedDirectPhase.ERROR,cleanupSafe=false,
+                            activation=directState.activation?.copy(restoration=UsbActivationRestoration.BLOCKED,
+                                restorationFailure="DIRECT_RESOURCE_CLEANUP_UNVERIFIED"))
+                        return@launchSwitch
+                    }
+                    if(shuttingDown) return@launchSwitch
+                    // Release only this reservation after join/proof, before any Android renderer is recreated.
+                    selectionOwner?.let { owner ->
+                        val released=if(selectionHandedOff) selection.release(owner,cleanupSafe=true) else selection.rollback(owner)
+                        if(!released) {
+                            restorationFailure="DIRECT_RESERVATION_RELEASE_UNVERIFIED"
+                            throw IllegalStateException()
+                        }
+                        if(detachedCleanup) direct.retireDetachedOwner(owner)
+                        selectionOwner=null;selectionHandedOff=false
+                        directState=directState.copy(activation=directState.activation?.copy(reservation=UsbActivationReservation.RELEASED))
+                    }
+                    directResourcesReleased=true
+                    queueOutputObserver?.beforeAndroidRestore()
+                    if(shuttingDown) return@launchSwitch
+                    // The joined terminal observation has entered history before normal callbacks
+                    // can be rebound. Later Direct notices/idle updates no longer own that ingress.
+                    endDirectListening()
+                    restorationStarted=true
+                    val restored=recreateNormal()
+                    normal.rebindPhysicalPlayer(restored,baselineVolume=savedVolume,logicalPlayWhenReady=false)
+                    shuffleEnabled=savedShuffle
+                    normal.setSmoothPlaybackEnabled(smoothEnabled);normal.setLogicalShuffleModeEnabled(savedShuffle)
+                    if(normal.repeatMode!=savedRepeat) normal.repeatMode=savedRepeat
+                    normal.playbackParameters=savedParameters
+                    if(savedItems.isNotEmpty()) normal.setMediaItems(savedItems,savedIndex.coerceAtMost(savedItems.lastIndex),savedPosition)
+                    setPlayer(normal)
+                    queueOutputObserver?.afterAndroidRestore()
+                    selectedDirect=false
+                    val evidence=directState.activation?.copy(reservation=if(directState.activation?.reservation==UsbActivationReservation.NOT_ACQUIRED)
+                        UsbActivationReservation.NOT_ACQUIRED else UsbActivationReservation.RELEASED,restoration=UsbActivationRestoration.COMPLETED)
+                    directState=IntegratedDirectPlaybackState(activation=evidence,
+                        cleanupSafe=direct.evidence.cleanupSafe,
+                        engine=direct.evidence.engine.takeIf { direct.evidence.detachedResourcesReleased },
+                        detachedResourcesReleased=direct.evidence.detachedResourcesReleased)
+                } catch(error: Exception) {
+                    runCatching { setPlayer(direct) }
+                    if(restorationStarted) normalReleaseSafe=runCatching { releaseNormal() }.getOrDefault(false)
+                    else if(error is CancellationException) restorationFailure="DIRECT_SWITCH_CANCELLED"
+                    failure(restorationFailure,error)
+                    directState=directState.copy(phase=IntegratedDirectPhase.ERROR,normalReleased=normalReleaseSafe,cleanupSafe=false,
+                        activation=directState.activation?.copy(restoration=UsbActivationRestoration.BLOCKED,
+                            restorationFailure=restorationFailure))
+                } finally {
+                    switching=null;modeJob=null
+                    directState=directState.copy(switching=null);publish()
+                    if(!selectedDirect) queueOutputObserver?.onAndroidRestored()
+                }
+            }
+        }
+    }
+    /** Attachment/permission loss never silently selects another DAC. */
+    fun usbSelectionChanged() {
+        val owner=selectionOwner ?: return
+        if(!selectedDirect || shuttingDown || safetyExitHandled) return
+        val invalid=selection.failure(owner) ?: return
+        if(switching==DirectOutputSwitch.TO_USB) safetyExitRequested=true
+        else if(switching==null) {
+            stage(UsbActivationStage.ATTACHMENT_LOST);failure(invalid)
+            safetyExitHandled=true;selectDirect(false)
+        }
+    }
+    override fun handleSetMediaItems(mediaItems: List<MediaItem>,startIndex: Int,startPositionMs: Long): com.google.common.util.concurrent.ListenableFuture<*> {
+        if(!predecessorReleased() || modeJob?.isCompleted==false) return com.google.common.util.concurrent.Futures.immediateFailedFuture<Unit>(IllegalStateException("DIRECT_SWITCH_PENDING"))
+        return super.handleSetMediaItems(mediaItems,startIndex,startPositionMs)
+    }
+    override fun getState(): SimpleBasePlayer.State {
+        val state=super.getState()
+        if(predecessorReleased()) return state
+        return state.buildUpon().setPlaybackState(Player.STATE_IDLE)
+            .setPlayWhenReady(false,Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST).setPlayerError(predecessorError)
+            .setAvailableCommands(Player.Commands.Builder().addAll(
+            Player.COMMAND_GET_CURRENT_MEDIA_ITEM,Player.COMMAND_GET_TIMELINE,Player.COMMAND_GET_METADATA).build()).build()
+    }
+    fun predecessorCleanupCompleted() { invalidateState() }
+    override fun handlePrepare(): com.google.common.util.concurrent.ListenableFuture<*> {
+        if(!predecessorReleased() || modeJob?.isCompleted==false || (selectedDirect && (!normalReleaseSafe || !selectionHandedOff || (directState.phase==IntegratedDirectPhase.ERROR && !directState.cleanupSafe)))) return com.google.common.util.concurrent.Futures.immediateVoidFuture()
+        return super.handlePrepare()
+    }
+    fun stopDirect() { if(selectedDirect) direct.requestStop() }
+    fun restartDirectPlayback() {
+        if(selectedDirect && !direct.evidence.busy && canReplaceDirectTimeline()) direct.restartSelectedFromZero()
+    }
+    fun toggleDirectPlayback() { if(selectedDirect && selectionHandedOff && switching==null && normalReleaseSafe && direct.isCommandAvailable(Player.COMMAND_PLAY_PAUSE)) direct.playWhenReady=!direct.playWhenReady }
+    fun pauseDirectPlayback() { if(selectedDirect && selectionHandedOff && switching==null && normalReleaseSafe && direct.isCommandAvailable(Player.COMMAND_PLAY_PAUSE)) direct.pause() }
+    fun seekDirectPlayback(positionMs: Long) {
+        if(selectedDirect && selectionHandedOff && switching==null && normalReleaseSafe && direct.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) direct.seekTo(positionMs)
+        else if(selectedDirect) direct.notice("Source seek")
+    }
+    fun rejectDirectCommand(command: String) { if(selectedDirect) direct.notice(command) }
+    suspend fun shutdown(): Boolean = withContext(NonCancellable) {
+        if(selectedDirect && switching==null) queueOutputObserver?.onAndroidRequested()
+        shuttingDown=true
+        if(selectedDirect) direct.requestStop()
+        modeJob?.join()
+        val restoredCleanup=direct.stopAndJoin()
+        val safe=restoredCleanup || directResourcesReleased || selectionOwner?.let(direct::detachedResourcesReleased)==true
+        if(selectedDirect) queueOutputObserver?.beforeAndroidRestore()
+        endDirectListening()
+        selectionOwner?.let { owner ->
+            stage(UsbActivationStage.SHUTDOWN)
+            if(!selectionHandedOff) rollback(owner)
+            else if(runCatching { selection.release(owner,safe) }.getOrDefault(false)) {
+                directResourcesReleased=true
+                selectionOwner=null;selectionHandedOff=false
+                directState=directState.copy(activation=directState.activation?.copy(reservation=UsbActivationReservation.RELEASED))
+            }
+        }
+        publish()
+        safe && (!selectedDirect || normalReleaseSafe) && selectionOwner==null
+    }
+    fun releaseTransitionResources()=normal.releaseTransitionResources()
+    fun setSmoothPlaybackEnabled(enabled: Boolean) { smoothEnabled=enabled;if(!selectedDirect) normal.setSmoothPlaybackEnabled(enabled) }
+    fun setLogicalShuffleModeEnabled(enabled: Boolean) { shuffleEnabled=enabled;if(!selectedDirect) normal.setLogicalShuffleModeEnabled(enabled) }
+    fun markNextShuffleModeCommandExternal() { if(!selectedDirect) normal.markNextShuffleModeCommandExternal() }
+    fun updateArtwork(item: MediaItem,uri: Uri?) { if(selectedDirect) direct.updateArtwork(item,uri) else normal.updateArtwork(item,uri) }
+}

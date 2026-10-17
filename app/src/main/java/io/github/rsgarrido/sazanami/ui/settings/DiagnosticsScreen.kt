@@ -33,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -333,6 +334,8 @@ internal fun DiagnosticsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val reportLocale = configuration.locales[0]
     val appContext = context.applicationContext
     val repository = remember(appContext) { WaveformRepository.shared(appContext) }
     val scope = rememberCoroutineScope()
@@ -391,6 +394,7 @@ internal fun DiagnosticsScreen(
         }
 
         DiagnosticValue(stringResource(R.string.diagnostics_app_version), "${version.first} (${version.second})")
+        UsbAudioDiagnosticsSection()
         DiagnosticValue(
             stringResource(R.string.diagnostics_library),
             pluralStringResource(R.plurals.diagnostics_song_count, librarySongCount, librarySongCount)
@@ -728,8 +732,11 @@ internal fun DiagnosticsScreen(
             ) { Text(stringResource(R.string.diagnostics_refresh)) }
             OutlinedButton(
                 onClick = {
-                    context.copyToClipboard(formatDiagnosticsSummary(snapshot))
-                    statusMessage = copiedMessage
+                    scope.launch {
+                        if(BuildConfig.DEBUG) io.github.rsgarrido.sazanami.player.usb.UsbTransportTelemetryBridge.capture()
+                        context.copyToClipboard(formatDiagnosticsSummary(snapshot) + if(BuildConfig.DEBUG) "\n"+io.github.rsgarrido.sazanami.player.formatIntegratedDirectPlayback(io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackBridge.reportState,reportLocale) else "")
+                        statusMessage = copiedMessage
+                    }
                 },
                 modifier = Modifier.weight(1f)
             ) { Text(stringResource(R.string.diagnostics_copy)) }

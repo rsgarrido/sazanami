@@ -77,12 +77,20 @@ class AndroidAutoLogicalPlayerTest {
         lateinit var incoming: StatePlayer
         lateinit var logical: SmoothPlaybackPlayer
         var transitions = 0
+        val transitionedMediaIds = mutableListOf<String?>()
         onMain {
             outgoing = StatePlayer("outgoing", 0)
             incoming = StatePlayer("incoming", 1)
             logical = SmoothPlaybackPlayer(outgoing)
+            // A connected session has already observed the outgoing state. addListener alone
+            // does not initialize SimpleBasePlayer's lazy state before the delegate changes.
+            assertEquals(0, logical.currentMediaItemIndex)
+            assertEquals("duplicate", logical.currentMediaItem!!.mediaId)
             logical.addListener(object : Player.Listener {
-                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { transitions++ }
+                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    transitions++
+                    transitionedMediaIds += mediaItem?.mediaId
+                }
             })
             logical.rebindPhysicalPlayerForCrossfade(incoming, 1f, true)
         }
@@ -93,6 +101,14 @@ class AndroidAutoLogicalPlayerTest {
                 assertEquals("middle", logical.currentMediaItem!!.mediaId)
                 assertEquals(listOf("duplicate", "middle", "duplicate"),
                     (0 until logical.mediaItemCount).map { logical.getMediaItemAt(it).mediaId })
+                assertEquals(1, transitions)
+                assertEquals(listOf("middle"), transitionedMediaIds)
+                assertTrue(logical.isPlaying)
+            }
+            onMain { incoming.position(10_000L); outgoing.position(20_000L) }
+            onMain {
+                assertEquals(10_000L, logical.currentPosition)
+                assertEquals(1, logical.currentMediaItemIndex)
                 assertEquals(1, transitions)
             }
         } finally { onMain { logical.release(); outgoing.release() } }
@@ -127,6 +143,8 @@ class AndroidAutoLogicalPlayerTest {
                 assertFalse(physical.shuffleModeEnabled)
                 assertEquals(1, logical.currentMediaItemIndex)
                 assertEquals(42_000L, logical.currentPosition)
+                assertEquals(42_000L, physical.currentPosition)
+                assertTrue(logical.isPlaying); assertTrue(physical.isPlaying)
                 assertEquals(initialTimeline.windowCount, logical.currentTimeline.windowCount)
                 assertEquals(
                     2,
@@ -156,6 +174,8 @@ class AndroidAutoLogicalPlayerTest {
                 assertFalse(physical.shuffleModeEnabled)
                 assertEquals(1, logical.currentMediaItemIndex)
                 assertEquals(42_000L, logical.currentPosition)
+                assertEquals(42_000L, physical.currentPosition)
+                assertTrue(logical.isPlaying); assertTrue(physical.isPlaying)
                 assertEquals(initialTimeline.windowCount, logical.currentTimeline.windowCount)
                 assertEquals(
                     listOf("duplicate", "middle", "duplicate"),
@@ -186,6 +206,8 @@ class AndroidAutoLogicalPlayerTest {
                 assertFalse(physical.shuffleModeEnabled)
                 assertEquals(2, logical.currentMediaItemIndex)
                 assertEquals(27_500L, logical.currentPosition)
+                assertEquals(27_500L, physical.currentPosition)
+                assertTrue(logical.isPlaying); assertTrue(physical.isPlaying)
                 assertEquals(initialTimeline.windowCount, logical.currentTimeline.windowCount)
                 assertEquals(
                     listOf("duplicate", "middle", "duplicate"),
@@ -206,11 +228,13 @@ class AndroidAutoLogicalPlayerTest {
             .setCurrentMediaItemIndex(index)
             .setPlaybackState(Player.STATE_READY)
             .setPlayWhenReady(true, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
+            // Keep playback active, but let only explicit fixture ticks advance its position.
+            .setContentPositionMs(PositionSupplier { 0L })
             .build()
 
         override fun getState(): State = state
         fun position(ms: Long) {
-            state = state.buildUpon().setContentPositionMs(ms).build()
+            state = state.buildUpon().setContentPositionMs(PositionSupplier { ms }).build()
             invalidateState()
         }
         fun currentIndex(index: Int) {

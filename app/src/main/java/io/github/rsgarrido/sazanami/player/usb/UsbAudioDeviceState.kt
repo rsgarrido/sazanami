@@ -1,0 +1,116 @@
+package io.github.rsgarrido.sazanami.player.usb
+
+/** deviceName is Android's transient bus key, used for matching only; never copied to reports. */
+internal data class UsbAudioDeviceIdentity(
+    val deviceName: String,
+    val deviceId: Int,
+    val vendorId: Int,
+    val productId: Int
+)
+
+internal data class UsbAndroidEndpointSnapshot(
+    val address: Int,
+    val attributes: Int,
+    val maxPacketSize: Int,
+    val interval: Int
+)
+
+internal data class UsbAndroidInterfaceSnapshot(
+    val number: Int,
+    val alternate: Int,
+    val interfaceClass: Int,
+    val subclass: Int,
+    val protocol: Int,
+    val endpoints: List<UsbAndroidEndpointSnapshot>
+)
+
+internal data class UsbAudioDeviceSnapshot(
+    val identity: UsbAudioDeviceIdentity,
+    val manufacturer: String?,
+    val product: String?,
+    val deviceClass: Int,
+    val interfaces: List<UsbAndroidInterfaceSnapshot>,
+    val hasPermission: Boolean
+) {
+    val hasAudioInterface: Boolean get() = interfaces.any { it.interfaceClass == 1 }
+}
+
+internal enum class UsbAudioDiagnosticStatus {
+    SERVICE_UNAVAILABLE, NO_DEVICE, SELECT_DEVICE, PERMISSION_REQUIRED,
+    REQUESTING_PERMISSION, PERMISSION_DENIED, OPENING, DESCRIPTORS_READ, ERROR
+}
+
+internal data class UsbAudioDiagnosticState(
+    val serviceAvailable: Boolean = false,
+    val status: UsbAudioDiagnosticStatus = UsbAudioDiagnosticStatus.SERVICE_UNAVAILABLE,
+    val devices: List<UsbAudioDeviceSnapshot> = emptyList(),
+    val selectedIdentity: UsbAudioDeviceIdentity? = null,
+    val generation: Long = 0,
+    val descriptors: UsbAudioDescriptorModel? = null,
+    val message: String? = null,
+    val clockDiagnostics: UsbAudioClockDiagnostics? = null,
+    val usbFsDiagnostics: UsbFsOwnershipDiagnostics? = null,
+    val forcedExperiment: UsbAudioForcedExperimentResult? = null,
+    val configurationExperiment: UsbAudioConfigurationResult? = null,
+    val silentExperiment: UsbSilentTransportExperimentResult? = null,
+    val referenceExperiment: UsbSilentTransportExperimentResult? = null,
+    val flacUsbExperiment: UsbSilentTransportExperimentResult? = null,
+    val fullFlacUsbExperiment: UsbSilentTransportExperimentResult? = null,
+    val integratedFlacUsbExperiment: UsbSilentTransportExperimentResult? = null
+) {
+    val selectedDevice: UsbAudioDeviceSnapshot?
+        get() = devices.firstOrNull { it.identity == selectedIdentity }
+    val diagnosticOperationRunning: Boolean
+        get() = status == UsbAudioDiagnosticStatus.OPENING ||
+            clockDiagnostics?.phase == UsbClockDiagnosticPhase.QUERYING || usbFsDiagnostics?.status == UsbFsProbeStatus.QUERYING ||
+            forcedExperiment?.phase == UsbForcedPhase.QUERYING || configurationExperiment?.phase == UsbConfigurationPhase.QUERYING ||
+            silentExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true ||
+            referenceExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true ||
+            flacUsbExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true ||
+            fullFlacUsbExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true ||
+            integratedFlacUsbExperiment?.phase?.let { it != UsbSilentPhase.FINISHED } == true
+    fun endpointExperiment(mode: UsbPcmDiagnosticMode) =
+        when (mode) {
+            UsbPcmDiagnosticMode.ZERO -> silentExperiment
+            UsbPcmDiagnosticMode.REFERENCE -> referenceExperiment
+            UsbPcmDiagnosticMode.FLAC_PREFIX -> flacUsbExperiment
+            UsbPcmDiagnosticMode.FLAC_FULL -> fullFlacUsbExperiment
+        }
+    fun withEndpointExperiment(mode: UsbPcmDiagnosticMode, result: UsbSilentTransportExperimentResult?) =
+        when (mode) {
+            UsbPcmDiagnosticMode.ZERO -> copy(silentExperiment = result)
+            UsbPcmDiagnosticMode.REFERENCE -> copy(referenceExperiment = result)
+            UsbPcmDiagnosticMode.FLAC_PREFIX -> copy(flacUsbExperiment = result)
+            UsbPcmDiagnosticMode.FLAC_FULL -> copy(fullFlacUsbExperiment = result)
+        }
+}
+
+internal data class UsbAudioInspectionToken(val identity: UsbAudioDeviceIdentity, val generation: Long)
+
+internal data class UsbAudioPermissionRequest(val id: String, val token: UsbAudioInspectionToken) {
+    fun matches(resultId: String, identity: UsbAudioDeviceIdentity?, gate: UsbAudioGenerationGate): Boolean =
+        id == resultId && token.identity == identity && gate.accepts(token)
+}
+
+/** Pure stale-work gate. Android controller serializes calls; tests need no USB hardware. */
+internal class UsbAudioGenerationGate {
+    var generation: Long = 0
+        private set
+    var current: UsbAudioInspectionToken? = null
+        private set
+
+    fun select(identity: UsbAudioDeviceIdentity?): UsbAudioInspectionToken? {
+        generation++
+        current = identity?.let { UsbAudioInspectionToken(it, generation) }
+        return current
+    }
+
+    fun accepts(token: UsbAudioInspectionToken): Boolean = current == token
+
+    fun clockAccessFailure(token: UsbAudioInspectionToken, devicePresent: Boolean, permissionGranted: Boolean): UsbClockQueryStatus? = when {
+        !accepts(token) -> UsbClockQueryStatus.STALE_GENERATION
+        !devicePresent -> UsbClockQueryStatus.DEVICE_DISCONNECTED
+        !permissionGranted -> UsbClockQueryStatus.PERMISSION_LOST
+        else -> null
+    }
+}

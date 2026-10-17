@@ -10,6 +10,7 @@ import io.github.rsgarrido.sazanami.data.local.PlaybackQueueEntryEntity
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.mockito.ArgumentMatchers.anyList
+import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
@@ -19,9 +20,38 @@ import org.mockito.Mockito.`when`
 
 class Media3PlaybackQueueRuntimeTest {
     @Test
+    fun unavailableQueueReplacementIssuesNoCommandsOrLogicalCallbacks() {
+        val player = androidPlayer()
+        `when`(player.isCommandAvailable(Player.COMMAND_CHANGE_MEDIA_ITEMS)).thenReturn(false)
+        `when`(player.playWhenReady).thenReturn(true)
+        var callbacks = 0
+        val runtime = Media3PlaybackQueueRuntime(player, { false }, { emptyList() },
+            { callbacks++ }, { _, _ -> callbacks++ })
+        assertEquals(false, runtime.canReplaceTimeline())
+        try {
+            runtime.replaceTimeline(restoration(true))
+            org.junit.Assert.fail("Unavailable activation must be rejected")
+        } catch (_: IllegalStateException) {
+            // Even callers outside the coordinator cannot partially activate a queue.
+        }
+        assertEquals(0, callbacks)
+        verify(player, never()).pause()
+        verify(player, never()).setMediaItems(anyList(), anyInt(), org.mockito.ArgumentMatchers.anyLong())
+        verify(player, never()).prepare()
+        verify(player, never()).play()
+        assertEquals(false, runtime.removeEntry("source"))
+        assertEquals(false, runtime.moveEntry("source", 1))
+        assertEquals(false, runtime.insertEntry(resolved("other", song(2L), 0, 0), 1))
+    }
+
+    private fun androidPlayer(): Player = mock(Player::class.java).also { player ->
+        `when`(player.isCommandAvailable(anyInt())).thenReturn(true)
+    }
+
+    @Test
     fun duplicateRestorationUsesEntryIdentityInPlaybackOrderForEveryRepeatMode() {
         PersistedQueueRepeatMode.entries.forEach { repeat ->
-            val player = mock(Player::class.java)
+            val player = androidPlayer()
             val runtime = Media3PlaybackQueueRuntime(player, { true }, { emptyList() }, {}, { _, _ -> },
                 mediaItemFactory = { mock(MediaItem::class.java) })
             val repeated = song(7L)
@@ -40,7 +70,7 @@ class Media3PlaybackQueueRuntimeTest {
 
     @Test
     fun playingSwitchUsesOneSetPrepareAndPlayPath() {
-        val player = mock(Player::class.java)
+        val player = androidPlayer()
         `when`(player.playWhenReady).thenReturn(true)
         var beforeCount = 0
         var restoredBaseIds = emptyList<Long>()
@@ -65,7 +95,7 @@ class Media3PlaybackQueueRuntimeTest {
 
     @Test
     fun pausedSwitchPreparesOnceWithoutPlaying() {
-        val player = mock(Player::class.java)
+        val player = androidPlayer()
         `when`(player.playWhenReady).thenReturn(false)
         val runtime = Media3PlaybackQueueRuntime(
             player = player,
@@ -86,7 +116,7 @@ class Media3PlaybackQueueRuntimeTest {
 
     @Test
     fun seekTargetsExactDuplicateEntryWithoutReplacingOrPreparingTimeline() {
-        val player = mock(Player::class.java)
+        val player = androidPlayer()
         val firstDuplicateItem = mock(MediaItem::class.java)
         val otherItem = mock(MediaItem::class.java)
         val secondDuplicateItem = mock(MediaItem::class.java)
@@ -119,7 +149,7 @@ class Media3PlaybackQueueRuntimeTest {
 
     @Test
     fun seekingCurrentEntryIsHarmless() {
-        val player = mock(Player::class.java)
+        val player = androidPlayer()
         val currentItem = mock(MediaItem::class.java)
         val evidenceByItem = mapOf(currentItem to evidence("current", 1L))
         `when`(player.mediaItemCount).thenReturn(1)
@@ -142,7 +172,7 @@ class Media3PlaybackQueueRuntimeTest {
 
     @Test
     fun moveRejectsCurrentBoundaryAndAllowsUpcomingReorderAfterCurrent() {
-        val player = mock(Player::class.java)
+        val player = androidPlayer()
         val currentItem = mock(MediaItem::class.java)
         val firstUpcomingItem = mock(MediaItem::class.java)
         val secondUpcomingItem = mock(MediaItem::class.java)

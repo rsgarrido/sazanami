@@ -1,5 +1,7 @@
 package io.github.rsgarrido.sazanami.ui.player.mini
 
+import io.github.rsgarrido.sazanami.ui.state.playbackPlayPauseShowsPause
+
 import android.R as AndroidR
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
@@ -154,8 +156,8 @@ internal fun MiniPlayerPlayPauseButton(
             modifier = Modifier.size(48.dp)
         ) {
             Icon(
-                imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                contentDescription = stringResource(miniPlayerPlaybackLabelRes(isPlaying)),
+                imageVector = if (playbackPlayPauseShowsPause(isPlaying)) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                contentDescription = stringResource(miniPlayerPlaybackLabelRes(playbackPlayPauseShowsPause(isPlaying))),
                 tint = iconTint
             )
         }

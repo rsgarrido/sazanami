@@ -1,5 +1,7 @@
 package io.github.rsgarrido.sazanami.ui.player.pocketflip
 
+import io.github.rsgarrido.sazanami.ui.state.playbackPlayPauseShowsPause
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -383,9 +385,9 @@ private fun PocketFlipActionCluster(
             verticalAlignment = Alignment.CenterVertically
         ) {
             PocketFlipRoundAction(
-                icon = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                icon = if (playbackPlayPauseShowsPause(isPlaying)) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                 markCount = 1,
-                contentDescription = stringResource(if (isPlaying) R.string.player_pause else R.string.player_play),
+                contentDescription = stringResource(if (playbackPlayPauseShowsPause(isPlaying)) R.string.player_pause else R.string.player_play),
                 faceSize = if (compact) 48.dp else 52.dp,
                 onClick = onPlayPauseClick,
                 enabled = inputEnabled && sharedOwner == PocketFlipSharedOwner.EXPANDED,

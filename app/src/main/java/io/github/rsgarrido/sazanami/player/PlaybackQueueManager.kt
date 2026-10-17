@@ -2,15 +2,20 @@ package io.github.rsgarrido.sazanami.player
 
 import io.github.rsgarrido.sazanami.data.Song
 
+/** The explicit queued-next list has the same insertion policy for songs and occurrence items. */
+internal fun <T> insertExplicitQueueItems(queue: MutableList<T>,items: List<T>,playNext: Boolean) {
+    queue.addAll(if(playNext) 0 else queue.size,items)
+}
+
 class PlaybackQueueManager {
     internal val playbackQueue = mutableListOf<Song>()
 
     fun addSongToQueue(song: Song) {
-        playbackQueue.add(song)
+        insertExplicitQueueItems(playbackQueue,listOf(song),playNext=false)
     }
 
     fun addSongToPlayNext(song: Song) {
-        playbackQueue.add(0, song)
+        insertExplicitQueueItems(playbackQueue,listOf(song),playNext=true)
     }
 
     fun removeSongFromQueue(index: Int): Boolean {
@@ -56,7 +61,7 @@ class PlaybackQueueManager {
             return false
         }
 
-        playbackQueue.addAll(0, songs)
+        insertExplicitQueueItems(playbackQueue,songs,playNext=true)
         return true
     }
 
@@ -65,7 +70,7 @@ class PlaybackQueueManager {
             return false
         }
 
-        playbackQueue.addAll(songs)
+        insertExplicitQueueItems(playbackQueue,songs,playNext=false)
         return true
     }
 

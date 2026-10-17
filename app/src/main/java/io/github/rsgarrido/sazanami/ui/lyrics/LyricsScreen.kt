@@ -1,5 +1,8 @@
 package io.github.rsgarrido.sazanami.ui.lyrics
 
+import io.github.rsgarrido.sazanami.ui.state.playbackPlayPauseShowsPause
+import io.github.rsgarrido.sazanami.ui.state.LocalPlaybackStatus
+
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -303,7 +306,8 @@ private fun LyricsHeader(
     onPlayPause: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val playbackStateDescription = stringResource(if (isPlaying) R.string.lyrics_playing else R.string.lyrics_paused)
+    val playbackStateDescription = LocalPlaybackStatus.current
+        ?: stringResource(if (isPlaying) R.string.lyrics_playing else R.string.lyrics_paused)
     Row(
         modifier = modifier
             .testTag(LyricsHeaderTag)
@@ -390,8 +394,8 @@ private fun LyricsHeader(
                 }
         ) {
             Icon(
-                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                contentDescription = stringResource(if (isPlaying) R.string.lyrics_pause else R.string.lyrics_play),
+                imageVector = if (playbackPlayPauseShowsPause(isPlaying)) Icons.Default.Pause else Icons.Default.PlayArrow,
+                contentDescription = stringResource(if (playbackPlayPauseShowsPause(isPlaying)) R.string.lyrics_pause else R.string.lyrics_play),
                 tint = Color.White
             )
         }

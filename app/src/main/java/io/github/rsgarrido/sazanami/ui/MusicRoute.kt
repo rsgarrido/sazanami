@@ -14,6 +14,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackBridge
+import io.github.rsgarrido.sazanami.player.IntegratedDirectPhase
+import io.github.rsgarrido.sazanami.ui.state.DirectSeekGestureEnvironment
+import io.github.rsgarrido.sazanami.ui.state.LocalDirectSeekGestureEnvironment
+import io.github.rsgarrido.sazanami.ui.state.DirectScrubAuthority
+import io.github.rsgarrido.sazanami.ui.state.LocalDirectSeekPreview
+import io.github.rsgarrido.sazanami.ui.state.LocalPlaybackPlayPauseIntent
+import io.github.rsgarrido.sazanami.ui.state.LocalPlaybackStatus
+import io.github.rsgarrido.sazanami.ui.state.resolve
 import androidx.compose.ui.platform.LocalResources
 import io.github.rsgarrido.sazanami.viewmodel.MusicViewModel
 import io.github.rsgarrido.sazanami.ui.state.displayText
@@ -53,6 +66,7 @@ import io.github.rsgarrido.sazanami.ui.ratings.SongRatingUiEnvironment
 import io.github.rsgarrido.sazanami.ui.playlist.LocalSmartPlaylistUi
 import io.github.rsgarrido.sazanami.ui.playlist.SmartPlaylistUiEnvironment
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 @Composable
 internal fun MusicRoute(
@@ -70,6 +84,7 @@ internal fun MusicRoute(
 ) {
     val resources = LocalResources.current
     val playbackUiState by musicViewModel.playbackUiState.collectAsStateWithLifecycle()
+    val playbackStatus = playbackUiState.playbackStatus?.resolve()
     val playbackQueueHubUiState by
         musicViewModel.playbackQueueHubUiState.collectAsStateWithLifecycle()
     val libraryUiState by musicViewModel.libraryUiState.collectAsStateWithLifecycle()
@@ -117,6 +132,33 @@ internal fun MusicRoute(
         !homeCustomizationUiState.isLoaded
     ) return
     val routeScope = rememberCoroutineScope()
+    var seekPreview by remember { mutableStateOf<Int?>(null) }
+    fun scrubAuthority(): DirectScrubAuthority {
+        val direct=IntegratedDirectPlaybackBridge.state.value
+        return DirectScrubAuthority(direct.enabled,direct.generation,direct.pendingSeekSerial,
+            direct.seekCapable && direct.busy && direct.phase!=IntegratedDirectPhase.STOPPING)
+    }
+    val seekGestures=remember { DirectSeekGestureEnvironment(::scrubAuthority) {seekPreview=it} }
+    LaunchedEffect(seekGestures) {
+        IntegratedDirectPlaybackBridge.state.collect {
+            seekGestures.observe()
+        }
+    }
+    // Global cancellation only. Each actual seek control owns completion; pointer-up never commits a Slider.
+    val scrubModifier=modifier.pointerInput(seekGestures) {
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed=false,pass=PointerEventPass.Initial)
+            seekGestures.pointerSequence()
+            try {
+                var pressed: Boolean
+                do {
+                    val event=awaitPointerEvent(PointerEventPass.Final)
+                    if(event.changes.count { it.pressed }>1) seekGestures.cancel()
+                    pressed=event.changes.any { it.pressed }
+                } while(pressed)
+            } catch(cancelled: CancellationException) {seekGestures.cancel();throw cancelled}
+        }
+    }
 
     val startupStage = resolveLibraryStartupStage(
         hasAudioAccess = mediaAccessState.hasAudioAccess,
@@ -373,6 +415,9 @@ internal fun MusicRoute(
             onApplyFavoriteBatch = musicViewModel::applyFavoriteBatch
         )
     ) {
+        CompositionLocalProvider(LocalDirectSeekPreview provides seekPreview,LocalDirectSeekGestureEnvironment provides seekGestures,
+            LocalPlaybackPlayPauseIntent provides playbackUiState.playPauseIntent,
+            LocalPlaybackStatus provides playbackStatus) {
         MusicScreen(
             songs = libraryUiState.songs,
             recentlyPlayedSongs = libraryUiState.recentlyPlayedSongs,
@@ -428,7 +473,7 @@ internal fun MusicRoute(
             },
             onClearPlaybackQueueMessage = musicViewModel::clearPlaybackQueueMessage,
             snackbarHostState = snackbarHostState,
-            modifier = modifier,
+            modifier = scrubModifier,
             libraryFolders = libraryUiState.folders,
             folderSelectionMode = libraryUiState.folderSelectionMode,
             selectedLibraryFolders = libraryUiState.selectedFolders,
@@ -464,9 +509,7 @@ internal fun MusicRoute(
             onNextClick = {
                 musicViewModel.skipToNext()
             },
-            onSeekChange = { position ->
-                musicViewModel.seekTo(position)
-            },
+            onSeekChange = musicViewModel::seekTo,
             onLyricsVisibilityChanged = musicViewModel::setLyricsVisible,
             onSuspendLyricsAutoFollow = musicViewModel::suspendLyricsAutoFollow,
             onReturnLyricsToCurrentLine = musicViewModel::returnLyricsToCurrentLine,
@@ -831,6 +874,7 @@ internal fun MusicRoute(
                 onBack = {}
             )
         )
+        }
         songRatingUiState.dialog?.let { dialog ->
             SongRatingDialog(
                 state = dialog,

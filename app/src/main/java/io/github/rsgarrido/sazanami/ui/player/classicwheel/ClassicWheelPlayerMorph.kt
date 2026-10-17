@@ -1,4 +1,6 @@
 package io.github.rsgarrido.sazanami.ui.player.classicwheel
+
+import io.github.rsgarrido.sazanami.ui.state.playbackPlayPauseShowsPause
 import androidx.compose.ui.res.stringResource
 import io.github.rsgarrido.sazanami.R
 
@@ -257,7 +259,7 @@ private fun ClassicWheelMorphSharedContent(
                 }
             }
             Icon(
-                imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                imageVector = if (playbackPlayPauseShowsPause(isPlaying)) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                 contentDescription = null,
                 tint = lerp(tokens.displayTextColor, ClassicWheelColors.wheelContent, progress),
                 modifier = Modifier.size((24f + 18f * progress).dp)

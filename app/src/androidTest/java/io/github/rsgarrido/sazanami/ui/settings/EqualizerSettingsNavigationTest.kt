@@ -13,6 +13,7 @@ import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.player.audio.AudioOffloadPreference
 import io.github.rsgarrido.sazanami.player.replaygain.ReplayGainMode
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernArtworkTransitionStyle
+import io.github.rsgarrido.sazanami.ui.player.modern.ModernAppearanceChoice
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerAppearance
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 import org.junit.Assert.assertTrue
@@ -66,7 +67,9 @@ class EqualizerSettingsNavigationTest {
                         ModernArtworkTransitionStyle.SLIDE,
                     onModernArtworkTransitionStyleSelected = {},
                     selectedModernPlayerAppearance = ModernPlayerAppearance.Default,
-                    onModernPlayerAppearanceChanged = {},
+                    activeModernAppearanceChoice = ModernAppearanceChoice.DEFAULT,
+                    onModernAppearanceChoiceSelected = {},
+                    onModernPlayerAppearanceEdited = {},
                     onResetModernPlayerAppearance = {},
                     previewSong = null,
                     selectedReplayGainMode =
@@ -87,6 +90,11 @@ class EqualizerSettingsNavigationTest {
         composeRule.runOnIdle {
             assertTrue(opened)
         }
+        composeRule.onNodeWithContentDescription("Open USB Audio settings")
+            .performScrollTo()
+            .performClick()
+        composeRule.onNodeWithText("Audio output").assertExists()
+        composeRule.onNodeWithText("USB Direct (Experimental)").assertExists()
     }
 
     @Test
@@ -130,7 +138,9 @@ class EqualizerSettingsNavigationTest {
                     selectedModernArtworkTransitionStyle = ModernArtworkTransitionStyle.SLIDE,
                     onModernArtworkTransitionStyleSelected = {},
                     selectedModernPlayerAppearance = ModernPlayerAppearance.Default,
-                    onModernPlayerAppearanceChanged = {},
+                    activeModernAppearanceChoice = ModernAppearanceChoice.DEFAULT,
+                    onModernAppearanceChoiceSelected = {},
+                    onModernPlayerAppearanceEdited = {},
                     onResetModernPlayerAppearance = {},
                     previewSong = null,
                     selectedReplayGainMode = ReplayGainMode.OFF,

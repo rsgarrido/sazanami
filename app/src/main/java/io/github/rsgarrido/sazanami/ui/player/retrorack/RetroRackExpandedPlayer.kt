@@ -1,15 +1,17 @@
 package io.github.rsgarrido.sazanami.ui.player.retrorack
+
+import io.github.rsgarrido.sazanami.ui.state.playbackPlayPauseShowsPause
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import io.github.rsgarrido.sazanami.R
 
+import io.github.rsgarrido.sazanami.ui.state.rememberDirectSeekGestureControl
+import io.github.rsgarrido.sazanami.ui.state.directSeekPositionInput
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -426,9 +428,9 @@ private fun MainDeck(
                 onClick = onPreviousClick
             )
             RackIconButton(
-                icon = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                label = stringResource(if (isPlaying) R.string.player_rack_pause else R.string.player_rack_play),
-                contentDescription = stringResource(if (isPlaying) R.string.player_pause else R.string.player_play),
+                icon = if (playbackPlayPauseShowsPause(isPlaying)) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                label = stringResource(if (playbackPlayPauseShowsPause(isPlaying)) R.string.player_rack_pause else R.string.player_rack_play),
+                contentDescription = stringResource(if (playbackPlayPauseShowsPause(isPlaying)) R.string.player_pause else R.string.player_play),
                 active = true,
                 compact = compact,
                 primary = true,
@@ -484,6 +486,7 @@ private fun RetroRackSeekControl(
     visualVisible: Boolean,
     onVisualBoundsChanged: (androidx.compose.ui.geometry.Rect) -> Unit
 ) {
+    val gesture=rememberDirectSeekGestureControl(onSeekChange)
     val safeDuration = duration.coerceAtLeast(1)
     val safePosition = currentPosition.coerceIn(0, safeDuration)
     val progress = safePosition.toFloat() / safeDuration.toFloat()
@@ -493,28 +496,7 @@ private fun RetroRackSeekControl(
     val markerColor = ControlSilver
 
     val inputModifier = if (inputEnabled) {
-        Modifier.pointerInput(safeDuration) {
-            awaitEachGesture {
-                val down = awaitFirstDown(requireUnconsumed = false)
-
-                fun seekTo(x: Float) {
-                    val fraction = (x / size.width.toFloat()).coerceIn(0f, 1f)
-                    onSeekChange((fraction * safeDuration).toInt())
-                }
-
-                seekTo(down.position.x)
-                var pressed = true
-                while (pressed) {
-                    val event = awaitPointerEvent()
-                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                    pressed = change.pressed
-                    if (pressed) {
-                        seekTo(change.position.x)
-                        change.consume()
-                    }
-                }
-            }
-        }
+        Modifier.directSeekPositionInput(gesture,safeDuration)
     } else {
         Modifier
     }
@@ -525,7 +507,7 @@ private fun RetroRackSeekControl(
                 range = 0f..safeDuration.toFloat()
             )
             setProgress { target ->
-                onSeekChange(target.coerceIn(0f, safeDuration.toFloat()).toInt())
+                gesture.immediate(target.coerceIn(0f, safeDuration.toFloat()).toInt())
                 true
             }
         }

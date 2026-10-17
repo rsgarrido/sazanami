@@ -1,0 +1,27 @@
+# Unmodified official libFLAC 1.5.0 portable decoder subset; entirely local/offline.
+set(flac_root "${CMAKE_CURRENT_SOURCE_DIR}/upstream")
+file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/flac-1.5.0.tar.xz" archive_hash)
+if(NOT archive_hash STREQUAL "f2c1c76592a82ffff8413ba3c4a1299b6c7ab06c734dee03fd88630485c2b920")
+    message(FATAL_ERROR "Pinned official libFLAC archive checksum mismatch")
+endif()
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/UPSTREAM_SHA256.txt" manifest)
+foreach(entry IN LISTS manifest)
+    string(SUBSTRING "${entry}" 0 64 expected)
+    string(SUBSTRING "${entry}" 66 -1 relative)
+    file(SHA256 "${flac_root}/${relative}" actual)
+    if(NOT actual STREQUAL expected)
+        message(FATAL_ERROR "Vendored libFLAC file changed: ${relative}")
+    endif()
+endforeach()
+include(TestBigEndian)
+test_big_endian(FLAC_BIG_ENDIAN)
+configure_file(config.h.in "${CMAKE_CURRENT_BINARY_DIR}/config.h")
+set(flac_sources bitmath.c bitreader.c cpu.c crc.c fixed.c float.c format.c lpc.c md5.c memory.c stream_decoder.c)
+list(TRANSFORM flac_sources PREPEND "${flac_root}/src/libFLAC/")
+add_library(sazanami_flac_decoder STATIC ${flac_sources})
+set_target_properties(sazanami_flac_decoder PROPERTIES POSITION_INDEPENDENT_CODE ON C_STANDARD 99)
+target_include_directories(sazanami_flac_decoder PUBLIC "${flac_root}/include"
+    PRIVATE "${flac_root}/src/libFLAC/include" "${CMAKE_CURRENT_BINARY_DIR}")
+target_compile_definitions(sazanami_flac_decoder PUBLIC FLAC__NO_DLL
+    PRIVATE HAVE_CONFIG_H FLAC__INTEGER_ONLY_LIBRARY FLAC__NO_ASM _FILE_OFFSET_BITS=64)
+# No SIMD/assembler, float prediction/encoder code, Ogg, metadata tools or threads.

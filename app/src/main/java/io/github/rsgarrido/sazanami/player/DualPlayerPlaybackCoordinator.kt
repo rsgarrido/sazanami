@@ -100,12 +100,21 @@ internal class PhysicalPlayerPipeline(
         baselineExact = false
     }
 
+    var releasedForDirectSafely=false; private set
     fun release() {
         if (released) return
         released = true
+        // Media3 reports a release timeout to listeners, without storing it in playerError.
+        var releaseTimedOut=false
+        val releaseObserver=object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) { if(error.errorCode==PlaybackException.ERROR_CODE_TIMEOUT) releaseTimedOut=true }
+        }
+        player.addListener(releaseObserver)
         try {
             player.release()
+            releasedForDirectSafely=!releaseTimedOut
         } finally {
+            player.removeListener(releaseObserver)
             spectrumPcmObserver?.close()
             EqualizerRuntimeBridge.releaseRuntime(equalizerRuntime)
         }
@@ -498,6 +507,7 @@ internal class DualPlayerPlaybackCoordinator(
     }
 
     fun updateActiveBaseline(volume: Float) {
+        if (released) return
         if (activeCrossfade != null) return
         val mediaKey = logicalPipeline.player.currentMediaItem
             ?.let(StandbyTargetResolver::key)
@@ -547,6 +557,7 @@ internal class DualPlayerPlaybackCoordinator(
     }
 
     fun forEachPipeline(action: (PhysicalPlayerPipeline) -> Unit) {
+        if (released) return
         action(active)
         action(standby)
     }
@@ -1483,6 +1494,12 @@ internal class DualPlayerPlaybackCoordinator(
         standbyListener?.let(standby.player::removeListener)
         activeListener = null
         standbyListener = null
+    }
+
+    fun releaseForDirect(): Boolean {
+        active.player.stop();standby.player.stop()
+        release() // cancels crossfade/listeners/preparation and synchronously releases both ExoPlayers
+        return active.releasedForDirectSafely && standby.releasedForDirectSafely
     }
 
     fun release() {

@@ -1,6 +1,7 @@
 package io.github.rsgarrido.sazanami.ui.player.classicwheel
 
 import androidx.compose.foundation.Canvas
+import io.github.rsgarrido.sazanami.ui.state.rememberDirectSeekGestureControl
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -264,6 +265,7 @@ private fun ClassicWheelProgress(
     duration: Int,
     onSeekChange: (Int) -> Unit
 ) {
+    val gesture=rememberDirectSeekGestureControl(onSeekChange)
     val safeDuration = duration.coerceAtLeast(1)
     val clampedPosition = currentPosition.coerceIn(0, safeDuration)
     val progress = clampedPosition.toFloat() / safeDuration.toFloat()
@@ -276,7 +278,7 @@ private fun ClassicWheelProgress(
         val seekRatio = (x / progressBarWidthPx.toFloat())
             .coerceIn(0f, 1f)
 
-        onSeekChange(
+        gesture.change(
             (seekRatio * safeDuration).roundToInt()
         )
     }
@@ -300,8 +302,10 @@ private fun ClassicWheelProgress(
                 .onSizeChanged { size ->
                     progressBarWidthPx = size.width.coerceAtLeast(1)
                 }
+                .then(gesture.pointerModifier())
                 .pointerInput(safeDuration, progressBarWidthPx) {
                     detectDragGestures(
+                        onDragCancel = gesture::cancel,
                         onDragStart = { offset ->
                             seekToPositionFromX(offset.x)
                         },

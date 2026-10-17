@@ -4,6 +4,7 @@ import android.net.Uri
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.RepeatMode
 import io.github.rsgarrido.sazanami.ui.state.PlaybackUiState
+import io.github.rsgarrido.sazanami.ui.state.PlaybackProgressUiState
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
@@ -30,6 +31,76 @@ class LyricsPlaybackControllerTest {
     @After
     fun tearDown() {
         scope.cancel()
+    }
+
+    @Test
+    fun pausedDirectSeeksFollowOnlyLatestConfirmedPositionWithoutPolling() = runBlocking {
+        val repository = PlaybackLyricsRepository().apply {
+            defaultResult = found(LyricsDocument.Synced(listOf(
+                cue(1_000, "First"), cue(5_000, "Middle"), cue(8_000, "Last"))))
+        }
+        val progress = MutableStateFlow(PlaybackProgressUiState(currentPosition = 1000, isDirect = true))
+        var reads = 0
+        val fixture = fixture(repository, position = { reads++; 1000L }, authoritativeProgress = progress)
+        fixture.playback.value = playback(song(1), isPlaying = false)
+        fixture.controller.setVisible(true)
+        fixture.controller.awaitState<LyricsPlaybackUiState.Synced> { it.activeGroup?.lines == listOf("First") }
+
+        progress.value = progress.value.copy(isSeeking = true)
+        fixture.controller.onSeek(5_000)
+        fixture.controller.onSeek(8_000) // A superseding request is still not a confirmation.
+        progress.value = progress.value.copy(currentPosition = 5000)
+        assertEquals(listOf("First"), (fixture.controller.uiState.value as LyricsPlaybackUiState.Synced).activeGroup?.lines)
+        progress.value = progress.value.copy(currentPosition = 8000, isSeeking = false)
+        fixture.controller.awaitState<LyricsPlaybackUiState.Synced> { it.activeGroup?.lines == listOf("Last") }
+
+        // An external paused seek has no local onSeek callback.
+        progress.value = progress.value.copy(isSeeking = true)
+        progress.value = progress.value.copy(currentPosition = 1000, isSeeking = false)
+        fixture.controller.awaitState<LyricsPlaybackUiState.Synced> { it.activeGroup?.lines == listOf("First") }
+        assertEquals(0, reads)
+        assertFalse(fixture.playback.value.isPlaying)
+    }
+
+    @Test
+    fun rejectedAndFailedDirectSeeksNeverLeaveOptimisticLyricsAndNavigationUsesCurrentPosition() = runBlocking<Unit> {
+        val repository = PlaybackLyricsRepository().apply {
+            defaultResult = found(LyricsDocument.Synced(listOf(cue(1_000, "First"), cue(5_000, "Second"))))
+        }
+        val progress = MutableStateFlow(PlaybackProgressUiState(currentPosition = 1000, isDirect = true))
+        val fixture = fixture(repository, authoritativeProgress = progress)
+        fixture.playback.value = playback(song(1))
+        fixture.controller.setVisible(true)
+        fixture.controller.awaitState<LyricsPlaybackUiState.Synced> { it.activeGroup?.lines == listOf("First") }
+        fixture.controller.onSeek(5_000) // Rejected request: authority never changes.
+        assertEquals(listOf("First"), (fixture.controller.uiState.value as LyricsPlaybackUiState.Synced).activeGroup?.lines)
+        progress.value = progress.value.copy(isSeeking = true)
+        fixture.controller.onSeek(5_000)
+        progress.value = progress.value.copy(isSeeking = false) // Failed/terminal request retains the actual playhead.
+        assertEquals(listOf("First"), (fixture.controller.uiState.value as LyricsPlaybackUiState.Synced).activeGroup?.lines)
+        fixture.controller.setVisible(false)
+        progress.value = progress.value.copy(currentPosition = 5000)
+        fixture.controller.setVisible(true)
+        fixture.controller.awaitState<LyricsPlaybackUiState.Synced> { it.activeGroup?.lines == listOf("Second") }
+    }
+
+    @Test
+    fun activeDirectProgressAndAndroidOptimisticSeekingRetainTheirOwnSemantics() = runBlocking {
+        val repository = PlaybackLyricsRepository().apply {
+            defaultResult = found(LyricsDocument.Synced(listOf(cue(1_000, "First"), cue(5_000, "Second"))))
+        }
+        val progress = MutableStateFlow(PlaybackProgressUiState(currentPosition = 1000, isDirect = true))
+        val fixture = fixture(repository, position = { 1000L }, authoritativeProgress = progress)
+        fixture.playback.value = playback(song(1), isPlaying = true)
+        fixture.controller.setVisible(true)
+        fixture.controller.awaitState<LyricsPlaybackUiState.Synced> { it.activeGroup?.lines == listOf("First") }
+        progress.value = progress.value.copy(currentPosition = 5000)
+        fixture.controller.awaitState<LyricsPlaybackUiState.Synced> { it.activeGroup?.lines == listOf("Second") }
+
+        fixture.playback.value = playback(song(1), isPlaying = false)
+        progress.value = progress.value.copy(isDirect = false, currentPosition = 1000)
+        fixture.controller.onSeek(5_000)
+        assertEquals(listOf("Second"), (fixture.controller.uiState.value as LyricsPlaybackUiState.Synced).activeGroup?.lines)
     }
 
     @Test
@@ -158,10 +229,10 @@ class LyricsPlaybackControllerTest {
         val repository = PlaybackLyricsRepository().apply {
             defaultResult = found(synced())
         }
-        val fixture = fixture(repository) {
+        val fixture = fixture(repository, position = {
             reads.incrementAndGet()
             1_000L
-        }
+        })
         fixture.playback.value = playback(song(1), isPlaying = true)
         delay(30)
         val hiddenReads = reads.get()
@@ -287,7 +358,8 @@ class LyricsPlaybackControllerTest {
     private fun fixture(
         repository: PlaybackLyricsRepository,
         monotonicTimeMs: () -> Long = { System.nanoTime() / 1_000_000L },
-        position: () -> Long = { 0L }
+        position: () -> Long = { 0L },
+        authoritativeProgress: StateFlow<PlaybackProgressUiState>? = null
     ): Fixture {
         val playback = MutableStateFlow(PlaybackUiState())
         val controller = LyricsPlaybackController(
@@ -296,7 +368,8 @@ class LyricsPlaybackControllerTest {
             positionSource = LyricsPositionSource(position),
             scope = scope,
             tickerIntervalMs = 10L,
-            monotonicTimeMs = monotonicTimeMs
+            monotonicTimeMs = monotonicTimeMs,
+            authoritativeProgress = authoritativeProgress
         )
         return Fixture(controller, playback)
     }

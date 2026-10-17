@@ -3,11 +3,15 @@ package io.github.rsgarrido.sazanami
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import io.github.rsgarrido.sazanami.data.PLAYBACK_QUEUE_WORKING_SOURCE_TYPE
 import io.github.rsgarrido.sazanami.data.PlaybackQueueEntryDraft
 import io.github.rsgarrido.sazanami.data.PlaybackQueueRepository
+import io.github.rsgarrido.sazanami.data.PlaybackQueueWorkingOutput
 import io.github.rsgarrido.sazanami.data.local.AppDatabase
 import io.github.rsgarrido.sazanami.data.local.ListeningTrackIdentityEntity
 import io.github.rsgarrido.sazanami.data.local.PersistedQueueRepeatMode
+import io.github.rsgarrido.sazanami.data.workingOutput
+import java.util.UUID
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -372,6 +376,493 @@ class PlaybackQueueRepositoryTest {
             assertEquals(9_999L, reordered.queue.currentPositionMs)
             assertTrue(reordered.queue.shuffleEnabled)
         }
+
+    @Test
+    fun workingOwnersSurviveDatabaseReopenAndSavedActivationWithoutGrowingQueueCount() =
+        runBlocking {
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val databaseName = "working-queue-${UUID.randomUUID()}.db"
+            database.close()
+            database = Room.databaseBuilder(context, AppDatabase::class.java, databaseName).build()
+            repository = PlaybackQueueRepository(database) { now++ }
+            try {
+                val track = seedIdentity("Working restart")
+                val android = checkNotNull(
+                    commitWorking(
+                        output = PlaybackQueueWorkingOutput.ANDROID,
+                        queueId = "android-working",
+                        displayName = "Queue 1",
+                        entries = listOf(entry("android-entry", track, 0, 0)),
+                        currentPositionMs = 4_321L
+                    )
+                )
+                repeat(4) { index ->
+                    val direct = checkNotNull(
+                        commitWorking(
+                            output = PlaybackQueueWorkingOutput.DIRECT,
+                            queueId = "direct-candidate-$index",
+                            displayName = "Queue ${index + 2}",
+                            entries = listOf(
+                                entry("direct-$index-first", track, 0, 1),
+                                entry("direct-$index-duplicate", track, 1, 0)
+                            ),
+                            currentEntryId = "direct-$index-duplicate",
+                            currentPositionMs = 200L + index,
+                            shuffleEnabled = true,
+                            repeatMode = PersistedQueueRepeatMode.ALL
+                        )
+                    )
+                    assertEquals("direct-candidate-0", direct.queue.queueId)
+                    assertEquals("Queue 2", direct.queue.displayName)
+                    assertEquals(
+                        listOf("direct-$index-duplicate", "direct-$index-first"),
+                        direct.entries.map { it.entryId }
+                    )
+                    assertEquals(listOf(1, 0), direct.entries.map { it.baseOrder })
+                    assertEquals(2, repository.listQueues().size)
+                }
+                val saved = repository.duplicateQueue(
+                    sourceQueueId = "direct-candidate-0",
+                    displayName = "Queue 3",
+                    queueId = "explicit-save"
+                )
+                repository.setActiveQueue(saved.queue.queueId)
+                val savedBeforeRestart = repository.loadQueue(saved.queue.queueId)
+                database.close()
+                database = Room.databaseBuilder(context, AppDatabase::class.java, databaseName).build()
+                repository = PlaybackQueueRepository(database) { now++ }
+
+                assertEquals("explicit-save", repository.getActiveQueueId())
+                assertEquals(android, repository.loadQueue("android-working"))
+                assertEquals(savedBeforeRestart, repository.loadQueue("explicit-save"))
+                assertEquals(
+                    PlaybackQueueWorkingOutput.DIRECT,
+                    repository.loadQueue("direct-candidate-0")?.queue?.workingOutput
+                )
+                val resumed = checkNotNull(
+                    commitWorking(
+                        output = PlaybackQueueWorkingOutput.DIRECT,
+                        queueId = "unused-after-restart",
+                        displayName = "Queue 4",
+                        entries = listOf(entry("after-restart", track, 0, 0)),
+                        currentPositionMs = 9_000L
+                    )
+                )
+
+                assertEquals("direct-candidate-0", resumed.queue.queueId)
+                assertEquals("after-restart", resumed.queue.currentEntryId)
+                assertEquals(9_000L, resumed.queue.currentPositionMs)
+                assertEquals(PersistedQueueRepeatMode.OFF, resumed.queue.repeatMode)
+                assertTrue(!resumed.queue.shuffleEnabled)
+                assertEquals("direct-candidate-0", repository.getActiveQueueId())
+                assertEquals(android, repository.loadQueue("android-working"))
+                assertEquals(savedBeforeRestart, repository.loadQueue("explicit-save"))
+                assertEquals(3, repository.listQueues().size)
+                assertEquals(2, repository.listQueues().count { it.workingOutput != null })
+                assertEquals(1, repository.listQueues().count { it.workingOutput == null })
+                assertNull(repository.loadQueue("unused-after-restart"))
+            } finally {
+                database.close()
+                context.deleteDatabase(databaseName)
+            }
+        }
+
+    @Test
+    fun explicitCopiesClearManagedOwnershipAndPreserveOtherSourceMetadata() = runBlocking {
+        val track = seedIdentity("Saved ownership")
+        val working = checkNotNull(
+            commitWorking(
+                output = PlaybackQueueWorkingOutput.DIRECT,
+                queueId = "working",
+                entries = listOf(entry("working-entry", track, 0, 0))
+            )
+        )
+        val saved = repository.duplicateQueue("working", "Queue 2", queueId = "saved")
+        assertNull(saved.queue.workingOutput)
+        assertNull(saved.queue.sourceType)
+        assertNull(saved.queue.sourceKey)
+        assertNotEquals(working.entries.single().entryId, saved.entries.single().entryId)
+        assertEquals(working, repository.loadQueue("working"))
+
+        repository.createQueue(
+            queueId = "album-source",
+            displayName = "Album source",
+            sourceType = "album",
+            sourceKey = "album:42",
+            entries = listOf(entry("album-entry", track, 0, 0))
+        )
+        val albumCopy = repository.duplicateQueue("album-source", "Album copy", queueId = "album-copy")
+        assertNull(albumCopy.queue.workingOutput)
+        assertEquals("album", albumCopy.queue.sourceType)
+        assertEquals("album:42", albumCopy.queue.sourceKey)
+    }
+
+    @Test
+    fun legacyRowsAndUnrecognizedMetadataArePreservedWithoutAdoptionOrRelabeling() = runBlocking {
+        val track = seedIdentity("Legacy")
+        repository.createQueue(
+            queueId = "legacy-duplicate-one",
+            displayName = "Queue 1",
+            entries = listOf(entry("legacy-first", track, 0, 0))
+        )
+        repository.createQueue(
+            queueId = "legacy-duplicate-two",
+            displayName = "Queue 1",
+            entries = listOf(entry("legacy-second", track, 0, 0))
+        )
+        repository.createQueue(
+            queueId = "unrecognized-key",
+            displayName = "Queue 1",
+            sourceType = PLAYBACK_QUEUE_WORKING_SOURCE_TYPE,
+            sourceKey = "unknown-output"
+        )
+        repository.createQueue(
+            queueId = "unrecognized-marker",
+            displayName = "Queue 1",
+            sourceType = "sazanami:working:v10",
+            sourceKey = PlaybackQueueWorkingOutput.DIRECT.storageKey
+        )
+        repository.setActiveQueue("legacy-duplicate-one")
+        val legacy = repository.listQueues().associate { it.queueId to repository.loadQueue(it.queueId) }
+        assertTrue(legacy.values.all { it?.queue?.workingOutput == null })
+        assertTrue(
+            runCatching {
+                commitWorking(
+                    output = PlaybackQueueWorkingOutput.DIRECT,
+                    queueId = "legacy-duplicate-one",
+                    entries = listOf(entry("must-not-relabel", track, 0, 0))
+                )
+            }.exceptionOrNull() is IllegalArgumentException
+        )
+
+        repeat(3) { index ->
+            PlaybackQueueWorkingOutput.entries.forEach { output ->
+                commitWorking(
+                    output = output,
+                    queueId = "${output.storageKey}-$index",
+                    displayName = "Queue ${index + 2}",
+                    entries = listOf(entry("${output.storageKey}-entry-$index", track, 0, 0))
+                )
+            }
+        }
+
+        legacy.forEach { (id, before) -> assertEquals(before, repository.loadQueue(id)) }
+        assertEquals(6, repository.listQueues().size)
+        assertEquals(2, repository.listQueues().count { it.workingOutput != null })
+        assertEquals(1, repository.listQueues().count { it.workingOutput == PlaybackQueueWorkingOutput.ANDROID })
+        assertEquals(1, repository.listQueues().count { it.workingOutput == PlaybackQueueWorkingOutput.DIRECT })
+    }
+
+    @Test
+    fun supersededWorkingCreationRollsBackOwnerEntriesAndActiveIdentity() = runBlocking {
+        val track = seedIdentity("Stale creation")
+        repository.createQueue(queueId = "saved", displayName = "Saved")
+        repository.setActiveQueue("saved")
+        val before = repository.listQueues()
+        val candidate = listOf(entry("candidate-entry", track, 0, 0))
+
+        assertNull(
+            commitWorking(
+                output = PlaybackQueueWorkingOutput.DIRECT,
+                queueId = "stale-working",
+                entries = candidate,
+                canCommit = { false }
+            )
+        )
+        var guardCalls = 0
+        assertNull(
+            commitWorking(
+                output = PlaybackQueueWorkingOutput.DIRECT,
+                queueId = "stale-working",
+                entries = candidate,
+                canCommit = { ++guardCalls == 1 }
+            )
+        )
+
+        assertEquals(2, guardCalls)
+        assertEquals(before, repository.listQueues())
+        assertEquals("saved", repository.getActiveQueueId())
+        assertNull(repository.loadQueue("stale-working"))
+        assertTrue(database.playbackQueueDao().getEntriesInPlaybackOrder("stale-working").isEmpty())
+        assertEquals(
+            "stale-working",
+            commitWorking(
+                output = PlaybackQueueWorkingOutput.DIRECT,
+                queueId = "stale-working",
+                entries = candidate
+            )?.queue?.queueId
+        )
+    }
+
+    @Test
+    fun supersededWorkingReplacementRestoresPreviousContentsPoliciesAndActiveQueue() = runBlocking {
+        val track = seedIdentity("Stale replacement")
+        val original = checkNotNull(
+            commitWorking(
+                output = PlaybackQueueWorkingOutput.DIRECT,
+                queueId = "working",
+                entries = listOf(entry("original", track, 0, 0)),
+                currentPositionMs = 8_000L,
+                repeatMode = PersistedQueueRepeatMode.ONE
+            )
+        )
+        repository.createQueue(queueId = "saved", displayName = "Saved")
+        repository.setActiveQueue("saved")
+        val saved = repository.loadQueue("saved")
+        var guardCalls = 0
+
+        val rejected = commitWorking(
+            output = PlaybackQueueWorkingOutput.DIRECT,
+            queueId = "unused-candidate",
+            entries = listOf(entry("obsolete", track, 0, 0)),
+            currentPositionMs = 1_000L,
+            shuffleEnabled = true,
+            repeatMode = PersistedQueueRepeatMode.ALL,
+            canCommit = { ++guardCalls == 1 }
+        )
+
+        assertNull(rejected)
+        assertEquals(2, guardCalls)
+        assertEquals(original, repository.loadQueue("working"))
+        assertEquals(saved, repository.loadQueue("saved"))
+        assertEquals("saved", repository.getActiveQueueId())
+        assertEquals(2, repository.listQueues().size)
+        assertNull(repository.loadQueue("unused-candidate"))
+    }
+
+    @Test
+    fun invalidWorkingReferencesLeaveLegacyAndWorkingRowsUntouched() = runBlocking {
+        val track = seedIdentity("Reference validation")
+        repository.createQueue(queueId = "legacy", displayName = "Queue 1")
+        repository.setActiveQueue("legacy")
+        val before = repository.listQueues()
+        val invalidEntries = listOf(entry("invalid", Long.MAX_VALUE, 0, 0))
+
+        assertTrue(
+            runCatching {
+                commitWorking(PlaybackQueueWorkingOutput.DIRECT, "new-invalid", invalidEntries)
+            }.exceptionOrNull() is IllegalArgumentException
+        )
+        assertEquals(before, repository.listQueues())
+        assertEquals("legacy", repository.getActiveQueueId())
+        val working = checkNotNull(
+            commitWorking(
+                output = PlaybackQueueWorkingOutput.DIRECT,
+                queueId = "working",
+                entries = listOf(entry("valid", track, 0, 0))
+            )
+        )
+        repository.setActiveQueue("legacy")
+
+        assertTrue(
+            runCatching {
+                commitWorking(PlaybackQueueWorkingOutput.DIRECT, "unused", invalidEntries)
+            }.exceptionOrNull() is IllegalArgumentException
+        )
+        assertTrue(
+            runCatching {
+                commitWorking(
+                    output = PlaybackQueueWorkingOutput.DIRECT,
+                    queueId = "unused",
+                    entries = listOf(
+                        entry("invalid-binding", track, 0, 0).copy(localTrackBindingId = Long.MAX_VALUE)
+                    )
+                )
+            }.exceptionOrNull() is IllegalArgumentException
+        )
+        assertEquals(working, repository.loadQueue("working"))
+        assertEquals("legacy", repository.getActiveQueueId())
+        assertEquals(2, repository.listQueues().size)
+    }
+
+    @Test
+    fun failedWorkingEntryInsertionRollsBackBothCreationAndReplacement() = runBlocking {
+        val track = seedIdentity("Insertion rollback")
+        repository.createQueue(
+            queueId = "saved",
+            displayName = "Saved",
+            entries = listOf(entry("protected-entry", track, 0, 0))
+        )
+        repository.setActiveQueue("saved")
+        val saved = repository.loadQueue("saved")
+        val conflictingEntries = listOf(entry("protected-entry", track, 0, 0))
+
+        assertTrue(
+            runCatching {
+                commitWorking(PlaybackQueueWorkingOutput.DIRECT, "failed-owner", conflictingEntries)
+            }.isFailure
+        )
+        assertEquals(1, repository.listQueues().size)
+        assertEquals("saved", repository.getActiveQueueId())
+        assertEquals(saved, repository.loadQueue("saved"))
+        assertNull(repository.loadQueue("failed-owner"))
+        val working = checkNotNull(
+            commitWorking(
+                output = PlaybackQueueWorkingOutput.DIRECT,
+                queueId = "working",
+                entries = listOf(entry("working-entry", track, 0, 0)),
+                currentPositionMs = 2_500L
+            )
+        )
+        repository.setActiveQueue("saved")
+        // Reactivation legitimately updates timestamps before the replacement transaction.
+        val savedBeforeReplacement = checkNotNull(repository.loadQueue("saved"))
+
+        assertTrue(
+            runCatching {
+                commitWorking(PlaybackQueueWorkingOutput.DIRECT, "unused", conflictingEntries)
+            }.isFailure
+        )
+        assertEquals(working, repository.loadQueue("working"))
+        assertEquals(savedBeforeReplacement, repository.loadQueue("saved"))
+        assertEquals("saved", repository.getActiveQueueId())
+        assertEquals(2, repository.listQueues().size)
+    }
+
+    @Test
+    fun frozenManagedOwnerExchangesOutputRolesWithoutChangingItsContentsOrAllocatingRows() =
+        runBlocking {
+            val track = seedIdentity("Frozen managed owner")
+            val previousAndroid = checkNotNull(
+                commitWorking(
+                    output = PlaybackQueueWorkingOutput.ANDROID,
+                    queueId = "previous-android",
+                    entries = listOf(entry("previous-android-entry", track, 0, 0))
+                )
+            )
+            val frozen = checkNotNull(
+                commitWorking(
+                    output = PlaybackQueueWorkingOutput.DIRECT,
+                    queueId = "restored-on-android",
+                    entries = listOf(entry("frozen-entry", track, 0, 0)),
+                    currentPositionMs = 7_000L,
+                    repeatMode = PersistedQueueRepeatMode.ONE
+                )
+            )
+
+            val direct = checkNotNull(
+                commitWorking(
+                    output = PlaybackQueueWorkingOutput.DIRECT,
+                    queueId = "unused-candidate",
+                    entries = listOf(entry("direct-replacement", track, 0, 0)),
+                    protectedQueueId = frozen.queue.queueId
+                )
+            )
+
+            assertEquals(previousAndroid.queue.queueId, direct.queue.queueId)
+            assertEquals(PlaybackQueueWorkingOutput.DIRECT, direct.queue.workingOutput)
+            assertEquals(
+                frozen.copy(queue = frozen.queue.copy(sourceKey = PlaybackQueueWorkingOutput.ANDROID.storageKey)),
+                repository.loadQueue(frozen.queue.queueId)
+            )
+            assertEquals(direct.queue.queueId, repository.getActiveQueueId())
+            assertEquals(2, repository.listQueues().size)
+            assertNull(repository.loadQueue("unused-candidate"))
+            assertEquals(1, repository.listQueues().count { it.workingOutput == PlaybackQueueWorkingOutput.ANDROID })
+            assertEquals(1, repository.listQueues().count { it.workingOutput == PlaybackQueueWorkingOutput.DIRECT })
+        }
+
+    @Test
+    fun frozenManagedOwnerGetsOppositeRoleAndCreatesOnlyOneMissingOutputOwner() = runBlocking {
+        val track = seedIdentity("Missing Android owner")
+        val frozen = checkNotNull(
+            commitWorking(
+                output = PlaybackQueueWorkingOutput.DIRECT,
+                queueId = "frozen",
+                entries = listOf(entry("frozen-entry", track, 0, 0)),
+                currentPositionMs = 3_000L
+            )
+        )
+        repeat(3) { index ->
+            val direct = checkNotNull(
+                commitWorking(
+                    output = PlaybackQueueWorkingOutput.DIRECT,
+                    queueId = "candidate-$index",
+                    entries = listOf(entry("direct-$index", track, 0, 0)),
+                    protectedQueueId = frozen.queue.queueId
+                )
+            )
+            assertEquals("candidate-0", direct.queue.queueId)
+            assertEquals(2, repository.listQueues().size)
+        }
+        assertEquals(
+            frozen.copy(queue = frozen.queue.copy(sourceKey = PlaybackQueueWorkingOutput.ANDROID.storageKey)),
+            repository.loadQueue("frozen")
+        )
+    }
+
+    @Test
+    fun supersededOrFailedOutputRoleExchangeRollsBackMetadataEntriesAndActiveState() = runBlocking {
+        val track = seedIdentity("Output role rollback")
+        val android = checkNotNull(
+            commitWorking(
+                output = PlaybackQueueWorkingOutput.ANDROID,
+                queueId = "android",
+                entries = listOf(entry("android-entry", track, 0, 0)),
+                currentPositionMs = 2_000L
+            )
+        )
+        val frozen = checkNotNull(
+            commitWorking(
+                output = PlaybackQueueWorkingOutput.DIRECT,
+                queueId = "frozen",
+                entries = listOf(entry("frozen-entry", track, 0, 0)),
+                currentPositionMs = 4_000L
+            )
+        )
+        var guardCalls = 0
+        assertNull(
+            commitWorking(
+                output = PlaybackQueueWorkingOutput.DIRECT,
+                queueId = "unused",
+                entries = listOf(entry("superseded", track, 0, 0)),
+                protectedQueueId = frozen.queue.queueId,
+                canCommit = { ++guardCalls == 1 }
+            )
+        )
+        assertEquals(2, guardCalls)
+        assertEquals(android, repository.loadQueue("android"))
+        assertEquals(frozen, repository.loadQueue("frozen"))
+        assertEquals("frozen", repository.getActiveQueueId())
+        assertTrue(
+            runCatching {
+                commitWorking(
+                    output = PlaybackQueueWorkingOutput.DIRECT,
+                    queueId = "unused",
+                    entries = listOf(entry("frozen-entry", track, 0, 0)),
+                    protectedQueueId = frozen.queue.queueId
+                )
+            }.isFailure
+        )
+        assertEquals(android, repository.loadQueue("android"))
+        assertEquals(frozen, repository.loadQueue("frozen"))
+        assertEquals("frozen", repository.getActiveQueueId())
+        assertEquals(2, repository.listQueues().size)
+    }
+
+    private suspend fun commitWorking(
+        output: PlaybackQueueWorkingOutput,
+        queueId: String,
+        entries: List<PlaybackQueueEntryDraft>,
+        displayName: String = "Queue 1",
+        currentEntryId: String? = entries.firstOrNull()?.entryId,
+        currentPositionMs: Long = 0L,
+        shuffleEnabled: Boolean = false,
+        repeatMode: PersistedQueueRepeatMode = PersistedQueueRepeatMode.OFF,
+        protectedQueueId: String? = null,
+        canCommit: () -> Boolean = { true }
+    ) = repository.commitWorkingQueue(
+        output = output,
+        queueId = queueId,
+        displayName = displayName,
+        entries = entries,
+        currentEntryId = currentEntryId,
+        currentPositionMs = currentPositionMs,
+        shuffleEnabled = shuffleEnabled,
+        repeatMode = repeatMode,
+        protectedQueueId = protectedQueueId,
+        canCommit = canCommit
+    )
 
     private suspend fun seedIdentity(label: String): Long {
         return database.listeningTrackIdentityDao().insert(
