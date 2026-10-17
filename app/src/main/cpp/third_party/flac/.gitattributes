@@ -1,0 +1,4 @@
+# Preserve the exact bytes of checksum-pinned upstream files.
+upstream/** -text
+# Keep the checksum manifest compatible with standard SHA-256 tools.
+UPSTREAM_SHA256.txt text eol=lf
