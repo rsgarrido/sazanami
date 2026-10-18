@@ -23,6 +23,7 @@ import io.github.rsgarrido.sazanami.ui.player.modern.ModernControlStyle
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernDimmingStrength
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernLayoutAppearance
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernLayoutDensity
+import io.github.rsgarrido.sazanami.ui.player.modern.ModernLandscapeLayout
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernMetadataAlignment
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerAppearance
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernSeekbarAppearance
@@ -35,6 +36,37 @@ import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class MyPlayerBackupTest {
+    @Test
+    fun independentLandscapeChoiceRoundTripsAlongsideBuiltInAndSavedAppearance() {
+        for (layout in ModernLandscapeLayout.entries) {
+            val saved = customizedAppearance()
+            val source = AppPreferencesState(myPlayerAppearance = saved,
+                activeModernAppearanceChoice = ModernAppearanceChoice.MINIMAL, modernLandscapeLayout = layout)
+            val restored = roundTrip(BackupPreferences().withMyPlayerAppearance(source))
+                .preferences.toModernAppearanceState()
+            assertEquals(layout, restored.modernLandscapeLayout)
+            assertEquals(ModernAppearanceChoice.MINIMAL, restored.activeModernAppearanceChoice)
+            assertEquals(saved, restored.myPlayerAppearance)
+            assertEquals(ModernAppearancePreset.MINIMAL.appearance(), restored.modernPlayerAppearance)
+        }
+    }
+
+    @Test
+    fun olderBackupMissingLandscapeChoiceAndUnknownValuesUseBalanced() {
+        val saved = customizedAppearance()
+        val backup = AppBackup(createdAt = 123L, canonicalListeningHistory = BackupListeningHistoryV2(),
+            preferences = BackupPreferences().withMyPlayerAppearance(AppPreferencesState(myPlayerAppearance = saved)))
+        val oldJson = AppBackupJson.encodeBackup(backup)
+            .replace("\"modernLandscapeLayout\":\"balanced\",", "")
+        assertFalse(oldJson.contains("modernLandscapeLayout"))
+        val old = AppBackupJson.decodeBackup(oldJson).preferences.toModernAppearanceState()
+        assertEquals(ModernLandscapeLayout.BALANCED, old.modernLandscapeLayout)
+        assertEquals(saved, old.myPlayerAppearance)
+        assertEquals(ModernLandscapeLayout.BALANCED,
+            roundTrip(BackupPreferences(modernLandscapeLayout = "future_layout"))
+                .preferences.toModernAppearanceState().modernLandscapeLayout)
+    }
+
     @Test
     fun currentSchemaRoundTripPreservesAllMyPlayerFieldsWhenMyPlayerIsActive() {
         val saved = customizedAppearance()

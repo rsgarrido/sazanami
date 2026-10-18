@@ -21,6 +21,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsNode
@@ -28,14 +30,19 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
@@ -65,16 +72,24 @@ import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerMorphGeometry
 import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerArrangement
 import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerLayout
+import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerInsets
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernArtworkTransitionStyle
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerAppearance
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernControlSize
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernLayoutDensity
+import io.github.rsgarrido.sazanami.ui.player.modern.ModernLandscapeLayout
+import io.github.rsgarrido.sazanami.ui.player.modern.ModernSeekbarStyle
+import io.github.rsgarrido.sazanami.ui.player.modern.ModernWaveformDensity
+import io.github.rsgarrido.sazanami.ui.player.modern.ModernArtworkCarouselState
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernWaveformSize
 import io.github.rsgarrido.sazanami.ui.player.modern.resolveDefaultPlayerLayout
 import io.github.rsgarrido.sazanami.ui.player.rememberPlayerLyricsTransitionState
 import io.github.rsgarrido.sazanami.ui.player.rememberPlayerMorphState
 import io.github.rsgarrido.sazanami.ui.player.theme.defaultTokens
 import io.github.rsgarrido.sazanami.ui.state.PlaybackProgressUiState
+import io.github.rsgarrido.sazanami.ui.state.DirectSeekGestureEnvironment
+import io.github.rsgarrido.sazanami.ui.state.DirectScrubAuthority
+import io.github.rsgarrido.sazanami.ui.state.LocalDirectSeekGestureEnvironment
 import io.github.rsgarrido.sazanami.ui.theme.SazanamiTheme
 import io.github.rsgarrido.sazanami.ui.navigation.MainDestination
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -248,7 +263,7 @@ class MusicPlayerPresentationTest {
         composeRule.onNodeWithContentDescription(text(R.string.player_open_queues)).performClick()
         composeRule.onNodeWithContentDescription(text(R.string.player_more_actions)).performClick()
         composeRule.onNode(hasText(fixture.current.value!!.artist) and hasClickAction()).performClick()
-        composeRule.onNode(hasText(fixture.current.value!!.album) and hasClickAction()).performClick()
+        composeRule.onNodeWithText(fixture.current.value!!.album, useUnmergedTree = true).performClick()
         composeRule.onNodeWithTag(ArtworkViewerEntryTag).performClick()
         composeRule.runOnIdle {
             assertEquals(listOf("queue", "more"), fixture.calls)
@@ -437,7 +452,7 @@ class MusicPlayerPresentationTest {
             hostEndInset.value = 16.dp
         }
         composeRule.setContent { fixture.Content() }
-        val snapshot = assertBalancedExpandedGeometry(fixture)
+        val snapshot = assertExpandedGeometry(fixture)
         val host = snapshot.expanded.surface
         val play = composeRule.onNodeWithContentDescription(text(R.string.player_play))
             .fetchSemanticsNode().boundsInRoot
@@ -557,7 +572,7 @@ class MusicPlayerPresentationTest {
             )
         }
         composeRule.setContent { fixture.Content() }
-        val snapshot = assertBalancedExpandedGeometry(fixture)
+        val snapshot = assertExpandedGeometry(fixture)
         val host = snapshot.expanded.surface
         for (description in listOf(R.string.player_play, R.string.player_previous_song,
             R.string.player_next_song, R.string.player_shuffle_off, R.string.player_repeat_off,
@@ -649,7 +664,262 @@ class MusicPlayerPresentationTest {
         }
     }
 
-    private data class BalancedExpandedGeometry(
+    @Test
+    @OptIn(ExperimentalTestApi::class)
+    fun wideWaveformUsesLowerFullHostProgressAndEveryExistingSeekbarStyle() {
+        val fixture = tabletFixture().apply {
+            observeDefaultMorphGeometry = true
+            hostStartInset.value = 32.dp
+            hostTopInset.value = 24.dp
+            hostEndInset.value = 16.dp
+            playerInsets.value = DefaultPlayerInsets(16.dp, 20.dp, 12.dp, 24.dp)
+            progress.value = PlaybackProgressUiState(currentPosition = 60_000, duration = 180_000)
+        }
+        composeRule.setContent { fixture.Content() }
+        val balanced = assertExpandedGeometry(fixture)
+        val balancedProgress = placedProgressBounds()
+        composeRule.runOnIdle { fixture.landscapeLayout.value = ModernLandscapeLayout.WIDE_WAVEFORM }
+        for (style in ModernSeekbarStyle.entries) {
+            composeRule.runOnIdle {
+                fixture.appearance.value = fixture.appearance.value.copy(seekbar =
+                    fixture.appearance.value.seekbar.copy(style = style, waveformDensity = ModernWaveformDensity.SPARSE))
+            }
+            val snapshot = assertExpandedGeometry(fixture, DefaultPlayerArrangement.WideWaveform)
+            val progress = placedProgressBounds()
+            val description = "style=$style progress=$progress; ${snapshot.description}"
+            assertInside(snapshot.expanded.surface, progress)
+            val host = snapshot.expanded.surface
+            val density = snapshot.frame.density
+            val foreground = Rect(host.left + 32f * density, host.top + 32f * density,
+                host.right - 28f * density, host.bottom - 36f * density)
+            assertInside(foreground, snapshot.expanded.artwork)
+            assertInside(foreground, snapshot.expanded.text)
+            assertInside(foreground, snapshot.expanded.playPause)
+            assertInside(foreground, progress)
+            assertEquals("Lower progress fills usable foreground; $description", foreground.left, progress.left, 1f)
+            assertEquals("Lower progress fills usable foreground; $description", foreground.right, progress.right, 1f)
+            assertTrue(description, progress.top > snapshot.expanded.artwork.bottom)
+            assertTrue(description, progress.top > snapshot.expanded.playPause.bottom)
+            assertTrue(description, progress.top > snapshot.expanded.text.bottom)
+            assertTrue(description, progress.left < snapshot.expanded.artwork.right)
+            assertTrue(description, progress.right > snapshot.expanded.text.left)
+            assertTrue(description, progress.width > balancedProgress.width)
+            assertTrue(description, progress.width > snapshot.expanded.text.width)
+            assertTrue(description, snapshot.frame.generation > balanced.frame.generation)
+            for (time in listOf(formatDuration(60_000), formatDuration(180_000))) {
+                val label = composeRule.onNodeWithText(time, useUnmergedTree = true)
+                    .fetchSemanticsNode().layoutInfo.coordinates.boundsInRoot()
+                assertInside(snapshot.expanded.surface, label)
+                assertTrue("Time must follow the track: label=$label; $description", label.top >= progress.bottom)
+            }
+            val seek = composeRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.SetProgress), useUnmergedTree = true)
+            assertEquals(60_000f, seek.fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo].current, 0f)
+            seek.performSemanticsAction(SemanticsActions.SetProgress) { it(90_000f) }
+            seek.performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+            seek.performKeyInput { pressKey(Key.DirectionRight) }
+        }
+        composeRule.runOnIdle {
+            assertEquals(ModernSeekbarStyle.entries.size * 2, fixture.seeks.size)
+            fixture.seeks.chunked(2).forEach { requests ->
+                assertEquals(90_000, requests[0])
+                assertTrue("Right-arrow seeking must advance from 60 seconds: $requests", requests[1] > 60_000)
+            }
+            assertEquals(60_000, fixture.progress.value.currentPosition)
+            assertTrue(fixture.calls.isEmpty())
+        }
+    }
+
+    @Test
+    fun widePreferenceSwitchAndFallbackKeepCurrentSnapshotOwnersAndPosition() {
+        val fixture = tabletFixture().apply { observeDefaultMorphGeometry = true }
+        composeRule.setContent { fixture.Content() }
+        val initial = assertExpandedGeometry(fixture)
+        val morph = fixture.morph
+        val lyrics = fixture.lyrics
+        val endpoints = fixture.endpoints
+        val song = fixture.current.value
+        val progress = fixture.progress.value
+        val carousel = rememberedCarouselState(fixture.playerComposition)
+        composeRule.runOnIdle { fixture.landscapeLayout.value = ModernLandscapeLayout.WIDE_WAVEFORM }
+        val wide = assertExpandedGeometry(fixture, DefaultPlayerArrangement.WideWaveform)
+        assertTrue(wide.frame.generation > initial.frame.generation)
+        composeRule.runOnIdle { fixture.viewport.value = DpSize(1200.dp, 440.dp) }
+        assertExpandedGeometry(fixture) // Insufficient room below the upper row: Balanced fallback.
+        composeRule.runOnIdle { fixture.viewport.value = DpSize(412.dp, 850.dp) }
+        composeRule.runOnIdle {
+            assertEquals(DefaultPlayerArrangement.Vertical, fixture.resolvedPlayerLayout!!.arrangement)
+            assertEquals(ModernLandscapeLayout.WIDE_WAVEFORM, fixture.landscapeLayout.value)
+        }
+        val portraitGeneration = composeRule.runOnIdle { fixture.endpoints.layoutFrame!!.generation }
+        composeRule.runOnIdle { fixture.landscapeLayout.value = ModernLandscapeLayout.BALANCED }
+        composeRule.runOnIdle { assertEquals(portraitGeneration, fixture.endpoints.layoutFrame!!.generation) }
+        composeRule.runOnIdle { fixture.landscapeLayout.value = ModernLandscapeLayout.WIDE_WAVEFORM }
+        composeRule.runOnIdle { assertEquals(portraitGeneration, fixture.endpoints.layoutFrame!!.generation) }
+        composeRule.runOnIdle { fixture.viewport.value = DpSize(1200.dp, 720.dp) }
+        assertExpandedGeometry(fixture, DefaultPlayerArrangement.WideWaveform)
+        composeRule.runOnIdle {
+            assertSame(morph, fixture.morph)
+            assertSame(lyrics, fixture.lyrics)
+            assertSame(endpoints, fixture.endpoints)
+            assertSame(carousel, rememberedCarouselState(fixture.playerComposition))
+            assertSame(song, fixture.current.value)
+            assertEquals(progress, fixture.progress.value)
+            assertEquals(1f, morph.progress, 0f)
+            assertTrue(fixture.calls.isEmpty())
+            assertTrue(fixture.seeks.isEmpty())
+        }
+        // Even while lyrics owns the presentation, changing arrangement must not close it.
+        composeRule.runOnIdle { fixture.lyrics.openLyrics() }
+        composeRule.runOnIdle { fixture.landscapeLayout.value = ModernLandscapeLayout.BALANCED }
+        composeRule.runOnIdle { assertTrue(fixture.lyricsVisible.value) }
+        composeRule.runOnIdle { fixture.lyrics.snapToExpanded() }
+        assertExpandedGeometry(fixture)
+    }
+
+    @Test
+    fun wideSwitchDuringMorphKeepsDragReversalAndTheNextExpansion() {
+        val fixture = tabletFixture(PlayerPresentation.Collapsed)
+        composeRule.setContent { fixture.Content() }
+        val morph = fixture.morph
+        composeRule.runOnIdle { morph.beginDragWithRange(500f); morph.dragBy(-220f) }
+        val progress = composeRule.runOnIdle { morph.progress }
+        val generation = composeRule.runOnIdle { fixture.endpoints.layoutFrame!!.generation }
+        composeRule.runOnIdle { fixture.landscapeLayout.value = ModernLandscapeLayout.WIDE_WAVEFORM }
+        mini(fixture).assertDoesNotExist()
+        composeRule.runOnIdle {
+            assertEquals(DefaultPlayerArrangement.WideWaveform, fixture.resolvedPlayerLayout!!.arrangement)
+            assertEquals(progress, morph.progress, 0f)
+            assertTrue(morph.isDragging)
+            assertTrue(fixture.endpoints.layoutFrame!!.generation > generation)
+            morph.dragBy(160f)
+        }
+        composeRule.runOnIdle { morph.endDrag(0f) }
+        mini(fixture).performClick()
+        composeRule.runOnIdle {
+            assertSame(morph, fixture.morph)
+            assertEquals(PlayerPresentation.Expanded, morph.settledPresentation)
+            assertEquals(1f, morph.progress, 0f)
+            assertTrue(fixture.calls.isEmpty())
+            assertTrue(fixture.seeks.isEmpty())
+        }
+    }
+
+    @Test
+    fun wideLongMetadataLargeControlsAndTallTracksRetainActionsAndTrackTargets() {
+        // The long artist must exist in the library as well as the current-song presentation;
+        // production intentionally offers no artist navigation for an absent library artist.
+        val fixture = tabletFixture(transformSong = { song ->
+            if (song.id == 2L) song.copy(title = "Long title with several words ".repeat(8),
+                artist = "Artist and collaborators ".repeat(6), album = "Album edition ".repeat(6))
+            else song
+        }).apply {
+            observeDefaultMorphGeometry = true
+            landscapeLayout.value = ModernLandscapeLayout.WIDE_WAVEFORM
+            viewport.value = DpSize(1200.dp, 760.dp)
+            fontScale.value = 1.25f
+            appearance.value = tallerPlayerAppearance()
+        }
+        composeRule.setContent { fixture.Content() }
+        for (size in ModernWaveformSize.entries) {
+            composeRule.runOnIdle { fixture.appearance.value = fixture.appearance.value.copy(
+                seekbar = fixture.appearance.value.seekbar.copy(style = ModernSeekbarStyle.WAVEFORM_PEAKS,
+                    waveformSize = size, waveformDensity = ModernWaveformDensity.SPARSE)) }
+            val snapshot = assertExpandedGeometry(fixture, DefaultPlayerArrangement.WideWaveform)
+            val seek = placedProgressBounds()
+            assertInside(snapshot.expanded.surface, seek)
+            assertTrue(snapshot.description, seek.top > snapshot.expanded.artwork.bottom)
+            for (description in listOf(R.string.player_play, R.string.player_previous_song,
+                R.string.player_next_song, R.string.player_shuffle_off, R.string.player_repeat_off,
+                R.string.player_open_queues, R.string.player_more_actions)) {
+                val bounds = composeRule.onNodeWithContentDescription(text(description)).fetchSemanticsNode().boundsInRoot
+                assertInside(snapshot.expanded.surface, bounds)
+                assertTrue("Upper control overlaps progress: $bounds seek=$seek; ${snapshot.description}", bounds.bottom < seek.top)
+            }
+        }
+        // A merged host can contain this text and a no-op click. Require the intended action,
+        // independently of the actual metadata geometry checked above.
+        val artistLabel = text(R.string.library_search_go_artist)
+        val albumLabel = text(R.string.player_open_current_album)
+        composeRule.onNode(hasText(fixture.current.value!!.artist) and
+            SemanticsMatcher("Current artist navigation action") {
+                it.config.getOrNull(SemanticsActions.OnClick)?.label == artistLabel
+            }).performClick()
+        composeRule.onNode(hasText(fixture.current.value!!.album) and
+            SemanticsMatcher("Current album navigation action") {
+                it.config.getOrNull(SemanticsActions.OnClick)?.label == albumLabel
+            }).performClick()
+        composeRule.onNodeWithTag(ArtworkViewerEntryTag).performClick()
+        for (description in listOf(R.string.player_play, R.string.player_open_queues, R.string.player_more_actions,
+            R.string.player_shuffle_off, R.string.player_repeat_off, R.string.player_next_song)) {
+            composeRule.onNodeWithContentDescription(text(description)).performClick()
+        }
+        composeRule.runOnIdle {
+            assertEquals(listOf("play-pause", "queue", "more", "shuffle", "repeat", "next"), fixture.calls)
+            assertEquals("Artist navigation must dispatch exactly once", 1, fixture.openedArtists.size)
+            assertSame(fixture.current.value, fixture.openedArtists.single())
+            assertEquals("Album navigation must dispatch exactly once", 1, fixture.openedAlbums.size)
+            assertSame(fixture.current.value, fixture.openedAlbums.single())
+            assertEquals("Artwork navigation must dispatch exactly once", 1, fixture.artworks.size)
+            assertSame(fixture.current.value, fixture.artworks.single())
+            fixture.current.value = fixture.songs.last()
+            fixture.previous.value = fixture.songs[1]
+            fixture.next.value = null
+        }
+        assertExpandedGeometry(fixture, DefaultPlayerArrangement.WideWaveform)
+        composeRule.onNodeWithTag(ArtworkViewerEntryTag).performTouchInput { swipeRight(durationMillis = 350) }
+        composeRule.runOnIdle {
+            assertEquals("previous", fixture.calls.last())
+            assertEquals(7, fixture.calls.size)
+            assertTrue(fixture.seeks.isEmpty())
+        }
+    }
+
+    @Test
+    fun wideSeekDisposalCancelsDirectScrubAndTheNextGestureCommitsOnce() {
+        val fixture = tabletFixture().apply { landscapeLayout.value = ModernLandscapeLayout.WIDE_WAVEFORM }
+        val environment = DirectSeekGestureEnvironment({ DirectScrubAuthority(true, 1, 0, true) }, {})
+        composeRule.setContent {
+            CompositionLocalProvider(LocalDirectSeekGestureEnvironment provides environment) { fixture.Content() }
+        }
+        fun seek() = composeRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.SetProgress), useUnmergedTree = true)
+        seek().performTouchInput { down(center); moveTo(Offset(width * 0.8f, centerY)) }
+        composeRule.runOnIdle {
+            assertTrue(fixture.seeks.isEmpty())
+            fixture.landscapeLayout.value = ModernLandscapeLayout.BALANCED
+        }
+        seek().performTouchInput { up() }
+        composeRule.runOnIdle { assertTrue(fixture.seeks.isEmpty()) }
+        seek().performTouchInput { click(center) }
+        composeRule.runOnIdle {
+            assertEquals(1, fixture.seeks.size)
+            assertTrue(fixture.seeks.single() in 60_000..120_000)
+            assertTrue(fixture.calls.isEmpty())
+        }
+    }
+
+    private fun placedProgressBounds(): Rect {
+        val node = composeRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.SetProgress),
+            useUnmergedTree = true).fetchSemanticsNode()
+        assertTrue("Measure the actual Slider, not a merged text container",
+            node.config.getOrNull(SemanticsProperties.ProgressBarRangeInfo) != null)
+        val host = composeRule.onNodeWithTag("player-host").fetchSemanticsNode()
+        assertTrue("Slider must have its own layout", node.layoutInfo !== host.layoutInfo)
+        return composeRule.runOnIdle { node.layoutInfo.coordinates.boundsInRoot() }
+    }
+
+    private fun rememberedCarouselState(data: CompositionData?): ModernArtworkCarouselState {
+        val owners = mutableSetOf<ModernArtworkCarouselState>()
+        fun collect(data: CompositionData) {
+            data.compositionGroups.forEach { group ->
+                owners.addAll(group.data.filterIsInstance<ModernArtworkCarouselState>())
+                collect(group)
+            }
+        }
+        data?.let(::collect)
+        return owners.single()
+    }
+
+    private data class ExpandedGeometrySnapshot(
         val frame: PlayerMorphLayoutFrame,
         val arrangement: DefaultPlayerArrangement,
         val expanded: DefaultPlayerMorphGeometry
@@ -659,8 +929,9 @@ class MusicPlayerPresentationTest {
                 "expandedRoot=$expanded; gapPx=${expanded.text.left - expanded.artwork.right}"
     }
 
-    private fun assertBalancedExpandedGeometry(fixture: Fixture): BalancedExpandedGeometry {
-        var captured: BalancedExpandedGeometry? = null
+    private fun assertExpandedGeometry(fixture: Fixture,
+        expectedArrangement: DefaultPlayerArrangement = DefaultPlayerArrangement.Balanced): ExpandedGeometrySnapshot {
+        var captured: ExpandedGeometrySnapshot? = null
         var readiness = "No geometry observed"
         try {
             composeRule.waitUntil(timeoutMillis = 5_000) {
@@ -700,7 +971,7 @@ class MusicPlayerPresentationTest {
                         // The promoted geometry is host-local. Convert it exactly once so every
                         // comparison below, including normal semantics bounds, uses root pixels.
                         val origin = frame.originInRoot
-                        BalancedExpandedGeometry(frame, layout.arrangement, expanded.copy(
+                        ExpandedGeometrySnapshot(frame, layout.arrangement, expanded.copy(
                             surface = expanded.surface.translate(origin),
                             artwork = expanded.artwork.translate(origin),
                             text = expanded.text.translate(origin),
@@ -716,7 +987,7 @@ class MusicPlayerPresentationTest {
         val snapshot = requireNotNull(captured)
         val expanded = snapshot.expanded
         val host = composeRule.onNodeWithTag("player-host").fetchSemanticsNode().boundsInRoot
-        assertEquals(snapshot.description, DefaultPlayerArrangement.Balanced, snapshot.arrangement)
+        assertEquals(snapshot.description, expectedArrangement, snapshot.arrangement)
         assertEquals("Expanded surface must fill the actual host; ${snapshot.description}", host, expanded.surface)
         assertInside(host, expanded.artwork)
         assertInside(host, expanded.text)
@@ -752,8 +1023,9 @@ class MusicPlayerPresentationTest {
     private fun Any.morphField(name: String): Any? =
         javaClass.getDeclaredField(name).apply { isAccessible = true }.get(this)
 
-    private fun tabletFixture(initial: PlayerPresentation = PlayerPresentation.Expanded) =
-        Fixture(initial).apply {
+    private fun tabletFixture(initial: PlayerPresentation = PlayerPresentation.Expanded,
+        transformSong: (Song) -> Song = { it }) =
+        Fixture(initial, transformSong).apply {
             miniVisible.value = true
             adaptiveNavigation.value = true
             adaptiveDefaultLayout.value = true
@@ -809,11 +1081,11 @@ class MusicPlayerPresentationTest {
         }
     }
 
-    private class Fixture(val initial: PlayerPresentation) {
+    private class Fixture(val initial: PlayerPresentation, transformSong: (Song) -> Song = { it }) {
         val songs = (1L..3L).map { id ->
             Song(id, "Track $id", "Artist $id", "Album $id", id.toInt(), 180_000L,
                 Uri.parse("content://media/external/audio/media/$id"), "/music/$id.mp3", "/music",
-                Uri.parse("content://fixture/artwork/$id"))
+                Uri.parse("content://fixture/artwork/$id")).let(transformSong)
         }
         val current = mutableStateOf<Song?>(songs[1])
         val previous = mutableStateOf<Song?>(songs[0])
@@ -835,6 +1107,8 @@ class MusicPlayerPresentationTest {
         val viewport = mutableStateOf<DpSize?>(null)
         val fontScale = mutableStateOf(1f)
         val appearance = mutableStateOf(ModernPlayerAppearance.Default)
+        val landscapeLayout = mutableStateOf(ModernLandscapeLayout.BALANCED)
+        val playerInsets = mutableStateOf(DefaultPlayerInsets())
         // Opt-in observation of the existing bounds owner; never compose a second owner.
         var observeDefaultMorphGeometry = false
         var playerComposition: CompositionData? = null
@@ -882,7 +1156,9 @@ class MusicPlayerPresentationTest {
                 ) {
                     val playerLayout = if (adaptiveDefaultLayout.value) {
                         resolveDefaultPlayerLayout(maxWidth, maxHeight,
-                            fontScale = LocalDensity.current.fontScale, appearance = appearance.value)
+                            insets = playerInsets.value,
+                            fontScale = LocalDensity.current.fontScale, appearance = appearance.value,
+                            preferredLandscapeLayout = landscapeLayout.value)
                     } else null
                     resolvedPlayerLayout = playerLayout
                     val player = prepareMusicPlayerPresentation(

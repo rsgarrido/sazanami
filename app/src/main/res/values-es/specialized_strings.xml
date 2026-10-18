@@ -136,6 +136,8 @@
     <string name="modern_playback_controls_description">Elige el estilo, el tamaño y el color de acento activo de los controles.</string>
     <string name="modern_accent">Color de acento</string>
     <string name="modern_layout">Distribución</string>
+    <string name="modern_landscape_layout">Distribución horizontal del reproductor</string>
+    <string name="modern_landscape_layout_description">Se aplica al reproductor predeterminado cuando la ventana tiene espacio suficiente. Las ventanas compactas y verticales conservan la distribución actual. La vista previa de apariencia sigue siendo compacta.</string>
     <string name="modern_layout_description">Ajusta el espaciado, la alineación de metadatos y los detalles técnicos.</string>
     <string name="modern_density">Densidad</string>
     <string name="modern_metadata_alignment">Alineación de metadatos</string>

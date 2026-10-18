@@ -322,6 +322,7 @@ class MusicViewModel(
             modernArtworkTransitionStyle = preferences.modernArtworkTransitionStyle,
             modernPlayerAppearance = preferences.modernPlayerAppearance,
             activeModernAppearanceChoice = preferences.activeModernAppearanceChoice,
+            modernLandscapeLayout = preferences.modernLandscapeLayout,
             replayGainMode = preferences.replayGainMode,
             isLoaded = preferences.isLoaded
         )
@@ -409,6 +410,10 @@ class MusicViewModel(
         viewModelScope.launch {
             appPreferencesRepository.setModernArtworkTransitionStyle(style)
         }
+    }
+
+    fun selectModernLandscapeLayout(layout: io.github.rsgarrido.sazanami.ui.player.modern.ModernLandscapeLayout) {
+        enqueueModernAppearanceAction { appPreferencesRepository.setModernLandscapeLayout(layout) }
     }
 
     fun selectModernSeekbarStyle(style: ModernSeekbarStyle) {

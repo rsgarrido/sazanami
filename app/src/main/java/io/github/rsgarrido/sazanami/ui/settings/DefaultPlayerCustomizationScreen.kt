@@ -69,6 +69,7 @@ import io.github.rsgarrido.sazanami.ui.player.modern.ModernControlAccent
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernControlSize
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernControlStyle
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernLayoutDensity
+import io.github.rsgarrido.sazanami.ui.player.modern.ModernLandscapeLayout
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernMetadataAlignment
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerControls
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerFramedAlbumImage
@@ -96,6 +97,8 @@ import io.github.rsgarrido.sazanami.ui.player.modern.resolveModernAlbumGradient
 internal fun DefaultPlayerCustomizationScreen(
     appearance: ModernPlayerAppearance,
     activeChoice: ModernAppearanceChoice,
+    landscapeLayout: ModernLandscapeLayout = ModernLandscapeLayout.BALANCED,
+    onLandscapeLayoutSelected: (ModernLandscapeLayout) -> Unit = {},
     previewSong: Song?,
     onChoiceSelected: (ModernAppearanceChoice) -> Unit,
     onAppearanceEdited: ((ModernPlayerAppearance) -> ModernPlayerAppearance) -> Unit,
@@ -353,6 +356,19 @@ internal fun DefaultPlayerCustomizationScreen(
             description = stringResource(R.string.modern_layout_description),
             icon = AppShellIcons.ListView
         ) {
+            ChoiceGroup(
+                title = stringResource(R.string.modern_landscape_layout),
+                options = ModernLandscapeLayout.entries,
+                selected = landscapeLayout,
+                label = { it.localizedLabel() },
+                onSelected = onLandscapeLayoutSelected
+            )
+            Text(
+                text = stringResource(R.string.modern_landscape_layout_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
             ChoiceGroup(stringResource(R.string.modern_density), ModernLayoutDensity.entries, appearance.layout.density,
                 { it.localizedLabel() }) { value ->
                 onAppearanceEdited { current ->

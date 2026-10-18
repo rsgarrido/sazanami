@@ -13,6 +13,20 @@ import org.mockito.Mockito.mock
 
 class ModernArtworkReadinessTest {
     @Test
+    fun wideArtworkUsesTheExistingBoundedPreloadPolicyBeforeAnchorsRefresh() {
+        for (size in ModernArtworkSize.entries) {
+            val appearance = ModernPlayerAppearance.Default.copy(artwork = ModernArtworkAppearance(size = size))
+            val layout = resolveDefaultPlayerLayout(1280.dp, 500.dp, appearance = appearance,
+                preferredLandscapeLayout = ModernLandscapeLayout.WIDE_WAVEFORM)
+            assertEquals(DefaultPlayerArrangement.WideWaveform, layout.arrangement)
+            val policy = modernArtworkPreloadPolicy(2560, 1000, 2f, appearance, layout)
+            assertEquals((layout.artworkSize.value * 2f).toInt(), policy.targetSizePx)
+            assertTrue(policy.exactSize)
+            assertTrue(policy.targetSizePx!! <= MAX_MODERN_ARTWORK_PRELOAD_TARGET_PX)
+        }
+    }
+
+    @Test
     fun phoneSizedPreloadIsExpandedExactBoundedAndNeverOriginalSize() {
         val policy = modernArtworkPreloadPolicy(
             viewportWidthPx = 1_080,

@@ -67,6 +67,7 @@ import io.github.rsgarrido.sazanami.ui.player.modern.ModernArtworkTransitionStyl
 import io.github.rsgarrido.sazanami.ui.player.modern.descriptionRes
 import io.github.rsgarrido.sazanami.ui.player.modern.labelRes
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerAppearance
+import io.github.rsgarrido.sazanami.ui.player.modern.ModernLandscapeLayout
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernAppearanceChoice
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokenField
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
@@ -111,6 +112,8 @@ fun SettingsScreen(
     onModernArtworkTransitionStyleSelected: (ModernArtworkTransitionStyle) -> Unit,
     selectedModernPlayerAppearance: ModernPlayerAppearance,
     activeModernAppearanceChoice: ModernAppearanceChoice,
+    selectedModernLandscapeLayout: ModernLandscapeLayout = ModernLandscapeLayout.BALANCED,
+    onModernLandscapeLayoutSelected: (ModernLandscapeLayout) -> Unit = {},
     onModernAppearanceChoiceSelected: (ModernAppearanceChoice) -> Unit,
     onModernPlayerAppearanceEdited: ((ModernPlayerAppearance) -> ModernPlayerAppearance) -> Unit,
     onResetModernPlayerAppearance: () -> Unit,
@@ -153,6 +156,8 @@ fun SettingsScreen(
         DefaultPlayerCustomizationScreen(
             appearance = selectedModernPlayerAppearance,
             activeChoice = activeModernAppearanceChoice,
+            landscapeLayout = selectedModernLandscapeLayout,
+            onLandscapeLayoutSelected = onModernLandscapeLayoutSelected,
             previewSong = previewSong,
             onChoiceSelected = onModernAppearanceChoiceSelected,
             onAppearanceEdited = onModernPlayerAppearanceEdited,

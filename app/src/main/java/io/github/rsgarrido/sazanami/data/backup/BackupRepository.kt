@@ -58,6 +58,7 @@ import io.github.rsgarrido.sazanami.ui.player.modern.ModernLayoutAppearance
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernLayoutDensity
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernMetadataAlignment
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerAppearance
+import io.github.rsgarrido.sazanami.ui.player.modern.ModernLandscapeLayout
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernSeekbarAppearance
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernSeekbarColorMode
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernSeekbarStyle
@@ -455,6 +456,7 @@ class BackupRepository(
                 modernPlayerAppearance = restoredAppearance.modernPlayerAppearance,
                 myPlayerAppearance = restoredAppearance.myPlayerAppearance,
                 activeModernAppearanceChoice = restoredAppearance.activeModernAppearanceChoice,
+                modernLandscapeLayout = restoredAppearance.modernLandscapeLayout,
                 replayGainMode = runCatching { ReplayGainMode.valueOf(preferences.replayGainMode) }
                     .getOrDefault(ReplayGainMode.OFF),
                 audioOffloadPreference = AudioOffloadPreference.fromStorageValue(
@@ -522,6 +524,7 @@ internal fun BackupPreferences.withMyPlayerAppearance(state: AppPreferencesState
     val myPlayer = state.myPlayerAppearance
     return copy(
         modernActiveAppearanceChoice = state.activeModernAppearanceChoice.name,
+        modernLandscapeLayout = state.modernLandscapeLayout.storageValue,
         modernSeekbarStyle = myPlayer.seekbar.style.storageValue,
         modernWaveformSize = myPlayer.seekbar.waveformSize.storageValue,
         modernWaveformDensity = myPlayer.seekbar.waveformDensity.storageValue,
@@ -580,7 +583,8 @@ internal fun BackupPreferences.toModernAppearanceState(): AppPreferencesState {
     return AppPreferencesState(
         modernPlayerAppearance = choice.effectiveAppearance(myPlayer),
         myPlayerAppearance = myPlayer,
-        activeModernAppearanceChoice = choice
+        activeModernAppearanceChoice = choice,
+        modernLandscapeLayout = ModernLandscapeLayout.fromStorageValue(modernLandscapeLayout)
     )
 }
 

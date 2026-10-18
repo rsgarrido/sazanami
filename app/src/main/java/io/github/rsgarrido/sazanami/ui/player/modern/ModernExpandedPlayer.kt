@@ -146,7 +146,7 @@ internal fun ModernExpandedPlayer(
     ) {
         val foregroundAlbumArtSize = defaultPlayerLayout?.artworkSize
             ?: verticalDefaultArtworkSize(maxWidth, maxHeight, appearance, albumArtSize)
-        val balanced = defaultPlayerLayout?.arrangement == DefaultPlayerArrangement.Balanced
+        val arrangement = defaultPlayerLayout?.arrangement ?: DefaultPlayerArrangement.Vertical
 
         Box(
             modifier = Modifier
@@ -378,7 +378,7 @@ internal fun ModernExpandedPlayer(
                             translationY = dragProgress * 14.dp.toPx()
                         }
                     }
-                    .then(if (balanced || defaultPlayerLayout?.scrollVertical == true) {
+                    .then(if (arrangement != DefaultPlayerArrangement.Vertical || defaultPlayerLayout?.scrollVertical == true) {
                         Modifier.padding(requireNotNull(defaultPlayerLayout).safePadding)
                     } else {
                         Modifier.statusBarsPadding().navigationBarsPadding()
@@ -388,52 +388,90 @@ internal fun ModernExpandedPlayer(
                         vertical = ModernPlayerDefaults.ContentVerticalPadding
                     )
             ) {
-                if (balanced) {
-                    val layout = requireNotNull(defaultPlayerLayout)
-                    Row(
-                        modifier = Modifier.align(Alignment.Center),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(layout.regionGap)
-                    ) {
-                        artwork()
-                        Column(
-                            modifier = Modifier.width(layout.detailsWidth).fillMaxHeight(),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
+                when (arrangement) {
+                    DefaultPlayerArrangement.Balanced -> {
+                        val layout = requireNotNull(defaultPlayerLayout)
+                        Row(
+                            modifier = Modifier.align(Alignment.Center),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(layout.regionGap)
                         ) {
+                            artwork()
+                            Column(
+                                modifier = Modifier.width(layout.detailsWidth).fillMaxHeight(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                metadata()
+                                actions()
+                                lyricsContent()
+                                // Density retains its flexible-gap intent inside the right region.
+                                flexibleGap()
+                                seekbar()
+                                Spacer(Modifier.height(18.dp))
+                                Box(Modifier.width(minOf(layout.detailsWidth,
+                                    (appearance.controls.size.primarySizeDp +
+                                        4 * appearance.controls.size.modeContainerSizeDp + 96).dp))) {
+                                    controls()
+                                }
+                                Spacer(Modifier.height(20.dp))
+                            }
+                        }
+                    }
+                    DefaultPlayerArrangement.WideWaveform -> {
+                        val layout = requireNotNull(defaultPlayerLayout)
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(layout.regionGap)
+                            ) {
+                                artwork()
+                                Column(
+                                    modifier = Modifier.width(layout.detailsWidth).fillMaxHeight(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    metadata()
+                                    actions()
+                                    lyricsContent()
+                                    flexibleGap()
+                                    Box(Modifier.width(minOf(layout.detailsWidth,
+                                        (appearance.controls.size.primarySizeDp +
+                                            4 * appearance.controls.size.modeContainerSizeDp + 96).dp))) {
+                                        controls()
+                                    }
+                                    Spacer(Modifier.height(20.dp))
+                                }
+                            }
+                            Spacer(Modifier.height(layout.regionGap))
+                            Box(Modifier.fillMaxWidth().height(layout.progressRegionHeight)) {
+                                seekbar()
+                            }
+                        }
+                    }
+                    DefaultPlayerArrangement.Vertical -> {
+                        Column(
+                            modifier = Modifier.fillMaxSize().then(
+                                if (defaultPlayerLayout?.scrollVertical == true)
+                                    Modifier.verticalScroll(verticalScrollState) else Modifier
+                            ),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            artwork()
+                            Spacer(Modifier.height(24.dp))
                             metadata()
                             actions()
                             lyricsContent()
-                            // Density retains its flexible-gap intent inside the right region.
                             flexibleGap()
                             seekbar()
                             Spacer(Modifier.height(18.dp))
-                            Box(Modifier.width(minOf(layout.detailsWidth,
-                                (appearance.controls.size.primarySizeDp +
-                                    4 * appearance.controls.size.modeContainerSizeDp + 96).dp))) {
-                                controls()
-                            }
+                            controls()
                             Spacer(Modifier.height(20.dp))
                         }
-                    }
-                } else {
-                    Column(
-                        modifier = Modifier.fillMaxSize().then(
-                            if (defaultPlayerLayout?.scrollVertical == true)
-                                Modifier.verticalScroll(verticalScrollState) else Modifier
-                        ),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        artwork()
-                        Spacer(Modifier.height(24.dp))
-                        metadata()
-                        actions()
-                        lyricsContent()
-                        flexibleGap()
-                        seekbar()
-                        Spacer(Modifier.height(18.dp))
-                        controls()
-                        Spacer(Modifier.height(20.dp))
                     }
                 }
             }

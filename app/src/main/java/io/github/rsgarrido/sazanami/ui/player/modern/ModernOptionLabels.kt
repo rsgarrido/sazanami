@@ -5,6 +5,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import io.github.rsgarrido.sazanami.R
 
+internal val ModernLandscapeLayout.labelRes: Int
+    @StringRes get() = when (this) {
+        ModernLandscapeLayout.BALANCED -> R.string.modern_option_layout_density_balanced
+        ModernLandscapeLayout.WIDE_WAVEFORM -> R.string.modern_option_landscape_wide_waveform
+    }
+
+@Composable
+internal fun ModernLandscapeLayout.localizedLabel(): String = stringResource(labelRes)
+
 internal val ModernArtworkTransitionStyle.labelRes: Int
     @StringRes get() = when (this) {
         ModernArtworkTransitionStyle.SLIDE -> R.string.modern_option_artwork_transition_style_slide

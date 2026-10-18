@@ -491,6 +491,43 @@ class DefaultPlayerMorphGeometryTest {
     }
 
     @Test
+    fun wideArrangementNeedsFreshSourceAndAllDestinationsBeforePromotingDuringReversal() {
+        val origin = Offset(48f, 24f)
+        val endpoints = framedEndpoints(origin)
+        val elements = framedElements(endpoints)
+        publishMini(elements, origin)
+        publishExpanded(elements, origin)
+        endpoints.updateMini(elements.miniSurface!!)
+        val previous = resolveDefaultPlayerMorphGeometry(1f, endpoints, elements)!!
+        val oldFrame = endpoints.layoutFrame!!
+        endpoints.updateLayoutFrame(oldFrame.boundsInRoot, origin, oldFrame.rootSize,
+            oldFrame.density, oldFrame.fontScale, DefaultPlayerArrangement.WideWaveform)
+        val wideArt = Rect(24f, 40f, 184f, 200f)
+        val wideText = Rect(208f, 40f, 384f, 100f)
+        val widePlay = Rect(260f, 140f, 342f, 222f)
+        elements.updateExpandedArtwork(wideArt.translate(origin))
+        elements.updateExpandedText(wideText.translate(origin))
+        assertEquals(previous, resolveDefaultPlayerMorphGeometry(1f, endpoints, elements))
+        elements.updateExpandedPlayPause(widePlay.translate(origin))
+        assertEquals(previous, resolveDefaultPlayerMorphGeometry(1f, endpoints, elements))
+        publishMini(elements, origin)
+        endpoints.updateMini(elements.miniSurface!!)
+        val expanded = resolveDefaultPlayerMorphGeometry(1f, endpoints, elements)!!
+        assertEquals(wideArt, expanded.artwork)
+        assertEquals(wideText, expanded.text)
+        assertEquals(widePlay, expanded.playPause)
+        assertTrue(expanded.artwork.right < expanded.text.left)
+        val mini = resolveDefaultPlayerMorphGeometry(0f, endpoints, elements)!!
+        for (progress in listOf(0.8f, 0.2f, 1f, 0f, 0.6f)) {
+            val geometry = resolveDefaultPlayerMorphGeometry(progress, endpoints, elements)!!
+            assertEquals(interpolateMorphRect(mini.artwork, wideArt, progress), geometry.artwork)
+            assertEquals(interpolateMorphRect(mini.text, wideText, progress), geometry.text)
+            assertEquals(interpolateMorphRect(mini.playPause, widePlay, progress), geometry.playPause)
+        }
+        assertTrue(endpoints.layoutFrame!!.generation > oldFrame.generation)
+    }
+
+    @Test
     fun firstDragUsesTheMeasuredSurfaceTravelBeforeDestinationsExist() {
         val origin = Offset(80f, 30f)
         val endpoints = framedEndpoints(origin)

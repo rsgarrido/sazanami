@@ -14,7 +14,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 
-enum class DefaultPlayerArrangement { Vertical, Balanced }
+enum class DefaultPlayerArrangement { Vertical, Balanced, WideWaveform }
 
 /** Resolved full-player geometry, also used as the host's measurement boundary. No UI state. */
 @Immutable
@@ -26,7 +26,9 @@ data class DefaultPlayerLayout(
     val safePadding: PaddingValues,
     val minimumDetailsHeight: Dp,
     val density: ModernLayoutDensity,
-    val scrollVertical: Boolean
+    val scrollVertical: Boolean,
+    /** Reserved only by Wide Waveform, including the Slider interaction area and timestamps. */
+    val progressRegionHeight: Dp = 0.dp
 ) {
     internal val foregroundPadding: PaddingValues get() = PaddingValues.Absolute(
         safePadding.calculateLeftPadding(LayoutDirection.Ltr) + ModernPlayerDefaults.ContentHorizontalPadding,
@@ -69,7 +71,8 @@ internal fun resolveDefaultPlayerLayout(
     insets: DefaultPlayerInsets = DefaultPlayerInsets(),
     fontScale: Float = 1f,
     appearance: ModernPlayerAppearance = ModernPlayerAppearance.Default,
-    albumArtSize: Dp = ModernPlayerDefaults.MaximumArtworkSize
+    albumArtSize: Dp = ModernPlayerDefaults.MaximumArtworkSize,
+    preferredLandscapeLayout: ModernLandscapeLayout = ModernLandscapeLayout.BALANCED
 ): DefaultPlayerLayout {
     val textScale = fontScale.coerceAtLeast(1f)
     val usableWidth = (width - insets.left - insets.right - 32.dp).coerceAtLeast(0.dp)
@@ -97,20 +100,41 @@ internal fun resolveDefaultPlayerLayout(
         usableWidth >= maxOf(760.dp, 240.dp + gap + minimumDetailsWidth) &&
         usableWidth >= usableHeight * 1.15f &&
         usableHeight >= maxOf(320.dp, minimumDetailsHeight)
-    val artwork = if (balanced) {
-        minOf(albumArtSize * appearance.artwork.size.maximumScale, usableHeight,
+    // The lower progress area is reserved before sizing the upper artwork/details row. Use the
+    // rendered Compact gap (16 dp), without changing Balanced's established eligibility budget.
+    val upperFlexibleGap = if (appearance.layout.density == ModernLayoutDensity.COMPACT) 16.dp
+        else appearance.layout.density.minimumFlexibleGapDp.dp
+    val minimumUpperDetailsHeight = metadataHeight + 48.dp + upperFlexibleGap +
+        appearance.controls.size.primarySizeDp.dp + 20.dp
+    val upperHeight = (usableHeight - seekHeight - gap).coerceAtLeast(0.dp)
+    val minimumWideHeight = maxOf(240.dp, minimumUpperDetailsHeight) + seekHeight + gap
+    val wideWaveform = preferredLandscapeLayout == ModernLandscapeLayout.WIDE_WAVEFORM &&
+        albumArtSize * appearance.artwork.size.maximumScale >= 240.dp &&
+        usableWidth >= maxOf(760.dp, 240.dp + gap + minimumDetailsWidth) &&
+        usableWidth >= usableHeight * 1.15f &&
+        usableHeight >= minimumWideHeight
+    val arrangement = when {
+        wideWaveform -> DefaultPlayerArrangement.WideWaveform
+        balanced -> DefaultPlayerArrangement.Balanced
+        else -> DefaultPlayerArrangement.Vertical
+    }
+    val horizontal = arrangement != DefaultPlayerArrangement.Vertical
+    val artwork = if (horizontal) {
+        minOf(albumArtSize * appearance.artwork.size.maximumScale,
+            if (wideWaveform) upperHeight else usableHeight,
             usableWidth - gap - minimumDetailsWidth)
     } else verticalDefaultArtworkSize(width, height, appearance, albumArtSize)
     return DefaultPlayerLayout(
-        arrangement = if (balanced) DefaultPlayerArrangement.Balanced else DefaultPlayerArrangement.Vertical,
+        arrangement = arrangement,
         artworkSize = artwork,
-        detailsWidth = if (balanced) minOf(520.dp * textScale, usableWidth - artwork - gap) else 0.dp,
+        detailsWidth = if (horizontal) minOf(520.dp * textScale, usableWidth - artwork - gap) else 0.dp,
         regionGap = gap,
         safePadding = PaddingValues.Absolute(insets.left, insets.top, insets.right, insets.bottom),
-        minimumDetailsHeight = minimumDetailsHeight,
+        minimumDetailsHeight = if (wideWaveform) minimumUpperDetailsHeight else minimumDetailsHeight,
         density = appearance.layout.density,
-        scrollVertical = !balanced && usableHeight <
-            maxOf(verticalDefaultReservedHeight(appearance) + 112.dp, minimumDetailsHeight + 136.dp)
+        scrollVertical = !horizontal && usableHeight <
+            maxOf(verticalDefaultReservedHeight(appearance) + 112.dp, minimumDetailsHeight + 136.dp),
+        progressRegionHeight = if (wideWaveform) seekHeight else 0.dp
     )
 }
 
@@ -120,7 +144,8 @@ internal fun defaultPlayerLayout(
     width: Dp,
     height: Dp,
     appearance: ModernPlayerAppearance,
-    topInsetAlreadyReserved: Boolean = false
+    topInsetAlreadyReserved: Boolean = false,
+    preferredLandscapeLayout: ModernLandscapeLayout = ModernLandscapeLayout.BALANCED
 ): DefaultPlayerLayout {
     val density = LocalDensity.current
     val safeInsets = WindowInsets.systemBarsIgnoringVisibility.union(WindowInsets.displayCutout)
@@ -132,7 +157,8 @@ internal fun defaultPlayerLayout(
             safeInsets.getBottom(this).toDp()
         )
     }
-    return remember(width, height, insets, density.fontScale, appearance) {
-        resolveDefaultPlayerLayout(width, height, insets, density.fontScale, appearance)
+    return remember(width, height, insets, density.fontScale, appearance, preferredLandscapeLayout) {
+        resolveDefaultPlayerLayout(width, height, insets, density.fontScale, appearance,
+            preferredLandscapeLayout = preferredLandscapeLayout)
     }
 }

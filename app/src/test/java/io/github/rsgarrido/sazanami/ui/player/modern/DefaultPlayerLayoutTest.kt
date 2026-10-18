@@ -187,6 +187,90 @@ class DefaultPlayerLayoutTest {
         assertEquals(baseline, resolveDefaultPlayerLayout(1280.dp, 800.dp, appearance = visualVariant))
     }
 
+    @Test
+    fun balancedDefaultAndPortraitGeometryAreIndependentOfTheSavedWideChoice() {
+        assertEquals(resolveDefaultPlayerLayout(1280.dp, 800.dp), resolveDefaultPlayerLayout(
+            1280.dp, 800.dp, preferredLandscapeLayout = ModernLandscapeLayout.BALANCED))
+        assertEquals(resolveDefaultPlayerLayout(412.dp, 850.dp), wide(412.dp, 850.dp))
+        assertEquals(DefaultPlayerArrangement.Vertical, wide(900.dp, 1400.dp).arrangement)
+    }
+
+    @Test
+    fun wideReservesProgressBeforeSizingTheUpperRegions() {
+        val layout = wide(1280.dp, 720.dp)
+        assertEquals(DefaultPlayerArrangement.WideWaveform, layout.arrangement)
+        val upperHeight = 696.dp - layout.progressRegionHeight - layout.regionGap
+        assertTrue(layout.artworkSize <= upperHeight)
+        assertTrue(layout.minimumDetailsHeight <= upperHeight)
+        assertTrue(layout.artworkSize + layout.regionGap + layout.detailsWidth <= 1248.dp)
+        assertTrue(layout.artworkSize >= 240.dp)
+    }
+
+    @Test
+    fun wideHeightBoundaryFallsBackToBalancedThenVerticalAndRestores() {
+        val roomy = wide(1280.dp, 720.dp)
+        val requiredHostHeight = maxOf(240.dp, roomy.minimumDetailsHeight) +
+            roomy.progressRegionHeight + roomy.regionGap + 24.dp
+        assertEquals(DefaultPlayerArrangement.WideWaveform, wide(1280.dp, requiredHostHeight).arrangement)
+        assertEquals(DefaultPlayerArrangement.Balanced, wide(1280.dp, requiredHostHeight - 1.dp).arrangement)
+        assertEquals(DefaultPlayerArrangement.Vertical, wide(1280.dp, 380.dp).arrangement)
+        assertEquals(roomy, wide(1280.dp, 720.dp))
+        repeat(4) {
+            assertEquals(DefaultPlayerArrangement.Vertical, wide(740.dp, 600.dp).arrangement)
+            assertEquals(DefaultPlayerArrangement.WideWaveform, wide(800.dp, 600.dp).arrangement)
+        }
+    }
+
+    @Test
+    fun wideAppliesRemainingInsetsOnceAndRejectsInsufficientUpperHeight() {
+        val insets = DefaultPlayerInsets(20.dp, 24.dp, 16.dp, 48.dp)
+        val inset = wide(1300.dp, 820.dp, insets = insets)
+        val usable = wide(1264.dp, 748.dp)
+        assertEquals(DefaultPlayerArrangement.WideWaveform, inset.arrangement)
+        assertDp(usable.artworkSize, inset.artworkSize)
+        assertDp(usable.detailsWidth, inset.detailsWidth)
+        assertEquals(usable.progressRegionHeight, inset.progressRegionHeight)
+        assertEquals(DefaultPlayerArrangement.Vertical,
+            wide(1280.dp, 480.dp, insets = DefaultPlayerInsets(top = 32.dp, bottom = 64.dp)).arrangement)
+    }
+
+    @Test
+    fun wideBudgetsEveryControlWaveformAndDensityWithoutShrinkingTargets() {
+        for (controls in ModernControlSize.entries) for (waveform in ModernWaveformSize.entries)
+            for (density in ModernLayoutDensity.entries) {
+                val appearance = appearance(controlSize = controls, waveformSize = waveform,
+                    artworkSize = ModernArtworkSize.LARGE, density = density)
+                val layout = wide(1600.dp, 1000.dp, appearance = appearance, fontScale = 1.8f)
+                assertEquals(DefaultPlayerArrangement.WideWaveform, layout.arrangement)
+                assertTrue(layout.detailsWidth >= (controls.primarySizeDp + 4 * controls.modeContainerSizeDp + 48).dp)
+                assertTrue(layout.progressRegionHeight >= waveform.trackHeightDp.dp + 20.dp * 1.8f)
+                assertTrue(layout.artworkSize <= 472.dp)
+                assertTrue(layout.artworkSize + layout.regionGap + layout.detailsWidth <= 1568.dp)
+                val requiredHeight = maxOf(240.dp, layout.minimumDetailsHeight) +
+                    layout.progressRegionHeight + layout.regionGap + 24.dp
+                assertEquals(DefaultPlayerArrangement.WideWaveform,
+                    wide(1600.dp, requiredHeight, appearance = appearance, fontScale = 1.8f).arrangement)
+                assertTrue(wide(1600.dp, requiredHeight - 1.dp, appearance = appearance,
+                    fontScale = 1.8f).arrangement != DefaultPlayerArrangement.WideWaveform)
+            }
+    }
+
+    @Test
+    fun wideSupportsEverySeekbarWithoutChangingItsAppearanceOrSampling() {
+        for (style in ModernSeekbarStyle.entries) {
+            val appearance = ModernPlayerAppearance.Default.copy(
+                seekbar = ModernSeekbarAppearance(style = style, waveformSize = ModernWaveformSize.TALL))
+            val layout = wide(1280.dp, 720.dp, appearance = appearance)
+            assertEquals(DefaultPlayerArrangement.WideWaveform, layout.arrangement)
+            assertDp((if (style.usesWaveformData) 64.dp else 48.dp) + 20.dp, layout.progressRegionHeight)
+        }
+    }
+
+    private fun wide(width: Dp, height: Dp, insets: DefaultPlayerInsets = DefaultPlayerInsets(),
+        fontScale: Float = 1f, appearance: ModernPlayerAppearance = ModernPlayerAppearance.Default) =
+        resolveDefaultPlayerLayout(width, height, insets, fontScale, appearance,
+            preferredLandscapeLayout = ModernLandscapeLayout.WIDE_WAVEFORM)
+
     private fun appearance(
         artworkSize: ModernArtworkSize = ModernArtworkSize.STANDARD,
         controlSize: ModernControlSize = ModernControlSize.STANDARD,

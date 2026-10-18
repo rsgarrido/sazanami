@@ -687,6 +687,8 @@ internal fun MusicRoute(
                 musicViewModel::selectModernArtworkTransitionStyle,
             selectedModernPlayerAppearance = playerAppearanceUiState.modernPlayerAppearance,
             activeModernAppearanceChoice = playerAppearanceUiState.activeModernAppearanceChoice,
+            selectedModernLandscapeLayout = playerAppearanceUiState.modernLandscapeLayout,
+            onModernLandscapeLayoutSelected = musicViewModel::selectModernLandscapeLayout,
             onModernAppearanceChoiceSelected = musicViewModel::selectModernAppearanceChoice,
             onModernPlayerAppearanceEdited = musicViewModel::editModernPlayerAppearance,
             onResetModernPlayerAppearance = musicViewModel::resetModernPlayerAppearance,
