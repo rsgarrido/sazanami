@@ -407,6 +407,90 @@ class DefaultPlayerMorphGeometryTest {
     }
 
     @Test
+    fun sameViewportPlayerArrangementPromotesAllBalancedDestinationsTogetherInHostCoordinates() {
+        val origin = Offset(48f, 24f)
+        val surface = Rect(0f, 0f, 960f, 600f)
+        val mini = DefaultPlayerMorphGeometry(
+            surface = Rect(144f, 508f, 936f, 576f),
+            artwork = Rect(152f, 516f, 204f, 568f),
+            text = Rect(216f, 518f, 812f, 560f),
+            playPause = Rect(880f, 518f, 928f, 566f)
+        )
+        val vertical = DefaultPlayerMorphGeometry(
+            surface = surface,
+            artwork = Rect(338f, 24f, 622f, 308f),
+            text = Rect(24f, 332f, 936f, 396f),
+            playPause = Rect(439f, 444f, 521f, 526f)
+        )
+        val balanced = DefaultPlayerMorphGeometry(
+            surface = surface,
+            artwork = Rect(36f, 116f, 404f, 484f),
+            text = Rect(448f, 100f, 924f, 164f),
+            playPause = Rect(653f, 380f, 735f, 462f)
+        )
+        val endpoints = PlayerEndpointBounds()
+        val elements = framedElements(endpoints)
+        fun frame(arrangement: String) = endpoints.updateLayoutFrame(
+            surface.translate(origin), origin, IntSize(1100, 700), 1f, 1f, arrangement
+        )
+        fun publishSource() {
+            endpoints.updateMini(mini.surface.translate(origin))
+            elements.updateMiniSurface(mini.surface.translate(origin))
+            elements.updateMiniArtwork(mini.artwork.translate(origin))
+            elements.updateMiniText(mini.text.translate(origin))
+            elements.updateMiniPlayPause(mini.playPause.translate(origin))
+        }
+        fun expected(destination: DefaultPlayerMorphGeometry, progress: Float) =
+            DefaultPlayerMorphGeometry(
+                interpolateMorphRect(mini.surface, destination.surface, progress),
+                interpolateMorphRect(mini.artwork, destination.artwork, progress),
+                interpolateMorphRect(mini.text, destination.text, progress),
+                interpolateMorphRect(mini.playPause, destination.playPause, progress)
+            )
+        fun assertSnapshot(destination: DefaultPlayerMorphGeometry) {
+            // Fractions go forward, backward, and to both endpoints while a replacement is pending.
+            for (progress in listOf(0.8f, 0.2f, 1f, 0f, 0.6f)) {
+                assertEquals(expected(destination, progress),
+                    resolveDefaultPlayerMorphGeometry(progress, endpoints, elements))
+            }
+        }
+
+        frame("vertical")
+        publishSource()
+        elements.updateExpandedArtwork(vertical.artwork.translate(origin))
+        elements.updateExpandedText(vertical.text.translate(origin))
+        elements.updateExpandedPlayPause(vertical.playPause.translate(origin))
+        assertSnapshot(vertical)
+        val initialGeneration = endpoints.layoutFrame!!.generation
+
+        // Only the Default arrangement changes: the full host, origin, and mini source stay put.
+        frame("balanced")
+        assertTrue(endpoints.layoutFrame!!.generation > initialGeneration)
+        publishSource()
+        elements.updateExpandedArtwork(balanced.artwork.translate(origin))
+        elements.updateExpandedText(balanced.text.translate(origin))
+        // The old central play/pause cannot be combined with the new left/right destinations.
+        assertSnapshot(vertical)
+        elements.updateExpandedPlayPause(balanced.playPause.translate(origin))
+        assertSnapshot(balanced)
+        assertEquals(balanced, resolveDefaultPlayerMorphGeometry(1f, endpoints, elements))
+        assertTrue(balanced.artwork.right < balanced.text.left)
+        assertTrue(balanced.artwork.right < balanced.playPause.left)
+
+        val balancedGeneration = endpoints.layoutFrame!!.generation
+        frame("vertical")
+        assertTrue(endpoints.layoutFrame!!.generation > balancedGeneration)
+        publishSource()
+        elements.updateExpandedArtwork(vertical.artwork.translate(origin))
+        // Returning to an earlier arrangement still requires new reports from every destination.
+        assertSnapshot(balanced)
+        elements.updateExpandedText(vertical.text.translate(origin))
+        assertSnapshot(balanced)
+        elements.updateExpandedPlayPause(vertical.playPause.translate(origin))
+        assertSnapshot(vertical)
+    }
+
+    @Test
     fun firstDragUsesTheMeasuredSurfaceTravelBeforeDestinationsExist() {
         val origin = Offset(80f, 30f)
         val endpoints = framedEndpoints(origin)

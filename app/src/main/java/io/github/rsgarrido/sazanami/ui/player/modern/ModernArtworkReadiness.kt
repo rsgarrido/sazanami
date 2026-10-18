@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import coil.imageLoader
 import coil.request.ImageRequest
 import coil.size.Precision
@@ -26,32 +27,18 @@ internal fun modernArtworkPreloadPolicy(
     viewportWidthPx: Int,
     viewportHeightPx: Int,
     density: Float,
-    appearance: ModernPlayerAppearance
+    appearance: ModernPlayerAppearance,
+    playerLayout: DefaultPlayerLayout? = null
 ): ModernArtworkPreloadPolicy {
     if (viewportWidthPx <= 1 || viewportHeightPx <= 1 || density <= 0f) {
         return ModernArtworkPreloadPolicy(targetSizePx = null, exactSize = false)
     }
 
-    val widthDp = viewportWidthPx / density
-    val heightDp = viewportHeightPx / density
-    val seekbarHeightBudgetDp = if (appearance.seekbar.style.usesWaveformData) {
-        appearance.seekbar.waveformSize.trackHeightDp + 36f
-    } else {
-        64f
-    }
-    val reservedContentHeightDp = 210f +
-        appearance.controls.size.primarySizeDp +
-        seekbarHeightBudgetDp +
-        appearance.layout.density.minimumFlexibleGapDp +
-        if (appearance.layout.showAudioQualityBadge) 36f else 0f
-    val artworkHeightBudgetDp = (heightDp - reservedContentHeightDp).coerceAtLeast(112f)
-    val targetDp = minOf(
-        ModernPlayerDefaults.MaximumArtworkSize.value *
-            appearance.artwork.size.maximumScale,
-        (widthDp - 32f).coerceAtLeast(1f),
-        heightDp * appearance.artwork.size.maximumHeightFraction,
-        artworkHeightBudgetDp
-    )
+    val targetDp = playerLayout?.artworkSize?.value ?: verticalDefaultArtworkSize(
+        width = (viewportWidthPx / density).dp,
+        height = (viewportHeightPx / density).dp,
+        appearance = appearance
+    ).value
     val targetPx = (targetDp * density)
         .roundToInt()
         .coerceIn(1, MAX_MODERN_ARTWORK_PRELOAD_TARGET_PX)

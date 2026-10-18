@@ -6,6 +6,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -25,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
@@ -37,9 +39,13 @@ import io.github.rsgarrido.sazanami.data.Song
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.foundation.shape.GenericShape
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -74,6 +80,7 @@ internal fun DefaultPlayerMorph(
     metadataGestureModifier: Modifier = Modifier,
     artworkGestureModifier: Modifier = Modifier,
     onViewArtwork: ((Song) -> Unit)? = null,
+    persistentContentPadding: PaddingValues? = null,
     expandedContent: @Composable (DefaultPlayerMorphVisualState) -> Unit
 ) {
     val safeProgress = progress.coerceIn(0f, 1f)
@@ -150,36 +157,59 @@ internal fun DefaultPlayerMorph(
         }
 
         if (geometry != null) {
-            DefaultMorphArtwork(
-                carouselPresentation = carouselPresentation,
-                transitionStyle = artworkTransitionStyle,
-                bounds = geometry.artwork,
-                progress = safeProgress,
-                style = style,
-                appearance = appearance.artwork,
-                expandedArtworkRequestSizePx = expandedArtworkRequestSizePx,
-                gestureModifier = artworkGestureModifier,
-                onViewArtwork = onViewArtwork
-            )
-            DefaultMorphTitleArtist(
-                carouselPresentation = carouselPresentation,
-                transitionStyle = artworkTransitionStyle,
-                bounds = geometry.text,
-                progress = safeProgress,
-                style = style,
-                layoutAppearance = appearance.layout,
-                onOpenArtistClick = onOpenArtistClick,
-                gestureModifier = metadataGestureModifier
-            )
-            DefaultMorphPlayPause(
-                isPlaying = isPlaying,
-                bounds = geometry.playPause,
-                progress = safeProgress,
-                onClick = onPlayPauseClick,
-                style = style,
-                appearance = appearance.controls,
-                artworkPalette = artworkPalette
-            )
+            // Only the short-window scroll fallback clips persistent visuals with its viewport.
+            // The clip changes neither the logical host origin nor endpoint rectangle coordinates.
+            val density = LocalDensity.current
+            val direction = LocalLayoutDirection.current
+            val foregroundClip = remember(persistentContentPadding, density, direction) {
+                persistentContentPadding?.let { padding ->
+                    with(density) {
+                        val left = padding.calculateLeftPadding(direction).toPx()
+                        val top = padding.calculateTopPadding().toPx()
+                        val right = padding.calculateRightPadding(direction).toPx()
+                        val bottom = padding.calculateBottomPadding().toPx()
+                        GenericShape { size, _ ->
+                            addRect(Rect(left, top, maxOf(left, size.width - right),
+                                maxOf(top, size.height - bottom)))
+                        }
+                    }
+                }
+            }
+            Box(Modifier.fillMaxSize().graphicsLayer {
+                shape = foregroundClip ?: RectangleShape
+                clip = foregroundClip != null
+            }) {
+                DefaultMorphArtwork(
+                    carouselPresentation = carouselPresentation,
+                    transitionStyle = artworkTransitionStyle,
+                    bounds = geometry.artwork,
+                    progress = safeProgress,
+                    style = style,
+                    appearance = appearance.artwork,
+                    expandedArtworkRequestSizePx = expandedArtworkRequestSizePx,
+                    gestureModifier = artworkGestureModifier,
+                    onViewArtwork = onViewArtwork
+                )
+                DefaultMorphTitleArtist(
+                    carouselPresentation = carouselPresentation,
+                    transitionStyle = artworkTransitionStyle,
+                    bounds = geometry.text,
+                    progress = safeProgress,
+                    style = style,
+                    layoutAppearance = appearance.layout,
+                    onOpenArtistClick = onOpenArtistClick,
+                    gestureModifier = metadataGestureModifier
+                )
+                DefaultMorphPlayPause(
+                    isPlaying = isPlaying,
+                    bounds = geometry.playPause,
+                    progress = safeProgress,
+                    onClick = onPlayPauseClick,
+                    style = style,
+                    appearance = appearance.controls,
+                    artworkPalette = artworkPalette
+                )
+            }
         }
     }
 }

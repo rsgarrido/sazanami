@@ -27,6 +27,8 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -51,7 +53,8 @@ internal fun ModernPlayerMetadataCarousel(
     onOpenArtistClick: (() -> Unit)? = null,
     onTrackInfoClick: (() -> Unit)? = null,
     expandedContentAlpha: Float = 1f,
-    loadExpandedMetadata: Boolean = true
+    loadExpandedMetadata: Boolean = true,
+    unclippedDestinationBounds: Boolean = false
 ) {
     var pageWidthPx by remember { mutableFloatStateOf(1f) }
     var stableAnchorBounds by remember { mutableStateOf<Rect?>(null) }
@@ -73,7 +76,7 @@ internal fun ModernPlayerMetadataCarousel(
                 }
             }
             .onGloballyPositioned { coordinates ->
-                stableAnchorBounds = coordinates.boundsInRoot()
+                stableAnchorBounds = coordinates.defaultPlayerDestinationBounds(unclippedDestinationBounds)
                 publishStableDestination()
             },
         contentAlignment = if (layoutAppearance.metadataAlignment == ModernMetadataAlignment.CENTER) {
@@ -307,3 +310,11 @@ internal fun resolveStableMetadataDestination(
         bottom = anchorBounds.top + persistentContentSize.height
     )
 }
+
+/** Scroll viewports clip boundsInRoot; morph destinations need the whole element, even offscreen.
+ * These remain root pixels and undergo the existing single host-local conversion as a snapshot.
+ */
+internal fun LayoutCoordinates.defaultPlayerDestinationBounds(unclipped: Boolean): Rect =
+    if (unclipped) findRootCoordinates().localBoundingBoxOf(this, clipBounds = false)
+    else boundsInRoot()
+

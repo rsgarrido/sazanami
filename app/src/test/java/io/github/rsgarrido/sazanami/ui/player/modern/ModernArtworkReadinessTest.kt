@@ -1,6 +1,7 @@
 package io.github.rsgarrido.sazanami.ui.player.modern
 
 import android.net.Uri
+import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.data.Song
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -40,6 +41,56 @@ class ModernArtworkReadinessTest {
 
         assertTrue(target(ModernArtworkSize.COMPACT) < target(ModernArtworkSize.STANDARD))
         assertTrue(target(ModernArtworkSize.STANDARD) < target(ModernArtworkSize.LARGE))
+    }
+
+    @Test
+    fun balancedPreloadUsesTheDestinationArtworkSizeAndExistingPhysicalSizeCacheKey() {
+        val appearance = ModernPlayerAppearance.Default.copy(
+            artwork = ModernArtworkAppearance(size = ModernArtworkSize.LARGE)
+        )
+        val layout = resolveDefaultPlayerLayout(1280.dp, 800.dp, appearance = appearance)
+        val policy = modernArtworkPreloadPolicy(
+            viewportWidthPx = 3200,
+            viewportHeightPx = 2000,
+            density = 2.5f,
+            appearance = appearance,
+            playerLayout = layout
+        )
+        val oldVerticalBudget = modernArtworkPreloadPolicy(3200, 2000, 2.5f, appearance)
+
+        assertEquals(DefaultPlayerArrangement.Balanced, layout.arrangement)
+        assertEquals(1180, policy.targetSizePx)
+        assertTrue(policy.exactSize)
+        assertTrue(requireNotNull(policy.targetSizePx) > requireNotNull(oldVerticalBudget.targetSizePx))
+        assertEquals(
+            "modern-expanded:1180:content://artwork/current",
+            modernExpandedArtworkMemoryCacheKey("content://artwork/current", requireNotNull(policy.targetSizePx))
+        )
+    }
+
+    @Test
+    fun resizingCanResolveANewPreloadTargetBeforeDestinationAnchorsExist() {
+        val appearance = ModernPlayerAppearance.Default.copy(
+            artwork = ModernArtworkAppearance(size = ModernArtworkSize.LARGE)
+        )
+        val wide = resolveDefaultPlayerLayout(1280.dp, 800.dp, appearance = appearance)
+        val shortWithTaskbar = resolveDefaultPlayerLayout(
+            1280.dp, 520.dp,
+            insets = DefaultPlayerInsets(top = 24.dp, bottom = 48.dp),
+            appearance = appearance
+        )
+        val portrait = resolveDefaultPlayerLayout(412.dp, 850.dp, appearance = appearance)
+        // Resolve from each replacement layout, without consulting any previous measured anchor.
+        val targets = listOf(
+            modernArtworkPreloadPolicy(2560, 1600, 2f, appearance, wide),
+            modernArtworkPreloadPolicy(2560, 1040, 2f, appearance, shortWithTaskbar),
+            modernArtworkPreloadPolicy(824, 1700, 2f, appearance, portrait)
+        )
+
+        assertEquals(DefaultPlayerArrangement.Balanced, shortWithTaskbar.arrangement)
+        assertEquals(DefaultPlayerArrangement.Vertical, portrait.arrangement)
+        assertEquals(listOf(944, 848, 760), targets.map { it.targetSizePx })
+        assertTrue(targets.all { it.exactSize })
     }
 
     @Test

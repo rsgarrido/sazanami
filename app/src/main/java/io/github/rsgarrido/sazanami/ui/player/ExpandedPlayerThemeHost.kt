@@ -36,6 +36,7 @@ import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMorphBoun
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.resolveClassicWheelSharedGeometry
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.resolveClassicWheelMiniChromeGeometry
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.classicWheelMorphTravelDistance
+import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerLayout
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernExpandedPlayer
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernArtworkTransitionStyle
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerAppearance
@@ -150,7 +151,8 @@ fun ExpandedPlayerThemeHost(
     retroRackMorphBounds: RetroRackMorphBounds,
     pocketFlipMorphBounds: PocketFlipMorphBounds,
     pocketCassetteMorphBounds: PocketCassetteMorphBounds,
-    pocketDiscMorphBounds: PocketDiscMorphBounds
+    pocketDiscMorphBounds: PocketDiscMorphBounds,
+    defaultPlayerLayout: DefaultPlayerLayout? = null
 ) {
     val shouldLoadWaveform = shouldLoadExpandedPlayerWaveform(
         selectedPlayerTheme = selectedPlayerTheme,
@@ -246,23 +248,30 @@ fun ExpandedPlayerThemeHost(
                         hostWidthPx,
                         hostHeightPx,
                         hostDensity,
-                        modernPlayerAppearance
+                        modernPlayerAppearance,
+                        defaultPlayerLayout
                     ) {
                         modernArtworkPreloadPolicy(
                             viewportWidthPx = hostWidthPx.roundToInt(),
                             viewportHeightPx = hostHeightPx.roundToInt(),
                             density = hostDensity,
-                            appearance = modernPlayerAppearance
+                            appearance = modernPlayerAppearance,
+                            playerLayout = defaultPlayerLayout
                         )
                     }
                     val artworkPalette = rememberModernArtworkPalette(
                         song = currentSong,
                         fallbackAccent = modernStyle.accentColor
                     )
-                    val expandedArtworkRequestSizePx =
+                    // Resolved geometry is available before anchors refresh. Never preload at a
+                    // retained destination size from the previous arrangement during a resize.
+                    val expandedArtworkRequestSizePx = if (defaultPlayerLayout != null) {
+                        artworkPreloadPolicy.targetSizePx
+                    } else {
                         defaultMorphBounds.expandedArtwork?.let { bounds ->
                             maxOf(bounds.width, bounds.height).roundToInt().coerceAtLeast(1)
                         } ?: artworkPreloadPolicy.targetSizePx
+                    }
                     ModernExpandedArtworkPreloader(
                         currentSong = currentSong,
                         previousSong = previousPreviewSong,
@@ -295,6 +304,7 @@ fun ExpandedPlayerThemeHost(
                         appearance = modernPlayerAppearance,
                         artworkPalette = artworkPalette,
                         expandedArtworkRequestSizePx = expandedArtworkRequestSizePx,
+                        persistentContentPadding = defaultPlayerLayout?.takeIf { it.scrollVertical }?.foregroundPadding,
                         onViewArtwork = modernArtworkClickCallback(
                             onViewArtwork, carouselPresentation.songs.current, currentSong,
                             playerMorphState, lyricsTransitionState, carouselPresentation.state,
@@ -329,6 +339,7 @@ fun ExpandedPlayerThemeHost(
                             nextPreviewSong = nextPreviewSong,
                             artworkTransitionStyle = modernArtworkTransitionStyle,
                             appearance = modernPlayerAppearance,
+                            defaultPlayerLayout = defaultPlayerLayout,
                             waveformData = waveformData,
                             artworkPalette = artworkPalette,
                             isPlaying = isPlaying,

@@ -94,6 +94,7 @@ import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerAppearance
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernAppearanceChoice
 import io.github.rsgarrido.sazanami.ui.theme.SazanamiAccent
 import io.github.rsgarrido.sazanami.ui.player.rememberPlayerLyricsTransitionState
+import io.github.rsgarrido.sazanami.ui.player.modern.defaultPlayerLayout
 import io.github.rsgarrido.sazanami.ui.player.PlayerMorphHost
 import io.github.rsgarrido.sazanami.ui.state.PlaybackProgressUiState
 import io.github.rsgarrido.sazanami.ui.state.LibraryAppearanceUiState
@@ -1301,6 +1302,10 @@ internal fun MusicScreen(
                 val shellLayout = musicShellLayout(
                     maxWidth, maxHeight, topInsetAlreadyReserved = directStatusVisible
                 )
+                val defaultLayout = defaultPlayerLayout(
+                    maxWidth, maxHeight, selectedModernPlayerAppearance,
+                    topInsetAlreadyReserved = directStatusVisible
+                )
                 val targetBottomContentPadding = shellLayout.bottomContentPadding(
                     compactNavigationBarInset = navigationBarInset,
                     navigationVisible = shouldShowBottomNavigation,
@@ -1376,11 +1381,13 @@ internal fun MusicScreen(
                     onTrackInfoClick = onTrackInfoClick,
                     onViewArtwork = onViewArtwork,
                     shellLayout = shellLayout,
+                    defaultPlayerLayout = defaultLayout,
                 )
                 PlayerMorphHost(
                     morphState = playerMorphState,
                     modifier = Modifier.fillMaxSize(),
-                    layoutBoundary = shellLayout
+                    layoutBoundary = shellLayout to
+                        defaultLayout.takeIf { selectedPlayerTheme == PlayerTheme.DEFAULT }
                 ) { playerEndpointBounds ->
                     playerPresentation(playerEndpointBounds)
                 }

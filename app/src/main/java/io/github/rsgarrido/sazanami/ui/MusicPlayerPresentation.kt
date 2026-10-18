@@ -41,6 +41,7 @@ import io.github.rsgarrido.sazanami.ui.player.classicwheel.resolveClassicWheelMo
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.resolveClassicWheelSharedGeometry
 import io.github.rsgarrido.sazanami.ui.player.mini.DefaultMiniPlayerMorphCallbacks
 import io.github.rsgarrido.sazanami.ui.player.modern.DefaultMorphMetadataOwner
+import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerLayout
 import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernArtworkTransitionStyle
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerAppearance
@@ -136,6 +137,7 @@ internal fun prepareMusicPlayerPresentation(
     onTrackInfoClick: (Song) -> Unit,
     onViewArtwork: (Song) -> Unit,
     shellLayout: MusicShellLayout = MusicShellLayout(),
+    defaultPlayerLayout: DefaultPlayerLayout? = null,
 ): @Composable BoxScope.(PlayerEndpointBounds) -> Unit {
     return { playerEndpointBounds ->
         val defaultMorphBounds = rememberMusicPlayerDefaultMorphBounds(playerEndpointBounds)
@@ -458,6 +460,7 @@ internal fun prepareMusicPlayerPresentation(
                 selectedModernPlayerAppearance = selectedModernPlayerAppearance,
                 playerEndpointBounds = playerEndpointBounds,
                 defaultMorphBounds = defaultMorphBounds,
+                defaultPlayerLayout = defaultPlayerLayout,
                 classicMorphBounds = classicMorphBounds,
                 classicWheelMenuState = classicWheelMenuState,
                 retroRackMorphBounds = retroRackMorphBounds,
