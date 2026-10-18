@@ -58,6 +58,7 @@ import io.github.rsgarrido.sazanami.player.audio.AudioOffloadPreference
 import io.github.rsgarrido.sazanami.player.replaygain.ReplayGainMode
 import io.github.rsgarrido.sazanami.ui.AppShellIcons
 import io.github.rsgarrido.sazanami.ui.AppShellTypography
+import io.github.rsgarrido.sazanami.ui.readableContentWidth
 import io.github.rsgarrido.sazanami.ui.LocalFolderArtworkUi
 import io.github.rsgarrido.sazanami.mediaaccess.folderArtworkLocationLabel
 import io.github.rsgarrido.sazanami.ui.home.LocalHomePinUi
@@ -186,6 +187,7 @@ fun SettingsScreen(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .readableContentWidth()
             .verticalScroll(scrollState)
     ) {
         Row(

@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.ui.AppShellIcons
+import io.github.rsgarrido.sazanami.ui.readableContentWidth
 
 @Composable
 fun TipsHelpScreen(onBackClick: () -> Unit, modifier: Modifier = Modifier) {
@@ -26,6 +27,7 @@ fun TipsHelpScreen(onBackClick: () -> Unit, modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .readableContentWidth()
             .verticalScroll(rememberScrollState())
     ) {
         SettingsSubpageHeader(stringResource(R.string.tips_title), onBackClick)

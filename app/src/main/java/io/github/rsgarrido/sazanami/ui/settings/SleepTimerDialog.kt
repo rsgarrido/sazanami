@@ -3,6 +3,8 @@ package io.github.rsgarrido.sazanami.ui.settings
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
@@ -21,15 +23,19 @@ fun SleepTimerDialog(
     sleepTimerDisplayText: String,
     onStartTimerClick: (Int) -> Unit,
     onCancelTimerClick: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        modifier = modifier,
         title = {
             Text(text = stringResource(R.string.sleep_timer_title))
         },
         text = {
-            Column {
+            // AlertDialog constrains this slot; keep the choices reachable in short windows while
+            // its existing dismiss button stays outside the scrolling content.
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(text = sleepTimerDisplayText)
 
                 SLEEP_TIMER_OPTIONS_MINUTES.forEach { minutes ->
