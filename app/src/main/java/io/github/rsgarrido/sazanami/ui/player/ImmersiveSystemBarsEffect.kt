@@ -8,12 +8,14 @@ import android.view.ViewTreeObserver
 import android.view.Window
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.core.view.ViewCompat
 
 internal data class SystemBarPresentation(
     val statusBarsVisible: Boolean,
@@ -23,26 +25,41 @@ internal data class SystemBarPresentation(
     val lightNavigationBars: Boolean
 )
 
-/** Read the owning Activity before a modal window takes focus; never change that Activity. */
+/** Capture the owning Activity's presentation once per opening; never change that Activity. */
 @Composable
 internal fun rememberPlayerSystemBarPresentation(opening: Any): SystemBarPresentation? {
     val view = LocalView.current
-    return remember(opening, view) {
-        view.context.findActivity()?.window?.let(::readSystemBarPresentation)
+    val activity = view.context.findActivity() ?: return null
+    val window = activity.window
+    fun capture(): SystemBarPresentation? {
+        if (activity.window !== window || !view.isAttachedToWindow ||
+            view.rootView !== window.decorView || view.windowToken == null ||
+            view.windowToken != window.decorView.windowToken
+        ) return null
+        return readSystemBarPresentation(window)
     }
+    val presentation = remember(opening, view, window) { mutableStateOf(capture()) }
+    // Normally captured above, before Dialog creation. If the host is not ready yet,
+    // wait for real insets instead of inventing visibility or remembering null forever.
+    LaunchedEffect(presentation) {
+        while (presentation.value == null) {
+            withFrameNanos { }
+            presentation.value = capture()
+        }
+    }
+    return presentation.value
 }
 
-internal fun readSystemBarPresentation(window: Window): SystemBarPresentation {
+internal fun readSystemBarPresentation(window: Window): SystemBarPresentation? {
     val view = window.decorView
-    val insets = ViewCompat.getRootWindowInsets(view)
+    if (!view.isAttachedToWindow || view.windowToken == null || view.rootView !== view) return null
+    val rootInsets = view.rootWindowInsets ?: return null
+    // API 29 needs this View's window visibility as well as the raw inset dimensions.
+    val insets = WindowInsetsCompat.toWindowInsetsCompat(rootInsets, view)
     val controller = WindowCompat.getInsetsController(window, view)
-    @Suppress("DEPRECATION")
-    val legacyVisibility = view.systemUiVisibility
     return SystemBarPresentation(
-        statusBarsVisible = insets?.isVisible(WindowInsetsCompat.Type.statusBars())
-            ?: (legacyVisibility and View.SYSTEM_UI_FLAG_FULLSCREEN == 0),
-        navigationBarsVisible = insets?.isVisible(WindowInsetsCompat.Type.navigationBars())
-            ?: (legacyVisibility and View.SYSTEM_UI_FLAG_HIDE_NAVIGATION == 0),
+        statusBarsVisible = insets.isVisible(WindowInsetsCompat.Type.statusBars()),
+        navigationBarsVisible = insets.isVisible(WindowInsetsCompat.Type.navigationBars()),
         behavior = controller.systemBarsBehavior,
         lightStatusBars = controller.isAppearanceLightStatusBars,
         lightNavigationBars = controller.isAppearanceLightNavigationBars
@@ -103,16 +120,49 @@ fun ImmersiveSystemBarsEffect(
                 view
             )
 
-            if (isImmersive) {
-                controller.systemBarsBehavior =
-                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            fun applyPolicy() {
+                if (isImmersive) {
+                    controller.systemBarsBehavior =
+                        WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 
-                controller.hide(WindowInsetsCompat.Type.systemBars())
-            } else {
-                controller.show(WindowInsetsCompat.Type.systemBars())
+                    controller.hide(WindowInsetsCompat.Type.systemBars())
+                } else {
+                    controller.show(WindowInsetsCompat.Type.systemBars())
+                }
             }
 
+            val decor = window.decorView
+            val focusListener = ViewTreeObserver.OnWindowFocusChangeListener { focused ->
+                if (focused && view.context.findActivity()?.window === window && decor.isAttachedToWindow) applyPolicy()
+            }
+            var focusObserver: ViewTreeObserver? = null
+            fun removeFocusListener() {
+                val observer = focusObserver ?: return
+                if (observer.isAlive) observer.removeOnWindowFocusChangeListener(focusListener)
+                else decor.viewTreeObserver.removeOnWindowFocusChangeListener(focusListener)
+                focusObserver = null
+            }
+            fun registerFocusListener() {
+                removeFocusListener()
+                if (decor.isAttachedToWindow) {
+                    decor.viewTreeObserver.also {
+                        it.addOnWindowFocusChangeListener(focusListener)
+                        focusObserver = it
+                    }
+                }
+            }
+            val attachmentListener = object : View.OnAttachStateChangeListener {
+                override fun onViewAttachedToWindow(v: View) = registerFocusListener()
+                override fun onViewDetachedFromWindow(v: View) = removeFocusListener()
+            }
+            // Follow the Activity decor's observer across attachment, never the Dialog's root.
+            decor.addOnAttachStateChangeListener(attachmentListener)
+            registerFocusListener()
+            applyPolicy()
+
             onDispose {
+                decor.removeOnAttachStateChangeListener(attachmentListener)
+                removeFocusListener()
                 controller.show(WindowInsetsCompat.Type.systemBars())
             }
         }

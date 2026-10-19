@@ -10,6 +10,7 @@ import io.github.rsgarrido.sazanami.ui.library.viewCategory
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernArtworkTransitionStyle
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernAppearanceChoice
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerAppearance
+import io.github.rsgarrido.sazanami.ui.player.modern.ModernLandscapeLayout
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernSeekbarStyle
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 import io.github.rsgarrido.sazanami.ui.player.theme.defaultTokens
@@ -21,6 +22,7 @@ data class PlayerAppearanceUiState(
         ModernArtworkTransitionStyle.SLIDE,
     val modernPlayerAppearance: ModernPlayerAppearance = ModernPlayerAppearance.Default,
     val activeModernAppearanceChoice: ModernAppearanceChoice = ModernAppearanceChoice.MY_PLAYER,
+    val modernLandscapeLayout: ModernLandscapeLayout = ModernLandscapeLayout.BALANCED,
     val replayGainMode: ReplayGainMode = ReplayGainMode.OFF,
     val isLoaded: Boolean = false
 ) {

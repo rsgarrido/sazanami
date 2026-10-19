@@ -3,6 +3,17 @@ package io.github.rsgarrido.sazanami.ui.player.modern
 import androidx.annotation.StringRes
 import io.github.rsgarrido.sazanami.R
 
+/** Independent of appearance recipes; responsive fallback never changes this preference. */
+enum class ModernLandscapeLayout(val storageValue: String) {
+    BALANCED("balanced"),
+    WIDE_WAVEFORM("wide_waveform");
+
+    companion object {
+        fun fromStorageValue(value: String?): ModernLandscapeLayout =
+            entries.firstOrNull { it.storageValue == value } ?: BALANCED
+    }
+}
+
 enum class ModernArtworkTransitionStyle(
     val storageValue: String,
     val displayName: String,

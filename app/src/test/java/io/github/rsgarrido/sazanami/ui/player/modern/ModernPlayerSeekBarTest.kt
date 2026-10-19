@@ -7,6 +7,33 @@ import org.junit.Test
 
 class ModernPlayerSeekBarTest {
     @Test
+    fun widePeaksRemainWithinEverySelectedTrackHeightAndDensity() {
+        for (width in listOf(360f, 1000f, 1800f)) for (size in ModernWaveformSize.entries)
+            for (density in ModernWaveformDensity.entries) for (amplitude in listOf(0f, 0.12f, 0.5f, 1f)) {
+                val height = size.trackHeightDp.toFloat()
+                val barWidth = ((width - density.gapDp * (density.barCount - 1)) / density.barCount).coerceAtLeast(1f)
+                val half = boundedWaveformPeakHalfHeight(barWidth, height / 2f - 1f, amplitude)
+                assertTrue("Top exceeds track: width=$width size=$size density=$density half=$half",
+                    height / 2f - 1f - half >= 0f)
+                assertTrue("Bottom exceeds track: width=$width size=$size density=$density half=$half",
+                    height / 2f + 1f + half <= height)
+            }
+    }
+
+    @Test
+    fun wideSparsePeaksCapOnlyThePreviouslyOutOfBoundsHeight() {
+        val barWidth = (1000f - 3f * 31) / 32
+        assertTrue(barWidth > 15f) // Old minimum half-height exceeded a Standard track's 15 dp budget.
+        assertEquals(15f, boundedWaveformPeakHalfHeight(barWidth, 15f, 0.4f), 0f)
+        for (amplitude in listOf(0.2f, 0.7f, 1f)) {
+            val ordinaryWidth = (360f - 2f * 47) / 48
+            val oldHeight = maxOf(ordinaryWidth, 15f * amplitude)
+            assertEquals(oldHeight, boundedWaveformPeakHalfHeight(ordinaryWidth, 15f, amplitude), 0f)
+        }
+        assertEquals(0f, boundedWaveformPeakHalfHeight(20f, 0f, 1f), 0f)
+    }
+
+    @Test
     fun waveformPreviewBars_sameSeedProducesStableBars() {
         val first = generateWaveformPreviewBars("42|music/track.flac|Example")
         val second = generateWaveformPreviewBars("42|music/track.flac|Example")

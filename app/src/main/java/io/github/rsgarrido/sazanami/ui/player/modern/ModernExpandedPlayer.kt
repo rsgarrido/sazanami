@@ -1,6 +1,8 @@
 package io.github.rsgarrido.sazanami.ui.player.modern
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -8,8 +10,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
@@ -33,7 +38,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.res.stringResource
 import io.github.rsgarrido.sazanami.R
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -83,6 +87,7 @@ internal fun ModernExpandedPlayer(
     modifier: Modifier = Modifier,
     style: ModernPlayerStyle = ModernPlayerDefaults.style(),
     albumArtSize: Dp = ModernPlayerDefaults.MaximumArtworkSize,
+    defaultPlayerLayout: DefaultPlayerLayout? = null,
     defaultMorphBounds: DefaultPlayerMorphBounds? = null,
     defaultMorphVisualState: DefaultPlayerMorphVisualState? = null,
     defaultMorphDragRangePx: Float? = null,
@@ -118,6 +123,7 @@ internal fun ModernExpandedPlayer(
     val carouselState = activeCarouselPresentation.state
     val displayedCarouselSongs = activeCarouselPresentation.songs
 
+    val verticalScrollState = rememberScrollState()
     var containerHeightPx by remember { mutableFloatStateOf(1f) }
     val dragProgress = 1f - playerMorphState.progress
     val morphOwnsPersistentContent = defaultMorphVisualState?.isReady == true
@@ -138,23 +144,9 @@ internal fun ModernExpandedPlayer(
                 containerHeightPx = size.height.toFloat().coerceAtLeast(1f)
             }
     ) {
-        val seekbarHeightBudget = if (appearance.seekbar.style.usesWaveformData) {
-            (appearance.seekbar.waveformSize.trackHeightDp + 36).dp
-        } else {
-            64.dp
-        }
-        val reservedContentHeight = 210.dp +
-                appearance.controls.size.primarySizeDp.dp +
-                seekbarHeightBudget +
-                appearance.layout.density.minimumFlexibleGapDp.dp +
-                (if (appearance.layout.showAudioQualityBadge) 36.dp else 0.dp)
-        val artworkHeightBudget = (maxHeight - reservedContentHeight).coerceAtLeast(112.dp)
-        val foregroundAlbumArtSize = minOf(
-            albumArtSize * appearance.artwork.size.maximumScale,
-            maxWidth - 32.dp,
-            maxHeight * appearance.artwork.size.maximumHeightFraction,
-            artworkHeightBudget
-        )
+        val foregroundAlbumArtSize = defaultPlayerLayout?.artworkSize
+            ?: verticalDefaultArtworkSize(maxWidth, maxHeight, appearance, albumArtSize)
+        val arrangement = defaultPlayerLayout?.arrangement ?: DefaultPlayerArrangement.Vertical
 
         Box(
             modifier = Modifier
@@ -203,23 +195,8 @@ internal fun ModernExpandedPlayer(
                 }
             }
 
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        if (defaultMorphVisualState == null) {
-                            alpha = 1f - dragProgress * 0.18f
-                            translationY = dragProgress * 14.dp.toPx()
-                        }
-                    }
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-                    .padding(
-                        horizontal = ModernPlayerDefaults.ContentHorizontalPadding,
-                        vertical = ModernPlayerDefaults.ContentVerticalPadding
-                    ),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+            // Layout slots share the existing callbacks, carousel and visual-ownership policies.
+            val artwork: @Composable () -> Unit = {
                 ModernPlayerArtwork(
                     carouselSongs = displayedCarouselSongs,
                     carouselState = carouselState,
@@ -230,7 +207,7 @@ internal fun ModernExpandedPlayer(
                     modifier = Modifier
                         .onGloballyPositioned { coordinates ->
                             defaultMorphBounds?.updateExpandedArtwork(
-                                coordinates.boundsInRoot()
+                                coordinates.defaultPlayerDestinationBounds(defaultPlayerLayout?.scrollVertical == true)
                             )
                         }
                         .hiddenFromDefaultMorph(morphOwnsPersistentContent),
@@ -242,9 +219,8 @@ internal fun ModernExpandedPlayer(
                         hasVisibleOwner = defaultMorphVisualState == null
                     )
                 )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
+            }
+            val metadata: @Composable () -> Unit = {
                 ModernPlayerMetadataCarousel(
                     carouselSongs = displayedCarouselSongs,
                     carouselState = carouselState,
@@ -252,6 +228,7 @@ internal fun ModernExpandedPlayer(
                     transitionStyle = artworkTransitionStyle,
                     style = style,
                     layoutAppearance = appearance.layout,
+                    unclippedDestinationBounds = defaultPlayerLayout?.scrollVertical == true,
                     modifier = Modifier.fillMaxWidth(),
                     onPersistentContentBoundsChanged = { bounds ->
                         defaultMorphBounds?.updateExpandedText(bounds)
@@ -281,7 +258,8 @@ internal fun ModernExpandedPlayer(
                     loadExpandedMetadata =
                         defaultMorphVisualState?.expensiveContentActive ?: true
                 )
-
+            }
+            val actions: @Composable () -> Unit = {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -314,9 +292,8 @@ internal fun ModernExpandedPlayer(
                         tint = style.contentColor
                     )
                 }
-
-                lyricsContent()
-
+            }
+            val flexibleGap: @Composable ColumnScope.() -> Unit = {
                 when (appearance.layout.density) {
                     ModernLayoutDensity.COMPACT -> Spacer(modifier = Modifier.height(16.dp))
                     ModernLayoutDensity.BALANCED -> Spacer(
@@ -330,7 +307,8 @@ internal fun ModernExpandedPlayer(
                             .heightIn(min = 24.dp)
                     )
                 }
-
+            }
+            val seekbar: @Composable () -> Unit = {
                 ModernPlayerSeekBar(
                     currentPosition = currentPosition,
                     duration = duration,
@@ -357,9 +335,8 @@ internal fun ModernExpandedPlayer(
                                     PlayerPresentation.Expanded
                         )
                 )
-
-                Spacer(modifier = Modifier.height(18.dp))
-
+            }
+            val controls: @Composable () -> Unit = {
                 ModernPlayerControls(
                     isPlaying = isPlaying,
                     isShuffleEnabled = isShuffleEnabled,
@@ -380,7 +357,7 @@ internal fun ModernExpandedPlayer(
                     primaryControlModifier = Modifier
                         .onGloballyPositioned { coordinates ->
                             defaultMorphBounds?.updateExpandedPlayPause(
-                                coordinates.boundsInRoot()
+                                coordinates.defaultPlayerDestinationBounds(defaultPlayerLayout?.scrollVertical == true)
                             )
                         }
                         .hiddenFromDefaultMorph(morphOwnsPersistentContent),
@@ -390,8 +367,113 @@ internal fun ModernExpandedPlayer(
                             playerMorphState.settledPresentation ==
                             PlayerPresentation.Expanded
                 )
+            }
 
-                Spacer(modifier = Modifier.height(20.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        if (defaultMorphVisualState == null) {
+                            alpha = 1f - dragProgress * 0.18f
+                            translationY = dragProgress * 14.dp.toPx()
+                        }
+                    }
+                    .then(if (arrangement != DefaultPlayerArrangement.Vertical || defaultPlayerLayout?.scrollVertical == true) {
+                        Modifier.padding(requireNotNull(defaultPlayerLayout).safePadding)
+                    } else {
+                        Modifier.statusBarsPadding().navigationBarsPadding()
+                    })
+                    .padding(
+                        horizontal = ModernPlayerDefaults.ContentHorizontalPadding,
+                        vertical = ModernPlayerDefaults.ContentVerticalPadding
+                    )
+            ) {
+                when (arrangement) {
+                    DefaultPlayerArrangement.Balanced -> {
+                        val layout = requireNotNull(defaultPlayerLayout)
+                        Row(
+                            modifier = Modifier.align(Alignment.Center),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(layout.regionGap)
+                        ) {
+                            artwork()
+                            Column(
+                                modifier = Modifier.width(layout.detailsWidth).fillMaxHeight(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                metadata()
+                                actions()
+                                lyricsContent()
+                                // Density retains its flexible-gap intent inside the right region.
+                                flexibleGap()
+                                seekbar()
+                                Spacer(Modifier.height(18.dp))
+                                Box(Modifier.width(minOf(layout.detailsWidth,
+                                    (appearance.controls.size.primarySizeDp +
+                                        4 * appearance.controls.size.modeContainerSizeDp + 96).dp))) {
+                                    controls()
+                                }
+                                Spacer(Modifier.height(20.dp))
+                            }
+                        }
+                    }
+                    DefaultPlayerArrangement.WideWaveform -> {
+                        val layout = requireNotNull(defaultPlayerLayout)
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(layout.regionGap)
+                            ) {
+                                artwork()
+                                Column(
+                                    modifier = Modifier.width(layout.detailsWidth).fillMaxHeight(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    metadata()
+                                    actions()
+                                    lyricsContent()
+                                    flexibleGap()
+                                    Box(Modifier.width(minOf(layout.detailsWidth,
+                                        (appearance.controls.size.primarySizeDp +
+                                            4 * appearance.controls.size.modeContainerSizeDp + 96).dp))) {
+                                        controls()
+                                    }
+                                    Spacer(Modifier.height(20.dp))
+                                }
+                            }
+                            Spacer(Modifier.height(layout.regionGap))
+                            Box(Modifier.fillMaxWidth().height(layout.progressRegionHeight)) {
+                                seekbar()
+                            }
+                        }
+                    }
+                    DefaultPlayerArrangement.Vertical -> {
+                        Column(
+                            modifier = Modifier.fillMaxSize().then(
+                                if (defaultPlayerLayout?.scrollVertical == true)
+                                    Modifier.verticalScroll(verticalScrollState) else Modifier
+                            ),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            artwork()
+                            Spacer(Modifier.height(24.dp))
+                            metadata()
+                            actions()
+                            lyricsContent()
+                            flexibleGap()
+                            seekbar()
+                            Spacer(Modifier.height(18.dp))
+                            controls()
+                            Spacer(Modifier.height(20.dp))
+                        }
+                    }
+                }
             }
         }
     }

@@ -1,14 +1,21 @@
 package io.github.rsgarrido.sazanami.ui.player
 
 import android.net.Uri
+import android.graphics.Rect as AndroidRect
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.findRootCoordinates
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
@@ -37,9 +44,12 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import kotlin.math.max
+import kotlin.math.min
 
 class NowPlayingTrackInfoSheetTest {
     @get:Rule val composeRule = createAndroidComposeRule<ComponentActivity>()
@@ -98,39 +108,103 @@ class NowPlayingTrackInfoSheetTest {
         val visible = mutableStateOf(true)
         val target = song(1).copy(artist = "", album = "", albumArtist = "", trackNumber = 0,
             duration = 0, filePath = "", fileSizeBytes = 0, year = null, genres = emptyList())
+        val currentSong = mutableStateOf(target)
+        lateinit var player: PlayerMorphState
         var playerClicks = 0
+        var playerBacks = 0
         var dismissed = 0
         composeRule.setContent {
             MaterialTheme {
-                Box(Modifier.fillMaxSize().clickable { playerClicks++ })
+                player = rememberPlayerMorphState(PlayerPresentation.Expanded)
+                BackHandler { playerBacks++; player.collapse() }
+                Box(Modifier.fillMaxSize().testTag("track-information-player").clickable {
+                    playerClicks++
+                    currentSong.value = song(2)
+                    player.collapse()
+                }) { Text(currentSong.value.title) }
                 if (visible.value) NowPlayingTrackInfoSheet(NowPlayingTrackInfoRequest(target),
                     onDismiss = { dismissed++; visible.value = false },
                     loadAudio = { AudioQualityInfo(null, null, null, null) })
             }
         }
+        fun assertPlayerIntact(expectedDismissals: Int) {
+            composeRule.onNodeWithTag(TrackInfoSheetTag).assertDoesNotExist()
+            composeRule.onNodeWithTag("track-information-player").assertIsDisplayed()
+            composeRule.onNodeWithText(target.title).assertIsDisplayed()
+            composeRule.runOnIdle {
+                assertEquals(expectedDismissals, dismissed)
+                assertEquals(0, playerClicks)
+                assertEquals(0, playerBacks)
+                assertSame(target, currentSong.value)
+                assertEquals(PlayerPresentation.Expanded, player.targetPresentation)
+                assertEquals(PlayerPresentation.Expanded, player.settledPresentation)
+                assertEquals(1f, player.progress, 0f)
+            }
+        }
         val closeDescription = composeRule.activity.getString(R.string.common_close)
+        composeRule.onNodeWithTag(TrackInfoSheetTag).assertIsDisplayed()
         composeRule.onAllNodesWithContentDescription(closeDescription).assertCountEquals(1)
         composeRule.onNodeWithText("Done").assertDoesNotExist()
         Espresso.pressBack()
-        composeRule.onNodeWithTag(TrackInfoSheetTag).assertDoesNotExist()
-        composeRule.runOnIdle { assertEquals(1, dismissed); assertEquals(0, playerClicks); visible.value = true }
-        composeRule.onNodeWithContentDescription(closeDescription).performClick()
-        composeRule.onNodeWithTag(TrackInfoSheetTag).assertDoesNotExist()
-        composeRule.runOnIdle { assertEquals(2, dismissed); assertEquals(0, playerClicks) }
+        assertPlayerIntact(1)
         composeRule.runOnIdle { visible.value = true }
-        val sheetTop = composeRule.onNodeWithTag(TrackInfoSheetTag).fetchSemanticsNode().boundsInRoot.top
-        assertTrue("The compact information sheet must leave scrim space above it", sheetTop > 0f)
+        composeRule.onNodeWithContentDescription(closeDescription).assertIsDisplayed().performClick()
+        assertPlayerIntact(2)
+        composeRule.runOnIdle { visible.value = true }
+        // Auto-advancing Compose synchronization finishes Material's show animation before placement is read.
+        composeRule.waitForIdle()
+        val sheetNode = composeRule.onNodeWithTag(TrackInfoSheetTag).assertIsDisplayed().fetchSemanticsNode()
         Espresso.onView(isRoot()).inRoot(isDialog()).perform(GeneralClickAction(
             Tap.SINGLE,
-            CoordinatesProvider { view ->
-                val position = IntArray(2)
-                view.getLocationOnScreen(position)
-                floatArrayOf(position[0] + view.width / 2f, position[1] + sheetTop / 2f)
+            CoordinatesProvider { dialogDecor ->
+                // The caller tag precedes Material's anchor modifier. Use the placed layout,
+                // as QueueHubAdaptiveLayoutTest does, rather than the outer semantics rectangle.
+                val coordinates = sheetNode.layoutInfo.coordinates
+                assertTrue("Sheet coordinates must remain attached", coordinates.isAttached)
+                val rootCoordinates = coordinates.findRootCoordinates()
+                val sheet = coordinates.boundsInRoot()
+                val root = rootCoordinates.boundsInRoot()
+                val originOnScreen = rootCoordinates.localToScreen(Offset.Zero)
+                val density = sheetNode.layoutInfo.density
+                val geometry = "sheetRootPx=$sheet; rootPx=$root; originScreenPx=$originOnScreen; " +
+                    "density=${density.density}; fontScale=${density.fontScale}"
+                assertTrue("Root must have a valid screen origin; $geometry",
+                    originOnScreen.x.isFinite() && originOnScreen.y.isFinite())
+                assertTrue("Settled sheet must have visible content; $geometry", sheet.width > 0f && sheet.height > 0f)
+                val activityDecor = composeRule.activity.window.decorView
+                val activityPosition = IntArray(2)
+                activityDecor.getLocationOnScreen(activityPosition)
+                val visibleScreen = AndroidRect()
+                activityDecor.getWindowVisibleDisplayFrame(visibleScreen)
+                assertTrue("Activity must have a visible viewport; $geometry", visibleScreen.intersect(
+                    AndroidRect(activityPosition[0], activityPosition[1],
+                        activityPosition[0] + activityDecor.width, activityPosition[1] + activityDecor.height)))
+                val dialogPosition = IntArray(2)
+                dialogDecor.getLocationOnScreen(dialogPosition)
+                assertTrue("Scrim must lie inside the native modal window; $geometry", visibleScreen.intersect(
+                    AndroidRect(dialogPosition[0], dialogPosition[1],
+                        dialogPosition[0] + dialogDecor.width, dialogPosition[1] + dialogDecor.height)))
+                val scrim = Rect(
+                    max(root.left, visibleScreen.left - originOnScreen.x),
+                    max(root.top, visibleScreen.top - originOnScreen.y),
+                    min(root.right, visibleScreen.right - originOnScreen.x),
+                    min(sheet.top, min(root.bottom, visibleScreen.bottom - originOnScreen.y))
+                )
+                assertTrue("The compact sheet must leave a real visible scrim above it; " +
+                    "$geometry; visibleScreenPx=$visibleScreen; scrimRootPx=$scrim",
+                    scrim.width > 0f && scrim.height > 0f)
+                val tapInRoot = scrim.center
+                assertTrue("Scrim tap must be inside the root; $geometry", root.contains(tapInRoot))
+                assertTrue("Scrim tap must be outside the placed sheet; $geometry", !sheet.contains(tapInRoot))
+                // Both measurements are root pixels. Translate the chosen point to screen pixels once.
+                val tapOnScreen = tapInRoot + originOnScreen
+                assertTrue("Scrim tap must avoid system bars; $geometry",
+                    visibleScreen.contains(tapOnScreen.x.toInt(), tapOnScreen.y.toInt()))
+                floatArrayOf(tapOnScreen.x, tapOnScreen.y)
             },
             Press.FINGER
         ))
-        composeRule.onNodeWithTag(TrackInfoSheetTag).assertDoesNotExist()
-        composeRule.runOnIdle { assertEquals(3, dismissed); assertEquals(0, playerClicks) }
+        assertPlayerIntact(3)
     }
 
     @Test fun headerStaysFixedAndFastMetadataFlingsNeverMoveOrDismissTheModal() {

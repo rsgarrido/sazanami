@@ -16,11 +16,16 @@ import io.github.rsgarrido.sazanami.ui.library.LibraryViewCategory
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewMode
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernArtworkTransitionStyle
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernSeekbarStyle
+import io.github.rsgarrido.sazanami.ui.player.modern.ModernLandscapeLayout
+import io.github.rsgarrido.sazanami.ui.player.modern.ModernAppearanceChoice
+import io.github.rsgarrido.sazanami.data.backup.BackupPreferences
+import io.github.rsgarrido.sazanami.data.backup.toModernAppearanceState
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokenOverrides
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.first
@@ -32,6 +37,48 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class AppPreferencesMigrationTest {
+    @Test
+    fun landscapeLayoutPersistsAcrossReopenAndFullRestoreWithoutChangingAppearanceChoice() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val filename = "landscape_layout_${System.nanoTime()}.preferences_pb"
+        val job = SupervisorJob()
+        val scope = CoroutineScope(job + Dispatchers.IO)
+        val repository = AppPreferencesRepository.create(context, scope, filename, emptyList())
+        try {
+            assertEquals(ModernLandscapeLayout.BALANCED, repository.awaitLoadedState().modernLandscapeLayout)
+            repository.selectModernAppearanceChoice(ModernAppearanceChoice.MINIMAL)
+            repository.setModernLandscapeLayout(ModernLandscapeLayout.WIDE_WAVEFORM)
+            val selected = withTimeout(5_000) { repository.state.firstMatching {
+                it.modernLandscapeLayout == ModernLandscapeLayout.WIDE_WAVEFORM &&
+                    it.activeModernAppearanceChoice == ModernAppearanceChoice.MINIMAL
+            } }
+            assertEquals(ModernAppearanceChoice.MINIMAL, selected.activeModernAppearanceChoice)
+            repository.resetModernPlayerAppearance()
+            val reset = withTimeout(5_000) { repository.state.firstMatching {
+                it.activeModernAppearanceChoice == ModernAppearanceChoice.MY_PLAYER
+            } }
+            assertEquals(ModernLandscapeLayout.WIDE_WAVEFORM, reset.modernLandscapeLayout)
+        } finally {
+            job.cancelAndJoin()
+        }
+        val reopenedJob = SupervisorJob()
+        val reopened = AppPreferencesRepository.create(context, CoroutineScope(reopenedJob + Dispatchers.IO), filename, emptyList())
+        try {
+            assertEquals(ModernLandscapeLayout.WIDE_WAVEFORM, reopened.awaitLoadedState().modernLandscapeLayout)
+            // Full replacement uses the real repository path, including clearing previous keys.
+            reopened.replaceAll(BackupPreferences().toModernAppearanceState())
+            withTimeout(5_000) { reopened.state.firstMatching { it.modernLandscapeLayout == ModernLandscapeLayout.BALANCED } }
+            reopened.replaceAll(BackupPreferences(modernLandscapeLayout = "wide_waveform",
+                modernActiveAppearanceChoice = "COLORFUL").toModernAppearanceState())
+            val restored = withTimeout(5_000) { reopened.state.firstMatching {
+                it.modernLandscapeLayout == ModernLandscapeLayout.WIDE_WAVEFORM
+            } }
+            assertEquals(ModernAppearanceChoice.COLORFUL, restored.activeModernAppearanceChoice)
+        } finally {
+            reopenedJob.cancelAndJoin()
+        }
+    }
+
     @Test
     fun appAppearancePersistsAndPropagatesEveryChoice() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()

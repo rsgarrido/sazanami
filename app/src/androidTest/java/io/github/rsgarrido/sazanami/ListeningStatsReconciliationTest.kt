@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import java.time.ZonedDateTime
+import java.util.Locale
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -416,7 +417,7 @@ class ListeningStatsReconciliationTest {
         assertEquals(3L, production.playCounts.totalPlayCount)
         assertEquals(2, production.knownBindings.size)
 
-        val plan = database.query(
+        val planRows = database.query(
             SimpleSQLiteQuery(
                 "EXPLAIN QUERY PLAN SELECT COALESCE(r.targetIdentityId, e.trackIdentityId) " +
                     "FROM listening_events e LEFT JOIN listening_identity_reconciliations r " +
@@ -428,9 +429,27 @@ class ListeningStatsReconciliationTest {
             buildList {
                 val detail = cursor.getColumnIndexOrThrow("detail")
                 while (cursor.moveToNext()) add(cursor.getString(detail))
-            }.joinToString("\n")
+            }
         }
-        assertTrue(plan, plan.contains("SEARCH r USING INTEGER PRIMARY KEY"))
+        val plan = planRows.joinToString("\n")
+        // SQLite versions differ in whether they print TABLE and the relation's name before AS r.
+        val reconciliationAccess = Regex(
+            """^(?:SEARCH|SCAN) (?:TABLE )?(?:LISTENING_IDENTITY_RECONCILIATIONS(?: (?:AS )?R)?|R)(?: |$)"""
+        )
+        val reconciliationRows = planRows.map { row ->
+            row.trim().replace(Regex("\\s+"), " ").uppercase(Locale.ROOT)
+        }.filter { reconciliationAccess.containsMatchIn(it) }
+        val primaryKeyLookup = Regex(
+            """\bUSING INTEGER PRIMARY KEY\s*\(\s*ROWID\s*=\s*\?\s*\)"""
+        )
+        assertTrue(
+            "Expected a reconciliation rowid search:\n$plan",
+            reconciliationRows.any { it.startsWith("SEARCH ") && primaryKeyLookup.containsMatchIn(it) }
+        )
+        assertFalse(
+            "Reconciliation must not use a full scan:\n$plan",
+            reconciliationRows.any { it.startsWith("SCAN ") }
+        )
     }
 
     private suspend fun identity(

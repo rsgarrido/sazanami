@@ -3,16 +3,10 @@ package io.github.rsgarrido.sazanami.ui
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.statusBars
@@ -21,7 +15,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -35,7 +28,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -99,9 +91,11 @@ import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokenField
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernArtworkTransitionStyle
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerAppearance
+import io.github.rsgarrido.sazanami.ui.player.modern.ModernLandscapeLayout
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernAppearanceChoice
 import io.github.rsgarrido.sazanami.ui.theme.SazanamiAccent
 import io.github.rsgarrido.sazanami.ui.player.rememberPlayerLyricsTransitionState
+import io.github.rsgarrido.sazanami.ui.player.modern.defaultPlayerLayout
 import io.github.rsgarrido.sazanami.ui.player.PlayerMorphHost
 import io.github.rsgarrido.sazanami.ui.state.PlaybackProgressUiState
 import io.github.rsgarrido.sazanami.ui.state.LibraryAppearanceUiState
@@ -270,6 +264,8 @@ internal fun MusicScreen(
     onModernArtworkTransitionStyleSelected: (ModernArtworkTransitionStyle) -> Unit,
     selectedModernPlayerAppearance: ModernPlayerAppearance,
     activeModernAppearanceChoice: ModernAppearanceChoice,
+    selectedModernLandscapeLayout: ModernLandscapeLayout = ModernLandscapeLayout.BALANCED,
+    onModernLandscapeLayoutSelected: (ModernLandscapeLayout) -> Unit = {},
     onModernAppearanceChoiceSelected: (ModernAppearanceChoice) -> Unit,
     onModernPlayerAppearanceEdited: ((ModernPlayerAppearance) -> ModernPlayerAppearance) -> Unit,
     onResetModernPlayerAppearance: () -> Unit,
@@ -1128,6 +1124,8 @@ internal fun MusicScreen(
         onModernArtworkTransitionStyleSelected = onModernArtworkTransitionStyleSelected,
         selectedModernPlayerAppearance = selectedModernPlayerAppearance,
         activeModernAppearanceChoice = activeModernAppearanceChoice,
+        selectedModernLandscapeLayout = selectedModernLandscapeLayout,
+        onModernLandscapeLayoutSelected = onModernLandscapeLayoutSelected,
         onModernAppearanceChoiceSelected = onModernAppearanceChoiceSelected,
         onModernPlayerAppearanceEdited = onModernPlayerAppearanceEdited,
         onResetModernPlayerAppearance = onResetModernPlayerAppearance,
@@ -1237,14 +1235,6 @@ internal fun MusicScreen(
     val navigationBarInset = WindowInsets.navigationBars
         .asPaddingValues()
         .calculateBottomPadding()
-    val targetBottomContentPadding = navigationBarInset +
-            (if (shouldShowBottomNavigation) AppBottomNavigationHeight else 0.dp) +
-            when {
-                isLibrarySelectionActive -> 8.dp
-                !shouldShowBottomMiniPlayer -> 24.dp
-                isSleepTimerActive -> 176.dp
-                else -> 96.dp
-            }
     val onOpenMiniUpNext: () -> Unit = {
         selectedLibraryTab = LibraryTab.QUEUE
         navigationState.clearArtist()
@@ -1263,105 +1253,27 @@ internal fun MusicScreen(
             currentSong?.let(overlayState::openNowPlayingMore)
         }
     }
-    val bottomNavigationContent: @Composable BoxScope.() -> Unit = {
-        AnimatedVisibility(
-            visible = shouldShowBottomNavigation,
-            enter = slideInVertically(tween(220)) { height -> height } +
-                fadeIn(tween(160)),
-            exit = slideOutVertically(tween(200)) { height -> height } +
-                fadeOut(tween(140)),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-        ) {
-            AppBottomNavigation(
-                selectedDestination = mainDestination,
-                onDestinationSelected = { destination ->
-                    val targetEntity = when (destination) {
-                        MainDestination.SEARCH -> LibrarySelectionEntity.SONG
-                        MainDestination.LIBRARY -> selectedLibraryTab.selectionEntity()
-                        else -> null
-                    }
-                    if (librarySelectionUi.state.entity != targetEntity) {
-                        librarySelectionUi.onClear()
-                    }
-                    navigationState.clearArtist()
-                    navigationState.clearAlbum()
-                    selectedGenreKey = null
-                    clearPlaylistSelection()
-                    if (destination == MainDestination.SEARCH) {
-                        selectedLibraryTab = LibraryTab.SONGS
-                    }
-                    if (destination != MainDestination.SEARCH) {
-                        searchQuery = ""
-                    }
-                    mainDestination = destination
-                },
-                modifier = Modifier
-            )
+    val onMainDestinationSelected: (MainDestination) -> Unit = { destination ->
+        val targetEntity = when (destination) {
+            MainDestination.SEARCH -> LibrarySelectionEntity.SONG
+            MainDestination.LIBRARY -> selectedLibraryTab.selectionEntity()
+            else -> null
         }
+        if (librarySelectionUi.state.entity != targetEntity) {
+            librarySelectionUi.onClear()
+        }
+        navigationState.clearArtist()
+        navigationState.clearAlbum()
+        selectedGenreKey = null
+        clearPlaylistSelection()
+        if (destination == MainDestination.SEARCH) {
+            selectedLibraryTab = LibraryTab.SONGS
+        }
+        if (destination != MainDestination.SEARCH) {
+            searchQuery = ""
+        }
+        mainDestination = destination
     }
-    val playerPresentation = prepareMusicPlayerPresentation(
-        songs = songs,
-        currentSong = currentSong,
-        previousPreviewSong = previousPreviewSong,
-        nextPreviewSong = nextPreviewSong,
-        isPlaying = isPlaying,
-        isShuffleEnabled = isShuffleEnabled,
-        repeatMode = repeatMode,
-        playbackProgressUiState = playbackProgressUiState,
-        lyricsPlaybackUiState = lyricsPlaybackUiState,
-        onSongClick = onSongClick,
-        onPlayPauseClick = onPlayPauseClick,
-        onPreviousClick = onPreviousClick,
-        onNextClick = onNextClick,
-        onSeekChange = onSeekChange,
-        onSuspendLyricsAutoFollow = onSuspendLyricsAutoFollow,
-        onReturnLyricsToCurrentLine = onReturnLyricsToCurrentLine,
-        onRescanLyrics = onRescanLyrics,
-        onShuffleClick = onShuffleClick,
-        onRepeatClick = onRepeatClick,
-        queuedSongs = queuedSongs,
-        upcomingSongs = upcomingSongs,
-        playbackQueueHubUiState = playbackQueueHubUiState,
-        favoriteMembershipKeys = favoriteMembershipKeys,
-        onToggleFavoriteClick = onToggleFavoriteClick,
-        isSleepTimerActive = isSleepTimerActive,
-        sleepTimerDisplayText = sleepTimerDisplayText,
-        selectedPlayerTheme = selectedPlayerTheme,
-        selectedPlayerThemeTokens = selectedPlayerThemeTokens,
-        selectedModernArtworkTransitionStyle = selectedModernArtworkTransitionStyle,
-        selectedModernPlayerAppearance = selectedModernPlayerAppearance,
-        playerMorphState = playerMorphState,
-        lyricsTransitionState = lyricsTransitionState,
-        isLyricsVisible = isLyricsVisible,
-        isExpandedUpNextSheetVisible = isExpandedUpNextSheetVisible,
-        isQueueHubVisible = isQueueHubVisible,
-        isNowPlayingMorePresented = isNowPlayingMorePresented,
-        isCreatePlaylistDialogVisible = isCreatePlaylistDialogVisible,
-        hasPendingPlaylistAdd = hasPendingPlaylistAdd,
-        hasPendingBulkPlaylistAdd = hasPendingBulkPlaylistAdd,
-        isSleepTimerDialogVisible = isSleepTimerDialogVisible,
-        isArtworkViewerVisible = overlayState.isArtworkViewerVisible.value,
-        shouldShowBottomMiniPlayer = shouldShowBottomMiniPlayer,
-        shouldShowMetadataEditor = shouldShowMetadataEditor,
-        shouldComposePlayerOverlays = shouldComposePlayerOverlays,
-        targetBottomContentPadding = targetBottomContentPadding,
-        bodyPresentation = bodyPresentation,
-        metadataEditorContent = metadataEditorContent,
-        metadataDialogContent = metadataDialogContent,
-        transientOverlayContent = transientOverlayContent,
-        bottomNavigationContent = bottomNavigationContent,
-        onOpenMiniUpNext = onOpenMiniUpNext,
-        onShowQueueHub = onShowQueueHub,
-        onOpenSleepTimer = onOpenSleepTimer,
-        onOpenLyricsSettings = onOpenLyricsSettings,
-        onShowExpandedMore = onShowExpandedMore,
-        onOpenCurrentAlbumClick = ::openCurrentAlbum,
-        onOpenCurrentArtistClick = onOpenCurrentArtistClick,
-        onTrackInfoClick = onTrackInfoClick,
-        onViewArtwork = onViewArtwork,
-    )
 
     CompositionLocalProvider(
         LocalAppShellAccent provides appShellAccent,
@@ -1386,14 +1298,105 @@ internal fun MusicScreen(
                     modifier = Modifier.statusBarsPadding()
                 )
             }
-            PlayerMorphHost(
-                morphState = playerMorphState,
+            BoxWithConstraints(
                 modifier = Modifier.weight(1f).fillMaxWidth().then(
                     if (directStatusVisible) Modifier.consumeWindowInsets(WindowInsets.statusBars)
                     else Modifier
                 )
-            ) { playerEndpointBounds ->
-                playerPresentation(playerEndpointBounds)
+            ) {
+                val shellLayout = musicShellLayout(
+                    maxWidth, maxHeight, topInsetAlreadyReserved = directStatusVisible
+                )
+                val defaultLayout = defaultPlayerLayout(
+                    maxWidth, maxHeight, selectedModernPlayerAppearance,
+                    topInsetAlreadyReserved = directStatusVisible,
+                    preferredLandscapeLayout = selectedModernLandscapeLayout
+                )
+                val targetBottomContentPadding = shellLayout.bottomContentPadding(
+                    compactNavigationBarInset = navigationBarInset,
+                    navigationVisible = shouldShowBottomNavigation,
+                    miniPlayerVisible = shouldShowBottomMiniPlayer,
+                    selectionActive = isLibrarySelectionActive,
+                    sleepTimerActive = isSleepTimerActive
+                )
+                val playerPresentation = prepareMusicPlayerPresentation(
+                    songs = songs,
+                    currentSong = currentSong,
+                    previousPreviewSong = previousPreviewSong,
+                    nextPreviewSong = nextPreviewSong,
+                    isPlaying = isPlaying,
+                    isShuffleEnabled = isShuffleEnabled,
+                    repeatMode = repeatMode,
+                    playbackProgressUiState = playbackProgressUiState,
+                    lyricsPlaybackUiState = lyricsPlaybackUiState,
+                    onSongClick = onSongClick,
+                    onPlayPauseClick = onPlayPauseClick,
+                    onPreviousClick = onPreviousClick,
+                    onNextClick = onNextClick,
+                    onSeekChange = onSeekChange,
+                    onSuspendLyricsAutoFollow = onSuspendLyricsAutoFollow,
+                    onReturnLyricsToCurrentLine = onReturnLyricsToCurrentLine,
+                    onRescanLyrics = onRescanLyrics,
+                    onShuffleClick = onShuffleClick,
+                    onRepeatClick = onRepeatClick,
+                    queuedSongs = queuedSongs,
+                    upcomingSongs = upcomingSongs,
+                    playbackQueueHubUiState = playbackQueueHubUiState,
+                    favoriteMembershipKeys = favoriteMembershipKeys,
+                    onToggleFavoriteClick = onToggleFavoriteClick,
+                    isSleepTimerActive = isSleepTimerActive,
+                    sleepTimerDisplayText = sleepTimerDisplayText,
+                    selectedPlayerTheme = selectedPlayerTheme,
+                    selectedPlayerThemeTokens = selectedPlayerThemeTokens,
+                    selectedModernArtworkTransitionStyle = selectedModernArtworkTransitionStyle,
+                    selectedModernPlayerAppearance = selectedModernPlayerAppearance,
+                    playerMorphState = playerMorphState,
+                    lyricsTransitionState = lyricsTransitionState,
+                    isLyricsVisible = isLyricsVisible,
+                    isExpandedUpNextSheetVisible = isExpandedUpNextSheetVisible,
+                    isQueueHubVisible = isQueueHubVisible,
+                    isNowPlayingMorePresented = isNowPlayingMorePresented,
+                    isCreatePlaylistDialogVisible = isCreatePlaylistDialogVisible,
+                    hasPendingPlaylistAdd = hasPendingPlaylistAdd,
+                    hasPendingBulkPlaylistAdd = hasPendingBulkPlaylistAdd,
+                    isSleepTimerDialogVisible = isSleepTimerDialogVisible,
+                    isArtworkViewerVisible = overlayState.isArtworkViewerVisible.value,
+                    shouldShowBottomMiniPlayer = shouldShowBottomMiniPlayer,
+                    shouldShowMetadataEditor = shouldShowMetadataEditor,
+                    shouldComposePlayerOverlays = shouldComposePlayerOverlays,
+                    targetBottomContentPadding = targetBottomContentPadding,
+                    bodyPresentation = bodyPresentation,
+                    metadataEditorContent = metadataEditorContent,
+                    metadataDialogContent = metadataDialogContent,
+                    transientOverlayContent = transientOverlayContent,
+                    bottomNavigationContent = {
+                        AppNavigationChrome(
+                            layout = shellLayout,
+                            visible = shouldShowBottomNavigation,
+                            selectedDestination = mainDestination,
+                            onDestinationSelected = onMainDestinationSelected
+                        )
+                    },
+                    onOpenMiniUpNext = onOpenMiniUpNext,
+                    onShowQueueHub = onShowQueueHub,
+                    onOpenSleepTimer = onOpenSleepTimer,
+                    onOpenLyricsSettings = onOpenLyricsSettings,
+                    onShowExpandedMore = onShowExpandedMore,
+                    onOpenCurrentAlbumClick = ::openCurrentAlbum,
+                    onOpenCurrentArtistClick = onOpenCurrentArtistClick,
+                    onTrackInfoClick = onTrackInfoClick,
+                    onViewArtwork = onViewArtwork,
+                    shellLayout = shellLayout,
+                    defaultPlayerLayout = defaultLayout,
+                )
+                PlayerMorphHost(
+                    morphState = playerMorphState,
+                    modifier = Modifier.fillMaxSize(),
+                    layoutBoundary = shellLayout to
+                        defaultLayout.takeIf { selectedPlayerTheme == PlayerTheme.DEFAULT }
+                ) { playerEndpointBounds ->
+                    playerPresentation(playerEndpointBounds)
+                }
             }
         }
     }

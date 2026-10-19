@@ -5,12 +5,15 @@ import io.github.rsgarrido.sazanami.R
 import android.R as AndroidR
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -19,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -105,13 +109,15 @@ fun QueueHubSheet(
     onUndoRemove: () -> Unit = {},
     onUndoDismissed: () -> Unit = {},
     onReorderEntry: (String, String, Int) -> Unit = { _, _, _ -> },
-    onMessageDismissed: () -> Unit
+    onMessageDismissed: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var renameQueue by remember { mutableStateOf<PlaybackQueueCardUiState?>(null) }
     var deleteQueue by remember { mutableStateOf<PlaybackQueueCardUiState?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val snackbarHostState = remember { SnackbarHostState() }
     val queueCardListState = rememberLazyListState()
+    val accessoryScrollState = rememberScrollState()
     val loadingInteractionSource = remember { MutableInteractionSource() }
     var lastObservedActiveQueueId by remember { mutableStateOf(state.activeQueueId) }
     val latestOnUndoDismissed by rememberUpdatedState<() -> Unit>(onUndoDismissed)
@@ -156,17 +162,19 @@ fun QueueHubSheet(
     }
 
     ModalBottomSheet(
+        modifier = modifier,
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
         dragHandle = null,
         containerColor = MaterialTheme.colorScheme.surfaceContainer
     ) {
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.94f)
         ) {
+        val managementMaximumHeight = maxHeight * 0.5f
         Column(modifier = Modifier.fillMaxSize()) {
             Row(
                 modifier = Modifier
@@ -195,45 +203,41 @@ fun QueueHubSheet(
                 }
             }
 
-            state.message?.let { message ->
-                Surface(
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(start = 14.dp, top = 8.dp, bottom = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+            val selected = state.selectedQueue
+            // The title/close row stays fixed. Short windows can scroll queue management without
+            // consuming the entry list's remaining viewport or changing its reorder item indices.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = managementMaximumHeight)
+                    .verticalScroll(accessoryScrollState)
+                    .testTag("queue-hub-accessories")
+            ) {
+                state.message?.let { message ->
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp)
                     ) {
-                        Text(
-                            text = stringResource(message),
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f)
-                        )
-                        IconButton(onClick = onMessageDismissed) {
-                            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.queue_hub_dismiss_message))
+                        Row(
+                            modifier = Modifier.padding(start = 14.dp, top = 8.dp, bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = stringResource(message),
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(onClick = onMessageDismissed) {
+                                Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.queue_hub_dismiss_message))
+                            }
                         }
                     }
                 }
-            }
-
-            when {
-                state.isLoading && state.queues.isEmpty() -> Box(
-                    Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
-                }
-                state.queues.isEmpty() -> Box(
-                    Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(stringResource(R.string.queue_hub_empty))
-                }
-                else -> {
+                if (state.queues.isNotEmpty()) {
                     LazyRow(
                         state = queueCardListState,
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
@@ -249,8 +253,6 @@ fun QueueHubSheet(
                             )
                         }
                     }
-
-                    val selected = state.selectedQueue
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -299,7 +301,33 @@ fun QueueHubSheet(
                             }
                         }
                     }
+                    if (state.selectedEntries.isNotEmpty() &&
+                        state.selectedEntries.none { entry -> entry.song != null }
+                    ) {
+                        Text(
+                            text = stringResource(R.string.queue_hub_tracks_unavailable),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
+                        )
+                    }
+                }
+            }
 
+            when {
+                state.isLoading && state.queues.isEmpty() -> Box(
+                    Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+                state.queues.isEmpty() -> Box(
+                    Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(stringResource(R.string.queue_hub_empty))
+                }
+                else -> {
                     if (state.selectedEntries.isEmpty()) {
                         Box(
                             modifier = Modifier
@@ -328,14 +356,6 @@ fun QueueHubSheet(
                         }
                         var dragStartIndex by remember(selectedQueueId) {
                             mutableStateOf<Int?>(null)
-                        }
-                        if (state.selectedEntries.none { entry -> entry.song != null }) {
-                            Text(
-                                text = stringResource(R.string.queue_hub_tracks_unavailable),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
-                            )
                         }
                         val listState = rememberLazyListState()
                         val density = LocalDensity.current
@@ -747,7 +767,7 @@ private fun QueueHubEntryRow(
         ) > 0.5f || dismissState.targetValue == SwipeToDismissBoxValue.EndToStart
         SwipeToDismissBox(
             state = dismissState,
-            modifier = modifier.height(64.dp),
+            modifier = modifier.heightIn(min = 64.dp),
             enableDismissFromStartToEnd = false,
             enableDismissFromEndToStart = true,
             backgroundContent = {

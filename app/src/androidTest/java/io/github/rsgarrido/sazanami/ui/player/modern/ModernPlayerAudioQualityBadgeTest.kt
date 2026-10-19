@@ -79,7 +79,21 @@ class ModernPlayerAudioQualityBadgeTest {
         composeRule.onNodeWithText("16 bit  44.1 kHz  830 kbps  FLAC").assertHasNoClickAction()
     }
 
-    private fun song(id: Long) = Song(id, "Track $id", "Artist", "Album", 1, 180_000L,
-        Uri.parse("content://media/external/audio/media/$id"), "/music/$id.flac", "/music", null,
-        volumeName = "external", displayName = "$id.flac")
+    private fun song(index: Long): Song {
+        // These FLAC files must not reuse other tests' MP3 MediaStore/cache identities.
+        val mediaId = FLAC_MEDIA_ID_BASE + index
+        val folder = "/storage/emulated/0/Music/AudioQualityBadge"
+        return Song(mediaId, "Track $index", "Artist", "Album", 1, 180_000L,
+            Uri.parse("content://media/external/audio/media/$mediaId"),
+            "$folder/$mediaId.flac", folder, null,
+            volumeName = "external", displayName = "$mediaId.flac",
+            relativePath = "Music/AudioQualityBadge/",
+            fileSizeBytes = 24_000_000L + index * 1_000L,
+            dateAddedEpochSeconds = 1_700_000_000L,
+            dateModifiedEpochSeconds = 1_700_000_000L + index)
+    }
+
+    private companion object {
+        const val FLAC_MEDIA_ID_BASE = 7_070_000L
+    }
 }

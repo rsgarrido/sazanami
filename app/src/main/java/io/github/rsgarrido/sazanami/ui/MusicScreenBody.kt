@@ -104,6 +104,7 @@ import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokenField
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernArtworkTransitionStyle
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerAppearance
+import io.github.rsgarrido.sazanami.ui.player.modern.ModernLandscapeLayout
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernAppearanceChoice
 import io.github.rsgarrido.sazanami.ui.settings.SettingsScreen
 import io.github.rsgarrido.sazanami.ui.settings.TipsHelpScreen
@@ -304,6 +305,8 @@ internal fun MusicScreenBody(
     onModernArtworkTransitionStyleSelected: (ModernArtworkTransitionStyle) -> Unit,
     selectedModernPlayerAppearance: ModernPlayerAppearance,
     activeModernAppearanceChoice: ModernAppearanceChoice,
+    selectedModernLandscapeLayout: ModernLandscapeLayout = ModernLandscapeLayout.BALANCED,
+    onModernLandscapeLayoutSelected: (ModernLandscapeLayout) -> Unit = {},
     onModernAppearanceChoiceSelected: (ModernAppearanceChoice) -> Unit,
     onModernPlayerAppearanceEdited: ((ModernPlayerAppearance) -> ModernPlayerAppearance) -> Unit,
     onResetModernPlayerAppearance: () -> Unit,
@@ -524,6 +527,8 @@ internal fun MusicScreenBody(
                 onModernArtworkTransitionStyleSelected = onModernArtworkTransitionStyleSelected,
                 selectedModernPlayerAppearance = selectedModernPlayerAppearance,
                 activeModernAppearanceChoice = activeModernAppearanceChoice,
+                selectedModernLandscapeLayout = selectedModernLandscapeLayout,
+                onModernLandscapeLayoutSelected = onModernLandscapeLayoutSelected,
                 onModernAppearanceChoiceSelected = onModernAppearanceChoiceSelected,
                 onModernPlayerAppearanceEdited = onModernPlayerAppearanceEdited,
                 onResetModernPlayerAppearance = onResetModernPlayerAppearance,

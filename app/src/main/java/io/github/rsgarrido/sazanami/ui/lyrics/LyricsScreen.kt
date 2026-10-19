@@ -12,9 +12,13 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,8 +28,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -102,6 +110,7 @@ import io.github.rsgarrido.sazanami.lyrics.calculateLyricAnchorScrollDelta
 import io.github.rsgarrido.sazanami.lyrics.toLyricsIdentity
 import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsTransitionState
 import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsGestureRegion
+import io.github.rsgarrido.sazanami.ui.readableContentWidth
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -166,7 +175,9 @@ fun LyricsScreen(
     ) {
         LyricsArtworkBackground(song)
 
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize().windowInsetsPadding(
+            WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
+        )) {
             LyricsHeader(
                 song = song,
                 isPlaying = isPlaying,
@@ -178,13 +189,14 @@ fun LyricsScreen(
                 onPlayPause = onPlayPause,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .statusBarsPadding()
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
             )
 
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
+                    .readableContentWidth()
             ) {
                 when (state) {
                     is LyricsPlaybackUiState.Loading -> LyricsLoading()
@@ -593,7 +605,9 @@ private fun SyncedLyricRow(
 
 @Composable
 private fun UnsyncedLyricsList(document: LyricsDocument.Unsynced) {
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().windowInsetsPadding(
+        WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)
+    )) {
         Text(
             text = stringResource(R.string.lyrics_unsynced),
             color = Color.White.copy(alpha = 0.62f),
@@ -639,6 +653,7 @@ private fun LyricsLoading() {
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun LyricsUnavailable(
     song: Song,
     reason: LyricsUnavailableReason,
@@ -649,11 +664,13 @@ private fun LyricsUnavailable(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
             .padding(30.dp)
             .testTag("lyrics_unavailable"),
         contentAlignment = Alignment.Center
     ) {
         Column(
+            modifier = Modifier.verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -680,7 +697,10 @@ private fun LyricsUnavailable(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 if (content.canRescan) {
                     Button(onClick = onRescan) {
                         Icon(Icons.Default.Refresh, contentDescription = null)

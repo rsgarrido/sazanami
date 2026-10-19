@@ -61,6 +61,7 @@
     <string name="modern_option_control_accent_album_derived">Album Derived</string>
     <string name="modern_option_layout_density_compact">Compact</string>
     <string name="modern_option_layout_density_balanced">Balanced</string>
+    <string name="modern_option_landscape_wide_waveform">Wide Waveform</string>
     <string name="modern_option_layout_density_relaxed">Relaxed</string>
     <string name="modern_option_metadata_alignment_left">Left</string>
     <string name="modern_option_metadata_alignment_center">Center</string>

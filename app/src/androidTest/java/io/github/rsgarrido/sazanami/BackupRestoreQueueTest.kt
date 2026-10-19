@@ -1,5 +1,6 @@
 package io.github.rsgarrido.sazanami
 
+import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -15,7 +16,15 @@ import io.github.rsgarrido.sazanami.data.backup.BackupListeningTrackIdentity
 import io.github.rsgarrido.sazanami.data.backup.BackupRepository
 import io.github.rsgarrido.sazanami.data.local.AppDatabase
 import io.github.rsgarrido.sazanami.data.local.ListeningTrackIdentityEntity
+import io.github.rsgarrido.sazanami.data.preferences.AppPreferencesRepository
+import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -29,10 +38,22 @@ class BackupRestoreQueueTest {
     private lateinit var database: AppDatabase
     private lateinit var queues: PlaybackQueueRepository
     private lateinit var backups: BackupRepository
+    private lateinit var preferencesJob: Job
+    private lateinit var preferencesFile: File
 
     @Before
-    fun setUp() {
-        val context = InstrumentationRegistry.getInstrumentation().context
+    fun setUp() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext
+        val preferencesFileName = "backup_restore_queue_${System.nanoTime()}.preferences_pb"
+        preferencesFile = context.preferencesDataStoreFile(preferencesFileName)
+        preferencesJob = SupervisorJob()
+        val preferences = AppPreferencesRepository.create(
+            context = context,
+            scope = CoroutineScope(preferencesJob + Dispatchers.IO),
+            dataStoreFileName = preferencesFileName,
+            legacyStores = emptyList()
+        )
+        withTimeout(5_000) { preferences.awaitLoadedState() }
         database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
         queues = PlaybackQueueRepository(database)
         backups = BackupRepository(
@@ -40,12 +61,24 @@ class BackupRestoreQueueTest {
             favoritesRepository = FavoritesRepository(database.favoriteSongDao()),
             playlistsRepository = PlaylistsRepository(database.playlistDao()),
             listeningHistoryRepository = ListeningHistoryRepository(database.songPlayStatsDao()),
-            appDatabase = database
+            appDatabase = database,
+            appPreferencesRepository = preferences
         )
     }
 
     @After
-    fun tearDown() = database.close()
+    fun tearDown() = runBlocking {
+        try {
+            if (::database.isInitialized) database.close()
+        } finally {
+            if (::preferencesJob.isInitialized) preferencesJob.cancelAndJoin()
+            if (::preferencesFile.isInitialized) {
+                check(!preferencesFile.exists() || preferencesFile.delete()) {
+                    "Could not delete the test-owned preferences file"
+                }
+            }
+        }
+    }
 
     @Test
     fun restoreReplacesHistoryAndClearsActiveAndNamedQueues() = runBlocking {
@@ -55,6 +88,8 @@ class BackupRestoreQueueTest {
 
         assertTrue(queues.listQueues().isEmpty())
         assertNull(queues.getActiveQueueId())
+        assertTrue(database.playbackQueueDao().getEntriesInPlaybackOrder("active").isEmpty())
+        assertTrue(database.playbackQueueDao().getEntriesInPlaybackOrder("named").isEmpty())
         assertEquals(listOf("Restored"), database.listeningTrackIdentityDao().getAll().map { it.titleSnapshot })
     }
 
@@ -66,7 +101,14 @@ class BackupRestoreQueueTest {
                 "BEGIN SELECT RAISE(ABORT, 'forced restore failure'); END"
         )
 
-        assertTrue(runCatching { backups.restoreBackup(replacementBackup()) }.isFailure)
+        val restore = runCatching { backups.restoreBackup(replacementBackup()) }
+        assertTrue(restore.isFailure)
+        assertTrue(
+            "Restore must fail at the forced history write",
+            generateSequence(restore.exceptionOrNull()) { it.cause }.any {
+                it.message?.contains("forced restore failure") == true
+            }
+        )
 
         assertEquals(setOf("active", "named"), queues.listQueues().map { it.queueId }.toSet())
         assertEquals("active", queues.getActiveQueueId())

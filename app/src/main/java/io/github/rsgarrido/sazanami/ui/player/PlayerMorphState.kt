@@ -11,7 +11,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.unit.IntSize
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -40,6 +42,17 @@ sealed interface PlayerBoundsMeasurement {
     ) : PlayerBoundsMeasurement
 }
 
+/** The logical morph viewport, before player/lyrics presentation transforms are applied. */
+internal data class PlayerMorphLayoutFrame(
+    val generation: Long,
+    val boundsInRoot: Rect,
+    val originInRoot: Offset,
+    val rootSize: IntSize,
+    val density: Float,
+    val fontScale: Float,
+    val layoutBoundary: Any? = null
+)
+
 @Stable
 class PlayerEndpointBounds internal constructor() {
     var mini: PlayerBoundsMeasurement by mutableStateOf(PlayerBoundsMeasurement.Missing)
@@ -48,8 +61,44 @@ class PlayerEndpointBounds internal constructor() {
     var expanded: PlayerBoundsMeasurement by mutableStateOf(PlayerBoundsMeasurement.Missing)
         private set
 
+    internal var layoutFrame: PlayerMorphLayoutFrame? by mutableStateOf(null)
+        private set
+
     private var miniGeneration = 0L
     private var expandedGeneration = 0L
+
+    internal fun updateLayoutFrame(
+        boundsInRoot: Rect,
+        originInRoot: Offset,
+        rootSize: IntSize,
+        density: Float,
+        fontScale: Float,
+        layoutBoundary: Any? = null
+    ) {
+        if (!boundsInRoot.isUsablePlayerBounds() ||
+            !originInRoot.x.isFinite() || !originInRoot.y.isFinite() ||
+            rootSize.width <= 0 || rootSize.height <= 0
+        ) return
+        val current = layoutFrame
+        if (current == null ||
+            !current.boundsInRoot.nearlyEquals(boundsInRoot) ||
+            current.originInRoot != originInRoot || current.rootSize != rootSize ||
+            current.density != density || current.fontScale != fontScale ||
+            current.layoutBoundary != layoutBoundary
+        ) {
+            layoutFrame = PlayerMorphLayoutFrame(
+                generation = (current?.generation ?: 0L) + 1L,
+                boundsInRoot = boundsInRoot,
+                originInRoot = originInRoot,
+                rootSize = rootSize,
+                density = density,
+                fontScale = fontScale,
+                layoutBoundary = layoutBoundary
+            )
+            markMiniStale()
+        }
+        updateExpanded(boundsInRoot)
+    }
 
     fun updateMini(bounds: Rect) {
         if (!bounds.isUsablePlayerBounds()) return

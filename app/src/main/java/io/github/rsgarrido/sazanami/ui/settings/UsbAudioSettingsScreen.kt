@@ -29,6 +29,7 @@ import io.github.rsgarrido.sazanami.data.preferences.AppPreferencesRepository
 import io.github.rsgarrido.sazanami.player.*
 import io.github.rsgarrido.sazanami.player.usb.*
 import io.github.rsgarrido.sazanami.ui.AppShellIcons
+import io.github.rsgarrido.sazanami.ui.readableContentWidth
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -132,6 +133,7 @@ internal fun UsbAudioSettingsContent(
         )
     }
     Column(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+        .readableContentWidth()
         .verticalScroll(rememberScrollState())) {
         SettingsSubpageHeader(stringResource(R.string.usb_settings_title), onBack)
         SettingsSection(stringResource(R.string.usb_settings_advanced), stringResource(R.string.usb_settings_experimental_summary), AppShellIcons.AudioRoute) {

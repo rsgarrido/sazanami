@@ -1,4 +1,6 @@
 package io.github.rsgarrido.sazanami.ui.playlist
+
+import io.github.rsgarrido.sazanami.ui.readableContentWidth
 import android.content.res.Resources
 import androidx.annotation.StringRes
 import androidx.compose.ui.res.stringResource
@@ -9,6 +11,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -61,6 +65,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.platform.LocalDensity
+import io.github.rsgarrido.sazanami.ui.library.collectionGridMinimumWidth
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -361,7 +367,7 @@ fun PlaylistListScreen(
         } else if (viewMode == LibraryViewMode.LIST) {
             LazyColumn(
                 state = listState,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).readableContentWidth(),
                 contentPadding = PaddingValues(bottom = bottomContentPadding + 8.dp)
             ) {
                 if (currentFolder == null) {
@@ -400,27 +406,48 @@ fun PlaylistListScreen(
                 }
             }
         } else {
-            LazyVerticalGrid(
-                state = gridState,
-                columns = GridCells.Adaptive(PlaylistGridLayout.minimumTileWidth),
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(
-                    start = 8.dp,
-                    end = 8.dp,
-                    bottom = bottomContentPadding + 8.dp
-                ),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (currentFolder == null) {
+            val fontScale = LocalDensity.current.fontScale
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                LazyVerticalGrid(
+                    state = gridState,
+                    columns = GridCells.Adaptive(collectionGridMinimumWidth(
+                        maxWidth, PlaylistGridLayout.minimumTileWidth, fontScale
+                    )),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = 8.dp,
+                        end = 8.dp,
+                        bottom = bottomContentPadding + 8.dp
+                    ),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (currentFolder == null) {
+                        gridItems(
+                            items = folders,
+                            key = { folder -> playlistFolderLazyListKey(folder.folderId) }
+                        ) { folder ->
+                            PlaylistFolderGridTile(
+                                folder = folder,
+                                onClick = { onFolderSelected(folder.folderId) },
+                                onMoreClick = { showFolderActions(folder) },
+                                modifier = Modifier.animateItem(
+                                    placementSpec = tween(
+                                        durationMillis = LibraryLayoutMotionDurationMillis,
+                                        easing = FastOutSlowInEasing
+                                    )
+                                )
+                            )
+                        }
+                    }
                     gridItems(
-                        items = folders,
-                        key = { folder -> playlistFolderLazyListKey(folder.folderId) }
-                    ) { folder ->
-                        PlaylistFolderGridTile(
-                            folder = folder,
-                            onClick = { onFolderSelected(folder.folderId) },
-                            onMoreClick = { showFolderActions(folder) },
+                        items = visiblePlaylists,
+                        key = { playlist -> playlistLazyListKey(playlist.playlistId) }
+                    ) { playlist ->
+                        PlaylistGridTile(
+                            playlist = playlist,
+                            onClick = { onPlaylistClick(playlist) },
+                            onMoreClick = { showPlaylistActions(playlist) },
                             modifier = Modifier.animateItem(
                                 placementSpec = tween(
                                     durationMillis = LibraryLayoutMotionDurationMillis,
@@ -429,22 +456,6 @@ fun PlaylistListScreen(
                             )
                         )
                     }
-                }
-                gridItems(
-                    items = visiblePlaylists,
-                    key = { playlist -> playlistLazyListKey(playlist.playlistId) }
-                ) { playlist ->
-                    PlaylistGridTile(
-                        playlist = playlist,
-                        onClick = { onPlaylistClick(playlist) },
-                        onMoreClick = { showPlaylistActions(playlist) },
-                        modifier = Modifier.animateItem(
-                            placementSpec = tween(
-                                durationMillis = LibraryLayoutMotionDurationMillis,
-                                easing = FastOutSlowInEasing
-                            )
-                        )
-                    )
                 }
             }
         }
@@ -696,7 +707,7 @@ private fun PlaylistFolderGridTile(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(PlaylistGridLayout.metadataHeight)
+                    .heightIn(min = PlaylistGridLayout.metadataHeight * LocalDensity.current.fontScale.coerceAtLeast(1f))
                     .padding(top = 8.dp)
             ) {
                 Text(
@@ -760,7 +771,7 @@ private fun PlaylistGridTile(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(PlaylistGridLayout.metadataHeight)
+                    .heightIn(min = PlaylistGridLayout.metadataHeight * LocalDensity.current.fontScale.coerceAtLeast(1f))
                     .padding(top = 8.dp)
             ) {
                 Text(

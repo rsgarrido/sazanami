@@ -165,6 +165,8 @@
     <string name="modern_playback_controls_description">Choose the control treatment, scale, and active accent.</string>
     <string name="modern_accent">Accent</string>
     <string name="modern_layout">Layout</string>
+    <string name="modern_landscape_layout">Landscape player layout</string>
+    <string name="modern_landscape_layout_description">Applies to the Default player when the window has enough space. Compact and portrait windows keep the existing layout. The appearance preview stays compact.</string>
     <string name="modern_layout_description">Tune spacing, metadata alignment, and technical details.</string>
     <string name="modern_density">Density</string>
     <string name="modern_metadata_alignment">Metadata alignment</string>

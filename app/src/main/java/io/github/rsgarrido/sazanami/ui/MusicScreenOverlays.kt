@@ -26,6 +26,7 @@ import io.github.rsgarrido.sazanami.ui.player.PlayerMorphState
 import io.github.rsgarrido.sazanami.ui.player.PlayerEndpointBounds
 import io.github.rsgarrido.sazanami.ui.player.WarmCurrentSongWaveform
 import io.github.rsgarrido.sazanami.ui.player.shouldLoadExpandedPlayerWaveform
+import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerLayout
 import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMenuState
@@ -102,7 +103,8 @@ fun MusicScreenOverlays(
     retroRackMorphBounds: RetroRackMorphBounds,
     pocketFlipMorphBounds: PocketFlipMorphBounds,
     pocketCassetteMorphBounds: PocketCassetteMorphBounds,
-    pocketDiscMorphBounds: PocketDiscMorphBounds
+    pocketDiscMorphBounds: PocketDiscMorphBounds,
+    defaultPlayerLayout: DefaultPlayerLayout? = null
 ) {
     val isPlayerExpanded = playerMorphState.shouldComposeExpanded
     val setSystemBarSurface = LocalSystemBarSurfaceSetter.current
@@ -178,6 +180,7 @@ fun MusicScreenOverlays(
                     tokens = selectedPlayerThemeTokens,
                     modernArtworkTransitionStyle = selectedModernArtworkTransitionStyle,
                     modernPlayerAppearance = selectedModernPlayerAppearance,
+                    defaultPlayerLayout = defaultPlayerLayout,
                     isVisualizerWorkAllowed = shouldAllowExpandedPlayerVisualizerWork(
                         isLyricsVisible = isLyricsVisible,
                         isExpandedUpNextSheetVisible = isExpandedUpNextSheetVisible,

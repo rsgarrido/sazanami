@@ -799,9 +799,10 @@ private fun DrawScope.drawMirroredWaveformBars(
 ) {
     val barWidth = max(1f, (size.width - gap * (bars.size - 1)) / bars.size)
     val centerY = size.height / 2f
-    val maximumHalfHeight = centerY - centerGap
+    val maximumHalfHeight = (centerY - centerGap).coerceAtLeast(0f)
+    if (maximumHalfHeight == 0f) return
     bars.forEachIndexed { index, amplitude ->
-        val halfHeight = max(barWidth, maximumHalfHeight * amplitude)
+        val halfHeight = boundedWaveformPeakHalfHeight(barWidth, maximumHalfHeight, amplitude)
         val left = index * (barWidth + gap)
         val radius = barWidth / 2f
         drawRoundRect(
@@ -818,6 +819,14 @@ private fun DrawScope.drawMirroredWaveformBars(
         )
     }
 }
+
+/** Preserve the existing bar-width floor until it would draw beyond the selected track height. */
+internal fun boundedWaveformPeakHalfHeight(
+    barWidth: Float,
+    maximumHalfHeight: Float,
+    amplitude: Float
+): Float = max(barWidth, maximumHalfHeight * amplitude)
+    .coerceIn(0f, maximumHalfHeight.coerceAtLeast(0f))
 
 internal fun segmentedFillFractions(
     progress: Float,

@@ -1,6 +1,7 @@
 package io.github.rsgarrido.sazanami.ui.library
 
-import androidx.compose.foundation.layout.fillMaxWidth
+import io.github.rsgarrido.sazanami.ui.readableContentWidth
+
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -29,7 +30,7 @@ fun LibrarySearchBar(
         value = searchQuery,
         onValueChange = onSearchQueryChange,
         modifier = Modifier
-            .fillMaxWidth()
+            .readableContentWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
         singleLine = true,
         textStyle = AppShellTypography.SearchInput,

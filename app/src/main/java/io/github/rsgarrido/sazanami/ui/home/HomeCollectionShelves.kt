@@ -165,9 +165,7 @@ fun HomePinnedShelf(
                 .padding(horizontal = 16.dp)
         ) {
             val gap = 8.dp
-            val cardWidth =
-                (maxWidth - gap * (HomePin.MAX_COUNT - 1).toFloat()) /
-                        HomePin.MAX_COUNT.toFloat()
+            val cardWidth = homePinnedCardWidth(maxWidth)
 
             val stepPx = with(density) {
                 (cardWidth + gap).toPx()

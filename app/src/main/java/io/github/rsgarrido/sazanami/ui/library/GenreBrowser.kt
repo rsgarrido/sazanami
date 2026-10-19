@@ -1,5 +1,7 @@
 package io.github.rsgarrido.sazanami.ui.library
 
+import io.github.rsgarrido.sazanami.ui.readableContentWidth
+
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
@@ -126,7 +128,7 @@ private fun GenreListScreen(
 ) {
     if (genres.isEmpty()) {
         Box(
-            modifier = modifier.fillMaxSize(),
+            modifier = modifier.fillMaxSize().readableContentWidth(),
             contentAlignment = Alignment.Center
         ) {
             Text(
@@ -139,7 +141,7 @@ private fun GenreListScreen(
     }
 
     LazyColumn(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize().readableContentWidth(),
         contentPadding = PaddingValues(bottom = bottomContentPadding)
     ) {
         items(

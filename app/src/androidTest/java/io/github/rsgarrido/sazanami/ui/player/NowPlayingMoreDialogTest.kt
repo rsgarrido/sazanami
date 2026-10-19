@@ -2,22 +2,30 @@ package io.github.rsgarrido.sazanami.ui.player
 
 import android.net.Uri
 import android.content.res.Configuration
+import android.graphics.Rect
+import android.view.ContextThemeWrapper
+import android.view.View
+import android.view.ViewConfiguration
+import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.onChildren
@@ -56,6 +64,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import java.util.Locale
+import kotlin.math.max
+import kotlin.math.min
 
 class NowPlayingMoreDialogTest {
     @get:Rule
@@ -108,29 +118,80 @@ class NowPlayingMoreDialogTest {
     @Test
     fun outsideTapDismissesWithoutClickingThePlayerBehindTheDialog() {
         val visible = mutableStateOf(true)
+        val originalSong = song(1)
+        val currentSong = mutableStateOf(originalSong)
+        lateinit var player: PlayerMorphState
         var playerClickCount = 0
+        var dismissCount = 0
+        var actionCount = 0
         composeRule.setContent {
             MaterialTheme {
-                Box(Modifier.fillMaxSize().clickable { playerClickCount++ })
+                player = rememberPlayerMorphState(PlayerPresentation.Expanded)
+                Box(Modifier.fillMaxSize().testTag("more-outside-player").clickable {
+                    playerClickCount++
+                    currentSong.value = song(2)
+                    player.collapse()
+                }) { Text(currentSong.value.title) }
                 if (visible.value) {
-                    val target = song(1)
                     NowPlayingMoreDialog(
-                        target, nowPlayingActions(target, emptySet(), listOf(target)),
-                        onDismiss = { visible.value = false }, onAction = {}
+                        originalSong, nowPlayingActions(originalSong, emptySet(), listOf(originalSong)),
+                        onDismiss = { dismissCount++; visible.value = false },
+                        onAction = { actionCount++ }
                     )
                 }
             }
         }
-        composeRule.onNodeWithTag(NowPlayingMoreDialogTag).assertExists()
+        composeRule.onNodeWithTag(NowPlayingMoreDialogTag).assertIsDisplayed()
         Espresso.onView(isRoot()).inRoot(isDialog()).perform(GeneralClickAction(
             Tap.SINGLE,
-            CoordinatesProvider { view ->
-                floatArrayOf(8f, view.resources.displayMetrics.heightPixels / 2f)
+            CoordinatesProvider { dialogDecor ->
+                val dialogPosition = IntArray(2)
+                dialogDecor.getLocationOnScreen(dialogPosition)
+                val dialogWindow = Rect(dialogPosition[0], dialogPosition[1],
+                    dialogPosition[0] + dialogDecor.width, dialogPosition[1] + dialogDecor.height)
+                val activityDecor = composeRule.activity.window.decorView
+                val activityPosition = IntArray(2)
+                activityDecor.getLocationOnScreen(activityPosition)
+                val activityViewport = Rect()
+                activityDecor.getWindowVisibleDisplayFrame(activityViewport)
+                assertTrue("Activity must have a visible viewport: $activityViewport", activityViewport.intersect(
+                    Rect(activityPosition[0], activityPosition[1],
+                        activityPosition[0] + activityDecor.width, activityPosition[1] + activityDecor.height)))
+                // Native outside handling can include window touch slop. Avoid that boundary too.
+                val exclusion = Rect(dialogWindow).apply {
+                    val slop = ViewConfiguration.get(dialogDecor.context).scaledWindowTouchSlop
+                    inset(-slop, -slop)
+                }
+                val outside = listOf(
+                    Rect(activityViewport.left, activityViewport.top, activityViewport.right, min(activityViewport.bottom, exclusion.top)),
+                    Rect(activityViewport.left, max(activityViewport.top, exclusion.bottom), activityViewport.right, activityViewport.bottom),
+                    Rect(activityViewport.left, activityViewport.top, min(activityViewport.right, exclusion.left), activityViewport.bottom),
+                    Rect(max(activityViewport.left, exclusion.right), activityViewport.top, activityViewport.right, activityViewport.bottom)
+                ).filter { it.width() > 0 && it.height() > 0 }
+                    .maxByOrNull { it.width().toLong() * it.height() }
+                    ?: throw AssertionError("No native outside region: dialog=$dialogWindow; " +
+                        "activity=$activityViewport; exclusion=$exclusion")
+                val x = outside.exactCenterX()
+                val y = outside.exactCenterY()
+                assertTrue("Outside tap must remain in the visible activity", activityViewport.contains(x.toInt(), y.toInt()))
+                assertFalse("Outside tap must leave the native window: $dialogWindow", dialogWindow.contains(x.toInt(), y.toInt()))
+                // GeneralClickAction consumes screen coordinates, not Compose-root coordinates.
+                floatArrayOf(x, y)
             },
             Press.FINGER
         ))
         composeRule.onNodeWithTag(NowPlayingMoreDialogTag).assertDoesNotExist()
-        composeRule.runOnIdle { assertEquals(0, playerClickCount) }
+        composeRule.onNodeWithTag("more-outside-player").assertIsDisplayed()
+        composeRule.onNodeWithText(originalSong.title).assertIsDisplayed()
+        composeRule.runOnIdle {
+            assertEquals(1, dismissCount)
+            assertEquals(0, actionCount)
+            assertEquals(0, playerClickCount)
+            assertSame(originalSong, currentSong.value)
+            assertEquals(PlayerPresentation.Expanded, player.targetPresentation)
+            assertEquals(PlayerPresentation.Expanded, player.settledPresentation)
+            assertEquals(1f, player.progress, 0f)
+        }
     }
 
     @Test
@@ -294,37 +355,91 @@ class NowPlayingMoreDialogTest {
 
     @Test
     fun timerButtonHasLocalizedButtonAndLiveStateSemanticsWithoutVisibleCaption() {
-        val language = mutableStateOf("en")
         val active = mutableStateOf(false)
         val target = song(1)
-        composeRule.setContent {
-            val context = LocalContext.current
-            val configuration = Configuration(LocalConfiguration.current).apply { setLocale(Locale(language.value)) }
-            CompositionLocalProvider(
-                LocalContext provides context.createConfigurationContext(configuration),
-                LocalConfiguration provides configuration
-            ) {
-                MaterialTheme {
-                    NowPlayingMoreDialog(target,
-                        nowPlayingActions(target, emptySet(), listOf(target), isSleepTimerActive = active.value), {}, {})
-                }
-            }
+        val originalDefaultLocale = Locale.getDefault()
+        lateinit var originalConfiguration: Configuration
+        lateinit var originalApplicationConfiguration: Configuration
+        var originalContent = emptyList<View>()
+        var host: ComposeView? = null
+        var timerClicks = 0
+        var dismissals = 0
+        composeRule.activityRule.scenario.onActivity { activity ->
+            originalConfiguration = Configuration(activity.resources.configuration)
+            originalApplicationConfiguration = Configuration(activity.applicationContext.resources.configuration)
+            val content = requireNotNull(activity.window.decorView.findViewById<ViewGroup>(android.R.id.content))
+            originalContent = (0 until content.childCount).map { requireNotNull(content.getChildAt(it)) }
         }
-        listOf("en", "es").forEach { locale ->
-            composeRule.runOnIdle { language.value = locale; active.value = false }
-            val label = if (locale == "en") "Sleep Timer" else "Temporizador de apagado"
-            val inactive = if (locale == "en") "No sleep timer" else "No hay un temporizador activo"
-            val activeDescription = if (locale == "en") "Sleep timer active" else "Temporizador de apagado activo"
-            val button = composeRule.onNodeWithContentDescription(label)
-            val inactiveNode = button.fetchSemanticsNode()
-            assertEquals(Role.Button, inactiveNode.config[SemanticsProperties.Role])
-            assertFalse(inactiveNode.config[SemanticsProperties.Selected])
-            assertEquals(inactive, inactiveNode.config[SemanticsProperties.StateDescription])
-            composeRule.onNodeWithText(label).assertDoesNotExist()
-            composeRule.runOnIdle { active.value = true }
-            button.assertIsSelected()
-            assertEquals(activeDescription, button.fetchSemanticsNode().config[SemanticsProperties.StateDescription])
-            composeRule.onNodeWithTag(NowPlayingMoreQuickActionsTag).onChildren().assertCountEquals(4)
+        try {
+            listOf("en", "es").forEachIndexed { index, language ->
+                composeRule.activityRule.scenario.onActivity { activity ->
+                    // Dispose the old native dialog before creating a differently localized host.
+                    host?.disposeComposition()
+                    active.value = false
+                    val context = ContextThemeWrapper(activity, 0).apply {
+                        applyOverrideConfiguration(Configuration(originalConfiguration).apply {
+                            setLocale(Locale.forLanguageTag(language))
+                        })
+                    }
+                    // Dialog reads LocalView.context. Give the real host View localized resources;
+                    // activity/application resources and the process default locale stay unchanged.
+                    val localizedHost = ComposeView(context).apply {
+                        setContent {
+                            MaterialTheme {
+                                NowPlayingMoreDialog(target,
+                                    nowPlayingActions(target, emptySet(), listOf(target), isSleepTimerActive = active.value),
+                                    onDismiss = { dismissals++ },
+                                    onAction = {
+                                        assertEquals(NowPlayingAction.SLEEP_TIMER, it)
+                                        timerClicks++
+                                        active.value = !active.value
+                                    })
+                            }
+                        }
+                    }
+                    host = localizedHost
+                    activity.setContentView(localizedHost)
+                }
+                val label = if (language == "en") "Sleep Timer" else "Temporizador de apagado"
+                val inactive = if (language == "en") "No sleep timer" else "No hay un temporizador activo"
+                val activeDescription = if (language == "en") "Sleep timer active" else "Temporizador de apagado activo"
+                val button = composeRule.onNodeWithContentDescription(label).assertIsDisplayed().assertIsEnabled()
+                Espresso.onView(isRoot()).inRoot(isDialog()).check { view, noViewError ->
+                    if (noViewError != null) throw noViewError
+                    assertEquals(language, requireNotNull(view).resources.configuration.locales[0].language)
+                }
+                val inactiveNode = button.fetchSemanticsNode()
+                assertEquals(Role.Button, inactiveNode.config[SemanticsProperties.Role])
+                assertFalse(inactiveNode.config[SemanticsProperties.Selected])
+                assertEquals(inactive, inactiveNode.config[SemanticsProperties.StateDescription])
+                composeRule.onNodeWithText(label).assertDoesNotExist()
+                button.performClick()
+                button.assertIsSelected()
+                val activeNode = button.fetchSemanticsNode()
+                assertEquals(Role.Button, activeNode.config[SemanticsProperties.Role])
+                assertEquals(activeDescription, activeNode.config[SemanticsProperties.StateDescription])
+                composeRule.runOnIdle { assertEquals(index * 2 + 1, timerClicks); assertEquals(0, dismissals) }
+                composeRule.onNodeWithText(label).assertDoesNotExist()
+                composeRule.onNodeWithTag(NowPlayingMoreQuickActionsTag).onChildren().assertCountEquals(4)
+                button.performClick()
+                val stoppedNode = button.fetchSemanticsNode()
+                assertFalse(stoppedNode.config[SemanticsProperties.Selected])
+                assertEquals(inactive, stoppedNode.config[SemanticsProperties.StateDescription])
+                composeRule.runOnIdle { assertEquals((index + 1) * 2, timerClicks); assertEquals(0, dismissals) }
+            }
+        } finally {
+            composeRule.activityRule.scenario.onActivity { activity ->
+                try {
+                    host?.disposeComposition()
+                } finally {
+                    val content = requireNotNull(activity.window.decorView.findViewById<ViewGroup>(android.R.id.content))
+                    content.removeAllViews()
+                    originalContent.forEach { content.addView(it) }
+                }
+                assertEquals(originalConfiguration.locales, activity.resources.configuration.locales)
+                assertEquals(originalApplicationConfiguration.locales, activity.applicationContext.resources.configuration.locales)
+                assertEquals(originalDefaultLocale, Locale.getDefault())
+            }
         }
     }
 

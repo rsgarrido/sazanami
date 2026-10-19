@@ -12,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -49,6 +50,7 @@ import java.time.LocalDate
 import java.time.Instant
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -354,17 +356,41 @@ class StatisticsScreenTest {
                 )
             }
         }
-        composeRule.runOnIdle { listState.requestScrollToItem(3) }
+        // Keep the header action visible while exercising a real, nonzero scroll position.
+        val headerScrollOffset = composeRule.runOnIdle {
+            (listState.layoutInfo.visibleItemsInfo.single { it.index == 0 }.size / 8).coerceAtLeast(1)
+        }
+        composeRule.runOnIdle { listState.requestScrollToItem(0, headerScrollOffset) }
         composeRule.waitForIdle()
-        val indexBeforeDialog = listState.firstVisibleItemIndex
-        val offsetBeforeDialog = listState.firstVisibleItemScrollOffset
+        val stateBeforeDialog = composeRule.runOnIdle { listState }
+        val (indexBeforeDialog, offsetBeforeDialog) = composeRule.runOnIdle {
+            listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+        }
         assertTrue(indexBeforeDialog > 0 || offsetBeforeDialog > 0)
-        composeRule.onNodeWithContentDescription("About Statistics").performClick()
-        composeRule.onNodeWithText("About Statistics").assertExists()
+        val visibleItemsBeforeDialog = composeRule.runOnIdle {
+            listState.layoutInfo.visibleItemsInfo.map { Triple(it.index, it.offset, it.size) }
+        }
+        val about = composeRule.onNodeWithContentDescription("About Statistics").assertIsDisplayed()
+        val aboutNode = about.fetchSemanticsNode()
+        val aboutBoundsBeforeDialog = composeRule.runOnIdle { aboutNode.layoutInfo.coordinates.boundsInRoot() }
+        composeRule.onNodeWithText("Statistics").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Last 30 days").assertIsSelected()
+        about.performClick()
+        composeRule.onNodeWithText("About Statistics").assertIsDisplayed()
+        composeRule.onNodeWithTag("statistics_info_content").assertExists()
         composeRule.onNodeWithText("Close").performClick()
+        composeRule.onNodeWithTag("statistics_info_content").assertDoesNotExist()
+        val returnedAboutNode = about.assertIsDisplayed().fetchSemanticsNode()
+        composeRule.onNodeWithText("Statistics").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Last 30 days").assertIsSelected()
         composeRule.runOnIdle {
+            assertSame(stateBeforeDialog, listState)
             assertEquals(indexBeforeDialog, listState.firstVisibleItemIndex)
             assertEquals(offsetBeforeDialog, listState.firstVisibleItemScrollOffset)
+            assertEquals(visibleItemsBeforeDialog,
+                listState.layoutInfo.visibleItemsInfo.map { Triple(it.index, it.offset, it.size) })
+            // Measure the placed control too: inspecting only a detached old state could miss a UI reset.
+            assertEquals(aboutBoundsBeforeDialog, returnedAboutNode.layoutInfo.coordinates.boundsInRoot())
         }
     }
 

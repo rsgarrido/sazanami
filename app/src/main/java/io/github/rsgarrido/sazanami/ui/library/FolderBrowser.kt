@@ -1,5 +1,7 @@
 package io.github.rsgarrido.sazanami.ui.library
 
+import io.github.rsgarrido.sazanami.ui.readableContentWidth
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -158,7 +160,7 @@ private fun FolderRootContent(
     modifier: Modifier
 ) {
     if (roots.isEmpty()) {
-        Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Box(modifier = modifier.fillMaxSize().readableContentWidth(), contentAlignment = Alignment.Center) {
             Text(
                 text = stringResource(R.string.library_folder_no_folders),
                 style = MaterialTheme.typography.bodyLarge,
@@ -171,7 +173,7 @@ private fun FolderRootContent(
 
     LazyColumn(
         state = listState,
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize().readableContentWidth(),
         contentPadding = PaddingValues(bottom = bottomContentPadding)
     ) {
         item(key = "folder-root-heading") {

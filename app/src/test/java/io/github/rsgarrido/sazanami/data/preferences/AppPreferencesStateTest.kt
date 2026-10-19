@@ -34,6 +34,10 @@ import io.github.rsgarrido.sazanami.ui.player.modern.ModernControlSize
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernControlStyle
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernLayoutAppearance
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernLayoutDensity
+import io.github.rsgarrido.sazanami.ui.player.modern.ModernLandscapeLayout
+import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerArrangement
+import io.github.rsgarrido.sazanami.ui.player.modern.resolveDefaultPlayerLayout
+import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernMetadataAlignment
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerAppearance
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernSeekbarAppearance
@@ -49,6 +53,46 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AppPreferencesStateTest {
+    @Test
+    fun landscapeChoiceDefaultsSafelyAndNeverEditsAnAppearanceRecipe() {
+        val key = stringPreferencesKey("modern_landscape_layout")
+        assertEquals(ModernLandscapeLayout.BALANCED, decodeAppPreferences(mutablePreferencesOf()).modernLandscapeLayout)
+        assertEquals(ModernLandscapeLayout.BALANCED,
+            decodeAppPreferences(mutablePreferencesOf(key to "future_layout")).modernLandscapeLayout)
+        val preferences = mutablePreferencesOf(booleanPreferencesKey("smooth_play_pause_enabled") to false)
+        val saved = ModernAppearancePreset.COLORFUL.appearance()
+        preferences.writeModernPlayerAppearance(saved)
+        preferences.selectModernAppearanceChoice(ModernAppearanceChoice.MINIMAL)
+        preferences.writeModernLandscapeLayout(ModernLandscapeLayout.WIDE_WAVEFORM)
+        assertEquals(ModernAppearanceChoice.MINIMAL, decodeAppPreferences(preferences).activeModernAppearanceChoice)
+        assertEquals(saved, decodeAppPreferences(preferences).myPlayerAppearance)
+        ModernAppearanceChoice.entries.forEach { choice ->
+            preferences.selectModernAppearanceChoice(choice)
+            assertEquals(ModernLandscapeLayout.WIDE_WAVEFORM, decodeAppPreferences(preferences).modernLandscapeLayout)
+        }
+        preferences.editModernPlayerAppearance { it.copy(layout = it.layout.copy(showAudioQualityBadge = false)) }
+        assertEquals(ModernLandscapeLayout.WIDE_WAVEFORM, decodeAppPreferences(preferences).modernLandscapeLayout)
+        preferences.resetMyPlayerAppearance()
+        val reset = decodeAppPreferences(preferences)
+        assertEquals(ModernLandscapeLayout.WIDE_WAVEFORM, reset.modernLandscapeLayout)
+        assertEquals(ModernPlayerAppearance.Default, reset.myPlayerAppearance)
+        assertFalse(reset.smoothPlayPauseEnabled)
+    }
+
+    @Test
+    fun responsiveFallbackDoesNotWriteTheStoredLandscapeChoice() {
+        val preferences = mutablePreferencesOf()
+        preferences.writeModernLandscapeLayout(ModernLandscapeLayout.WIDE_WAVEFORM)
+        val before = preferences.asMap().toMap()
+        fun layout(height: Int) = resolveDefaultPlayerLayout(1280.dp, height.dp,
+            preferredLandscapeLayout = decodeAppPreferences(preferences).modernLandscapeLayout).arrangement
+        assertEquals(DefaultPlayerArrangement.WideWaveform, layout(720))
+        assertEquals(DefaultPlayerArrangement.Balanced, layout(440))
+        assertEquals(DefaultPlayerArrangement.Vertical, layout(380))
+        assertEquals(DefaultPlayerArrangement.WideWaveform, layout(720))
+        assertEquals(before, preferences.asMap())
+    }
+
     @Test
     fun experimentalUsbDirectIsDisabledBeforeLoadingAndWhenAbsentAfterUpgrade() {
         assertFalse(AppPreferencesState().experimentalUsbDirectEnabled)

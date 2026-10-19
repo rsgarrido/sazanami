@@ -59,6 +59,7 @@ import io.github.rsgarrido.sazanami.ui.player.modern.ModernLayoutAppearance
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernLayoutDensity
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernMetadataAlignment
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerAppearance
+import io.github.rsgarrido.sazanami.ui.player.modern.ModernLandscapeLayout
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernSeekbarAppearance
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernSeekbarColorMode
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernSeekbarStyle
@@ -95,6 +96,7 @@ data class AppPreferencesState(
     val modernPlayerAppearance: ModernPlayerAppearance = ModernPlayerAppearance.Default,
     val myPlayerAppearance: ModernPlayerAppearance = ModernPlayerAppearance.Default,
     val activeModernAppearanceChoice: ModernAppearanceChoice = ModernAppearanceChoice.MY_PLAYER,
+    val modernLandscapeLayout: ModernLandscapeLayout = ModernLandscapeLayout.BALANCED,
     val replayGainMode: ReplayGainMode = ReplayGainMode.OFF,
     val audioOffloadPreference: AudioOffloadPreference = AudioOffloadPreference.DISABLED,
     val experimentalUsbDirectEnabled: Boolean = false,
@@ -173,6 +175,10 @@ class AppPreferencesRepository private constructor(
 
     suspend fun setModernArtworkTransitionStyle(style: ModernArtworkTransitionStyle) = edit {
         it[Keys.modernArtworkTransitionStyle] = style.storageValue
+    }
+
+    suspend fun setModernLandscapeLayout(layout: ModernLandscapeLayout) = edit {
+        it.writeModernLandscapeLayout(layout)
     }
 
     suspend fun setModernSeekbarStyle(style: ModernSeekbarStyle) =
@@ -617,6 +623,7 @@ class AppPreferencesRepository private constructor(
         preferences[Keys.modernArtworkTransitionStyle] =
             restored.modernArtworkTransitionStyle.storageValue
         preferences.writeRestoredModernAppearance(restored)
+        preferences.writeModernLandscapeLayout(restored.modernLandscapeLayout)
         preferences[Keys.replayGainMode] = restored.replayGainMode.name
         preferences[Keys.audioOffloadPreference] = restored.audioOffloadPreference.name
         preferences[Keys.smoothPlayPauseEnabled] = restored.smoothPlayPauseEnabled
@@ -719,6 +726,7 @@ internal fun decodeAppPreferences(preferences: Preferences): AppPreferencesState
         modernPlayerAppearance = choice.effectiveAppearance(myPlayer),
         myPlayerAppearance = myPlayer,
         activeModernAppearanceChoice = choice,
+        modernLandscapeLayout = ModernLandscapeLayout.fromStorageValue(preferences[Keys.modernLandscapeLayout]),
         replayGainMode = runCatching {
             ReplayGainMode.valueOf(preferences[Keys.replayGainMode].orEmpty())
         }.getOrDefault(ReplayGainMode.OFF),
@@ -818,6 +826,10 @@ private fun MutablePreferences.writeHomePins(pins: List<HomePin>) {
     } else {
         this[Keys.homePins] = preferencesJson.encodeToString(sanitized)
     }
+}
+
+internal fun MutablePreferences.writeModernLandscapeLayout(layout: ModernLandscapeLayout) {
+    this[Keys.modernLandscapeLayout] = layout.storageValue
 }
 
 internal fun MutablePreferences.writeModernPlayerAppearance(
@@ -1246,6 +1258,7 @@ private object Keys {
     val appAppearance = stringPreferencesKey("app_appearance")
     val selectedPlayerTheme = stringPreferencesKey("selected_player_theme")
     val modernArtworkTransitionStyle = stringPreferencesKey("artwork_transition_style")
+    val modernLandscapeLayout = stringPreferencesKey("modern_landscape_layout")
     val activeModernAppearanceChoice = stringPreferencesKey("modern_active_appearance_choice")
     val modernSeekbarStyle = stringPreferencesKey("seekbar_style")
     val modernWaveformSize = stringPreferencesKey("modern_waveform_size")

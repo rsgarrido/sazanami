@@ -61,6 +61,7 @@
     <string name="modern_option_control_accent_album_derived">Color del álbum</string>
     <string name="modern_option_layout_density_compact">Compacta</string>
     <string name="modern_option_layout_density_balanced">Equilibrada</string>
+    <string name="modern_option_landscape_wide_waveform">Forma de onda amplia</string>
     <string name="modern_option_layout_density_relaxed">Espaciosa</string>
     <string name="modern_option_metadata_alignment_left">Izquierda</string>
     <string name="modern_option_metadata_alignment_center">Centro</string>
