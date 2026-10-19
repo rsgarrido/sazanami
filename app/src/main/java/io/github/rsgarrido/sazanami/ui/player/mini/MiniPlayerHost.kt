@@ -8,7 +8,8 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.Dp
 import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.data.Song
-import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
+import io.github.rsgarrido.sazanami.ui.player.PlayerPresentationIdentity
+import io.github.rsgarrido.sazanami.ui.player.ResolvedPlayerPresentation
 import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.retrorack.RetroRackMorphBounds
@@ -60,8 +61,7 @@ internal fun miniPlayerVariantFor(playerTheme: PlayerTheme): MiniPlayerVariant =
 
 @Composable
 fun MiniPlayerHost(
-    selectedPlayerTheme: PlayerTheme,
-    tokens: PlayerThemeTokens,
+    playerPresentation: ResolvedPlayerPresentation,
     state: MiniPlayerState,
     callbacks: MiniPlayerCallbacks,
     modifier: Modifier = Modifier,
@@ -75,10 +75,14 @@ fun MiniPlayerHost(
     defaultMorphCallbacks: DefaultMiniPlayerMorphCallbacks? = null,
     morphOwnsVisuals: Boolean = false
 ) {
+    val playerTheme = when (val identity = playerPresentation.identity) {
+        is PlayerPresentationIdentity.Existing -> identity.theme
+    }
+    val tokens = playerPresentation.tokens
     val measuredModifier = modifier.onGloballyPositioned { coordinates ->
         onBoundsChanged(coordinates.boundsInRoot())
     }
-    when (miniPlayerVariantFor(selectedPlayerTheme)) {
+    when (miniPlayerVariantFor(playerTheme)) {
         MiniPlayerVariant.MODERN -> ModernMiniPlayer(
             state = state,
             callbacks = callbacks,

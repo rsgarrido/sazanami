@@ -27,7 +27,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.R
-import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.membershipKey
 import io.github.rsgarrido.sazanami.player.RepeatMode
@@ -45,6 +44,7 @@ import io.github.rsgarrido.sazanami.ui.library.LibrarySortState
 import io.github.rsgarrido.sazanami.ui.library.LibraryTab
 import io.github.rsgarrido.sazanami.ui.player.PlayerCard
 import io.github.rsgarrido.sazanami.ui.player.PlayerMorphState
+import io.github.rsgarrido.sazanami.ui.player.ResolvedPlayerPresentation
 import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.retrorack.RetroRackMorphBounds
@@ -53,7 +53,6 @@ import io.github.rsgarrido.sazanami.ui.player.pocketcassette.PocketCassetteMorph
 import io.github.rsgarrido.sazanami.ui.player.pocketdisc.PocketDiscMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.mini.DefaultMiniPlayerMorphCallbacks
 import io.github.rsgarrido.sazanami.ui.player.SleepTimerStatusBanner
-import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 
 @Composable
 fun MusicScreenHeader(
@@ -170,8 +169,7 @@ fun MiniPlayerSection(
     repeatMode: RepeatMode,
     currentPosition: Int,
     duration: Int,
-    selectedPlayerTheme: PlayerTheme,
-    selectedPlayerThemeTokens: PlayerThemeTokens,
+    playerPresentation: ResolvedPlayerPresentation,
     playerMorphState: PlayerMorphState,
     favoriteMembershipKeys: Set<String>,
     onPlayPauseClick: () -> Unit,
@@ -213,8 +211,7 @@ fun MiniPlayerSection(
             repeatMode = repeatMode,
             currentPosition = currentPosition,
             duration = duration,
-            selectedPlayerTheme = selectedPlayerTheme,
-            selectedPlayerThemeTokens = selectedPlayerThemeTokens,
+            playerPresentation = playerPresentation,
             playerMorphState = playerMorphState,
             onPlayPauseClick = onPlayPauseClick,
             onPreviousClick = onPreviousClick,

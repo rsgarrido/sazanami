@@ -97,6 +97,8 @@ import io.github.rsgarrido.sazanami.ui.theme.SazanamiAccent
 import io.github.rsgarrido.sazanami.ui.player.rememberPlayerLyricsTransitionState
 import io.github.rsgarrido.sazanami.ui.player.modern.defaultPlayerLayout
 import io.github.rsgarrido.sazanami.ui.player.PlayerMorphHost
+import io.github.rsgarrido.sazanami.ui.player.PlayerPresentationIdentity
+import io.github.rsgarrido.sazanami.ui.player.resolvePlayerPresentation
 import io.github.rsgarrido.sazanami.ui.state.PlaybackProgressUiState
 import io.github.rsgarrido.sazanami.ui.state.LibraryAppearanceUiState
 import io.github.rsgarrido.sazanami.ui.state.LibraryRefreshSummary
@@ -390,7 +392,10 @@ internal fun MusicScreen(
     var isDiscardTagChangesDialogVisible by remember { mutableStateOf(false) }
     var selectedArtworkUriForTagEdit by remember { mutableStateOf<Uri?>(null) }
 
-    val canPresentNowPlayingMore = supportsNowPlayingMore(selectedPlayerTheme) &&
+    // No landscape candidate is enabled until a complete matched player and interruption policy exist.
+    // Global accents and settings below deliberately continue using the primary selection.
+    val resolvedPlayerPresentation = resolvePlayerPresentation(selectedPlayerTheme, selectedPlayerThemeTokens)
+    val canPresentNowPlayingMore = supportsNowPlayingMore(resolvedPlayerPresentation.identity) &&
             playerMorphState.targetPresentation == PlayerPresentation.Expanded &&
             !isLyricsVisible && !lyricsTransitionState.lyricsOwnsInput &&
             songPendingTagEdit == null && batchMetadataEditorState == null &&
@@ -403,7 +408,7 @@ internal fun MusicScreen(
         { overlayState.isSleepTimerDialogVisible.value = true }
     }
     NowPlayingTrackInfoOverlay(overlayState, canPresentNowPlayingMore)
-    val canPresentArtworkViewer = canPresentNowPlayingMore && supportsNowPlayingArtworkViewer(selectedPlayerTheme)
+    val canPresentArtworkViewer = canPresentNowPlayingMore && supportsNowPlayingArtworkViewer(resolvedPlayerPresentation.identity)
     val onViewArtwork = rememberNowPlayingArtworkViewerOpener(currentSong, overlayState, lyricsTransitionState, canPresentArtworkViewer)
     NowPlayingArtworkViewerOverlay(overlayState, canPresentArtworkViewer)
     val nowPlayingMoreTarget = overlayState.currentNowPlayingMoreTarget(currentSong)
@@ -1346,8 +1351,7 @@ internal fun MusicScreen(
                     onToggleFavoriteClick = onToggleFavoriteClick,
                     isSleepTimerActive = isSleepTimerActive,
                     sleepTimerDisplayText = sleepTimerDisplayText,
-                    selectedPlayerTheme = selectedPlayerTheme,
-                    selectedPlayerThemeTokens = selectedPlayerThemeTokens,
+                    playerPresentation = resolvedPlayerPresentation,
                     selectedModernArtworkTransitionStyle = selectedModernArtworkTransitionStyle,
                     selectedModernPlayerAppearance = selectedModernPlayerAppearance,
                     playerMorphState = playerMorphState,
@@ -1393,7 +1397,9 @@ internal fun MusicScreen(
                     morphState = playerMorphState,
                     modifier = Modifier.fillMaxSize(),
                     layoutBoundary = shellLayout to
-                        defaultLayout.takeIf { selectedPlayerTheme == PlayerTheme.DEFAULT }
+                        defaultLayout.takeIf {
+                            resolvedPlayerPresentation.identity == PlayerPresentationIdentity.Existing(PlayerTheme.DEFAULT)
+                        }
                 ) { playerEndpointBounds ->
                     playerPresentation(playerEndpointBounds)
                 }

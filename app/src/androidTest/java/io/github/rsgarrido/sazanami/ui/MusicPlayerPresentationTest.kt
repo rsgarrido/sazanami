@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.testTag
@@ -68,6 +69,12 @@ import io.github.rsgarrido.sazanami.ui.player.PlayerMorphHost
 import io.github.rsgarrido.sazanami.ui.player.PlayerMorphState
 import io.github.rsgarrido.sazanami.ui.player.PlayerMorphLayoutFrame
 import io.github.rsgarrido.sazanami.ui.player.PlayerPresentation
+import io.github.rsgarrido.sazanami.ui.player.PlayerDeviceKind
+import io.github.rsgarrido.sazanami.ui.player.PlayerPresentationIdentity
+import io.github.rsgarrido.sazanami.ui.player.ResolvedPlayerPresentation
+import io.github.rsgarrido.sazanami.ui.player.TabletLandscapePlayerCandidate
+import io.github.rsgarrido.sazanami.ui.player.TabletLandscapePlayerContext
+import io.github.rsgarrido.sazanami.ui.player.resolvePlayerPresentation
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMenuScreen
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMenuState
 import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerMorphBounds
@@ -244,6 +251,77 @@ class MusicPlayerPresentationTest {
         composeRule.runOnIdle { assertEquals(listOf("play-pause", "queue", "sleep"), fixture.calls) }
         mini(fixture).performClick()
         composeRule.runOnIdle { assertEquals(PlayerPresentation.Expanded, fixture.morph.targetPresentation) }
+    }
+
+    @Test
+    fun oneResolvedPairDrivesMiniMorphAndExpandedWhilePrimarySelectionStaysSeparate() {
+        // An existing complete pair exercises nomination without adding unfinished landscape UI.
+        val fixture = Fixture(PlayerPresentation.Collapsed).apply {
+            viewport.value = DpSize(1200.dp, 800.dp)
+            deviceKind.value = PlayerDeviceKind.TABLET
+            nominatedTheme.value = PlayerTheme.RETRO_RACK
+            miniVisible.value = true
+        }
+        composeRule.setContent {
+            SazanamiTheme {
+                // Same appearance boundary as MusicScreen; the nominated player receives its own tokens.
+                val accent = rememberAppShellAccent(fixture.theme.value, fixture.theme.value.defaultTokens())
+                CompositionLocalProvider(LocalAppShellAccent provides accent) { fixture.Content() }
+            }
+        }
+        val owner = fixture.morph
+        val endpoints = fixture.endpoints
+        composeRule.runOnIdle {
+            assertEquals(resolveAppShellAccent(PlayerTheme.DEFAULT, PlayerTheme.DEFAULT.defaultTokens()),
+                fixture.observedShellAccent)
+        }
+        composeRule.onNodeWithText(fixture.current.value!!.title.uppercase()).assertIsDisplayed()
+        composeRule.mainClock.autoAdvance = false
+        try {
+            mini(fixture).performClick()
+            composeRule.mainClock.advanceTimeBy(120)
+            val beforePrimaryChange = composeRule.runOnIdle {
+                assertTrue(owner.progress > 0f && owner.progress < 1f)
+                assertEquals(PlayerTheme.DEFAULT, fixture.theme.value)
+                owner.progress
+            }
+            composeRule.runOnIdle {
+                // Changing global appearance during a morph must not reselect the nominated pair.
+                fixture.theme.value = PlayerTheme.CLASSIC_WHEEL
+            }
+            composeRule.mainClock.advanceTimeByFrame()
+            composeRule.runOnIdle {
+                assertSame(owner, fixture.morph)
+                assertSame(endpoints, fixture.endpoints)
+                assertTrue(owner.progress >= beforePrimaryChange && owner.progress < 1f)
+                assertEquals(PlayerPresentation.Expanded, owner.targetPresentation)
+            }
+            mini(fixture).assertDoesNotExist() // Its composed source has yielded input to the morph.
+        } finally {
+            composeRule.mainClock.autoAdvance = true
+        }
+        composeRule.onNodeWithText(text(R.string.player_rack_main_deck)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(text(R.string.player_more_actions)).performClick()
+        composeRule.runOnIdle {
+            assertEquals(PlayerTheme.CLASSIC_WHEEL, fixture.theme.value)
+            assertEquals(PlayerPresentation.Expanded, owner.settledPresentation)
+            assertSame(owner, fixture.morph)
+            assertSame(endpoints, fixture.endpoints)
+            assertEquals(listOf("more"), fixture.calls)
+        }
+        composeRule.onNodeWithText(text(R.string.player_rack_main_deck)).assertIsDisplayed()
+        composeRule.runOnIdle {
+            assertEquals(resolveAppShellAccent(PlayerTheme.CLASSIC_WHEEL, PlayerTheme.CLASSIC_WHEEL.defaultTokens()),
+                fixture.observedShellAccent)
+        }
+        composeRule.onNodeWithContentDescription(text(R.string.player_collapse)).performClick()
+        composeRule.onNodeWithText(fixture.current.value!!.title.uppercase()).assertIsDisplayed()
+        composeRule.runOnIdle {
+            assertSame(owner, fixture.morph)
+            assertSame(endpoints, fixture.endpoints)
+            assertTrue(owner.isCollapsedAndIdle)
+            assertEquals(listOf("more"), fixture.calls)
+        }
     }
 
     @Test
@@ -1145,6 +1223,8 @@ class MusicPlayerPresentationTest {
         val previous = mutableStateOf<Song?>(songs[0])
         val next = mutableStateOf<Song?>(songs[2])
         val theme = mutableStateOf(PlayerTheme.DEFAULT)
+        val nominatedTheme = mutableStateOf<PlayerTheme?>(null)
+        val deviceKind = mutableStateOf(PlayerDeviceKind.UNKNOWN)
         val miniVisible = mutableStateOf(false)
         val navigationVisible = mutableStateOf(true)
         val metadataVisible = mutableStateOf(false)
@@ -1169,6 +1249,7 @@ class MusicPlayerPresentationTest {
         var resolvedPlayerLayout: DefaultPlayerLayout? = null
         var contentPaddingPx = 0f
         var receivedPadding: Dp? = null
+        var observedShellAccent: Color? = null
         val progress = MutableStateFlow(PlaybackProgressUiState(duration = 180_000))
         val calls = mutableListOf<String>()
         val openedArtists = mutableListOf<Song>()
@@ -1215,6 +1296,17 @@ class MusicPlayerPresentationTest {
                             preferredLandscapeLayout = landscapeLayout.value)
                     } else null
                     resolvedPlayerLayout = playerLayout
+                    val presentation = resolvePlayerPresentation(
+                        primaryTheme = theme.value,
+                        primaryThemeTokens = theme.value.defaultTokens(),
+                        context = TabletLandscapePlayerContext(deviceKind.value, 800, DpSize(maxWidth, maxHeight)),
+                        landscapeCandidate = nominatedTheme.value?.let { nominated ->
+                            TabletLandscapePlayerCandidate(
+                                ResolvedPlayerPresentation(PlayerPresentationIdentity.Existing(nominated), nominated.defaultTokens()),
+                                DpSize(840.dp, 480.dp)
+                            )
+                        }
+                    )
                     val player = prepareMusicPlayerPresentation(
                         songs = songs,
                         currentSong = current.value,
@@ -1242,8 +1334,7 @@ class MusicPlayerPresentationTest {
                         onToggleFavoriteClick = { favorites += it },
                         isSleepTimerActive = timerActive.value,
                         sleepTimerDisplayText = "Timer fixture",
-                        selectedPlayerTheme = theme.value,
-                        selectedPlayerThemeTokens = theme.value.defaultTokens(),
+                        playerPresentation = presentation,
                         selectedModernArtworkTransitionStyle = ModernArtworkTransitionStyle.SLIDE,
                         selectedModernPlayerAppearance = appearance.value,
                         playerMorphState = morph,
@@ -1262,6 +1353,7 @@ class MusicPlayerPresentationTest {
                         shouldComposePlayerOverlays = overlaysVisible.value,
                         targetBottomContentPadding = padding.value,
                         bodyPresentation = { value ->
+                            observedShellAccent = AppShellAccent
                             receivedPadding = value
                             Box(Modifier.fillMaxSize().testTag("body-pane")) {
                                 Text("Body", Modifier.testTag("body"))

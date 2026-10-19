@@ -30,6 +30,8 @@ import io.github.rsgarrido.sazanami.player.RepeatMode
 import io.github.rsgarrido.sazanami.ui.player.PlayerEndpointBounds
 import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsTransitionState
 import io.github.rsgarrido.sazanami.ui.player.PlayerMorphState
+import io.github.rsgarrido.sazanami.ui.player.PlayerPresentationIdentity
+import io.github.rsgarrido.sazanami.ui.player.ResolvedPlayerPresentation
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMenuState
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMiniVisualOwner
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMorphBounds
@@ -65,7 +67,6 @@ import io.github.rsgarrido.sazanami.ui.player.retrorack.RetroRackMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.retrorack.resolveRetroRackMorphGeometry
 import io.github.rsgarrido.sazanami.ui.player.retrorack.retroRackMorphOwnsVisuals
 import io.github.rsgarrido.sazanami.ui.player.retrorack.retroRackMorphTravelDistance
-import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 import io.github.rsgarrido.sazanami.ui.state.PlaybackProgress
 import io.github.rsgarrido.sazanami.ui.state.PlaybackProgressUiState
 import kotlinx.coroutines.flow.StateFlow
@@ -103,8 +104,7 @@ internal fun prepareMusicPlayerPresentation(
     onToggleFavoriteClick: (Song) -> Unit,
     isSleepTimerActive: Boolean,
     sleepTimerDisplayText: String,
-    selectedPlayerTheme: PlayerTheme,
-    selectedPlayerThemeTokens: PlayerThemeTokens,
+    playerPresentation: ResolvedPlayerPresentation,
     selectedModernArtworkTransitionStyle: ModernArtworkTransitionStyle,
     selectedModernPlayerAppearance: ModernPlayerAppearance,
     playerMorphState: PlayerMorphState,
@@ -139,6 +139,10 @@ internal fun prepareMusicPlayerPresentation(
     shellLayout: MusicShellLayout = MusicShellLayout(),
     defaultPlayerLayout: DefaultPlayerLayout? = null,
 ): @Composable BoxScope.(PlayerEndpointBounds) -> Unit {
+    // Existing choreography stays theme-local. Both endpoints below receive this same resolution.
+    val selectedPlayerTheme = when (val identity = playerPresentation.identity) {
+        is PlayerPresentationIdentity.Existing -> identity.theme
+    }
     return { playerEndpointBounds ->
         val defaultMorphBounds = rememberMusicPlayerDefaultMorphBounds(playerEndpointBounds)
         val classicMorphBounds = rememberMusicPlayerClassicMorphBounds()
@@ -359,8 +363,7 @@ internal fun prepareMusicPlayerPresentation(
                         repeatMode = repeatMode,
                         currentPosition = progress.currentPosition,
                         duration = progress.duration,
-                        selectedPlayerTheme = selectedPlayerTheme,
-                        selectedPlayerThemeTokens = selectedPlayerThemeTokens,
+                        playerPresentation = playerPresentation,
                         playerMorphState = playerMorphState,
                         favoriteMembershipKeys = favoriteMembershipKeys,
                         onPlayPauseClick = onPlayPauseClick,
@@ -454,8 +457,7 @@ internal fun prepareMusicPlayerPresentation(
                 onShowExpandedMore = onShowExpandedMore,
                 onToggleFavoriteClick = onToggleFavoriteClick,
                 isSleepTimerDialogVisible = isSleepTimerDialogVisible,
-                selectedPlayerTheme = selectedPlayerTheme,
-                selectedPlayerThemeTokens = selectedPlayerThemeTokens,
+                playerPresentation = playerPresentation,
                 selectedModernArtworkTransitionStyle = selectedModernArtworkTransitionStyle,
                 selectedModernPlayerAppearance = selectedModernPlayerAppearance,
                 playerEndpointBounds = playerEndpointBounds,

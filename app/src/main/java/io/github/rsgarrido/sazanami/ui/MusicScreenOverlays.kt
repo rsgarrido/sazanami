@@ -24,6 +24,8 @@ import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsTransitionState
 import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsGestureRegion
 import io.github.rsgarrido.sazanami.ui.player.PlayerMorphState
 import io.github.rsgarrido.sazanami.ui.player.PlayerEndpointBounds
+import io.github.rsgarrido.sazanami.ui.player.PlayerPresentationIdentity
+import io.github.rsgarrido.sazanami.ui.player.ResolvedPlayerPresentation
 import io.github.rsgarrido.sazanami.ui.player.WarmCurrentSongWaveform
 import io.github.rsgarrido.sazanami.ui.player.shouldLoadExpandedPlayerWaveform
 import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerLayout
@@ -39,7 +41,6 @@ import io.github.rsgarrido.sazanami.ui.player.playerVisualAlpha
 import io.github.rsgarrido.sazanami.ui.player.ImmersiveSystemBarsEffect
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernArtworkTransitionStyle
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerAppearance
-import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 import io.github.rsgarrido.sazanami.controller.PlaybackQueueHubUiState
 import io.github.rsgarrido.sazanami.ui.state.PlaybackProgress
 import io.github.rsgarrido.sazanami.ui.state.PlaybackProgressUiState
@@ -92,8 +93,7 @@ fun MusicScreenOverlays(
     onToggleFavoriteClick: (Song) -> Unit,
     hasPendingBulkPlaylistAdd: Boolean,
     isSleepTimerDialogVisible: Boolean,
-    selectedPlayerTheme: PlayerTheme,
-    selectedPlayerThemeTokens: PlayerThemeTokens,
+    playerPresentation: ResolvedPlayerPresentation,
     selectedModernArtworkTransitionStyle: ModernArtworkTransitionStyle,
     selectedModernPlayerAppearance: ModernPlayerAppearance,
     playerEndpointBounds: PlayerEndpointBounds,
@@ -109,7 +109,7 @@ fun MusicScreenOverlays(
     val isPlayerExpanded = playerMorphState.shouldComposeExpanded
     val setSystemBarSurface = LocalSystemBarSurfaceSetter.current
     val systemBarSurface = playerSystemBarSurface(
-        theme = selectedPlayerTheme,
+        presentation = playerPresentation.identity,
         isExpanded = isPlayerExpanded,
         hasSong = currentSong != null,
         lyricsVisible = isLyricsVisible || lyricsTransitionState.lyricsComposed
@@ -118,11 +118,11 @@ fun MusicScreenOverlays(
         setSystemBarSurface(systemBarSurface)
         onDispose { setSystemBarSurface(SystemBarSurface.SHELL) }
     }
-    val lyricsGestureRegion = remember(selectedPlayerTheme) {
+    val lyricsGestureRegion = remember(playerPresentation.identity) {
         PlayerLyricsGestureRegion()
     }
     val shouldWarmCurrentWaveform = shouldLoadExpandedPlayerWaveform(
-        selectedPlayerTheme = selectedPlayerTheme,
+        presentation = playerPresentation.identity,
         modernSeekbarStyle = selectedModernPlayerAppearance.seekbar.style
     )
     WarmCurrentSongWaveform(
@@ -132,7 +132,7 @@ fun MusicScreenOverlays(
 
     ImmersiveSystemBarsEffect(
         isImmersive = shouldUseImmersivePlayerSystemBars(
-            selectedPlayerTheme,
+            playerPresentation.identity,
             isPlayerExpanded,
             isLyricsVisible
         )
@@ -176,8 +176,7 @@ fun MusicScreenOverlays(
         ) {
             PlaybackProgress(playbackProgressUiState) { progress ->
                 ExpandedPlayerThemeHost(
-                    selectedPlayerTheme = selectedPlayerTheme,
-                    tokens = selectedPlayerThemeTokens,
+                    playerPresentation = playerPresentation,
                     modernArtworkTransitionStyle = selectedModernArtworkTransitionStyle,
                     modernPlayerAppearance = selectedModernPlayerAppearance,
                     defaultPlayerLayout = defaultPlayerLayout,
@@ -287,6 +286,16 @@ internal fun shouldAllowExpandedPlayerVisualizerWork(
         !isCreatePlaylistDialogVisible &&
         !hasPendingPlaylistAdd &&
         !hasPendingBulkPlaylistAdd
+
+internal fun shouldUseImmersivePlayerSystemBars(
+    presentation: PlayerPresentationIdentity,
+    isPlayerExpanded: Boolean,
+    isLyricsVisible: Boolean
+): Boolean = when (presentation) {
+    is PlayerPresentationIdentity.Existing -> shouldUseImmersivePlayerSystemBars(
+        presentation.theme, isPlayerExpanded, isLyricsVisible
+    )
+}
 
 internal fun shouldUseImmersivePlayerSystemBars(
     theme: PlayerTheme,

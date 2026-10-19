@@ -83,7 +83,6 @@ import io.github.rsgarrido.sazanami.ui.player.retrorack.retroRackSharedOwner
 import io.github.rsgarrido.sazanami.ui.player.retrorack.retroRackMorphTravelDistance
 import io.github.rsgarrido.sazanami.ui.player.retrorack.RetroRackMorphSpec
 import io.github.rsgarrido.sazanami.ui.player.retrorack.retroRackDistanceThreshold
-import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 import io.github.rsgarrido.sazanami.ui.player.PlayerEndpointBounds
 import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerMorph
 import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerMorphBounds
@@ -106,8 +105,7 @@ import kotlin.math.roundToInt
 
 @Composable
 fun ExpandedPlayerThemeHost(
-    selectedPlayerTheme: PlayerTheme,
-    tokens: PlayerThemeTokens,
+    playerPresentation: ResolvedPlayerPresentation,
     currentSong: Song?,
     previousPreviewSong: Song?,
     nextPreviewSong: Song?,
@@ -154,8 +152,12 @@ fun ExpandedPlayerThemeHost(
     pocketDiscMorphBounds: PocketDiscMorphBounds,
     defaultPlayerLayout: DefaultPlayerLayout? = null
 ) {
+    val selectedPlayerTheme = when (val identity = playerPresentation.identity) {
+        is PlayerPresentationIdentity.Existing -> identity.theme
+    }
+    val tokens = playerPresentation.tokens
     val shouldLoadWaveform = shouldLoadExpandedPlayerWaveform(
-        selectedPlayerTheme = selectedPlayerTheme,
+        presentation = playerPresentation.identity,
         modernSeekbarStyle = modernPlayerAppearance.seekbar.style
     ) && when (selectedPlayerTheme) {
         PlayerTheme.DEFAULT -> shouldRunDefaultExpandedWork(playerMorphState.progress)
