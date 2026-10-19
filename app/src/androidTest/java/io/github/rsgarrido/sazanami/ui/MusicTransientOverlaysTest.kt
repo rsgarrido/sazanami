@@ -13,6 +13,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -20,6 +21,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.test.espresso.Espresso
 import io.github.rsgarrido.sazanami.R
@@ -119,9 +121,26 @@ class MusicTransientOverlaysTest {
     fun queueHubUsesLatestCardsAndForwardsSelectSwitchCreateAndDismiss() {
         val fixture = fixture()
         composeRule.setContent { fixture.Content() }
-        composeRule.runOnIdle { fixture.overlays.isQueueHubVisible.value = true }
-        composeRule.onNodeWithText("Saved queue").performClick()
-        composeRule.onNodeWithText(text(R.string.queue_hub_switch)).performClick()
+        val latestQueueName = "Updated saved queue"
+        composeRule.runOnIdle {
+            fixture.queueState.value = fixture.queueState.value.copy(
+                queues = fixture.queueState.value.queues.map {
+                    if (it.queueId == "B") it.copy(name = latestQueueName) else it
+                }
+            )
+            fixture.overlays.isQueueHubVisible.value = true
+        }
+        composeRule.onNodeWithText("Saved queue", useUnmergedTree = true).assertDoesNotExist()
+        // Click the title itself; the merged card's center can hit its nested overflow button.
+        composeRule.onNodeWithText(latestQueueName, useUnmergedTree = true)
+            .performScrollTo().assertIsDisplayed().performClick()
+        composeRule.runOnIdle {
+            assertEquals(listOf("select:B"), fixture.calls)
+            assertEquals("B", fixture.queueState.value.selectedQueueId)
+            assertTrue(fixture.queueState.value.queues.single { it.queueId == "B" }.isSelected)
+            assertEquals("A", fixture.queueState.value.activeQueueId)
+        }
+        composeRule.onNodeWithText(text(R.string.queue_hub_switch)).performScrollTo().assertIsDisplayed().performClick()
         composeRule.onNodeWithContentDescription(text(R.string.queue_hub_new_from_current)).performClick()
         composeRule.onNodeWithContentDescription(text(R.string.queue_hub_close)).performClick()
         composeRule.runOnIdle {

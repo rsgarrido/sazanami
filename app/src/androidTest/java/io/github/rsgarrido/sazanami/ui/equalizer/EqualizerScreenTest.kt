@@ -16,15 +16,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertContentDescriptionEquals
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
+import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.player.equalizer.EqualizerPreferencesState
 import io.github.rsgarrido.sazanami.player.equalizer.EqualizerMode
 import io.github.rsgarrido.sazanami.player.equalizer.EqualizerRuntimeState
@@ -245,28 +251,35 @@ class EqualizerScreenTest {
             }
         }
 
-        composeRule.onNodeWithText("Add Filter").assertExists()
+        val resources = composeRule.activity.resources
+        val parameters = "1 kHz · +4.0 dB · Q 1.25"
+        val filterDescription = resources.getString(
+            R.string.eq_filter_access,
+            1,
+            resources.getString(R.string.eq_type_peaking),
+            resources.getString(R.string.eq_enabled_label),
+            parameters
+        )
+        composeRule.onNodeWithText(resources.getString(R.string.eq_add_filter)).assertExists()
         composeRule.onNode(
-            hasContentDescription(
-                "Filter 1, peaking, enabled",
-                substring = true
-            )
-        ).assertExists()
+            hasContentDescription(filterDescription)
+        ).assertIsSelected()
+        composeRule.onNodeWithTag(parametricMarkerDragTargetTag(peak.id))
+            .assertContentDescriptionEquals(resources.getString(R.string.eq_filter_marker, 1, parameters))
+            .assertIsSelected()
         composeRule.onNode(
-            hasContentDescription(
-                "Filter marker 1",
-                substring = true
-            )
-        ).assertExists()
-        composeRule.onNode(
-            hasContentDescription("Edit filter 1")
+            hasContentDescription(resources.getString(R.string.eq_edit_filter, 1))
         ).performScrollTo().performClick()
-        composeRule.onNodeWithText("Frequency (Hz)")
-            .assertExists()
-        composeRule.onNodeWithText("Gain (dB)")
-            .assertExists()
-        composeRule.onNodeWithText("Q").assertExists()
-        composeRule.onNodeWithText("Shelf slope S")
+        composeRule.onNode(
+            hasText(resources.getString(R.string.eq_frequency)) and hasSetTextAction()
+        ).assertTextContains("1000.0")
+        composeRule.onNode(
+            hasText(resources.getString(R.string.eq_gain)) and hasSetTextAction()
+        ).assertTextContains("4.0")
+        composeRule.onNode(
+            hasText(resources.getString(R.string.eq_q)) and hasSetTextAction()
+        ).assertTextContains("1.25")
+        composeRule.onNodeWithText(resources.getString(R.string.eq_shelf_slope))
             .assertDoesNotExist()
     }
 

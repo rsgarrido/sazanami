@@ -30,12 +30,14 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -259,37 +261,65 @@ class MusicPlayerPresentationTest {
 
     @Test
     fun expandedDefaultEntriesAndTrackReplacementKeepLiveSongTargets() {
-        val fixture = mount(PlayerPresentation.Expanded)
-        composeRule.onNodeWithContentDescription(text(R.string.player_open_queues)).performClick()
-        composeRule.onNodeWithContentDescription(text(R.string.player_more_actions)).performClick()
-        composeRule.onNode(hasText(fixture.current.value!!.artist) and hasClickAction()).performClick()
-        composeRule.onNodeWithText(fixture.current.value!!.album, useUnmergedTree = true).performClick()
-        composeRule.onNodeWithTag(ArtworkViewerEntryTag).performClick()
+        val fixture = mountExpandedDefault()
+        val artistLabel = text(R.string.library_search_go_artist)
+        val albumLabel = text(R.string.player_open_current_album)
+        val artistAction = SemanticsMatcher("Current artist navigation action") {
+            it.config.getOrNull(SemanticsActions.OnClick)?.label == artistLabel
+        }
+        val albumAction = SemanticsMatcher("Current album navigation action") {
+            it.config.getOrNull(SemanticsActions.OnClick)?.label == albumLabel
+        }
+        composeRule.onNodeWithContentDescription(text(R.string.player_open_queues)).assertIsDisplayed().performClick()
+        composeRule.onNodeWithContentDescription(text(R.string.player_more_actions)).assertIsDisplayed().performClick()
+        composeRule.onNode(hasText(fixture.current.value!!.artist) and artistAction).assertIsDisplayed().performClick()
+        composeRule.onNode(hasText(fixture.current.value!!.album) and albumAction).assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag(ArtworkViewerEntryTag).assertIsDisplayed().performClick()
         composeRule.runOnIdle {
             assertEquals(listOf("queue", "more"), fixture.calls)
             assertSame(fixture.current.value, fixture.openedArtists.single())
             assertSame(fixture.current.value, fixture.openedAlbums.single())
             assertSame(fixture.current.value, fixture.artworks.single())
             fixture.current.value = fixture.songs.last()
+            fixture.previous.value = fixture.songs[1]
+            fixture.next.value = null
         }
-        composeRule.onNode(hasText(fixture.current.value!!.artist) and hasClickAction()).performClick()
-        composeRule.onNodeWithTag(ArtworkViewerEntryTag).performClick()
+        awaitExpandedSnapshot(fixture, requireLiveArtwork = true)
+        composeRule.onNodeWithContentDescription(text(R.string.player_open_queues)).assertIsDisplayed().performClick()
+        composeRule.onNodeWithContentDescription(text(R.string.player_more_actions)).assertIsDisplayed().performClick()
+        composeRule.onNode(hasText(fixture.current.value!!.artist) and artistAction).assertIsDisplayed().performClick()
+        composeRule.onNode(hasText(fixture.current.value!!.album) and albumAction).assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag(ArtworkViewerEntryTag).assertIsDisplayed().performClick()
         composeRule.runOnIdle {
+            assertEquals(listOf("queue", "more", "queue", "more"), fixture.calls)
+            assertEquals(2, fixture.openedArtists.size)
+            assertEquals(2, fixture.openedAlbums.size)
+            assertEquals(2, fixture.artworks.size)
             assertSame(fixture.current.value, fixture.openedArtists.last())
+            assertSame(fixture.current.value, fixture.openedAlbums.last())
             assertSame(fixture.current.value, fixture.artworks.last())
         }
     }
 
     @Test
     fun defaultCarouselUsesThePreviousAndNextInputsAndTheirTransportCallbacks() {
-        val fixture = mount(PlayerPresentation.Expanded)
-        val artwork = composeRule.onNodeWithTag(ArtworkViewerEntryTag)
+        val fixture = mountExpandedDefault()
+        val artwork = composeRule.onNodeWithTag(ArtworkViewerEntryTag).assertIsDisplayed()
+        artwork.performClick()
+        composeRule.runOnIdle { assertSame(fixture.current.value, fixture.artworks.single()) }
         artwork.performTouchInput { swipeLeft(durationMillis = 350) }
         composeRule.runOnIdle {
             assertEquals(listOf("next"), fixture.calls)
             fixture.current.value = fixture.next.value
             fixture.previous.value = fixture.songs[1]
             fixture.next.value = null
+        }
+        awaitExpandedSnapshot(fixture, requireLiveArtwork = true)
+        composeRule.onNodeWithTag(ArtworkViewerEntryTag).assertIsDisplayed().performClick()
+        composeRule.runOnIdle {
+            assertSame(fixture.songs.last(), fixture.current.value)
+            assertEquals(2, fixture.artworks.size)
+            assertSame(fixture.current.value, fixture.artworks.last())
         }
         composeRule.onNodeWithTag(ArtworkViewerEntryTag).performTouchInput { swipeRight(durationMillis = 350) }
         composeRule.runOnIdle { assertEquals(listOf("next", "previous"), fixture.calls) }
@@ -929,10 +959,11 @@ class MusicPlayerPresentationTest {
                 "expandedRoot=$expanded; gapPx=${expanded.text.left - expanded.artwork.right}"
     }
 
-    private fun assertExpandedGeometry(fixture: Fixture,
-        expectedArrangement: DefaultPlayerArrangement = DefaultPlayerArrangement.Balanced): ExpandedGeometrySnapshot {
+    private fun awaitExpandedSnapshot(fixture: Fixture,
+        requireLiveArtwork: Boolean = false): ExpandedGeometrySnapshot {
         var captured: ExpandedGeometrySnapshot? = null
         var readiness = "No geometry observed"
+        var liveArtworkCount = 0
         try {
             composeRule.waitUntil(timeoutMillis = 5_000) {
                 captured = composeRule.runOnIdle {
@@ -948,7 +979,9 @@ class MusicPlayerPresentationTest {
                     val expanded = cached?.morphField("expanded") as? DefaultPlayerMorphGeometry
                     val sameMeasurements = cached != null && cached.morphField("measurements") === measurements
                     val expandedSurface = (fixture.endpoints.expanded as? PlayerBoundsMeasurement.Measured)?.bounds
-                    val expectedBoundary = Pair(fixture.shellLayout.value, layout)
+                    val expectedBoundary: Any = if (fixture.adaptiveDefaultLayout.value) {
+                        Pair(fixture.shellLayout.value, layout)
+                    } else fixture.shellLayout.value
                     val boundaryMatches = frame != null && frame.layoutBoundary == expectedBoundary
                     // Production promotes only complete, valid seven-element snapshots from one
                     // frame. Matching both frame and immutable map identity verifies that contract
@@ -965,13 +998,14 @@ class MusicPlayerPresentationTest {
                         "boundaryMatches=$boundaryMatches; boundary=${frame?.layoutBoundary}; expectedBoundary=$expectedBoundary; " +
                         "currentMeasurements=$sameMeasurements; currentSnapshot=$current; settled=$settled; " +
                         "progress=${fixture.morph.progress}; mini=${fixture.endpoints.mini}; expandedSurface=$expandedSurface"
-                    if (!current || !settled || frame == null || layout == null || expanded == null) {
+                    if (!current || !settled || expanded == null ||
+                        fixture.adaptiveDefaultLayout.value && layout == null) {
                         null
                     } else {
                         // The promoted geometry is host-local. Convert it exactly once so every
                         // comparison below, including normal semantics bounds, uses root pixels.
                         val origin = frame.originInRoot
-                        ExpandedGeometrySnapshot(frame, layout.arrangement, expanded.copy(
+                        ExpandedGeometrySnapshot(frame, layout?.arrangement ?: DefaultPlayerArrangement.Vertical, expanded.copy(
                             surface = expanded.surface.translate(origin),
                             artwork = expanded.artwork.translate(origin),
                             text = expanded.text.translate(origin),
@@ -979,12 +1013,24 @@ class MusicPlayerPresentationTest {
                         ))
                     }
                 }
-                captured != null
+                captured != null && (!requireLiveArtwork || run {
+                    // Only the current, settled shared artwork exposes this live entry action.
+                    // Expanded measurement placeholders never expose it.
+                    val artworkNodes = composeRule.onAllNodesWithTag(ArtworkViewerEntryTag).fetchSemanticsNodes()
+                    liveArtworkCount = artworkNodes.size
+                    artworkNodes.singleOrNull()?.config?.getOrNull(SemanticsActions.OnClick) != null
+                })
             }
         } catch (timeout: androidx.compose.ui.test.ComposeTimeoutException) {
-            throw AssertionError("No settled current complete morph snapshot: $readiness", timeout)
+            throw AssertionError("No settled current complete morph snapshot: $readiness; " +
+                "liveArtworkRequired=$requireLiveArtwork; liveArtworkCount=$liveArtworkCount", timeout)
         }
-        val snapshot = requireNotNull(captured)
+        return requireNotNull(captured)
+    }
+
+    private fun assertExpandedGeometry(fixture: Fixture,
+        expectedArrangement: DefaultPlayerArrangement = DefaultPlayerArrangement.Balanced): ExpandedGeometrySnapshot {
+        val snapshot = awaitExpandedSnapshot(fixture)
         val expanded = snapshot.expanded
         val host = composeRule.onNodeWithTag("player-host").fetchSemanticsNode().boundsInRoot
         assertEquals(snapshot.description, expectedArrangement, snapshot.arrangement)
@@ -1049,6 +1095,14 @@ class MusicPlayerPresentationTest {
 
     private fun mount(initial: PlayerPresentation = PlayerPresentation.Collapsed) =
         Fixture(initial).also { fixture -> composeRule.setContent { fixture.Content() } }
+
+    private fun mountExpandedDefault() = Fixture(PlayerPresentation.Expanded).apply {
+        miniVisible.value = true
+        observeDefaultMorphGeometry = true
+    }.also { fixture ->
+        composeRule.setContent { fixture.Content() }
+        awaitExpandedSnapshot(fixture, requireLiveArtwork = true)
+    }
 
     private fun text(id: Int) = composeRule.activity.getString(id)
     private fun mini(fixture: Fixture) = composeRule.onNodeWithContentDescription(

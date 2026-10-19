@@ -1,10 +1,12 @@
 package io.github.rsgarrido.sazanami.ui.player
 
 import android.net.Uri
+import android.util.Log
+import android.view.View
 import android.view.Window
-import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -12,7 +14,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
@@ -45,18 +49,32 @@ class NowPlayingArtworkViewerDialogTest {
     private val status = mutableStateOf(ArtworkViewerLoadStatus.READY)
     private val tilt = ArtworkViewerTiltState()
     private var viewerWindow: Window? = null
+    private var viewerView: View? = null
 
-    private fun content(motion: ArtworkViewerMotionPolicy = ArtworkViewerMotionPolicy(true, false)) {
+    private fun content(
+        motion: ArtworkViewerMotionPolicy = ArtworkViewerMotionPolicy(true, false),
+        hostIsImmersive: State<Boolean?>? = null
+    ) {
         val target = song(1)
         val request = NowPlayingArtworkViewerRequest(target, requireNotNull(target.albumArtUri))
         composeRule.setContent {
             MaterialTheme {
+                hostIsImmersive?.value?.let { ImmersiveSystemBarsEffect(isImmersive = it) }
                 BackHandler { playerBacks++ }
                 Box(Modifier.fillMaxSize().clickable { playerClicks++ })
                 if (visible.value) NowPlayingArtworkViewerDialog(request, { visible.value = false }, motion, tilt,
                     imageContent = { _, modifier, description, onStatus ->
                         val view = LocalView.current
                         Box(modifier.background(Color.Blue).semantics { contentDescription = description })
+                        DisposableEffect(view) {
+                            viewerView = view
+                            onDispose {
+                                if (viewerView === view) {
+                                    viewerView = null
+                                    viewerWindow = null
+                                }
+                            }
+                        }
                         SideEffect {
                             viewerWindow = (view.parent as? DialogWindowProvider)?.window
                             onStatus(status.value)
@@ -85,45 +103,117 @@ class NowPlayingArtworkViewerDialogTest {
 
     @Test fun dialogPreservesVisibleOrHiddenBarsAndDismissalLeavesThePlayerPresentationIntact() {
         visible.value = false
-        content()
+        val hostIsImmersive = mutableStateOf<Boolean?>(null)
+        content(hostIsImmersive = hostIsImmersive)
         val activityWindow = composeRule.activity.window
         val controller = WindowCompat.getInsetsController(activityWindow, activityWindow.decorView)
-        lateinit var original: SystemBarPresentation
-        composeRule.runOnIdle { original = readSystemBarPresentation(activityWindow) }
+        val original = composeRule.runOnIdle {
+            val insets = requireNotNull(viewAwareWindowInsets(activityWindow))
+            SystemBarPresentation(
+                statusBarsVisible = insets.isVisible(WindowInsetsCompat.Type.statusBars()),
+                navigationBarsVisible = insets.isVisible(WindowInsetsCompat.Type.navigationBars()),
+                behavior = controller.systemBarsBehavior,
+                lightStatusBars = controller.isAppearanceLightStatusBars,
+                lightNavigationBars = controller.isAppearanceLightNavigationBars
+            )
+        }
         try {
             listOf(false, true).forEach { barsVisible ->
                 composeRule.runOnIdle {
-                    if (barsVisible) controller.show(WindowInsetsCompat.Type.systemBars())
-                    else controller.hide(WindowInsetsCompat.Type.systemBars())
+                    // Keep the production host policy mounted through Dialog focus and dismissal.
+                    hostIsImmersive.value = !barsVisible
                 }
-                composeRule.waitUntil(5_000) {
-                    val insets = ViewCompat.getRootWindowInsets(activityWindow.decorView)
-                    insets != null && insets.isVisible(WindowInsetsCompat.Type.statusBars()) == barsVisible &&
-                        insets.isVisible(WindowInsetsCompat.Type.navigationBars()) == barsVisible
+                waitForSystemBars("activity-before-opening", barsVisible) {
+                    activityWindow.takeIf { it === composeRule.activity.window }
                 }
-                composeRule.runOnIdle { visible.value = true }
+                composeRule.runOnIdle {
+                    // Verify the production capture independently of the viewer's observed result.
+                    // The expected values come from this scenario, not from the reader itself.
+                    val source = requireNotNull(readSystemBarPresentation(activityWindow))
+                    assertEquals("Captured host status-bar visibility", barsVisible, source.statusBarsVisible)
+                    assertEquals("Captured host navigation-bar visibility", barsVisible, source.navigationBarsVisible)
+                    assertEquals("Captured host system-bar behavior",
+                        WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE, source.behavior)
+                    visible.value = true
+                }
                 composeRule.onNodeWithTag(ArtworkViewerDialogTag).assertExists()
-                composeRule.waitUntil(5_000) {
-                    val insets = viewerWindow?.decorView?.let(ViewCompat::getRootWindowInsets)
-                    insets != null && insets.isVisible(WindowInsetsCompat.Type.statusBars()) == barsVisible &&
-                        insets.isVisible(WindowInsetsCompat.Type.navigationBars()) == barsVisible
-                }
+                waitForSystemBars("viewer", barsVisible, ::currentViewerWindow)
                 val close = composeRule.onNodeWithContentDescription(composeRule.activity.getString(R.string.common_close))
                 close.assertIsDisplayed()
                 val root = composeRule.onNodeWithTag(ArtworkViewerDialogTag).fetchSemanticsNode().boundsInRoot
                 val bounds = close.fetchSemanticsNode().boundsInRoot
-                val cutout = requireNotNull(viewerWindow).decorView.let(ViewCompat::getRootWindowInsets)?.displayCutout
+                val cutout = composeRule.runOnUiThread {
+                    requireNotNull(viewAwareWindowInsets(requireNotNull(currentViewerWindow()))).displayCutout
+                }
                 assertTrue(bounds.top >= root.top + (cutout?.safeInsetTop ?: 0))
                 assertTrue(bounds.right <= root.right - (cutout?.safeInsetRight ?: 0))
                 close.performClick()
                 composeRule.onNodeWithTag(ArtworkViewerDialogTag).assertDoesNotExist()
-                composeRule.waitUntil(5_000) {
-                    val insets = ViewCompat.getRootWindowInsets(activityWindow.decorView)
-                    insets != null && insets.isVisible(WindowInsetsCompat.Type.statusBars()) == barsVisible &&
-                        insets.isVisible(WindowInsetsCompat.Type.navigationBars()) == barsVisible
+                waitForSystemBars("activity-after-dismissal", barsVisible) {
+                    activityWindow.takeIf { it === composeRule.activity.window }
+                }
+                composeRule.runOnIdle { assertEquals(0, playerClicks); assertEquals(0, playerBacks) }
+            }
+        } finally {
+            composeRule.runOnIdle {
+                visible.value = false
+                hostIsImmersive.value = null
+            }
+            // runOnIdle waits for both effects to dispose before restoring fixture-owned state.
+            // These cleanup requests do not participate in the restoration assertion above.
+            composeRule.runOnIdle {
+                controller.systemBarsBehavior = original.behavior
+                controller.isAppearanceLightStatusBars = original.lightStatusBars
+                controller.isAppearanceLightNavigationBars = original.lightNavigationBars
+                if (original.statusBarsVisible) controller.show(WindowInsetsCompat.Type.statusBars())
+                else controller.hide(WindowInsetsCompat.Type.statusBars())
+                if (original.navigationBarsVisible) controller.show(WindowInsetsCompat.Type.navigationBars())
+                else controller.hide(WindowInsetsCompat.Type.navigationBars())
+            }
+        }
+    }
+
+    private fun waitForSystemBars(
+        stage: String,
+        barsVisible: Boolean,
+        currentWindow: () -> Window?
+    ) {
+        var lastObservation = "No sample"
+        try {
+            composeRule.waitUntil(5_000) {
+                composeRule.runOnUiThread {
+                    val window = currentWindow()
+                    val focused = window?.decorView?.hasWindowFocus() == true
+                    val insets = window?.let(::viewAwareWindowInsets)
+                    val statusVisible = insets?.isVisible(WindowInsetsCompat.Type.statusBars())
+                    val navigationVisible = insets?.isVisible(WindowInsetsCompat.Type.navigationBars())
+                    lastObservation = "currentWindow=$window focused=$focused readyInsets=${insets != null} " +
+                        "statusVisible=$statusVisible navigationVisible=$navigationVisible"
+                    window != null && focused && insets != null &&
+                        statusVisible == barsVisible && navigationVisible == barsVisible
                 }
             }
-        } finally { composeRule.runOnIdle { applySystemBarPresentation(controller, original) } }
+        } catch (timeout: ComposeTimeoutException) {
+            Log.e("SazanamiSystemBarsTest", "$stage expectedStatus=$barsVisible expectedNavigation=$barsVisible; $lastObservation")
+            throw timeout
+        }
+    }
+
+    private fun currentViewerWindow(): Window? {
+        val view = viewerView ?: return null
+        val window = (view.parent as? DialogWindowProvider)?.window ?: return null
+        return window.takeIf {
+            it === viewerWindow && it !== composeRule.activity.window &&
+                view.isAttachedToWindow && view.rootView === it.decorView &&
+                view.windowToken != null && view.windowToken == it.decorView.windowToken
+        }
+    }
+
+    private fun viewAwareWindowInsets(window: Window): WindowInsetsCompat? {
+        val decor = window.decorView
+        if (!decor.isAttachedToWindow || decor.windowToken == null || decor.rootView !== decor) return null
+        // The View-aware overload includes window visibility on API 29; raw stable insets alone do not.
+        return decor.rootWindowInsets?.let { WindowInsetsCompat.toWindowInsetsCompat(it, decor) }
     }
 
     @Test fun backdropClosesWithoutClickingTheUnderlyingPlayer() {
