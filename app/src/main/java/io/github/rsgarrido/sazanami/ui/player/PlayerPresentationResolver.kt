@@ -14,6 +14,9 @@ import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 sealed interface PlayerPresentationIdentity {
     @Immutable
     data class Existing(val theme: PlayerTheme) : PlayerPresentationIdentity
+
+    @Immutable
+    data object PocketAdvance : PlayerPresentationIdentity
 }
 
 /** One value is forwarded to both endpoints and their morph dispatcher; neither resolves again. */
@@ -64,13 +67,9 @@ internal fun isTabletLandscapePlayerEligible(
 
 /**
  * Pure presentation policy: never writes preferences or owns playback, navigation, or morph state.
- * Production currently supplies no candidate, so every existing selection resolves unchanged.
- *
- * Before enabling the first landscape pair, resolve its actual host constraints once above all
- * capability/endpoint consumers and define when a changed identity may be applied during an active
- * morph, lyrics interaction, or Activity recreation. Its new geometry must qualify measurements by
- * identity/layout frame while retaining measurable mini anchors. This resolver does not settle or
- * restart gestures, replace existing geometry, or promise a continuous cross-orientation transition.
+ * Only the development selector currently nominates Pocket Advance. Actual host constraints are
+ * resolved above capability/endpoint consumers; the presentation boundary settles interrupted motion
+ * before publishing a changed pair. This function never rewrites the primary selection or accents.
  */
 internal fun resolvePlayerPresentation(
     primaryTheme: PlayerTheme,

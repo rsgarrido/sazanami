@@ -32,6 +32,11 @@ internal fun playerSystemBarSurface(
     is PlayerPresentationIdentity.Existing -> playerSystemBarSurface(
         presentation.theme, isExpanded, hasSong, lyricsVisible
     )
+    PlayerPresentationIdentity.PocketAdvance -> when {
+        !isExpanded || !hasSong -> SystemBarSurface.SHELL
+        lyricsVisible -> SystemBarSurface.LYRICS
+        else -> SystemBarSurface.MODERN_PLAYER
+    }
 }
 
 internal fun playerSystemBarSurface(

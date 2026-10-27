@@ -5,7 +5,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.data.PlayerTheme
+import io.github.rsgarrido.sazanami.ui.resolveAppShellAccent
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernSeekbarStyle
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.minimumPocketAdvanceSize
 import io.github.rsgarrido.sazanami.ui.player.theme.defaultTokens
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -157,6 +159,104 @@ class PlayerPresentationResolverTest {
             ModernSeekbarStyle.entries.forEach { style ->
                 assertEquals(shouldLoadExpandedPlayerWaveform(theme, style),
                     shouldLoadExpandedPlayerWaveform(identity, style))
+            }
+        }
+    }
+
+    @Test
+    fun pocketAdvanceUsesItsActualDesignBudgetAndFallsBackAtEitherContentBoundary() {
+        val primary = PlayerTheme.CLASSIC_WHEEL
+        val tokens = primary.defaultTokens()
+        val minimum = minimumPocketAdvanceSize(1f)
+        val advance = TabletLandscapePlayerCandidate(
+            ResolvedPlayerPresentation(PlayerPresentationIdentity.PocketAdvance,
+                PlayerTheme.DEFAULT.defaultTokens()),
+            minimum
+        )
+        val exactFit = tabletLandscape.copy(availableSize = minimum)
+        assertSame(advance.presentation,
+            resolvePlayerPresentation(primary, tokens, exactFit, advance))
+        listOf(
+            DpSize(minimum.width - 1.dp, minimum.height),
+            DpSize(minimum.width, minimum.height - 1.dp),
+            DpSize(minimum.height, minimum.width)
+        ).forEach { size ->
+            val fallback = resolvePlayerPresentation(primary, tokens,
+                exactFit.copy(availableSize = size), advance)
+            assertEquals(PlayerPresentationIdentity.Existing(primary), fallback.identity)
+            assertSame(tokens, fallback.tokens)
+        }
+        listOf(PlayerDeviceKind.PHONE, PlayerDeviceKind.FOLDABLE, PlayerDeviceKind.DESKTOP,
+            PlayerDeviceKind.UNKNOWN).forEach { kind ->
+            assertEquals(PlayerPresentationIdentity.Existing(primary), resolvePlayerPresentation(
+                primary, tokens, tabletLandscape.copy(deviceKind = kind), advance
+            ).identity)
+        }
+    }
+
+    @Test
+    fun pocketAdvanceLargeTextBudgetCanDisqualifyAWindowThatFitsAtNormalScale() {
+        val minimum = minimumPocketAdvanceSize(1f)
+        val largeTextMinimum = minimumPocketAdvanceSize(2f)
+        assertTrue(largeTextMinimum.width > minimum.width)
+        assertTrue(largeTextMinimum.height > minimum.height)
+        val advance = TabletLandscapePlayerCandidate(
+            ResolvedPlayerPresentation(PlayerPresentationIdentity.PocketAdvance,
+                PlayerTheme.DEFAULT.defaultTokens()),
+            largeTextMinimum
+        )
+        val primary = PlayerTheme.POCKET_DISC
+        assertEquals(PlayerPresentationIdentity.Existing(primary), resolvePlayerPresentation(
+            primary, primary.defaultTokens(), tabletLandscape.copy(availableSize = minimum), advance
+        ).identity)
+        assertSame(advance.presentation, resolvePlayerPresentation(
+            primary, primary.defaultTokens(),
+            tabletLandscape.copy(availableSize = largeTextMinimum), advance
+        ))
+        listOf(Float.NaN, Float.POSITIVE_INFINITY, 0f, -1f, 0.8f).forEach { scale ->
+            assertEquals(minimum, minimumPocketAdvanceSize(scale))
+        }
+    }
+
+    @Test
+    fun pocketAdvanceNominationAndFallbackRetainPrimaryTokensAndShellAccentSelection() {
+        val primary = PlayerTheme.CLASSIC_WHEEL
+        val primaryTokens = primary.defaultTokens().copy(accentColor = Color.Green)
+        val primaryAccent = resolveAppShellAccent(primary, primaryTokens,
+            surfaces = listOf(Color.Black), minimumContrast = 1f)
+        val advance = TabletLandscapePlayerCandidate(
+            ResolvedPlayerPresentation(PlayerPresentationIdentity.PocketAdvance,
+                PlayerTheme.DEFAULT.defaultTokens().copy(accentColor = Color.Magenta)),
+            minimumPocketAdvanceSize(1f)
+        )
+        val nominated = resolvePlayerPresentation(primary, primaryTokens, tabletLandscape, advance)
+        assertSame(advance.presentation, nominated)
+        assertEquals(Color.Green, primaryTokens.accentColor)
+        val fallback = resolvePlayerPresentation(primary, primaryTokens,
+            tabletLandscape.copy(availableSize = DpSize(800.dp, 1200.dp)), advance)
+        assertEquals(PlayerPresentationIdentity.Existing(primary), fallback.identity)
+        assertSame(primaryTokens, fallback.tokens)
+        assertEquals(primaryAccent, resolveAppShellAccent(primary, fallback.tokens,
+            surfaces = listOf(Color.Black), minimumContrast = 1f))
+        // Returning to eligible space restores the same matched pair, not a different mini identity.
+        assertSame(nominated, resolvePlayerPresentation(primary, primaryTokens, tabletLandscape, advance))
+    }
+
+    @Test
+    fun pocketAdvanceCapabilitiesAreIndependentOfAnUnrelatedPrimaryTheme() {
+        val advance = TabletLandscapePlayerCandidate(
+            ResolvedPlayerPresentation(PlayerPresentationIdentity.PocketAdvance,
+                PlayerTheme.DEFAULT.defaultTokens()),
+            minimumPocketAdvanceSize(1f)
+        )
+        PlayerTheme.entries.forEach { primary ->
+            val identity = resolvePlayerPresentation(primary, primary.defaultTokens(), tabletLandscape,
+                advance).identity
+            assertEquals(PlayerPresentationIdentity.PocketAdvance, identity)
+            assertTrue(supportsNowPlayingMore(identity))
+            assertTrue(supportsNowPlayingArtworkViewer(identity))
+            ModernSeekbarStyle.entries.forEach { style ->
+                assertFalse(shouldLoadExpandedPlayerWaveform(identity, style))
             }
         }
     }

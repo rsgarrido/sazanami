@@ -21,6 +21,7 @@ internal enum class NowPlayingFavoriteFeedback { ADDED_TO_FAVORITES, REMOVED_FRO
 
 internal fun supportsNowPlayingMore(presentation: PlayerPresentationIdentity): Boolean = when (presentation) {
     is PlayerPresentationIdentity.Existing -> supportsNowPlayingMore(presentation.theme)
+    PlayerPresentationIdentity.PocketAdvance -> true
 }
 
 internal fun supportsNowPlayingMore(theme: PlayerTheme): Boolean = when (theme) {

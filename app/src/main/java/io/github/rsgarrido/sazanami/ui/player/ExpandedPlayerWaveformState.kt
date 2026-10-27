@@ -91,6 +91,7 @@ internal fun shouldLoadExpandedPlayerWaveform(
     modernSeekbarStyle: ModernSeekbarStyle
 ): Boolean = when (presentation) {
     is PlayerPresentationIdentity.Existing -> shouldLoadExpandedPlayerWaveform(presentation.theme, modernSeekbarStyle)
+    PlayerPresentationIdentity.PocketAdvance -> false
 }
 
 internal fun shouldLoadExpandedPlayerWaveform(

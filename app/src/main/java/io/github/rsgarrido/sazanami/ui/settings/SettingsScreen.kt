@@ -69,6 +69,7 @@ import io.github.rsgarrido.sazanami.ui.player.modern.labelRes
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerAppearance
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernLandscapeLayout
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernAppearanceChoice
+import io.github.rsgarrido.sazanami.ui.player.PocketAdvanceDevelopmentSettings
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokenField
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 import io.github.rsgarrido.sazanami.ui.player.theme.customizationOptions
@@ -626,6 +627,8 @@ fun SettingsScreen(
                 navigationContentDescription = stringResource(R.string.settings_help_open_about)
             )
         }
+
+        PocketAdvanceDevelopmentSettings()
 
         Spacer(modifier = Modifier.height(32.dp))
     }

@@ -100,6 +100,9 @@ import io.github.rsgarrido.sazanami.ui.player.modern.rememberModernArtworkHorizo
 import io.github.rsgarrido.sazanami.ui.player.modern.modernArtworkClickCallback
 import io.github.rsgarrido.sazanami.ui.player.retrorack.RetroRackSharedOwner
 import io.github.rsgarrido.sazanami.ui.player.pocketdisc.PocketDiscSharedOwner
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceExpandedPlayer
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvancePlayerMorph
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvancePlayerMorphBounds
 import io.github.rsgarrido.sazanami.data.membershipKey
 import kotlin.math.roundToInt
 
@@ -150,10 +153,71 @@ fun ExpandedPlayerThemeHost(
     pocketFlipMorphBounds: PocketFlipMorphBounds,
     pocketCassetteMorphBounds: PocketCassetteMorphBounds,
     pocketDiscMorphBounds: PocketDiscMorphBounds,
-    defaultPlayerLayout: DefaultPlayerLayout? = null
+    defaultPlayerLayout: DefaultPlayerLayout? = null,
+    pocketAdvanceMorphBounds: PocketAdvancePlayerMorphBounds? = null
 ) {
     val selectedPlayerTheme = when (val identity = playerPresentation.identity) {
         is PlayerPresentationIdentity.Existing -> identity.theme
+        PlayerPresentationIdentity.PocketAdvance -> {
+            val openLyricsLabel = stringResource(R.string.player_open_lyrics)
+            val advanceActionsEnabled = canOpenArtworkAtExpandedEndpoint(playerMorphState, lyricsTransitionState)
+            val bounds = pocketAdvanceMorphBounds ?: remember(endpointBounds) {
+                PocketAdvancePlayerMorphBounds(currentLayoutFrame = { endpointBounds.layoutFrame })
+            }
+            PocketAdvancePlayerMorph(
+                progress = playerMorphState.progress,
+                geometry = bounds.resolveGeometry(playerMorphState.progress, endpointBounds),
+                currentSong = currentSong,
+                isPlaying = isPlaying,
+                currentPosition = currentPosition,
+                duration = duration,
+                onPlayPauseClick = onPlayPauseClick
+            ) { visual ->
+                PocketAdvanceExpandedPlayer(
+                    currentSong = currentSong,
+                    isPlaying = isPlaying,
+                    isShuffleEnabled = isShuffleEnabled,
+                    repeatMode = repeatMode,
+                    currentPosition = currentPosition,
+                    duration = duration,
+                    onPlayPauseClick = onPlayPauseClick,
+                    onPreviousClick = onPreviousClick,
+                    onNextClick = onNextClick,
+                    onSeekChange = onSeekChange,
+                    onShuffleClick = onShuffleClick,
+                    onRepeatClick = onRepeatClick,
+                    onCollapseClick = onCollapseClick,
+                    onOpenUpNextClick = onOpenQueueHubClick,
+                    onMoreClick = onOpenMoreClick,
+                    modifier = if (visual.inputEnabled) Modifier.semantics {
+                        customActions = listOf(CustomAccessibilityAction(openLyricsLabel) {
+                            lyricsTransitionState.openLyrics()
+                            true
+                        })
+                    } else Modifier,
+                    renderShell = visual.endpointOwnsVisuals,
+                    shellAlpha = visual.shellAlpha,
+                    bezelAlpha = visual.bezelAlpha,
+                    hardwareAlpha = visual.hardwareAlpha,
+                    displayDetailsAlpha = visual.displayDetailsAlpha,
+                    inputEnabled = visual.inputEnabled,
+                    // Preserve a captured gesture even after its reveal/input window closes.
+                    collapseGestureEnabled = visual.collapseGestureEnabled || playerMorphState.isDragging,
+                    morphBounds = bounds,
+                    morphOwnsSharedVisuals = visual.morphOwnsSharedVisuals,
+                    onMorphDragStart = { playerMorphState.beginDragWithRange(bounds.travelDistance(endpointBounds)) },
+                    onMorphDragBy = playerMorphState::dragBy,
+                    onMorphDragEnd = playerMorphState::endDrag,
+                    onMorphDragCancel = playerMorphState::cancelDrag,
+                    lyricsGestureRegion = lyricsGestureRegion,
+                    onViewArtwork = onViewArtwork.takeIf { advanceActionsEnabled },
+                    onOpenArtist = onOpenCurrentArtistClick.takeIf { advanceActionsEnabled },
+                    onOpenAlbum = onOpenCurrentAlbumClick.takeIf { advanceActionsEnabled },
+                    onOpenLyrics = if (advanceActionsEnabled) lyricsTransitionState::openLyrics else null
+                )
+            }
+            return
+        }
     }
     val tokens = playerPresentation.tokens
     val shouldLoadWaveform = shouldLoadExpandedPlayerWaveform(

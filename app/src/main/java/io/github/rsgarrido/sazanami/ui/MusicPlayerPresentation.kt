@@ -12,13 +12,19 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.absolutePadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
@@ -56,6 +62,8 @@ import io.github.rsgarrido.sazanami.ui.player.pocketcassette.pocketCassetteMorph
 import io.github.rsgarrido.sazanami.ui.player.pocketcassette.resolvePocketCassetteMorphGeometry
 import io.github.rsgarrido.sazanami.ui.player.pocketcassette.resolvePocketCassetteSharedGeometry
 import io.github.rsgarrido.sazanami.ui.player.pocketdisc.PocketDiscMorphBounds
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvancePlayerMorphBounds
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.pocketAdvanceMorphVisualState
 import io.github.rsgarrido.sazanami.ui.player.pocketdisc.pocketDiscMorphTravelDistance
 import io.github.rsgarrido.sazanami.ui.player.pocketdisc.resolvePocketDiscMorphGeometry
 import io.github.rsgarrido.sazanami.ui.player.pocketdisc.resolvePocketDiscSharedGeometry
@@ -138,22 +146,57 @@ internal fun prepareMusicPlayerPresentation(
     onViewArtwork: (Song) -> Unit,
     shellLayout: MusicShellLayout = MusicShellLayout(),
     defaultPlayerLayout: DefaultPlayerLayout? = null,
+    playerPresentationEpoch: Long = 0L,
+    playerPresentationInputEnabled: Boolean = true,
 ): @Composable BoxScope.(PlayerEndpointBounds) -> Unit {
     // Existing choreography stays theme-local. Both endpoints below receive this same resolution.
     val selectedPlayerTheme = when (val identity = playerPresentation.identity) {
         is PlayerPresentationIdentity.Existing -> identity.theme
+        PlayerPresentationIdentity.PocketAdvance -> null
     }
     return { playerEndpointBounds ->
         val defaultMorphBounds = rememberMusicPlayerDefaultMorphBounds(playerEndpointBounds)
-        val classicMorphBounds = rememberMusicPlayerClassicMorphBounds()
+        val classicMorphBounds = rememberMusicPlayerClassicMorphBounds(playerPresentationEpoch)
         val classicWheelMenuState = rememberMusicPlayerClassicWheelMenuState(
             selectedPlayerTheme,
-            playerMorphState
+            playerMorphState,
+            playerPresentationEpoch
         )
-        val retroRackMorphBounds = rememberMusicPlayerRetroRackMorphBounds()
-        val pocketFlipMorphBounds = rememberMusicPlayerPocketFlipMorphBounds()
-        val pocketCassetteMorphBounds = rememberMusicPlayerPocketCassetteMorphBounds()
-        val pocketDiscMorphBounds = rememberMusicPlayerPocketDiscMorphBounds()
+        val retroRackMorphBounds = rememberMusicPlayerRetroRackMorphBounds(playerPresentationEpoch)
+        val pocketFlipMorphBounds = rememberMusicPlayerPocketFlipMorphBounds(playerPresentationEpoch)
+        val pocketCassetteMorphBounds = rememberMusicPlayerPocketCassetteMorphBounds(playerPresentationEpoch)
+        val pocketDiscMorphBounds = rememberMusicPlayerPocketDiscMorphBounds(playerPresentationEpoch)
+        val currentIdentity = rememberUpdatedState(playerPresentation.identity)
+        val pocketAdvanceMorphBounds = remember(playerEndpointBounds, playerPresentationEpoch) {
+            PocketAdvancePlayerMorphBounds(
+                currentLayoutFrame = { playerEndpointBounds.layoutFrame },
+                currentIdentity = { currentIdentity.value },
+                canMeasure = {
+                    lyricsTransitionState.progress == 0f && !lyricsTransitionState.isDragging
+                }
+            )
+        }
+        DisposableEffect(pocketAdvanceMorphBounds) {
+            onDispose { pocketAdvanceMorphBounds.clear() }
+        }
+        val pocketAdvanceGeometry = pocketAdvanceMorphBounds.resolveGeometry(
+            playerMorphState.progress, playerEndpointBounds
+        )
+        val pocketAdvanceMorphOwnsVisuals =
+            playerPresentation.identity == PlayerPresentationIdentity.PocketAdvance &&
+                pocketAdvanceMorphVisualState(playerMorphState.progress, pocketAdvanceGeometry != null).hideMiniVisuals
+        val pocketAdvanceMiniMorphCallbacks = remember(
+            playerMorphState, playerEndpointBounds, pocketAdvanceMorphBounds
+        ) {
+            DefaultMiniPlayerMorphCallbacks(
+                onDragStart = {
+                    playerMorphState.beginDragWithRange(pocketAdvanceMorphBounds.travelDistance(playerEndpointBounds))
+                },
+                onDragBy = playerMorphState::dragBy,
+                onDragEnd = playerMorphState::endDrag,
+                onDragCancel = playerMorphState::cancelDrag
+            )
+        }
         val defaultMorphGeometry = resolveDefaultPlayerMorphGeometry(
             progress = playerMorphState.progress,
             endpointBounds = playerEndpointBounds,
@@ -341,6 +384,12 @@ internal fun prepareMusicPlayerPresentation(
                         right = shellLayout.contentRight,
                         bottom = shellLayout.insets.bottom + shellLayout.miniPlayerBottomGap
                     )
+                } else if (playerPresentation.identity == PlayerPresentationIdentity.PocketAdvance) {
+                    // Advance can fit below the rail breakpoint. Keep its mini anchor fixed
+                    // while immersive bars hide/show, just as the rail already does.
+                    @OptIn(ExperimentalLayoutApi::class)
+                    val stableNavigationBars = WindowInsets.navigationBarsIgnoringVisibility
+                    Modifier.windowInsetsPadding(stableNavigationBars).padding(bottom = AppBottomNavigationHeight)
                 } else {
                     Modifier.navigationBarsPadding().padding(bottom = AppBottomNavigationHeight)
                 }
@@ -388,6 +437,7 @@ internal fun prepareMusicPlayerPresentation(
                         pocketFlipMorphBounds = pocketFlipMorphBounds,
                         pocketCassetteMorphBounds = pocketCassetteMorphBounds,
                         pocketDiscMorphBounds = pocketDiscMorphBounds,
+                        pocketAdvanceMorphBounds = pocketAdvanceMorphBounds,
                         defaultMorphCallbacks = when (selectedPlayerTheme) {
                             PlayerTheme.DEFAULT -> defaultMiniMorphCallbacks
                             PlayerTheme.CLASSIC_WHEEL -> classicMiniMorphCallbacks
@@ -395,15 +445,19 @@ internal fun prepareMusicPlayerPresentation(
                             PlayerTheme.POCKET_FLIP -> pocketFlipMiniMorphCallbacks
                             PlayerTheme.POCKET_CASSETTE -> pocketCassetteMiniMorphCallbacks
                             PlayerTheme.POCKET_DISC -> pocketDiscMiniMorphCallbacks
+                            null -> pocketAdvanceMiniMorphCallbacks
                         },
                         morphOwnsVisuals = defaultMorphOwnsVisuals ||
                                 classicWheelMorphOwnsVisuals ||
                                 retroRackMorphOwnsVisuals ||
                                 pocketFlipMorphOwnsVisuals ||
                                 pocketCassetteMorphOwnsVisuals ||
-                                pocketDiscMorphOwnsVisuals,
+                                pocketDiscMorphOwnsVisuals || pocketAdvanceMorphOwnsVisuals,
                         modifier = Modifier.playerEndpointInput(
-                            playerMorphState.isCollapsedAndIdle
+                            playerPresentationInputEnabled &&
+                                (playerMorphState.isCollapsedAndIdle ||
+                                    (playerPresentation.identity == PlayerPresentationIdentity.PocketAdvance &&
+                                        playerMorphState.isDragging))
                         )
                     )
                 }
@@ -469,6 +523,8 @@ internal fun prepareMusicPlayerPresentation(
                 pocketFlipMorphBounds = pocketFlipMorphBounds,
                 pocketCassetteMorphBounds = pocketCassetteMorphBounds,
                 pocketDiscMorphBounds = pocketDiscMorphBounds,
+                pocketAdvanceMorphBounds = pocketAdvanceMorphBounds,
+                playerPresentationInputEnabled = playerPresentationInputEnabled,
                 songs = songs,
                 onSongClick = onSongClick,
                 onOpenCurrentAlbumClick = onOpenCurrentAlbumClick,
@@ -491,29 +547,30 @@ internal fun rememberMusicPlayerDefaultMorphBounds(
 }
 
 @Composable
-internal fun rememberMusicPlayerClassicMorphBounds(): ClassicWheelMorphBounds =
-    remember { ClassicWheelMorphBounds() }
+internal fun rememberMusicPlayerClassicMorphBounds(lifetime: Long = 0L): ClassicWheelMorphBounds =
+    remember(lifetime) { ClassicWheelMorphBounds() }
 
 @Composable
-internal fun rememberMusicPlayerRetroRackMorphBounds(): RetroRackMorphBounds =
-    remember { RetroRackMorphBounds() }
+internal fun rememberMusicPlayerRetroRackMorphBounds(lifetime: Long = 0L): RetroRackMorphBounds =
+    remember(lifetime) { RetroRackMorphBounds() }
 
 @Composable
-internal fun rememberMusicPlayerPocketFlipMorphBounds(): PocketFlipMorphBounds =
-    remember { PocketFlipMorphBounds() }
+internal fun rememberMusicPlayerPocketFlipMorphBounds(lifetime: Long = 0L): PocketFlipMorphBounds =
+    remember(lifetime) { PocketFlipMorphBounds() }
 
 @Composable
-internal fun rememberMusicPlayerPocketCassetteMorphBounds(): PocketCassetteMorphBounds =
-    remember { PocketCassetteMorphBounds() }
+internal fun rememberMusicPlayerPocketCassetteMorphBounds(lifetime: Long = 0L): PocketCassetteMorphBounds =
+    remember(lifetime) { PocketCassetteMorphBounds() }
 
 @Composable
-internal fun rememberMusicPlayerPocketDiscMorphBounds(): PocketDiscMorphBounds =
-    remember { PocketDiscMorphBounds() }
+internal fun rememberMusicPlayerPocketDiscMorphBounds(lifetime: Long = 0L): PocketDiscMorphBounds =
+    remember(lifetime) { PocketDiscMorphBounds() }
 
 @Composable
 internal fun rememberMusicPlayerClassicWheelMenuState(
-    selectedPlayerTheme: PlayerTheme,
-    playerMorphState: PlayerMorphState
-): ClassicWheelMenuState = remember(selectedPlayerTheme, playerMorphState.shouldComposeExpanded) {
+    selectedPlayerTheme: PlayerTheme?,
+    playerMorphState: PlayerMorphState,
+    lifetime: Long = 0L
+): ClassicWheelMenuState = remember(selectedPlayerTheme, playerMorphState.shouldComposeExpanded, lifetime) {
     ClassicWheelMenuState()
 }

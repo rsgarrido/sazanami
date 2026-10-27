@@ -5,12 +5,46 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.IntSize
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlayerMorphStateTest {
+    @Test
+    fun presentationBoundaryCancelsAnIncompleteOpeningDragAtItsTarget() = runBlocking {
+        val state = state(PlayerPresentation.Collapsed)
+        state.beginDragWithRange(500f)
+        state.dragBy(-200f)
+        assertEquals(0.4f, state.progress, 0.001f)
+
+        state.settleForPresentationChange()
+        state.dragBy(-300f) // An outgoing pointer's late motion no longer owns this controller.
+        state.endDrag(-2_000f)
+
+        assertFalse(state.isDragging)
+        assertFalse(state.isAnimating)
+        assertEquals(PlayerPresentation.Collapsed, state.settledPresentation)
+        assertEquals(0f, state.progress, 0f)
+    }
+
+    @Test
+    fun presentationBoundaryRestoresExpandedTargetWithoutReplayingItsMorph() = runBlocking {
+        val state = state(PlayerPresentation.Expanded)
+        state.beginDragWithRange(500f)
+        state.dragBy(200f)
+        assertEquals(0.6f, state.progress, 0.001f)
+
+        state.settleForPresentationChange()
+        state.cancelDrag()
+
+        assertFalse(state.isDragging)
+        assertEquals(PlayerPresentation.Expanded, state.targetPresentation)
+        assertEquals(PlayerPresentation.Expanded, state.settledPresentation)
+        assertEquals(1f, state.progress, 0f)
+    }
+
     @Test
     fun collapsedInitializationUsesZeroProgress() {
         val state = state(PlayerPresentation.Collapsed)

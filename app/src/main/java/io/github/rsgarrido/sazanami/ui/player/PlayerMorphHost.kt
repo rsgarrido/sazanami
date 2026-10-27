@@ -33,9 +33,10 @@ fun PlayerMorphHost(
     morphState: PlayerMorphState,
     modifier: Modifier = Modifier,
     layoutBoundary: Any? = null,
+    measurementIdentity: Any? = null,
     content: @Composable BoxScope.(PlayerEndpointBounds) -> Unit
 ) {
-    val endpointBounds = remember(morphState) { PlayerEndpointBounds() }
+    val endpointBounds = remember(morphState, measurementIdentity) { PlayerEndpointBounds() }
     val density = LocalDensity.current
     // A changed arrangement must dispatch positioning through the whole host, including expanded
     // placeholders whose rectangles did not move. A new modifier instance requests that pass

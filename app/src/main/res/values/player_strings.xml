@@ -134,4 +134,12 @@
     <string name="player_artwork_viewer">Artwork viewer</string>
     <string name="player_artwork_unavailable">Artwork unavailable</string>
     <string name="player_artwork_loading">Loading artwork</string>
+    <string name="pocket_advance_power">POWER</string>
+    <string name="pocket_advance_now_playing">NOW PLAYING</string>
+    <string name="pocket_advance_paused">PAUSED</string>
+    <string name="pocket_advance_stereo">STEREO</string>
+    <string name="pocket_advance_track_mode">TRACK / MODE</string>
+    <string name="pocket_advance_button_a">A · PLAY</string>
+    <string name="pocket_advance_button_a_pause">A · PAUSE</string>
+    <string name="pocket_advance_button_b">B · CLOSE</string>
 </resources>

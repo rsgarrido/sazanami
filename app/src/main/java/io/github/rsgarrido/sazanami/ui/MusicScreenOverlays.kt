@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -36,6 +37,7 @@ import io.github.rsgarrido.sazanami.ui.player.retrorack.RetroRackMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketflip.PocketFlipMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketcassette.PocketCassetteMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketdisc.PocketDiscMorphBounds
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvancePlayerMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.lyricsVisualAlpha
 import io.github.rsgarrido.sazanami.ui.player.playerVisualAlpha
 import io.github.rsgarrido.sazanami.ui.player.ImmersiveSystemBarsEffect
@@ -104,7 +106,9 @@ fun MusicScreenOverlays(
     pocketFlipMorphBounds: PocketFlipMorphBounds,
     pocketCassetteMorphBounds: PocketCassetteMorphBounds,
     pocketDiscMorphBounds: PocketDiscMorphBounds,
-    defaultPlayerLayout: DefaultPlayerLayout? = null
+    defaultPlayerLayout: DefaultPlayerLayout? = null,
+    pocketAdvanceMorphBounds: PocketAdvancePlayerMorphBounds? = null,
+    playerPresentationInputEnabled: Boolean = true
 ) {
     val isPlayerExpanded = playerMorphState.shouldComposeExpanded
     val setSystemBarSurface = LocalSystemBarSurfaceSetter.current
@@ -138,7 +142,8 @@ fun MusicScreenOverlays(
         )
     )
 
-    if (isPlayerExpanded && currentSong != null) {
+    val premeasurePocketAdvance = playerPresentation.identity == PlayerPresentationIdentity.PocketAdvance
+    if ((isPlayerExpanded || premeasurePocketAdvance) && currentSong != null) {
         val activeQueueCard = playbackQueueHubUiState.queues.firstOrNull { queue -> queue.isActive }
         val activeQueueSongs = playbackQueueHubUiState.activeEntries
             .mapNotNull { entry -> entry.song }
@@ -155,6 +160,9 @@ fun MusicScreenOverlays(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                // Alpha/disabled clickable nodes alone still participate in pointer hit testing.
+                // Keep the warm, measured endpoint behind the real app and mini while collapsed.
+                .zIndex(if (premeasurePocketAdvance && !isPlayerExpanded) -1f else 0f)
                 .graphicsLayer {
                     val progress = lyricsTransitionState.progress
                     translationY = -56.dp.toPx() * progress
@@ -166,13 +174,14 @@ fun MusicScreenOverlays(
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
+                    enabled = isPlayerExpanded,
                     onClick = {}
                 )
                 .blockPlayerInput(shouldBlockExpandedPlayerInput(
                     lyricsOwnsInput = lyricsTransitionState.lyricsOwnsInput,
                     isNowPlayingMorePresented = isNowPlayingMorePresented,
                     isArtworkViewerVisible = isArtworkViewerVisible
-                ))
+                ) || (isPlayerExpanded && !playerPresentationInputEnabled))
         ) {
             PlaybackProgress(playbackProgressUiState) { progress ->
                 ExpandedPlayerThemeHost(
@@ -231,7 +240,8 @@ fun MusicScreenOverlays(
                     retroRackMorphBounds = retroRackMorphBounds,
                     pocketFlipMorphBounds = pocketFlipMorphBounds,
                     pocketCassetteMorphBounds = pocketCassetteMorphBounds,
-                    pocketDiscMorphBounds = pocketDiscMorphBounds
+                    pocketDiscMorphBounds = pocketDiscMorphBounds,
+                    pocketAdvanceMorphBounds = pocketAdvanceMorphBounds
                 )
             }
         }
@@ -295,6 +305,8 @@ internal fun shouldUseImmersivePlayerSystemBars(
     is PlayerPresentationIdentity.Existing -> shouldUseImmersivePlayerSystemBars(
         presentation.theme, isPlayerExpanded, isLyricsVisible
     )
+    // Advance keeps visibility-independent inset measurements while the existing controller hides bars.
+    PlayerPresentationIdentity.PocketAdvance -> isPlayerExpanded && !isLyricsVisible
 }
 
 internal fun shouldUseImmersivePlayerSystemBars(

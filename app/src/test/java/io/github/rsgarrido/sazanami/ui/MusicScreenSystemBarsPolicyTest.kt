@@ -4,6 +4,7 @@ import io.github.rsgarrido.sazanami.data.PlayerTheme
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import io.github.rsgarrido.sazanami.ui.player.SystemBarPresentation
+import io.github.rsgarrido.sazanami.ui.player.PlayerPresentationIdentity
 import io.github.rsgarrido.sazanami.ui.player.resolvePlayerPresentation
 import io.github.rsgarrido.sazanami.ui.player.theme.defaultTokens
 import io.github.rsgarrido.sazanami.ui.player.applySystemBarPresentation
@@ -16,6 +17,17 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 
 class MusicScreenSystemBarsPolicyTest {
+    @Test fun `pocket advance owns its expanded system bar surface and yields to lyrics`() {
+        val identity = PlayerPresentationIdentity.PocketAdvance
+        assertEquals(SystemBarSurface.SHELL, playerSystemBarSurface(identity, false, true, false))
+        assertEquals(SystemBarSurface.SHELL, playerSystemBarSurface(identity, true, false, false))
+        assertEquals(SystemBarSurface.MODERN_PLAYER, playerSystemBarSurface(identity, true, true, false))
+        assertEquals(SystemBarSurface.LYRICS, playerSystemBarSurface(identity, true, true, true))
+        assertTrue(shouldUseImmersivePlayerSystemBars(identity, true, false))
+        assertFalse(shouldUseImmersivePlayerSystemBars(identity, false, false))
+        assertFalse(shouldUseImmersivePlayerSystemBars(identity, true, true))
+    }
+
     @Test fun `resolved existing players retain system bar policy at every presentation boundary`() {
         PlayerTheme.entries.forEach { theme ->
             val identity = resolvePlayerPresentation(theme, theme.defaultTokens()).identity

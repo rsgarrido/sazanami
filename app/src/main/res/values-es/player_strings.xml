@@ -136,4 +136,12 @@
     <string name="player_artwork_viewer">Visor de portada</string>
     <string name="player_artwork_unavailable">Portada no disponible</string>
     <string name="player_artwork_loading">Cargando portada</string>
+    <string name="pocket_advance_power">ENCENDIDO</string>
+    <string name="pocket_advance_now_playing">REPRODUCIENDO</string>
+    <string name="pocket_advance_paused">EN PAUSA</string>
+    <string name="pocket_advance_stereo">ESTÉREO</string>
+    <string name="pocket_advance_track_mode">PISTA / MODO</string>
+    <string name="pocket_advance_button_a">A · REPRODUCIR</string>
+    <string name="pocket_advance_button_a_pause">A · PAUSA</string>
+    <string name="pocket_advance_button_b">B · CERRAR</string>
 </resources>
