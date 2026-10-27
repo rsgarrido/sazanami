@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.testTag
@@ -36,6 +37,12 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
@@ -82,6 +89,11 @@ import io.github.rsgarrido.sazanami.ui.player.TabletLandscapePlayerContext
 import io.github.rsgarrido.sazanami.ui.player.resolvePlayerPresentation
 import io.github.rsgarrido.sazanami.ui.player.PlayerPresentationViewport
 import io.github.rsgarrido.sazanami.ui.player.rememberPlayerPresentationBoundary
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceNavigationState
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceLcdMode
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceRootEntry
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceColors
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.rememberPocketAdvanceNavigationState
 import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvancePlayerMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceMorphGeometry
 import io.github.rsgarrido.sazanami.ui.player.pocketadvance.minimumPocketAdvanceSize
@@ -185,9 +197,198 @@ class MusicPlayerPresentationTest {
                 fixture.observedShellAccent)
             assertEquals(1f, controller.progress, 0f)
         }
-        composeRule.onNodeWithTag("pocketAdvanceCollapse").performTouchInput { click() }
+        collapseAdvanceThroughHeader()
         composeRule.onNodeWithTag("pocketAdvanceMini").assertIsDisplayed()
         composeRule.runOnIdle { assertTrue(controller.isCollapsedAndIdle) }
+    }
+
+    @Test
+    fun pocketAdvanceBrowserRetainsAnchorsAndExclusivelyOwnsLcdAndConfirmInput() {
+        val fixture = advanceFixture()
+        composeRule.setContent { fixture.Content() }
+        awaitAdvanceSnapshot(fixture)
+        advanceControl("pocketAdvanceMini")
+        val before = awaitAdvanceSnapshot(fixture)
+        val navigation = fixture.advanceNavigation
+        advanceControl("pocketAdvanceStart")
+        advanceControl("pocketAdvanceDown")
+        advanceControl("pocketAdvanceDown")
+        composeRule.onNodeWithTag("pocketAdvanceRootArtists").assertIsSelected().assertIsNotEnabled()
+        val browsing = awaitAdvanceSnapshot(fixture)
+        assertSame(before.owner, browsing.owner)
+        assertEquals(before.expanded, browsing.expanded)
+        assertEquals(before.mini, browsing.mini)
+        composeRule.onNodeWithTag("pocketAdvanceSeek").assertDoesNotExist()
+        composeRule.onNodeWithTag("pocketAdvanceArtist").assertDoesNotExist()
+        composeRule.onNodeWithTag("pocketAdvanceAlbum").assertDoesNotExist()
+        composeRule.onAllNodesWithContentDescription(text(R.string.player_play)).assertCountEquals(0)
+        composeRule.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsActions.SetProgress)).assertCountEquals(0)
+        // A real tap at the shared A owner's rectangle must reach the disabled browser control,
+        // never the invisible play/pause target above it.
+        val primary = before.expanded.playPause.translate(before.frame.originInRoot)
+        composeRule.onRoot().performTouchInput { click(primary.center) }
+        composeRule.onNodeWithTag("pocketAdvanceBrowser", useUnmergedTree = true).performTouchInput {
+            down(center); moveBy(Offset(0f, -48f)); up()
+        }
+        composeRule.runOnIdle {
+            assertSame(navigation, fixture.advanceNavigation)
+            assertEquals(PocketAdvanceLcdMode.MusicBrowser, navigation.lcdMode)
+            assertEquals(1f, fixture.morph.progress, 0f)
+            assertFalse(fixture.morph.isDragging)
+            assertFalse(fixture.lyrics.lyricsComposed)
+            assertTrue(fixture.calls.isEmpty()); assertTrue(fixture.seeks.isEmpty())
+        }
+        // Taps at old metadata/seek coordinates must not invoke the hidden destinations.
+        listOf(before.expanded.artist, before.expanded.progressTrack).forEach { rect ->
+            composeRule.onRoot().performTouchInput { click(rect.translate(before.frame.originInRoot).center) }
+            if (composeRule.runOnIdle { navigation.lcdMode == PocketAdvanceLcdMode.NowPlaying }) {
+                advanceControl("pocketAdvanceStart")
+            }
+        }
+        composeRule.runOnIdle {
+            assertTrue(fixture.openedArtists.isEmpty()); assertTrue(fixture.openedAlbums.isEmpty())
+            assertTrue(fixture.calls.isEmpty()); assertTrue(fixture.seeks.isEmpty())
+        }
+        // Touch activation uses the actual row rather than the previous hardware selection.
+        composeRule.onNodeWithTag("pocketAdvanceRootNowPlaying").performScrollTo().performTouchInput { click() }
+        composeRule.runOnIdle { assertEquals(PocketAdvanceLcdMode.NowPlaying, navigation.lcdMode) }
+        advanceControl("pocketAdvanceStart")
+        advanceControl("pocketAdvancePlay")
+        composeRule.runOnIdle {
+            assertEquals(PocketAdvanceLcdMode.NowPlaying, navigation.lcdMode)
+            assertTrue(fixture.calls.isEmpty()); assertTrue(fixture.seeks.isEmpty())
+        }
+        advanceControl("pocketAdvanceMorphPlay")
+        composeRule.runOnIdle { assertEquals(listOf("play-pause"), fixture.calls) }
+    }
+
+    @Test
+    @OptIn(ExperimentalTestApi::class)
+    fun pocketAdvanceBrowserPaintsSelectionWithoutTheSharedNowPlayingLayer() {
+        val fixture = advanceFixture()
+        composeRule.setContent { fixture.Content() }
+        awaitAdvanceSnapshot(fixture)
+        advanceControl("pocketAdvanceMini")
+        advanceControl("pocketAdvanceStart")
+        advanceControl("pocketAdvanceDown")
+        advanceControl("pocketAdvanceDown")
+        val row = composeRule.onNodeWithTag("pocketAdvanceRootArtists")
+        row.assertIsSelected()
+        val pixels = row.captureToImage().toPixelMap()
+        // The row edge is outside its text and rounded corners. Shared artwork must not cover it.
+        val pixel = pixels[1, pixels.height / 2]
+        assertEquals(PocketAdvanceColors.Ink.red, pixel.red, 0.04f)
+        assertEquals(PocketAdvanceColors.Ink.green, pixel.green, 0.04f)
+        assertEquals(PocketAdvanceColors.Ink.blue, pixel.blue, 0.04f)
+    }
+
+    @Test
+    fun pocketAdvanceBrowserHeaderCollapseKeepsMorphGeometryAndRestoresSelectionOnStart() {
+        val fixture = advanceFixture()
+        composeRule.setContent { fixture.Content() }
+        awaitAdvanceSnapshot(fixture)
+        advanceControl("pocketAdvanceMini")
+        val expanded = awaitAdvanceSnapshot(fixture)
+        val controller = fixture.morph
+        advanceControl("pocketAdvanceStart")
+        advanceControl("pocketAdvanceUp")
+        val header = composeRule.onNodeWithTag("pocketAdvanceHeader", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        composeRule.onRoot().performTouchInput { down(header.center); moveBy(Offset(0f, 48f)) }
+        composeRule.onNodeWithTag("pocketAdvanceBrowser", useUnmergedTree = true).assertDoesNotExist()
+        val progress = composeRule.runOnIdle {
+            assertTrue(controller.isDragging)
+            controller.progress
+        }
+        val moving = composeRule.onNodeWithTag("pocketAdvanceMorphProgress", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        assertRectNear(io.github.rsgarrido.sazanami.ui.player.pocketadvance.interpolatePocketAdvanceRect(
+            expanded.mini.progressTrack, expanded.expanded.progressTrack, progress)
+            .translate(expanded.frame.originInRoot), moving)
+        composeRule.onRoot().performTouchInput { moveBy(Offset(0f, 72f)); up() }
+        composeRule.runOnIdle {
+            assertTrue(controller.isCollapsedAndIdle)
+            assertEquals(PocketAdvanceLcdMode.NowPlaying, fixture.advanceNavigation.lcdMode)
+            assertEquals(PocketAdvanceRootEntry.Albums, fixture.advanceNavigation.selectedRootEntry)
+        }
+        advanceControl("pocketAdvanceMini")
+        composeRule.onNodeWithTag("pocketAdvanceBrowser", useUnmergedTree = true).assertDoesNotExist()
+        val reopened = awaitAdvanceSnapshot(fixture)
+        assertSame(expanded.owner, reopened.owner)
+        assertEquals(expanded.expanded, reopened.expanded)
+        advanceControl("pocketAdvanceStart")
+        composeRule.onNodeWithTag("pocketAdvanceRootAlbums").assertIsSelected()
+        composeRule.runOnIdle {
+            assertSame(controller, fixture.morph)
+            assertTrue(fixture.calls.isEmpty()); assertTrue(fixture.seeks.isEmpty())
+        }
+    }
+
+    @Test
+    fun pocketAdvanceBrowserReturnsOnlyAfterCancelledOrReversedCollapseSettles() {
+        val fixture = advanceFixture()
+        composeRule.setContent { fixture.Content() }
+        awaitAdvanceSnapshot(fixture)
+        advanceControl("pocketAdvanceMini")
+        advanceControl("pocketAdvanceStart")
+        advanceControl("pocketAdvanceUp")
+        for (cancelGesture in listOf(true, false)) {
+            val header = composeRule.onNodeWithTag("pocketAdvanceHeader", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            composeRule.onRoot().performTouchInput { down(header.center); moveBy(Offset(0f, 48f)) }
+            composeRule.onNodeWithTag("pocketAdvanceBrowser", useUnmergedTree = true).assertDoesNotExist()
+            composeRule.runOnIdle { assertTrue(fixture.morph.isDragging) }
+            composeRule.onRoot().performTouchInput {
+                if (cancelGesture) cancel() else { moveTo(header.center - Offset(0f, 24f)); up() }
+            }
+            composeRule.onNodeWithTag("pocketAdvanceRootAlbums").assertIsDisplayed().assertIsSelected()
+            composeRule.runOnIdle {
+                assertEquals(1f, fixture.morph.progress, 0f)
+                assertFalse(fixture.morph.isDragging)
+                assertFalse(fixture.morph.isAnimating)
+                assertEquals(PocketAdvanceLcdMode.MusicBrowser, fixture.advanceNavigation.lcdMode)
+                assertTrue(fixture.calls.isEmpty()); assertTrue(fixture.seeks.isEmpty())
+            }
+        }
+    }
+
+    @Test
+    fun pocketAdvanceBrowserLocationSurvivesTrackChangeFallbackAndSavedStateRecreation() {
+        val fixture = advanceFixture()
+        val restoration = StateRestorationTester(composeRule)
+        restoration.setContent { fixture.Content() }
+        awaitAdvanceSnapshot(fixture)
+        advanceControl("pocketAdvanceMini")
+        advanceControl("pocketAdvanceStart")
+        advanceControl("pocketAdvanceDown")
+        advanceControl("pocketAdvanceDown")
+        val navigation = fixture.advanceNavigation
+        composeRule.runOnIdle { fixture.current.value = fixture.songs.first() }
+        composeRule.runOnIdle {
+            assertSame(navigation, fixture.advanceNavigation)
+            assertEquals(PocketAdvanceLcdMode.MusicBrowser, navigation.lcdMode)
+            fixture.viewport.value = DpSize(720.dp, 1180.dp)
+        }
+        composeRule.runOnIdle {
+            assertEquals(PlayerPresentationIdentity.Existing(PlayerTheme.CLASSIC_WHEEL), fixture.resolvedIdentity)
+            assertEquals(PocketAdvanceLcdMode.NowPlaying, navigation.lcdMode)
+            assertEquals(PocketAdvanceRootEntry.Artists, navigation.selectedRootEntry)
+            fixture.viewport.value = DpSize(1200.dp, 720.dp)
+        }
+        awaitAdvanceSnapshot(fixture)
+        composeRule.onNodeWithTag("pocketAdvanceBrowser", useUnmergedTree = true).assertDoesNotExist()
+        advanceControl("pocketAdvanceStart")
+        composeRule.onNodeWithTag("pocketAdvanceRootArtists").assertIsSelected()
+        restoration.emulateSavedInstanceStateRestore()
+        awaitAdvanceSnapshot(fixture)
+        composeRule.onNodeWithTag("pocketAdvanceBrowser", useUnmergedTree = true).assertDoesNotExist()
+        composeRule.runOnIdle {
+            assertNotSame(navigation, fixture.advanceNavigation)
+            assertEquals(PocketAdvanceLcdMode.NowPlaying, fixture.advanceNavigation.lcdMode)
+            assertEquals(PocketAdvanceRootEntry.Artists, fixture.advanceNavigation.selectedRootEntry)
+            assertEquals(PlayerTheme.CLASSIC_WHEEL, fixture.theme.value)
+            assertTrue(fixture.calls.isEmpty()); assertTrue(fixture.seeks.isEmpty())
+        }
+        advanceControl("pocketAdvanceStart")
+        composeRule.onNodeWithTag("pocketAdvanceRootArtists").assertIsSelected()
     }
 
     @Test
@@ -392,7 +593,7 @@ class MusicPlayerPresentationTest {
         composeRule.onNodeWithTag("pocketAdvanceMini").performTouchInput { click() }
         val expanded = awaitAdvanceSnapshot(fixture)
         assertEquals("Expansion must retain every compact mini anchor", collapsed.mini, expanded.mini)
-        composeRule.onNodeWithTag("pocketAdvanceCollapse").performTouchInput { click() }
+        collapseAdvanceThroughHeader()
         val returned = awaitAdvanceSnapshot(fixture)
         assertEquals("Collapse must return to the same compact mini anchors", collapsed.mini, returned.mini)
         composeRule.runOnIdle {
@@ -1336,6 +1537,16 @@ class MusicPlayerPresentationTest {
         val expanded: PocketAdvanceMorphGeometry
     )
 
+    private fun advanceControl(tag: String) {
+        composeRule.onNodeWithTag(tag).performTouchInput { click() }
+    }
+
+    private fun collapseAdvanceThroughHeader() {
+        val action = composeRule.onNodeWithTag("pocketAdvanceHeader", useUnmergedTree = true).fetchSemanticsNode()
+            .config[SemanticsActions.CustomActions].single { it.label == text(R.string.player_collapse) }
+        composeRule.runOnIdle { assertTrue(action.action()) }
+    }
+
     private fun advanceFixture() = tabletFixture(PlayerPresentation.Collapsed).apply {
         theme.value = PlayerTheme.CLASSIC_WHEEL
         deviceKind.value = PlayerDeviceKind.TABLET
@@ -1666,6 +1877,7 @@ class MusicPlayerPresentationTest {
         lateinit var morph: PlayerMorphState
         lateinit var lyrics: PlayerLyricsTransitionState
         lateinit var endpoints: PlayerEndpointBounds
+        lateinit var advanceNavigation: PocketAdvanceNavigationState
 
         @Composable
         fun Content() {
@@ -1682,6 +1894,7 @@ class MusicPlayerPresentationTest {
         @OptIn(ExperimentalLayoutApi::class)
         private fun ContentInViewport() {
             contentPaddingPx = with(LocalDensity.current) { 16.dp.toPx() }
+            advanceNavigation = rememberPocketAdvanceNavigationState()
             morph = rememberPlayerMorphState(initial)
             lyrics = rememberPlayerLyricsTransitionState(lyricsVisible.value) { lyricsVisible.value = it }
             SazanamiTheme {
@@ -1810,6 +2023,7 @@ class MusicPlayerPresentationTest {
                         onViewArtwork = { artworks += it },
                         shellLayout = shellLayout.value,
                         defaultPlayerLayout = playerLayout,
+                        pocketAdvanceNavigationState = advanceNavigation,
                         playerPresentationEpoch = boundary.epoch,
                         playerPresentationInputEnabled = boundary.inputEnabled,
                     )

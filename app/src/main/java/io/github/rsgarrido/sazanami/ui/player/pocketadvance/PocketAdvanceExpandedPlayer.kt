@@ -31,7 +31,12 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Repeat
@@ -62,11 +67,16 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.layout.HorizontalAlignmentLine
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -90,7 +100,7 @@ import io.github.rsgarrido.sazanami.ui.state.playbackPlayPauseShowsPause
 import io.github.rsgarrido.sazanami.ui.state.rememberDirectSeekGestureControl
 import kotlinx.coroutines.CancellationException
 
-/** Initial Now Playing screen. Device navigation can replace the display content in a later session. */
+/** The browser changes LCD ownership only; Now Playing remains laid out for the existing morph. */
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
 fun PocketAdvanceExpandedPlayer(
@@ -128,10 +138,14 @@ fun PocketAdvanceExpandedPlayer(
     onViewArtwork: ((Song) -> Unit)? = null,
     onOpenArtist: ((Song) -> Unit)? = null,
     onOpenAlbum: ((Song) -> Unit)? = null,
-    onOpenLyrics: (() -> Unit)? = null
+    onOpenLyrics: (() -> Unit)? = null,
+    navigationState: PocketAdvanceNavigationState = rememberPocketAdvanceNavigationState(),
+    browserVisible: Boolean = inputEnabled && navigationState.lcdMode == PocketAdvanceLcdMode.MusicBrowser
 ) {
     val fontScale = LocalDensity.current.fontScale
-    val lyricsEnabled by rememberUpdatedState(inputEnabled && onOpenLyrics != null)
+    val collapseLabel = stringResource(R.string.player_collapse)
+    val displayLyricsModifier = if (browserVisible) Modifier else lyricsGestureModifier
+    val lyricsEnabled by rememberUpdatedState(inputEnabled && !browserVisible && onOpenLyrics != null)
     val openLyrics by rememberUpdatedState(onOpenLyrics)
     val collapseDrag = Modifier.pocketAdvanceCollapseGesture(
         collapseGestureEnabled, morphBounds, onMorphDragStart, onMorphDragBy, onMorphDragEnd, onMorphDragCancel,
@@ -167,8 +181,12 @@ fun PocketAdvanceExpandedPlayer(
                         .height(PocketAdvanceLayout.BrandHeight * fontScale.coerceAtLeast(1f))
                         .graphicsLayer { alpha = hardwareAlpha }
                         .then(collapseDrag)
-                         .then(lyricsGestureModifier)
-                         .padding(start = 16.dp, top = 4.dp),
+                        .then(displayLyricsModifier)
+                        .testTag("pocketAdvanceHeader")
+                        .then(if (inputEnabled) Modifier.semantics {
+                            customActions = listOf(CustomAccessibilityAction(collapseLabel) { onCollapseClick(); true })
+                        } else Modifier.clearAndSetSemantics { })
+                        .padding(start = 16.dp, top = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(Modifier.size(7.dp).background(if (isPlaying) PocketAdvanceColors.Led else PocketAdvanceColors.ShellShade, CircleShape))
@@ -182,19 +200,19 @@ fun PocketAdvanceExpandedPlayer(
                 ) {
                     PocketAdvanceDirectionWing(
                         isShuffleEnabled, repeatMode, inputEnabled, onPreviousClick, onNextClick,
-                        onShuffleClick, onRepeatClick,
+                        onShuffleClick, onRepeatClick, navigationState, browserVisible,
                         Modifier.width(PocketAdvanceLayout.ControlWing).fillMaxHeight()
                             .graphicsLayer { alpha = hardwareAlpha }
                     )
                     PocketAdvanceDisplay(
                         currentSong, isPlaying, currentPosition, duration, onSeekChange, inputEnabled,
                         morphOwnsSharedVisuals, morphBounds, bezelAlpha, displayDetailsAlpha,
-                        Modifier.weight(1f).fillMaxHeight(), collapseDrag, lyricsGestureModifier,
-                        lyricsGestureRegion, onViewArtwork, onOpenArtist, onOpenAlbum
+                        Modifier.weight(1f).fillMaxHeight(), collapseDrag, displayLyricsModifier,
+                        lyricsGestureRegion, onViewArtwork, onOpenArtist, onOpenAlbum, navigationState, browserVisible
                     )
                     PocketAdvanceActionWing(
-                        isPlaying, inputEnabled, onPlayPauseClick, onCollapseClick,
-                        onOpenUpNextClick, onMoreClick, morphOwnsSharedVisuals, morphBounds,
+                        isPlaying, inputEnabled, onPlayPauseClick,
+                        onOpenUpNextClick, onMoreClick, morphOwnsSharedVisuals, morphBounds, navigationState, browserVisible,
                         Modifier.width(PocketAdvanceLayout.ControlWing).fillMaxHeight()
                             .graphicsLayer { alpha = hardwareAlpha }
                     )
@@ -211,14 +229,17 @@ private fun PocketAdvanceDisplay(
     morphOwnsSharedVisuals: Boolean, morphBounds: PocketAdvancePlayerMorphBounds?,
     bezelAlpha: Float, detailsAlpha: Float, modifier: Modifier,
     collapseDrag: Modifier, lyricsGestureModifier: Modifier, lyricsGestureRegion: PlayerLyricsGestureRegion?,
-    onViewArtwork: ((Song) -> Unit)?, onOpenArtist: ((Song) -> Unit)?, onOpenAlbum: ((Song) -> Unit)?
+    onViewArtwork: ((Song) -> Unit)?, onOpenArtist: ((Song) -> Unit)?, onOpenAlbum: ((Song) -> Unit)?,
+    navigation: PocketAdvanceNavigationState, browserVisible: Boolean
 ) {
+    val nowPlayingInputEnabled = inputEnabled && !browserVisible
     val sharedModifier = Modifier.graphicsLayer { alpha = if (morphOwnsSharedVisuals) 0f else 1f }
         .then(if (morphOwnsSharedVisuals) Modifier.clearAndSetSemantics { } else Modifier)
     val backgroundAlpha = if (morphOwnsSharedVisuals) 0f else bezelAlpha
     Column(
         modifier = modifier
             .onGloballyPositioned { morphBounds?.updateExpandedDisplay(it.boundsInRoot()) }
+            .testTag("pocketAdvanceDisplay")
             .background(PocketAdvanceColors.Bezel.copy(alpha = backgroundAlpha), RoundedCornerShape(20.dp))
             .border(1.dp, PocketAdvanceColors.ShellShade.copy(alpha = backgroundAlpha), RoundedCornerShape(20.dp))
             .padding(8.dp)
@@ -236,104 +257,182 @@ private fun PocketAdvanceDisplay(
         ) {
             Box(Modifier.size(6.dp).background(PocketAdvanceColors.ScreenAccent, CircleShape))
             Spacer(Modifier.width(7.dp))
-            Text(stringResource(if (playbackPlayPauseShowsPause(isPlaying)) R.string.pocket_advance_now_playing else R.string.pocket_advance_paused), color = PocketAdvanceColors.Ink,
+            Text(stringResource(if (browserVisible) R.string.player_wheel_music
+                else if (playbackPlayPauseShowsPause(isPlaying)) R.string.pocket_advance_now_playing else R.string.pocket_advance_paused), color = PocketAdvanceColors.Ink,
                 fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.sp)
         }
         Spacer(Modifier.height(PocketAdvanceLayout.StatusGap))
-        BoxWithConstraints(
-            Modifier.fillMaxWidth().weight(1f).testTag("pocketAdvanceDisplayDrag")
-                .then(collapseDrag).then(lyricsGestureModifier)
-        ) {
-            val fontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
-            val artSize = minOf(maxHeight, (maxWidth - PocketAdvanceLayout.MetadataWidth * fontScale - PocketAdvanceLayout.ScreenGap)
-                .coerceAtLeast(PocketAdvanceLayout.Artwork), 288.dp)
-            val metadataHeight = minOf(maxHeight, 192.dp * fontScale)
-            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(PocketAdvanceLayout.ScreenGap),
-                verticalAlignment = Alignment.CenterVertically) {
-                // Interactive endpoint wrappers remain in place underneath the passive shared
-                // artwork/text owner. Their hit path includes the screen's directional gesture.
-                Box(Modifier.size(artSize)
-                    .then(if (inputEnabled) Modifier.artworkViewerClick(currentSong, onViewArtwork) else Modifier)) {
-                    PocketAdvanceArtwork(currentSong, Modifier.fillMaxSize()
-                        .onGloballyPositioned { morphBounds?.updateExpandedArtwork(it.boundsInRoot()) }
-                        .then(sharedModifier))
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            // Same constraints and anchors in both modes. Only pixels/input/semantics yield.
+            Column(Modifier.fillMaxSize()
+                .graphicsLayer { alpha = if (browserVisible) 0f else 1f }
+                .then(if (browserVisible) Modifier.clearAndSetSemantics { } else Modifier)) {
+                BoxWithConstraints(
+                    Modifier.fillMaxWidth().weight(1f).testTag("pocketAdvanceDisplayDrag")
+                        .then(if (browserVisible) Modifier else collapseDrag.then(lyricsGestureModifier))
+                ) {
+                    val fontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
+                    val artSize = minOf(maxHeight, (maxWidth - PocketAdvanceLayout.MetadataWidth * fontScale - PocketAdvanceLayout.ScreenGap)
+                        .coerceAtLeast(PocketAdvanceLayout.Artwork), 288.dp)
+                    val metadataHeight = minOf(maxHeight, 192.dp * fontScale)
+                    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(PocketAdvanceLayout.ScreenGap),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        // Interactive endpoint wrappers remain in place underneath the passive shared
+                        // artwork/text owner. Their hit path includes the screen's directional gesture.
+                        Box(Modifier.size(artSize)
+                            .then(if (nowPlayingInputEnabled) Modifier.artworkViewerClick(currentSong, onViewArtwork) else Modifier)) {
+                            PocketAdvanceArtwork(currentSong, Modifier.fillMaxSize()
+                                .onGloballyPositioned { morphBounds?.updateExpandedArtwork(it.boundsInRoot()) }
+                                .then(sharedModifier))
+                        }
+                        Column(Modifier.weight(1f).height(metadataHeight), verticalArrangement = Arrangement.Center) {
+                            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.CenterStart) {
+                                PocketAdvanceTitle(currentSong, 1f, Modifier.fillMaxWidth().clipToBounds()
+                                    .onGloballyPositioned { morphBounds?.updateExpandedTitle(it.boundsInRoot()) }.then(sharedModifier))
+                            }
+                            Box(Modifier.fillMaxWidth().height(maxOf(48.dp, 24.dp * fontScale)).testTag("pocketAdvanceArtist")
+                                .then(if (browserVisible) Modifier else Modifier.clickable(enabled = nowPlayingInputEnabled && currentSong != null && onOpenArtist != null,
+                                    role = Role.Button, onClickLabel = stringResource(R.string.library_search_go_artist),
+                                    onClick = { currentSong?.let { onOpenArtist?.invoke(it) } }))
+                                .semantics { contentDescription = currentSong?.artist.orEmpty() }, contentAlignment = Alignment.CenterStart) {
+                                PocketAdvanceArtist(currentSong, 1f, Modifier.fillMaxWidth()
+                                    .onGloballyPositioned { morphBounds?.updateExpandedArtist(it.boundsInRoot()) }.then(sharedModifier))
+                            }
+                            Box(Modifier.fillMaxWidth().height(maxOf(48.dp, 32.dp * fontScale)).testTag("pocketAdvanceAlbum")
+                                .then(if (browserVisible) Modifier else Modifier.clickable(enabled = nowPlayingInputEnabled && currentSong != null && onOpenAlbum != null,
+                                    role = Role.Button, onClickLabel = stringResource(R.string.player_go_to_album),
+                                    onClick = { currentSong?.let { onOpenAlbum?.invoke(it) } }))
+                                .graphicsLayer { alpha = detailsAlpha }, contentAlignment = Alignment.TopStart) {
+                                Text(currentSong?.album.orEmpty(), color = PocketAdvanceColors.MutedInk,
+                                    fontSize = 12.sp, fontFamily = FontFamily.Monospace, maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
                 }
-                Column(Modifier.weight(1f).height(metadataHeight), verticalArrangement = Arrangement.Center) {
-                    Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.CenterStart) {
-                        PocketAdvanceTitle(currentSong, 1f, Modifier.fillMaxWidth().clipToBounds()
-                            .onGloballyPositioned { morphBounds?.updateExpandedTitle(it.boundsInRoot()) }.then(sharedModifier))
-                    }
-                    Box(Modifier.fillMaxWidth().height(maxOf(48.dp, 24.dp * fontScale)).testTag("pocketAdvanceArtist")
-                        .clickable(enabled = inputEnabled && currentSong != null && onOpenArtist != null,
-                            role = Role.Button, onClickLabel = stringResource(R.string.library_search_go_artist),
-                            onClick = { currentSong?.let { onOpenArtist?.invoke(it) } })
-                        .semantics { contentDescription = currentSong?.artist.orEmpty() }, contentAlignment = Alignment.CenterStart) {
-                        PocketAdvanceArtist(currentSong, 1f, Modifier.fillMaxWidth()
-                            .onGloballyPositioned { morphBounds?.updateExpandedArtist(it.boundsInRoot()) }.then(sharedModifier))
-                    }
-                    Box(Modifier.fillMaxWidth().height(maxOf(48.dp, 32.dp * fontScale)).testTag("pocketAdvanceAlbum")
-                        .clickable(enabled = inputEnabled && currentSong != null && onOpenAlbum != null,
-                            role = Role.Button, onClickLabel = stringResource(R.string.player_go_to_album),
-                            onClick = { currentSong?.let { onOpenAlbum?.invoke(it) } })
-                        .graphicsLayer { alpha = detailsAlpha }, contentAlignment = Alignment.TopStart) {
-                        Text(currentSong?.album.orEmpty(), color = PocketAdvanceColors.MutedInk,
-                            fontSize = 12.sp, fontFamily = FontFamily.Monospace, maxLines = 2,
-                            overflow = TextOverflow.Ellipsis)
-                    }
-                }
+                Spacer(Modifier.height(PocketAdvanceLayout.SeekGap))
+                PocketAdvanceSeekBar(currentPosition, duration, onSeekChange, nowPlayingInputEnabled, morphOwnsSharedVisuals, morphBounds,
+                    Modifier.fillMaxWidth().height(PocketAdvanceLayout.SeekHeight * LocalDensity.current.fontScale.coerceAtLeast(1f))
+                        .graphicsLayer { alpha = detailsAlpha })
             }
+            if (browserVisible) PocketAdvanceBrowserRoot(navigation, Modifier.fillMaxSize())
         }
-        Spacer(Modifier.height(PocketAdvanceLayout.SeekGap))
-        PocketAdvanceSeekBar(currentPosition, duration, onSeekChange, inputEnabled, morphOwnsSharedVisuals, morphBounds,
-            Modifier.fillMaxWidth().height(PocketAdvanceLayout.SeekHeight * LocalDensity.current.fontScale.coerceAtLeast(1f))
-                .graphicsLayer { alpha = detailsAlpha })
     }
 }
+
+private val PocketAdvanceTrackModeBottom = HorizontalAlignmentLine { old, new -> maxOf(old, new) }
 
 @Composable
 private fun PocketAdvanceDirectionWing(
     isShuffleEnabled: Boolean, repeatMode: RepeatMode, inputEnabled: Boolean,
     onPreviousClick: () -> Unit, onNextClick: () -> Unit, onShuffleClick: () -> Unit,
-    onRepeatClick: () -> Unit, modifier: Modifier
+    onRepeatClick: () -> Unit, navigation: PocketAdvanceNavigationState, browserVisible: Boolean, modifier: Modifier
 ) {
     val repeatLabel = stringResource(when (repeatMode) {
         RepeatMode.OFF -> R.string.player_repeat_off
         RepeatMode.ALL -> R.string.player_repeat_all
         RepeatMode.ONE -> R.string.player_repeat_one
     })
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Box(Modifier.size(144.dp)) {
-            Box(Modifier.fillMaxSize()
-                .background(Brush.verticalGradient(listOf(PocketAdvanceColors.ShellShade, PocketAdvanceColors.ShellHighlight)), CircleShape)
-                .padding(3.dp).background(PocketAdvanceColors.Shell.copy(alpha = .7f), CircleShape))
-            Canvas(Modifier.fillMaxSize().padding(10.dp)) {
-                val unit = size.width / 3f
-                val path = Path().apply {
-                    moveTo(unit, 0f); lineTo(unit * 2, 0f); lineTo(unit * 2, unit)
-                    lineTo(size.width, unit); lineTo(size.width, unit * 2)
-                    lineTo(unit * 2, unit * 2); lineTo(unit * 2, size.height)
-                    lineTo(unit, size.height); lineTo(unit, unit * 2)
-                    lineTo(0f, unit * 2); lineTo(0f, unit); lineTo(unit, unit); close()
+    val confirmLabel = pocketAdvanceConfirmLabel(navigation)
+    val backLabel = stringResource(R.string.pocket_advance_return_now_playing)
+    Layout(modifier = modifier, content = {
+        // Keep the original full-size centered column and its measurement constraints unchanged.
+        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Box(Modifier.size(144.dp).testTag("pocketAdvanceDpad")) {
+                Box(Modifier.fillMaxSize()
+                    .background(Brush.verticalGradient(listOf(PocketAdvanceColors.ShellShade, PocketAdvanceColors.ShellHighlight)), CircleShape)
+                    .padding(3.dp).background(PocketAdvanceColors.Shell.copy(alpha = .7f), CircleShape))
+                Canvas(Modifier.fillMaxSize().padding(10.dp)) {
+                    val unit = size.width / 3f
+                    val path = Path().apply {
+                        moveTo(unit, 0f); lineTo(unit * 2, 0f); lineTo(unit * 2, unit)
+                        lineTo(size.width, unit); lineTo(size.width, unit * 2)
+                        lineTo(unit * 2, unit * 2); lineTo(unit * 2, size.height)
+                        lineTo(unit, size.height); lineTo(unit, unit * 2)
+                        lineTo(0f, unit * 2); lineTo(0f, unit); lineTo(unit, unit); close()
+                    }
+                    val shadow = Path().apply { addPath(path); translate(Offset(0f, 4.dp.toPx())) }
+                    drawPath(shadow, PocketAdvanceColors.ShellShade)
+                    drawPath(path, Brush.verticalGradient(listOf(PocketAdvanceColors.ButtonHighlight, PocketAdvanceColors.Button)))
+                    drawPath(path, PocketAdvanceColors.ButtonInk.copy(alpha = .22f), style = Stroke(1.dp.toPx()))
+                    drawCircle(PocketAdvanceColors.Button, radius = unit * .30f)
+                    drawCircle(PocketAdvanceColors.ButtonHighlight, radius = unit * .30f, style = Stroke(1.dp.toPx()))
                 }
-                val shadow = Path().apply { addPath(path); translate(Offset(0f, 4.dp.toPx())) }
-                drawPath(shadow, PocketAdvanceColors.ShellShade)
-                drawPath(path, Brush.verticalGradient(listOf(PocketAdvanceColors.ButtonHighlight, PocketAdvanceColors.Button)))
-                drawPath(path, PocketAdvanceColors.ButtonInk.copy(alpha = .22f), style = Stroke(1.dp.toPx()))
-                drawCircle(PocketAdvanceColors.Button, radius = unit * .30f)
-                drawCircle(PocketAdvanceColors.ButtonHighlight, radius = unit * .30f, style = Stroke(1.dp.toPx()))
+                PocketAdvanceDirectionButton(if (browserVisible) Icons.Filled.KeyboardArrowUp else Icons.Filled.Shuffle,
+                    if (browserVisible) stringResource(R.string.pocket_advance_previous_selection)
+                    else stringResource(if (isShuffleEnabled) R.string.player_shuffle_on else R.string.player_shuffle_off),
+                    if (browserVisible) navigation::moveSelectionUp else onShuffleClick,
+                    inputEnabled, !browserVisible && isShuffleEnabled,
+                    Modifier.align(Alignment.TopCenter).testTag("pocketAdvanceUp"))
+                PocketAdvanceDirectionButton(if (browserVisible) Icons.Filled.KeyboardArrowLeft else Icons.Filled.SkipPrevious,
+                    if (browserVisible) backLabel else stringResource(R.string.player_previous_song),
+                    if (browserVisible) navigation::back else onPreviousClick, inputEnabled, false,
+                    Modifier.align(Alignment.CenterStart).testTag("pocketAdvancePrevious"))
+                PocketAdvanceDirectionButton(if (browserVisible) Icons.Filled.KeyboardArrowRight else Icons.Filled.SkipNext,
+                    if (browserVisible) confirmLabel else stringResource(R.string.player_next_song),
+                    if (browserVisible) navigation::confirmSelection else onNextClick,
+                    inputEnabled && (!browserVisible || navigation.selectedRootEntry.isAvailable), false,
+                    Modifier.align(Alignment.CenterEnd).testTag("pocketAdvanceNext"))
+                PocketAdvanceDirectionButton(if (browserVisible) Icons.Filled.KeyboardArrowDown
+                    else if (repeatMode == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
+                    if (browserVisible) stringResource(R.string.pocket_advance_next_selection) else repeatLabel,
+                    if (browserVisible) navigation::moveSelectionDown else onRepeatClick,
+                    inputEnabled, !browserVisible && repeatMode != RepeatMode.OFF,
+                    Modifier.align(Alignment.BottomCenter).testTag("pocketAdvanceDown"))
             }
-            PocketAdvanceDirectionButton(Icons.Filled.Shuffle,
-                stringResource(if (isShuffleEnabled) R.string.player_shuffle_on else R.string.player_shuffle_off),
-                onShuffleClick, inputEnabled, isShuffleEnabled, Modifier.align(Alignment.TopCenter))
-            PocketAdvanceDirectionButton(Icons.Filled.SkipPrevious, stringResource(R.string.player_previous_song),
-                onPreviousClick, inputEnabled, false, Modifier.align(Alignment.CenterStart).testTag("pocketAdvancePrevious"))
-            PocketAdvanceDirectionButton(Icons.Filled.SkipNext, stringResource(R.string.player_next_song),
-                onNextClick, inputEnabled, false, Modifier.align(Alignment.CenterEnd).testTag("pocketAdvanceNext"))
-            PocketAdvanceDirectionButton(if (repeatMode == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
-                repeatLabel, onRepeatClick, inputEnabled, repeatMode != RepeatMode.OFF, Modifier.align(Alignment.BottomCenter))
+            Spacer(Modifier.height(12.dp))
+            Text(stringResource(R.string.pocket_advance_track_mode), color = PocketAdvanceColors.Label, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp,
+                modifier = Modifier.testTag("pocketAdvanceTrackMode").layout { measurable, constraints ->
+                    val label = measurable.measure(constraints)
+                    layout(label.width, label.height, mapOf(PocketAdvanceTrackModeBottom to label.height)) {
+                        label.placeRelative(0, 0)
+                    }
+                })
         }
-        Spacer(Modifier.height(12.dp))
-        Text(stringResource(R.string.pocket_advance_track_mode), color = PocketAdvanceColors.Label, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        PocketAdvanceStartButton(
+            label = stringResource(if (browserVisible) R.string.pocket_advance_return_now_playing else R.string.pocket_advance_open_browser),
+            enabled = inputEnabled, onClick = navigation::toggleMode, modifier = Modifier
+        )
+    }) { measurables, constraints ->
+        // Box used these same loose child constraints. The column still fills the whole wing.
+        val childConstraints = constraints.copy(minWidth = 0, minHeight = 0)
+        val controls = measurables[0].measure(childConstraints)
+        val start = measurables[1].measure(childConstraints)
+        // The face sits about 12dp below the actual label: 1dp target gap + 11dp inset.
+        // Clamp only START at the minimum budget; neither the column nor the shell can move.
+        val startTop = minOf(controls[PocketAdvanceTrackModeBottom] + 1.dp.roundToPx(),
+            controls.height - start.height)
+        layout(controls.width, controls.height) {
+            controls.placeRelative(0, 0)
+            start.placeRelative((controls.width - start.width) / 2, startTop)
+        }
+    }
+}
+
+/** A small physical face inside a separate 48dp target; it never participates in morph geometry. */
+@Composable
+private fun PocketAdvanceStartButton(label: String, enabled: Boolean, onClick: () -> Unit, modifier: Modifier) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    Box(modifier.size(width = 64.dp, height = 48.dp).testTag("pocketAdvanceStart")
+        .clickable(interactionSource = interaction, indication = null, enabled = enabled,
+            role = Role.Button, onClickLabel = label, onClick = onClick)
+        .semantics { contentDescription = label }, contentAlignment = Alignment.Center) {
+        Box(Modifier.size(width = 52.dp, height = 26.dp).testTag("pocketAdvanceStartFace")
+            .graphicsLayer { translationY = if (pressed) 1.dp.toPx() else 0f }
+            .shadow(if (pressed) 1.dp else 3.dp, RoundedCornerShape(13.dp))
+            .background(Brush.verticalGradient(if (pressed)
+                listOf(PocketAdvanceColors.Button, PocketAdvanceColors.ButtonHighlight)
+                else listOf(PocketAdvanceColors.ButtonHighlight, PocketAdvanceColors.Button)), RoundedCornerShape(13.dp))
+            .border(1.dp, PocketAdvanceColors.ShellHighlight, RoundedCornerShape(13.dp)),
+            contentAlignment = Alignment.Center) {
+            Text(stringResource(R.string.pocket_advance_start), color = PocketAdvanceColors.ButtonInk,
+                // Physical engraving keeps its size and legibility when surrounding UI text scales.
+                fontSize = with(LocalDensity.current) { 9.dp.toSp() },
+                lineHeight = with(LocalDensity.current) { 11.dp.toSp() }, maxLines = 1,
+                fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold,
+                modifier = Modifier.testTag("pocketAdvanceStartLabel").clearAndSetSemantics { })
+        }
     }
 }
 
@@ -357,15 +456,21 @@ private fun PocketAdvanceDirectionButton(
 @Composable
 private fun PocketAdvanceActionWing(
     isPlaying: Boolean, inputEnabled: Boolean, onPlayPauseClick: () -> Unit,
-    onCollapseClick: () -> Unit, onQueueClick: () -> Unit, onMoreClick: () -> Unit,
-    morphOwnsSharedVisuals: Boolean, bounds: PocketAdvancePlayerMorphBounds?, modifier: Modifier
+    onQueueClick: () -> Unit, onMoreClick: () -> Unit,
+    morphOwnsSharedVisuals: Boolean, bounds: PocketAdvancePlayerMorphBounds?,
+    navigation: PocketAdvanceNavigationState, browserVisible: Boolean, modifier: Modifier
 ) {
     val playLabel = stringResource(if (playbackPlayPauseShowsPause(isPlaying)) R.string.player_pause else R.string.player_play)
-    val collapseLabel = stringResource(R.string.player_collapse)
+    val primaryLabel = if (browserVisible) pocketAdvanceConfirmLabel(navigation) else playLabel
+    val primaryClick = if (browserVisible) navigation::confirmSelection else onPlayPauseClick
+    val morphOwnsActionVisual = morphOwnsSharedVisuals && !browserVisible
+    val primaryEnabled = inputEnabled && !morphOwnsActionVisual &&
+        (!browserVisible || navigation.selectedRootEntry.isAvailable)
+    val backLabel = stringResource(if (browserVisible) R.string.pocket_advance_return_now_playing else R.string.pocket_advance_open_browser)
     val playInteraction = remember { MutableInteractionSource() }
     val playPressed by playInteraction.collectIsPressedAsState()
-    val closeInteraction = remember { MutableInteractionSource() }
-    val closePressed by closeInteraction.collectIsPressedAsState()
+    val backInteraction = remember { MutableInteractionSource() }
+    val backPressed by backInteraction.collectIsPressedAsState()
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Box(Modifier.fillMaxWidth().height(144.dp)) {
             Canvas(Modifier.fillMaxSize()) {
@@ -386,26 +491,27 @@ private fun PocketAdvanceActionWing(
                 Box(
                     Modifier.fillMaxSize().testTag("pocketAdvancePlay")
                         .clickable(interactionSource = playInteraction, indication = null,
-                            enabled = inputEnabled && !morphOwnsSharedVisuals, role = Role.Button,
-                            onClickLabel = playLabel, onClick = onPlayPauseClick)
-                        .then(if (morphOwnsSharedVisuals) Modifier.clearAndSetSemantics { } else Modifier.semantics { contentDescription = playLabel }),
+                            enabled = primaryEnabled, role = Role.Button,
+                            onClickLabel = primaryLabel, onClick = primaryClick)
+                        .then(if (morphOwnsActionVisual) Modifier.clearAndSetSemantics { } else Modifier.semantics { contentDescription = primaryLabel }),
                     contentAlignment = Alignment.Center
                 ) {
                     PocketAdvancePlayVisual(isPlaying, Modifier.size(56.dp)
                         .onGloballyPositioned { bounds?.updateExpandedPlayPause(it.boundsInRoot()) }
-                        .graphicsLayer { alpha = if (morphOwnsSharedVisuals) 0f else 1f }, pressed = playPressed)
+                        .graphicsLayer { alpha = if (morphOwnsActionVisual) 0f else 1f },
+                        pressed = playPressed, confirm = browserVisible)
                 }
             }
             Box(Modifier.align(Alignment.BottomStart).size(72.dp)) {
-                Box(Modifier.fillMaxSize().testTag("pocketAdvanceCollapse")
-                    .clickable(interactionSource = closeInteraction, indication = null,
-                        enabled = inputEnabled, role = Role.Button, onClickLabel = collapseLabel, onClick = onCollapseClick)
-                    .semantics { contentDescription = collapseLabel }, contentAlignment = Alignment.Center) {
-                    Box(Modifier.size(56.dp).shadow(if (closePressed) 1.dp else 3.dp, CircleShape)
-                        .background(Brush.verticalGradient(if (closePressed) listOf(PocketAdvanceColors.Button, PocketAdvanceColors.ButtonHighlight)
+                Box(Modifier.fillMaxSize().testTag("pocketAdvanceBack")
+                    .clickable(interactionSource = backInteraction, indication = null,
+                        enabled = inputEnabled, role = Role.Button, onClickLabel = backLabel, onClick = navigation::back)
+                    .semantics { contentDescription = backLabel }, contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(56.dp).shadow(if (backPressed) 1.dp else 3.dp, CircleShape)
+                        .background(Brush.verticalGradient(if (backPressed) listOf(PocketAdvanceColors.Button, PocketAdvanceColors.ButtonHighlight)
                             else listOf(PocketAdvanceColors.ButtonHighlight, PocketAdvanceColors.Button)), CircleShape)
                         .border(1.dp, PocketAdvanceColors.ButtonHighlight, CircleShape), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.ExpandMore, null, tint = PocketAdvanceColors.ButtonInk)
+                        Icon(if (browserVisible) Icons.Filled.ArrowBack else Icons.Filled.Menu, null, tint = PocketAdvanceColors.ButtonInk)
                     }
                 }
             }

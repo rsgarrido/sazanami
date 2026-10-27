@@ -139,6 +139,14 @@
     <string name="pocket_advance_paused">PAUSED</string>
     <string name="pocket_advance_stereo">STEREO</string>
     <string name="pocket_advance_track_mode">TRACK / MODE</string>
+    <string name="pocket_advance_start" translatable="false">START</string>
+    <string name="pocket_advance_open_browser">Open music browser</string>
+    <string name="pocket_advance_return_now_playing">Return to Now Playing</string>
+    <string name="pocket_advance_previous_selection">Previous selection</string>
+    <string name="pocket_advance_next_selection">Next selection</string>
+    <string name="pocket_advance_open_entry">Open %1$s</string>
+    <string name="pocket_advance_unavailable_entry">%1$s, unavailable</string>
+    <string name="pocket_advance_unavailable">Unavailable</string>
     <string name="pocket_advance_button_a">A · PLAY</string>
     <string name="pocket_advance_button_a_pause">A · PAUSE</string>
     <string name="pocket_advance_button_b">B · CLOSE</string>

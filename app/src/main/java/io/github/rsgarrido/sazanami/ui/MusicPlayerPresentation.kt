@@ -38,6 +38,9 @@ import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsTransitionState
 import io.github.rsgarrido.sazanami.ui.player.PlayerMorphState
 import io.github.rsgarrido.sazanami.ui.player.PlayerPresentationIdentity
 import io.github.rsgarrido.sazanami.ui.player.ResolvedPlayerPresentation
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceNavigationState
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceNavigationLifecycleEffect
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.rememberPocketAdvanceNavigationState
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMenuState
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMiniVisualOwner
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMorphBounds
@@ -148,7 +151,9 @@ internal fun prepareMusicPlayerPresentation(
     defaultPlayerLayout: DefaultPlayerLayout? = null,
     playerPresentationEpoch: Long = 0L,
     playerPresentationInputEnabled: Boolean = true,
+    pocketAdvanceNavigationState: PocketAdvanceNavigationState = rememberPocketAdvanceNavigationState(),
 ): @Composable BoxScope.(PlayerEndpointBounds) -> Unit {
+    PocketAdvanceNavigationLifecycleEffect(pocketAdvanceNavigationState, playerMorphState, playerPresentation.identity)
     // Existing choreography stays theme-local. Both endpoints below receive this same resolution.
     val selectedPlayerTheme = when (val identity = playerPresentation.identity) {
         is PlayerPresentationIdentity.Existing -> identity.theme
@@ -519,6 +524,7 @@ internal fun prepareMusicPlayerPresentation(
                 defaultPlayerLayout = defaultPlayerLayout,
                 classicMorphBounds = classicMorphBounds,
                 classicWheelMenuState = classicWheelMenuState,
+                pocketAdvanceNavigationState = pocketAdvanceNavigationState,
                 retroRackMorphBounds = retroRackMorphBounds,
                 pocketFlipMorphBounds = pocketFlipMorphBounds,
                 pocketCassetteMorphBounds = pocketCassetteMorphBounds,

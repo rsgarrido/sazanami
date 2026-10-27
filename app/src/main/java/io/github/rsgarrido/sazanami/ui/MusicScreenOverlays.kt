@@ -32,6 +32,8 @@ import io.github.rsgarrido.sazanami.ui.player.shouldLoadExpandedPlayerWaveform
 import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerLayout
 import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMorphBounds
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceNavigationState
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.rememberPocketAdvanceNavigationState
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMenuState
 import io.github.rsgarrido.sazanami.ui.player.retrorack.RetroRackMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketflip.PocketFlipMorphBounds
@@ -108,7 +110,8 @@ fun MusicScreenOverlays(
     pocketDiscMorphBounds: PocketDiscMorphBounds,
     defaultPlayerLayout: DefaultPlayerLayout? = null,
     pocketAdvanceMorphBounds: PocketAdvancePlayerMorphBounds? = null,
-    playerPresentationInputEnabled: Boolean = true
+    playerPresentationInputEnabled: Boolean = true,
+    pocketAdvanceNavigationState: PocketAdvanceNavigationState = rememberPocketAdvanceNavigationState()
 ) {
     val isPlayerExpanded = playerMorphState.shouldComposeExpanded
     val setSystemBarSurface = LocalSystemBarSurfaceSetter.current
@@ -241,6 +244,7 @@ fun MusicScreenOverlays(
                     pocketFlipMorphBounds = pocketFlipMorphBounds,
                     pocketCassetteMorphBounds = pocketCassetteMorphBounds,
                     pocketDiscMorphBounds = pocketDiscMorphBounds,
+                    pocketAdvanceNavigationState = pocketAdvanceNavigationState,
                     pocketAdvanceMorphBounds = pocketAdvanceMorphBounds
                 )
             }

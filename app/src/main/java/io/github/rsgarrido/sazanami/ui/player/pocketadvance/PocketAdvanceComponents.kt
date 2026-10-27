@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -194,7 +195,10 @@ internal fun PocketAdvanceArtist(currentSong: Song?, progress: Float, modifier: 
 
 /** Pure visible face: callers provide a separate >=48dp interactive target. */
 @Composable
-internal fun PocketAdvancePlayVisual(isPlaying: Boolean, modifier: Modifier = Modifier, progress: Float = 1f, pressed: Boolean = false) {
+internal fun PocketAdvancePlayVisual(
+    isPlaying: Boolean, modifier: Modifier = Modifier, progress: Float = 1f,
+    pressed: Boolean = false, confirm: Boolean = false
+) {
     Box(
         modifier = modifier
             .shadow(if (pressed) 1.dp else 3.dp, CircleShape)
@@ -207,7 +211,8 @@ internal fun PocketAdvancePlayVisual(isPlaying: Boolean, modifier: Modifier = Mo
         contentAlignment = Alignment.Center
     ) {
         Icon(
-            imageVector = if (playbackPlayPauseShowsPause(isPlaying)) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+            imageVector = if (confirm) Icons.Filled.Check
+                else if (playbackPlayPauseShowsPause(isPlaying)) Icons.Filled.Pause else Icons.Filled.PlayArrow,
             contentDescription = null,
             tint = PocketAdvanceColors.ButtonInk,
             modifier = Modifier.size((22f + 2f * progress.coerceIn(0f, 1f)).dp)

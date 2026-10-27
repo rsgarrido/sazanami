@@ -100,6 +100,9 @@ import io.github.rsgarrido.sazanami.ui.player.modern.rememberModernArtworkHorizo
 import io.github.rsgarrido.sazanami.ui.player.modern.modernArtworkClickCallback
 import io.github.rsgarrido.sazanami.ui.player.retrorack.RetroRackSharedOwner
 import io.github.rsgarrido.sazanami.ui.player.pocketdisc.PocketDiscSharedOwner
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceNavigationState
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.rememberPocketAdvanceNavigationState
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.shouldShowPocketAdvanceBrowser
 import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceExpandedPlayer
 import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvancePlayerMorph
 import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvancePlayerMorphBounds
@@ -154,13 +157,16 @@ fun ExpandedPlayerThemeHost(
     pocketCassetteMorphBounds: PocketCassetteMorphBounds,
     pocketDiscMorphBounds: PocketDiscMorphBounds,
     defaultPlayerLayout: DefaultPlayerLayout? = null,
-    pocketAdvanceMorphBounds: PocketAdvancePlayerMorphBounds? = null
+    pocketAdvanceMorphBounds: PocketAdvancePlayerMorphBounds? = null,
+    pocketAdvanceNavigationState: PocketAdvanceNavigationState = rememberPocketAdvanceNavigationState()
 ) {
     val selectedPlayerTheme = when (val identity = playerPresentation.identity) {
         is PlayerPresentationIdentity.Existing -> identity.theme
         PlayerPresentationIdentity.PocketAdvance -> {
             val openLyricsLabel = stringResource(R.string.player_open_lyrics)
-            val advanceActionsEnabled = canOpenArtworkAtExpandedEndpoint(playerMorphState, lyricsTransitionState)
+            val browserVisible = shouldShowPocketAdvanceBrowser(pocketAdvanceNavigationState, playerMorphState)
+            val advanceActionsEnabled = !browserVisible &&
+                canOpenArtworkAtExpandedEndpoint(playerMorphState, lyricsTransitionState)
             val bounds = pocketAdvanceMorphBounds ?: remember(endpointBounds) {
                 PocketAdvancePlayerMorphBounds(currentLayoutFrame = { endpointBounds.layoutFrame })
             }
@@ -171,7 +177,8 @@ fun ExpandedPlayerThemeHost(
                 isPlaying = isPlaying,
                 currentPosition = currentPosition,
                 duration = duration,
-                onPlayPauseClick = onPlayPauseClick
+                onPlayPauseClick = onPlayPauseClick,
+                nowPlayingContentVisible = !browserVisible
             ) { visual ->
                 PocketAdvanceExpandedPlayer(
                     currentSong = currentSong,
@@ -189,7 +196,9 @@ fun ExpandedPlayerThemeHost(
                     onCollapseClick = onCollapseClick,
                     onOpenUpNextClick = onOpenQueueHubClick,
                     onMoreClick = onOpenMoreClick,
-                    modifier = if (visual.inputEnabled) Modifier.semantics {
+                    navigationState = pocketAdvanceNavigationState,
+                    browserVisible = browserVisible,
+                    modifier = if (visual.inputEnabled && !browserVisible) Modifier.semantics {
                         customActions = listOf(CustomAccessibilityAction(openLyricsLabel) {
                             lyricsTransitionState.openLyrics()
                             true
@@ -200,7 +209,7 @@ fun ExpandedPlayerThemeHost(
                     bezelAlpha = visual.bezelAlpha,
                     hardwareAlpha = visual.hardwareAlpha,
                     displayDetailsAlpha = visual.displayDetailsAlpha,
-                    inputEnabled = visual.inputEnabled,
+                    inputEnabled = visual.inputEnabled && !playerMorphState.isDragging && !playerMorphState.isAnimating,
                     // Preserve a captured gesture even after its reveal/input window closes.
                     collapseGestureEnabled = visual.collapseGestureEnabled || playerMorphState.isDragging,
                     morphBounds = bounds,

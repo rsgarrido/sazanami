@@ -111,6 +111,7 @@ import io.github.rsgarrido.sazanami.ui.player.ResolvedPlayerPresentation
 import io.github.rsgarrido.sazanami.ui.player.TabletLandscapePlayerContext
 import io.github.rsgarrido.sazanami.ui.player.TabletLandscapePlayerCandidate
 import io.github.rsgarrido.sazanami.ui.player.rememberTabletLandscapePlayerEnvironment
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.rememberPocketAdvanceNavigationState
 import io.github.rsgarrido.sazanami.ui.player.rememberPocketAdvanceDevelopmentState
 import io.github.rsgarrido.sazanami.ui.player.LocalPocketAdvanceDevelopmentState
 import io.github.rsgarrido.sazanami.ui.player.PlayerPresentationViewport
@@ -355,6 +356,7 @@ internal fun MusicScreen(
     val librarySelectionUi = LocalLibrarySelectionUi.current
     val librarySelectionHeaderState = remember { LibrarySelectionHeaderState() }
     val navigationState = rememberMusicNavigationState()
+    val pocketAdvanceNavigationState = rememberPocketAdvanceNavigationState()
     var mainDestination by navigationState.mainDestination
     var selectedLibraryTab by navigationState.selectedLibraryTab
     var playbackLaunchContext by navigationState.playbackLaunchContext
@@ -1415,6 +1417,7 @@ internal fun MusicScreen(
                     isSleepTimerActive = isSleepTimerActive,
                     sleepTimerDisplayText = sleepTimerDisplayText,
                     playerPresentation = resolvedPlayerPresentation,
+                    pocketAdvanceNavigationState = pocketAdvanceNavigationState,
                     playerPresentationEpoch = playerBoundary.epoch,
                     playerPresentationInputEnabled = playerBoundary.inputEnabled,
                     selectedModernArtworkTransitionStyle = selectedModernArtworkTransitionStyle,

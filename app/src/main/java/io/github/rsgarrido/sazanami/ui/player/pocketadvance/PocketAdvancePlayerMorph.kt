@@ -57,6 +57,7 @@ internal fun PocketAdvancePlayerMorph(
     currentPosition: Int,
     duration: Int,
     onPlayPauseClick: () -> Unit,
+    nowPlayingContentVisible: Boolean = true,
     modifier: Modifier = Modifier,
     expandedContent: @Composable (PocketAdvanceMorphVisualState) -> Unit
 ) {
@@ -116,9 +117,9 @@ internal fun PocketAdvancePlayerMorph(
             // It claims pixels only when the mini relinquishes them, after a complete measurement.
             Box(
                 Modifier.fillMaxSize()
-                    .graphicsLayer { alpha = if (visual.morphOwnsSharedVisuals) 1f else 0f }
+                    .graphicsLayer { alpha = if (visual.morphOwnsSharedVisuals && nowPlayingContentVisible) 1f else 0f }
                     .clipPocketAdvanceMorphShell(geometry, p)
-                    .then(if (!visual.inputEnabled) Modifier.clearAndSetSemantics { } else Modifier)
+                    .then(if (!visual.inputEnabled || !nowPlayingContentVisible) Modifier.clearAndSetSemantics { } else Modifier)
             ) {
                 PocketAdvanceArtwork(
                     currentSong = currentSong,
@@ -184,14 +185,16 @@ internal fun PocketAdvancePlayerMorph(
                 Box(
                     Modifier.atPocketAdvanceRect(touchBounds, density)
                         .testTag("pocketAdvanceMorphPlay")
-                        .clickable(
+                        // Remove the pointer node while browsing; a disabled clickable would still
+                        // win hit testing over the endpoint's contextual A target underneath it.
+                        .then(if (nowPlayingContentVisible) Modifier.clickable(
                             interactionSource = interaction, indication = null,
                             enabled = visual.inputEnabled,
                             role = Role.Button,
                             onClickLabel = label,
                             onClick = onPlayPauseClick
-                        )
-                        .then(if (visual.inputEnabled) {
+                        ) else Modifier)
+                        .then(if (visual.inputEnabled && nowPlayingContentVisible) {
                             Modifier.clearAndSetSemantics {
                                 contentDescription = label
                                 this.role = Role.Button
