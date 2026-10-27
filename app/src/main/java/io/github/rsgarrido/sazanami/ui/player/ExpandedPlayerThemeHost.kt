@@ -158,7 +158,9 @@ fun ExpandedPlayerThemeHost(
     pocketDiscMorphBounds: PocketDiscMorphBounds,
     defaultPlayerLayout: DefaultPlayerLayout? = null,
     pocketAdvanceMorphBounds: PocketAdvancePlayerMorphBounds? = null,
-    pocketAdvanceNavigationState: PocketAdvanceNavigationState = rememberPocketAdvanceNavigationState()
+    pocketAdvanceNavigationState: PocketAdvanceNavigationState = rememberPocketAdvanceNavigationState(),
+    isLibraryReady: Boolean = true,
+    songsRepeatAllowed: Boolean = true
 ) {
     val selectedPlayerTheme = when (val identity = playerPresentation.identity) {
         is PlayerPresentationIdentity.Existing -> identity.theme
@@ -197,6 +199,10 @@ fun ExpandedPlayerThemeHost(
                     onOpenUpNextClick = onOpenQueueHubClick,
                     onMoreClick = onOpenMoreClick,
                     navigationState = pocketAdvanceNavigationState,
+                    songs = songs,
+                    onSongClick = onSongClick,
+                    isLibraryReady = isLibraryReady,
+                    songsRepeatAllowed = songsRepeatAllowed,
                     browserVisible = browserVisible,
                     modifier = if (visual.inputEnabled && !browserVisible) Modifier.semantics {
                         customActions = listOf(CustomAccessibilityAction(openLyricsLabel) {

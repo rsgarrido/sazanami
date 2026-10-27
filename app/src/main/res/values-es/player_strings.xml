@@ -148,6 +148,10 @@
     <string name="pocket_advance_open_entry">Abrir %1$s</string>
     <string name="pocket_advance_unavailable_entry">%1$s, no disponible</string>
     <string name="pocket_advance_unavailable">No disponible</string>
+    <string name="pocket_advance_back_music">Volver a Música</string>
+    <string name="pocket_advance_play_song">Reproducir %1$s</string>
+    <string name="pocket_advance_no_song">Ninguna canción disponible</string>
+    <string name="pocket_advance_library_pending">Esperando datos de la biblioteca</string>
     <string name="pocket_advance_button_a">A · REPRODUCIR</string>
     <string name="pocket_advance_button_a_pause">A · PAUSA</string>
     <string name="pocket_advance_button_b">B · CERRAR</string>

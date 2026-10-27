@@ -111,7 +111,8 @@ fun MusicScreenOverlays(
     defaultPlayerLayout: DefaultPlayerLayout? = null,
     pocketAdvanceMorphBounds: PocketAdvancePlayerMorphBounds? = null,
     playerPresentationInputEnabled: Boolean = true,
-    pocketAdvanceNavigationState: PocketAdvanceNavigationState = rememberPocketAdvanceNavigationState()
+    pocketAdvanceNavigationState: PocketAdvanceNavigationState = rememberPocketAdvanceNavigationState(),
+    isLibraryReady: Boolean = true
 ) {
     val isPlayerExpanded = playerMorphState.shouldComposeExpanded
     val setSystemBarSurface = LocalSystemBarSurfaceSetter.current
@@ -160,6 +161,11 @@ fun MusicScreenOverlays(
             ?.takeIf { count -> count > 0 }
             ?: fallbackActiveQueueCount
 
+        val expandedInputBlocked = shouldBlockExpandedPlayerInput(
+            lyricsOwnsInput = lyricsTransitionState.lyricsOwnsInput,
+            isNowPlayingMorePresented = isNowPlayingMorePresented,
+            isArtworkViewerVisible = isArtworkViewerVisible
+        ) || (isPlayerExpanded && !playerPresentationInputEnabled)
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -180,11 +186,7 @@ fun MusicScreenOverlays(
                     enabled = isPlayerExpanded,
                     onClick = {}
                 )
-                .blockPlayerInput(shouldBlockExpandedPlayerInput(
-                    lyricsOwnsInput = lyricsTransitionState.lyricsOwnsInput,
-                    isNowPlayingMorePresented = isNowPlayingMorePresented,
-                    isArtworkViewerVisible = isArtworkViewerVisible
-                ) || (isPlayerExpanded && !playerPresentationInputEnabled))
+                .blockPlayerInput(expandedInputBlocked)
         ) {
             PlaybackProgress(playbackProgressUiState) { progress ->
                 ExpandedPlayerThemeHost(
@@ -245,6 +247,11 @@ fun MusicScreenOverlays(
                     pocketCassetteMorphBounds = pocketCassetteMorphBounds,
                     pocketDiscMorphBounds = pocketDiscMorphBounds,
                     pocketAdvanceNavigationState = pocketAdvanceNavigationState,
+                    isLibraryReady = isLibraryReady,
+                    // A pointer fence alone cannot stop a timer that started before an overlay opened.
+                    songsRepeatAllowed = !expandedInputBlocked && !isExpandedUpNextSheetVisible &&
+                        !isQueueHubVisible && !isSleepTimerDialogVisible && !isCreatePlaylistDialogVisible &&
+                        !hasPendingPlaylistAdd && !hasPendingBulkPlaylistAdd,
                     pocketAdvanceMorphBounds = pocketAdvanceMorphBounds
                 )
             }

@@ -21,6 +21,9 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.StateRestorationTester
@@ -35,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Density
 import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.data.Song
+import io.github.rsgarrido.sazanami.data.stableUiKey
 import io.github.rsgarrido.sazanami.player.RepeatMode
 import io.github.rsgarrido.sazanami.ui.player.PlayerEndpointBounds
 import io.github.rsgarrido.sazanami.ui.player.mini.DefaultMiniPlayerMorphCallbacks
@@ -57,6 +61,7 @@ class PocketAdvanceInteractionTest {
         Uri.EMPTY, "", "", null)
     private val commands = mutableListOf<String>()
     private val seeks = mutableListOf<Int>()
+    private val songSelections = mutableListOf<Pair<Song, List<Song>>>()
     private lateinit var navigation: PocketAdvanceNavigationState
     private val miniState get() = MiniPlayerState(song, false, 30_000, 180_000, 36.dp)
     private fun callbacks() = MiniPlayerCallbacks(
@@ -64,7 +69,7 @@ class PocketAdvanceInteractionTest {
         { commands += "queue" }, { commands += "expand" }
     )
 
-    private fun expanded(inputEnabled: Boolean = true) {
+    private fun expanded(inputEnabled: Boolean = true, songs: List<Song> = listOf(song)) {
         compose.setContent {
             navigation = rememberPocketAdvanceNavigationState()
             val preview = remember { mutableStateOf<Int?>(null) }
@@ -82,7 +87,8 @@ class PocketAdvanceInteractionTest {
                             onSeekChange = { seeks += it }, onShuffleClick = { commands += "shuffle" },
                             onRepeatClick = { commands += "repeat" }, onCollapseClick = { commands += "collapse" },
                             onOpenUpNextClick = { commands += "queue" }, onMoreClick = { commands += "more" },
-                            navigationState = navigation,
+                            navigationState = navigation, songs = songs,
+                            onSongClick = { selected, context -> songSelections += selected to context.toList() },
                             inputEnabled = inputEnabled, collapseGestureEnabled = false,
                             onOpenArtist = { commands += "artist:${it.id}" },
                             onOpenAlbum = { commands += "album:${it.id}" }
@@ -205,6 +211,127 @@ class PocketAdvanceInteractionTest {
             assertEquals(PocketAdvanceLcdMode.NowPlaying, navigation.lcdMode)
             navigation.openBrowser()
             assertEquals(PocketAdvanceRootEntry.Albums, navigation.selectedRootEntry)
+        }
+    }
+
+    @Test
+    fun songsHardwareControlsConfirmTheSelectedSongAndKeepTheCompleteOrderedContext() {
+        val library = listOf(
+            song.copy(id = 3, title = "Zulu", uri = Uri.parse("content://media/external/audio/media/3"), filePath = "/music/3.mp3"),
+            song.copy(filePath = "/music/1.mp3"),
+            song.copy(id = 2, title = "Alpha", uri = Uri.parse("content://media/external/audio/media/2"), filePath = "/music/2.mp3")
+        )
+        expanded(songs = library)
+        control("pocketAdvanceBack")
+        control("pocketAdvanceDown")
+        compose.onNodeWithTag("pocketAdvanceRootSongs").assertIsSelected().assertIsEnabled()
+        control("pocketAdvancePlay")
+        compose.runOnIdle { assertEquals(PocketAdvanceBrowserPage.Songs, navigation.browserPage) }
+        compose.onNodeWithTag("pocketAdvanceSong:${library.first().stableUiKey()}", useUnmergedTree = true).assertIsSelected()
+        control("pocketAdvanceUp")
+        compose.onNodeWithTag("pocketAdvanceSong:${library.last().stableUiKey()}", useUnmergedTree = true).assertIsSelected()
+        control("pocketAdvanceDown")
+        control("pocketAdvanceDown")
+        assertEquals(compose.activity.getString(R.string.pocket_advance_play_song, library[1].title),
+            compose.onNodeWithTag("pocketAdvancePlay").fetchSemanticsNode().config[SemanticsActions.OnClick].label)
+        assertEquals(compose.activity.getString(R.string.pocket_advance_back_music),
+            compose.onNodeWithTag("pocketAdvanceBack").fetchSemanticsNode().config[SemanticsActions.OnClick].label)
+        control("pocketAdvancePlay")
+        compose.runOnIdle {
+            assertEquals(listOf(library[1] to library), songSelections)
+            assertEquals(PocketAdvanceLcdMode.NowPlaying, navigation.lcdMode)
+        }
+        control("pocketAdvanceStart")
+        compose.onNodeWithTag("pocketAdvanceSong:${library[1].stableUiKey()}", useUnmergedTree = true).assertIsSelected()
+        control("pocketAdvanceNext")
+        compose.runOnIdle { assertEquals(listOf(library[1] to library, library[1] to library), songSelections) }
+        control("pocketAdvanceBack")
+        control("pocketAdvancePrevious")
+        compose.onNodeWithTag("pocketAdvanceRootSongs").assertIsSelected()
+        control("pocketAdvanceNext")
+        control("pocketAdvanceBack")
+        compose.onNodeWithTag("pocketAdvanceRootSongs").assertIsSelected()
+        compose.runOnIdle {
+            assertEquals(PocketAdvanceBrowserPage.Root, navigation.browserPage)
+            assertTrue(commands.isEmpty()); assertTrue(seeks.isEmpty())
+            assertEquals(2, songSelections.size)
+        }
+    }
+
+    @Test
+    fun songsAccessibilityDirectionalClicksRemainSingleAndWrapWithoutPointerHold() {
+        val library = (1L..4L).map { id ->
+            song.copy(id = id, title = "Track $id", uri = Uri.parse("content://media/external/audio/media/$id"),
+                filePath = "/music/accessibility/$id.mp3")
+        }
+        expanded(songs = library)
+        control("pocketAdvanceStart")
+        control("pocketAdvanceDown")
+        control("pocketAdvanceNext")
+        compose.mainClock.autoAdvance = false
+        try {
+            control("pocketAdvanceUp")
+            compose.mainClock.advanceTimeBy(1_000)
+            compose.runOnIdle { assertEquals(library.last().stableUiKey(), navigation.selectedSongKey) }
+            control("pocketAdvanceDown")
+            compose.mainClock.advanceTimeBy(1_000)
+            compose.runOnIdle { assertEquals(library.first().stableUiKey(), navigation.selectedSongKey) }
+            control("pocketAdvanceDown")
+            compose.mainClock.advanceTimeBy(1_000)
+            compose.runOnIdle {
+                assertEquals(library[1].stableUiKey(), navigation.selectedSongKey)
+                assertEquals(PocketAdvanceBrowserPage.Songs, navigation.browserPage)
+                assertTrue(songSelections.isEmpty()); assertTrue(commands.isEmpty()); assertTrue(seeks.isEmpty())
+            }
+            assertEquals(compose.activity.getString(R.string.pocket_advance_previous_selection),
+                compose.onNodeWithTag("pocketAdvanceUp").fetchSemanticsNode().config[SemanticsActions.OnClick].label)
+            assertEquals(compose.activity.getString(R.string.pocket_advance_next_selection),
+                compose.onNodeWithTag("pocketAdvanceDown").fetchSemanticsNode().config[SemanticsActions.OnClick].label)
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
+
+    @Test
+    fun emptySongsHasNoSelectableRowsOrPlaybackAction() {
+        expanded(songs = emptyList())
+        control("pocketAdvanceStart")
+        control("pocketAdvanceDown")
+        control("pocketAdvanceNext")
+        compose.onNodeWithTag("pocketAdvanceSongsEmpty", useUnmergedTree = true).assertExists()
+        compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.Selected)).assertCountEquals(0)
+        compose.onNodeWithTag("pocketAdvancePlay").assertIsNotEnabled()
+        compose.onNodeWithTag("pocketAdvanceNext").assertIsNotEnabled()
+        assertEquals(compose.activity.getString(R.string.pocket_advance_no_song),
+            compose.onNodeWithTag("pocketAdvancePlay").fetchSemanticsNode().config[SemanticsActions.OnClick].label)
+        control("pocketAdvancePlay")
+        control("pocketAdvanceNext")
+        control("pocketAdvanceUp")
+        control("pocketAdvanceDown")
+        compose.runOnIdle {
+            assertEquals(PocketAdvanceBrowserPage.Songs, navigation.browserPage)
+            assertEquals(null, navigation.selectedSongIndex(emptyList()))
+            assertTrue(songSelections.isEmpty()); assertTrue(commands.isEmpty()); assertTrue(seeks.isEmpty())
+        }
+        control("pocketAdvanceBack")
+        compose.onNodeWithTag("pocketAdvanceRootSongs").assertIsSelected()
+    }
+
+    @Test
+    fun songsUseClassicUnknownMetadataFallbacksWithoutChangingThePlaybackModel() {
+        val unknown = song.copy(title = "", artist = "", filePath = "/music/unknown.mp3")
+        expanded(songs = listOf(unknown))
+        control("pocketAdvanceStart")
+        control("pocketAdvanceDown")
+        control("pocketAdvanceNext")
+        val rowText = compose.onNodeWithTag("pocketAdvanceSong:${unknown.stableUiKey()}")
+            .fetchSemanticsNode().config[SemanticsProperties.Text].map { it.text }
+        assertEquals(listOf(compose.activity.getString(R.string.player_unknown_title),
+            compose.activity.getString(R.string.player_unknown_artist)), rowText)
+        control("pocketAdvancePlay")
+        compose.runOnIdle {
+            assertEquals(listOf(unknown to listOf(unknown)), songSelections)
+            assertTrue(commands.isEmpty()); assertTrue(seeks.isEmpty())
         }
     }
 

@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -30,6 +29,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.rsgarrido.sazanami.R
+import io.github.rsgarrido.sazanami.data.Song
 
 @Composable
 internal fun pocketAdvanceRootEntryTitle(entry: PocketAdvanceRootEntry): String = stringResource(
@@ -42,7 +42,11 @@ internal fun pocketAdvanceRootEntryTitle(entry: PocketAdvanceRootEntry): String 
 )
 
 @Composable
-internal fun pocketAdvanceConfirmLabel(navigation: PocketAdvanceNavigationState): String {
+internal fun pocketAdvanceConfirmLabel(navigation: PocketAdvanceNavigationState, selectedSong: Song? = null): String {
+    if (navigation.browserPage == PocketAdvanceBrowserPage.Songs) {
+        return if (selectedSong == null) stringResource(R.string.pocket_advance_no_song)
+        else stringResource(R.string.pocket_advance_play_song, pocketAdvanceSongTitle(selectedSong))
+    }
     val title = pocketAdvanceRootEntryTitle(navigation.selectedRootEntry)
     return stringResource(
         if (navigation.selectedRootEntry.isAvailable) R.string.pocket_advance_open_entry
@@ -57,9 +61,11 @@ internal fun PocketAdvanceBrowserRoot(
     navigation: PocketAdvanceNavigationState,
     modifier: Modifier = Modifier
 ) {
-    val listState = rememberLazyListState()
-    LaunchedEffect(navigation.selectedRootEntry) {
-        listState.animateScrollToItem(navigation.selectedRootEntry.ordinal)
+    val listState = navigation.rootListState
+    LaunchedEffect(navigation.rootScrollRequest) {
+        if (navigation.takeRootScrollRequest()) {
+            listState.animateScrollToItem(navigation.selectedRootEntry.ordinal)
+        }
     }
     LazyColumn(
         modifier = modifier.fillMaxSize().testTag("pocketAdvanceBrowser"),

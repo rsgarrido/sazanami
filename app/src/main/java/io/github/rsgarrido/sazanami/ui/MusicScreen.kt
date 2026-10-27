@@ -1418,6 +1418,7 @@ internal fun MusicScreen(
                     sleepTimerDisplayText = sleepTimerDisplayText,
                     playerPresentation = resolvedPlayerPresentation,
                     pocketAdvanceNavigationState = pocketAdvanceNavigationState,
+                    isLibraryReady = !isLibraryLoading && !isLibraryRefreshing && libraryErrorMessage == null,
                     playerPresentationEpoch = playerBoundary.epoch,
                     playerPresentationInputEnabled = playerBoundary.inputEnabled,
                     selectedModernArtworkTransitionStyle = selectedModernArtworkTransitionStyle,
