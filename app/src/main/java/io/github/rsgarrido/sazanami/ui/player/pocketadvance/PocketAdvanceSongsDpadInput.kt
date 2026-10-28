@@ -38,13 +38,14 @@ internal class PocketAdvanceSongsDpadPressGate {
     }
 }
 
-/** Songs Up/Down alone consume the down before clickable; its accessibility/key click remains intact. */
+/** Browse-list Up/Down consume down before clickable; its accessibility/key click remains intact. */
 internal fun Modifier.pocketAdvanceSongsDpadInput(
     interaction: MutableInteractionSource,
     pressGate: PocketAdvanceSongsDpadPressGate,
+    page: PocketAdvanceBrowserPage,
     onInitialPress: () -> Unit,
     onRepeat: () -> Boolean
-): Modifier = pointerInput(interaction, pressGate) {
+): Modifier = pointerInput(interaction, pressGate, page) {
     coroutineScope {
         val repeatScope = this
         awaitEachGesture {

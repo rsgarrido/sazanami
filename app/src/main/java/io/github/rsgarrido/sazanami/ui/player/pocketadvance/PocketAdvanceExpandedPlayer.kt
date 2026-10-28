@@ -92,7 +92,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.data.Song
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortState
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortOption
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortDirection
 import io.github.rsgarrido.sazanami.data.stableUiKey
+import io.github.rsgarrido.sazanami.ui.library.LibraryArtistGroup
+import io.github.rsgarrido.sazanami.ui.library.sortedLibraryArtistGroups
 import io.github.rsgarrido.sazanami.player.RepeatMode
 import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsGestureRegion
 import io.github.rsgarrido.sazanami.ui.player.artworkViewerClick
@@ -146,28 +151,60 @@ fun PocketAdvanceExpandedPlayer(
     songs: List<Song> = emptyList(),
     isLibraryReady: Boolean = true,
     onSongClick: (Song, List<Song>) -> Unit = { _, _ -> },
-    songsRepeatAllowed: Boolean = true
+    songsRepeatAllowed: Boolean = true,
+    artistSortState: LibrarySortState = LibrarySortState(LibrarySortOption.NAME, LibrarySortDirection.ASCENDING)
 ) {
     val songKeys = remember(songs) { songs.map(Song::stableUiKey) }
-    val latestSongs by rememberUpdatedState(songs)
-    val latestKeys by rememberUpdatedState(songKeys)
+    val artists = remember(songs, artistSortState) { sortedLibraryArtistGroups(songs, artistSortState) }
+    val artistKeys = remember(artists) { artists.map { it.key } }
+    val page = navigationState.browserPage
+    val activeArtist = (page as? PocketAdvanceBrowserPage.ArtistSongs)?.let { artistPage ->
+        artists.firstOrNull { it.key == artistPage.artistKey }
+    }
+    val contextSongs = if (page is PocketAdvanceBrowserPage.ArtistSongs) activeArtist?.songs.orEmpty() else songs
+    val contextKeys = remember(contextSongs) { contextSongs.map(Song::stableUiKey) }
+    val browseKeys = if (page == PocketAdvanceBrowserPage.Artists) artistKeys else contextKeys
+    val latestContext by rememberUpdatedState(contextSongs)
+    val latestContextKeys by rememberUpdatedState(contextKeys)
+    val latestArtists by rememberUpdatedState(artists)
+    val latestArtistKeys by rememberUpdatedState(artistKeys)
     val latestSongClick by rememberUpdatedState(onSongClick)
     val browserInputEnabled by rememberUpdatedState(inputEnabled && browserVisible)
-    LaunchedEffect(navigationState, songKeys, isLibraryReady, navigationState.browserPage) {
+    LaunchedEffect(navigationState, songKeys, artists, isLibraryReady, page) {
         navigationState.reconcileSongs(songKeys, isLibraryReady)
+        navigationState.reconcileArtists(artists, isLibraryReady)
     }
-    val selectedSong = navigationState.selectedSongIndex(songKeys)?.let(songs::get)
-    val browserConfirmLabel = pocketAdvanceConfirmLabel(navigationState, selectedSong)
-    val browserBackLabel = stringResource(if (navigationState.browserPage == PocketAdvanceBrowserPage.Songs)
-        R.string.pocket_advance_back_music else R.string.pocket_advance_return_now_playing)
-    val browserCanConfirm = navigationState.canConfirm(songKeys)
+    val selectedArtist = navigationState.selectedArtistIndex(artistKeys)?.let(artists::get)
+    val selectedSong = when (page) {
+        PocketAdvanceBrowserPage.Songs, is PocketAdvanceBrowserPage.ArtistSongs ->
+            navigationState.selectedBrowseIndex(contextKeys)?.let(contextSongs::get)
+        else -> null
+    }
+    val activeArtistName = activeArtist?.let { pocketAdvanceArtistName(it) }
+    val browserConfirmLabel = pocketAdvanceConfirmLabel(navigationState, selectedSong,
+        selectedArtist?.let { pocketAdvanceArtistName(it) })
+    val browserBackLabel = stringResource(when (page) {
+        is PocketAdvanceBrowserPage.ArtistSongs -> R.string.pocket_advance_back_artists
+        PocketAdvanceBrowserPage.Songs, PocketAdvanceBrowserPage.Artists -> R.string.pocket_advance_back_music
+        PocketAdvanceBrowserPage.Root -> R.string.pocket_advance_return_now_playing
+    })
+    val browserCanConfirm = navigationState.canConfirm(browseKeys)
+    val activateArtist: (String) -> Unit = { key ->
+        if (browserInputEnabled && navigationState.lcdMode == PocketAdvanceLcdMode.MusicBrowser &&
+            navigationState.browserPage == PocketAdvanceBrowserPage.Artists) {
+            val index = latestArtistKeys.indexOf(key)
+            if (index >= 0) navigationState.openArtist(latestArtists[index].key, index)
+        }
+    }
     val activateSong: (String) -> Unit = { key ->
         if (browserInputEnabled && navigationState.lcdMode == PocketAdvanceLcdMode.MusicBrowser &&
-            navigationState.browserPage == PocketAdvanceBrowserPage.Songs) {
-            val context = latestSongs
-            val index = latestKeys.indexOf(key)
+            navigationState.browserPage == page &&
+            (page == PocketAdvanceBrowserPage.Songs || page is PocketAdvanceBrowserPage.ArtistSongs)) {
+            val context = latestContext
+            val index = latestContextKeys.indexOf(key)
             if (index >= 0) {
-                navigationState.selectSong(key, index)
+                if (page is PocketAdvanceBrowserPage.ArtistSongs) navigationState.selectArtistSong(key, index)
+                else navigationState.selectSong(key, index)
                 latestSongClick(context[index], context)
                 navigationState.showNowPlaying()
             }
@@ -176,9 +213,11 @@ fun PocketAdvanceExpandedPlayer(
     val confirmBrowser: () -> Unit = {
         when (navigationState.browserPage) {
             PocketAdvanceBrowserPage.Root -> navigationState.confirmSelection()
-            PocketAdvanceBrowserPage.Songs -> navigationState.selectedSongIndex(latestKeys)?.let { index ->
-                activateSong(latestKeys[index])
+            PocketAdvanceBrowserPage.Artists -> navigationState.selectedArtistIndex(latestArtistKeys)?.let { index ->
+                activateArtist(latestArtistKeys[index])
             }
+            PocketAdvanceBrowserPage.Songs, is PocketAdvanceBrowserPage.ArtistSongs ->
+                navigationState.selectedBrowseIndex(latestContextKeys)?.let { index -> activateSong(latestContextKeys[index]) }
         }
     }
     val fontScale = LocalDensity.current.fontScale
@@ -240,7 +279,7 @@ fun PocketAdvanceExpandedPlayer(
                     PocketAdvanceDirectionWing(
                         isShuffleEnabled, repeatMode, inputEnabled, onPreviousClick, onNextClick,
                         onShuffleClick, onRepeatClick, navigationState, browserVisible,
-                        songKeys, songsRepeatAllowed, confirmBrowser, browserCanConfirm, browserConfirmLabel, browserBackLabel,
+                        browseKeys, songsRepeatAllowed, confirmBrowser, browserCanConfirm, browserConfirmLabel, browserBackLabel,
                         Modifier.width(PocketAdvanceLayout.ControlWing).fillMaxHeight()
                             .graphicsLayer { alpha = hardwareAlpha }
                     )
@@ -249,7 +288,7 @@ fun PocketAdvanceExpandedPlayer(
                         morphOwnsSharedVisuals, morphBounds, bezelAlpha, displayDetailsAlpha,
                         Modifier.weight(1f).fillMaxHeight(), collapseDrag, displayLyricsModifier,
                         lyricsGestureRegion, onViewArtwork, onOpenArtist, onOpenAlbum, navigationState, browserVisible,
-                        songs, songKeys, isLibraryReady, activateSong
+                        contextSongs, contextKeys, artists, artistKeys, activeArtistName, isLibraryReady, activateSong, activateArtist
                     )
                     PocketAdvanceActionWing(
                         isPlaying, inputEnabled, onPlayPauseClick,
@@ -273,7 +312,8 @@ private fun PocketAdvanceDisplay(
     collapseDrag: Modifier, lyricsGestureModifier: Modifier, lyricsGestureRegion: PlayerLyricsGestureRegion?,
     onViewArtwork: ((Song) -> Unit)?, onOpenArtist: ((Song) -> Unit)?, onOpenAlbum: ((Song) -> Unit)?,
     navigation: PocketAdvanceNavigationState, browserVisible: Boolean,
-    songs: List<Song>, songKeys: List<String>, isLibraryReady: Boolean, onActivateSong: (String) -> Unit
+    songs: List<Song>, songKeys: List<String>, artists: List<LibraryArtistGroup>, artistKeys: List<String>,
+    artistName: String?, isLibraryReady: Boolean, onActivateSong: (String) -> Unit, onActivateArtist: (String) -> Unit
 ) {
     val nowPlayingInputEnabled = inputEnabled && !browserVisible
     val sharedModifier = Modifier.graphicsLayer { alpha = if (morphOwnsSharedVisuals) 0f else 1f }
@@ -300,9 +340,13 @@ private fun PocketAdvanceDisplay(
         ) {
             Box(Modifier.size(6.dp).background(PocketAdvanceColors.ScreenAccent, CircleShape))
             Spacer(Modifier.width(7.dp))
-            Text(stringResource(if (browserVisible && navigation.browserPage == PocketAdvanceBrowserPage.Songs) R.string.player_wheel_songs
-                else if (browserVisible) R.string.player_wheel_music
-                else if (playbackPlayPauseShowsPause(isPlaying)) R.string.pocket_advance_now_playing else R.string.pocket_advance_paused), color = PocketAdvanceColors.Ink,
+            val header = if (browserVisible) when (navigation.browserPage) {
+                PocketAdvanceBrowserPage.Root -> stringResource(R.string.player_wheel_music)
+                PocketAdvanceBrowserPage.Songs -> stringResource(R.string.player_wheel_songs)
+                PocketAdvanceBrowserPage.Artists -> stringResource(R.string.player_wheel_artists)
+                is PocketAdvanceBrowserPage.ArtistSongs -> artistName ?: stringResource(R.string.pocket_advance_artist_unavailable)
+            } else stringResource(if (playbackPlayPauseShowsPause(isPlaying)) R.string.pocket_advance_now_playing else R.string.pocket_advance_paused)
+            Text(header, color = PocketAdvanceColors.Ink, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                 fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.sp)
         }
         Spacer(Modifier.height(PocketAdvanceLayout.StatusGap))
@@ -365,6 +409,12 @@ private fun PocketAdvanceDisplay(
                     PocketAdvanceBrowserPage.Songs -> PocketAdvanceSongs(
                         navigation, songs, songKeys, isLibraryReady, onActivateSong, Modifier.fillMaxSize()
                     )
+                    PocketAdvanceBrowserPage.Artists -> PocketAdvanceArtists(
+                        navigation, artists, artistKeys, isLibraryReady, onActivateArtist, Modifier.fillMaxSize()
+                    )
+                    is PocketAdvanceBrowserPage.ArtistSongs -> PocketAdvanceSongs(
+                        navigation, songs, songKeys, isLibraryReady, onActivateSong, Modifier.fillMaxSize(), artistName
+                    )
                 }
             }
         }
@@ -386,8 +436,9 @@ private fun PocketAdvanceDirectionWing(
         RepeatMode.ALL -> R.string.player_repeat_all
         RepeatMode.ONE -> R.string.player_repeat_one
     })
+    val repeatPage = navigation.browserPage
     val songsHoldEnabled = inputEnabled && browserVisible && songsRepeatAllowed && songKeys.isNotEmpty() &&
-        navigation.lcdMode == PocketAdvanceLcdMode.MusicBrowser && navigation.browserPage == PocketAdvanceBrowserPage.Songs
+        navigation.lcdMode == PocketAdvanceLcdMode.MusicBrowser && repeatPage != PocketAdvanceBrowserPage.Root
     val latestSongKeys by rememberUpdatedState(songKeys)
     val repeatPressGate = remember { PocketAdvanceSongsDpadPressGate() }
     Layout(modifier = modifier, content = {
@@ -419,7 +470,7 @@ private fun PocketAdvanceDirectionWing(
                     if (browserVisible) { { navigation.moveSelectionUp(songKeys) } } else onShuffleClick,
                     inputEnabled, !browserVisible && isShuffleEnabled,
                     Modifier.align(Alignment.TopCenter).testTag("pocketAdvanceUp"),
-                    repeatPressGate, if (songsHoldEnabled) ({ navigation.repeatSongSelection(-1, latestSongKeys) }) else null)
+                    repeatPressGate, if (songsHoldEnabled) ({ navigation.repeatBrowseSelection(-1, latestSongKeys, repeatPage) }) else null, repeatPage)
                 PocketAdvanceDirectionButton(if (browserVisible) Icons.Filled.KeyboardArrowLeft else Icons.Filled.SkipPrevious,
                     if (browserVisible) backLabel else stringResource(R.string.player_previous_song),
                     if (browserVisible) navigation::back else onPreviousClick, inputEnabled, false,
@@ -435,7 +486,7 @@ private fun PocketAdvanceDirectionWing(
                     if (browserVisible) { { navigation.moveSelectionDown(songKeys) } } else onRepeatClick,
                     inputEnabled, !browserVisible && repeatMode != RepeatMode.OFF,
                     Modifier.align(Alignment.BottomCenter).testTag("pocketAdvanceDown"),
-                    repeatPressGate, if (songsHoldEnabled) ({ navigation.repeatSongSelection(1, latestSongKeys) }) else null)
+                    repeatPressGate, if (songsHoldEnabled) ({ navigation.repeatBrowseSelection(1, latestSongKeys, repeatPage) }) else null, repeatPage)
             }
             Spacer(Modifier.height(12.dp))
             Text(stringResource(R.string.pocket_advance_track_mode), color = PocketAdvanceColors.Label, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp,
@@ -496,14 +547,15 @@ private fun PocketAdvanceStartButton(label: String, enabled: Boolean, onClick: (
 @Composable
 private fun PocketAdvanceDirectionButton(
     icon: ImageVector, label: String, onClick: () -> Unit, enabled: Boolean,
-    active: Boolean, modifier: Modifier, repeatPressGate: PocketAdvanceSongsDpadPressGate? = null, onHoldRepeat: (() -> Boolean)? = null
+    active: Boolean, modifier: Modifier, repeatPressGate: PocketAdvanceSongsDpadPressGate? = null,
+    onHoldRepeat: (() -> Boolean)? = null, repeatPage: PocketAdvanceBrowserPage? = null
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val latestClick by rememberUpdatedState(onClick)
     val latestRepeat by rememberUpdatedState(onHoldRepeat)
-    val holdInput = if (enabled && onHoldRepeat != null && repeatPressGate != null) {
-        Modifier.pocketAdvanceSongsDpadInput(interaction, repeatPressGate,
+    val holdInput = if (enabled && onHoldRepeat != null && repeatPressGate != null && repeatPage != null) {
+        Modifier.pocketAdvanceSongsDpadInput(interaction, repeatPressGate, repeatPage,
             onInitialPress = { latestClick() }, onRepeat = { latestRepeat?.invoke() == true })
     } else Modifier
     Box(modifier.size(48.dp).then(holdInput).clickable(interactionSource = interaction, indication = null,

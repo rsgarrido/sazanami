@@ -31,6 +31,9 @@ import androidx.compose.ui.unit.Dp
 import io.github.rsgarrido.sazanami.controller.PlaybackQueueHubUiState
 import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.data.Song
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortState
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortOption
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortDirection
 import io.github.rsgarrido.sazanami.lyrics.LyricsPlaybackUiState
 import io.github.rsgarrido.sazanami.player.RepeatMode
 import io.github.rsgarrido.sazanami.ui.player.PlayerEndpointBounds
@@ -153,6 +156,7 @@ internal fun prepareMusicPlayerPresentation(
     playerPresentationInputEnabled: Boolean = true,
     pocketAdvanceNavigationState: PocketAdvanceNavigationState = rememberPocketAdvanceNavigationState(),
     isLibraryReady: Boolean = true,
+    artistSortState: LibrarySortState = LibrarySortState(LibrarySortOption.NAME, LibrarySortDirection.ASCENDING),
 ): @Composable BoxScope.(PlayerEndpointBounds) -> Unit {
     PocketAdvanceNavigationLifecycleEffect(pocketAdvanceNavigationState, playerMorphState, playerPresentation.identity)
     // Existing choreography stays theme-local. Both endpoints below receive this same resolution.
@@ -527,6 +531,7 @@ internal fun prepareMusicPlayerPresentation(
                 classicWheelMenuState = classicWheelMenuState,
                 pocketAdvanceNavigationState = pocketAdvanceNavigationState,
                 isLibraryReady = isLibraryReady,
+                artistSortState = artistSortState,
                 retroRackMorphBounds = retroRackMorphBounds,
                 pocketFlipMorphBounds = pocketFlipMorphBounds,
                 pocketCassetteMorphBounds = pocketCassetteMorphBounds,

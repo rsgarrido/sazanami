@@ -18,6 +18,9 @@ import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.data.Song
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortState
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortOption
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortDirection
 import io.github.rsgarrido.sazanami.data.membershipKey
 import io.github.rsgarrido.sazanami.player.RepeatMode
 import io.github.rsgarrido.sazanami.ui.player.ExpandedPlayerThemeHost
@@ -112,7 +115,8 @@ fun MusicScreenOverlays(
     pocketAdvanceMorphBounds: PocketAdvancePlayerMorphBounds? = null,
     playerPresentationInputEnabled: Boolean = true,
     pocketAdvanceNavigationState: PocketAdvanceNavigationState = rememberPocketAdvanceNavigationState(),
-    isLibraryReady: Boolean = true
+    isLibraryReady: Boolean = true,
+    artistSortState: LibrarySortState = LibrarySortState(LibrarySortOption.NAME, LibrarySortDirection.ASCENDING)
 ) {
     val isPlayerExpanded = playerMorphState.shouldComposeExpanded
     val setSystemBarSurface = LocalSystemBarSurfaceSetter.current
@@ -248,6 +252,7 @@ fun MusicScreenOverlays(
                     pocketDiscMorphBounds = pocketDiscMorphBounds,
                     pocketAdvanceNavigationState = pocketAdvanceNavigationState,
                     isLibraryReady = isLibraryReady,
+                    artistSortState = artistSortState,
                     // A pointer fence alone cannot stop a timer that started before an overlay opened.
                     songsRepeatAllowed = !expandedInputBlocked && !isExpandedUpNextSheetVisible &&
                         !isQueueHubVisible && !isSleepTimerDialogVisible && !isCreatePlaylistDialogVisible &&

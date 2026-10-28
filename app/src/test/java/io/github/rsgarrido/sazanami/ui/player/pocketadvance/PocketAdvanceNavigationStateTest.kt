@@ -74,7 +74,8 @@ class PocketAdvanceNavigationStateTest {
     fun unavailableEntriesNeverOpenADestination() {
         val navigation = PocketAdvanceNavigationState()
         navigation.openBrowser()
-        navigation.moveSelectionDown() // Songs is available; Artists and Albums remain unavailable.
+        navigation.moveSelectionDown() // Songs and Artists are available; only Albums remains unavailable.
+        navigation.moveSelectionDown()
         PocketAdvanceRootEntry.entries.filterNot { it.isAvailable }.forEach { entry ->
             navigation.moveSelectionDown()
             assertEquals(entry, navigation.selectedRootEntry)

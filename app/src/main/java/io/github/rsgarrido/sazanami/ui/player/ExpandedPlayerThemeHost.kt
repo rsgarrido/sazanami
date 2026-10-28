@@ -20,6 +20,9 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.data.Song
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortState
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortOption
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortDirection
 import io.github.rsgarrido.sazanami.player.RepeatMode
 import io.github.rsgarrido.sazanami.ui.library.buildLibraryAlbumGroups
 import io.github.rsgarrido.sazanami.ui.library.findLibraryAlbumGroupForSong
@@ -160,7 +163,8 @@ fun ExpandedPlayerThemeHost(
     pocketAdvanceMorphBounds: PocketAdvancePlayerMorphBounds? = null,
     pocketAdvanceNavigationState: PocketAdvanceNavigationState = rememberPocketAdvanceNavigationState(),
     isLibraryReady: Boolean = true,
-    songsRepeatAllowed: Boolean = true
+    songsRepeatAllowed: Boolean = true,
+    artistSortState: LibrarySortState = LibrarySortState(LibrarySortOption.NAME, LibrarySortDirection.ASCENDING)
 ) {
     val selectedPlayerTheme = when (val identity = playerPresentation.identity) {
         is PlayerPresentationIdentity.Existing -> identity.theme
@@ -202,6 +206,7 @@ fun ExpandedPlayerThemeHost(
                     songs = songs,
                     onSongClick = onSongClick,
                     isLibraryReady = isLibraryReady,
+                    artistSortState = artistSortState,
                     songsRepeatAllowed = songsRepeatAllowed,
                     browserVisible = browserVisible,
                     modifier = if (visual.inputEnabled && !browserVisible) Modifier.semantics {

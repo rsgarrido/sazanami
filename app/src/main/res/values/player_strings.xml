@@ -151,6 +151,10 @@
     <string name="pocket_advance_play_song">Play %1$s</string>
     <string name="pocket_advance_no_song">No song available</string>
     <string name="pocket_advance_library_pending">Waiting for library data</string>
+    <string name="pocket_advance_back_artists">Back to Artists</string>
+    <string name="pocket_advance_no_artist">No artist available</string>
+    <string name="pocket_advance_artist_songs">Songs by %1$s</string>
+    <string name="pocket_advance_artist_unavailable">Artist unavailable</string>
     <string name="pocket_advance_button_a">A · PLAY</string>
     <string name="pocket_advance_button_a_pause">A · PAUSE</string>
     <string name="pocket_advance_button_b">B · CLOSE</string>

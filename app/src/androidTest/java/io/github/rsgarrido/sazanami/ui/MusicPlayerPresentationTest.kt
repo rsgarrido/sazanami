@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.systemBarsIgnoringVisibility
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -73,6 +74,11 @@ import io.github.rsgarrido.sazanami.controller.PlaybackQueueHubUiState
 import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.stableUiKey
+import io.github.rsgarrido.sazanami.ui.library.LibraryArtistGroup
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortDirection
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortOption
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortState
+import io.github.rsgarrido.sazanami.ui.library.sortedLibraryArtistGroups
 import io.github.rsgarrido.sazanami.lyrics.LyricsPlaybackUiState
 import io.github.rsgarrido.sazanami.player.RepeatMode
 import io.github.rsgarrido.sazanami.ui.player.ArtworkViewerEntryTag
@@ -216,7 +222,8 @@ class MusicPlayerPresentationTest {
         advanceControl("pocketAdvanceStart")
         advanceControl("pocketAdvanceDown")
         advanceControl("pocketAdvanceDown")
-        composeRule.onNodeWithTag("pocketAdvanceRootArtists").assertIsSelected().assertIsNotEnabled()
+        advanceControl("pocketAdvanceDown")
+        composeRule.onNodeWithTag("pocketAdvanceRootAlbums").assertIsSelected().assertIsNotEnabled()
         val browsing = awaitAdvanceSnapshot(fixture)
         assertSame(before.owner, browsing.owner)
         assertEquals(before.expanded, browsing.expanded)
@@ -392,6 +399,435 @@ class MusicPlayerPresentationTest {
         }
         advanceControl("pocketAdvanceStart")
         composeRule.onNodeWithTag("pocketAdvanceRootArtists").assertIsSelected()
+    }
+
+    @Test
+    fun pocketAdvanceArtistsHardwareOpensTheCanonicalGroupAndPlaysItsCompleteOrderedContext() {
+        val fixture = advanceFixture()
+        val supplied = advanceArtistLibrary(3, 5).reversed()
+        val groups = advanceArtistGroups(supplied)
+        fixture.librarySongs.value = supplied
+        composeRule.setContent { fixture.Content() }
+        awaitAdvanceSnapshot(fixture)
+        advanceControl("pocketAdvanceMini")
+        openAdvanceArtists()
+        composeRule.onNodeWithTag(advanceArtistTag(groups.first()), useUnmergedTree = true).assertIsSelected()
+        advanceControl("pocketAdvanceUp")
+        composeRule.onNodeWithTag(advanceArtistTag(groups.last()), useUnmergedTree = true).assertIsSelected()
+        advanceControl("pocketAdvanceDown")
+        advanceControl("pocketAdvanceDown")
+        val group = groups[1]
+        assertEquals(listOf(6L, 7L, 8L, 9L, 10L), group.songs.map { it.id })
+        advanceControl("pocketAdvancePlay")
+        composeRule.runOnIdle {
+            assertEquals(PocketAdvanceBrowserPage.ArtistSongs(group.key), fixture.advanceNavigation.browserPage)
+            assertTrue(fixture.songSelections.isEmpty())
+        }
+        composeRule.onNodeWithTag(advanceArtistSongTag(group.songs.first()), useUnmergedTree = true).assertIsSelected()
+        advanceControl("pocketAdvanceUp")
+        composeRule.onNodeWithTag(advanceArtistSongTag(group.songs.last()), useUnmergedTree = true).assertIsSelected()
+        advanceControl("pocketAdvanceDown")
+        advanceControl("pocketAdvanceDown")
+        advanceControl("pocketAdvancePlay")
+        composeRule.runOnIdle {
+            assertEquals(listOf(group.songs[1] to group.songs), fixture.songSelections)
+            assertEquals(PocketAdvanceLcdMode.NowPlaying, fixture.advanceNavigation.lcdMode)
+        }
+        advanceControl("pocketAdvanceStart")
+        composeRule.onNodeWithTag(advanceArtistSongTag(group.songs[1]), useUnmergedTree = true).assertIsSelected()
+        advanceControl("pocketAdvanceNext")
+        composeRule.runOnIdle { assertEquals(listOf(group.songs[1] to group.songs, group.songs[1] to group.songs), fixture.songSelections) }
+        advanceControl("pocketAdvanceStart")
+        advanceControl("pocketAdvanceBack")
+        composeRule.onNodeWithTag(advanceArtistTag(group), useUnmergedTree = true).assertIsSelected()
+        advanceControl("pocketAdvancePrevious")
+        composeRule.onNodeWithTag("pocketAdvanceRootArtists").assertIsSelected()
+        advanceControl("pocketAdvanceNext")
+        advanceControl("pocketAdvanceNext")
+        composeRule.runOnIdle {
+            assertEquals(PocketAdvanceBrowserPage.ArtistSongs(group.key), fixture.advanceNavigation.browserPage)
+            assertEquals(2, fixture.songSelections.size)
+            assertTrue(fixture.calls.isEmpty()); assertTrue(fixture.seeks.isEmpty())
+        }
+    }
+
+    @Test
+    fun pocketAdvanceArtistsFollowTheCurrentLibrarySortWithoutLosingCanonicalSelection() {
+        val fixture = advanceFixture()
+        val supplied = advanceArtistLibrary(3, 4).filter { song ->
+            song.artist != "Artist 01" || song.trackNumber == 1
+        }.filter { song -> song.artist != "Artist 03" || song.trackNumber <= 2 }.reversed()
+        val countDescending = LibrarySortState(LibrarySortOption.SONG_COUNT, LibrarySortDirection.DESCENDING)
+        val groups = advanceArtistGroups(supplied, countDescending)
+        assertEquals(listOf("Artist 02", "Artist 03", "Artist 01"), groups.map { it.name })
+        fixture.librarySongs.value = supplied
+        fixture.artistSortState.value = countDescending
+        composeRule.setContent { fixture.Content() }
+        awaitAdvanceSnapshot(fixture)
+        advanceControl("pocketAdvanceMini")
+        openAdvanceArtists()
+        val selected = groups.first()
+        composeRule.onNodeWithTag(advanceArtistTag(selected), useUnmergedTree = true).assertIsSelected()
+        composeRule.runOnIdle {
+            fixture.artistSortState.value = LibrarySortState(LibrarySortOption.NAME, LibrarySortDirection.ASCENDING)
+        }
+        composeRule.onNodeWithTag(advanceArtistTag(selected), useUnmergedTree = true).assertIsSelected()
+        composeRule.runOnIdle {
+            assertEquals(1, fixture.advanceNavigation.selectedArtistIndex(advanceArtistGroups(supplied).map { it.key }))
+        }
+        advanceControl("pocketAdvancePlay")
+        composeRule.runOnIdle {
+            assertEquals(PocketAdvanceBrowserPage.ArtistSongs(selected.key), fixture.advanceNavigation.browserPage)
+            assertTrue(fixture.songSelections.isEmpty())
+        }
+        advanceControl("pocketAdvancePlay")
+        composeRule.runOnIdle {
+            assertEquals(listOf(selected.songs.first() to selected.songs), fixture.songSelections)
+            assertTrue(fixture.calls.isEmpty()); assertTrue(fixture.seeks.isEmpty())
+        }
+    }
+
+    @Test
+    fun pocketAdvanceArtistAndSongTouchTargetsActivateTheirOwnRowsExactlyOnce() {
+        val fixture = advanceFixture()
+        val supplied = advanceArtistLibrary(3, 5).reversed()
+        val groups = advanceArtistGroups(supplied)
+        fixture.librarySongs.value = supplied
+        composeRule.setContent { fixture.Content() }
+        awaitAdvanceSnapshot(fixture)
+        advanceControl("pocketAdvanceMini")
+        advanceControl("pocketAdvanceStart")
+        composeRule.onNodeWithTag("pocketAdvanceBrowser", useUnmergedTree = true).performScrollToIndex(2)
+        composeRule.onNodeWithTag("pocketAdvanceRootArtists", useUnmergedTree = true).performTouchInput { click() }
+        composeRule.onNodeWithTag("pocketAdvanceArtists", useUnmergedTree = true).assertExists()
+        composeRule.runOnIdle { assertEquals(PocketAdvanceRootEntry.Artists, fixture.advanceNavigation.selectedRootEntry) }
+        // The touched group differs from the hardware highlight; its own identity must win.
+        val group = groups[2]
+        composeRule.onNodeWithTag(advanceArtistTag(group), useUnmergedTree = true).performScrollTo().performTouchInput { click() }
+        composeRule.runOnIdle {
+            assertEquals(group.key, fixture.advanceNavigation.selectedArtistKey)
+            assertEquals(PocketAdvanceBrowserPage.ArtistSongs(group.key), fixture.advanceNavigation.browserPage)
+            assertTrue(fixture.songSelections.isEmpty())
+        }
+        composeRule.onNodeWithTag("pocketAdvanceArtistSongs", useUnmergedTree = true).performScrollToIndex(3)
+        composeRule.onNodeWithTag(advanceArtistSongTag(group.songs[3]), useUnmergedTree = true).performTouchInput { click() }
+        composeRule.runOnIdle {
+            assertEquals(listOf(group.songs[3] to group.songs), fixture.songSelections)
+            assertEquals(group.songs[3].stableUiKey(), fixture.advanceNavigation.selectedArtistSongKey)
+            assertEquals(PocketAdvanceLcdMode.NowPlaying, fixture.advanceNavigation.lcdMode)
+            assertTrue(fixture.calls.isEmpty()); assertTrue(fixture.seeks.isEmpty())
+        }
+        advanceControl("pocketAdvanceStart")
+        composeRule.onNodeWithTag(advanceArtistSongTag(group.songs[3]), useUnmergedTree = true).assertIsSelected()
+    }
+
+    @Test
+    fun pocketAdvanceArtistsKeepSeparateTouchViewportsThroughBackStartAndSavedState() {
+        val fixture = advanceFixture()
+        val supplied = advanceArtistLibrary(40, 35).reversed()
+        val groups = advanceArtistGroups(supplied)
+        fixture.librarySongs.value = supplied
+        val restoration = StateRestorationTester(composeRule)
+        restoration.setContent { fixture.Content() }
+        awaitAdvanceSnapshot(fixture)
+        advanceControl("pocketAdvanceMini")
+        openAdvanceArtists()
+        val navigation = fixture.advanceNavigation
+        val artistsState = navigation.artistsListState
+        composeRule.onNodeWithTag("pocketAdvanceArtists", useUnmergedTree = true).performScrollToIndex(10)
+        val beforeTouch = composeRule.runOnIdle { artistsState.firstVisibleItemIndex to artistsState.firstVisibleItemScrollOffset }
+        composeRule.onNodeWithTag("pocketAdvanceArtists", useUnmergedTree = true).performTouchInput {
+            down(Offset(centerX, height * .8f)); moveTo(Offset(centerX, height * .25f)); up()
+        }
+        composeRule.runOnIdle {
+            assertTrue(beforeTouch != (artistsState.firstVisibleItemIndex to artistsState.firstVisibleItemScrollOffset))
+            assertEquals(groups.first().key, navigation.selectedArtistKey)
+            assertFalse(fixture.lyrics.lyricsComposed); assertFalse(fixture.morph.isDragging)
+        }
+        composeRule.onNodeWithTag("pocketAdvanceArtists", useUnmergedTree = true).performScrollToIndex(20)
+        val artistsViewport = composeRule.runOnIdle { artistsState.firstVisibleItemIndex to artistsState.firstVisibleItemScrollOffset }
+        val group = groups[21]
+        composeRule.onNodeWithTag(advanceArtistTag(group), useUnmergedTree = true).performTouchInput { click() }
+        repeat(12) { advanceControl("pocketAdvanceDown") }
+        val tracksState = navigation.artistSongsListState
+        composeRule.onNodeWithTag("pocketAdvanceArtistSongs", useUnmergedTree = true).performScrollToIndex(10)
+        val tracksBeforeTouch = composeRule.runOnIdle { tracksState.firstVisibleItemIndex to tracksState.firstVisibleItemScrollOffset }
+        composeRule.onNodeWithTag("pocketAdvanceArtistSongs", useUnmergedTree = true).performTouchInput {
+            down(Offset(centerX, height * .8f)); moveTo(Offset(centerX, height * .25f)); up()
+        }
+        composeRule.runOnIdle {
+            assertTrue(tracksBeforeTouch != (tracksState.firstVisibleItemIndex to tracksState.firstVisibleItemScrollOffset))
+            assertEquals(group.songs[12].stableUiKey(), navigation.selectedArtistSongKey)
+            assertFalse(fixture.lyrics.lyricsComposed); assertFalse(fixture.morph.isDragging)
+            assertEquals(1f, fixture.morph.progress, 0f)
+        }
+        composeRule.onNodeWithTag("pocketAdvanceArtistSongs", useUnmergedTree = true).performScrollToIndex(20)
+        val tracksViewport = composeRule.runOnIdle { tracksState.firstVisibleItemIndex to tracksState.firstVisibleItemScrollOffset }
+        advanceControl("pocketAdvancePlay")
+        composeRule.runOnIdle { assertEquals(listOf(group.songs[12] to group.songs), fixture.songSelections) }
+        advanceControl("pocketAdvanceStart")
+        composeRule.runOnIdle {
+            assertEquals(group.songs[12].stableUiKey(), navigation.selectedArtistSongKey)
+            assertEquals(tracksViewport, tracksState.firstVisibleItemIndex to tracksState.firstVisibleItemScrollOffset)
+        }
+        advanceControl("pocketAdvanceBack")
+        composeRule.onNodeWithTag(advanceArtistTag(group), useUnmergedTree = true).assertIsSelected()
+        composeRule.runOnIdle {
+            assertEquals(artistsViewport, artistsState.firstVisibleItemIndex to artistsState.firstVisibleItemScrollOffset)
+        }
+        advanceControl("pocketAdvanceNext")
+        composeRule.runOnIdle {
+            assertSame(tracksState, navigation.artistSongsListState)
+            assertEquals(tracksViewport, tracksState.firstVisibleItemIndex to tracksState.firstVisibleItemScrollOffset)
+            fixture.current.value = fixture.songs.first().copy(title = "Changed outside the console")
+        }
+        restoration.emulateSavedInstanceStateRestore()
+        awaitAdvanceSnapshot(fixture)
+        composeRule.runOnIdle {
+            assertNotSame(navigation, fixture.advanceNavigation)
+            assertEquals(PocketAdvanceLcdMode.NowPlaying, fixture.advanceNavigation.lcdMode)
+            assertEquals(PocketAdvanceBrowserPage.ArtistSongs(group.key), fixture.advanceNavigation.browserPage)
+            assertEquals(group.songs[12].stableUiKey(), fixture.advanceNavigation.selectedArtistSongKey)
+        }
+        advanceControl("pocketAdvanceStart")
+        composeRule.onNodeWithTag("pocketAdvanceArtistSongs", useUnmergedTree = true).assertExists()
+        composeRule.runOnIdle {
+            assertEquals(tracksViewport, fixture.advanceNavigation.artistSongsListState.firstVisibleItemIndex to
+                fixture.advanceNavigation.artistSongsListState.firstVisibleItemScrollOffset)
+        }
+        advanceControl("pocketAdvanceBack")
+        composeRule.runOnIdle {
+            assertEquals(artistsViewport, fixture.advanceNavigation.artistsListState.firstVisibleItemIndex to
+                fixture.advanceNavigation.artistsListState.firstVisibleItemScrollOffset)
+            assertEquals(group.key, fixture.advanceNavigation.selectedArtistKey)
+            assertFalse(fixture.lyrics.lyricsComposed); assertFalse(fixture.morph.isDragging)
+            assertEquals(1, fixture.songSelections.size)
+            assertTrue(fixture.calls.isEmpty()); assertTrue(fixture.seeks.isEmpty())
+        }
+    }
+
+    @Test
+    fun pocketAdvanceArtistsAndArtistSongsRevealAdjacentRowsAtBothViewportEdges() {
+        val fixture = advanceFixture()
+        val supplied = advanceArtistLibrary(30, 30)
+        val groups = advanceArtistGroups(supplied)
+        fixture.librarySongs.value = supplied
+        composeRule.setContent { fixture.Content() }
+        awaitAdvanceSnapshot(fixture)
+        advanceControl("pocketAdvanceMini")
+        openAdvanceArtists()
+        val navigation = fixture.advanceNavigation
+        assertAdvanceBrowseEdgeReveal(
+            "pocketAdvanceArtists", navigation.artistsListState,
+            rowTag = { index -> advanceArtistTag(groups[index]) },
+            select = { index ->
+                navigation.openArtist(groups[index].key, index)
+                navigation.back()
+            }
+        )
+        val group = groups[2]
+        composeRule.runOnIdle { navigation.openArtist(group.key, 2) }
+        composeRule.onNodeWithTag("pocketAdvanceArtistSongs", useUnmergedTree = true).assertExists()
+        assertAdvanceBrowseEdgeReveal(
+            "pocketAdvanceArtistSongs", navigation.artistSongsListState,
+            rowTag = { index -> advanceArtistSongTag(group.songs[index]) },
+            select = { index -> navigation.selectArtistSong(group.songs[index].stableUiKey(), index) }
+        )
+        composeRule.runOnIdle {
+            assertFalse(fixture.lyrics.lyricsComposed); assertFalse(fixture.morph.isDragging)
+            assertEquals(1f, fixture.morph.progress, 0f)
+            assertTrue(fixture.songSelections.isEmpty()); assertTrue(fixture.calls.isEmpty()); assertTrue(fixture.seeks.isEmpty())
+        }
+    }
+
+    @Test
+    fun pocketAdvanceArtistSongsReconcileCanonicalIdentityReadinessAndConfirmedRemoval() {
+        val fixture = advanceFixture()
+        val supplied = advanceArtistLibrary(3, 4)
+        val group = advanceArtistGroups(supplied)[1]
+        fixture.librarySongs.value = supplied
+        composeRule.setContent { fixture.Content() }
+        awaitAdvanceSnapshot(fixture)
+        advanceControl("pocketAdvanceMini")
+        openAdvanceArtists()
+        advanceControl("pocketAdvanceDown")
+        advanceControl("pocketAdvanceNext")
+        advanceControl("pocketAdvanceDown")
+        val selected = group.songs[1]
+        val updated = supplied.reversed().map {
+            if (it in group.songs) it.copy(artist = "  ARTIST 02  ", title = "Updated " + it.title,
+                trackNumber = if (it.id == selected.id) 99 else it.trackNumber) else it
+        }
+        val updatedGroup = advanceArtistGroups(updated).single { it.key == group.key }
+        composeRule.runOnIdle { fixture.librarySongs.value = updated }
+        composeRule.onNodeWithTag(advanceArtistSongTag(selected), useUnmergedTree = true).assertIsSelected()
+        composeRule.runOnIdle {
+            fixture.libraryReady.value = false
+            fixture.librarySongs.value = emptyList()
+        }
+        composeRule.onNodeWithTag("pocketAdvanceArtistSongsEmpty", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithTag("pocketAdvancePlay").assertIsNotEnabled()
+        composeRule.onNodeWithTag("pocketAdvanceNext").assertIsNotEnabled()
+        advanceControl("pocketAdvancePlay")
+        advanceControl("pocketAdvanceNext")
+        composeRule.runOnIdle {
+            assertEquals(PocketAdvanceBrowserPage.ArtistSongs(group.key), fixture.advanceNavigation.browserPage)
+            assertEquals(selected.stableUiKey(), fixture.advanceNavigation.selectedArtistSongKey)
+            assertTrue(fixture.songSelections.isEmpty())
+            fixture.librarySongs.value = updated
+            fixture.libraryReady.value = true
+        }
+        composeRule.onNodeWithTag(advanceArtistSongTag(selected), useUnmergedTree = true).assertIsSelected()
+        advanceControl("pocketAdvanceNext")
+        val currentSelected = updatedGroup.songs.single { it.stableUiKey() == selected.stableUiKey() }
+        composeRule.runOnIdle { assertEquals(listOf(currentSelected to updatedGroup.songs), fixture.songSelections) }
+        advanceControl("pocketAdvanceStart")
+        val remaining = updated.filterNot { it.stableUiKey() == selected.stableUiKey() }
+        val remainingGroup = advanceArtistGroups(remaining).single { it.key == group.key }
+        val neighbor = remainingGroup.songs.last()
+        composeRule.runOnIdle { fixture.librarySongs.value = remaining }
+        composeRule.onNodeWithTag(advanceArtistSongTag(neighbor), useUnmergedTree = true).assertIsSelected()
+        advanceControl("pocketAdvancePlay")
+        composeRule.runOnIdle { assertEquals(listOf(currentSelected to updatedGroup.songs, neighbor to remainingGroup.songs), fixture.songSelections) }
+        advanceControl("pocketAdvanceStart")
+        val withoutArtist = remaining.filterNot { it in remainingGroup.songs }
+        composeRule.runOnIdle {
+            fixture.libraryReady.value = false
+            fixture.librarySongs.value = withoutArtist
+        }
+        composeRule.onNodeWithTag("pocketAdvanceArtistSongsEmpty", useUnmergedTree = true).assertExists()
+        composeRule.runOnIdle {
+            assertEquals(PocketAdvanceBrowserPage.ArtistSongs(group.key), fixture.advanceNavigation.browserPage)
+            assertEquals(neighbor.stableUiKey(), fixture.advanceNavigation.selectedArtistSongKey)
+            fixture.libraryReady.value = true
+        }
+        composeRule.onNodeWithTag("pocketAdvanceArtists", useUnmergedTree = true).assertExists()
+        composeRule.runOnIdle {
+            assertEquals(PocketAdvanceBrowserPage.Artists, fixture.advanceNavigation.browserPage)
+            assertEquals(null, fixture.advanceNavigation.selectedArtistSongKey)
+            assertEquals(advanceArtistGroups(withoutArtist).last().key, fixture.advanceNavigation.selectedArtistKey)
+            assertEquals(2, fixture.songSelections.size)
+            assertTrue(fixture.calls.isEmpty()); assertTrue(fixture.seeks.isEmpty())
+        }
+    }
+
+    @Test
+    fun pocketAdvanceArtistSongsPreserveMorphAnchorsThroughCollapseReversalAndPortraitFallback() {
+        val fixture = advanceFixture()
+        val supplied = advanceArtistLibrary(3, 30)
+        val group = advanceArtistGroups(supplied)[1]
+        fixture.librarySongs.value = supplied
+        composeRule.setContent { fixture.Content() }
+        awaitAdvanceSnapshot(fixture)
+        advanceControl("pocketAdvanceMini")
+        val initial = awaitAdvanceSnapshot(fixture)
+        openAdvanceArtists()
+        advanceControl("pocketAdvanceDown")
+        advanceControl("pocketAdvanceNext")
+        repeat(14) { advanceControl("pocketAdvanceDown") }
+        composeRule.onNodeWithTag("pocketAdvanceArtistSongs", useUnmergedTree = true).performScrollToIndex(10)
+        val navigation = fixture.advanceNavigation
+        val viewport = composeRule.runOnIdle {
+            navigation.artistSongsListState.firstVisibleItemIndex to navigation.artistSongsListState.firstVisibleItemScrollOffset
+        }
+        val browsing = awaitAdvanceSnapshot(fixture)
+        assertSame(initial.owner, browsing.owner)
+        assertEquals(initial.expanded, browsing.expanded); assertEquals(initial.mini, browsing.mini)
+        composeRule.onNodeWithTag("pocketAdvanceSeek").assertDoesNotExist()
+        for (cancelGesture in listOf(true, false)) {
+            val header = composeRule.onNodeWithTag("pocketAdvanceHeader", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            composeRule.onRoot().performTouchInput { down(header.center); moveBy(Offset(0f, 48f)) }
+            composeRule.onNodeWithTag("pocketAdvanceArtistSongs", useUnmergedTree = true).assertDoesNotExist()
+            composeRule.runOnIdle { assertTrue(fixture.morph.isDragging) }
+            composeRule.onRoot().performTouchInput {
+                if (cancelGesture) cancel() else { moveTo(header.center - Offset(0f, 24f)); up() }
+            }
+            composeRule.onNodeWithTag("pocketAdvanceArtistSongs", useUnmergedTree = true).assertExists()
+            composeRule.runOnIdle {
+                assertEquals(1f, fixture.morph.progress, 0f)
+                assertEquals(group.songs[14].stableUiKey(), navigation.selectedArtistSongKey)
+                assertEquals(viewport, navigation.artistSongsListState.firstVisibleItemIndex to navigation.artistSongsListState.firstVisibleItemScrollOffset)
+            }
+        }
+        collapseAdvanceThroughHeader()
+        composeRule.runOnIdle {
+            assertTrue(fixture.morph.isCollapsedAndIdle)
+            assertEquals(PocketAdvanceLcdMode.NowPlaying, navigation.lcdMode)
+        }
+        advanceControl("pocketAdvanceMini")
+        composeRule.onNodeWithTag("pocketAdvanceArtistSongs", useUnmergedTree = true).assertDoesNotExist()
+        advanceControl("pocketAdvanceStart")
+        composeRule.runOnIdle {
+            assertEquals(PocketAdvanceBrowserPage.ArtistSongs(group.key), navigation.browserPage)
+            assertEquals(viewport, navigation.artistSongsListState.firstVisibleItemIndex to navigation.artistSongsListState.firstVisibleItemScrollOffset)
+            fixture.viewport.value = DpSize(720.dp, 1180.dp)
+        }
+        composeRule.runOnIdle {
+            assertEquals(PlayerPresentationIdentity.Existing(PlayerTheme.CLASSIC_WHEEL), fixture.resolvedIdentity)
+            assertEquals(PocketAdvanceLcdMode.NowPlaying, navigation.lcdMode)
+            fixture.viewport.value = DpSize(1200.dp, 720.dp)
+        }
+        awaitAdvanceSnapshot(fixture)
+        advanceControl("pocketAdvanceStart")
+        composeRule.onNodeWithTag("pocketAdvanceArtistSongs", useUnmergedTree = true).assertExists()
+        composeRule.runOnIdle {
+            assertEquals(group.songs[14].stableUiKey(), navigation.selectedArtistSongKey)
+            assertEquals(viewport, navigation.artistSongsListState.firstVisibleItemIndex to navigation.artistSongsListState.firstVisibleItemScrollOffset)
+            assertFalse(fixture.lyrics.lyricsComposed)
+            assertTrue(fixture.songSelections.isEmpty()); assertTrue(fixture.calls.isEmpty()); assertTrue(fixture.seeks.isEmpty())
+        }
+    }
+
+    @Test
+    fun pocketAdvanceArtistHoldsStopWhenAnotherRepeatablePageTakesOwnership() {
+        val fixture = advanceFixture()
+        val supplied = advanceArtistLibrary(30, 30)
+        val groups = advanceArtistGroups(supplied)
+        fixture.librarySongs.value = supplied
+        composeRule.setContent { fixture.Content() }
+        awaitAdvanceSnapshot(fixture)
+        advanceControl("pocketAdvanceMini")
+        openAdvanceArtists()
+        composeRule.mainClock.autoAdvance = false
+        try {
+            beginAdvanceHold("pocketAdvanceDown")
+            composeRule.runOnIdle { assertEquals(groups[1].key, fixture.advanceNavigation.selectedArtistKey) }
+            composeRule.mainClock.advanceTimeBy(400)
+            val group = groups[2]
+            composeRule.runOnIdle {
+                assertEquals(group.key, fixture.advanceNavigation.selectedArtistKey)
+                fixture.advanceNavigation.openArtist(group.key, 2)
+            }
+            composeRule.mainClock.advanceTimeBy(1_000)
+            composeRule.runOnIdle {
+                assertEquals(PocketAdvanceBrowserPage.ArtistSongs(group.key), fixture.advanceNavigation.browserPage)
+                assertEquals(group.songs.first().stableUiKey(), fixture.advanceNavigation.selectedArtistSongKey)
+            }
+            composeRule.onRoot().performTouchInput { up() }
+            composeRule.mainClock.advanceTimeByFrame()
+            beginAdvanceHold("pocketAdvanceDown")
+            composeRule.mainClock.advanceTimeBy(400)
+            composeRule.runOnIdle {
+                assertEquals(group.songs[2].stableUiKey(), fixture.advanceNavigation.selectedArtistSongKey)
+                fixture.advanceNavigation.back()
+            }
+            composeRule.mainClock.advanceTimeBy(1_000)
+            composeRule.runOnIdle {
+                assertEquals(PocketAdvanceBrowserPage.Artists, fixture.advanceNavigation.browserPage)
+                assertEquals(group.key, fixture.advanceNavigation.selectedArtistKey)
+                assertEquals(group.songs[2].stableUiKey(), fixture.advanceNavigation.selectedArtistSongKey)
+                assertFalse(fixture.lyrics.lyricsComposed); assertFalse(fixture.morph.isDragging)
+                assertTrue(fixture.songSelections.isEmpty()); assertTrue(fixture.calls.isEmpty()); assertTrue(fixture.seeks.isEmpty())
+            }
+            composeRule.onRoot().performTouchInput { up() }
+            composeRule.mainClock.advanceTimeByFrame()
+            composeRule.runOnIdle {
+                assertEquals(group.key, fixture.advanceNavigation.selectedArtistKey)
+                assertEquals(group.songs[2].stableUiKey(), fixture.advanceNavigation.selectedArtistSongKey)
+            }
+        } finally {
+            composeRule.mainClock.autoAdvance = true
+        }
     }
 
     @Test
@@ -2230,6 +2666,94 @@ class MusicPlayerPresentationTest {
         val expanded: PocketAdvanceMorphGeometry
     )
 
+    private fun assertAdvanceBrowseEdgeReveal(
+        listTag: String,
+        listState: LazyListState,
+        rowTag: (Int) -> String,
+        select: (Int) -> Unit
+    ) {
+        composeRule.onNodeWithTag(listTag, useUnmergedTree = true).performScrollToIndex(10)
+        composeRule.runOnIdle { select(10) }
+        val unchanged = composeRule.runOnIdle { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+        advanceControl("pocketAdvanceDown")
+        composeRule.onNodeWithTag(rowTag(11), useUnmergedTree = true).assertIsSelected().assertIsDisplayed()
+        composeRule.runOnIdle {
+            assertEquals("A fully visible adjacent row must not move $listTag", unchanged,
+                listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset)
+        }
+        val bottom = composeRule.runOnIdle {
+            val info = listState.layoutInfo
+            info.visibleItemsInfo.last { it.offset >= info.viewportStartOffset && it.offset + it.size <= info.viewportEndOffset }.index
+        }
+        composeRule.runOnIdle { select(bottom) }
+        var selected = bottom
+        for ((tag, step) in listOf("pocketAdvanceDown" to 1, "pocketAdvanceUp" to -1)) {
+            if (step < 0) {
+                selected = composeRule.runOnIdle {
+                    val info = listState.layoutInfo
+                    info.visibleItemsInfo.first { it.offset >= info.viewportStartOffset }.index
+                }
+                composeRule.runOnIdle { select(selected) }
+            }
+            repeat(4) {
+                val before = composeRule.runOnIdle {
+                    val info = listState.layoutInfo
+                    val stride = info.visibleItemsInfo.first().size + info.mainAxisItemSpacing
+                    val nextIndex = selected + step
+                    val anchor = info.visibleItemsInfo.firstOrNull { it.index == nextIndex }
+                        ?: if (step > 0) info.visibleItemsInfo.last() else info.visibleItemsInfo.first()
+                    val start = anchor.offset + (nextIndex - anchor.index) * stride
+                    val required = when {
+                        start < info.viewportStartOffset -> start - info.viewportStartOffset
+                        start + anchor.size > info.viewportEndOffset -> start + anchor.size - info.viewportEndOffset
+                        else -> 0
+                    }
+                    Triple(listState.firstVisibleItemIndex * stride + listState.firstVisibleItemScrollOffset, stride, required)
+                }
+                advanceControl(tag)
+                selected += step
+                composeRule.onNodeWithTag(rowTag(selected), useUnmergedTree = true).assertIsSelected().assertIsDisplayed()
+                composeRule.runOnIdle {
+                    val info = listState.layoutInfo
+                    val after = listState.firstVisibleItemIndex * before.second + listState.firstVisibleItemScrollOffset
+                    val displacement = after - before.first
+                    assertEquals("Reveal only row pixels outside $listTag", before.third.toFloat(), displacement.toFloat(), 1f)
+                    assertTrue("An edge reveal must move in the selection direction", displacement * step > 0)
+                    assertTrue("An adjacent move must never jump a page", displacement in (-before.second - 1)..(before.second + 1))
+                    val row = info.visibleItemsInfo.single { it.index == selected }
+                    assertTrue("The whole selected row must be visible in $listTag", row.offset >= info.viewportStartOffset &&
+                        row.offset + row.size <= info.viewportEndOffset)
+                }
+            }
+        }
+    }
+
+    private fun advanceArtistGroups(
+        songs: List<Song>,
+        sortState: LibrarySortState = LibrarySortState(LibrarySortOption.NAME, LibrarySortDirection.ASCENDING)
+    ): List<LibraryArtistGroup> = sortedLibraryArtistGroups(songs, sortState)
+
+    private fun advanceArtistTag(group: LibraryArtistGroup): String = "pocketAdvanceArtistRow:" + group.key
+    private fun advanceArtistSongTag(song: Song): String = "pocketAdvanceArtistSong:" + song.stableUiKey()
+
+    private fun advanceArtistLibrary(artistCount: Int, songsPerArtist: Int): List<Song> =
+        (1..artistCount).flatMap { artistIndex ->
+            (1..songsPerArtist).map { track ->
+                val id = ((artistIndex - 1) * songsPerArtist + track).toLong()
+                Song(id, "Track " + (songsPerArtist - track).toString().padStart(2, '0'),
+                    "Artist " + artistIndex.toString().padStart(2, '0'), "Album", track, 180_000L,
+                    Uri.parse("content://media/external/audio/media/$id"), "/music/session3d/$id.mp3", "/music/session3d", null)
+            }
+        }
+
+    private fun openAdvanceArtists() {
+        advanceControl("pocketAdvanceStart")
+        advanceControl("pocketAdvanceDown")
+        advanceControl("pocketAdvanceDown")
+        advanceControl("pocketAdvanceNext")
+        composeRule.onNodeWithTag("pocketAdvanceArtists", useUnmergedTree = true).assertExists()
+    }
+
     private fun beginAdvanceHold(tag: String): Rect {
         // The clock may have been paused immediately after a click changed Root to Songs.
         // Install that page's pointer handler before down; a later frame cannot replay the event.
@@ -2560,6 +3084,7 @@ class MusicPlayerPresentationTest {
         }
         val librarySongs = mutableStateOf(songs)
         val libraryReady = mutableStateOf(true)
+        val artistSortState = mutableStateOf(LibrarySortState(LibrarySortOption.NAME, LibrarySortDirection.ASCENDING))
         val songSelections = mutableListOf<Pair<Song, List<Song>>>()
         val current = mutableStateOf<Song?>(songs[1])
         val previous = mutableStateOf<Song?>(songs[0])
@@ -2757,6 +3282,7 @@ class MusicPlayerPresentationTest {
                         defaultPlayerLayout = playerLayout,
                         pocketAdvanceNavigationState = advanceNavigation,
                         isLibraryReady = libraryReady.value,
+                        artistSortState = artistSortState.value,
                         playerPresentationEpoch = boundary.epoch,
                         playerPresentationInputEnabled = boundary.inputEnabled,
                     )

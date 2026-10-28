@@ -42,8 +42,14 @@ internal fun pocketAdvanceRootEntryTitle(entry: PocketAdvanceRootEntry): String 
 )
 
 @Composable
-internal fun pocketAdvanceConfirmLabel(navigation: PocketAdvanceNavigationState, selectedSong: Song? = null): String {
-    if (navigation.browserPage == PocketAdvanceBrowserPage.Songs) {
+internal fun pocketAdvanceConfirmLabel(
+    navigation: PocketAdvanceNavigationState, selectedSong: Song? = null, selectedArtistName: String? = null
+): String {
+    if (navigation.browserPage == PocketAdvanceBrowserPage.Artists) {
+        return if (selectedArtistName == null) stringResource(R.string.pocket_advance_no_artist)
+        else stringResource(R.string.pocket_advance_open_entry, selectedArtistName)
+    }
+    if (navigation.browserPage == PocketAdvanceBrowserPage.Songs || navigation.browserPage is PocketAdvanceBrowserPage.ArtistSongs) {
         return if (selectedSong == null) stringResource(R.string.pocket_advance_no_song)
         else stringResource(R.string.pocket_advance_play_song, pocketAdvanceSongTitle(selectedSong))
     }
