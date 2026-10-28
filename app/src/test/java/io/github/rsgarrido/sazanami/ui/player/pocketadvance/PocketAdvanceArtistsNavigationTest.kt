@@ -366,7 +366,7 @@ class PocketAdvanceArtistsNavigationTest {
         navigation.artistsListState.requestScrollToItem(1, 7)
         navigation.artistSongsListState.requestScrollToItem(1, 11)
         val saved = save(navigation)
-        assertEquals(12, saved.size)
+        assertEquals(15, saved.size) // Album Archive appends compact state after the original twelve fields.
         assertEquals(listOf("Artists", "ArtistSongs", "song-b", 1, 2, 3, 1, 5, ""), saved.take(9))
         val restored = requireNotNull(PocketAdvanceNavigationState.Saver.restore(saved))
         assertEquals(PocketAdvanceLcdMode.NowPlaying, restored.lcdMode)

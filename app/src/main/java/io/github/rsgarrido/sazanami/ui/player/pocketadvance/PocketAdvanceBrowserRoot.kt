@@ -43,13 +43,19 @@ internal fun pocketAdvanceRootEntryTitle(entry: PocketAdvanceRootEntry): String 
 
 @Composable
 internal fun pocketAdvanceConfirmLabel(
-    navigation: PocketAdvanceNavigationState, selectedSong: Song? = null, selectedArtistName: String? = null
+    navigation: PocketAdvanceNavigationState, selectedSong: Song? = null, selectedArtistName: String? = null,
+    selectedAlbumTitle: String? = null
 ): String {
+    if (navigation.browserPage == PocketAdvanceBrowserPage.AlbumCatalogue) {
+        return if (selectedAlbumTitle == null) stringResource(R.string.pocket_advance_no_album)
+        else stringResource(R.string.pocket_advance_open_entry, selectedAlbumTitle)
+    }
     if (navigation.browserPage == PocketAdvanceBrowserPage.Artists) {
         return if (selectedArtistName == null) stringResource(R.string.pocket_advance_no_artist)
         else stringResource(R.string.pocket_advance_open_entry, selectedArtistName)
     }
-    if (navigation.browserPage == PocketAdvanceBrowserPage.Songs || navigation.browserPage is PocketAdvanceBrowserPage.ArtistSongs) {
+    if (navigation.browserPage == PocketAdvanceBrowserPage.Songs || navigation.browserPage is PocketAdvanceBrowserPage.ArtistSongs ||
+        navigation.browserPage is PocketAdvanceBrowserPage.AlbumRecord) {
         return if (selectedSong == null) stringResource(R.string.pocket_advance_no_song)
         else stringResource(R.string.pocket_advance_play_song, pocketAdvanceSongTitle(selectedSong))
     }
@@ -61,7 +67,7 @@ internal fun pocketAdvanceConfirmLabel(
     )
 }
 
-/** Root only: unavailable entries advertise the intended structure without opening placeholders. */
+/** The four established destinations share the existing root selection and touch behavior. */
 @Composable
 internal fun PocketAdvanceBrowserRoot(
     navigation: PocketAdvanceNavigationState,

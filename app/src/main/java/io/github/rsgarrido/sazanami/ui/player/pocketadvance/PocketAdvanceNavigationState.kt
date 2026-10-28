@@ -13,6 +13,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import io.github.rsgarrido.sazanami.data.stableUiKey
 import io.github.rsgarrido.sazanami.ui.library.LibraryArtistGroup
+import io.github.rsgarrido.sazanami.ui.library.LibraryAlbumGroup
 import io.github.rsgarrido.sazanami.ui.player.PlayerMorphState
 import io.github.rsgarrido.sazanami.ui.player.PlayerPresentation
 import io.github.rsgarrido.sazanami.ui.player.PlayerPresentationIdentity
@@ -24,13 +25,15 @@ sealed interface PocketAdvanceBrowserPage {
     data object Songs : PocketAdvanceBrowserPage
     data object Artists : PocketAdvanceBrowserPage
     data class ArtistSongs(val artistKey: String) : PocketAdvanceBrowserPage
+    data object AlbumCatalogue : PocketAdvanceBrowserPage
+    data class AlbumRecord(val albumKey: String) : PocketAdvanceBrowserPage
 }
 
-/** Entry order matches Classic Wheel. Availability is temporary until each browser is implemented. */
+/** The four established Music Browser destinations, all available. */
 enum class PocketAdvanceRootEntry {
     NowPlaying, Songs, Artists, Albums;
 
-    val isAvailable: Boolean get() = this != Albums
+    val isAvailable: Boolean get() = true
 }
 
 /** Browser location outlives LCD toggles and expansion. It never owns playback or morph geometry. */
@@ -70,6 +73,15 @@ class PocketAdvanceNavigationState(
     val artistsListState: LazyListState get() = artistsCursor.listState
     val artistSongsListState: LazyListState get() = artistSongsCursor.listState
 
+    internal val albumsCursor = PocketAdvanceBrowseCursor(preserveEmptyKeys = true)
+    internal val albumTracksCursor = PocketAdvanceBrowseCursor()
+    internal var retainedAlbumKey by mutableStateOf<String?>(null)
+        private set
+    val selectedAlbumKey: String? get() = albumsCursor.selectedKey
+    val selectedAlbumTrackKey: String? get() = albumTracksCursor.selectedKey
+    val albumsListState: LazyListState get() = albumsCursor.listState
+    val albumTracksListState: LazyListState get() = albumTracksCursor.listState
+
     var selectedRootEntry by mutableStateOf(initialRootEntry)
         private set
 
@@ -89,6 +101,8 @@ class PocketAdvanceNavigationState(
         when {
             lcdMode == PocketAdvanceLcdMode.NowPlaying -> openBrowser()
             browserPage is PocketAdvanceBrowserPage.ArtistSongs -> browserPage = PocketAdvanceBrowserPage.Artists
+            browserPage is PocketAdvanceBrowserPage.AlbumRecord -> browserPage = PocketAdvanceBrowserPage.AlbumCatalogue
+            browserPage == PocketAdvanceBrowserPage.AlbumCatalogue -> browserPage = PocketAdvanceBrowserPage.Root
             browserPage == PocketAdvanceBrowserPage.Songs || browserPage == PocketAdvanceBrowserPage.Artists ->
                 browserPage = PocketAdvanceBrowserPage.Root
             else -> showNowPlaying()
@@ -115,6 +129,8 @@ class PocketAdvanceNavigationState(
             }
             PocketAdvanceBrowserPage.Artists -> artistsCursor.move(delta, songKeys, wrap = true)
             is PocketAdvanceBrowserPage.ArtistSongs -> artistSongsCursor.move(delta, songKeys, wrap = true)
+            PocketAdvanceBrowserPage.AlbumCatalogue -> albumsCursor.move(delta, songKeys, wrap = true)
+            is PocketAdvanceBrowserPage.AlbumRecord -> albumTracksCursor.move(delta, songKeys, wrap = true)
         }
     }
 
@@ -138,6 +154,8 @@ class PocketAdvanceNavigationState(
             PocketAdvanceBrowserPage.Songs -> repeatSongSelection(delta, keys)
             PocketAdvanceBrowserPage.Artists -> artistsCursor.move(delta, keys, wrap = false)
             is PocketAdvanceBrowserPage.ArtistSongs -> artistSongsCursor.move(delta, keys, wrap = false)
+            PocketAdvanceBrowserPage.AlbumCatalogue -> albumsCursor.move(delta, keys, wrap = false)
+            is PocketAdvanceBrowserPage.AlbumRecord -> albumTracksCursor.move(delta, keys, wrap = false)
         }
     }
 
@@ -147,7 +165,7 @@ class PocketAdvanceNavigationState(
             PocketAdvanceRootEntry.NowPlaying -> showNowPlaying()
             PocketAdvanceRootEntry.Songs -> browserPage = PocketAdvanceBrowserPage.Songs
             PocketAdvanceRootEntry.Artists -> browserPage = PocketAdvanceBrowserPage.Artists
-            PocketAdvanceRootEntry.Albums -> Unit
+            PocketAdvanceRootEntry.Albums -> browserPage = PocketAdvanceBrowserPage.AlbumCatalogue
         }
     }
 
@@ -165,6 +183,8 @@ class PocketAdvanceNavigationState(
         PocketAdvanceBrowserPage.Songs -> selectedSongIndex(keys)
         PocketAdvanceBrowserPage.Artists -> selectedArtistIndex(keys)
         is PocketAdvanceBrowserPage.ArtistSongs -> selectedArtistSongIndex(keys)
+        PocketAdvanceBrowserPage.AlbumCatalogue -> selectedAlbumIndex(keys)
+        is PocketAdvanceBrowserPage.AlbumRecord -> selectedAlbumTrackIndex(keys)
     }
 
     fun openArtist(key: String, index: Int) {
@@ -195,6 +215,36 @@ class PocketAdvanceNavigationState(
         }
     }
 
+    fun selectedAlbumIndex(keys: List<String>): Int? = albumsCursor.selectedIndex(keys)
+    fun selectedAlbumTrackIndex(keys: List<String>): Int? = albumTracksCursor.selectedIndex(keys)
+
+    fun openAlbum(key: String, index: Int) {
+        if (lcdMode != PocketAdvanceLcdMode.MusicBrowser || browserPage != PocketAdvanceBrowserPage.AlbumCatalogue) return
+        albumsCursor.select(key, index)
+        if (retainedAlbumKey != key) albumTracksCursor.clear()
+        retainedAlbumKey = key
+        browserPage = PocketAdvanceBrowserPage.AlbumRecord(key)
+    }
+
+    fun selectAlbumTrack(key: String, index: Int) {
+        if (lcdMode == PocketAdvanceLcdMode.MusicBrowser && browserPage is PocketAdvanceBrowserPage.AlbumRecord) {
+            albumTracksCursor.select(key, index)
+        }
+    }
+
+    fun reconcileAlbums(albums: List<LibraryAlbumGroup>, isLibraryReady: Boolean) {
+        albumsCursor.reconcile(albums.map { it.key }, isLibraryReady)
+        val retained = retainedAlbumKey ?: return
+        val album = albums.firstOrNull { it.key == retained }
+        if (album == null && isLibraryReady) {
+            if (browserPage is PocketAdvanceBrowserPage.AlbumRecord) browserPage = PocketAdvanceBrowserPage.AlbumCatalogue
+            retainedAlbumKey = null
+            albumTracksCursor.clear()
+        } else {
+            albumTracksCursor.reconcile(album?.songs?.map { it.stableUiKey() }.orEmpty(), isLibraryReady)
+        }
+    }
+
     /** The visible highlight and confirmation always resolve this same current-library index. */
     fun selectedSongIndex(songKeys: List<String>): Int? {
         if (songKeys.isEmpty()) return null
@@ -218,6 +268,8 @@ class PocketAdvanceNavigationState(
         PocketAdvanceBrowserPage.Songs -> selectedSongIndex(songKeys) != null
         PocketAdvanceBrowserPage.Artists -> selectedArtistIndex(songKeys) != null
         is PocketAdvanceBrowserPage.ArtistSongs -> selectedArtistSongIndex(songKeys) != null
+        PocketAdvanceBrowserPage.AlbumCatalogue -> selectedAlbumIndex(songKeys) != null
+        is PocketAdvanceBrowserPage.AlbumRecord -> selectedAlbumTrackIndex(songKeys) != null
     }
 
     /** Busy/error snapshots must not erase a location that a rescan can still restore. */
@@ -273,6 +325,8 @@ class PocketAdvanceNavigationState(
                         PocketAdvanceBrowserPage.Songs -> "Songs"
                         PocketAdvanceBrowserPage.Artists -> "Artists"
                         is PocketAdvanceBrowserPage.ArtistSongs -> "ArtistSongs"
+                        PocketAdvanceBrowserPage.AlbumCatalogue -> "AlbumCatalogue"
+                        is PocketAdvanceBrowserPage.AlbumRecord -> "AlbumRecord"
                     },
                     state.selectedSongKey.orEmpty(), state.selectedSongIndexHint,
                     state.rootListState.firstVisibleItemIndex, state.rootListState.firstVisibleItemScrollOffset,
@@ -282,7 +336,8 @@ class PocketAdvanceNavigationState(
                         ((visible?.takeIf { it.index == state.songsListState.firstVisibleItemIndex }?.key as? String)
                             ?: state.restoredSongsViewportKey).orEmpty()
                     },
-                    state.artistsCursor.save(), state.retainedArtistKey.orEmpty(), state.artistSongsCursor.save()
+                    state.artistsCursor.save(), state.retainedArtistKey.orEmpty(), state.artistSongsCursor.save(),
+                    state.albumsCursor.save(), state.retainedAlbumKey, state.albumTracksCursor.save()
                 )
             },
             restore = { saved ->
@@ -296,11 +351,17 @@ class PocketAdvanceNavigationState(
                     artistsCursor.restore(values?.getOrNull(9))
                     retainedArtistKey = (values?.getOrNull(10) as? String)?.takeIf(String::isNotEmpty)
                     artistSongsCursor.restore(values?.getOrNull(11))
+                    albumsCursor.restore(values?.getOrNull(12))
+                    retainedAlbumKey = values?.getOrNull(13) as? String
+                    albumTracksCursor.restore(values?.getOrNull(14))
                     browserPage = when (values?.getOrNull(1)) {
                         "Songs" -> PocketAdvanceBrowserPage.Songs
                         "Artists" -> PocketAdvanceBrowserPage.Artists
                         "ArtistSongs" -> retainedArtistKey?.let { PocketAdvanceBrowserPage.ArtistSongs(it) }
                             ?: PocketAdvanceBrowserPage.Artists
+                        "AlbumCatalogue" -> PocketAdvanceBrowserPage.AlbumCatalogue
+                        "AlbumRecord" -> retainedAlbumKey?.let { PocketAdvanceBrowserPage.AlbumRecord(it) }
+                            ?: PocketAdvanceBrowserPage.AlbumCatalogue
                         else -> PocketAdvanceBrowserPage.Root
                     }
                     selectedSongKey = (values?.getOrNull(2) as? String)?.takeIf { it.isNotEmpty() }

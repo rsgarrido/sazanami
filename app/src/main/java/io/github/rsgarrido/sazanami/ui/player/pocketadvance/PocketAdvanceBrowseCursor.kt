@@ -8,9 +8,9 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
-/** A compact cursor/viewport for the Artists list or the last opened artist's tracks. */
+/** A compact browse-list cursor/viewport. Empty canonical album-folder keys are saveable too. */
 @Stable
-internal class PocketAdvanceBrowseCursor {
+internal class PocketAdvanceBrowseCursor(private val preserveEmptyKeys: Boolean = false) {
     var selectedKey by mutableStateOf<String?>(null)
         private set
     private var indexHint by mutableIntStateOf(0)
@@ -80,20 +80,20 @@ internal class PocketAdvanceBrowseCursor {
 
     fun save(): List<Any> {
         val visible = listState.layoutInfo.visibleItemsInfo.firstOrNull()
-        val viewportKey = if (selectedKey == null) "" else {
-            ((visible?.takeIf { it.index == listState.firstVisibleItemIndex }?.key as? String)
-                ?: restoredViewportKey).orEmpty()
+        val viewportKey = if (selectedKey == null) null else {
+            (visible?.takeIf { it.index == listState.firstVisibleItemIndex }?.key as? String) ?: restoredViewportKey
         }
-        return listOf(selectedKey.orEmpty(), indexHint, listState.firstVisibleItemIndex,
-            listState.firstVisibleItemScrollOffset, viewportKey)
+        val values = listOf(selectedKey.orEmpty(), indexHint, listState.firstVisibleItemIndex,
+            listState.firstVisibleItemScrollOffset, viewportKey.orEmpty())
+        return if (preserveEmptyKeys) values + listOf(selectedKey != null, viewportKey != null) else values
     }
 
     fun restore(saved: Any?) {
         val values = saved as? List<*> ?: return
-        selectedKey = (values.getOrNull(0) as? String)?.takeIf(String::isNotEmpty)
+        selectedKey = (values.getOrNull(0) as? String)?.takeIf { it.isNotEmpty() || (preserveEmptyKeys && values.getOrNull(5) == true) }
         indexHint = ((values.getOrNull(1) as? Int) ?: 0).coerceAtLeast(0)
         listState = LazyListState(((values.getOrNull(2) as? Int) ?: 0).coerceAtLeast(0),
             ((values.getOrNull(3) as? Int) ?: 0).coerceAtLeast(0))
-        restoredViewportKey = (values.getOrNull(4) as? String)?.takeIf(String::isNotEmpty)
+        restoredViewportKey = (values.getOrNull(4) as? String)?.takeIf { it.isNotEmpty() || (preserveEmptyKeys && values.getOrNull(6) == true) }
     }
 }

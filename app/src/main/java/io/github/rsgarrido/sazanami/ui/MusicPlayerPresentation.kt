@@ -157,6 +157,7 @@ internal fun prepareMusicPlayerPresentation(
     pocketAdvanceNavigationState: PocketAdvanceNavigationState = rememberPocketAdvanceNavigationState(),
     isLibraryReady: Boolean = true,
     artistSortState: LibrarySortState = LibrarySortState(LibrarySortOption.NAME, LibrarySortDirection.ASCENDING),
+    albumSortState: LibrarySortState = LibrarySortState(LibrarySortOption.TITLE, LibrarySortDirection.ASCENDING),
 ): @Composable BoxScope.(PlayerEndpointBounds) -> Unit {
     PocketAdvanceNavigationLifecycleEffect(pocketAdvanceNavigationState, playerMorphState, playerPresentation.identity)
     // Existing choreography stays theme-local. Both endpoints below receive this same resolution.
@@ -532,6 +533,7 @@ internal fun prepareMusicPlayerPresentation(
                 pocketAdvanceNavigationState = pocketAdvanceNavigationState,
                 isLibraryReady = isLibraryReady,
                 artistSortState = artistSortState,
+                albumSortState = albumSortState,
                 retroRackMorphBounds = retroRackMorphBounds,
                 pocketFlipMorphBounds = pocketFlipMorphBounds,
                 pocketCassetteMorphBounds = pocketCassetteMorphBounds,

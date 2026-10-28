@@ -164,7 +164,8 @@ fun ExpandedPlayerThemeHost(
     pocketAdvanceNavigationState: PocketAdvanceNavigationState = rememberPocketAdvanceNavigationState(),
     isLibraryReady: Boolean = true,
     songsRepeatAllowed: Boolean = true,
-    artistSortState: LibrarySortState = LibrarySortState(LibrarySortOption.NAME, LibrarySortDirection.ASCENDING)
+    artistSortState: LibrarySortState = LibrarySortState(LibrarySortOption.NAME, LibrarySortDirection.ASCENDING),
+    albumSortState: LibrarySortState = LibrarySortState(LibrarySortOption.TITLE, LibrarySortDirection.ASCENDING)
 ) {
     val selectedPlayerTheme = when (val identity = playerPresentation.identity) {
         is PlayerPresentationIdentity.Existing -> identity.theme
@@ -207,6 +208,7 @@ fun ExpandedPlayerThemeHost(
                     onSongClick = onSongClick,
                     isLibraryReady = isLibraryReady,
                     artistSortState = artistSortState,
+                    albumSortState = albumSortState,
                     songsRepeatAllowed = songsRepeatAllowed,
                     browserVisible = browserVisible,
                     modifier = if (visual.inputEnabled && !browserVisible) Modifier.semantics {

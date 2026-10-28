@@ -71,21 +71,22 @@ class PocketAdvanceNavigationStateTest {
     }
 
     @Test
-    fun unavailableEntriesNeverOpenADestination() {
+    fun allFourRootEntriesAreAvailableAndOpenTheirTypedDestinations() {
         val navigation = PocketAdvanceNavigationState()
-        navigation.openBrowser()
-        navigation.moveSelectionDown() // Songs and Artists are available; only Albums remains unavailable.
-        navigation.moveSelectionDown()
-        PocketAdvanceRootEntry.entries.filterNot { it.isAvailable }.forEach { entry ->
-            navigation.moveSelectionDown()
-            assertEquals(entry, navigation.selectedRootEntry)
-            assertFalse(entry.isAvailable)
-            navigation.confirmSelection()
+        val destinations = listOf(PocketAdvanceBrowserPage.Songs, PocketAdvanceBrowserPage.Artists,
+            PocketAdvanceBrowserPage.AlbumCatalogue)
+        PocketAdvanceRootEntry.entries.drop(1).zip(destinations).forEach { (entry, destination) ->
+            navigation.openBrowser()
+            assertTrue(entry.isAvailable)
             navigation.activateRootEntry(entry)
-            assertEquals(PocketAdvanceLcdMode.MusicBrowser, navigation.lcdMode)
-            assertEquals(PocketAdvanceBrowserPage.Root, navigation.browserPage)
+            assertEquals(destination, navigation.browserPage)
             assertEquals(entry, navigation.selectedRootEntry)
+            assertEquals(PocketAdvanceLcdMode.MusicBrowser, navigation.lcdMode)
+            navigation.back()
+            assertEquals(PocketAdvanceBrowserPage.Root, navigation.browserPage)
         }
+        navigation.activateRootEntry(PocketAdvanceRootEntry.NowPlaying)
+        assertEquals(PocketAdvanceLcdMode.NowPlaying, navigation.lcdMode)
     }
 
     @Test

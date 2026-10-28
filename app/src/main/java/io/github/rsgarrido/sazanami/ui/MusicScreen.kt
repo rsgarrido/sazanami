@@ -1420,6 +1420,7 @@ internal fun MusicScreen(
                     pocketAdvanceNavigationState = pocketAdvanceNavigationState,
                     isLibraryReady = !isLibraryLoading && !isLibraryRefreshing && libraryErrorMessage == null,
                     artistSortState = selectedArtistSortState,
+                    albumSortState = selectedAlbumSortState,
                     playerPresentationEpoch = playerBoundary.epoch,
                     playerPresentationInputEnabled = playerBoundary.inputEnabled,
                     selectedModernArtworkTransitionStyle = selectedModernArtworkTransitionStyle,

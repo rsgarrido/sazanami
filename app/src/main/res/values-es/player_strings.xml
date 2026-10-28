@@ -156,6 +156,15 @@
     <string name="pocket_advance_no_artist">Ningún artista disponible</string>
     <string name="pocket_advance_artist_songs">Canciones de %1$s</string>
     <string name="pocket_advance_artist_unavailable">Artista no disponible</string>
+    <string name="pocket_advance_album_archive">ARCHIVO DE ÁLBUMES</string>
+    <string name="pocket_advance_back_archive">Volver al catálogo de álbumes</string>
+    <string name="pocket_advance_no_album">Ningún álbum disponible</string>
+    <string name="pocket_advance_album_unavailable">Álbum no disponible</string>
+    <string name="pocket_advance_album_tracks">Canciones de %1$s</string>
+    <plurals name="pocket_advance_disc_count">
+        <item quantity="one">%d disco</item>
+        <item quantity="other">%d discos</item>
+    </plurals>
     <string name="pocket_advance_button_a">A · REPRODUCIR</string>
     <string name="pocket_advance_button_a_pause">A · PAUSA</string>
     <string name="pocket_advance_button_b">B · CERRAR</string>

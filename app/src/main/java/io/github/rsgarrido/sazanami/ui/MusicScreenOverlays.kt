@@ -116,7 +116,8 @@ fun MusicScreenOverlays(
     playerPresentationInputEnabled: Boolean = true,
     pocketAdvanceNavigationState: PocketAdvanceNavigationState = rememberPocketAdvanceNavigationState(),
     isLibraryReady: Boolean = true,
-    artistSortState: LibrarySortState = LibrarySortState(LibrarySortOption.NAME, LibrarySortDirection.ASCENDING)
+    artistSortState: LibrarySortState = LibrarySortState(LibrarySortOption.NAME, LibrarySortDirection.ASCENDING),
+    albumSortState: LibrarySortState = LibrarySortState(LibrarySortOption.TITLE, LibrarySortDirection.ASCENDING)
 ) {
     val isPlayerExpanded = playerMorphState.shouldComposeExpanded
     val setSystemBarSurface = LocalSystemBarSurfaceSetter.current
@@ -253,6 +254,7 @@ fun MusicScreenOverlays(
                     pocketAdvanceNavigationState = pocketAdvanceNavigationState,
                     isLibraryReady = isLibraryReady,
                     artistSortState = artistSortState,
+                    albumSortState = albumSortState,
                     // A pointer fence alone cannot stop a timer that started before an overlay opened.
                     songsRepeatAllowed = !expandedInputBlocked && !isExpandedUpNextSheetVisible &&
                         !isQueueHubVisible && !isSleepTimerDialogVisible && !isCreatePlaylistDialogVisible &&
