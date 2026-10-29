@@ -18,6 +18,7 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import io.github.rsgarrido.sazanami.data.PlayerTheme
+import io.github.rsgarrido.sazanami.data.TabletLandscapeTheme
 import io.github.rsgarrido.sazanami.data.FolderSelection
 import io.github.rsgarrido.sazanami.data.FolderSelectionMode
 import io.github.rsgarrido.sazanami.data.home.HomePin
@@ -90,6 +91,7 @@ data class AppPreferencesState(
     val appFont: AppFont = AppFont.SAZANAMI,
     val appAppearance: AppAppearance = AppAppearance.DARK,
     val selectedPlayerTheme: PlayerTheme = PlayerTheme.DEFAULT,
+    val tabletLandscapeTheme: TabletLandscapeTheme = TabletLandscapeTheme.NORMAL_PLAYER,
     val playerThemeTokenOverrides: Map<PlayerTheme, PlayerThemeTokenOverrides> = emptyMap(),
     val modernArtworkTransitionStyle: ModernArtworkTransitionStyle =
         ModernArtworkTransitionStyle.SLIDE,
@@ -163,6 +165,10 @@ class AppPreferencesRepository private constructor(
 
     suspend fun setSelectedPlayerTheme(theme: PlayerTheme) = edit {
         it[Keys.selectedPlayerTheme] = theme.id
+    }
+
+    suspend fun setTabletLandscapeTheme(theme: TabletLandscapeTheme) = edit {
+        it[Keys.tabletLandscapeTheme] = theme.id
     }
 
     suspend fun setAppFont(appFont: AppFont) = edit {
@@ -620,6 +626,7 @@ class AppPreferencesRepository private constructor(
         preferences.writeAppFont(restored.appFont)
         preferences[Keys.appAppearance] = restored.appAppearance.storageValue
         preferences[Keys.selectedPlayerTheme] = restored.selectedPlayerTheme.id
+        preferences[Keys.tabletLandscapeTheme] = restored.tabletLandscapeTheme.id
         preferences[Keys.modernArtworkTransitionStyle] =
             restored.modernArtworkTransitionStyle.storageValue
         preferences.writeRestoredModernAppearance(restored)
@@ -709,6 +716,7 @@ internal fun decodeAppPreferences(preferences: Preferences): AppPreferencesState
         appFont = AppFont.fromStorageValue(preferences[Keys.appFont]),
         appAppearance = AppAppearance.fromStorageValue(preferences[Keys.appAppearance]),
         selectedPlayerTheme = PlayerTheme.fromId(preferences[Keys.selectedPlayerTheme]),
+        tabletLandscapeTheme = TabletLandscapeTheme.fromId(preferences[Keys.tabletLandscapeTheme]),
         playerThemeTokenOverrides = PlayerTheme.entries.associateWith { emptyOverrides() }
             .mapValues { (theme, _) ->
                 PlayerThemeTokenOverrides(
@@ -1257,6 +1265,7 @@ private object Keys {
     val appFont = stringPreferencesKey("app_font")
     val appAppearance = stringPreferencesKey("app_appearance")
     val selectedPlayerTheme = stringPreferencesKey("selected_player_theme")
+    val tabletLandscapeTheme = stringPreferencesKey("tablet_landscape_theme")
     val modernArtworkTransitionStyle = stringPreferencesKey("artwork_transition_style")
     val modernLandscapeLayout = stringPreferencesKey("modern_landscape_layout")
     val activeModernAppearanceChoice = stringPreferencesKey("modern_active_appearance_choice")

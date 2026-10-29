@@ -109,6 +109,10 @@
     <string name="settings_choose_font">Elegir fuente de la aplicación</string>
     <string name="settings_player_theme">Tema del reproductor</string>
     <string name="settings_choose_player_theme">Elegir tema del reproductor</string>
+    <string name="settings_tablet_landscape_theme">Tema para tabletas en horizontal</string>
+    <string name="settings_choose_tablet_landscape_theme">Elegir tema para tabletas en horizontal</string>
+    <string name="settings_tablet_landscape_theme_summary">Pocket Advance solo se activa en diseños horizontales compatibles de tabletas a pantalla completa. En vertical y en otros diseños no compatibles se usa el tema normal del reproductor.</string>
+    <string name="tablet_landscape_theme_normal_player">Usar reproductor normal</string>
     <string name="settings_artwork_transition_style">Transición de portada</string>
     <string name="settings_choose_artwork_transition_style">Elegir transición de portada</string>
     <string name="settings_customize_default_player">Personalizar reproductor predeterminado</string>

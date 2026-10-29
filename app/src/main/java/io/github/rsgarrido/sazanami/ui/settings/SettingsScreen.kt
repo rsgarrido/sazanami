@@ -53,6 +53,7 @@ import io.github.rsgarrido.sazanami.data.preferences.AppAppearance
 import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.data.FolderSelectionMode
 import io.github.rsgarrido.sazanami.data.PlayerTheme
+import io.github.rsgarrido.sazanami.data.TabletLandscapeTheme
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.audio.AudioOffloadPreference
 import io.github.rsgarrido.sazanami.player.replaygain.ReplayGainMode
@@ -69,7 +70,6 @@ import io.github.rsgarrido.sazanami.ui.player.modern.labelRes
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerAppearance
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernLandscapeLayout
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernAppearanceChoice
-import io.github.rsgarrido.sazanami.ui.player.PocketAdvanceDevelopmentSettings
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokenField
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 import io.github.rsgarrido.sazanami.ui.player.theme.customizationOptions
@@ -107,6 +107,8 @@ fun SettingsScreen(
     onAppAppearanceSelected: (AppAppearance) -> Unit = {},
     selectedPlayerThemeTokens: PlayerThemeTokens,
     onPlayerThemeSelected: (PlayerTheme) -> Unit,
+    selectedTabletLandscapeTheme: TabletLandscapeTheme = TabletLandscapeTheme.NORMAL_PLAYER,
+    onTabletLandscapeThemeSelected: (TabletLandscapeTheme) -> Unit = {},
     onUpdatePlayerThemeTokenOverride: (PlayerTheme, PlayerThemeTokenField, Color) -> Unit,
     onResetPlayerThemeTokenOverrides: (PlayerTheme) -> Unit,
     selectedModernArtworkTransitionStyle: ModernArtworkTransitionStyle,
@@ -492,6 +494,10 @@ fun SettingsScreen(
                 navigationContentDescription = stringResource(R.string.settings_choose_player_theme)
             )
 
+            SettingsDivider()
+
+            TabletLandscapeThemeSettings(selectedTabletLandscapeTheme, onTabletLandscapeThemeSelected)
+
             if (selectedPlayerTheme == PlayerTheme.DEFAULT) {
                 SettingsDivider()
 
@@ -627,8 +633,6 @@ fun SettingsScreen(
                 navigationContentDescription = stringResource(R.string.settings_help_open_about)
             )
         }
-
-        PocketAdvanceDevelopmentSettings()
 
         Spacer(modifier = Modifier.height(32.dp))
     }

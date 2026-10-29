@@ -56,6 +56,7 @@ import io.github.rsgarrido.sazanami.data.FolderSelectionMode
 import io.github.rsgarrido.sazanami.data.buildFolderBrowseIndex
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.PlayerTheme
+import io.github.rsgarrido.sazanami.data.TabletLandscapeTheme
 import io.github.rsgarrido.sazanami.data.preferences.AppFont
 import io.github.rsgarrido.sazanami.data.preferences.AppAppearance
 import io.github.rsgarrido.sazanami.data.Playlist
@@ -107,16 +108,12 @@ import io.github.rsgarrido.sazanami.ui.player.modern.defaultPlayerLayout
 import io.github.rsgarrido.sazanami.ui.player.PlayerMorphHost
 import io.github.rsgarrido.sazanami.ui.player.PlayerPresentationIdentity
 import io.github.rsgarrido.sazanami.ui.player.resolvePlayerPresentation
-import io.github.rsgarrido.sazanami.ui.player.ResolvedPlayerPresentation
+import io.github.rsgarrido.sazanami.ui.player.tabletLandscapePlayerCandidate
 import io.github.rsgarrido.sazanami.ui.player.TabletLandscapePlayerContext
-import io.github.rsgarrido.sazanami.ui.player.TabletLandscapePlayerCandidate
 import io.github.rsgarrido.sazanami.ui.player.rememberTabletLandscapePlayerEnvironment
 import io.github.rsgarrido.sazanami.ui.player.pocketadvance.rememberPocketAdvanceNavigationState
-import io.github.rsgarrido.sazanami.ui.player.rememberPocketAdvanceDevelopmentState
-import io.github.rsgarrido.sazanami.ui.player.LocalPocketAdvanceDevelopmentState
 import io.github.rsgarrido.sazanami.ui.player.PlayerPresentationViewport
 import io.github.rsgarrido.sazanami.ui.player.rememberPlayerPresentationBoundary
-import io.github.rsgarrido.sazanami.ui.player.pocketadvance.minimumPocketAdvanceSize
 import io.github.rsgarrido.sazanami.ui.state.PlaybackProgressUiState
 import io.github.rsgarrido.sazanami.ui.state.LibraryAppearanceUiState
 import io.github.rsgarrido.sazanami.ui.state.LibraryRefreshSummary
@@ -279,6 +276,8 @@ internal fun MusicScreen(
     onAppAppearanceSelected: (AppAppearance) -> Unit,
     selectedPlayerThemeTokens: PlayerThemeTokens,
     onPlayerThemeSelected: (PlayerTheme) -> Unit,
+    selectedTabletLandscapeTheme: TabletLandscapeTheme = TabletLandscapeTheme.NORMAL_PLAYER,
+    onTabletLandscapeThemeSelected: (TabletLandscapeTheme) -> Unit = {},
     onUpdatePlayerThemeTokenOverride: (PlayerTheme, PlayerThemeTokenField, Color) -> Unit,
     onResetPlayerThemeTokenOverrides: (PlayerTheme) -> Unit,
     selectedModernArtworkTransitionStyle: ModernArtworkTransitionStyle,
@@ -326,15 +325,13 @@ internal fun MusicScreen(
         playerTheme = selectedPlayerTheme,
         tokens = selectedPlayerThemeTokens
     )
-    val developmentState = rememberPocketAdvanceDevelopmentState()
     val directStatusVisible = if (io.github.rsgarrido.sazanami.BuildConfig.DEBUG) {
         val direct by io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackBridge.state.collectAsState()
         direct.enabled
     } else false
     // Resolve against the very same viewport that hosts both endpoints, including the USB banner.
     CompositionLocalProvider(
-        LocalAppShellAccent provides appShellAccent,
-        LocalPocketAdvanceDevelopmentState provides developmentState
+        LocalAppShellAccent provides appShellAccent
     ) {
     Column(modifier = modifier.fillMaxSize().appShellBackground()) {
         if (directStatusVisible) {
@@ -438,7 +435,8 @@ internal fun MusicScreen(
     var isDiscardTagChangesDialogVisible by remember { mutableStateOf(false) }
     var selectedArtworkUriForTagEdit by remember { mutableStateOf<Uri?>(null) }
 
-    val playerEnvironment = if (developmentState.enabled) rememberTabletLandscapePlayerEnvironment() else null
+    val playerEnvironment = if (selectedTabletLandscapeTheme == TabletLandscapeTheme.POCKET_ADVANCE)
+        rememberTabletLandscapePlayerEnvironment() else null
     val playerDensity = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
     val persistentInsets = WindowInsets.systemBarsIgnoringVisibility.union(WindowInsets.displayCutout).let {
@@ -459,10 +457,9 @@ internal fun MusicScreen(
         context = playerEnvironment?.let {
             TabletLandscapePlayerContext(it.deviceKind, it.smallestScreenWidthDp, usablePlayerSize)
         },
-        landscapeCandidate = if (developmentState.enabled) TabletLandscapePlayerCandidate(
-            ResolvedPlayerPresentation(PlayerPresentationIdentity.PocketAdvance, selectedPlayerThemeTokens),
-            minimumPocketAdvanceSize(playerDensity.fontScale)
-        ) else null
+        landscapeCandidate = tabletLandscapePlayerCandidate(
+            selectedTabletLandscapeTheme, selectedPlayerThemeTokens, playerDensity.fontScale
+        )
     )
     val playerBoundary = rememberPlayerPresentationBoundary(
         requested = requestedPlayerPresentation,
@@ -1204,6 +1201,8 @@ internal fun MusicScreen(
         onAppAppearanceSelected = onAppAppearanceSelected,
         selectedPlayerThemeTokens = selectedPlayerThemeTokens,
         onPlayerThemeSelected = onPlayerThemeSelected,
+        selectedTabletLandscapeTheme = selectedTabletLandscapeTheme,
+        onTabletLandscapeThemeSelected = onTabletLandscapeThemeSelected,
         onUpdatePlayerThemeTokenOverride = onUpdatePlayerThemeTokenOverride,
         onResetPlayerThemeTokenOverrides = onResetPlayerThemeTokenOverrides,
         selectedModernArtworkTransitionStyle = selectedModernArtworkTransitionStyle,

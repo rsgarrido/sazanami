@@ -109,6 +109,11 @@
     <string name="settings_choose_font">Choose application font</string>
     <string name="settings_player_theme">Player Theme</string>
     <string name="settings_choose_player_theme">Choose player theme</string>
+    <string name="settings_tablet_landscape_theme">Tablet Landscape Theme</string>
+    <string name="settings_choose_tablet_landscape_theme">Choose tablet landscape theme</string>
+    <string name="settings_tablet_landscape_theme_summary">Pocket Advance activates only in supported full-screen tablet landscape layouts. Portrait and other unsupported layouts use your normal Player Theme.</string>
+    <string name="tablet_landscape_theme_normal_player">Use normal player</string>
+    <string name="tablet_landscape_theme_pocket_advance" translatable="false">Pocket Advance</string>
     <string name="settings_artwork_transition_style">Artwork transition style</string>
     <string name="settings_choose_artwork_transition_style">Choose artwork transition style</string>
     <string name="settings_customize_default_player">Customize Default Player</string>

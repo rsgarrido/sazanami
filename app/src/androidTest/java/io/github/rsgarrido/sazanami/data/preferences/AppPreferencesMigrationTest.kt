@@ -8,6 +8,8 @@ import androidx.datastore.preferences.SharedPreferencesMigration
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import io.github.rsgarrido.sazanami.data.PlayerTheme
+import io.github.rsgarrido.sazanami.data.TabletLandscapeTheme
+import androidx.datastore.preferences.preferencesDataStoreFile
 import io.github.rsgarrido.sazanami.data.FolderSelection
 import io.github.rsgarrido.sazanami.data.FolderSelectionMode
 import io.github.rsgarrido.sazanami.player.replaygain.ReplayGainMode
@@ -37,6 +39,77 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class AppPreferencesMigrationTest {
+    @Test
+    fun tabletLandscapePreferencePersistsAcrossReopenWithoutReplacingNormalThemeOrColors() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val filename = "tablet_landscape_theme_" + System.nanoTime() + ".preferences_pb"
+        val firstJob = SupervisorJob()
+        val reopenedJob = SupervisorJob()
+        val overrides = PlayerThemeTokenOverrides(shellColor = Color(0xFF123456), accentColor = Color(0xFF456789))
+        try {
+            val repository = AppPreferencesRepository.create(context, CoroutineScope(firstJob + Dispatchers.IO), filename, emptyList())
+            assertEquals(TabletLandscapeTheme.NORMAL_PLAYER, withTimeout(5_000) { repository.awaitLoadedState() }.tabletLandscapeTheme)
+            repository.setSelectedPlayerTheme(PlayerTheme.CLASSIC_WHEEL)
+            repository.setThemeTokenOverrides(PlayerTheme.CLASSIC_WHEEL, overrides)
+            repository.setTabletLandscapeTheme(TabletLandscapeTheme.POCKET_ADVANCE)
+            val selected = withTimeout(5_000) { repository.state.firstMatching {
+                it.tabletLandscapeTheme == TabletLandscapeTheme.POCKET_ADVANCE &&
+                    it.playerThemeTokenOverrides[PlayerTheme.CLASSIC_WHEEL] == overrides
+            } }
+            assertEquals(PlayerTheme.CLASSIC_WHEEL, selected.selectedPlayerTheme)
+            repository.setSelectedPlayerTheme(PlayerTheme.POCKET_CASSETTE)
+            withTimeout(5_000) { repository.state.firstMatching { it.selectedPlayerTheme == PlayerTheme.POCKET_CASSETTE } }
+            firstJob.cancelAndJoin()
+
+            val reopened = AppPreferencesRepository.create(context, CoroutineScope(reopenedJob + Dispatchers.IO), filename, emptyList())
+            // The first loaded snapshot already contains both durable selections.
+            val restored = withTimeout(5_000) { reopened.awaitLoadedState() }
+            assertEquals(TabletLandscapeTheme.POCKET_ADVANCE, restored.tabletLandscapeTheme)
+            assertEquals(PlayerTheme.POCKET_CASSETTE, restored.selectedPlayerTheme)
+            assertEquals(overrides, restored.playerThemeTokenOverrides[PlayerTheme.CLASSIC_WHEEL])
+            reopened.setTabletLandscapeTheme(TabletLandscapeTheme.NORMAL_PLAYER)
+            val disabled = withTimeout(5_000) { reopened.state.firstMatching { it.tabletLandscapeTheme == TabletLandscapeTheme.NORMAL_PLAYER } }
+            assertEquals(PlayerTheme.POCKET_CASSETTE, disabled.selectedPlayerTheme)
+            assertEquals(restored.playerThemeTokenOverrides, disabled.playerThemeTokenOverrides)
+        } finally {
+            firstJob.cancelAndJoin()
+            reopenedJob.cancelAndJoin()
+            context.preferencesDataStoreFile(filename).delete()
+        }
+    }
+
+    @Test
+    fun replacementRestoresLandscapeChoiceAndOlderDefaultsWhileThemeResetsRemainIndependent() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val filename = "tablet_landscape_replace_" + System.nanoTime() + ".preferences_pb"
+        val job = SupervisorJob()
+        try {
+            val repository = AppPreferencesRepository.create(context, CoroutineScope(job + Dispatchers.IO), filename, emptyList())
+            withTimeout(5_000) { repository.awaitLoadedState() }
+            val overrides = PlayerThemeTokenOverrides(shellColor = Color(0xFF876543))
+            val restored = AppPreferencesState(selectedPlayerTheme = PlayerTheme.POCKET_CASSETTE,
+                tabletLandscapeTheme = TabletLandscapeTheme.POCKET_ADVANCE,
+                playerThemeTokenOverrides = mapOf(PlayerTheme.POCKET_CASSETTE to overrides))
+            repository.replaceAll(restored)
+            val selected = withTimeout(5_000) { repository.state.firstMatching { it.tabletLandscapeTheme == TabletLandscapeTheme.POCKET_ADVANCE } }
+            assertEquals(restored.selectedPlayerTheme, selected.selectedPlayerTheme)
+            assertEquals(restored.playerThemeTokenOverrides, selected.playerThemeTokenOverrides)
+            repository.selectModernAppearanceChoice(ModernAppearanceChoice.MINIMAL)
+            withTimeout(5_000) { repository.state.firstMatching { it.activeModernAppearanceChoice == ModernAppearanceChoice.MINIMAL } }
+            repository.resetModernPlayerAppearance()
+            val reset = withTimeout(5_000) { repository.state.firstMatching { it.activeModernAppearanceChoice == ModernAppearanceChoice.MY_PLAYER } }
+            assertEquals(TabletLandscapeTheme.POCKET_ADVANCE, reset.tabletLandscapeTheme)
+            assertEquals(restored.playerThemeTokenOverrides, reset.playerThemeTokenOverrides)
+            repository.replaceAll(restored.copy(tabletLandscapeTheme = TabletLandscapeTheme.NORMAL_PLAYER))
+            val oldDefault = withTimeout(5_000) { repository.state.firstMatching { it.tabletLandscapeTheme == TabletLandscapeTheme.NORMAL_PLAYER } }
+            assertEquals(restored.selectedPlayerTheme, oldDefault.selectedPlayerTheme)
+            assertEquals(restored.playerThemeTokenOverrides, oldDefault.playerThemeTokenOverrides)
+        } finally {
+            job.cancelAndJoin()
+            context.preferencesDataStoreFile(filename).delete()
+        }
+    }
+
     @Test
     fun landscapeLayoutPersistsAcrossReopenAndFullRestoreWithoutChangingAppearanceChoice() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()

@@ -21,6 +21,7 @@ import io.github.rsgarrido.sazanami.data.LibraryFolder
 import io.github.rsgarrido.sazanami.data.ListeningRankingCategory
 import io.github.rsgarrido.sazanami.data.ListeningTrendMetric
 import io.github.rsgarrido.sazanami.data.PlayerTheme
+import io.github.rsgarrido.sazanami.data.TabletLandscapeTheme
 import io.github.rsgarrido.sazanami.data.Playlist
 import io.github.rsgarrido.sazanami.data.PlaylistFolder
 import io.github.rsgarrido.sazanami.data.PlaylistSong
@@ -142,6 +143,8 @@ internal fun prepareMusicBodyPresentation(
     onAppAppearanceSelected: (AppAppearance) -> Unit,
     selectedPlayerThemeTokens: PlayerThemeTokens,
     onPlayerThemeSelected: (PlayerTheme) -> Unit,
+    selectedTabletLandscapeTheme: TabletLandscapeTheme = TabletLandscapeTheme.NORMAL_PLAYER,
+    onTabletLandscapeThemeSelected: (TabletLandscapeTheme) -> Unit = {},
     onUpdatePlayerThemeTokenOverride: (PlayerTheme, PlayerThemeTokenField, Color) -> Unit,
     onResetPlayerThemeTokenOverrides: (PlayerTheme) -> Unit,
     selectedModernArtworkTransitionStyle: ModernArtworkTransitionStyle,
@@ -565,6 +568,8 @@ internal fun prepareMusicBodyPresentation(
             onAppAppearanceSelected = onAppAppearanceSelected,
             selectedPlayerThemeTokens = selectedPlayerThemeTokens,
             onPlayerThemeSelected = onPlayerThemeSelected,
+            selectedTabletLandscapeTheme = selectedTabletLandscapeTheme,
+            onTabletLandscapeThemeSelected = onTabletLandscapeThemeSelected,
             onUpdatePlayerThemeTokenOverride = onUpdatePlayerThemeTokenOverride,
             onResetPlayerThemeTokenOverrides = onResetPlayerThemeTokenOverrides,
             selectedModernArtworkTransitionStyle = selectedModernArtworkTransitionStyle,

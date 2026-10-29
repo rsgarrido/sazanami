@@ -13,6 +13,7 @@ import io.github.rsgarrido.sazanami.data.artistIdentity
 import io.github.rsgarrido.sazanami.data.FolderSelection
 import io.github.rsgarrido.sazanami.data.ListeningHistoryRepository
 import io.github.rsgarrido.sazanami.data.PlayerTheme
+import io.github.rsgarrido.sazanami.data.TabletLandscapeTheme
 import io.github.rsgarrido.sazanami.data.PlaylistsRepository
 import io.github.rsgarrido.sazanami.data.PlaylistArtworkMode
 import io.github.rsgarrido.sazanami.data.visual.VisualAssetOwnerType
@@ -116,6 +117,7 @@ class BackupRepository(
                     .sorted(),
                 appAppearance = appPreferences.appAppearance.storageValue,
                 selectedPlayerThemeId = appPreferences.selectedPlayerTheme.id,
+                tabletLandscapeThemeId = appPreferences.tabletLandscapeTheme.id,
                 replayGainMode = appPreferences.replayGainMode.name,
                 audioOffloadPreference = appPreferences.audioOffloadPreference.name,
                 smoothPlayPauseEnabled = appPreferences.smoothPlayPauseEnabled,
@@ -449,6 +451,7 @@ class BackupRepository(
             AppPreferencesState(
                 appAppearance = preferences.toAppAppearance(),
                 selectedPlayerTheme = PlayerTheme.fromId(preferences.selectedPlayerThemeId),
+                tabletLandscapeTheme = TabletLandscapeTheme.fromId(preferences.tabletLandscapeThemeId),
                 playerThemeTokenOverrides = overrides,
                 modernArtworkTransitionStyle = ModernArtworkTransitionStyle.fromStorageValue(
                     preferences.modernArtworkTransitionStyle

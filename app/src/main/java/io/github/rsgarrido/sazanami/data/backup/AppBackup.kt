@@ -1,6 +1,7 @@
 package io.github.rsgarrido.sazanami.data.backup
 
 import io.github.rsgarrido.sazanami.data.preferences.AppAppearance
+import io.github.rsgarrido.sazanami.data.TabletLandscapeTheme
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 
@@ -42,6 +43,7 @@ data class BackupPreferences(
     val selectedLibraryFolders: List<String> = emptyList(),
     val appAppearance: String = AppAppearance.DARK.storageValue,
     val selectedPlayerThemeId: String = "",
+    val tabletLandscapeThemeId: String = TabletLandscapeTheme.NORMAL_PLAYER.id,
     val replayGainMode: String = "",
     val audioOffloadPreference: String = "",
     val smoothPlayPauseEnabled: Boolean = true,

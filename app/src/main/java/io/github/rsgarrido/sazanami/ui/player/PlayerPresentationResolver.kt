@@ -67,7 +67,7 @@ internal fun isTabletLandscapePlayerEligible(
 
 /**
  * Pure presentation policy: never writes preferences or owns playback, navigation, or morph state.
- * Only the development selector currently nominates Pocket Advance. Actual host constraints are
+ * The persisted tablet-landscape choice nominates Pocket Advance. Actual host constraints are
  * resolved above capability/endpoint consumers; the presentation boundary settles interrupted motion
  * before publishing a changed pair. This function never rewrites the primary selection or accents.
  */
