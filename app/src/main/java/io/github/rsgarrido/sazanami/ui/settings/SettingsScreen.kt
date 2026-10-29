@@ -197,7 +197,7 @@ fun SettingsScreen(
         isLibraryRefreshing -> stringResource(R.string.settings_scan_in_progress)
         libraryErrorMessage != null -> libraryErrorMessage
         lastLibraryRefreshSummary != null -> lastLibraryRefreshSummary.settingsSummary()
-        else -> stringResource(R.string.settings_scan_idle)
+        else -> null
     }
 
     Column(
@@ -231,7 +231,6 @@ fun SettingsScreen(
 
         SettingsSection(
             title = stringResource(R.string.settings_library_section),
-            description = stringResource(R.string.settings_library_section_summary),
             icon = AppShellIcons.AlbumStack
         ) {
             SettingsRow(
@@ -263,6 +262,7 @@ fun SettingsScreen(
                 SettingsRow(
                     title = stringResource(R.string.settings_embedded_artwork_only),
                     summary = stringResource(R.string.settings_embedded_artwork_only_summary),
+                    summaryMaxLines = Int.MAX_VALUE,
                     icon = AppShellIcons.AlbumStack,
                     onClick = {
                         isEmbeddedArtworkOnlyDialogVisible = true
@@ -297,7 +297,6 @@ fun SettingsScreen(
 
         SettingsSection(
             title = stringResource(R.string.settings_home_section),
-            description = stringResource(R.string.settings_home_section_summary),
             icon = Icons.Filled.Home
         ) {
             SettingsRow(
@@ -329,7 +328,6 @@ fun SettingsScreen(
 
         SettingsSection(
             title = stringResource(R.string.settings_playback_section),
-            description = stringResource(R.string.settings_playback_section_summary),
             icon = AppShellIcons.Equalizer
         ) {
             SettingsRow(
@@ -396,6 +394,7 @@ fun SettingsScreen(
             SettingsRow(
                 title = stringResource(R.string.settings_preserve_album_transitions),
                 summary = stringResource(R.string.settings_preserve_album_transitions_summary),
+                summaryMaxLines = Int.MAX_VALUE,
                 icon = AppShellIcons.AlbumStack,
                 trailingContent = {
                     Switch(
@@ -465,7 +464,6 @@ fun SettingsScreen(
 
         SettingsSection(
             title = stringResource(R.string.settings_player_section),
-            description = stringResource(R.string.settings_player_section_summary),
             icon = AppShellIcons.Palette
         ) {
             SettingsRow(
@@ -552,7 +550,6 @@ fun SettingsScreen(
 
         SettingsSection(
             title = stringResource(R.string.settings_history_section),
-            description = stringResource(R.string.settings_history_section_summary),
             icon = Icons.Filled.History
         ) {
             SettingsRow(
@@ -576,12 +573,12 @@ fun SettingsScreen(
 
         SettingsSection(
             title = stringResource(R.string.settings_data_section),
-            description = stringResource(R.string.settings_data_section_summary),
             icon = AppShellIcons.Diagnostics
         ) {
             SettingsRow(
                 title = stringResource(R.string.settings_export_backup),
                 summary = stringResource(R.string.settings_export_backup_summary),
+                summaryMaxLines = Int.MAX_VALUE,
                 icon = AppShellIcons.Export,
                 onClick = onExportBackupClick,
                 navigationContentDescription = stringResource(R.string.settings_export_backup_action)
@@ -592,6 +589,7 @@ fun SettingsScreen(
             SettingsRow(
                 title = stringResource(R.string.settings_restore_backup),
                 summary = stringResource(R.string.settings_restore_backup_summary),
+                summaryMaxLines = Int.MAX_VALUE,
                 icon = AppShellIcons.Restore,
                 onClick = onRestoreBackupClick,
                 navigationContentDescription = stringResource(R.string.settings_restore_backup_action)
@@ -612,12 +610,10 @@ fun SettingsScreen(
 
         SettingsSection(
             title = stringResource(R.string.settings_help_section_title),
-            description = stringResource(R.string.settings_help_section_summary),
             icon = Icons.AutoMirrored.Filled.HelpOutline
         ) {
             SettingsRow(
                 title = stringResource(R.string.settings_help_tips_title),
-                summary = stringResource(R.string.settings_help_tips_summary),
                 icon = Icons.Filled.TipsAndUpdates,
                 onClick = onTipsHelpClick,
                 navigationContentDescription = stringResource(R.string.settings_help_open_tips)

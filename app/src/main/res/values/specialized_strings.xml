@@ -93,7 +93,7 @@
     <string name="lyrics_unsynced">Unsynced lyrics</string>
     <string name="lyrics_loading">Loading local lyrics…</string>
     <string name="lyrics_rescan">Rescan</string>
-    <string name="lyrics_settings">Local Lyrics settings</string>
+    <string name="lyrics_settings">Local lyrics settings</string>
     <string name="lyrics_no_folder">No lyrics folder configured</string>
     <string name="lyrics_no_folder_detail">Select one or more folders containing local .lrc files.</string>
     <string name="lyrics_not_found">No local lyrics found</string>
@@ -113,7 +113,7 @@
     <string name="lyrics_candidate_path">%1$s — %2$s</string>
     <string name="lyrics_no_folders_selected">No folders selected. Local .lrc files will not be indexed.</string>
     <string name="lyrics_local_title">Local lyrics</string>
-    <string name="lyrics_local_description">Manage folders containing synced .lrc lyric files.</string>
+    <string name="lyrics_local_description">Folders with synced .lrc lyrics.</string>
     <string name="lyrics_folders">Lyrics folders</string>
     <string name="lyrics_persisted_access_missing">Persisted folder access is missing</string>
     <string name="lyrics_remove">Remove</string>

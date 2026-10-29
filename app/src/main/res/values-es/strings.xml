@@ -36,16 +36,14 @@
     <string name="usb_diagnostics_output_disconnected">DAC desconectado. La salida de Android sigue disponible.</string>
     <string name="usb_diagnostics_output_disabled">USB directo experimental está desactivado. La reproducción de Android sigue disponible.</string>
     <string name="usb_diagnostics_capture_live">Capturar estado del transporte USB en vivo</string>
-    <string name="settings_help_section_title">Ayuda y acerca de</string>
-    <string name="settings_help_section_summary">Consejos, enlaces del proyecto e información de la app.</string>
+    <string name="settings_help_section_title">Ayuda e información</string>
     <string name="settings_help_tips_title">Consejos y ayuda</string>
-    <string name="settings_help_tips_summary">Aprovecha mejor tu biblioteca y reproductor.</string>
-    <string name="settings_help_issue_title">Informar un problema</string>
-    <string name="settings_help_issue_summary">Abrir la plantilla de informe de errores en GitHub.</string>
+    <string name="settings_help_issue_title">Reportar un problema</string>
+    <string name="settings_help_issue_summary">Abre GitHub</string>
     <string name="settings_help_feature_title">Solicitar una función</string>
-    <string name="settings_help_feature_summary">Comparte una idea con la plantilla de solicitud de funciones en GitHub.</string>
+    <string name="settings_help_feature_summary">Abre GitHub</string>
     <string name="settings_help_about_title">Acerca de Sazanami</string>
-    <string name="settings_help_about_summary">Información de la app, privacidad y licencia.</string>
+    <string name="settings_help_about_summary">Privacidad y licencia</string>
     <string name="settings_help_open_tips">Abrir consejos y ayuda</string>
     <string name="settings_help_open_about">Abrir Acerca de Sazanami</string>
     <string name="settings_help_back">Volver a Configuración</string>
@@ -377,7 +375,7 @@
     <string name="usb_integrated_commands">Usa los controles del reproductor para pausar, reproducir, desplazarte por la pista, avanzar, retroceder, repetir y activar la reproducción aleatoria. La reproducción sigue la cola seleccionada. Una pista siguiente no compatible detiene la reproducción automática. Usa Detener para abortar con seguridad. Elige Audio de Android para volver; la reproducción normal permanece pausada.</string>
     <!-- USB Audio output selection; service session only. -->
     <string name="usb_settings_title">Audio USB</string>
-    <string name="usb_settings_entry_summary">Salida de Android y reproducción experimental opcional por USB directo.</string>
+    <string name="usb_settings_entry_summary">Audio de Android y USB directo experimental</string>
     <string name="usb_settings_open">Abrir ajustes de audio USB</string>
     <string name="usb_settings_output">Salida de audio</string>
     <string name="usb_settings_android">Audio de Android</string>
