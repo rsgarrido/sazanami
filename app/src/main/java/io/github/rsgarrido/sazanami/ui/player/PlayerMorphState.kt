@@ -16,6 +16,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.IntSize
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -134,6 +135,7 @@ class PlayerMorphState internal constructor(
     private var dragDistancePx = 0f
     private var dragProgressRangePx = 1f
     private var dragDistanceThresholdPx = 1f
+    private var presentationGeneration = 0L
 
     var targetPresentation by mutableStateOf(initialPresentation)
         private set
@@ -185,6 +187,25 @@ class PlayerMorphState internal constructor(
         }
     }
 
+    /**
+     * A Pocket Advance viewport/identity change is a presentation boundary, not another morph.
+     * Await cancellation before the caller publishes the incoming pair and fresh measurements.
+     * The current target preserves the user's expand/collapse intent, including an unfinished drag.
+     */
+    internal suspend fun settleForPresentationChange() {
+        val destination = targetPresentation
+        presentationGeneration += 1
+        settleJob?.cancelAndJoin()
+        settleJob = null
+        isDragging = false
+        dragDistancePx = 0f
+        dragStartPresentation = destination
+        animatedProgress.snapTo(destination.progress)
+        targetPresentation = destination
+        settledPresentation = destination
+        onSettledPresentationChanged(destination)
+    }
+
     fun beginDrag(containerHeightPx: Float) {
         if (containerHeightPx <= 0f) return
         beginDragWithRange(
@@ -218,7 +239,9 @@ class PlayerMorphState internal constructor(
         if (!isDragging) return
         dragDistancePx += deltaY
         val progressDelta = -deltaY / dragProgressRangePx
+        val generation = presentationGeneration
         coroutineScope.launch {
+            if (generation != presentationGeneration) return@launch
             animatedProgress.snapTo(
                 (animatedProgress.value + progressDelta).coerceIn(0f, 1f)
             )
@@ -228,7 +251,9 @@ class PlayerMorphState internal constructor(
     fun updateProgressFromDrag(progress: Float) {
         settleJob?.cancel()
         isDragging = true
+        val generation = presentationGeneration
         coroutineScope.launch {
+            if (generation != presentationGeneration) return@launch
             animatedProgress.snapTo(progress.coerceIn(0f, 1f))
         }
     }

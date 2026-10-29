@@ -52,6 +52,10 @@ import io.github.rsgarrido.sazanami.data.DEFAULT_BATCH_REFRESH_TIMEOUT_MS
 import io.github.rsgarrido.sazanami.data.scanBatchMetadataFiles
 import io.github.rsgarrido.sazanami.data.membershipKey
 import io.github.rsgarrido.sazanami.data.PlayerTheme
+import io.github.rsgarrido.sazanami.data.TabletLandscapeTheme
+import io.github.rsgarrido.sazanami.data.PocketAdvanceConsoleFinish
+import io.github.rsgarrido.sazanami.data.PocketAdvanceLcdPalette
+import io.github.rsgarrido.sazanami.data.PocketAdvanceControlsFinish
 import io.github.rsgarrido.sazanami.data.AnalyticsRangePreset
 import io.github.rsgarrido.sazanami.data.AnalyticsRangeSelection
 import io.github.rsgarrido.sazanami.data.AnalyticsZoneIdProvider
@@ -318,6 +322,8 @@ class MusicViewModel(
             ?: PlayerThemeTokenOverrides()
         PlayerAppearanceUiState(
             selectedTheme = selectedTheme,
+            tabletLandscapeTheme = preferences.tabletLandscapeTheme,
+            pocketAdvanceAppearance = preferences.pocketAdvanceAppearance,
             themeTokens = selectedTheme.defaultTokens().applyOverrides(overrides),
             modernArtworkTransitionStyle = preferences.modernArtworkTransitionStyle,
             modernPlayerAppearance = preferences.modernPlayerAppearance,
@@ -396,6 +402,26 @@ class MusicViewModel(
 
     fun selectPlayerTheme(playerTheme: PlayerTheme) {
         viewModelScope.launch { appPreferencesRepository.setSelectedPlayerTheme(playerTheme) }
+    }
+
+    fun selectTabletLandscapeTheme(theme: TabletLandscapeTheme) {
+        viewModelScope.launch { appPreferencesRepository.setTabletLandscapeTheme(theme) }
+    }
+
+    fun selectPocketAdvanceConsoleFinish(finish: PocketAdvanceConsoleFinish) {
+        viewModelScope.launch { appPreferencesRepository.setPocketAdvanceConsoleFinish(finish) }
+    }
+
+    fun selectPocketAdvanceLcdPalette(palette: PocketAdvanceLcdPalette) {
+        viewModelScope.launch { appPreferencesRepository.setPocketAdvanceLcdPalette(palette) }
+    }
+
+    fun selectPocketAdvanceControlsFinish(finish: PocketAdvanceControlsFinish) {
+        viewModelScope.launch { appPreferencesRepository.setPocketAdvanceControlsFinish(finish) }
+    }
+
+    fun resetPocketAdvanceAppearance() {
+        viewModelScope.launch { appPreferencesRepository.resetPocketAdvanceAppearance() }
     }
 
     fun selectAppFont(appFont: AppFont) {

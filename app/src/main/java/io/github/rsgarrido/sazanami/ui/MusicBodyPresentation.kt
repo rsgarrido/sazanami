@@ -21,6 +21,11 @@ import io.github.rsgarrido.sazanami.data.LibraryFolder
 import io.github.rsgarrido.sazanami.data.ListeningRankingCategory
 import io.github.rsgarrido.sazanami.data.ListeningTrendMetric
 import io.github.rsgarrido.sazanami.data.PlayerTheme
+import io.github.rsgarrido.sazanami.data.TabletLandscapeTheme
+import io.github.rsgarrido.sazanami.data.PocketAdvanceAppearance
+import io.github.rsgarrido.sazanami.data.PocketAdvanceConsoleFinish
+import io.github.rsgarrido.sazanami.data.PocketAdvanceLcdPalette
+import io.github.rsgarrido.sazanami.data.PocketAdvanceControlsFinish
 import io.github.rsgarrido.sazanami.data.Playlist
 import io.github.rsgarrido.sazanami.data.PlaylistFolder
 import io.github.rsgarrido.sazanami.data.PlaylistSong
@@ -142,6 +147,13 @@ internal fun prepareMusicBodyPresentation(
     onAppAppearanceSelected: (AppAppearance) -> Unit,
     selectedPlayerThemeTokens: PlayerThemeTokens,
     onPlayerThemeSelected: (PlayerTheme) -> Unit,
+    selectedTabletLandscapeTheme: TabletLandscapeTheme = TabletLandscapeTheme.NORMAL_PLAYER,
+    onTabletLandscapeThemeSelected: (TabletLandscapeTheme) -> Unit = {},
+    pocketAdvanceAppearance: PocketAdvanceAppearance = PocketAdvanceAppearance.Default,
+    onPocketAdvanceConsoleFinishSelected: (PocketAdvanceConsoleFinish) -> Unit = {},
+    onPocketAdvanceLcdPaletteSelected: (PocketAdvanceLcdPalette) -> Unit = {},
+    onPocketAdvanceControlsFinishSelected: (PocketAdvanceControlsFinish) -> Unit = {},
+    onResetPocketAdvanceAppearance: () -> Unit = {},
     onUpdatePlayerThemeTokenOverride: (PlayerTheme, PlayerThemeTokenField, Color) -> Unit,
     onResetPlayerThemeTokenOverrides: (PlayerTheme) -> Unit,
     selectedModernArtworkTransitionStyle: ModernArtworkTransitionStyle,
@@ -565,6 +577,13 @@ internal fun prepareMusicBodyPresentation(
             onAppAppearanceSelected = onAppAppearanceSelected,
             selectedPlayerThemeTokens = selectedPlayerThemeTokens,
             onPlayerThemeSelected = onPlayerThemeSelected,
+            selectedTabletLandscapeTheme = selectedTabletLandscapeTheme,
+            onTabletLandscapeThemeSelected = onTabletLandscapeThemeSelected,
+            pocketAdvanceAppearance = pocketAdvanceAppearance,
+            onPocketAdvanceConsoleFinishSelected = onPocketAdvanceConsoleFinishSelected,
+            onPocketAdvanceLcdPaletteSelected = onPocketAdvanceLcdPaletteSelected,
+            onPocketAdvanceControlsFinishSelected = onPocketAdvanceControlsFinishSelected,
+            onResetPocketAdvanceAppearance = onResetPocketAdvanceAppearance,
             onUpdatePlayerThemeTokenOverride = onUpdatePlayerThemeTokenOverride,
             onResetPlayerThemeTokenOverrides = onResetPlayerThemeTokenOverrides,
             selectedModernArtworkTransitionStyle = selectedModernArtworkTransitionStyle,

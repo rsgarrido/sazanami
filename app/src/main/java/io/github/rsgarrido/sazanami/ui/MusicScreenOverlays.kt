@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -17,6 +18,9 @@ import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.data.Song
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortState
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortOption
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortDirection
 import io.github.rsgarrido.sazanami.data.membershipKey
 import io.github.rsgarrido.sazanami.player.RepeatMode
 import io.github.rsgarrido.sazanami.ui.player.ExpandedPlayerThemeHost
@@ -24,27 +28,34 @@ import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsTransitionState
 import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsGestureRegion
 import io.github.rsgarrido.sazanami.ui.player.PlayerMorphState
 import io.github.rsgarrido.sazanami.ui.player.PlayerEndpointBounds
+import io.github.rsgarrido.sazanami.ui.player.PlayerPresentationIdentity
+import io.github.rsgarrido.sazanami.ui.player.ResolvedPlayerPresentation
 import io.github.rsgarrido.sazanami.ui.player.WarmCurrentSongWaveform
 import io.github.rsgarrido.sazanami.ui.player.shouldLoadExpandedPlayerWaveform
 import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerLayout
 import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMorphBounds
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceNavigationState
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.rememberPocketAdvanceNavigationState
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMenuState
 import io.github.rsgarrido.sazanami.ui.player.retrorack.RetroRackMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketflip.PocketFlipMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketcassette.PocketCassetteMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketdisc.PocketDiscMorphBounds
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvancePlayerMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.lyricsVisualAlpha
 import io.github.rsgarrido.sazanami.ui.player.playerVisualAlpha
 import io.github.rsgarrido.sazanami.ui.player.ImmersiveSystemBarsEffect
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernArtworkTransitionStyle
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernPlayerAppearance
-import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 import io.github.rsgarrido.sazanami.controller.PlaybackQueueHubUiState
 import io.github.rsgarrido.sazanami.ui.state.PlaybackProgress
 import io.github.rsgarrido.sazanami.ui.state.PlaybackProgressUiState
 import io.github.rsgarrido.sazanami.lyrics.LyricsPlaybackUiState
 import io.github.rsgarrido.sazanami.ui.lyrics.LyricsScreen
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.LocalPocketAdvancePalette
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceOverlayTheme
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.pocketAdvanceLyricsColors
 import kotlinx.coroutines.flow.StateFlow
 
 @Composable
@@ -92,8 +103,7 @@ fun MusicScreenOverlays(
     onToggleFavoriteClick: (Song) -> Unit,
     hasPendingBulkPlaylistAdd: Boolean,
     isSleepTimerDialogVisible: Boolean,
-    selectedPlayerTheme: PlayerTheme,
-    selectedPlayerThemeTokens: PlayerThemeTokens,
+    playerPresentation: ResolvedPlayerPresentation,
     selectedModernArtworkTransitionStyle: ModernArtworkTransitionStyle,
     selectedModernPlayerAppearance: ModernPlayerAppearance,
     playerEndpointBounds: PlayerEndpointBounds,
@@ -104,12 +114,18 @@ fun MusicScreenOverlays(
     pocketFlipMorphBounds: PocketFlipMorphBounds,
     pocketCassetteMorphBounds: PocketCassetteMorphBounds,
     pocketDiscMorphBounds: PocketDiscMorphBounds,
-    defaultPlayerLayout: DefaultPlayerLayout? = null
+    defaultPlayerLayout: DefaultPlayerLayout? = null,
+    pocketAdvanceMorphBounds: PocketAdvancePlayerMorphBounds? = null,
+    playerPresentationInputEnabled: Boolean = true,
+    pocketAdvanceNavigationState: PocketAdvanceNavigationState = rememberPocketAdvanceNavigationState(),
+    isLibraryReady: Boolean = true,
+    artistSortState: LibrarySortState = LibrarySortState(LibrarySortOption.NAME, LibrarySortDirection.ASCENDING),
+    albumSortState: LibrarySortState = LibrarySortState(LibrarySortOption.TITLE, LibrarySortDirection.ASCENDING)
 ) {
     val isPlayerExpanded = playerMorphState.shouldComposeExpanded
     val setSystemBarSurface = LocalSystemBarSurfaceSetter.current
     val systemBarSurface = playerSystemBarSurface(
-        theme = selectedPlayerTheme,
+        presentation = playerPresentation.identity,
         isExpanded = isPlayerExpanded,
         hasSong = currentSong != null,
         lyricsVisible = isLyricsVisible || lyricsTransitionState.lyricsComposed
@@ -118,11 +134,11 @@ fun MusicScreenOverlays(
         setSystemBarSurface(systemBarSurface)
         onDispose { setSystemBarSurface(SystemBarSurface.SHELL) }
     }
-    val lyricsGestureRegion = remember(selectedPlayerTheme) {
+    val lyricsGestureRegion = remember(playerPresentation.identity) {
         PlayerLyricsGestureRegion()
     }
     val shouldWarmCurrentWaveform = shouldLoadExpandedPlayerWaveform(
-        selectedPlayerTheme = selectedPlayerTheme,
+        presentation = playerPresentation.identity,
         modernSeekbarStyle = selectedModernPlayerAppearance.seekbar.style
     )
     WarmCurrentSongWaveform(
@@ -132,13 +148,14 @@ fun MusicScreenOverlays(
 
     ImmersiveSystemBarsEffect(
         isImmersive = shouldUseImmersivePlayerSystemBars(
-            selectedPlayerTheme,
+            playerPresentation.identity,
             isPlayerExpanded,
             isLyricsVisible
         )
     )
 
-    if (isPlayerExpanded && currentSong != null) {
+    val premeasurePocketAdvance = playerPresentation.identity == PlayerPresentationIdentity.PocketAdvance
+    if ((isPlayerExpanded || premeasurePocketAdvance) && currentSong != null) {
         val activeQueueCard = playbackQueueHubUiState.queues.firstOrNull { queue -> queue.isActive }
         val activeQueueSongs = playbackQueueHubUiState.activeEntries
             .mapNotNull { entry -> entry.song }
@@ -152,9 +169,17 @@ fun MusicScreenOverlays(
             ?.takeIf { count -> count > 0 }
             ?: fallbackActiveQueueCount
 
+        val expandedInputBlocked = shouldBlockExpandedPlayerInput(
+            lyricsOwnsInput = lyricsTransitionState.lyricsOwnsInput,
+            isNowPlayingMorePresented = isNowPlayingMorePresented,
+            isArtworkViewerVisible = isArtworkViewerVisible
+        ) || (isPlayerExpanded && !playerPresentationInputEnabled)
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                // Alpha/disabled clickable nodes alone still participate in pointer hit testing.
+                // Keep the warm, measured endpoint behind the real app and mini while collapsed.
+                .zIndex(if (premeasurePocketAdvance && !isPlayerExpanded) -1f else 0f)
                 .graphicsLayer {
                     val progress = lyricsTransitionState.progress
                     translationY = -56.dp.toPx() * progress
@@ -166,18 +191,14 @@ fun MusicScreenOverlays(
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
+                    enabled = isPlayerExpanded,
                     onClick = {}
                 )
-                .blockPlayerInput(shouldBlockExpandedPlayerInput(
-                    lyricsOwnsInput = lyricsTransitionState.lyricsOwnsInput,
-                    isNowPlayingMorePresented = isNowPlayingMorePresented,
-                    isArtworkViewerVisible = isArtworkViewerVisible
-                ))
+                .blockPlayerInput(expandedInputBlocked)
         ) {
             PlaybackProgress(playbackProgressUiState) { progress ->
                 ExpandedPlayerThemeHost(
-                    selectedPlayerTheme = selectedPlayerTheme,
-                    tokens = selectedPlayerThemeTokens,
+                    playerPresentation = playerPresentation,
                     modernArtworkTransitionStyle = selectedModernArtworkTransitionStyle,
                     modernPlayerAppearance = selectedModernPlayerAppearance,
                     defaultPlayerLayout = defaultPlayerLayout,
@@ -232,32 +253,46 @@ fun MusicScreenOverlays(
                     retroRackMorphBounds = retroRackMorphBounds,
                     pocketFlipMorphBounds = pocketFlipMorphBounds,
                     pocketCassetteMorphBounds = pocketCassetteMorphBounds,
-                    pocketDiscMorphBounds = pocketDiscMorphBounds
+                    pocketDiscMorphBounds = pocketDiscMorphBounds,
+                    pocketAdvanceNavigationState = pocketAdvanceNavigationState,
+                    isLibraryReady = isLibraryReady,
+                    artistSortState = artistSortState,
+                    albumSortState = albumSortState,
+                    // A pointer fence alone cannot stop a timer that started before an overlay opened.
+                    songsRepeatAllowed = !expandedInputBlocked && !isExpandedUpNextSheetVisible &&
+                        !isQueueHubVisible && !isSleepTimerDialogVisible && !isCreatePlaylistDialogVisible &&
+                        !hasPendingPlaylistAdd && !hasPendingBulkPlaylistAdd,
+                    pocketAdvanceMorphBounds = pocketAdvanceMorphBounds
                 )
             }
         }
     }
 
     if (isPlayerExpanded && lyricsTransitionState.lyricsComposed && currentSong != null) {
-        LyricsScreen(
-            state = lyricsPlaybackUiState,
-            isPlaying = isPlaying,
-            transitionState = lyricsTransitionState,
-            closeGestureRegion = lyricsGestureRegion,
-            interactive = lyricsTransitionState.lyricsInteractive,
-            onBack = lyricsTransitionState::returnToExpanded,
-            onPlayPause = onPlayPauseClick,
-            onSeek = onSeekChange,
-            onSuspendAutoFollow = onSuspendLyricsAutoFollow,
-            onReturnToCurrentLine = onReturnLyricsToCurrentLine,
-            onRescan = onRescanLyrics,
-            onOpenSettings = onOpenLyricsSettings,
-            modifier = Modifier.graphicsLayer {
-                val progress = lyricsTransitionState.progress
-                alpha = lyricsVisualAlpha(progress)
-                translationY = (1f - progress) * 88.dp.toPx()
-            }
-        )
+        val advance = playerPresentation.identity == PlayerPresentationIdentity.PocketAdvance
+        val lyricsColors = pocketAdvanceLyricsColors(LocalPocketAdvancePalette.current, advance)
+        PocketAdvanceOverlayTheme(active = advance, inverse = true) {
+            LyricsScreen(
+                colors = lyricsColors,
+                state = lyricsPlaybackUiState,
+                isPlaying = isPlaying,
+                transitionState = lyricsTransitionState,
+                closeGestureRegion = lyricsGestureRegion,
+                interactive = lyricsTransitionState.lyricsInteractive,
+                onBack = lyricsTransitionState::returnToExpanded,
+                onPlayPause = onPlayPauseClick,
+                onSeek = onSeekChange,
+                onSuspendAutoFollow = onSuspendLyricsAutoFollow,
+                onReturnToCurrentLine = onReturnLyricsToCurrentLine,
+                onRescan = onRescanLyrics,
+                onOpenSettings = onOpenLyricsSettings,
+                modifier = Modifier.graphicsLayer {
+                    val progress = lyricsTransitionState.progress
+                    alpha = lyricsVisualAlpha(progress)
+                    translationY = (1f - progress) * 88.dp.toPx()
+                }
+            )
+        }
     }
 }
 
@@ -287,6 +322,18 @@ internal fun shouldAllowExpandedPlayerVisualizerWork(
         !isCreatePlaylistDialogVisible &&
         !hasPendingPlaylistAdd &&
         !hasPendingBulkPlaylistAdd
+
+internal fun shouldUseImmersivePlayerSystemBars(
+    presentation: PlayerPresentationIdentity,
+    isPlayerExpanded: Boolean,
+    isLyricsVisible: Boolean
+): Boolean = when (presentation) {
+    is PlayerPresentationIdentity.Existing -> shouldUseImmersivePlayerSystemBars(
+        presentation.theme, isPlayerExpanded, isLyricsVisible
+    )
+    // Advance keeps visibility-independent inset measurements while the existing controller hides bars.
+    PlayerPresentationIdentity.PocketAdvance -> isPlayerExpanded && !isLyricsVisible
+}
 
 internal fun shouldUseImmersivePlayerSystemBars(
     theme: PlayerTheme,

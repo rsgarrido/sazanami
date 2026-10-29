@@ -18,6 +18,11 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import io.github.rsgarrido.sazanami.data.PlayerTheme
+import io.github.rsgarrido.sazanami.data.TabletLandscapeTheme
+import io.github.rsgarrido.sazanami.data.PocketAdvanceAppearance
+import io.github.rsgarrido.sazanami.data.PocketAdvanceConsoleFinish
+import io.github.rsgarrido.sazanami.data.PocketAdvanceLcdPalette
+import io.github.rsgarrido.sazanami.data.PocketAdvanceControlsFinish
 import io.github.rsgarrido.sazanami.data.FolderSelection
 import io.github.rsgarrido.sazanami.data.FolderSelectionMode
 import io.github.rsgarrido.sazanami.data.home.HomePin
@@ -90,6 +95,8 @@ data class AppPreferencesState(
     val appFont: AppFont = AppFont.SAZANAMI,
     val appAppearance: AppAppearance = AppAppearance.DARK,
     val selectedPlayerTheme: PlayerTheme = PlayerTheme.DEFAULT,
+    val tabletLandscapeTheme: TabletLandscapeTheme = TabletLandscapeTheme.NORMAL_PLAYER,
+    val pocketAdvanceAppearance: PocketAdvanceAppearance = PocketAdvanceAppearance.Default,
     val playerThemeTokenOverrides: Map<PlayerTheme, PlayerThemeTokenOverrides> = emptyMap(),
     val modernArtworkTransitionStyle: ModernArtworkTransitionStyle =
         ModernArtworkTransitionStyle.SLIDE,
@@ -163,6 +170,29 @@ class AppPreferencesRepository private constructor(
 
     suspend fun setSelectedPlayerTheme(theme: PlayerTheme) = edit {
         it[Keys.selectedPlayerTheme] = theme.id
+    }
+
+    suspend fun setTabletLandscapeTheme(theme: TabletLandscapeTheme) = edit {
+        it[Keys.tabletLandscapeTheme] = theme.id
+    }
+
+    // Each setter edits only its own key so rapid changes in other categories cannot be lost.
+    suspend fun setPocketAdvanceConsoleFinish(finish: PocketAdvanceConsoleFinish) = edit {
+        it[Keys.pocketAdvanceConsoleFinish] = finish.id
+    }
+
+    suspend fun setPocketAdvanceLcdPalette(palette: PocketAdvanceLcdPalette) = edit {
+        it[Keys.pocketAdvanceLcdPalette] = palette.id
+    }
+
+    suspend fun setPocketAdvanceControlsFinish(finish: PocketAdvanceControlsFinish) = edit {
+        it[Keys.pocketAdvanceControlsFinish] = finish.id
+    }
+
+    suspend fun resetPocketAdvanceAppearance() = edit {
+        it.remove(Keys.pocketAdvanceConsoleFinish)
+        it.remove(Keys.pocketAdvanceLcdPalette)
+        it.remove(Keys.pocketAdvanceControlsFinish)
     }
 
     suspend fun setAppFont(appFont: AppFont) = edit {
@@ -620,6 +650,10 @@ class AppPreferencesRepository private constructor(
         preferences.writeAppFont(restored.appFont)
         preferences[Keys.appAppearance] = restored.appAppearance.storageValue
         preferences[Keys.selectedPlayerTheme] = restored.selectedPlayerTheme.id
+        preferences[Keys.tabletLandscapeTheme] = restored.tabletLandscapeTheme.id
+        preferences[Keys.pocketAdvanceConsoleFinish] = restored.pocketAdvanceAppearance.consoleFinish.id
+        preferences[Keys.pocketAdvanceLcdPalette] = restored.pocketAdvanceAppearance.lcdPalette.id
+        preferences[Keys.pocketAdvanceControlsFinish] = restored.pocketAdvanceAppearance.controlsFinish.id
         preferences[Keys.modernArtworkTransitionStyle] =
             restored.modernArtworkTransitionStyle.storageValue
         preferences.writeRestoredModernAppearance(restored)
@@ -709,6 +743,12 @@ internal fun decodeAppPreferences(preferences: Preferences): AppPreferencesState
         appFont = AppFont.fromStorageValue(preferences[Keys.appFont]),
         appAppearance = AppAppearance.fromStorageValue(preferences[Keys.appAppearance]),
         selectedPlayerTheme = PlayerTheme.fromId(preferences[Keys.selectedPlayerTheme]),
+        tabletLandscapeTheme = TabletLandscapeTheme.fromId(preferences[Keys.tabletLandscapeTheme]),
+        pocketAdvanceAppearance = PocketAdvanceAppearance(
+            consoleFinish = PocketAdvanceConsoleFinish.fromId(preferences[Keys.pocketAdvanceConsoleFinish]),
+            lcdPalette = PocketAdvanceLcdPalette.fromId(preferences[Keys.pocketAdvanceLcdPalette]),
+            controlsFinish = PocketAdvanceControlsFinish.fromId(preferences[Keys.pocketAdvanceControlsFinish])
+        ),
         playerThemeTokenOverrides = PlayerTheme.entries.associateWith { emptyOverrides() }
             .mapValues { (theme, _) ->
                 PlayerThemeTokenOverrides(
@@ -1257,6 +1297,10 @@ private object Keys {
     val appFont = stringPreferencesKey("app_font")
     val appAppearance = stringPreferencesKey("app_appearance")
     val selectedPlayerTheme = stringPreferencesKey("selected_player_theme")
+    val tabletLandscapeTheme = stringPreferencesKey("tablet_landscape_theme")
+    val pocketAdvanceConsoleFinish = stringPreferencesKey("pocket_advance_console_finish")
+    val pocketAdvanceLcdPalette = stringPreferencesKey("pocket_advance_lcd_palette")
+    val pocketAdvanceControlsFinish = stringPreferencesKey("pocket_advance_controls_finish")
     val modernArtworkTransitionStyle = stringPreferencesKey("artwork_transition_style")
     val modernLandscapeLayout = stringPreferencesKey("modern_landscape_layout")
     val activeModernAppearanceChoice = stringPreferencesKey("modern_active_appearance_choice")

@@ -53,6 +53,11 @@ import io.github.rsgarrido.sazanami.data.preferences.AppAppearance
 import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.data.FolderSelectionMode
 import io.github.rsgarrido.sazanami.data.PlayerTheme
+import io.github.rsgarrido.sazanami.data.TabletLandscapeTheme
+import io.github.rsgarrido.sazanami.data.PocketAdvanceAppearance
+import io.github.rsgarrido.sazanami.data.PocketAdvanceConsoleFinish
+import io.github.rsgarrido.sazanami.data.PocketAdvanceLcdPalette
+import io.github.rsgarrido.sazanami.data.PocketAdvanceControlsFinish
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.audio.AudioOffloadPreference
 import io.github.rsgarrido.sazanami.player.replaygain.ReplayGainMode
@@ -106,6 +111,13 @@ fun SettingsScreen(
     onAppAppearanceSelected: (AppAppearance) -> Unit = {},
     selectedPlayerThemeTokens: PlayerThemeTokens,
     onPlayerThemeSelected: (PlayerTheme) -> Unit,
+    selectedTabletLandscapeTheme: TabletLandscapeTheme = TabletLandscapeTheme.NORMAL_PLAYER,
+    onTabletLandscapeThemeSelected: (TabletLandscapeTheme) -> Unit = {},
+    pocketAdvanceAppearance: PocketAdvanceAppearance = PocketAdvanceAppearance.Default,
+    onPocketAdvanceConsoleFinishSelected: (PocketAdvanceConsoleFinish) -> Unit = {},
+    onPocketAdvanceLcdPaletteSelected: (PocketAdvanceLcdPalette) -> Unit = {},
+    onPocketAdvanceControlsFinishSelected: (PocketAdvanceControlsFinish) -> Unit = {},
+    onResetPocketAdvanceAppearance: () -> Unit = {},
     onUpdatePlayerThemeTokenOverride: (PlayerTheme, PlayerThemeTokenField, Color) -> Unit,
     onResetPlayerThemeTokenOverrides: (PlayerTheme) -> Unit,
     selectedModernArtworkTransitionStyle: ModernArtworkTransitionStyle,
@@ -490,6 +502,15 @@ fun SettingsScreen(
                 emphasizeSummary = true,
                 navigationContentDescription = stringResource(R.string.settings_choose_player_theme)
             )
+
+            SettingsDivider()
+
+            TabletLandscapeThemeSettings(selectedTabletLandscapeTheme, onTabletLandscapeThemeSelected)
+
+            SettingsDivider()
+
+            PocketAdvanceAppearanceSettings(pocketAdvanceAppearance, onPocketAdvanceConsoleFinishSelected,
+                onPocketAdvanceLcdPaletteSelected, onPocketAdvanceControlsFinishSelected, onResetPocketAdvanceAppearance)
 
             if (selectedPlayerTheme == PlayerTheme.DEFAULT) {
                 SettingsDivider()

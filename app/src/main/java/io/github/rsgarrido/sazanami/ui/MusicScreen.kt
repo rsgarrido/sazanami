@@ -7,6 +7,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.statusBars
@@ -15,6 +16,10 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.systemBarsIgnoringVisibility
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.exclude
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -32,8 +37,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.DpSize
 import android.content.Intent
 import android.net.Uri
 import io.github.rsgarrido.sazanami.R
@@ -48,6 +56,11 @@ import io.github.rsgarrido.sazanami.data.FolderSelectionMode
 import io.github.rsgarrido.sazanami.data.buildFolderBrowseIndex
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.PlayerTheme
+import io.github.rsgarrido.sazanami.data.TabletLandscapeTheme
+import io.github.rsgarrido.sazanami.data.PocketAdvanceAppearance
+import io.github.rsgarrido.sazanami.data.PocketAdvanceConsoleFinish
+import io.github.rsgarrido.sazanami.data.PocketAdvanceLcdPalette
+import io.github.rsgarrido.sazanami.data.PocketAdvanceControlsFinish
 import io.github.rsgarrido.sazanami.data.preferences.AppFont
 import io.github.rsgarrido.sazanami.data.preferences.AppAppearance
 import io.github.rsgarrido.sazanami.data.Playlist
@@ -97,6 +110,16 @@ import io.github.rsgarrido.sazanami.ui.theme.SazanamiAccent
 import io.github.rsgarrido.sazanami.ui.player.rememberPlayerLyricsTransitionState
 import io.github.rsgarrido.sazanami.ui.player.modern.defaultPlayerLayout
 import io.github.rsgarrido.sazanami.ui.player.PlayerMorphHost
+import io.github.rsgarrido.sazanami.ui.player.PlayerPresentationIdentity
+import io.github.rsgarrido.sazanami.ui.player.resolvePlayerPresentation
+import io.github.rsgarrido.sazanami.ui.player.tabletLandscapePlayerCandidate
+import io.github.rsgarrido.sazanami.ui.player.TabletLandscapePlayerContext
+import io.github.rsgarrido.sazanami.ui.player.rememberTabletLandscapePlayerEnvironment
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.rememberPocketAdvanceNavigationState
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.LocalPocketAdvancePalette
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvancePalette
+import io.github.rsgarrido.sazanami.ui.player.PlayerPresentationViewport
+import io.github.rsgarrido.sazanami.ui.player.rememberPlayerPresentationBoundary
 import io.github.rsgarrido.sazanami.ui.state.PlaybackProgressUiState
 import io.github.rsgarrido.sazanami.ui.state.LibraryAppearanceUiState
 import io.github.rsgarrido.sazanami.ui.state.LibraryRefreshSummary
@@ -131,6 +154,7 @@ import java.time.LocalDate
 
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 internal fun MusicScreen(
     songs: List<Song>,
     mediaAccessState: MediaAccessState,
@@ -258,6 +282,13 @@ internal fun MusicScreen(
     onAppAppearanceSelected: (AppAppearance) -> Unit,
     selectedPlayerThemeTokens: PlayerThemeTokens,
     onPlayerThemeSelected: (PlayerTheme) -> Unit,
+    selectedTabletLandscapeTheme: TabletLandscapeTheme = TabletLandscapeTheme.NORMAL_PLAYER,
+    onTabletLandscapeThemeSelected: (TabletLandscapeTheme) -> Unit = {},
+    pocketAdvanceAppearance: PocketAdvanceAppearance = PocketAdvanceAppearance.Default,
+    onPocketAdvanceConsoleFinishSelected: (PocketAdvanceConsoleFinish) -> Unit = {},
+    onPocketAdvanceLcdPaletteSelected: (PocketAdvanceLcdPalette) -> Unit = {},
+    onPocketAdvanceControlsFinishSelected: (PocketAdvanceControlsFinish) -> Unit = {},
+    onResetPocketAdvanceAppearance: () -> Unit = {},
     onUpdatePlayerThemeTokenOverride: (PlayerTheme, PlayerThemeTokenField, Color) -> Unit,
     onResetPlayerThemeTokenOverrides: (PlayerTheme) -> Unit,
     selectedModernArtworkTransitionStyle: ModernArtworkTransitionStyle,
@@ -301,6 +332,32 @@ internal fun MusicScreen(
     reconciliationActions: ListeningHistoryReconciliationUiActions,
     spotifyImportActions: SpotifyImportUiActions
 ) {
+    val appShellAccent = rememberAppShellAccent(
+        playerTheme = selectedPlayerTheme,
+        tokens = selectedPlayerThemeTokens
+    )
+    val advancePalette = remember(pocketAdvanceAppearance) { PocketAdvancePalette.from(pocketAdvanceAppearance) }
+    val directStatusVisible = if (io.github.rsgarrido.sazanami.BuildConfig.DEBUG) {
+        val direct by io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackBridge.state.collectAsState()
+        direct.enabled
+    } else false
+    // Resolve against the very same viewport that hosts both endpoints, including the USB banner.
+    CompositionLocalProvider(
+        LocalAppShellAccent provides appShellAccent,
+        LocalPocketAdvancePalette provides advancePalette
+    ) {
+    Column(modifier = modifier.fillMaxSize().appShellBackground()) {
+        if (directStatusVisible) {
+            io.github.rsgarrido.sazanami.ui.settings.IntegratedDirectPlaybackBanner(
+                modifier = Modifier.statusBarsPadding()
+            )
+        }
+        BoxWithConstraints(
+            modifier = Modifier.weight(1f).fillMaxWidth().then(
+                if (directStatusVisible) Modifier.consumeWindowInsets(WindowInsets.statusBars)
+                else Modifier
+            )
+        ) {
     val context = LocalContext.current
     val favoriteFeedbackQueue = remember { NowPlayingFavoriteFeedbackQueue() }
     NowPlayingFavoriteFeedbackEffect(favoriteFeedbackQueue, snackbarHostState)
@@ -309,6 +366,7 @@ internal fun MusicScreen(
     val librarySelectionUi = LocalLibrarySelectionUi.current
     val librarySelectionHeaderState = remember { LibrarySelectionHeaderState() }
     val navigationState = rememberMusicNavigationState()
+    val pocketAdvanceNavigationState = rememberPocketAdvanceNavigationState()
     var mainDestination by navigationState.mainDestination
     var selectedLibraryTab by navigationState.selectedLibraryTab
     var playbackLaunchContext by navigationState.playbackLaunchContext
@@ -390,7 +448,49 @@ internal fun MusicScreen(
     var isDiscardTagChangesDialogVisible by remember { mutableStateOf(false) }
     var selectedArtworkUriForTagEdit by remember { mutableStateOf<Uri?>(null) }
 
-    val canPresentNowPlayingMore = supportsNowPlayingMore(selectedPlayerTheme) &&
+    val playerEnvironment = if (selectedTabletLandscapeTheme == TabletLandscapeTheme.POCKET_ADVANCE)
+        rememberTabletLandscapePlayerEnvironment() else null
+    val playerDensity = LocalDensity.current
+    val layoutDirection = LocalLayoutDirection.current
+    val persistentInsets = WindowInsets.systemBarsIgnoringVisibility.union(WindowInsets.displayCutout).let {
+        if (directStatusVisible) it.exclude(WindowInsets.statusBars) else it
+    }
+    val insetLeft = persistentInsets.getLeft(playerDensity, layoutDirection)
+    val insetRight = persistentInsets.getRight(playerDensity, layoutDirection)
+    val insetTop = persistentInsets.getTop(playerDensity)
+    val insetBottom = persistentInsets.getBottom(playerDensity)
+    val usablePlayerSize = with(playerDensity) {
+        DpSize(
+            (maxWidth - (insetLeft + insetRight).toDp()).coerceAtLeast(0.dp),
+            (maxHeight - (insetTop + insetBottom).toDp()).coerceAtLeast(0.dp)
+        )
+    }
+    val requestedPlayerPresentation = resolvePlayerPresentation(
+        selectedPlayerTheme, selectedPlayerThemeTokens,
+        context = playerEnvironment?.let {
+            TabletLandscapePlayerContext(it.deviceKind, it.smallestScreenWidthDp, usablePlayerSize)
+        },
+        landscapeCandidate = tabletLandscapePlayerCandidate(
+            selectedTabletLandscapeTheme, selectedPlayerThemeTokens, playerDensity.fontScale
+        )
+    )
+    val playerBoundary = rememberPlayerPresentationBoundary(
+        requested = requestedPlayerPresentation,
+        viewport = PlayerPresentationViewport(
+            constraints.maxWidth, constraints.maxHeight, playerDensity.density, playerDensity.fontScale,
+            insetLeft, insetTop, insetRight, insetBottom
+        ),
+        morphState = playerMorphState,
+        resetPresentationOverlays = {
+            lyricsTransitionState.snapToExpanded()
+            overlayState.dismissNowPlayingMore()
+            overlayState.dismissTrackInformation()
+            overlayState.dismissArtworkViewer()
+        }
+    )
+    // App accents/settings continue using the primary selection, independently of this pair.
+    val resolvedPlayerPresentation = playerBoundary.presentation
+    val canPresentNowPlayingMore = playerBoundary.inputEnabled && supportsNowPlayingMore(resolvedPlayerPresentation.identity) &&
             playerMorphState.targetPresentation == PlayerPresentation.Expanded &&
             !isLyricsVisible && !lyricsTransitionState.lyricsOwnsInput &&
             songPendingTagEdit == null && batchMetadataEditorState == null &&
@@ -403,7 +503,7 @@ internal fun MusicScreen(
         { overlayState.isSleepTimerDialogVisible.value = true }
     }
     NowPlayingTrackInfoOverlay(overlayState, canPresentNowPlayingMore)
-    val canPresentArtworkViewer = canPresentNowPlayingMore && supportsNowPlayingArtworkViewer(selectedPlayerTheme)
+    val canPresentArtworkViewer = canPresentNowPlayingMore && supportsNowPlayingArtworkViewer(resolvedPlayerPresentation.identity)
     val onViewArtwork = rememberNowPlayingArtworkViewerOpener(currentSong, overlayState, lyricsTransitionState, canPresentArtworkViewer)
     NowPlayingArtworkViewerOverlay(overlayState, canPresentArtworkViewer)
     val nowPlayingMoreTarget = overlayState.currentNowPlayingMoreTarget(currentSong)
@@ -736,6 +836,7 @@ internal fun MusicScreen(
     val hasPendingBulkPlaylistAdd = songsPendingPlaylistAdd.isNotEmpty()
     val transientOverlayContent: @Composable () -> Unit = {
         MusicTransientOverlays(
+            playerPresentation = resolvedPlayerPresentation.identity,
             nowPlayingMoreTarget = nowPlayingMoreTarget,
             favoriteMembershipKeys = favoriteMembershipKeys,
             songs = songs,
@@ -1027,10 +1128,6 @@ internal fun MusicScreen(
         }
     }
 
-    val appShellAccent = rememberAppShellAccent(
-        playerTheme = selectedPlayerTheme,
-        tokens = selectedPlayerThemeTokens
-    )
     val appShellChartAccent = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) {
         rememberAppShellAccent(
             playerTheme = selectedPlayerTheme,
@@ -1118,6 +1215,13 @@ internal fun MusicScreen(
         onAppAppearanceSelected = onAppAppearanceSelected,
         selectedPlayerThemeTokens = selectedPlayerThemeTokens,
         onPlayerThemeSelected = onPlayerThemeSelected,
+        selectedTabletLandscapeTheme = selectedTabletLandscapeTheme,
+        onTabletLandscapeThemeSelected = onTabletLandscapeThemeSelected,
+        pocketAdvanceAppearance = pocketAdvanceAppearance,
+        onPocketAdvanceConsoleFinishSelected = onPocketAdvanceConsoleFinishSelected,
+        onPocketAdvanceLcdPaletteSelected = onPocketAdvanceLcdPaletteSelected,
+        onPocketAdvanceControlsFinishSelected = onPocketAdvanceControlsFinishSelected,
+        onResetPocketAdvanceAppearance = onResetPocketAdvanceAppearance,
         onUpdatePlayerThemeTokenOverride = onUpdatePlayerThemeTokenOverride,
         onResetPlayerThemeTokenOverrides = onResetPlayerThemeTokenOverrides,
         selectedModernArtworkTransitionStyle = selectedModernArtworkTransitionStyle,
@@ -1288,22 +1392,6 @@ internal fun MusicScreen(
             }
         )
     ) {
-        val directStatusVisible = if (io.github.rsgarrido.sazanami.BuildConfig.DEBUG) {
-            val direct by io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackBridge.state.collectAsState()
-            direct.enabled
-        } else false
-        Column(modifier = modifier.fillMaxSize().appShellBackground()) {
-            if (directStatusVisible) {
-                io.github.rsgarrido.sazanami.ui.settings.IntegratedDirectPlaybackBanner(
-                    modifier = Modifier.statusBarsPadding()
-                )
-            }
-            BoxWithConstraints(
-                modifier = Modifier.weight(1f).fillMaxWidth().then(
-                    if (directStatusVisible) Modifier.consumeWindowInsets(WindowInsets.statusBars)
-                    else Modifier
-                )
-            ) {
                 val shellLayout = musicShellLayout(
                     maxWidth, maxHeight, topInsetAlreadyReserved = directStatusVisible
                 )
@@ -1346,8 +1434,13 @@ internal fun MusicScreen(
                     onToggleFavoriteClick = onToggleFavoriteClick,
                     isSleepTimerActive = isSleepTimerActive,
                     sleepTimerDisplayText = sleepTimerDisplayText,
-                    selectedPlayerTheme = selectedPlayerTheme,
-                    selectedPlayerThemeTokens = selectedPlayerThemeTokens,
+                    playerPresentation = resolvedPlayerPresentation,
+                    pocketAdvanceNavigationState = pocketAdvanceNavigationState,
+                    isLibraryReady = !isLibraryLoading && !isLibraryRefreshing && libraryErrorMessage == null,
+                    artistSortState = selectedArtistSortState,
+                    albumSortState = selectedAlbumSortState,
+                    playerPresentationEpoch = playerBoundary.epoch,
+                    playerPresentationInputEnabled = playerBoundary.inputEnabled,
                     selectedModernArtworkTransitionStyle = selectedModernArtworkTransitionStyle,
                     selectedModernPlayerAppearance = selectedModernPlayerAppearance,
                     playerMorphState = playerMorphState,
@@ -1392,14 +1485,18 @@ internal fun MusicScreen(
                 PlayerMorphHost(
                     morphState = playerMorphState,
                     modifier = Modifier.fillMaxSize(),
+                    measurementIdentity = playerBoundary.epoch,
                     layoutBoundary = shellLayout to
-                        defaultLayout.takeIf { selectedPlayerTheme == PlayerTheme.DEFAULT }
+                        defaultLayout.takeIf {
+                            resolvedPlayerPresentation.identity == PlayerPresentationIdentity.Existing(PlayerTheme.DEFAULT)
+                        }
                 ) { playerEndpointBounds ->
                     playerPresentation(playerEndpointBounds)
                 }
             }
         }
     }
+}
 }
 
 internal fun dismissExpandedPlayerPresentation(

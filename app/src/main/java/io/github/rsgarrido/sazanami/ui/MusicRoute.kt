@@ -128,6 +128,7 @@ internal fun MusicRoute(
     musicViewModel.homeCustomizationUiState.collectAsStateWithLifecycle()
     val batchMetadataOperationState by
     musicViewModel.batchMetadataOperationState.collectAsStateWithLifecycle()
+    // Normal and tablet-landscape selections arrive together in the loaded appearance snapshot.
     if (!playerAppearanceUiState.isLoaded || !libraryAppearanceUiState.isLoaded ||
         !homeCustomizationUiState.isLoaded
     ) return
@@ -679,6 +680,13 @@ internal fun MusicRoute(
             onPlayerThemeSelected = { playerTheme ->
                 musicViewModel.selectPlayerTheme(playerTheme)
             },
+            selectedTabletLandscapeTheme = playerAppearanceUiState.tabletLandscapeTheme,
+            onTabletLandscapeThemeSelected = musicViewModel::selectTabletLandscapeTheme,
+            pocketAdvanceAppearance = playerAppearanceUiState.pocketAdvanceAppearance,
+            onPocketAdvanceConsoleFinishSelected = musicViewModel::selectPocketAdvanceConsoleFinish,
+            onPocketAdvanceLcdPaletteSelected = musicViewModel::selectPocketAdvanceLcdPalette,
+            onPocketAdvanceControlsFinishSelected = musicViewModel::selectPocketAdvanceControlsFinish,
+            onResetPocketAdvanceAppearance = musicViewModel::resetPocketAdvanceAppearance,
             onUpdatePlayerThemeTokenOverride = musicViewModel::updatePlayerThemeTokenOverride,
             onResetPlayerThemeTokenOverrides = musicViewModel::resetPlayerThemeTokenOverrides,
             selectedModernArtworkTransitionStyle =

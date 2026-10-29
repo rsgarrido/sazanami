@@ -87,6 +87,14 @@ internal fun WarmCurrentSongWaveform(
 private const val WAVEFORM_PREFETCH_DELAY_MILLIS = 250L
 
 internal fun shouldLoadExpandedPlayerWaveform(
+    presentation: PlayerPresentationIdentity,
+    modernSeekbarStyle: ModernSeekbarStyle
+): Boolean = when (presentation) {
+    is PlayerPresentationIdentity.Existing -> shouldLoadExpandedPlayerWaveform(presentation.theme, modernSeekbarStyle)
+    PlayerPresentationIdentity.PocketAdvance -> false
+}
+
+internal fun shouldLoadExpandedPlayerWaveform(
     selectedPlayerTheme: PlayerTheme,
     modernSeekbarStyle: ModernSeekbarStyle
 ): Boolean = when (selectedPlayerTheme) {

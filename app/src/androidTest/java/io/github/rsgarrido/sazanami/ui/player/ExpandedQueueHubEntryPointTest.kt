@@ -409,7 +409,7 @@ class ExpandedQueueHubEntryPointTest {
     ) {
         Box(Modifier.fillMaxSize().blockPlayerInput(lyrics.lyricsOwnsInput)) {
             ExpandedPlayerThemeHost(
-                selectedPlayerTheme = theme, tokens = theme.defaultTokens(), currentSong = target,
+                playerPresentation = resolvePlayerPresentation(theme, theme.defaultTokens()), currentSong = target,
                 previousPreviewSong = null, nextPreviewSong = null,
                 modernArtworkTransitionStyle = ModernArtworkTransitionStyle.SLIDE,
                 modernPlayerAppearance = ModernPlayerAppearance.Default,

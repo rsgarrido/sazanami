@@ -22,11 +22,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.R
@@ -166,12 +169,14 @@ private fun ThemeColorOptionRow(
 }
 
 @Composable
-private fun ColorSwatchButton(
+internal fun ColorSwatchButton(
     preset: PlayerThemeColorPreset,
     optionName: String,
     isSelected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    swatchSize: Dp = 42.dp,
+    selectionRole: Role? = null
 ) {
     val swatchDescription = stringResource(R.string.theme_color_swatch, optionName, preset.name)
     Column(
@@ -181,10 +186,11 @@ private fun ColorSwatchButton(
         Surface(
             onClick = onClick,
             modifier = Modifier
-                .size(42.dp)
+                .size(swatchSize)
                 .semantics {
                     contentDescription = swatchDescription
                     selected = isSelected
+                    selectionRole?.let { role = it }
                 },
             shape = CircleShape,
             color = preset.color,

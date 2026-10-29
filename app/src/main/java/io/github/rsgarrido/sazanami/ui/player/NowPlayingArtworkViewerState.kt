@@ -22,6 +22,11 @@ internal const val ArtworkViewerEntryTag = "now_playing_view_artwork"
 /** Referential identity isolates every opening, including reopening the same URI. */
 internal class NowPlayingArtworkViewerRequest(val song: Song, val artworkUri: Uri)
 
+internal fun supportsNowPlayingArtworkViewer(presentation: PlayerPresentationIdentity): Boolean = when (presentation) {
+    is PlayerPresentationIdentity.Existing -> supportsNowPlayingArtworkViewer(presentation.theme)
+    PlayerPresentationIdentity.PocketAdvance -> true
+}
+
 internal fun supportsNowPlayingArtworkViewer(theme: PlayerTheme): Boolean = when (theme) {
     PlayerTheme.DEFAULT, PlayerTheme.RETRO_RACK, PlayerTheme.POCKET_FLIP, PlayerTheme.POCKET_DISC -> true
     PlayerTheme.POCKET_CASSETTE, PlayerTheme.CLASSIC_WHEEL -> false

@@ -136,4 +136,36 @@
     <string name="player_artwork_viewer">Visor de portada</string>
     <string name="player_artwork_unavailable">Portada no disponible</string>
     <string name="player_artwork_loading">Cargando portada</string>
+    <string name="pocket_advance_power">ENCENDIDO</string>
+    <string name="pocket_advance_now_playing">REPRODUCIENDO</string>
+    <string name="pocket_advance_paused">EN PAUSA</string>
+    <string name="pocket_advance_stereo">ESTÉREO</string>
+    <string name="pocket_advance_track_mode">PISTA / MODO</string>
+    <string name="pocket_advance_open_browser">Abrir navegador de música</string>
+    <string name="pocket_advance_return_now_playing">Volver a Reproduciendo</string>
+    <string name="pocket_advance_previous_selection">Selección anterior</string>
+    <string name="pocket_advance_next_selection">Selección siguiente</string>
+    <string name="pocket_advance_open_entry">Abrir %1$s</string>
+    <string name="pocket_advance_unavailable_entry">%1$s, no disponible</string>
+    <string name="pocket_advance_unavailable">No disponible</string>
+    <string name="pocket_advance_back_music">Volver a Música</string>
+    <string name="pocket_advance_play_song">Reproducir %1$s</string>
+    <string name="pocket_advance_no_song">Ninguna canción disponible</string>
+    <string name="pocket_advance_library_pending">Esperando datos de la biblioteca</string>
+    <string name="pocket_advance_back_artists">Volver a Artistas</string>
+    <string name="pocket_advance_no_artist">Ningún artista disponible</string>
+    <string name="pocket_advance_artist_songs">Canciones de %1$s</string>
+    <string name="pocket_advance_artist_unavailable">Artista no disponible</string>
+    <string name="pocket_advance_album_archive">ARCHIVO DE ÁLBUMES</string>
+    <string name="pocket_advance_back_archive">Volver al catálogo de álbumes</string>
+    <string name="pocket_advance_no_album">Ningún álbum disponible</string>
+    <string name="pocket_advance_album_unavailable">Álbum no disponible</string>
+    <string name="pocket_advance_album_tracks">Canciones de %1$s</string>
+    <plurals name="pocket_advance_disc_count">
+        <item quantity="one">%d disco</item>
+        <item quantity="other">%d discos</item>
+    </plurals>
+    <string name="pocket_advance_button_a">A · REPRODUCIR</string>
+    <string name="pocket_advance_button_a_pause">A · PAUSA</string>
+    <string name="pocket_advance_button_b">B · CERRAR</string>
 </resources>

@@ -7,7 +7,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.dp
-import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.player.RepeatMode
 import io.github.rsgarrido.sazanami.ui.player.mini.MiniPlayerCallbacks
@@ -16,12 +15,12 @@ import io.github.rsgarrido.sazanami.ui.player.mini.MiniPlayerState
 import io.github.rsgarrido.sazanami.ui.player.modern.ModernExpandedPlayer
 import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.mini.DefaultMiniPlayerMorphCallbacks
-import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.retrorack.RetroRackMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketflip.PocketFlipMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketcassette.PocketCassetteMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketdisc.PocketDiscMorphBounds
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvancePlayerMorphBounds
 
 @Composable
 fun PlayerCard(
@@ -32,8 +31,7 @@ fun PlayerCard(
     duration: Int,
     isShuffleEnabled: Boolean,
     repeatMode: RepeatMode,
-    selectedPlayerTheme: PlayerTheme,
-    selectedPlayerThemeTokens: PlayerThemeTokens,
+    playerPresentation: ResolvedPlayerPresentation,
     playerMorphState: PlayerMorphState,
     modifier: Modifier = Modifier,
     onPlayPauseClick: () -> Unit,
@@ -56,6 +54,7 @@ fun PlayerCard(
     pocketFlipMorphBounds: PocketFlipMorphBounds? = null,
     pocketCassetteMorphBounds: PocketCassetteMorphBounds? = null,
     pocketDiscMorphBounds: PocketDiscMorphBounds? = null,
+    pocketAdvanceMorphBounds: PocketAdvancePlayerMorphBounds? = null,
     defaultMorphCallbacks: DefaultMiniPlayerMorphCallbacks? = null,
     morphOwnsVisuals: Boolean = false,
 ) {
@@ -73,6 +72,8 @@ fun PlayerCard(
     )
 
     if (isExpanded) {
+        // Retain the legacy direct Default path. Production matched expansion is dispatched by
+        // ExpandedPlayerThemeHost; MiniPlayerSection always supplies isExpanded = false here.
         ModernExpandedPlayer(
             currentSong = currentSong,
             isPlaying = isPlaying,
@@ -97,8 +98,7 @@ fun PlayerCard(
         )
     } else {
         MiniPlayerHost(
-            selectedPlayerTheme = selectedPlayerTheme,
-            tokens = selectedPlayerThemeTokens,
+            playerPresentation = playerPresentation,
             state = MiniPlayerState(
                 currentSong = currentSong,
                 isPlaying = isPlaying,
@@ -120,6 +120,7 @@ fun PlayerCard(
             pocketFlipMorphBounds = pocketFlipMorphBounds,
             pocketCassetteMorphBounds = pocketCassetteMorphBounds,
             pocketDiscMorphBounds = pocketDiscMorphBounds,
+            pocketAdvanceMorphBounds = pocketAdvanceMorphBounds,
             defaultMorphCallbacks = defaultMorphCallbacks,
             morphOwnsVisuals = morphOwnsVisuals,
             modifier = modifier

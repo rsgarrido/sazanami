@@ -134,4 +134,39 @@
     <string name="player_artwork_viewer">Artwork viewer</string>
     <string name="player_artwork_unavailable">Artwork unavailable</string>
     <string name="player_artwork_loading">Loading artwork</string>
+    <string name="pocket_advance_power">POWER</string>
+    <string name="pocket_advance_now_playing">NOW PLAYING</string>
+    <string name="pocket_advance_paused">PAUSED</string>
+    <string name="pocket_advance_stereo">STEREO</string>
+    <string name="pocket_advance_track_mode">TRACK / MODE</string>
+    <string name="pocket_advance_start" translatable="false">START</string>
+    <string name="pocket_advance_open_browser">Open music browser</string>
+    <string name="pocket_advance_return_now_playing">Return to Now Playing</string>
+    <string name="pocket_advance_previous_selection">Previous selection</string>
+    <string name="pocket_advance_next_selection">Next selection</string>
+    <string name="pocket_advance_open_entry">Open %1$s</string>
+    <string name="pocket_advance_unavailable_entry">%1$s, unavailable</string>
+    <string name="pocket_advance_unavailable">Unavailable</string>
+    <string name="pocket_advance_back_music">Back to Music</string>
+    <string name="pocket_advance_play_song">Play %1$s</string>
+    <string name="pocket_advance_no_song">No song available</string>
+    <string name="pocket_advance_library_pending">Waiting for library data</string>
+    <string name="pocket_advance_back_artists">Back to Artists</string>
+    <string name="pocket_advance_no_artist">No artist available</string>
+    <string name="pocket_advance_artist_songs">Songs by %1$s</string>
+    <string name="pocket_advance_artist_unavailable">Artist unavailable</string>
+    <string name="pocket_advance_album_archive">ALBUM ARCHIVE</string>
+    <string name="pocket_advance_back_archive">Back to Album Catalogue</string>
+    <string name="pocket_advance_no_album">No album available</string>
+    <string name="pocket_advance_album_unavailable">Album unavailable</string>
+    <string name="pocket_advance_album_tracks">Tracks from %1$s</string>
+    <string name="pocket_advance_archive_position" translatable="false">%1$03d / %2$03d</string>
+    <string name="pocket_advance_numbered_track" translatable="false">%1$s  %2$s</string>
+    <plurals name="pocket_advance_disc_count">
+        <item quantity="one">%d disc</item>
+        <item quantity="other">%d discs</item>
+    </plurals>
+    <string name="pocket_advance_button_a">A · PLAY</string>
+    <string name="pocket_advance_button_a_pause">A · PAUSE</string>
+    <string name="pocket_advance_button_b">B · CLOSE</string>
 </resources>

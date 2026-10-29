@@ -8,13 +8,15 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.Dp
 import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.data.Song
-import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
+import io.github.rsgarrido.sazanami.ui.player.PlayerPresentationIdentity
+import io.github.rsgarrido.sazanami.ui.player.ResolvedPlayerPresentation
 import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.classicwheel.ClassicWheelMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.retrorack.RetroRackMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketflip.PocketFlipMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketcassette.PocketCassetteMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketdisc.PocketDiscMorphBounds
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvancePlayerMorphBounds
 
 data class MiniPlayerState(
     val currentSong: Song,
@@ -60,8 +62,7 @@ internal fun miniPlayerVariantFor(playerTheme: PlayerTheme): MiniPlayerVariant =
 
 @Composable
 fun MiniPlayerHost(
-    selectedPlayerTheme: PlayerTheme,
-    tokens: PlayerThemeTokens,
+    playerPresentation: ResolvedPlayerPresentation,
     state: MiniPlayerState,
     callbacks: MiniPlayerCallbacks,
     modifier: Modifier = Modifier,
@@ -72,13 +73,29 @@ fun MiniPlayerHost(
     pocketFlipMorphBounds: PocketFlipMorphBounds? = null,
     pocketCassetteMorphBounds: PocketCassetteMorphBounds? = null,
     pocketDiscMorphBounds: PocketDiscMorphBounds? = null,
+    pocketAdvanceMorphBounds: PocketAdvancePlayerMorphBounds? = null,
     defaultMorphCallbacks: DefaultMiniPlayerMorphCallbacks? = null,
     morphOwnsVisuals: Boolean = false
 ) {
+    val tokens = playerPresentation.tokens
     val measuredModifier = modifier.onGloballyPositioned { coordinates ->
         onBoundsChanged(coordinates.boundsInRoot())
     }
-    when (miniPlayerVariantFor(selectedPlayerTheme)) {
+    val playerTheme = when (val identity = playerPresentation.identity) {
+        is PlayerPresentationIdentity.Existing -> identity.theme
+        PlayerPresentationIdentity.PocketAdvance -> {
+            PocketAdvanceMiniPlayer(
+                state = state,
+                callbacks = callbacks,
+                morphBounds = pocketAdvanceMorphBounds,
+                morphCallbacks = defaultMorphCallbacks,
+                morphOwnsVisuals = morphOwnsVisuals,
+                modifier = measuredModifier
+            )
+            return
+        }
+    }
+    when (miniPlayerVariantFor(playerTheme)) {
         MiniPlayerVariant.MODERN -> ModernMiniPlayer(
             state = state,
             callbacks = callbacks,

@@ -19,6 +19,11 @@ internal val NowPlayingAction.isQuickAction: Boolean
 
 internal enum class NowPlayingFavoriteFeedback { ADDED_TO_FAVORITES, REMOVED_FROM_FAVORITES }
 
+internal fun supportsNowPlayingMore(presentation: PlayerPresentationIdentity): Boolean = when (presentation) {
+    is PlayerPresentationIdentity.Existing -> supportsNowPlayingMore(presentation.theme)
+    PlayerPresentationIdentity.PocketAdvance -> true
+}
+
 internal fun supportsNowPlayingMore(theme: PlayerTheme): Boolean = when (theme) {
     PlayerTheme.DEFAULT, PlayerTheme.RETRO_RACK, PlayerTheme.POCKET_FLIP,
     PlayerTheme.POCKET_CASSETTE, PlayerTheme.POCKET_DISC -> true

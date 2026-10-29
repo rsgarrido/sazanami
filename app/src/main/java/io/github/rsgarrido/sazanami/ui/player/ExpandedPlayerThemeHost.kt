@@ -20,6 +20,9 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.data.Song
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortState
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortOption
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortDirection
 import io.github.rsgarrido.sazanami.player.RepeatMode
 import io.github.rsgarrido.sazanami.ui.library.buildLibraryAlbumGroups
 import io.github.rsgarrido.sazanami.ui.library.findLibraryAlbumGroupForSong
@@ -83,7 +86,6 @@ import io.github.rsgarrido.sazanami.ui.player.retrorack.retroRackSharedOwner
 import io.github.rsgarrido.sazanami.ui.player.retrorack.retroRackMorphTravelDistance
 import io.github.rsgarrido.sazanami.ui.player.retrorack.RetroRackMorphSpec
 import io.github.rsgarrido.sazanami.ui.player.retrorack.retroRackDistanceThreshold
-import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokens
 import io.github.rsgarrido.sazanami.ui.player.PlayerEndpointBounds
 import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerMorph
 import io.github.rsgarrido.sazanami.ui.player.modern.DefaultPlayerMorphBounds
@@ -101,13 +103,18 @@ import io.github.rsgarrido.sazanami.ui.player.modern.rememberModernArtworkHorizo
 import io.github.rsgarrido.sazanami.ui.player.modern.modernArtworkClickCallback
 import io.github.rsgarrido.sazanami.ui.player.retrorack.RetroRackSharedOwner
 import io.github.rsgarrido.sazanami.ui.player.pocketdisc.PocketDiscSharedOwner
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceNavigationState
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.rememberPocketAdvanceNavigationState
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.shouldShowPocketAdvanceBrowser
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceExpandedPlayer
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvancePlayerMorph
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvancePlayerMorphBounds
 import io.github.rsgarrido.sazanami.data.membershipKey
 import kotlin.math.roundToInt
 
 @Composable
 fun ExpandedPlayerThemeHost(
-    selectedPlayerTheme: PlayerTheme,
-    tokens: PlayerThemeTokens,
+    playerPresentation: ResolvedPlayerPresentation,
     currentSong: Song?,
     previousPreviewSong: Song?,
     nextPreviewSong: Song?,
@@ -152,10 +159,91 @@ fun ExpandedPlayerThemeHost(
     pocketFlipMorphBounds: PocketFlipMorphBounds,
     pocketCassetteMorphBounds: PocketCassetteMorphBounds,
     pocketDiscMorphBounds: PocketDiscMorphBounds,
-    defaultPlayerLayout: DefaultPlayerLayout? = null
+    defaultPlayerLayout: DefaultPlayerLayout? = null,
+    pocketAdvanceMorphBounds: PocketAdvancePlayerMorphBounds? = null,
+    pocketAdvanceNavigationState: PocketAdvanceNavigationState = rememberPocketAdvanceNavigationState(),
+    isLibraryReady: Boolean = true,
+    songsRepeatAllowed: Boolean = true,
+    artistSortState: LibrarySortState = LibrarySortState(LibrarySortOption.NAME, LibrarySortDirection.ASCENDING),
+    albumSortState: LibrarySortState = LibrarySortState(LibrarySortOption.TITLE, LibrarySortDirection.ASCENDING)
 ) {
+    val selectedPlayerTheme = when (val identity = playerPresentation.identity) {
+        is PlayerPresentationIdentity.Existing -> identity.theme
+        PlayerPresentationIdentity.PocketAdvance -> {
+            val openLyricsLabel = stringResource(R.string.player_open_lyrics)
+            val browserVisible = shouldShowPocketAdvanceBrowser(pocketAdvanceNavigationState, playerMorphState)
+            val advanceActionsEnabled = !browserVisible &&
+                canOpenArtworkAtExpandedEndpoint(playerMorphState, lyricsTransitionState)
+            val bounds = pocketAdvanceMorphBounds ?: remember(endpointBounds) {
+                PocketAdvancePlayerMorphBounds(currentLayoutFrame = { endpointBounds.layoutFrame })
+            }
+            PocketAdvancePlayerMorph(
+                progress = playerMorphState.progress,
+                geometry = bounds.resolveGeometry(playerMorphState.progress, endpointBounds),
+                currentSong = currentSong,
+                isPlaying = isPlaying,
+                currentPosition = currentPosition,
+                duration = duration,
+                onPlayPauseClick = onPlayPauseClick,
+                nowPlayingContentVisible = !browserVisible
+            ) { visual ->
+                PocketAdvanceExpandedPlayer(
+                    currentSong = currentSong,
+                    isPlaying = isPlaying,
+                    isShuffleEnabled = isShuffleEnabled,
+                    repeatMode = repeatMode,
+                    currentPosition = currentPosition,
+                    duration = duration,
+                    onPlayPauseClick = onPlayPauseClick,
+                    onPreviousClick = onPreviousClick,
+                    onNextClick = onNextClick,
+                    onSeekChange = onSeekChange,
+                    onShuffleClick = onShuffleClick,
+                    onRepeatClick = onRepeatClick,
+                    onCollapseClick = onCollapseClick,
+                    onOpenUpNextClick = onOpenQueueHubClick,
+                    onMoreClick = onOpenMoreClick,
+                    navigationState = pocketAdvanceNavigationState,
+                    songs = songs,
+                    onSongClick = onSongClick,
+                    isLibraryReady = isLibraryReady,
+                    artistSortState = artistSortState,
+                    albumSortState = albumSortState,
+                    songsRepeatAllowed = songsRepeatAllowed,
+                    browserVisible = browserVisible,
+                    modifier = if (visual.inputEnabled && !browserVisible) Modifier.semantics {
+                        customActions = listOf(CustomAccessibilityAction(openLyricsLabel) {
+                            lyricsTransitionState.openLyrics()
+                            true
+                        })
+                    } else Modifier,
+                    renderShell = visual.endpointOwnsVisuals,
+                    shellAlpha = visual.shellAlpha,
+                    bezelAlpha = visual.bezelAlpha,
+                    hardwareAlpha = visual.hardwareAlpha,
+                    displayDetailsAlpha = visual.displayDetailsAlpha,
+                    inputEnabled = visual.inputEnabled && !playerMorphState.isDragging && !playerMorphState.isAnimating,
+                    // Preserve a captured gesture even after its reveal/input window closes.
+                    collapseGestureEnabled = visual.collapseGestureEnabled || playerMorphState.isDragging,
+                    morphBounds = bounds,
+                    morphOwnsSharedVisuals = visual.morphOwnsSharedVisuals,
+                    onMorphDragStart = { playerMorphState.beginDragWithRange(bounds.travelDistance(endpointBounds)) },
+                    onMorphDragBy = playerMorphState::dragBy,
+                    onMorphDragEnd = playerMorphState::endDrag,
+                    onMorphDragCancel = playerMorphState::cancelDrag,
+                    lyricsGestureRegion = lyricsGestureRegion,
+                    onViewArtwork = onViewArtwork.takeIf { advanceActionsEnabled },
+                    onOpenArtist = onOpenCurrentArtistClick.takeIf { advanceActionsEnabled },
+                    onOpenAlbum = onOpenCurrentAlbumClick.takeIf { advanceActionsEnabled },
+                    onOpenLyrics = if (advanceActionsEnabled) lyricsTransitionState::openLyrics else null
+                )
+            }
+            return
+        }
+    }
+    val tokens = playerPresentation.tokens
     val shouldLoadWaveform = shouldLoadExpandedPlayerWaveform(
-        selectedPlayerTheme = selectedPlayerTheme,
+        presentation = playerPresentation.identity,
         modernSeekbarStyle = modernPlayerAppearance.seekbar.style
     ) && when (selectedPlayerTheme) {
         PlayerTheme.DEFAULT -> shouldRunDefaultExpandedWork(playerMorphState.progress)

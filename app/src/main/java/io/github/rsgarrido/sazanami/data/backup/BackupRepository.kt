@@ -13,6 +13,11 @@ import io.github.rsgarrido.sazanami.data.artistIdentity
 import io.github.rsgarrido.sazanami.data.FolderSelection
 import io.github.rsgarrido.sazanami.data.ListeningHistoryRepository
 import io.github.rsgarrido.sazanami.data.PlayerTheme
+import io.github.rsgarrido.sazanami.data.TabletLandscapeTheme
+import io.github.rsgarrido.sazanami.data.PocketAdvanceAppearance
+import io.github.rsgarrido.sazanami.data.PocketAdvanceConsoleFinish
+import io.github.rsgarrido.sazanami.data.PocketAdvanceLcdPalette
+import io.github.rsgarrido.sazanami.data.PocketAdvanceControlsFinish
 import io.github.rsgarrido.sazanami.data.PlaylistsRepository
 import io.github.rsgarrido.sazanami.data.PlaylistArtworkMode
 import io.github.rsgarrido.sazanami.data.visual.VisualAssetOwnerType
@@ -116,6 +121,10 @@ class BackupRepository(
                     .sorted(),
                 appAppearance = appPreferences.appAppearance.storageValue,
                 selectedPlayerThemeId = appPreferences.selectedPlayerTheme.id,
+                tabletLandscapeThemeId = appPreferences.tabletLandscapeTheme.id,
+                pocketAdvanceConsoleFinishId = appPreferences.pocketAdvanceAppearance.consoleFinish.id,
+                pocketAdvanceLcdPaletteId = appPreferences.pocketAdvanceAppearance.lcdPalette.id,
+                pocketAdvanceControlsFinishId = appPreferences.pocketAdvanceAppearance.controlsFinish.id,
                 replayGainMode = appPreferences.replayGainMode.name,
                 audioOffloadPreference = appPreferences.audioOffloadPreference.name,
                 smoothPlayPauseEnabled = appPreferences.smoothPlayPauseEnabled,
@@ -449,6 +458,8 @@ class BackupRepository(
             AppPreferencesState(
                 appAppearance = preferences.toAppAppearance(),
                 selectedPlayerTheme = PlayerTheme.fromId(preferences.selectedPlayerThemeId),
+                tabletLandscapeTheme = TabletLandscapeTheme.fromId(preferences.tabletLandscapeThemeId),
+                pocketAdvanceAppearance = preferences.toPocketAdvanceAppearance(),
                 playerThemeTokenOverrides = overrides,
                 modernArtworkTransitionStyle = ModernArtworkTransitionStyle.fromStorageValue(
                     preferences.modernArtworkTransitionStyle
@@ -516,6 +527,12 @@ class BackupRepository(
         const val APP_NAME = "Sazanami"
     }
 }
+
+internal fun BackupPreferences.toPocketAdvanceAppearance(): PocketAdvanceAppearance = PocketAdvanceAppearance(
+    consoleFinish = PocketAdvanceConsoleFinish.fromId(pocketAdvanceConsoleFinishId),
+    lcdPalette = PocketAdvanceLcdPalette.fromId(pocketAdvanceLcdPaletteId),
+    controlsFinish = PocketAdvanceControlsFinish.fromId(pocketAdvanceControlsFinishId)
+)
 
 internal fun BackupPreferences.toAppAppearance(): AppAppearance =
     AppAppearance.fromStorageValue(appAppearance)

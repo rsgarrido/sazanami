@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import io.github.rsgarrido.sazanami.data.PlayerTheme
+import io.github.rsgarrido.sazanami.data.TabletLandscapeTheme
 import io.github.rsgarrido.sazanami.data.FolderSelectionMode
 import io.github.rsgarrido.sazanami.data.SongReference
 import io.github.rsgarrido.sazanami.data.home.HomePin
@@ -53,6 +54,51 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AppPreferencesStateTest {
+    @Test
+    fun tabletLandscapeSelectionDefaultsBeforeLoadingAndInExistingPreferences() {
+        val initial = AppPreferencesState()
+        assertFalse(initial.isLoaded)
+        assertEquals(TabletLandscapeTheme.NORMAL_PLAYER, initial.tabletLandscapeTheme)
+        val loaded = decodeAppPreferences(mutablePreferencesOf())
+        assertTrue(loaded.isLoaded)
+        assertEquals(TabletLandscapeTheme.NORMAL_PLAYER, loaded.tabletLandscapeTheme)
+        assertEquals(PlayerTheme.DEFAULT, loaded.selectedPlayerTheme)
+    }
+
+    @Test
+    fun tabletLandscapeSelectionDecodesIndependentlyOfEveryNormalThemeAndItsColors() {
+        PlayerTheme.entries.forEach { primary ->
+            val stored = mutablePreferencesOf(
+                stringPreferencesKey("selected_player_theme") to primary.id,
+                stringPreferencesKey("tablet_landscape_theme") to "pocket_advance",
+                stringPreferencesKey("classic_wheel.shell") to "#FF123456"
+            )
+            val loaded = decodeAppPreferences(stored)
+            assertEquals(TabletLandscapeTheme.POCKET_ADVANCE, loaded.tabletLandscapeTheme)
+            assertEquals(primary, loaded.selectedPlayerTheme)
+            assertEquals(Color(0xFF123456), loaded.playerThemeTokenOverrides[PlayerTheme.CLASSIC_WHEEL]?.shellColor)
+            stored[stringPreferencesKey("tablet_landscape_theme")] = "normal_player"
+            val disabled = decodeAppPreferences(stored)
+            assertEquals(TabletLandscapeTheme.NORMAL_PLAYER, disabled.tabletLandscapeTheme)
+            assertEquals(primary, disabled.selectedPlayerTheme)
+            assertEquals(loaded.playerThemeTokenOverrides, disabled.playerThemeTokenOverrides)
+        }
+    }
+
+    @Test
+    fun invalidTabletLandscapeIdsLeaveTheSavedPrimaryAndCustomizationUntouched() {
+        listOf("", "POCKET_ADVANCE", "future_theme", "1").forEach { invalid ->
+            val loaded = decodeAppPreferences(mutablePreferencesOf(
+                stringPreferencesKey("selected_player_theme") to "pocket_cassette",
+                stringPreferencesKey("tablet_landscape_theme") to invalid,
+                stringPreferencesKey("pocket_cassette.accent") to "#FF456789"
+            ))
+            assertEquals(TabletLandscapeTheme.NORMAL_PLAYER, loaded.tabletLandscapeTheme)
+            assertEquals(PlayerTheme.POCKET_CASSETTE, loaded.selectedPlayerTheme)
+            assertEquals(Color(0xFF456789), loaded.playerThemeTokenOverrides[PlayerTheme.POCKET_CASSETTE]?.accentColor)
+        }
+    }
+
     @Test
     fun landscapeChoiceDefaultsSafelyAndNeverEditsAnAppearanceRecipe() {
         val key = stringPreferencesKey("modern_landscape_layout")
