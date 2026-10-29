@@ -34,7 +34,7 @@ import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceArtist
 import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceArtwork
-import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceColors
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.LocalPocketAdvancePalette
 import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvancePlayVisual
 import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvancePlayerMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceTitle
@@ -50,6 +50,7 @@ fun PocketAdvanceMiniPlayer(
     morphOwnsVisuals: Boolean = false,
     morphBounds: PocketAdvancePlayerMorphBounds? = null
 ) {
+    val colors = LocalPocketAdvancePalette.current
     // A viewport epoch gets a new holder: disposing this subtree cancels the old pointer scope.
     key(morphBounds) {
         MiniPlayerScaffold(
@@ -59,8 +60,8 @@ fun PocketAdvanceMiniPlayer(
                 .testTag("pocketAdvanceMini")
                 .graphicsLayer { alpha = if (morphOwnsVisuals) 0f else 1f }
                 .then(if (morphOwnsVisuals) Modifier.clearAndSetSemantics { } else Modifier),
-            containerColor = PocketAdvanceColors.Shell,
-            borderColor = PocketAdvanceColors.ShellHighlight,
+            containerColor = colors.Shell,
+            borderColor = colors.ShellHighlight,
             shape = RoundedCornerShape(16.dp),
             defaultMorphCallbacks = morphCallbacks,
             onSurfaceBoundsChanged = { morphBounds?.updateMiniSurface(it) }
@@ -77,16 +78,16 @@ fun PocketAdvanceMiniPlayer(
                         lineTo(unit, size.height); lineTo(unit, unit * 2)
                         lineTo(0f, unit * 2); lineTo(0f, unit); lineTo(unit, unit); close()
                     }
-                    drawPath(cross, PocketAdvanceColors.ShellShade)
-                    drawCircle(PocketAdvanceColors.ShellHighlight.copy(alpha = .45f), unit * .22f)
+                    drawPath(cross, colors.ShellShade)
+                    drawCircle(colors.ShellHighlight.copy(alpha = .45f), unit * .22f)
                 }
                 Spacer(Modifier.width(10.dp))
                 Row(
                     Modifier.weight(1f).height(48.dp)
                         .onGloballyPositioned { if (isCurrentSource) morphBounds?.updateMiniDisplay(it.boundsInRoot()) }
-                        .background(PocketAdvanceColors.Bezel, RoundedCornerShape(8.dp))
+                        .background(colors.Bezel, RoundedCornerShape(8.dp))
                         .padding(3.dp)
-                        .background(PocketAdvanceColors.Screen, RoundedCornerShape(5.dp))
+                        .background(colors.Screen, RoundedCornerShape(5.dp))
                         .padding(3.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -113,8 +114,8 @@ fun PocketAdvanceMiniPlayer(
                                     morphBounds?.updateMiniProgress(rect.translate(0f, -rect.height / 2f))
                                 }
                             }) {
-                            drawLine(PocketAdvanceColors.MutedInk.copy(alpha = .22f), Offset.Zero, Offset(size.width, 0f), size.height)
-                            drawLine(PocketAdvanceColors.ScreenAccent, Offset.Zero,
+                            drawLine(colors.MutedInk.copy(alpha = .22f), Offset.Zero, Offset(size.width, 0f), size.height)
+                            drawLine(colors.ScreenAccent, Offset.Zero,
                                 Offset(size.width * normalizedMiniPlayerProgress(displayedState.currentPosition, displayedState.duration), 0f), size.height)
                         }
                     }

@@ -61,6 +61,7 @@ internal fun PocketAdvancePlayerMorph(
     modifier: Modifier = Modifier,
     expandedContent: @Composable (PocketAdvanceMorphVisualState) -> Unit
 ) {
+    val colors = LocalPocketAdvancePalette.current
     val p = pocketAdvanceSafeProgress(progress)
     val visual = pocketAdvanceMorphVisualState(p, geometry != null)
     val density = LocalDensity.current
@@ -74,7 +75,7 @@ internal fun PocketAdvancePlayerMorph(
                         ((p - 0.04f) / 0.70f).coerceIn(0f, 1f)
                     } else 0f
                 }
-                .background(Brush.radialGradient(listOf(PocketAdvanceColors.ShellHighlight, PocketAdvanceColors.ShellShade)))
+                .background(Brush.radialGradient(listOf(colors.ShellHighlight, colors.ShellShade)))
         )
         if (geometry != null) {
             PocketAdvanceShell(
@@ -93,10 +94,10 @@ internal fun PocketAdvancePlayerMorph(
                 val bezelShape = RoundedCornerShape((8f + 12f * p).dp)
                 Box(
                     Modifier.atPocketAdvanceRect(geometry.display, density)
-                        .background(PocketAdvanceColors.Bezel, bezelShape)
-                        .border(1.dp, PocketAdvanceColors.ShellShade.copy(alpha = p), bezelShape)
+                        .background(colors.Bezel, bezelShape)
+                        .border(1.dp, colors.ShellShade.copy(alpha = p), bezelShape)
                         .padding((3f + 5f * p).dp)
-                        .background(PocketAdvanceColors.Screen, RoundedCornerShape((5f + 7f * p).dp))
+                        .background(colors.Screen, RoundedCornerShape((5f + 7f * p).dp))
                 )
             }
         }
@@ -155,8 +156,8 @@ internal fun PocketAdvancePlayerMorph(
                                 lineTo(unit, size.height); lineTo(unit, unit * 2f)
                                 lineTo(0f, unit * 2f); lineTo(0f, unit); lineTo(unit, unit); close()
                             }
-                            drawPath(cross, PocketAdvanceColors.ShellShade)
-                            drawCircle(PocketAdvanceColors.ShellHighlight.copy(alpha = .45f), unit * .22f)
+                            drawPath(cross, colors.ShellShade)
+                            drawCircle(colors.ShellHighlight.copy(alpha = .45f), unit * .22f)
                         }
 
                     }
@@ -164,7 +165,7 @@ internal fun PocketAdvancePlayerMorph(
 
                 Canvas(Modifier.atPocketAdvanceRect(geometry.progressTrack, density)
                     .testTag("pocketAdvanceMorphProgress")) {
-                    drawPocketAdvanceProgress(normalizedMiniPlayerProgress(currentPosition, duration), p)
+                    drawPocketAdvanceProgress(normalizedMiniPlayerProgress(currentPosition, duration), p, colors)
                 }
 
                 // The measured rectangle describes the visible button. Its final interactive

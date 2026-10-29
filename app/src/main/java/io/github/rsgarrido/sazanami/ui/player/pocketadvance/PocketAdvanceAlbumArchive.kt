@@ -83,6 +83,7 @@ internal fun PocketAdvanceAlbumArchive(
     onActivateSong: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalPocketAdvancePalette.current
     val recordPage = navigation.browserPage as? PocketAdvanceBrowserPage.AlbumRecord
     val isRecord = recordPage != null
     val selectedIndex = navigation.selectedAlbumIndex(albumKeys)
@@ -109,22 +110,22 @@ internal fun PocketAdvanceAlbumArchive(
                 Column(Modifier.offset(8.dp, metadataTop.dp).width((panelWidth - 16f).coerceAtLeast(1f).dp)
                     .height((lcdHeight.value - metadataTop).coerceAtLeast(1f).dp).verticalScroll(metadataScroll),
                     verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    if (isRecord) Text(title, color = PocketAdvanceColors.Ink, fontFamily = FontFamily.Monospace,
+                    if (isRecord) Text(title, color = colors.Ink, fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2,
                         overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("pocketAdvanceAlbumRecordTitle"))
-                    else Text(position, color = PocketAdvanceColors.Ink, fontFamily = FontFamily.Monospace,
+                    else Text(position, color = colors.Ink, fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold, fontSize = 10.sp, lineHeight = 12.sp, maxLines = 1,
                         modifier = Modifier.testTag("pocketAdvanceAlbumIndex"))
                     album?.let { current ->
-                        Text(pocketAdvanceAlbumArtist(current), color = PocketAdvanceColors.MutedInk,
+                        Text(pocketAdvanceAlbumArtist(current), color = colors.MutedInk,
                             fontFamily = FontFamily.Monospace, fontSize = 10.sp, lineHeight = 13.sp,
                             maxLines = if (isRecord) 1 else 2, overflow = TextOverflow.Ellipsis)
                         Text(pluralStringResource(R.plurals.player_wheel_song_count, current.songs.size, current.songs.size),
-                            color = PocketAdvanceColors.Ink, fontFamily = FontFamily.Monospace,
+                            color = colors.Ink, fontFamily = FontFamily.Monospace,
                             fontSize = 9.sp, lineHeight = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         val discs = remember(current.songs) { buildLibraryAlbumDiscSections(current.songs).mapNotNull { it.discNumber }.distinct().size }
                         if (discs > 1) Text(pluralStringResource(R.plurals.pocket_advance_disc_count, discs, discs),
-                            color = PocketAdvanceColors.MutedInk, fontFamily = FontFamily.Monospace,
+                            color = colors.MutedInk, fontFamily = FontFamily.Monospace,
                             fontSize = 9.sp, lineHeight = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
@@ -148,6 +149,7 @@ private fun PocketAdvanceArchiveArtwork(
     album: LibraryAlbumGroup?, title: String, position: String, canOpen: Boolean,
     onActivateAlbum: (String) -> Unit, modifier: Modifier
 ) {
+    val colors = LocalPocketAdvancePalette.current
     val uri = album?.songs?.firstOrNull()?.albumArtUri?.takeIf { isPocketAdvanceArchiveArtworkSchemeLocal(it.scheme) }
     val sharedRequest = rememberLibraryArtworkRequest(LibraryArtworkOwnerType.ALBUM, album?.key.orEmpty(), uri, VisualAssetVariant.DISPLAY)
     // A fixed decode size avoids resizing/redecoding the cover on every opening-animation frame.
@@ -155,13 +157,13 @@ private fun PocketAdvanceArchiveArtwork(
     val description = stringResource(R.string.library_album_art_for, title)
     val openLabel = stringResource(R.string.pocket_advance_open_entry, title)
     Box(modifier.testTag("pocketAdvanceAlbumArtwork:" + (album?.key ?: "unavailable"))
-        .clip(RoundedCornerShape(4.dp)).background(PocketAdvanceColors.ScreenShade)
-        .border(1.dp, PocketAdvanceColors.Ink.copy(alpha = .65f), RoundedCornerShape(4.dp))
+        .clip(RoundedCornerShape(4.dp)).background(colors.ScreenShade)
+        .border(1.dp, colors.Ink.copy(alpha = .65f), RoundedCornerShape(4.dp))
         .then(if (canOpen && album != null) Modifier.clickable(role = Role.Button, onClickLabel = openLabel,
             onClick = { onActivateAlbum(album.key) }) else Modifier)
         .semantics { contentDescription = description; stateDescription = position; if (!canOpen) role = Role.Image }
         .padding(3.dp), contentAlignment = Alignment.Center) {
-        Icon(Icons.Filled.Album, null, tint = PocketAdvanceColors.MutedInk, modifier = Modifier.size(28.dp))
+        Icon(Icons.Filled.Album, null, tint = colors.MutedInk, modifier = Modifier.size(28.dp))
         // A new identity disposes the old painter immediately: rapid selection never retains another cover.
         key(album?.key, uri) {
             if (request != null) AsyncImage(request, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)

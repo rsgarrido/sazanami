@@ -13,6 +13,10 @@ import io.github.rsgarrido.sazanami.data.Playlist
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.membershipKey
 import io.github.rsgarrido.sazanami.ui.player.NowPlayingAction
+import io.github.rsgarrido.sazanami.ui.player.PlayerPresentationIdentity
+import io.github.rsgarrido.sazanami.data.PocketAdvanceLcdPalette
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.LocalPocketAdvancePalette
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceOverlayTheme
 import io.github.rsgarrido.sazanami.ui.player.NowPlayingMoreDialog
 import io.github.rsgarrido.sazanami.ui.player.nowPlayingActions
 import io.github.rsgarrido.sazanami.ui.playlist.AddToPlaylistDialog
@@ -71,56 +75,67 @@ internal fun MusicTransientOverlays(
     sleepTimerDisplayText: String,
     onStartSleepTimerClick: (Int) -> Unit,
     onCancelSleepTimerClick: () -> Unit,
-    onDismissSleepTimerDialog: () -> Unit
+    onDismissSleepTimerDialog: () -> Unit,
+    playerPresentation: PlayerPresentationIdentity? = null
 ) {
+    val advance = playerPresentation == PlayerPresentationIdentity.PocketAdvance
+    val palette = LocalPocketAdvancePalette.current
+    val overlayAccent = if (advance && palette.lcdPalette != PocketAdvanceLcdPalette.ORIGINAL) palette.Ink else null
     if (nowPlayingMoreTarget != null) {
         val ratings = LocalSongRatingUi.current.state.ratingsByReferenceKey
         val isRated = (ratings[nowPlayingMoreTarget.membershipKey()] ?: 0) in 1..5
         val actions = remember(nowPlayingMoreTarget, favoriteMembershipKeys, songs, isRated, isSleepTimerActive) {
             nowPlayingActions(nowPlayingMoreTarget, favoriteMembershipKeys, songs, isRated, isSleepTimerActive)
         }
-        NowPlayingMoreDialog(
-            target = nowPlayingMoreTarget,
-            actions = actions,
-            onDismiss = onDismissNowPlayingMore,
-            onAction = { action -> onNowPlayingMoreAction(action, nowPlayingMoreTarget) }
-        )
-    }
-
-    if (isExpandedUpNextSheetVisible) {
-        ModalBottomSheet(
-            onDismissRequest = onDismissExpandedUpNextSheet
-        ) {
-            QueueScreen(
-                queuedSongs = queuedSongs,
-                upcomingSongs = upcomingSongs,
-                isShuffleEnabled = isShuffleEnabled,
-                onBackClick = onDismissExpandedUpNextSheet,
-                onRemoveFromQueueClick = onRemoveFromQueueClick,
-                onMoveQueueItemUpClick = onMoveQueueItemUpClick,
-                onMoveQueueItemDownClick = onMoveQueueItemDownClick,
-                onClearQueueClick = onClearQueueClick,
-                modifier = Modifier.fillMaxHeight(0.86f)
+        PocketAdvanceOverlayTheme(active = advance) {
+            NowPlayingMoreDialog(
+                accentOverride = overlayAccent,
+                target = nowPlayingMoreTarget,
+                actions = actions,
+                onDismiss = onDismissNowPlayingMore,
+                onAction = { action -> onNowPlayingMoreAction(action, nowPlayingMoreTarget) }
             )
         }
     }
 
+    if (isExpandedUpNextSheetVisible) {
+        PocketAdvanceOverlayTheme(active = advance) {
+            ModalBottomSheet(
+                onDismissRequest = onDismissExpandedUpNextSheet
+            ) {
+                QueueScreen(
+                    queuedSongs = queuedSongs,
+                    upcomingSongs = upcomingSongs,
+                    isShuffleEnabled = isShuffleEnabled,
+                    onBackClick = onDismissExpandedUpNextSheet,
+                    onRemoveFromQueueClick = onRemoveFromQueueClick,
+                    onMoveQueueItemUpClick = onMoveQueueItemUpClick,
+                    onMoveQueueItemDownClick = onMoveQueueItemDownClick,
+                    onClearQueueClick = onClearQueueClick,
+                    modifier = Modifier.fillMaxHeight(0.86f)
+                )
+            }
+        }
+    }
+
     if (isQueueHubVisible) {
-        QueueHubSheet(
-            state = playbackQueueHubUiState,
-            onDismiss = onDismissQueueHub,
-            onQueueSelected = onPlaybackQueueSelected,
-            onSwitchSelected = onSwitchSelectedPlaybackQueue,
-            onCreateFromCurrent = onCreatePlaybackQueueFromCurrent,
-            onRename = onRenamePlaybackQueue,
-            onDelete = onDeletePlaybackQueue,
-            onRemoveEntry = onRemovePlaybackQueueEntry,
-            onPlayEntry = onPlayPlaybackQueueEntry,
-            onUndoRemove = onUndoPlaybackQueueEntryRemoval,
-            onUndoDismissed = onClearPlaybackQueueEntryRemovalUndo,
-            onReorderEntry = onReorderPlaybackQueueEntry,
-            onMessageDismissed = onClearPlaybackQueueMessage
-        )
+        PocketAdvanceOverlayTheme(active = advance) {
+            QueueHubSheet(
+                state = playbackQueueHubUiState,
+                onDismiss = onDismissQueueHub,
+                onQueueSelected = onPlaybackQueueSelected,
+                onSwitchSelected = onSwitchSelectedPlaybackQueue,
+                onCreateFromCurrent = onCreatePlaybackQueueFromCurrent,
+                onRename = onRenamePlaybackQueue,
+                onDelete = onDeletePlaybackQueue,
+                onRemoveEntry = onRemovePlaybackQueueEntry,
+                onPlayEntry = onPlayPlaybackQueueEntry,
+                onUndoRemove = onUndoPlaybackQueueEntryRemoval,
+                onUndoDismissed = onClearPlaybackQueueEntryRemovalUndo,
+                onReorderEntry = onReorderPlaybackQueueEntry,
+                onMessageDismissed = onClearPlaybackQueueMessage
+            )
+        }
     }
 
     if (isCreatePlaylistDialogVisible) {

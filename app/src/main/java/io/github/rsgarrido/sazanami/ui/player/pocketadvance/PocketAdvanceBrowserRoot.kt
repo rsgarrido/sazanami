@@ -73,6 +73,7 @@ internal fun PocketAdvanceBrowserRoot(
     navigation: PocketAdvanceNavigationState,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalPocketAdvancePalette.current
     val listState = navigation.rootListState
     LaunchedEffect(navigation.rootScrollRequest) {
         if (navigation.takeRootScrollRequest()) {
@@ -92,10 +93,10 @@ internal fun PocketAdvanceBrowserRoot(
                 Modifier.fillMaxWidth().heightIn(min = 48.dp)
                     .testTag("pocketAdvanceRoot${entry.name}")
                     .background(
-                        if (selected) PocketAdvanceColors.Ink else PocketAdvanceColors.Screen,
+                        if (selected) colors.Ink else colors.Screen,
                         RoundedCornerShape(4.dp)
                     )
-                    .border(1.dp, if (selected) PocketAdvanceColors.ScreenAccent else PocketAdvanceColors.ScreenShade,
+                    .border(1.dp, if (selected) colors.ScreenAccent else colors.ScreenShade,
                         RoundedCornerShape(4.dp))
                     .selectable(
                         selected = selected, enabled = entry.isAvailable, role = Role.Button,
@@ -106,12 +107,12 @@ internal fun PocketAdvanceBrowserRoot(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text(title, color = if (selected) PocketAdvanceColors.Screen else PocketAdvanceColors.Ink,
+                    Text(title, color = if (selected) colors.Screen else colors.Ink,
                         fontSize = 15.sp, fontFamily = FontFamily.Monospace,
                         fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (!entry.isAvailable) {
-                        Text(unavailable, color = if (selected) PocketAdvanceColors.Screen else PocketAdvanceColors.MutedInk,
+                        Text(unavailable, color = if (selected) colors.Screen else colors.MutedInk,
                             fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                     }
                 }

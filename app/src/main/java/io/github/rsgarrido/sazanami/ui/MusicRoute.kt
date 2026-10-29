@@ -682,6 +682,11 @@ internal fun MusicRoute(
             },
             selectedTabletLandscapeTheme = playerAppearanceUiState.tabletLandscapeTheme,
             onTabletLandscapeThemeSelected = musicViewModel::selectTabletLandscapeTheme,
+            pocketAdvanceAppearance = playerAppearanceUiState.pocketAdvanceAppearance,
+            onPocketAdvanceConsoleFinishSelected = musicViewModel::selectPocketAdvanceConsoleFinish,
+            onPocketAdvanceLcdPaletteSelected = musicViewModel::selectPocketAdvanceLcdPalette,
+            onPocketAdvanceControlsFinishSelected = musicViewModel::selectPocketAdvanceControlsFinish,
+            onResetPocketAdvanceAppearance = musicViewModel::resetPocketAdvanceAppearance,
             onUpdatePlayerThemeTokenOverride = musicViewModel::updatePlayerThemeTokenOverride,
             onResetPlayerThemeTokenOverrides = musicViewModel::resetPlayerThemeTokenOverrides,
             selectedModernArtworkTransitionStyle =

@@ -114,6 +114,25 @@
     <string name="settings_tablet_landscape_theme_summary">Pocket Advance activates only in supported full-screen tablet landscape layouts. Portrait and other unsupported layouts use your normal Player Theme.</string>
     <string name="tablet_landscape_theme_normal_player">Use normal player</string>
     <string name="tablet_landscape_theme_pocket_advance" translatable="false">Pocket Advance</string>
+    <string name="settings_customize_pocket_advance">Customize Pocket Advance</string>
+    <string name="settings_customize_pocket_advance_summary">Choose coordinated console, LCD, and control finishes, even when Pocket Advance is not active.</string>
+    <string name="pocket_advance_console_finish">Console Finish</string>
+    <string name="pocket_advance_console_finish_description">Shell surfaces, highlights, seams, and hardware labels</string>
+    <string name="pocket_advance_lcd_palette">LCD Palette</string>
+    <string name="pocket_advance_lcd_palette_description">Coordinated display backgrounds, text, selection, and playback accents</string>
+    <string name="pocket_advance_controls_finish">Controls Finish</string>
+    <string name="pocket_advance_controls_finish_description">D-pad, face buttons, START, and their coordinated shading and icons</string>
+    <string name="pocket_advance_console_original_purple">Original Purple</string>
+    <string name="pocket_advance_console_graphite">Graphite</string>
+    <string name="pocket_advance_console_ocean_blue">Ocean Blue</string>
+    <string name="pocket_advance_console_forest_green">Forest Green</string>
+    <string name="pocket_advance_console_berry">Berry</string>
+    <string name="pocket_advance_lcd_original">Original LCD</string>
+    <string name="pocket_advance_lcd_classic_green">Classic Green</string>
+    <string name="pocket_advance_lcd_warm_amber">Warm Amber</string>
+    <string name="pocket_advance_controls_original_dark">Original Dark</string>
+    <string name="pocket_advance_controls_light_gray">Light Gray</string>
+    <string name="pocket_advance_controls_deep_navy">Deep Navy</string>
     <string name="settings_artwork_transition_style">Artwork transition style</string>
     <string name="settings_choose_artwork_transition_style">Choose artwork transition style</string>
     <string name="settings_customize_default_player">Customize Default Player</string>

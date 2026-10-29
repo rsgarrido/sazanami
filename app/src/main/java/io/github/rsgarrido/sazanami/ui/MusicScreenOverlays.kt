@@ -53,6 +53,9 @@ import io.github.rsgarrido.sazanami.ui.state.PlaybackProgress
 import io.github.rsgarrido.sazanami.ui.state.PlaybackProgressUiState
 import io.github.rsgarrido.sazanami.lyrics.LyricsPlaybackUiState
 import io.github.rsgarrido.sazanami.ui.lyrics.LyricsScreen
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.LocalPocketAdvancePalette
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceOverlayTheme
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.pocketAdvanceLyricsColors
 import kotlinx.coroutines.flow.StateFlow
 
 @Composable
@@ -266,25 +269,30 @@ fun MusicScreenOverlays(
     }
 
     if (isPlayerExpanded && lyricsTransitionState.lyricsComposed && currentSong != null) {
-        LyricsScreen(
-            state = lyricsPlaybackUiState,
-            isPlaying = isPlaying,
-            transitionState = lyricsTransitionState,
-            closeGestureRegion = lyricsGestureRegion,
-            interactive = lyricsTransitionState.lyricsInteractive,
-            onBack = lyricsTransitionState::returnToExpanded,
-            onPlayPause = onPlayPauseClick,
-            onSeek = onSeekChange,
-            onSuspendAutoFollow = onSuspendLyricsAutoFollow,
-            onReturnToCurrentLine = onReturnLyricsToCurrentLine,
-            onRescan = onRescanLyrics,
-            onOpenSettings = onOpenLyricsSettings,
-            modifier = Modifier.graphicsLayer {
-                val progress = lyricsTransitionState.progress
-                alpha = lyricsVisualAlpha(progress)
-                translationY = (1f - progress) * 88.dp.toPx()
-            }
-        )
+        val advance = playerPresentation.identity == PlayerPresentationIdentity.PocketAdvance
+        val lyricsColors = pocketAdvanceLyricsColors(LocalPocketAdvancePalette.current, advance)
+        PocketAdvanceOverlayTheme(active = advance, inverse = true) {
+            LyricsScreen(
+                colors = lyricsColors,
+                state = lyricsPlaybackUiState,
+                isPlaying = isPlaying,
+                transitionState = lyricsTransitionState,
+                closeGestureRegion = lyricsGestureRegion,
+                interactive = lyricsTransitionState.lyricsInteractive,
+                onBack = lyricsTransitionState::returnToExpanded,
+                onPlayPause = onPlayPauseClick,
+                onSeek = onSeekChange,
+                onSuspendAutoFollow = onSuspendLyricsAutoFollow,
+                onReturnToCurrentLine = onReturnLyricsToCurrentLine,
+                onRescan = onRescanLyrics,
+                onOpenSettings = onOpenLyricsSettings,
+                modifier = Modifier.graphicsLayer {
+                    val progress = lyricsTransitionState.progress
+                    alpha = lyricsVisualAlpha(progress)
+                    translationY = (1f - progress) * 88.dp.toPx()
+                }
+            )
+        }
     }
 }
 

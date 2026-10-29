@@ -157,6 +157,7 @@ fun PocketAdvanceExpandedPlayer(
     artistSortState: LibrarySortState = LibrarySortState(LibrarySortOption.NAME, LibrarySortDirection.ASCENDING),
     albumSortState: LibrarySortState = LibrarySortState(LibrarySortOption.TITLE, LibrarySortDirection.ASCENDING)
 ) {
+    val colors = LocalPocketAdvancePalette.current
     val songKeys = remember(songs) { songs.map(Song::stableUiKey) }
     val artists = remember(songs, artistSortState) { sortedLibraryArtistGroups(songs, artistSortState) }
     val artistKeys = remember(artists) { artists.map { it.key } }
@@ -301,9 +302,9 @@ fun PocketAdvanceExpandedPlayer(
                         .padding(start = 16.dp, top = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(Modifier.size(7.dp).background(if (isPlaying) PocketAdvanceColors.Led else PocketAdvanceColors.ShellShade, CircleShape))
+                    Box(Modifier.size(7.dp).background(if (isPlaying) colors.Led else colors.ShellShade, CircleShape))
                     Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.pocket_advance_power), color = PocketAdvanceColors.Label, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                    Text(stringResource(R.string.pocket_advance_power), color = colors.Label, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth().weight(1f),
@@ -351,6 +352,7 @@ private fun PocketAdvanceDisplay(
     artistName: String?, albums: List<LibraryAlbumGroup>, albumKeys: List<String>, albumTitle: String?,
     isLibraryReady: Boolean, onActivateSong: (String) -> Unit, onActivateArtist: (String) -> Unit, onActivateAlbum: (String) -> Unit
 ) {
+    val colors = LocalPocketAdvancePalette.current
     val nowPlayingInputEnabled = inputEnabled && !browserVisible
     val sharedModifier = Modifier.graphicsLayer { alpha = if (morphOwnsSharedVisuals) 0f else 1f }
         .then(if (morphOwnsSharedVisuals) Modifier.clearAndSetSemantics { } else Modifier)
@@ -359,10 +361,10 @@ private fun PocketAdvanceDisplay(
         modifier = modifier
             .onGloballyPositioned { morphBounds?.updateExpandedDisplay(it.boundsInRoot()) }
             .testTag("pocketAdvanceDisplay")
-            .background(PocketAdvanceColors.Bezel.copy(alpha = backgroundAlpha), RoundedCornerShape(20.dp))
-            .border(1.dp, PocketAdvanceColors.ShellShade.copy(alpha = backgroundAlpha), RoundedCornerShape(20.dp))
+            .background(colors.Bezel.copy(alpha = backgroundAlpha), RoundedCornerShape(20.dp))
+            .border(1.dp, colors.ShellShade.copy(alpha = backgroundAlpha), RoundedCornerShape(20.dp))
             .padding(8.dp)
-            .background(PocketAdvanceColors.Screen.copy(alpha = backgroundAlpha), RoundedCornerShape(12.dp))
+            .background(colors.Screen.copy(alpha = backgroundAlpha), RoundedCornerShape(12.dp))
             .padding(8.dp)
     ) {
         Row(
@@ -374,7 +376,7 @@ private fun PocketAdvanceDisplay(
                 .then(collapseDrag).then(lyricsGestureModifier),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(Modifier.size(6.dp).background(PocketAdvanceColors.ScreenAccent, CircleShape))
+            Box(Modifier.size(6.dp).background(colors.ScreenAccent, CircleShape))
             Spacer(Modifier.width(7.dp))
             val header = if (browserVisible) when (navigation.browserPage) {
                 PocketAdvanceBrowserPage.Root -> stringResource(R.string.player_wheel_music)
@@ -384,7 +386,7 @@ private fun PocketAdvanceDisplay(
                 PocketAdvanceBrowserPage.AlbumCatalogue -> stringResource(R.string.pocket_advance_album_archive)
                 is PocketAdvanceBrowserPage.AlbumRecord -> albumTitle ?: stringResource(R.string.pocket_advance_album_unavailable)
             } else stringResource(if (playbackPlayPauseShowsPause(isPlaying)) R.string.pocket_advance_now_playing else R.string.pocket_advance_paused)
-            Text(header, color = PocketAdvanceColors.Ink, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
+            Text(header, color = colors.Ink, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                 fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.sp)
         }
         Spacer(Modifier.height(PocketAdvanceLayout.StatusGap))
@@ -429,7 +431,7 @@ private fun PocketAdvanceDisplay(
                                     role = Role.Button, onClickLabel = stringResource(R.string.player_go_to_album),
                                     onClick = { currentSong?.let { onOpenAlbum?.invoke(it) } }))
                                 .graphicsLayer { alpha = detailsAlpha }, contentAlignment = Alignment.TopStart) {
-                                Text(currentSong?.album.orEmpty(), color = PocketAdvanceColors.MutedInk,
+                                Text(currentSong?.album.orEmpty(), color = colors.MutedInk,
                                     fontSize = 12.sp, fontFamily = FontFamily.Monospace, maxLines = 2,
                                     overflow = TextOverflow.Ellipsis)
                             }
@@ -472,6 +474,7 @@ private fun PocketAdvanceDirectionWing(
     songKeys: List<String>, songsRepeatAllowed: Boolean, onConfirm: () -> Unit, canConfirm: Boolean, confirmLabel: String, backLabel: String,
     modifier: Modifier
 ) {
+    val colors = LocalPocketAdvancePalette.current
     val repeatLabel = stringResource(when (repeatMode) {
         RepeatMode.OFF -> R.string.player_repeat_off
         RepeatMode.ALL -> R.string.player_repeat_all
@@ -487,8 +490,8 @@ private fun PocketAdvanceDirectionWing(
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Box(Modifier.size(144.dp).testTag("pocketAdvanceDpad")) {
                 Box(Modifier.fillMaxSize()
-                    .background(Brush.verticalGradient(listOf(PocketAdvanceColors.ShellShade, PocketAdvanceColors.ShellHighlight)), CircleShape)
-                    .padding(3.dp).background(PocketAdvanceColors.Shell.copy(alpha = .7f), CircleShape))
+                    .background(Brush.verticalGradient(listOf(colors.ShellShade, colors.ShellHighlight)), CircleShape)
+                    .padding(3.dp).background(colors.Shell.copy(alpha = .7f), CircleShape))
                 Canvas(Modifier.fillMaxSize().padding(10.dp)) {
                     val unit = size.width / 3f
                     val path = Path().apply {
@@ -499,11 +502,11 @@ private fun PocketAdvanceDirectionWing(
                         lineTo(0f, unit * 2); lineTo(0f, unit); lineTo(unit, unit); close()
                     }
                     val shadow = Path().apply { addPath(path); translate(Offset(0f, 4.dp.toPx())) }
-                    drawPath(shadow, PocketAdvanceColors.ShellShade)
-                    drawPath(path, Brush.verticalGradient(listOf(PocketAdvanceColors.ButtonHighlight, PocketAdvanceColors.Button)))
-                    drawPath(path, PocketAdvanceColors.ButtonInk.copy(alpha = .22f), style = Stroke(1.dp.toPx()))
-                    drawCircle(PocketAdvanceColors.Button, radius = unit * .30f)
-                    drawCircle(PocketAdvanceColors.ButtonHighlight, radius = unit * .30f, style = Stroke(1.dp.toPx()))
+                    drawPath(shadow, colors.ShellShade)
+                    drawPath(path, Brush.verticalGradient(listOf(colors.ButtonHighlight, colors.Button)))
+                    drawPath(path, colors.ButtonInk.copy(alpha = .22f), style = Stroke(1.dp.toPx()))
+                    drawCircle(colors.Button, radius = unit * .30f)
+                    drawCircle(colors.ButtonHighlight, radius = unit * .30f, style = Stroke(1.dp.toPx()))
                 }
                 PocketAdvanceDirectionButton(if (browserVisible) Icons.Filled.KeyboardArrowUp else Icons.Filled.Shuffle,
                     if (browserVisible) stringResource(R.string.pocket_advance_previous_selection)
@@ -530,7 +533,7 @@ private fun PocketAdvanceDirectionWing(
                     repeatPressGate, if (songsHoldEnabled) ({ navigation.repeatBrowseSelection(1, latestSongKeys, repeatPage) }) else null, repeatPage)
             }
             Spacer(Modifier.height(12.dp))
-            Text(stringResource(R.string.pocket_advance_track_mode), color = PocketAdvanceColors.Label, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp,
+            Text(stringResource(R.string.pocket_advance_track_mode), color = colors.Label, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp,
                 modifier = Modifier.testTag("pocketAdvanceTrackMode").layout { measurable, constraints ->
                     val label = measurable.measure(constraints)
                     layout(label.width, label.height, mapOf(PocketAdvanceTrackModeBottom to label.height)) {
@@ -561,6 +564,7 @@ private fun PocketAdvanceDirectionWing(
 /** A small physical face inside a separate 48dp target; it never participates in morph geometry. */
 @Composable
 private fun PocketAdvanceStartButton(label: String, enabled: Boolean, onClick: () -> Unit, modifier: Modifier) {
+    val colors = LocalPocketAdvancePalette.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Box(modifier.size(width = 64.dp, height = 48.dp).testTag("pocketAdvanceStart")
@@ -571,11 +575,11 @@ private fun PocketAdvanceStartButton(label: String, enabled: Boolean, onClick: (
             .graphicsLayer { translationY = if (pressed) 1.dp.toPx() else 0f }
             .shadow(if (pressed) 1.dp else 3.dp, RoundedCornerShape(13.dp))
             .background(Brush.verticalGradient(if (pressed)
-                listOf(PocketAdvanceColors.Button, PocketAdvanceColors.ButtonHighlight)
-                else listOf(PocketAdvanceColors.ButtonHighlight, PocketAdvanceColors.Button)), RoundedCornerShape(13.dp))
-            .border(1.dp, PocketAdvanceColors.ShellHighlight, RoundedCornerShape(13.dp)),
+                listOf(colors.Button, colors.ButtonHighlight)
+                else listOf(colors.ButtonHighlight, colors.Button)), RoundedCornerShape(13.dp))
+            .border(1.dp, colors.ShellHighlight, RoundedCornerShape(13.dp)),
             contentAlignment = Alignment.Center) {
-            Text(stringResource(R.string.pocket_advance_start), color = PocketAdvanceColors.ButtonInk,
+            Text(stringResource(R.string.pocket_advance_start), color = colors.ButtonInk,
                 // Physical engraving keeps its size and legibility when surrounding UI text scales.
                 fontSize = with(LocalDensity.current) { 9.dp.toSp() },
                 lineHeight = with(LocalDensity.current) { 11.dp.toSp() }, maxLines = 1,
@@ -591,6 +595,7 @@ private fun PocketAdvanceDirectionButton(
     active: Boolean, modifier: Modifier, repeatPressGate: PocketAdvanceSongsDpadPressGate? = null,
     onHoldRepeat: (() -> Boolean)? = null, repeatPage: PocketAdvanceBrowserPage? = null
 ) {
+    val colors = LocalPocketAdvancePalette.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val latestClick by rememberUpdatedState(onClick)
@@ -602,9 +607,9 @@ private fun PocketAdvanceDirectionButton(
     Box(modifier.size(48.dp).then(holdInput).clickable(interactionSource = interaction, indication = null,
         enabled = enabled, role = Role.Button, onClickLabel = label, onClick = onClick)
         .semantics { contentDescription = label }, contentAlignment = Alignment.Center) {
-        if (pressed) Box(Modifier.size(32.dp).background(PocketAdvanceColors.Button, RoundedCornerShape(4.dp))
-            .border(1.dp, PocketAdvanceColors.ShellShade, RoundedCornerShape(4.dp)))
-        Icon(icon, null, tint = if (active) PocketAdvanceColors.Led else PocketAdvanceColors.ButtonInk,
+        if (pressed) Box(Modifier.size(32.dp).background(colors.Button, RoundedCornerShape(4.dp))
+            .border(1.dp, colors.ShellShade, RoundedCornerShape(4.dp)))
+        Icon(icon, null, tint = if (active) colors.ActiveButtonInk else colors.ButtonInk,
             modifier = Modifier.size(21.dp).graphicsLayer { translationY = if (pressed) 2.dp.toPx() else 0f })
     }
 }
@@ -617,6 +622,7 @@ private fun PocketAdvanceActionWing(
     navigation: PocketAdvanceNavigationState, browserVisible: Boolean,
     onConfirm: () -> Unit, canConfirm: Boolean, confirmLabel: String, browserBackLabel: String, modifier: Modifier
 ) {
+    val colors = LocalPocketAdvancePalette.current
     val playLabel = stringResource(if (playbackPlayPauseShowsPause(isPlaying)) R.string.player_pause else R.string.player_play)
     val primaryLabel = if (browserVisible) confirmLabel else playLabel
     val primaryClick = if (browserVisible) onConfirm else onPlayPauseClick
@@ -637,10 +643,10 @@ private fun PocketAdvanceActionWing(
                 val topLeft = Offset(center.x - housingWidth / 2f, center.y - diameter / 2f)
                 val rim = 3.dp.toPx()
                 rotate(-45f) {
-                    drawRoundRect(Brush.verticalGradient(listOf(PocketAdvanceColors.ShellShade, PocketAdvanceColors.ShellHighlight),
+                    drawRoundRect(Brush.verticalGradient(listOf(colors.ShellShade, colors.ShellHighlight),
                         startY = topLeft.y, endY = topLeft.y + diameter),
                         topLeft, Size(housingWidth, diameter), CornerRadius(diameter / 2f))
-                    drawRoundRect(PocketAdvanceColors.Shell, topLeft + Offset(rim, rim),
+                    drawRoundRect(colors.Shell, topLeft + Offset(rim, rim),
                         Size(housingWidth - rim * 2f, diameter - rim * 2f), CornerRadius(diameter / 2f - rim))
                 }
             }
@@ -665,10 +671,10 @@ private fun PocketAdvanceActionWing(
                         enabled = inputEnabled, role = Role.Button, onClickLabel = backLabel, onClick = navigation::back)
                     .semantics { contentDescription = backLabel }, contentAlignment = Alignment.Center) {
                     Box(Modifier.size(56.dp).shadow(if (backPressed) 1.dp else 3.dp, CircleShape)
-                        .background(Brush.verticalGradient(if (backPressed) listOf(PocketAdvanceColors.Button, PocketAdvanceColors.ButtonHighlight)
-                            else listOf(PocketAdvanceColors.ButtonHighlight, PocketAdvanceColors.Button)), CircleShape)
-                        .border(1.dp, PocketAdvanceColors.ButtonHighlight, CircleShape), contentAlignment = Alignment.Center) {
-                        Icon(if (browserVisible) Icons.Filled.ArrowBack else Icons.Filled.Menu, null, tint = PocketAdvanceColors.ButtonInk)
+                        .background(Brush.verticalGradient(if (backPressed) listOf(colors.Button, colors.ButtonHighlight)
+                            else listOf(colors.ButtonHighlight, colors.Button)), CircleShape)
+                        .border(1.dp, colors.ButtonHighlight, CircleShape), contentAlignment = Alignment.Center) {
+                        Icon(if (browserVisible) Icons.Filled.ArrowBack else Icons.Filled.Menu, null, tint = colors.ButtonInk)
                     }
                 }
             }
@@ -685,11 +691,12 @@ private fun PocketAdvanceActionWing(
 
 @Composable
 private fun PocketAdvanceUtilityButton(icon: ImageVector, label: String, onClick: () -> Unit, enabled: Boolean) {
+    val colors = LocalPocketAdvancePalette.current
     Box(Modifier.size(48.dp).clickable(enabled = enabled, role = Role.Button, onClickLabel = label, onClick = onClick)
         .semantics { contentDescription = label }, contentAlignment = Alignment.Center) {
-        Box(Modifier.size(width = 40.dp, height = 24.dp).background(PocketAdvanceColors.ShellShade, RoundedCornerShape(12.dp))
-            .border(1.dp, PocketAdvanceColors.ShellHighlight.copy(alpha = .5f), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
-            Icon(icon, null, tint = PocketAdvanceColors.Label, modifier = Modifier.size(18.dp))
+        Box(Modifier.size(width = 40.dp, height = 24.dp).background(colors.ShellShade, RoundedCornerShape(12.dp))
+            .border(1.dp, colors.ShellHighlight.copy(alpha = .5f), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
+            Icon(icon, null, tint = colors.Label, modifier = Modifier.size(18.dp))
         }
     }
 }
@@ -699,6 +706,7 @@ private fun PocketAdvanceSeekBar(
     currentPosition: Int, duration: Int, onSeekChange: (Int) -> Unit,
     inputEnabled: Boolean, morphOwnsSharedVisuals: Boolean, bounds: PocketAdvancePlayerMorphBounds?, modifier: Modifier
 ) {
+    val colors = LocalPocketAdvancePalette.current
     val seek = rememberDirectSeekGestureControl(onSeekChange)
     val safeDuration = duration.coerceAtLeast(1)
     val safePosition = currentPosition.coerceIn(0, safeDuration)
@@ -717,13 +725,13 @@ private fun PocketAdvanceSeekBar(
             Canvas(Modifier.fillMaxWidth().height(8.dp)
                 .onGloballyPositioned { bounds?.updateExpandedProgress(it.boundsInRoot()) }
                 .graphicsLayer { alpha = if (morphOwnsSharedVisuals) 0f else 1f }) {
-                drawPocketAdvanceProgress(safePosition.toFloat() / safeDuration, 1f)
+                drawPocketAdvanceProgress(safePosition.toFloat() / safeDuration, 1f, colors)
             }
         }
         Row(Modifier.fillMaxWidth()) {
-            Text(formatPocketAdvanceTime(safePosition), color = PocketAdvanceColors.MutedInk, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+            Text(formatPocketAdvanceTime(safePosition), color = colors.MutedInk, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
             Spacer(Modifier.weight(1f))
-            Text(formatPocketAdvanceTime(duration), color = PocketAdvanceColors.MutedInk, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+            Text(formatPocketAdvanceTime(duration), color = colors.MutedInk, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
         }
     }
 }

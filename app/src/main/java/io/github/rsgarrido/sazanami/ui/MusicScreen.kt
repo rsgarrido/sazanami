@@ -57,6 +57,10 @@ import io.github.rsgarrido.sazanami.data.buildFolderBrowseIndex
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.data.TabletLandscapeTheme
+import io.github.rsgarrido.sazanami.data.PocketAdvanceAppearance
+import io.github.rsgarrido.sazanami.data.PocketAdvanceConsoleFinish
+import io.github.rsgarrido.sazanami.data.PocketAdvanceLcdPalette
+import io.github.rsgarrido.sazanami.data.PocketAdvanceControlsFinish
 import io.github.rsgarrido.sazanami.data.preferences.AppFont
 import io.github.rsgarrido.sazanami.data.preferences.AppAppearance
 import io.github.rsgarrido.sazanami.data.Playlist
@@ -112,6 +116,8 @@ import io.github.rsgarrido.sazanami.ui.player.tabletLandscapePlayerCandidate
 import io.github.rsgarrido.sazanami.ui.player.TabletLandscapePlayerContext
 import io.github.rsgarrido.sazanami.ui.player.rememberTabletLandscapePlayerEnvironment
 import io.github.rsgarrido.sazanami.ui.player.pocketadvance.rememberPocketAdvanceNavigationState
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.LocalPocketAdvancePalette
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvancePalette
 import io.github.rsgarrido.sazanami.ui.player.PlayerPresentationViewport
 import io.github.rsgarrido.sazanami.ui.player.rememberPlayerPresentationBoundary
 import io.github.rsgarrido.sazanami.ui.state.PlaybackProgressUiState
@@ -278,6 +284,11 @@ internal fun MusicScreen(
     onPlayerThemeSelected: (PlayerTheme) -> Unit,
     selectedTabletLandscapeTheme: TabletLandscapeTheme = TabletLandscapeTheme.NORMAL_PLAYER,
     onTabletLandscapeThemeSelected: (TabletLandscapeTheme) -> Unit = {},
+    pocketAdvanceAppearance: PocketAdvanceAppearance = PocketAdvanceAppearance.Default,
+    onPocketAdvanceConsoleFinishSelected: (PocketAdvanceConsoleFinish) -> Unit = {},
+    onPocketAdvanceLcdPaletteSelected: (PocketAdvanceLcdPalette) -> Unit = {},
+    onPocketAdvanceControlsFinishSelected: (PocketAdvanceControlsFinish) -> Unit = {},
+    onResetPocketAdvanceAppearance: () -> Unit = {},
     onUpdatePlayerThemeTokenOverride: (PlayerTheme, PlayerThemeTokenField, Color) -> Unit,
     onResetPlayerThemeTokenOverrides: (PlayerTheme) -> Unit,
     selectedModernArtworkTransitionStyle: ModernArtworkTransitionStyle,
@@ -325,13 +336,15 @@ internal fun MusicScreen(
         playerTheme = selectedPlayerTheme,
         tokens = selectedPlayerThemeTokens
     )
+    val advancePalette = remember(pocketAdvanceAppearance) { PocketAdvancePalette.from(pocketAdvanceAppearance) }
     val directStatusVisible = if (io.github.rsgarrido.sazanami.BuildConfig.DEBUG) {
         val direct by io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackBridge.state.collectAsState()
         direct.enabled
     } else false
     // Resolve against the very same viewport that hosts both endpoints, including the USB banner.
     CompositionLocalProvider(
-        LocalAppShellAccent provides appShellAccent
+        LocalAppShellAccent provides appShellAccent,
+        LocalPocketAdvancePalette provides advancePalette
     ) {
     Column(modifier = modifier.fillMaxSize().appShellBackground()) {
         if (directStatusVisible) {
@@ -823,6 +836,7 @@ internal fun MusicScreen(
     val hasPendingBulkPlaylistAdd = songsPendingPlaylistAdd.isNotEmpty()
     val transientOverlayContent: @Composable () -> Unit = {
         MusicTransientOverlays(
+            playerPresentation = resolvedPlayerPresentation.identity,
             nowPlayingMoreTarget = nowPlayingMoreTarget,
             favoriteMembershipKeys = favoriteMembershipKeys,
             songs = songs,
@@ -1203,6 +1217,11 @@ internal fun MusicScreen(
         onPlayerThemeSelected = onPlayerThemeSelected,
         selectedTabletLandscapeTheme = selectedTabletLandscapeTheme,
         onTabletLandscapeThemeSelected = onTabletLandscapeThemeSelected,
+        pocketAdvanceAppearance = pocketAdvanceAppearance,
+        onPocketAdvanceConsoleFinishSelected = onPocketAdvanceConsoleFinishSelected,
+        onPocketAdvanceLcdPaletteSelected = onPocketAdvanceLcdPaletteSelected,
+        onPocketAdvanceControlsFinishSelected = onPocketAdvanceControlsFinishSelected,
+        onResetPocketAdvanceAppearance = onResetPocketAdvanceAppearance,
         onUpdatePlayerThemeTokenOverride = onUpdatePlayerThemeTokenOverride,
         onResetPlayerThemeTokenOverrides = onResetPlayerThemeTokenOverrides,
         selectedModernArtworkTransitionStyle = selectedModernArtworkTransitionStyle,

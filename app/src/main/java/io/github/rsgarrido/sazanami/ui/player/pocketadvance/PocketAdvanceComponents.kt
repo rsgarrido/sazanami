@@ -23,7 +23,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
@@ -46,22 +45,6 @@ import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.ui.player.RetainedArtworkImage
 import io.github.rsgarrido.sazanami.ui.state.playbackPlayPauseShowsPause
 
-internal object PocketAdvanceColors {
-    val Shell = Color(0xFF6653A5)
-    val ShellHighlight = Color(0xFF9C87D2)
-    val ShellShade = Color(0xFF392C65)
-    val Bezel = Color(0xFF282639)
-    val Screen = Color(0xFFDFE5CC)
-    val ScreenShade = Color(0xFFC8D2B1)
-    val Ink = Color(0xFF263C38)
-    val MutedInk = Color(0xFF52655A)
-    val ScreenAccent = Color(0xFF547B64)
-    val Button = Color(0xFF383443)
-    val ButtonHighlight = Color(0xFF686173)
-    val ButtonInk = Color(0xFFF4EDF9)
-    val Label = Color(0xFFE1D8F3)
-    val Led = Color(0xFFA8E68D)
-}
 
 /** Same 16dp compact outline at zero; sculpted grips and bowed lower edge at one. */
 internal fun PocketAdvanceShellShape(progress: Float = 1f): Shape = object : Shape {
@@ -91,6 +74,7 @@ internal fun PocketAdvanceShellShape(progress: Float = 1f): Shape = object : Sha
 /** The same native finish is used by the endpoint and the moving morph shell. */
 @Composable
 internal fun PocketAdvanceShell(modifier: Modifier = Modifier, progress: Float = 1f) {
+    val colors = LocalPocketAdvancePalette.current
     val shape = PocketAdvanceShellShape(progress)
     val amount = progress.coerceIn(0f, 1f)
     Box(
@@ -99,14 +83,14 @@ internal fun PocketAdvanceShell(modifier: Modifier = Modifier, progress: Float =
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        androidx.compose.ui.graphics.lerp(PocketAdvanceColors.Shell, PocketAdvanceColors.ShellHighlight, amount * .48f),
-                        PocketAdvanceColors.Shell,
-                        androidx.compose.ui.graphics.lerp(PocketAdvanceColors.Shell, PocketAdvanceColors.ShellShade, amount * .42f)
+                        androidx.compose.ui.graphics.lerp(colors.Shell, colors.ShellHighlight, amount * .48f),
+                        colors.Shell,
+                        androidx.compose.ui.graphics.lerp(colors.Shell, colors.ShellShade, amount * .42f)
                     )
                 ),
                 shape
             )
-            .border(1.dp, PocketAdvanceColors.ShellHighlight.copy(alpha = 1f - .28f * amount), shape)
+            .border(1.dp, colors.ShellHighlight.copy(alpha = 1f - .28f * amount), shape)
     ) {
         Canvas(Modifier.fillMaxSize().clip(shape)) {
             val lip = Path().apply {
@@ -114,14 +98,14 @@ internal fun PocketAdvanceShell(modifier: Modifier = Modifier, progress: Float =
                 cubicTo(size.width * .32f, size.height * .015f, size.width * .68f, size.height * .015f,
                     size.width * .92f, size.height * .055f)
             }
-            drawPath(lip, PocketAdvanceColors.Label.copy(alpha = .25f * amount), style = Stroke(2.dp.toPx()))
+            drawPath(lip, colors.Label.copy(alpha = .25f * amount), style = Stroke(2.dp.toPx()))
             val seam = Path().apply {
                 val y = size.height - 10.dp.toPx()
                 moveTo(size.width * .36f, y)
                 cubicTo(size.width * .44f, size.height - 5.dp.toPx(), size.width * .56f, size.height - 5.dp.toPx(),
                     size.width * .64f, y)
             }
-            drawPath(seam, PocketAdvanceColors.ShellShade.copy(alpha = .18f * amount), style = Stroke(1.dp.toPx()))
+            drawPath(seam, colors.ShellShade.copy(alpha = .18f * amount), style = Stroke(1.dp.toPx()))
         }
     }
 }
@@ -133,6 +117,7 @@ internal fun PocketAdvanceArtwork(
     modifier: Modifier = Modifier,
     progress: Float = 1f
 ) {
+    val colors = LocalPocketAdvancePalette.current
     val context = LocalContext.current
     val uri = currentSong?.albumArtUri
     val model = remember(context, uri) {
@@ -146,10 +131,10 @@ internal fun PocketAdvanceArtwork(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape((3f + progress.coerceIn(0f, 1f) * 3f).dp))
-            .background(PocketAdvanceColors.ScreenShade),
+            .background(colors.ScreenShade),
         contentAlignment = Alignment.Center
     ) {
-        Icon(Icons.Filled.Album, null, tint = PocketAdvanceColors.MutedInk, modifier = Modifier.size(24.dp))
+        Icon(Icons.Filled.Album, null, tint = colors.MutedInk, modifier = Modifier.size(24.dp))
         if (uri != null) {
             RetainedArtworkImage(
                 model = model,
@@ -165,10 +150,11 @@ internal fun PocketAdvanceArtwork(
 
 @Composable
 internal fun PocketAdvanceTitle(currentSong: Song?, progress: Float, modifier: Modifier = Modifier) {
+    val colors = LocalPocketAdvancePalette.current
     val fraction = progress.coerceIn(0f, 1f)
     Text(
         text = currentSong?.title?.takeIf(String::isNotBlank) ?: stringResource(R.string.player_unknown_title),
-        color = PocketAdvanceColors.Ink,
+        color = colors.Ink,
         fontFamily = FontFamily.Monospace,
         fontWeight = FontWeight.Bold,
         fontSize = (13f + 9f * fraction).sp,
@@ -181,9 +167,10 @@ internal fun PocketAdvanceTitle(currentSong: Song?, progress: Float, modifier: M
 
 @Composable
 internal fun PocketAdvanceArtist(currentSong: Song?, progress: Float, modifier: Modifier = Modifier) {
+    val colors = LocalPocketAdvancePalette.current
     Text(
         text = currentSong?.artist?.takeIf(String::isNotBlank) ?: stringResource(R.string.player_unknown_artist),
-        color = PocketAdvanceColors.MutedInk,
+        color = colors.MutedInk,
         fontFamily = FontFamily.Monospace,
         fontSize = (10f + 5f * progress.coerceIn(0f, 1f)).sp,
         lineHeight = (14f + 6f * progress.coerceIn(0f, 1f)).sp,
@@ -199,22 +186,23 @@ internal fun PocketAdvancePlayVisual(
     isPlaying: Boolean, modifier: Modifier = Modifier, progress: Float = 1f,
     pressed: Boolean = false, confirm: Boolean = false
 ) {
+    val colors = LocalPocketAdvancePalette.current
     Box(
         modifier = modifier
             .shadow(if (pressed) 1.dp else 3.dp, CircleShape)
             .background(
-                Brush.verticalGradient(if (pressed) listOf(PocketAdvanceColors.Button, PocketAdvanceColors.ButtonHighlight)
-                    else listOf(PocketAdvanceColors.ButtonHighlight, PocketAdvanceColors.Button)),
+                Brush.verticalGradient(if (pressed) listOf(colors.Button, colors.ButtonHighlight)
+                    else listOf(colors.ButtonHighlight, colors.Button)),
                 CircleShape
             )
-            .border(1.dp, PocketAdvanceColors.ButtonHighlight, CircleShape),
+            .border(1.dp, colors.ButtonHighlight, CircleShape),
         contentAlignment = Alignment.Center
     ) {
         Icon(
             imageVector = if (confirm) Icons.Filled.Check
                 else if (playbackPlayPauseShowsPause(isPlaying)) Icons.Filled.Pause else Icons.Filled.PlayArrow,
             contentDescription = null,
-            tint = PocketAdvanceColors.ButtonInk,
+            tint = colors.ButtonInk,
             modifier = Modifier.size((22f + 2f * progress.coerceIn(0f, 1f)).dp)
         )
     }
@@ -222,17 +210,18 @@ internal fun PocketAdvancePlayVisual(
 
 @Composable
 internal fun PocketAdvanceSpeaker(modifier: Modifier = Modifier) {
+    val colors = LocalPocketAdvancePalette.current
     Canvas(modifier) {
         repeat(5) { index ->
             val x = size.width * (index + 1) / 6f
             val inset = kotlin.math.abs(index - 2) * size.height * .1f
             drawLine(
-                PocketAdvanceColors.ShellShade.copy(alpha = .7f),
+                colors.ShellShade.copy(alpha = .7f),
                 Offset(x, inset), Offset(x, size.height - inset),
                 strokeWidth = 3.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round
             )
             drawLine(
-                PocketAdvanceColors.ShellHighlight.copy(alpha = .45f),
+                colors.ShellHighlight.copy(alpha = .45f),
                 Offset(x + 2.dp.toPx(), inset), Offset(x + 2.dp.toPx(), size.height - inset),
                 strokeWidth = 1.dp.toPx()
             )
@@ -246,16 +235,16 @@ internal fun formatPocketAdvanceTime(milliseconds: Int): String {
 }
 
 /** Passive track shared by the native endpoint and morph owner; never receives pointer input. */
-internal fun DrawScope.drawPocketAdvanceProgress(fraction: Float, progress: Float) {
+internal fun DrawScope.drawPocketAdvanceProgress(fraction: Float, progress: Float, colors: PocketAdvancePalette) {
     val p = pocketAdvanceSafeProgress(progress)
     val value = pocketAdvanceSafeProgress(fraction)
     val radius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx() * p)
-    drawRoundRect(PocketAdvanceColors.MutedInk.copy(alpha = .22f), cornerRadius = radius)
-    drawRoundRect(PocketAdvanceColors.ScreenAccent, size = Size(size.width * value, size.height), cornerRadius = radius)
+    drawRoundRect(colors.MutedInk.copy(alpha = .22f), cornerRadius = radius)
+    drawRoundRect(colors.ScreenAccent, size = Size(size.width * value, size.height), cornerRadius = radius)
     if (p > 0f) {
         val width = 10.dp.toPx() * p
         val x = (size.width * value - width / 2f).coerceIn(0f, (size.width - width).coerceAtLeast(0f))
-        drawRoundRect(PocketAdvanceColors.Ink.copy(alpha = p), Offset(x, -4.dp.toPx() * p),
+        drawRoundRect(colors.Ink.copy(alpha = p), Offset(x, -4.dp.toPx() * p),
             Size(width, size.height + 8.dp.toPx() * p), androidx.compose.ui.geometry.CornerRadius(2.dp.toPx() * p))
     }
 }

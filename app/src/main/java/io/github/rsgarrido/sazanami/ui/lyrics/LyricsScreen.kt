@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.contentColorFor
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -135,7 +136,8 @@ fun LyricsScreen(
     onReturnToCurrentLine: () -> Unit,
     onRescan: () -> Unit,
     onOpenSettings: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    colors: LyricsColors? = null
 ) {
     val song = state.songOrNull() ?: return
     var surfaceHeightPx by remember { mutableIntStateOf(1) }
@@ -170,10 +172,10 @@ fun LyricsScreen(
                     }
                 }
             }
-            .background(MaterialTheme.colorScheme.surface)
+            .background(colors?.background ?: MaterialTheme.colorScheme.surface)
             .testTag(LyricsScreenTag)
     ) {
-        LyricsArtworkBackground(song)
+        LyricsArtworkBackground(song, colors)
 
         Column(modifier = Modifier.fillMaxSize().windowInsetsPadding(
             WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
@@ -187,6 +189,7 @@ fun LyricsScreen(
                 regionCloseEnabled = usesLayoutCloseRegion,
                 onBack = onBack,
                 onPlayPause = onPlayPause,
+                colors = colors,
                 modifier = Modifier
                     .fillMaxWidth()
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
@@ -199,20 +202,22 @@ fun LyricsScreen(
                     .readableContentWidth()
             ) {
                 when (state) {
-                    is LyricsPlaybackUiState.Loading -> LyricsLoading()
+                    is LyricsPlaybackUiState.Loading -> LyricsLoading(colors)
                     is LyricsPlaybackUiState.Synced -> SyncedLyricsList(
                         state = state,
                         onSeek = onSeek,
                         onSuspendAutoFollow = onSuspendAutoFollow,
                         onReturnToCurrentLine = onReturnToCurrentLine,
-                        interactive = interactive
+                        interactive = interactive,
+                        colors = colors
                     )
-                    is LyricsPlaybackUiState.Unsynced -> UnsyncedLyricsList(state.lyrics)
+                    is LyricsPlaybackUiState.Unsynced -> UnsyncedLyricsList(state.lyrics, colors)
                     is LyricsPlaybackUiState.Unavailable -> LyricsUnavailable(
                         song = state.song,
                         reason = state.reason,
                         onRescan = onRescan,
-                        onOpenSettings = onOpenSettings
+                        onOpenSettings = onOpenSettings,
+                        colors = colors
                     )
                     LyricsPlaybackUiState.Hidden -> Unit
                 }
@@ -282,7 +287,8 @@ private fun Modifier.lyricsRegionCloseGesture(
 }
 
 @Composable
-private fun LyricsArtworkBackground(song: Song) {
+private fun LyricsArtworkBackground(song: Song, colors: LyricsColors?) {
+    val scrim = colors?.background ?: Color.Black
     AsyncImage(
         model = song.albumArtUri,
         contentDescription = null,
@@ -297,9 +303,9 @@ private fun LyricsArtworkBackground(song: Song) {
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        Color.Black.copy(alpha = 0.78f),
-                        Color.Black.copy(alpha = 0.64f),
-                        Color.Black.copy(alpha = 0.88f)
+                        scrim.copy(alpha = colors?.backdropTopAlpha ?: 0.78f),
+                        scrim.copy(alpha = colors?.backdropMiddleAlpha ?: 0.64f),
+                        scrim.copy(alpha = colors?.backdropBottomAlpha ?: 0.88f)
                     )
                 )
             )
@@ -316,6 +322,7 @@ private fun LyricsHeader(
     regionCloseEnabled: Boolean,
     onBack: () -> Unit,
     onPlayPause: () -> Unit,
+    colors: LyricsColors?,
     modifier: Modifier = Modifier
 ) {
     val playbackStateDescription = LocalPlaybackStatus.current
@@ -345,7 +352,7 @@ private fun LyricsHeader(
             )
             .background(
                 Brush.verticalGradient(
-                    listOf(Color.Black.copy(alpha = 0.58f), Color.Transparent)
+                    listOf((colors?.background ?: Color.Black).copy(alpha = colors?.headerScrimAlpha ?: 0.58f), Color.Transparent)
                 )
             )
             .padding(horizontal = 8.dp, vertical = 10.dp),
@@ -359,13 +366,13 @@ private fun LyricsHeader(
             Icon(
                 Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = stringResource(R.string.lyrics_close),
-                tint = Color.White
+                tint = (colors?.foreground ?: Color.White)
             )
         }
 
         Surface(
             shape = RoundedCornerShape(8.dp),
-            color = Color.White.copy(alpha = 0.1f),
+            color = (colors?.foreground ?: Color.White).copy(alpha = 0.1f),
             modifier = Modifier.size(46.dp)
         ) {
             AsyncImage(
@@ -382,14 +389,14 @@ private fun LyricsHeader(
         ) {
             Text(
                 text = song.title.ifBlank { song.displayName },
-                color = Color.White,
+                color = (colors?.foreground ?: Color.White),
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = song.artist.ifBlank { stringResource(R.string.lyrics_unknown_artist) },
-                color = Color.White.copy(alpha = 0.7f),
+                color = (colors?.foreground ?: Color.White).copy(alpha = colors?.secondaryTextAlpha ?: 0.7f),
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -408,7 +415,7 @@ private fun LyricsHeader(
             Icon(
                 imageVector = if (playbackPlayPauseShowsPause(isPlaying)) Icons.Default.Pause else Icons.Default.PlayArrow,
                 contentDescription = stringResource(if (playbackPlayPauseShowsPause(isPlaying)) R.string.lyrics_pause else R.string.lyrics_play),
-                tint = Color.White
+                tint = (colors?.foreground ?: Color.White)
             )
         }
     }
@@ -417,12 +424,15 @@ private fun LyricsHeader(
 @Composable
 private fun androidx.compose.foundation.layout.BoxScope.BoxScopeSyncedReturnAction(
     visible: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    colors: LyricsColors?
 ) {
     if (!visible) return
+    val container = (colors?.returnContainer ?: MaterialTheme.colorScheme.primaryContainer).copy(alpha = 0.94f)
     Surface(
         shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.94f),
+        color = container,
+        contentColor = colors?.returnContent ?: contentColorFor(container),
         shadowElevation = 6.dp,
         modifier = Modifier
             .align(Alignment.BottomCenter)
@@ -448,7 +458,8 @@ private fun SyncedLyricsList(
     onSeek: (Int) -> Unit,
     onSuspendAutoFollow: () -> Unit,
     onReturnToCurrentLine: () -> Unit,
-    interactive: Boolean
+    interactive: Boolean,
+    colors: LyricsColors?
 ) {
     val groups = remember(state.lyrics) { state.lyrics.toDisplayGroups() }
     var optimisticTimestamp by remember(state.song.id, state.lyrics) {
@@ -523,6 +534,7 @@ private fun SyncedLyricsList(
                 val isPast = displayedActiveTimestamp != null &&
                         group.timestampMs < displayedActiveTimestamp
                 SyncedLyricRow(
+                    colors = colors,
                     group = group,
                     isActive = isActive,
                     isPast = isPast,
@@ -542,6 +554,7 @@ private fun SyncedLyricsList(
         }
 
         BoxScopeSyncedReturnAction(
+            colors = colors,
             visible = !state.autoFollowEnabled,
             onClick = {
                 onReturnToCurrentLine()
@@ -561,7 +574,8 @@ private fun SyncedLyricRow(
     isActive: Boolean,
     isPast: Boolean,
     enabled: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    colors: LyricsColors?
 ) {
     val currentLyricDescription = stringResource(R.string.lyrics_current_lyric)
     val seekDescription = stringResource(R.string.lyrics_seek_to_lyric)
@@ -569,9 +583,9 @@ private fun SyncedLyricRow(
         group.lines.joinToString(" "))
     val color by animateColorAsState(
         targetValue = when {
-            isActive -> Color.White
-            isPast -> Color.White.copy(alpha = 0.58f)
-            else -> Color.White.copy(alpha = 0.38f)
+            isActive -> (colors?.foreground ?: Color.White)
+            isPast -> (colors?.foreground ?: Color.White).copy(alpha = colors?.pastLineAlpha ?: 0.58f)
+            else -> (colors?.foreground ?: Color.White).copy(alpha = colors?.upcomingLineAlpha ?: 0.38f)
         },
         label = stringResource(R.string.lyrics_emphasis)
     )
@@ -604,13 +618,13 @@ private fun SyncedLyricRow(
 }
 
 @Composable
-private fun UnsyncedLyricsList(document: LyricsDocument.Unsynced) {
+private fun UnsyncedLyricsList(document: LyricsDocument.Unsynced, colors: LyricsColors?) {
     Column(modifier = Modifier.fillMaxSize().windowInsetsPadding(
         WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)
     )) {
         Text(
             text = stringResource(R.string.lyrics_unsynced),
-            color = Color.White.copy(alpha = 0.62f),
+            color = (colors?.foreground ?: Color.White).copy(alpha = colors?.secondaryTextAlpha ?: 0.62f),
             style = MaterialTheme.typography.labelLarge,
             modifier = Modifier.padding(horizontal = 28.dp, vertical = 10.dp)
         )
@@ -627,7 +641,7 @@ private fun UnsyncedLyricsList(document: LyricsDocument.Unsynced) {
             ) { _, line: StaticLyricLine ->
                 Text(
                     text = line.text.ifEmpty { " " },
-                    color = Color.White.copy(alpha = 0.78f),
+                    color = (colors?.foreground ?: Color.White).copy(alpha = colors?.secondaryTextAlpha ?: 0.78f),
                     fontSize = 20.sp,
                     lineHeight = 29.sp
                 )
@@ -637,7 +651,7 @@ private fun UnsyncedLyricsList(document: LyricsDocument.Unsynced) {
 }
 
 @Composable
-private fun LyricsLoading() {
+private fun LyricsLoading(colors: LyricsColors?) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -645,9 +659,9 @@ private fun LyricsLoading() {
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator(color = Color.White)
+            CircularProgressIndicator(color = (colors?.foreground ?: Color.White))
             Spacer(Modifier.height(14.dp))
-            Text(stringResource(R.string.lyrics_loading), color = Color.White.copy(alpha = 0.76f))
+            Text(stringResource(R.string.lyrics_loading), color = (colors?.foreground ?: Color.White).copy(alpha = colors?.secondaryTextAlpha ?: 0.76f))
         }
     }
 }
@@ -658,7 +672,8 @@ private fun LyricsUnavailable(
     song: Song,
     reason: LyricsUnavailableReason,
     onRescan: () -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    colors: LyricsColors?
 ) {
     val content = unavailableContent(song, reason)
     Box(
@@ -676,14 +691,14 @@ private fun LyricsUnavailable(
         ) {
             Text(
                 text = stringResource(content.titleRes),
-                color = Color.White,
+                color = (colors?.foreground ?: Color.White),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold
             )
             Text(
                 text = content.detailArg?.let { stringResource(content.detailRes, it) }
                     ?: stringResource(content.detailRes),
-                color = Color.White.copy(alpha = 0.7f),
+                color = (colors?.foreground ?: Color.White).copy(alpha = colors?.secondaryTextAlpha ?: 0.7f),
                 style = MaterialTheme.typography.bodyLarge
             )
             content.candidates.forEach { candidate ->
@@ -691,7 +706,7 @@ private fun LyricsUnavailable(
                     text = if (candidate.relativeDirectory.isBlank()) candidate.displayName
                         else stringResource(R.string.lyrics_candidate_path,
                             candidate.displayName, candidate.relativeDirectory),
-                    color = Color.White.copy(alpha = 0.62f),
+                    color = (colors?.foreground ?: Color.White).copy(alpha = colors?.secondaryTextAlpha ?: 0.62f),
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis

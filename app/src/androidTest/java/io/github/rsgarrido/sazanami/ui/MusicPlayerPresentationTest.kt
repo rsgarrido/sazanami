@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
 import androidx.compose.runtime.currentComposer
@@ -66,6 +67,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
@@ -74,6 +76,10 @@ import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.controller.PlaybackQueueHubUiState
 import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.data.TabletLandscapeTheme
+import io.github.rsgarrido.sazanami.data.PocketAdvanceAppearance
+import io.github.rsgarrido.sazanami.data.PocketAdvanceConsoleFinish
+import io.github.rsgarrido.sazanami.data.PocketAdvanceLcdPalette
+import io.github.rsgarrido.sazanami.data.PocketAdvanceControlsFinish
 import io.github.rsgarrido.sazanami.data.preferences.decodeAppPreferences
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -109,7 +115,11 @@ import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceBrowser
 import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceNavigationState
 import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceLcdMode
 import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceRootEntry
-import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceColors
+import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokenOverrides
+import io.github.rsgarrido.sazanami.ui.player.theme.applyOverrides
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceDefaultPalette
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvancePalette
+import io.github.rsgarrido.sazanami.ui.player.pocketadvance.LocalPocketAdvancePalette
 import io.github.rsgarrido.sazanami.ui.player.pocketadvance.rememberPocketAdvanceNavigationState
 import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvancePlayerMorphBounds
 import io.github.rsgarrido.sazanami.ui.player.pocketadvance.PocketAdvanceMorphGeometry
@@ -297,9 +307,226 @@ class MusicPlayerPresentationTest {
         val pixels = row.captureToImage().toPixelMap()
         // The row edge is outside its text and rounded corners. Shared artwork must not cover it.
         val pixel = pixels[1, pixels.height / 2]
-        assertEquals(PocketAdvanceColors.Ink.red, pixel.red, 0.04f)
-        assertEquals(PocketAdvanceColors.Ink.green, pixel.green, 0.04f)
-        assertEquals(PocketAdvanceColors.Ink.blue, pixel.blue, 0.04f)
+        assertEquals(PocketAdvanceDefaultPalette.Ink.red, pixel.red, 0.04f)
+        assertEquals(PocketAdvanceDefaultPalette.Ink.green, pixel.green, 0.04f)
+        assertEquals(PocketAdvanceDefaultPalette.Ink.blue, pixel.blue, 0.04f)
+    }
+
+    @Test
+    @OptIn(ExperimentalTestApi::class)
+    fun pocketAdvanceAppearanceRecolorsMiniHardwareAndNowPlayingWithoutReplacingGeometry() {
+        val fixture = advanceFixture()
+        composeRule.setContent { fixture.Content() }
+        val mini = awaitAdvanceSnapshot(fixture)
+        val controller = fixture.morph
+        val originalMini = mini.mini.shell.translate(mini.frame.originInRoot)
+        assertAdvancePalettePixel("pocketAdvanceMini", PocketAdvanceDefaultPalette.Shell,
+            Offset(originalMini.center.x, originalMini.top + originalMini.height * .06f))
+        val custom = PocketAdvanceAppearance(PocketAdvanceConsoleFinish.OCEAN_BLUE,
+            PocketAdvanceLcdPalette.WARM_AMBER, PocketAdvanceControlsFinish.LIGHT_GRAY)
+        val colors = PocketAdvancePalette.from(custom)
+        composeRule.runOnIdle { fixture.advanceAppearance.value = custom }
+        val recoloredMini = awaitAdvanceSnapshot(fixture)
+        assertSame(mini.owner, recoloredMini.owner)
+        assertEquals(mini.mini, recoloredMini.mini); assertEquals(mini.expanded, recoloredMini.expanded)
+        assertAdvancePalettePixel("pocketAdvanceMini", colors.Shell,
+            Offset(originalMini.center.x, originalMini.top + originalMini.height * .06f))
+        advanceControl("pocketAdvanceMini")
+        val expanded = awaitAdvanceSnapshot(fixture)
+        composeRule.runOnIdle {
+            assertEquals(PlayerPresentation.Expanded, controller.targetPresentation)
+            assertEquals(1f, controller.progress, 0f)
+            assertFalse(controller.isAnimating); assertFalse(controller.isDragging)
+        }
+        assertAdvancePaletteFraction("pocketAdvanceDpad", colors.Button, .5f, .5f)
+        val buttonMiddle = androidx.compose.ui.graphics.lerp(colors.ButtonHighlight, colors.Button, .5f)
+        assertAdvancePaletteFraction("pocketAdvanceMorphPlay", buttonMiddle, .28f, .5f)
+        assertAdvancePaletteFraction("pocketAdvanceBack", buttonMiddle, .28f, .5f)
+        assertAdvancePaletteFraction("pocketAdvanceStartFace", buttonMiddle, .15f, .5f)
+        assertAdvancePaletteFraction("pocketAdvanceDisplay", colors.Screen, .94f, .5f)
+        assertAdvanceTextColor("pocketAdvanceMorphTitle", colors.Ink)
+        val shellTop = androidx.compose.ui.graphics.lerp(colors.Shell, colors.ShellHighlight, .48f)
+        assertAdvancePaletteFraction("pocketAdvanceMorphShell",
+            androidx.compose.ui.graphics.lerp(shellTop, colors.Shell, .12f), .5f, .06f)
+        val epoch = fixture.presentationEpoch
+        composeRule.runOnIdle { fixture.advanceAppearance.value = PocketAdvanceAppearance.Default }
+        val reset = awaitAdvanceSnapshot(fixture)
+        assertSame(expanded.owner, reset.owner)
+        assertEquals(expanded.expanded, reset.expanded); assertEquals(expanded.mini, reset.mini)
+        assertAdvancePaletteFraction("pocketAdvanceDpad", PocketAdvanceDefaultPalette.Button, .5f, .5f)
+        assertAdvancePaletteFraction("pocketAdvanceDisplay", PocketAdvanceDefaultPalette.Screen, .94f, .5f)
+        assertAdvanceTextColor("pocketAdvanceMorphTitle", PocketAdvanceDefaultPalette.Ink)
+        composeRule.runOnIdle {
+            assertSame(controller, fixture.morph); assertEquals(epoch, fixture.presentationEpoch)
+            assertEquals(PlayerPresentation.Expanded, controller.targetPresentation)
+            assertEquals(1f, controller.progress, 0f)
+            assertTrue(fixture.calls.isEmpty()); assertTrue(fixture.seeks.isEmpty()); assertTrue(fixture.songSelections.isEmpty())
+        }
+    }
+
+    @Test
+    @OptIn(ExperimentalTestApi::class)
+    fun pocketAdvanceAppearanceRecolorsSongsArtistsAndAlbumRecordsWhileRetainingTheirLocations() {
+        val fixture = advanceFixture()
+        val supplied = advanceAlbumLibrary(4, 25)
+        fixture.librarySongs.value = supplied
+        composeRule.setContent { fixture.Content() }
+        awaitAdvanceSnapshot(fixture)
+        advanceControl("pocketAdvanceMini")
+        val original = awaitAdvanceSnapshot(fixture)
+        val controller = fixture.morph
+        val epoch = fixture.presentationEpoch
+        openAdvanceSongs()
+        repeat(10) { advanceControl("pocketAdvanceDown") }
+        val song = supplied[10]
+        val songsViewport = composeRule.runOnIdle {
+            fixture.advanceNavigation.songsListState.firstVisibleItemIndex to fixture.advanceNavigation.songsListState.firstVisibleItemScrollOffset
+        }
+        composeRule.runOnIdle { fixture.advanceAppearance.value = PocketAdvanceAppearance(lcdPalette = PocketAdvanceLcdPalette.WARM_AMBER) }
+        assertAdvanceSelectedRowColor(advanceSongTag(song), PocketAdvancePalette.from(fixture.advanceAppearance.value).Ink)
+        composeRule.runOnIdle {
+            assertEquals(song.stableUiKey(), fixture.advanceNavigation.selectedSongKey)
+            assertEquals(songsViewport, fixture.advanceNavigation.songsListState.firstVisibleItemIndex to fixture.advanceNavigation.songsListState.firstVisibleItemScrollOffset)
+        }
+        advanceControl("pocketAdvanceBack")
+        composeRule.onNodeWithTag("pocketAdvanceRootArtists").performScrollTo().performClick()
+        advanceControl("pocketAdvanceDown")
+        val artist = advanceArtistGroups(supplied)[1]
+        composeRule.runOnIdle { fixture.advanceAppearance.value = fixture.advanceAppearance.value.copy(lcdPalette = PocketAdvanceLcdPalette.CLASSIC_GREEN) }
+        val green = PocketAdvancePalette.from(fixture.advanceAppearance.value)
+        assertAdvanceSelectedRowColor(advanceArtistTag(artist), green.Ink)
+        advanceControl("pocketAdvanceNext")
+        advanceControl("pocketAdvanceDown")
+        val artistSong = artist.songs[1]
+        composeRule.runOnIdle { fixture.advanceAppearance.value = fixture.advanceAppearance.value.copy(consoleFinish = PocketAdvanceConsoleFinish.GRAPHITE) }
+        assertAdvanceSelectedRowColor(advanceArtistSongTag(artistSong), green.Ink)
+        advanceControl("pocketAdvanceBack"); advanceControl("pocketAdvanceBack")
+        composeRule.onNodeWithTag("pocketAdvanceRootAlbums").performScrollTo().performClick()
+        advanceControl("pocketAdvanceDown")
+        val album = advanceAlbumGroups(supplied)[1]
+        composeRule.runOnIdle { fixture.advanceAppearance.value = fixture.advanceAppearance.value.copy(lcdPalette = PocketAdvanceLcdPalette.WARM_AMBER) }
+        assertAdvanceSelectedRowColor(albumRowTag(album), PocketAdvancePalette.from(fixture.advanceAppearance.value).Ink)
+        composeRule.onNodeWithTag(albumArtTag(album), useUnmergedTree = true).assertIsDisplayed()
+        advanceControl("pocketAdvanceNext")
+        repeat(10) { advanceControl("pocketAdvanceDown") }
+        val track = album.songs[10]
+        val viewport = composeRule.runOnIdle {
+            fixture.advanceNavigation.albumTracksListState.firstVisibleItemIndex to fixture.advanceNavigation.albumTracksListState.firstVisibleItemScrollOffset
+        }
+        composeRule.runOnIdle { fixture.advanceAppearance.value = PocketAdvanceAppearance(PocketAdvanceConsoleFinish.BERRY,
+            PocketAdvanceLcdPalette.CLASSIC_GREEN, PocketAdvanceControlsFinish.LIGHT_GRAY) }
+        assertAdvanceSelectedRowColor(albumTrackTag(track), PocketAdvancePalette.from(fixture.advanceAppearance.value).Ink)
+        val recolored = awaitAdvanceSnapshot(fixture)
+        assertSame(original.owner, recolored.owner); assertEquals(original.expanded, recolored.expanded); assertEquals(original.mini, recolored.mini)
+        advanceControl("pocketAdvanceStart"); advanceControl("pocketAdvanceStart")
+        composeRule.runOnIdle {
+            assertSame(controller, fixture.morph); assertEquals(epoch, fixture.presentationEpoch)
+            assertEquals(PocketAdvanceBrowserPage.AlbumRecord(album.key), fixture.advanceNavigation.browserPage)
+            assertEquals(track.stableUiKey(), fixture.advanceNavigation.selectedAlbumTrackKey)
+            assertEquals(artistSong.stableUiKey(), fixture.advanceNavigation.selectedArtistSongKey)
+            assertEquals(song.stableUiKey(), fixture.advanceNavigation.selectedSongKey)
+            assertEquals(viewport, fixture.advanceNavigation.albumTracksListState.firstVisibleItemIndex to fixture.advanceNavigation.albumTracksListState.firstVisibleItemScrollOffset)
+            assertTrue(fixture.calls.isEmpty()); assertTrue(fixture.seeks.isEmpty()); assertTrue(fixture.songSelections.isEmpty())
+        }
+    }
+
+    @Test
+    fun pocketAdvanceAppearanceUpdatesDoNotCancelHeldInputOrAnActivePlayerDrag() {
+        val fixture = advanceFixture()
+        val supplied = advanceLibrarySongs(30)
+        fixture.librarySongs.value = supplied
+        composeRule.setContent { fixture.Content() }
+        awaitAdvanceSnapshot(fixture)
+        advanceControl("pocketAdvanceMini")
+        openAdvanceSongs()
+        val controller = fixture.morph
+        val epoch = fixture.presentationEpoch
+        composeRule.mainClock.autoAdvance = false
+        try {
+            beginAdvanceHold("pocketAdvanceDown")
+            composeRule.mainClock.advanceTimeBy(200)
+            composeRule.runOnIdle { fixture.advanceAppearance.value = PocketAdvanceAppearance(PocketAdvanceConsoleFinish.FOREST_GREEN,
+                PocketAdvanceLcdPalette.CLASSIC_GREEN, PocketAdvanceControlsFinish.DEEP_NAVY) }
+            composeRule.mainClock.advanceTimeBy(200)
+            assertAdvanceSongIndex(fixture, supplied, 2)
+            composeRule.mainClock.advanceTimeBy(110)
+            assertAdvanceSongIndex(fixture, supplied, 3)
+            composeRule.onRoot().performTouchInput { up() }
+            composeRule.mainClock.advanceTimeBy(600)
+            assertAdvanceSongIndex(fixture, supplied, 3)
+            composeRule.runOnIdle { controller.beginDragWithRange(500f); controller.dragBy(100f) }
+            composeRule.mainClock.advanceTimeByFrame()
+            val progress = composeRule.runOnIdle { assertTrue(controller.isDragging); controller.progress }
+            composeRule.runOnIdle { fixture.advanceAppearance.value = PocketAdvanceAppearance.Default }
+            composeRule.mainClock.advanceTimeByFrame()
+            composeRule.runOnIdle {
+                assertSame(controller, fixture.morph); assertTrue(controller.isDragging)
+                assertEquals(progress, controller.progress, 0f); assertEquals(epoch, fixture.presentationEpoch)
+                assertEquals(supplied[3].stableUiKey(), fixture.advanceNavigation.selectedSongKey)
+                assertTrue(fixture.calls.isEmpty()); assertTrue(fixture.seeks.isEmpty()); assertTrue(fixture.songSelections.isEmpty())
+                controller.cancelDrag()
+            }
+            composeRule.mainClock.advanceTimeBy(600)
+        } finally { composeRule.mainClock.autoAdvance = true }
+    }
+
+    @Test
+    fun pocketAdvanceAppearanceDoesNotRestartAlbumOpeningOrLeakAcrossPortraitFallback() {
+        val fixture = advanceFixture()
+        val supplied = advanceAlbumLibrary(3, 20)
+        fixture.librarySongs.value = supplied
+        val custom = PocketAdvanceAppearance(PocketAdvanceConsoleFinish.OCEAN_BLUE,
+            PocketAdvanceLcdPalette.CLASSIC_GREEN, PocketAdvanceControlsFinish.DEEP_NAVY)
+        fixture.advanceAppearance.value = custom
+        composeRule.setContent { fixture.Content() }
+        awaitAdvanceSnapshot(fixture)
+        advanceControl("pocketAdvanceMini")
+        val controller = fixture.morph
+        composeRule.runOnIdle { fixture.primaryTokenOverrides.value = PlayerThemeTokenOverrides(
+            shellColor = Color.Red, displayBackgroundColor = Color.Blue, displayTextColor = Color.Yellow) }
+        assertAdvancePaletteFraction("pocketAdvanceDisplay", PocketAdvancePalette.from(custom).Screen, .94f, .5f)
+        openAdvanceAlbums()
+        val album = advanceAlbumGroups(supplied).first()
+        val tag = albumArtTag(album)
+        val catalogue = composeRule.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val epoch = fixture.presentationEpoch
+        composeRule.mainClock.autoAdvance = false
+        try {
+            advanceControl("pocketAdvanceNext")
+            composeRule.mainClock.advanceTimeByFrame(); composeRule.mainClock.advanceTimeBy(80)
+            val middle = composeRule.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            composeRule.runOnIdle { fixture.advanceAppearance.value = custom.copy(lcdPalette = PocketAdvanceLcdPalette.WARM_AMBER) }
+            composeRule.mainClock.advanceTimeByFrame(); composeRule.mainClock.advanceTimeBy(80)
+            val later = composeRule.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            assertTrue(catalogue.width > middle.width && middle.width > later.width)
+            composeRule.mainClock.advanceTimeBy(160)
+            composeRule.onAllNodesWithTag(tag, useUnmergedTree = true).assertCountEquals(1)
+            composeRule.runOnIdle {
+                assertSame(controller, fixture.morph); assertEquals(epoch, fixture.presentationEpoch)
+                assertEquals(PocketAdvanceBrowserPage.AlbumRecord(album.key), fixture.advanceNavigation.browserPage)
+                fixture.viewport.value = DpSize(720.dp, 1180.dp)
+            }
+            composeRule.mainClock.advanceTimeBy(600)
+            composeRule.runOnIdle {
+                assertEquals(PlayerPresentationIdentity.Existing(PlayerTheme.CLASSIC_WHEEL), fixture.resolvedIdentity)
+                assertEquals(PlayerTheme.CLASSIC_WHEEL, fixture.theme.value)
+                assertEquals(Color.Red, fixture.primaryTokenOverrides.value.shellColor)
+                assertEquals(Color.Blue, fixture.primaryTokenOverrides.value.displayBackgroundColor)
+                assertEquals(custom.copy(lcdPalette = PocketAdvanceLcdPalette.WARM_AMBER), fixture.advanceAppearance.value)
+                fixture.theme.value = PlayerTheme.POCKET_CASSETTE
+                fixture.viewport.value = DpSize(1200.dp, 720.dp)
+            }
+            composeRule.mainClock.advanceTimeBy(600)
+            composeRule.runOnIdle {
+                assertEquals(PlayerPresentationIdentity.PocketAdvance, fixture.resolvedIdentity)
+                assertEquals(PocketAdvanceConsoleFinish.OCEAN_BLUE, fixture.advanceAppearance.value.consoleFinish)
+                assertSame(controller, fixture.morph); assertEquals(1f, controller.progress, 0f)
+                assertTrue(fixture.calls.isEmpty()); assertTrue(fixture.seeks.isEmpty()); assertTrue(fixture.songSelections.isEmpty())
+            }
+        } finally { composeRule.mainClock.autoAdvance = true }
+        advanceControl("pocketAdvanceStart")
+        composeRule.onNodeWithTag(albumTrackTag(album.songs.first()), useUnmergedTree = true).assertIsSelected()
+        assertAdvanceSelectedRowColor(albumTrackTag(album.songs.first()), PocketAdvancePalette.from(fixture.advanceAppearance.value).Ink)
     }
 
     @Test
@@ -3188,6 +3415,41 @@ class MusicPlayerPresentationTest {
         }
     }
 
+    @OptIn(ExperimentalTestApi::class)
+    private fun assertAdvancePalettePixel(tag: String, expected: Color, pointInRoot: Offset) {
+        val node = composeRule.onNodeWithTag(tag, useUnmergedTree = true)
+        val bounds = node.fetchSemanticsNode().boundsInRoot
+        val pixels = node.captureToImage().toPixelMap()
+        val x = (pointInRoot.x - bounds.left).toInt().coerceIn(0, pixels.width - 1)
+        val y = (pointInRoot.y - bounds.top).toInt().coerceIn(0, pixels.height - 1)
+        val actual = pixels[x, y]
+        assertEquals("Red in $tag", expected.red, actual.red, .06f)
+        assertEquals("Green in $tag", expected.green, actual.green, .06f)
+        assertEquals("Blue in $tag", expected.blue, actual.blue, .06f)
+    }
+
+    private fun assertAdvanceSelectedRowColor(tag: String, expected: Color) {
+        val bounds = composeRule.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertAdvancePalettePixel(tag, expected, Offset(bounds.left + 1f, bounds.center.y))
+    }
+
+    private fun assertAdvancePaletteFraction(tag: String, expected: Color, x: Float, y: Float) {
+        val bounds = composeRule.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertAdvancePalettePixel(tag, expected, Offset(bounds.left + bounds.width * x, bounds.top + bounds.height * y))
+    }
+
+    private fun assertAdvanceTextColor(tag: String, expected: Color) {
+        // At the fixture's 0.25 density, glyphs may contain only antialiased pixels. Assert the
+        // actual displayed Text's current paint color exactly, independently of glyph coverage.
+        val layouts = mutableListOf<TextLayoutResult>()
+        composeRule.onNodeWithTag(tag, useUnmergedTree = true).assertIsDisplayed()
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { getLayout ->
+                assertTrue("Expected a current text layout in $tag", getLayout(layouts))
+            }
+        assertEquals("Expected one text layout in $tag", 1, layouts.size)
+        assertEquals("Expected the current text color in $tag", expected, layouts.single().layoutInput.style.color)
+    }
+
     private data class AdvanceSnapshot(
         val owner: PocketAdvancePlayerMorphBounds,
         val frame: PlayerMorphLayoutFrame,
@@ -3646,6 +3908,8 @@ class MusicPlayerPresentationTest {
         val theme = mutableStateOf(PlayerTheme.DEFAULT)
         val nominatedTheme = mutableStateOf<PlayerTheme?>(null)
         val tabletLandscapeTheme = mutableStateOf(TabletLandscapeTheme.NORMAL_PLAYER)
+        val advanceAppearance = mutableStateOf(PocketAdvanceAppearance.Default)
+        val primaryTokenOverrides = mutableStateOf(PlayerThemeTokenOverrides())
         val deviceKind = mutableStateOf(PlayerDeviceKind.UNKNOWN)
         val miniVisible = mutableStateOf(false)
         val navigationVisible = mutableStateOf(true)
@@ -3693,7 +3957,8 @@ class MusicPlayerPresentationTest {
         @Composable
         fun Content() {
             val inheritedDensity = LocalDensity.current
-            CompositionLocalProvider(LocalDensity provides if (viewport.value != null) {
+            val advancePalette = remember(advanceAppearance.value) { PocketAdvancePalette.from(advanceAppearance.value) }
+            CompositionLocalProvider(LocalPocketAdvancePalette provides advancePalette, LocalDensity provides if (viewport.value != null) {
                 // Fit a deterministic tablet-sized logical window on phone test devices.
                 Density(0.25f, fontScale.value)
             } else inheritedDensity) {
@@ -3729,12 +3994,13 @@ class MusicPlayerPresentationTest {
                             preferredLandscapeLayout = landscapeLayout.value)
                     } else null
                     resolvedPlayerLayout = playerLayout
+                    val primaryTokens = theme.value.defaultTokens().applyOverrides(primaryTokenOverrides.value)
                     val requestedPresentation = resolvePlayerPresentation(
                         primaryTheme = theme.value,
-                        primaryThemeTokens = theme.value.defaultTokens(),
+                        primaryThemeTokens = primaryTokens,
                         context = TabletLandscapePlayerContext(deviceKind.value, 800, DpSize(maxWidth, maxHeight)),
                         landscapeCandidate = tabletLandscapePlayerCandidate(tabletLandscapeTheme.value,
-                            theme.value.defaultTokens(), LocalDensity.current.fontScale) ?: nominatedTheme.value?.let { nominated ->
+                            primaryTokens, LocalDensity.current.fontScale) ?: nominatedTheme.value?.let { nominated ->
                             TabletLandscapePlayerCandidate(
                                 ResolvedPlayerPresentation(PlayerPresentationIdentity.Existing(nominated), nominated.defaultTokens()),
                                 DpSize(840.dp, 480.dp)

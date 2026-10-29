@@ -35,6 +35,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
@@ -66,8 +67,10 @@ internal fun NowPlayingMoreDialog(
     target: Song,
     actions: List<NowPlayingActionItem>,
     onDismiss: () -> Unit,
-    onAction: (NowPlayingAction) -> Unit
+    onAction: (NowPlayingAction) -> Unit,
+    accentOverride: Color? = null
 ) {
+    val accent = accentOverride ?: AppShellAccent
     val entrance = remember { Animatable(0f) }
     val paneLabel = stringResource(R.string.player_more_actions)
     val configuration = LocalConfiguration.current
@@ -143,7 +146,7 @@ internal fun NowPlayingMoreDialog(
                                 Icon(
                                     imageVector = nowPlayingActionIcon(item),
                                     contentDescription = null,
-                                    tint = AppShellAccent,
+                                    tint = accent,
                                     modifier = Modifier.size(22.dp)
                                 )
                                 Text(
@@ -178,14 +181,14 @@ internal fun NowPlayingMoreDialog(
                                 timerStateDescription?.let { stateDescription = it }
                             },
                             shape = RoundedCornerShape(12.dp),
-                            color = if (item.isActive) AppShellAccent.copy(alpha = 0.12f)
+                            color = if (item.isActive) accent.copy(alpha = 0.12f)
                                 else MaterialTheme.colorScheme.surfaceContainerLow
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = nowPlayingActionIcon(item),
                                     contentDescription = null,
-                                    tint = AppShellAccent,
+                                    tint = accent,
                                     modifier = Modifier.size(24.dp)
                                 )
                             }

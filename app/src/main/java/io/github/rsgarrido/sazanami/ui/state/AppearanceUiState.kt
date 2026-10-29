@@ -2,6 +2,7 @@ package io.github.rsgarrido.sazanami.ui.state
 
 import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.data.TabletLandscapeTheme
+import io.github.rsgarrido.sazanami.data.PocketAdvanceAppearance
 import io.github.rsgarrido.sazanami.player.replaygain.ReplayGainMode
 import io.github.rsgarrido.sazanami.ui.library.LibraryGridColumns
 import io.github.rsgarrido.sazanami.ui.library.LibraryViewMode
@@ -19,6 +20,7 @@ import io.github.rsgarrido.sazanami.ui.player.theme.defaultTokens
 data class PlayerAppearanceUiState(
     val selectedTheme: PlayerTheme = PlayerTheme.DEFAULT,
     val tabletLandscapeTheme: TabletLandscapeTheme = TabletLandscapeTheme.NORMAL_PLAYER,
+    val pocketAdvanceAppearance: PocketAdvanceAppearance = PocketAdvanceAppearance.Default,
     val themeTokens: PlayerThemeTokens = PlayerTheme.DEFAULT.defaultTokens(),
     val modernArtworkTransitionStyle: ModernArtworkTransitionStyle =
         ModernArtworkTransitionStyle.SLIDE,

@@ -36,19 +36,20 @@ internal fun PocketAdvanceBrowserRow(
     title: String, subtitle: String, isSelected: Boolean, actionLabel: String,
     onClick: () -> Unit, modifier: Modifier = Modifier
 ) {
+    val colors = LocalPocketAdvancePalette.current
     Column(
         modifier.fillMaxWidth().heightIn(min = 56.dp)
-            .background(if (isSelected) PocketAdvanceColors.Ink else PocketAdvanceColors.Screen, RoundedCornerShape(4.dp))
-            .border(1.dp, if (isSelected) PocketAdvanceColors.ScreenAccent else PocketAdvanceColors.ScreenShade, RoundedCornerShape(4.dp))
+            .background(if (isSelected) colors.Ink else colors.Screen, RoundedCornerShape(4.dp))
+            .border(1.dp, if (isSelected) colors.ScreenAccent else colors.ScreenShade, RoundedCornerShape(4.dp))
             .clickable(role = Role.Button, onClickLabel = actionLabel, onClick = onClick)
             .semantics { selected = isSelected; contentDescription = "$title, $subtitle" }
             .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
-        val ink = if (isSelected) PocketAdvanceColors.Screen else PocketAdvanceColors.Ink
+        val ink = if (isSelected) colors.Screen else colors.Ink
         Text(title, color = ink, fontFamily = FontFamily.Monospace,
             fontSize = 15.sp, lineHeight = 20.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(subtitle, color = if (isSelected) PocketAdvanceColors.Screen else PocketAdvanceColors.MutedInk,
+        Text(subtitle, color = if (isSelected) colors.Screen else colors.MutedInk,
             fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 15.sp,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
@@ -56,11 +57,12 @@ internal fun PocketAdvanceBrowserRow(
 
 @Composable
 internal fun PocketAdvanceBrowserEmpty(title: String, modifier: Modifier = Modifier) {
+    val colors = LocalPocketAdvancePalette.current
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, color = PocketAdvanceColors.Ink, fontFamily = FontFamily.Monospace, fontSize = 15.sp)
-            Text(stringResource(R.string.player_wheel_check_library), color = PocketAdvanceColors.MutedInk,
+            Text(title, color = colors.Ink, fontFamily = FontFamily.Monospace, fontSize = 15.sp)
+            Text(stringResource(R.string.player_wheel_check_library), color = colors.MutedInk,
                 fontFamily = FontFamily.Monospace, fontSize = 11.sp)
         }
     }
