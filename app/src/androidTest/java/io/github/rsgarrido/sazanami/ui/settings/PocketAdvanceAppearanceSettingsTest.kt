@@ -14,6 +14,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -92,7 +93,13 @@ class PocketAdvanceAppearanceSettingsTest {
     @Test
     fun disabledPocketAdvanceStillExposesAllCategoriesAndAccessibleOriginalSwatches() {
         compose.setContent { Content() }
-        compose.onNodeWithTag("pocketAdvanceAppearanceSetting").performScrollTo().assertIsDisplayed().performClick()
+        val row = compose.onNodeWithTag("pocketAdvanceAppearanceSetting").performScrollTo().assertIsDisplayed()
+        row.assertTextContains(text(R.string.settings_customize_pocket_advance))
+            .assertTextContains(text(R.string.settings_customize_pocket_advance_summary))
+        compose.onNodeWithContentDescription(text(R.string.settings_customize_pocket_advance), useUnmergedTree = true)
+            .assertIsDisplayed()
+        row.performClick()
+        compose.onNodeWithText(text(R.string.pocket_advance_appearance_title)).assertIsDisplayed()
         val originals = listOf(
             swatch(R.string.pocket_advance_console_finish, PocketAdvanceConsoleFinish.ORIGINAL_PURPLE.labelRes),
             swatch(R.string.pocket_advance_lcd_palette, PocketAdvanceLcdPalette.ORIGINAL.labelRes),
@@ -150,6 +157,23 @@ class PocketAdvanceAppearanceSettingsTest {
             assertEquals(TabletLandscapeTheme.NORMAL_PLAYER, repository.state.value.tabletLandscapeTheme)
             assertTrue(otherRequests.isEmpty())
         }
+        compose.onNodeWithContentDescription(text(R.string.settings_customize_theme_colors))
+            .performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithText(compose.activity.getString(R.string.theme_color_customize, text(PlayerTheme.CLASSIC_WHEEL.labelRes)))
+            .assertIsDisplayed()
+        compose.onNodeWithText(text(R.string.pocket_advance_appearance_title)).assertDoesNotExist()
+        compose.onNodeWithText(text(R.string.settings_done)).performClick()
+        openChoices()
+        compose.onNodeWithText(text(R.string.pocket_advance_appearance_title)).assertIsDisplayed()
+        originalsAreSelected()
+        compose.onNodeWithText(text(R.string.settings_done)).performClick()
+        compose.runOnIdle {
+            assertEquals(PlayerTheme.CLASSIC_WHEEL, repository.state.value.selectedPlayerTheme)
+            assertEquals(mapOf(PlayerTheme.CLASSIC_WHEEL to primaryColors), repository.state.value.playerThemeTokenOverrides)
+            assertEquals(TabletLandscapeTheme.NORMAL_PLAYER, repository.state.value.tabletLandscapeTheme)
+            assertEquals(PocketAdvanceAppearance.Default, repository.state.value.pocketAdvanceAppearance)
+            assertTrue(otherRequests.isEmpty())
+        }
     }
 
     @Test
@@ -189,6 +213,7 @@ class PocketAdvanceAppearanceSettingsTest {
         val english = resources("en")
         val spanish = resources("es")
         val ids = listOf(R.string.settings_customize_pocket_advance, R.string.settings_customize_pocket_advance_summary,
+            R.string.pocket_advance_appearance_title,
             R.string.pocket_advance_console_finish, R.string.pocket_advance_console_finish_description,
             R.string.pocket_advance_lcd_palette, R.string.pocket_advance_lcd_palette_description,
             R.string.pocket_advance_controls_finish, R.string.pocket_advance_controls_finish_description) +
@@ -198,6 +223,12 @@ class PocketAdvanceAppearanceSettingsTest {
             assertTrue(english.getString(id).isNotBlank()); assertTrue(spanish.getString(id).isNotBlank())
             assertNotEquals(english.getString(id), spanish.getString(id))
         }
+        assertEquals("Customize landscape theme", english.getString(R.string.settings_customize_pocket_advance))
+        assertEquals("Personalizar tema horizontal", spanish.getString(R.string.settings_customize_pocket_advance))
+        assertEquals("Pocket Advance · Console, LCD & controls", english.getString(R.string.settings_customize_pocket_advance_summary))
+        assertEquals("Pocket Advance · Consola, LCD y controles", spanish.getString(R.string.settings_customize_pocket_advance_summary))
+        assertEquals("Pocket Advance appearance", english.getString(R.string.pocket_advance_appearance_title))
+        assertEquals("Apariencia de Pocket Advance", spanish.getString(R.string.pocket_advance_appearance_title))
         assertEquals("Original Purple", english.getString(PocketAdvanceConsoleFinish.ORIGINAL_PURPLE.labelRes))
         assertEquals("Morado original", spanish.getString(PocketAdvanceConsoleFinish.ORIGINAL_PURPLE.labelRes))
     }

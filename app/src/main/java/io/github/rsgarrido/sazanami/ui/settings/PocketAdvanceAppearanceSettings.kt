@@ -79,7 +79,7 @@ private fun PocketAdvanceAppearanceDialog(
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_customize_pocket_advance)) },
+        title = { Text(stringResource(R.string.pocket_advance_appearance_title)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()).testTag("pocketAdvanceAppearanceOptions")) {
                 PocketAdvancePresetSection(

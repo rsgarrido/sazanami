@@ -16,6 +16,9 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -88,6 +91,8 @@ class TabletLandscapeThemeSettingsTest {
         compose.setContent { Content() }
         compose.onNodeWithText(text(R.string.settings_tablet_landscape_theme_summary)).performScrollTo().assertIsDisplayed()
         openChoices()
+        compose.onNode(hasText(text(R.string.settings_tablet_landscape_theme_summary)) and hasAnyAncestor(isDialog()),
+            useUnmergedTree = true).assertIsDisplayed()
         option(TabletLandscapeTheme.NORMAL_PLAYER).assertIsEnabled().assertIsSelected()
         option(TabletLandscapeTheme.POCKET_ADVANCE).assertIsEnabled().assertIsNotSelected()
         assertEquals(Role.RadioButton, option(TabletLandscapeTheme.POCKET_ADVANCE).fetchSemanticsNode().config[SemanticsProperties.Role])
@@ -149,6 +154,10 @@ class TabletLandscapeThemeSettingsTest {
             assertTrue(english.getString(id).isNotBlank()); assertTrue(spanish.getString(id).isNotBlank())
             assertNotEquals(english.getString(id), spanish.getString(id))
         }
+        assertEquals("Pocket Advance works on supported tablets in landscape. Other layouts use your normal player theme.",
+            english.getString(R.string.settings_tablet_landscape_theme_summary))
+        assertEquals("Pocket Advance funciona en tabletas compatibles en horizontal. En los demás casos se usa el tema normal del reproductor.",
+            spanish.getString(R.string.settings_tablet_landscape_theme_summary))
         assertEquals("Use normal player", english.getString(R.string.tablet_landscape_theme_normal_player))
         assertEquals("Usar reproductor normal", spanish.getString(R.string.tablet_landscape_theme_normal_player))
         assertEquals("Pocket Advance", spanish.getString(R.string.tablet_landscape_theme_pocket_advance))

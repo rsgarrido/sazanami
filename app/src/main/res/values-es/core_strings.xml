@@ -111,10 +111,11 @@
     <string name="settings_choose_player_theme">Elegir tema del reproductor</string>
     <string name="settings_tablet_landscape_theme">Tema para tabletas en horizontal</string>
     <string name="settings_choose_tablet_landscape_theme">Elegir tema para tabletas en horizontal</string>
-    <string name="settings_tablet_landscape_theme_summary">Pocket Advance solo se activa en diseños horizontales compatibles de tabletas a pantalla completa. En vertical y en otros diseños no compatibles se usa el tema normal del reproductor.</string>
+    <string name="settings_tablet_landscape_theme_summary">Pocket Advance funciona en tabletas compatibles en horizontal. En los demás casos se usa el tema normal del reproductor.</string>
     <string name="tablet_landscape_theme_normal_player">Usar reproductor normal</string>
-    <string name="settings_customize_pocket_advance">Personalizar Pocket Advance</string>
-    <string name="settings_customize_pocket_advance_summary">Elige acabados coordinados para la consola, la pantalla LCD y los controles, incluso cuando Pocket Advance no esté activo.</string>
+    <string name="settings_customize_pocket_advance">Personalizar tema horizontal</string>
+    <string name="settings_customize_pocket_advance_summary">Pocket Advance · Consola, LCD y controles</string>
+    <string name="pocket_advance_appearance_title">Apariencia de Pocket Advance</string>
     <string name="pocket_advance_console_finish">Acabado de la consola</string>
     <string name="pocket_advance_console_finish_description">Superficies, reflejos, uniones y etiquetas de la consola</string>
     <string name="pocket_advance_lcd_palette">Paleta LCD</string>
