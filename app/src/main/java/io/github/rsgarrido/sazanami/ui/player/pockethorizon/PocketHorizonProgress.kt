@@ -51,7 +51,8 @@ internal fun PocketHorizonProgress(
     trackKey: String?,
     enabled: Boolean,
     onSeekChange: (Int) -> Unit,
-    style: PocketHorizonStyle
+    style: PocketHorizonStyle,
+    modifier: Modifier = Modifier
 ) {
     PlaybackProgress(progressState) { progress ->
         val duration = if (trackKey == null) 0 else progress.duration.coerceAtLeast(0)
@@ -59,7 +60,7 @@ internal fun PocketHorizonProgress(
         val canSeek = enabled && duration > 0
         // Disposing the shared adapter retires delayed callbacks and any unfinished Direct gesture.
         key(trackKey, duration, canSeek) {
-            Column(Modifier.fillMaxWidth()) {
+            Column(modifier.fillMaxWidth()) {
                 if (duration > 0) {
                     PocketHorizonSeek(position, duration, canSeek, onSeekChange, style)
                 } else {

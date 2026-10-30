@@ -43,7 +43,8 @@ internal fun PocketHorizonTransport(
     onPreviousClick: () -> Unit,
     onNextClick: () -> Unit,
     style: PocketHorizonStyle,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    measurements: PocketHorizonEndpointMeasurements? = null
 ) {
     // The route's shared command-intent local has priority; isolated callers can supply its state value.
     val showsPause = playbackPlayPauseShowsPause(playPauseIntent ?: isPlaying)
@@ -53,7 +54,8 @@ internal fun PocketHorizonTransport(
             enabled && previousEnabled, onPreviousClick, "pocketHorizonPrevious", style)
         PocketHorizonButton(if (showsPause) Icons.Filled.Pause else Icons.Filled.PlayArrow,
             stringResource(if (showsPause) R.string.player_pause else R.string.player_play),
-            enabled, onPlayPauseClick, "pocketHorizonPlayPause", style, prominent = true)
+            enabled, onPlayPauseClick, "pocketHorizonPlayPause", style, prominent = true,
+            modifier = Modifier.horizonAnchor(measurements, PocketHorizonAnchor.PlayPause))
         PocketHorizonButton(Icons.Filled.SkipNext, stringResource(R.string.player_next_song),
             enabled && nextEnabled, onNextClick, "pocketHorizonNext", style)
     }
@@ -93,11 +95,12 @@ private fun PocketHorizonButton(
     onClick: () -> Unit,
     tag: String,
     style: PocketHorizonStyle,
-    prominent: Boolean = false
+    prominent: Boolean = false,
+    modifier: Modifier = Modifier
 ) {
     val shape = if (prominent) CircleShape else RoundedCornerShape(16.dp)
     Box(
-        Modifier.size(if (prominent) PocketHorizonLayoutMetrics.ControlHeight else PocketHorizonLayoutMetrics.MinimumTouchTarget)
+        modifier.size(if (prominent) PocketHorizonLayoutMetrics.ControlHeight else PocketHorizonLayoutMetrics.MinimumTouchTarget)
             .testTag(tag).background(if (prominent && enabled) style.accent else style.surface.copy(alpha = 0.65f), shape)
             .border(1.dp, style.outline.copy(alpha = 0.40f), shape)
             .clickable(enabled = enabled, role = Role.Button, onClickLabel = label) { if (enabled) onClick() }

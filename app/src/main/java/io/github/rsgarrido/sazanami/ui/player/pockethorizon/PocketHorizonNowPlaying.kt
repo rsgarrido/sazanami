@@ -63,21 +63,23 @@ internal fun PocketHorizonNowPlaying(
     onSeekChange: (Int) -> Unit,
     onViewArtwork: ((Song) -> Unit)?,
     style: PocketHorizonStyle,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    measurements: PocketHorizonEndpointMeasurements? = null
 ) {
     val artwork: @Composable () -> Unit = {
-        PocketHorizonArtwork(playbackState.currentSong, layout.artworkSize, enabled, onViewArtwork, style)
+        PocketHorizonArtwork(playbackState.currentSong, layout.artworkSize, enabled, onViewArtwork, style,
+            Modifier.horizonAnchor(measurements, PocketHorizonAnchor.Artwork))
     }
     val details: @Composable () -> Unit = {
         Column(Modifier.width(layout.detailsWidth)) {
-            PocketHorizonMetadata(playbackState.currentSong, style)
+            PocketHorizonMetadata(playbackState.currentSong, style, measurements)
             Spacer(Modifier.height(PocketHorizonLayoutMetrics.DetailsGap))
             PocketHorizonProgress(progressState, playbackState.currentSong?.stableUiKey(), enabled && seekEnabled,
-                onSeekChange, style)
+                onSeekChange, style, Modifier.horizonAnchor(measurements, PocketHorizonAnchor.ProgressRegion))
             Spacer(Modifier.height(PocketHorizonLayoutMetrics.DetailsGap))
             PocketHorizonTransport(playbackState.isPlaying, playbackState.playPauseIntent,
                 enabled, previousEnabled, nextEnabled,
-                onPlayPauseClick, onPreviousClick, onNextClick, style)
+                onPlayPauseClick, onPreviousClick, onNextClick, style, measurements = measurements)
         }
     }
     if (layout.isWide) {
@@ -92,11 +94,12 @@ internal fun PocketHorizonNowPlaying(
 }
 
 @Composable
-private fun PocketHorizonMetadata(song: Song?, style: PocketHorizonStyle) {
+private fun PocketHorizonMetadata(song: Song?, style: PocketHorizonStyle, measurements: PocketHorizonEndpointMeasurements?) {
     val metrics = PocketHorizonLayoutMetrics
     val typography = TextStyle(fontFamily = FontFamily.SansSerif,
         platformStyle = PlatformTextStyle(includeFontPadding = false))
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(metrics.MetadataGap)) {
+    Column(Modifier.fillMaxWidth().horizonAnchor(measurements, PocketHorizonAnchor.Metadata),
+        verticalArrangement = Arrangement.spacedBy(metrics.MetadataGap)) {
         Text(song?.title?.takeIf { it.isNotBlank() }
             ?: stringResource(if (song == null) R.string.pocket_horizon_no_track else R.string.library_song_unknown_title),
             modifier = Modifier.fillMaxWidth().testTag("pocketHorizonTitle"),
@@ -123,20 +126,23 @@ private fun PocketHorizonMetadata(song: Song?, style: PocketHorizonStyle) {
 }
 
 @Composable
-private fun PocketHorizonArtwork(
+internal fun PocketHorizonArtwork(
     song: Song?,
     size: Dp,
     enabled: Boolean,
     onViewArtwork: ((Song) -> Unit)?,
-    style: PocketHorizonStyle
+    style: PocketHorizonStyle,
+    modifier: Modifier = Modifier,
+    requestSize: Int = 1024,
+    tag: String = "pocketHorizonArtwork"
 ) {
     val context = LocalContext.current
     val uri = song?.albumArtUri
     val requestKey = listOf(uri?.toString(), song?.dateModifiedEpochSeconds, song?.fileSizeBytes,
-        song?.artworkEnrichmentVersion)
-    val model = remember(context, requestKey) {
+        song?.artworkEnrichmentVersion, requestSize)
+    val model = remember(context, requestKey, requestSize) {
         uri?.let {
-            ImageRequest.Builder(context).data(it).size(1024).crossfade(false)
+            ImageRequest.Builder(context).data(it).size(requestSize).crossfade(false)
                 .memoryCacheKey("horizon:$requestKey").build()
         }
     }
@@ -147,11 +153,11 @@ private fun PocketHorizonArtwork(
         }.semantics { contentDescription = label }
     } else Modifier
     val shape = RoundedCornerShape(16.dp)
-    Box(Modifier.size(size).testTag("pocketHorizonArtwork").clip(shape)
+    Box(modifier.size(size).testTag(tag).clip(shape)
         .background(style.surface).border(1.dp, style.outline.copy(alpha = 0.65f), shape).then(action),
         contentAlignment = Alignment.Center) {
         Icon(Icons.Filled.Album, contentDescription = null, tint = style.secondaryText,
-            modifier = Modifier.size(48.dp))
+            modifier = Modifier.size(minOf(48.dp, size * .5f)))
         // Always retain the same loader lifetime, including null requests; the shared loader retires
         // obsolete completions and retains the preceding image only during a pending replacement.
         RetainedArtworkImage(model = model, contentDescription = null, modifier = Modifier.fillMaxSize(),

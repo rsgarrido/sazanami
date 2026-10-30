@@ -17,10 +17,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.PlatformTextStyle
@@ -70,7 +72,9 @@ internal fun PocketHorizonExpandedPlayer(
     albumSortState: LibrarySortState = LibrarySortState(LibrarySortOption.TITLE, LibrarySortDirection.ASCENDING),
     artistSortState: LibrarySortState = LibrarySortState(LibrarySortOption.NAME, LibrarySortDirection.ASCENDING),
     onSongClick: ((Song, List<Song>) -> Unit)? = null,
-    navigationState: PocketHorizonNavigationState = rememberPocketHorizonNavigationState()
+    navigationState: PocketHorizonNavigationState = rememberPocketHorizonNavigationState(),
+    measurements: PocketHorizonEndpointMeasurements? = null,
+    collapseGestureModifier: Modifier = Modifier
 ) {
     val enabled = inputEnabled && playbackState.isConnected && playbackState.currentSong != null
     val library = rememberPocketHorizonLibrary(libraryState, songSortState, albumSortState, artistSortState)
@@ -93,7 +97,11 @@ internal fun PocketHorizonExpandedPlayer(
         }
     }
     val fontScale = LocalDensity.current.fontScale
-    PocketHorizonShell(modifier, style) { layout ->
+    val contentKey = pocketHorizonMeasurementKey(playbackState.currentSong, LocalLayoutDirection.current)
+    val reports = measurements?.takeIf { it.contentKey == contentKey &&
+        navigationState.category == PocketHorizonCategory.NowPlaying }
+    DisposableEffect(measurements, contentKey, reports) { onDispose { measurements?.clear() } }
+    PocketHorizonShell(modifier, style, reports) { layout ->
         // The plane has a finite height even inside the extreme-small-host scroll fallback. Lazy
         // browsing never inherits the unbounded constraints of Now Playing's own vertical scroll.
         val minimumBody = if (navigationState.category == PocketHorizonCategory.NowPlaying)
@@ -108,7 +116,14 @@ internal fun PocketHorizonExpandedPlayer(
                 Row(Modifier.fillMaxWidth().heightIn(min = PocketHorizonLayoutMetrics.statusHeight(fontScale)),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    PocketHorizonStatus(playbackState, style, Modifier.weight(1f))
+                    // Future collapse gestures have a dedicated header region, separate from tabs,
+                    // artwork, seeking, actions and lazy-list scrolling. No recognizer is installed here.
+                    Box(Modifier.weight(1f).heightIn(min = PocketHorizonLayoutMetrics.MinimumTouchTarget)
+                        .horizonAnchor(reports, PocketHorizonAnchor.GestureRegion)
+                        .then(if (inputEnabled) collapseGestureModifier else Modifier),
+                        contentAlignment = Alignment.CenterStart) {
+                        PocketHorizonStatus(playbackState, style, Modifier.fillMaxWidth())
+                    }
                     actions()
                 }
                 Spacer(Modifier.height(PocketHorizonLayoutMetrics.CategoryGap))
@@ -133,7 +148,8 @@ internal fun PocketHorizonExpandedPlayer(
                                 onSeekChange = onSeekChange,
                                 onViewArtwork = onViewArtwork,
                                 style = style,
-                                modifier = Modifier.heightIn(min = bodyHeight)
+                                modifier = Modifier.heightIn(min = bodyHeight),
+                                measurements = reports
                             )
                         }
                     } else {

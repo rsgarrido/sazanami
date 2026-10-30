@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 internal fun PocketHorizonShell(
     modifier: Modifier = Modifier,
     style: PocketHorizonStyle = PocketHorizonStyle.Default,
+    measurements: PocketHorizonEndpointMeasurements? = null,
     content: @Composable (PocketHorizonLayout) -> Unit
 ) {
     val fontScale = LocalDensity.current.fontScale
@@ -37,6 +38,7 @@ internal fun PocketHorizonShell(
         val shellShape = RoundedCornerShape(32.dp)
         Box(
             Modifier.size(layout.shellSize.width, layout.shellSize.height)
+                .horizonAnchor(measurements, PocketHorizonAnchor.Surface)
                 .testTag("pocketHorizonShell")
                 .shadow(8.dp, shellShape)
                 .clip(shellShape)
@@ -44,7 +46,7 @@ internal fun PocketHorizonShell(
                 .border(1.dp, style.shellHighlight, shellShape)
                 .padding(layout.bezelInset)
         ) {
-            PocketHorizonDisplay(layout, style) { content(layout) }
+            PocketHorizonDisplay(layout, style, measurements) { content(layout) }
         }
     }
 }
@@ -53,11 +55,13 @@ internal fun PocketHorizonShell(
 private fun PocketHorizonDisplay(
     layout: PocketHorizonLayout,
     style: PocketHorizonStyle,
+    measurements: PocketHorizonEndpointMeasurements?,
     content: @Composable () -> Unit
 ) {
     val shape = RoundedCornerShape(24.dp)
     Box(
-        Modifier.fillMaxSize().testTag("pocketHorizonDisplay").clip(shape)
+        Modifier.fillMaxSize().horizonAnchor(measurements, PocketHorizonAnchor.Display)
+            .testTag("pocketHorizonDisplay").clip(shape)
             .background(style.bezel).border(1.dp, style.outline.copy(alpha = 0.45f), shape)
     ) {
         PocketHorizonBackdrop(style, Modifier.matchParentSize())
