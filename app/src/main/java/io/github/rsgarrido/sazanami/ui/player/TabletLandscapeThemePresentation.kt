@@ -11,6 +11,9 @@ internal fun tabletLandscapePlayerCandidate(
     fontScale: Float
 ): TabletLandscapePlayerCandidate? = when (theme) {
     TabletLandscapeTheme.NORMAL_PLAYER -> null
+    // Reserve the durable choice without a renderer, size budget, or presentation identity.
+    // Even a restored/development preference must keep using the complete primary player pair.
+    TabletLandscapeTheme.POCKET_HORIZON -> null
     TabletLandscapeTheme.POCKET_ADVANCE -> TabletLandscapePlayerCandidate(
         // Advance keeps its fixed palette; these tokens still belong to the independent primary theme.
         ResolvedPlayerPresentation(PlayerPresentationIdentity.PocketAdvance, primaryThemeTokens),

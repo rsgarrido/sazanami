@@ -110,6 +110,7 @@
     <string name="settings_tablet_landscape_theme_summary">Pocket Advance works on supported tablets in landscape. Other layouts use your normal player theme.</string>
     <string name="tablet_landscape_theme_normal_player">Use normal player</string>
     <string name="tablet_landscape_theme_pocket_advance" translatable="false">Pocket Advance</string>
+    <string name="tablet_landscape_theme_pocket_horizon" translatable="false">Pocket Horizon</string>
     <string name="settings_customize_pocket_advance">Customize landscape theme</string>
     <string name="settings_customize_pocket_advance_summary">Pocket Advance · Console, LCD &amp; controls</string>
     <string name="pocket_advance_appearance_title">Pocket Advance appearance</string>

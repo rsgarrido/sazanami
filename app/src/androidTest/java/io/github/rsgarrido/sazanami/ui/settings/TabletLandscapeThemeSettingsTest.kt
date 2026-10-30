@@ -95,6 +95,7 @@ class TabletLandscapeThemeSettingsTest {
             useUnmergedTree = true).assertIsDisplayed()
         option(TabletLandscapeTheme.NORMAL_PLAYER).assertIsEnabled().assertIsSelected()
         option(TabletLandscapeTheme.POCKET_ADVANCE).assertIsEnabled().assertIsNotSelected()
+        option(TabletLandscapeTheme.POCKET_HORIZON).assertDoesNotExist()
         assertEquals(Role.RadioButton, option(TabletLandscapeTheme.POCKET_ADVANCE).fetchSemanticsNode().config[SemanticsProperties.Role])
         option(TabletLandscapeTheme.POCKET_ADVANCE).performClick()
         awaitSelection(TabletLandscapeTheme.POCKET_ADVANCE)
@@ -144,6 +145,35 @@ class TabletLandscapeThemeSettingsTest {
     }
 
     @Test
+    fun restoredReservedChoiceShowsTheUsableFallbackWithoutExposingOrRewritingHorizon() {
+        runBlocking {
+            repository.setTabletLandscapeTheme(TabletLandscapeTheme.POCKET_HORIZON)
+            withTimeout(5_000) { repository.state.first { it.tabletLandscapeTheme == TabletLandscapeTheme.POCKET_HORIZON } }
+        }
+        compose.setContent { Content() }
+        compose.onNodeWithTag("tabletLandscapeThemeSetting").performScrollTo()
+            .assertTextContains(text(R.string.tablet_landscape_theme_normal_player))
+        openChoices()
+        option(TabletLandscapeTheme.POCKET_HORIZON).assertDoesNotExist()
+        option(TabletLandscapeTheme.NORMAL_PLAYER).assertIsSelected()
+        option(TabletLandscapeTheme.POCKET_ADVANCE).assertIsNotSelected()
+        compose.onNodeWithText(text(R.string.settings_close)).performClick()
+        compose.runOnIdle {
+            assertEquals(TabletLandscapeTheme.POCKET_HORIZON, repository.state.value.tabletLandscapeTheme)
+            assertTrue(landscapeRequests.isEmpty())
+            assertTrue(primaryRequests.isEmpty())
+        }
+        openChoices()
+        option(TabletLandscapeTheme.POCKET_ADVANCE).performClick()
+        awaitSelection(TabletLandscapeTheme.POCKET_ADVANCE)
+        compose.runOnIdle {
+            assertEquals(listOf(TabletLandscapeTheme.POCKET_ADVANCE), landscapeRequests)
+            assertEquals(PlayerTheme.CLASSIC_WHEEL, repository.state.value.selectedPlayerTheme)
+            assertEquals(colors, repository.state.value.playerThemeTokenOverrides[PlayerTheme.CLASSIC_WHEEL])
+        }
+    }
+
+    @Test
     fun productionLabelsAndCompatibilityExplanationHaveEnglishAndSpanishResources() {
         fun resources(language: String) = compose.activity.createConfigurationContext(
             Configuration(compose.activity.resources.configuration).apply { setLocale(Locale.forLanguageTag(language)) }).resources
@@ -161,6 +191,9 @@ class TabletLandscapeThemeSettingsTest {
         assertEquals("Use normal player", english.getString(R.string.tablet_landscape_theme_normal_player))
         assertEquals("Usar reproductor normal", spanish.getString(R.string.tablet_landscape_theme_normal_player))
         assertEquals("Pocket Advance", spanish.getString(R.string.tablet_landscape_theme_pocket_advance))
+        // Theme names are shared, non-translatable resources, including the reserved Horizon identity.
+        assertEquals("Pocket Horizon", english.getString(R.string.tablet_landscape_theme_pocket_horizon))
+        assertEquals("Pocket Horizon", spanish.getString(R.string.tablet_landscape_theme_pocket_horizon))
     }
 
     private fun text(id: Int) = compose.activity.getString(id)

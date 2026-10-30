@@ -19,11 +19,42 @@ class TabletLandscapeThemePresentationTest {
     fun stableIdsRoundTripAndMissingOrUnknownIdsUseTheNormalPlayer() {
         assertEquals("normal_player", TabletLandscapeTheme.NORMAL_PLAYER.id)
         assertEquals("pocket_advance", TabletLandscapeTheme.POCKET_ADVANCE.id)
+        assertEquals("pocket_horizon", TabletLandscapeTheme.POCKET_HORIZON.id)
+        assertEquals(TabletLandscapeTheme.entries.size, TabletLandscapeTheme.entries.map { it.id }.toSet().size)
         TabletLandscapeTheme.entries.forEach { assertEquals(it, TabletLandscapeTheme.fromId(it.id)) }
-        listOf(null, "", "future_theme", "POCKET_ADVANCE", "0").forEach {
+        listOf(null, "", "future_theme", "POCKET_ADVANCE", "POCKET_HORIZON", "0").forEach {
             assertEquals(TabletLandscapeTheme.NORMAL_PLAYER, TabletLandscapeTheme.fromId(it))
         }
         assertEquals(PlayerTheme.DEFAULT, PlayerTheme.fromId(TabletLandscapeTheme.POCKET_ADVANCE.id))
+        assertEquals(PlayerTheme.DEFAULT, PlayerTheme.fromId(TabletLandscapeTheme.POCKET_HORIZON.id))
+    }
+
+    @Test
+    fun onlyCompleteThemesAreSelectableInTheirExistingOrder() {
+        assertEquals(listOf(TabletLandscapeTheme.NORMAL_PLAYER, TabletLandscapeTheme.POCKET_ADVANCE),
+            TabletLandscapeTheme.selectableThemes)
+    }
+
+    @Test
+    fun reservedHorizonSelectionAlwaysKeepsThePrimaryPlayerAndItsTokens() {
+        val contexts = listOf(null, landscape,
+            landscape.copy(availableSize = DpSize(800.dp, 1200.dp)),
+            landscape.copy(availableSize = DpSize(800.dp, 800.dp)),
+            landscape.copy(availableSize = DpSize(700.dp, 500.dp)),
+            landscape.copy(smallestScreenWidthDp = 599)) +
+            PlayerDeviceKind.entries.map { landscape.copy(deviceKind = it) }
+        PlayerTheme.entries.forEach { primary ->
+            val tokens = primary.defaultTokens().copy(shellColor = Color.Red, accentColor = Color.Green)
+            listOf(1f, 2f).forEach { fontScale ->
+                val candidate = tabletLandscapePlayerCandidate(TabletLandscapeTheme.POCKET_HORIZON, tokens, fontScale)
+                assertNull(candidate)
+                contexts.forEach { context ->
+                    val resolved = resolvePlayerPresentation(primary, tokens, context, candidate)
+                    assertEquals(PlayerPresentationIdentity.Existing(primary), resolved.identity)
+                    assertSame(tokens, resolved.tokens)
+                }
+            }
+        }
     }
 
     @Test

@@ -34,10 +34,13 @@ internal fun TabletLandscapeThemeSettings(
     onThemeSelected: (TabletLandscapeTheme) -> Unit
 ) {
     var showChoices by rememberSaveable { mutableStateOf(false) }
+    // Reflect the usable fallback for a reserved choice without rewriting its persisted identity.
+    val displayedTheme = selectedTheme.takeIf { it in TabletLandscapeTheme.selectableThemes }
+        ?: TabletLandscapeTheme.NORMAL_PLAYER
     val explanation = stringResource(R.string.settings_tablet_landscape_theme_summary)
     SettingsRow(
         title = stringResource(R.string.settings_tablet_landscape_theme),
-        summary = stringResource(selectedTheme.labelRes),
+        summary = stringResource(displayedTheme.labelRes),
         icon = AppShellIcons.Deck,
         modifier = Modifier.testTag("tabletLandscapeThemeSetting"),
         onClick = { showChoices = true },
@@ -53,13 +56,13 @@ internal fun TabletLandscapeThemeSettings(
                 Column(Modifier.selectableGroup()) {
                     Text(explanation, style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(bottom = 12.dp))
-                    TabletLandscapeTheme.entries.forEach { theme ->
+                    TabletLandscapeTheme.selectableThemes.forEach { theme ->
                         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
                             .testTag("tabletLandscapeThemeOption" + theme.name)
-                            .selectable(selected = selectedTheme == theme, role = Role.RadioButton,
+                            .selectable(selected = displayedTheme == theme, role = Role.RadioButton,
                                 onClick = { onThemeSelected(theme); showChoices = false })
                             .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = selectedTheme == theme, onClick = null)
+                            RadioButton(selected = displayedTheme == theme, onClick = null)
                             Text(stringResource(theme.labelRes), modifier = Modifier.padding(start = 8.dp))
                         }
                     }
