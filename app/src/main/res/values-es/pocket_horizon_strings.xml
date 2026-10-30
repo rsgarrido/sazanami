@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pocket_horizon_no_track">No hay ninguna pista cargada</string>
+    <string name="pocket_horizon_no_track_hint">Elige una pista de tu biblioteca para empezar.</string>
+    <string name="pocket_horizon_disconnected">Reproducción no disponible</string>
+    <string name="pocket_horizon_playing">Reproduciendo</string>
+    <string name="pocket_horizon_paused">En pausa</string>
+    <string name="pocket_horizon_seek_unavailable">No se puede cambiar la posición</string>
+</resources>
