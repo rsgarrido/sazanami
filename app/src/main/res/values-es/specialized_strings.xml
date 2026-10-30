@@ -80,7 +80,7 @@
     <string name="lyrics_unsynced">Letras sin sincronizar</string>
     <string name="lyrics_loading">Cargando letras locales…</string>
     <string name="lyrics_rescan">Escanear de nuevo</string>
-    <string name="lyrics_settings">Letras</string>
+    <string name="lyrics_settings">Letras locales</string>
     <string name="lyrics_no_folder">No hay una carpeta de letras configurada</string>
     <string name="lyrics_no_folder_detail">Selecciona una o más carpetas con archivos .lrc locales.</string>
     <string name="lyrics_not_found">No se encontraron letras locales</string>
@@ -100,7 +100,7 @@
     <string name="lyrics_candidate_path">%1$s — %2$s</string>
     <string name="lyrics_no_folders_selected">No hay carpetas seleccionadas. No se indexarán archivos .lrc locales.</string>
     <string name="lyrics_local_title">Letras locales</string>
-    <string name="lyrics_local_description">Administra las carpetas con archivos .lrc de letras sincronizadas.</string>
+    <string name="lyrics_local_description">Carpetas con letras sincronizadas en formato .lrc.</string>
     <string name="lyrics_folders">Carpetas de letras</string>
     <string name="lyrics_persisted_access_missing">No se encuentra el acceso persistente a la carpeta</string>
     <string name="lyrics_remove">Quitar</string>

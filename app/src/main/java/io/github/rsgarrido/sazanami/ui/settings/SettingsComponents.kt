@@ -38,7 +38,7 @@ import io.github.rsgarrido.sazanami.ui.AppShellTypography
 @Composable
 internal fun SettingsSection(
     title: String,
-    description: String,
+    description: String? = null,
     icon: ImageVector,
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
@@ -67,12 +67,14 @@ internal fun SettingsSection(
                     color = MaterialTheme.colorScheme.onBackground
                 )
 
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
+                description?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
             }
         }
 
@@ -93,7 +95,7 @@ internal fun SettingsSection(
 @Composable
 internal fun SettingsRow(
     title: String,
-    summary: String,
+    summary: String? = null,
     icon: ImageVector,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
@@ -112,8 +114,8 @@ internal fun SettingsRow(
     Row(
         modifier = clickModifier
             .fillMaxWidth()
-            .heightIn(min = 78.dp)
-            .padding(horizontal = 16.dp, vertical = 13.dp),
+            .heightIn(min = if (summary == null) 64.dp else 78.dp)
+            .padding(horizontal = 16.dp, vertical = if (summary == null) 11.dp else 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         SettingsIconBadge(icon = icon)
@@ -128,18 +130,20 @@ internal fun SettingsRow(
                 color = MaterialTheme.colorScheme.onSurface
             )
 
-            Text(
-                text = summary,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (emphasizeSummary) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                maxLines = summaryMaxLines,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 3.dp)
-            )
+            summary?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (emphasizeSummary) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    maxLines = summaryMaxLines,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 3.dp)
+                )
+            }
         }
 
         when {

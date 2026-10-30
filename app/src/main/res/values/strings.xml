@@ -53,16 +53,14 @@
     <string name="external_audio_unsupported_audio">This file is not supported audio.</string>
     <string name="external_audio_cannot_open">Cannot open this audio. Try opening it again from the file manager.</string>
     <string name="external_audio_cannot_play">This audio could not be played.</string>
-    <string name="settings_help_section_title">Help &amp; About</string>
-    <string name="settings_help_section_summary">Tips, project links, and app information.</string>
-    <string name="settings_help_tips_title">Tips &amp; Help</string>
-    <string name="settings_help_tips_summary">Get more from your library and player.</string>
-    <string name="settings_help_issue_title">Report an Issue</string>
-    <string name="settings_help_issue_summary">Open the bug report template on GitHub.</string>
-    <string name="settings_help_feature_title">Request a Feature</string>
-    <string name="settings_help_feature_summary">Share an idea using the GitHub feature request template.</string>
+    <string name="settings_help_section_title">Help &amp; about</string>
+    <string name="settings_help_tips_title">Tips &amp; help</string>
+    <string name="settings_help_issue_title">Report an issue</string>
+    <string name="settings_help_issue_summary">Opens GitHub</string>
+    <string name="settings_help_feature_title">Request a feature</string>
+    <string name="settings_help_feature_summary">Opens GitHub</string>
     <string name="settings_help_about_title">About Sazanami</string>
-    <string name="settings_help_about_summary">App details, privacy, and license.</string>
+    <string name="settings_help_about_summary">Privacy and license</string>
     <string name="settings_help_open_tips">Open Tips and Help</string>
     <string name="settings_help_open_about">Open About Sazanami</string>
     <string name="settings_help_back">Back to Settings</string>
@@ -422,7 +420,7 @@
     <string name="usb_integrated_commands">Use the player controls for pause, play, seeking, next, previous, repeat and shuffle. Playback follows the selected queue. An unsupported next track stops automatic playback. Use Stop to abort safely. Choose Android audio to return; normal playback stays paused.</string>
     <!-- USB Audio output selection; service session only. -->
     <string name="usb_settings_title">USB Audio</string>
-    <string name="usb_settings_entry_summary">Android output and optional experimental USB Direct playback.</string>
+    <string name="usb_settings_entry_summary">Android audio and experimental USB Direct</string>
     <string name="usb_settings_open">Open USB Audio settings</string>
     <string name="usb_settings_output">Audio output</string>
     <string name="usb_settings_android">Android audio</string>
