@@ -1,10 +1,13 @@
 package io.github.rsgarrido.sazanami.ui.player.pockethorizon
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -13,9 +16,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.PlatformTextStyle
@@ -27,6 +32,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.data.Song
+import io.github.rsgarrido.sazanami.data.stableUiKey
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortDirection
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortOption
+import io.github.rsgarrido.sazanami.ui.library.LibrarySortState
+import io.github.rsgarrido.sazanami.ui.state.LibraryUiState
 import io.github.rsgarrido.sazanami.ui.state.LocalPlaybackStatus
 import io.github.rsgarrido.sazanami.ui.state.PlaybackProgressUiState
 import io.github.rsgarrido.sazanami.ui.state.PlaybackUiState
@@ -54,51 +64,83 @@ internal fun PocketHorizonExpandedPlayer(
     onOpenMoreClick: (() -> Unit)? = null,
     onOpenLyrics: (() -> Unit)? = null,
     onViewArtwork: ((Song) -> Unit)? = null,
-    style: PocketHorizonStyle = PocketHorizonStyle.Default
+    style: PocketHorizonStyle = PocketHorizonStyle.Default,
+    libraryState: LibraryUiState = LibraryUiState.Empty,
+    songSortState: LibrarySortState = LibrarySortState(LibrarySortOption.TITLE, LibrarySortDirection.ASCENDING),
+    albumSortState: LibrarySortState = LibrarySortState(LibrarySortOption.TITLE, LibrarySortDirection.ASCENDING),
+    artistSortState: LibrarySortState = LibrarySortState(LibrarySortOption.NAME, LibrarySortDirection.ASCENDING),
+    onSongClick: ((Song, List<Song>) -> Unit)? = null,
+    navigationState: PocketHorizonNavigationState = rememberPocketHorizonNavigationState()
 ) {
     val enabled = inputEnabled && playbackState.isConnected && playbackState.currentSong != null
+    val library = rememberPocketHorizonLibrary(libraryState, songSortState, albumSortState, artistSortState)
+    LaunchedEffect(navigationState, library.albumKeys, library.artistKeys, library.songKeys, library.isAuthoritative) {
+        navigationState.reconcileLibrary(library.albumByKey.keys, library.artistByKey.keys,
+            library.isAuthoritative, library.songByKey.keys)
+    }
+    // Local Back policy only; a future presentation host must supply endpoint/overlay input eligibility.
+    BackHandler(inputEnabled && navigationState.category != PocketHorizonCategory.NowPlaying) {
+        navigationState.back()
+    }
+    val selectSong: ((Song, List<Song>) -> Unit)? = onSongClick?.let { action ->
+        { song, context ->
+            if (inputEnabled && navigationState.category != PocketHorizonCategory.NowPlaying) {
+                action(song, context)
+                navigationState.selectSong(song.stableUiKey())
+                // Unit callback confirms dispatch only. Playing/pending/failure remain externally owned.
+                navigationState.showNowPlaying()
+            }
+        }
+    }
+    val fontScale = LocalDensity.current.fontScale
     PocketHorizonShell(modifier, style) { layout ->
-        // Scroll within the clipped display, never by reducing type or target sizes. On fitting hosts
-        // this plane exactly matches the viewport; below budget it becomes a readable stacked view.
-        Row(Modifier.horizontalScroll(rememberScrollState())) {
-            Column(Modifier.width(layout.contentWidth).verticalScroll(rememberScrollState())
-                .heightIn(min = layout.contentViewportSize.height)) {
+        // The plane has a finite height even inside the extreme-small-host scroll fallback. Lazy
+        // browsing never inherits the unbounded constraints of Now Playing's own vertical scroll.
+        val minimumBody = if (navigationState.category == PocketHorizonCategory.NowPlaying)
+            PocketHorizonLayoutMetrics.MinimumTouchTarget else PocketHorizonLayoutMetrics.browserMinimumHeight(fontScale)
+        val planeHeight = maxOf(layout.contentViewportSize.height,
+            layout.headerHeight + PocketHorizonLayoutMetrics.HeaderGap + minimumBody)
+        Row(Modifier.fillMaxSize().horizontalScroll(rememberScrollState()).verticalScroll(rememberScrollState())) {
+            Column(Modifier.width(layout.contentWidth).height(planeHeight)) {
                 val actions: @Composable () -> Unit = {
                     PocketHorizonActions(enabled, onOpenQueueHubClick, onOpenMoreClick, onOpenLyrics, style)
                 }
-                if (layout.isWide) {
-                    Row(Modifier.fillMaxWidth().heightIn(min = layout.headerHeight),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        PocketHorizonStatus(playbackState, style, Modifier.weight(1f))
-                        actions()
-                    }
-                } else {
-                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PocketHorizonStatus(playbackState, style, Modifier.heightIn(min = layout.headerHeight))
-                        actions()
-                    }
+                Row(Modifier.fillMaxWidth().heightIn(min = PocketHorizonLayoutMetrics.statusHeight(fontScale)),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    PocketHorizonStatus(playbackState, style, Modifier.weight(1f))
+                    actions()
                 }
-                // The status/action band and this gap reserve a real header budget for future categories.
+                Spacer(Modifier.height(PocketHorizonLayoutMetrics.CategoryGap))
+                PocketHorizonCategoryNavigation(navigationState, inputEnabled, style, Modifier.fillMaxWidth())
                 Spacer(Modifier.height(PocketHorizonLayoutMetrics.HeaderGap))
                 val bodyHeight = maxOf(layout.bodyMinHeight,
-                    layout.contentViewportSize.height - layout.headerHeight - PocketHorizonLayoutMetrics.HeaderGap)
-                PocketHorizonNowPlaying(
-                    playbackState = playbackState,
-                    progressState = progressState,
-                    layout = layout,
-                    enabled = enabled,
-                    seekEnabled = seekEnabled,
-                    previousEnabled = previousEnabled,
-                    nextEnabled = nextEnabled,
-                    onPlayPauseClick = onPlayPauseClick,
-                    onPreviousClick = onPreviousClick,
-                    onNextClick = onNextClick,
-                    onSeekChange = onSeekChange,
-                    onViewArtwork = onViewArtwork,
-                    style = style,
-                    modifier = Modifier.heightIn(min = bodyHeight)
-                )
+                    planeHeight - layout.headerHeight - PocketHorizonLayoutMetrics.HeaderGap)
+                Box(Modifier.fillMaxWidth().weight(1f).testTag("pocketHorizonCategoryBody")) {
+                    if (navigationState.category == PocketHorizonCategory.NowPlaying) {
+                        Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                            PocketHorizonNowPlaying(
+                                playbackState = playbackState,
+                                progressState = progressState,
+                                layout = layout,
+                                enabled = enabled,
+                                seekEnabled = seekEnabled,
+                                previousEnabled = previousEnabled,
+                                nextEnabled = nextEnabled,
+                                onPlayPauseClick = onPlayPauseClick,
+                                onPreviousClick = onPreviousClick,
+                                onNextClick = onNextClick,
+                                onSeekChange = onSeekChange,
+                                onViewArtwork = onViewArtwork,
+                                style = style,
+                                modifier = Modifier.heightIn(min = bodyHeight)
+                            )
+                        }
+                    } else {
+                        PocketHorizonLibraryBrowser(library, libraryState, navigationState, inputEnabled,
+                            selectSong, style, Modifier.fillMaxSize())
+                    }
+                }
             }
         }
     }

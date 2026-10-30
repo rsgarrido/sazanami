@@ -25,6 +25,7 @@ internal object PocketHorizonLayoutMetrics {
     // Readable two-line metadata measure (21 artist-font ems), larger than the 192 dp transport row.
     val MinimumDetailsWidth = 336.dp
     val MinimumHeaderHeight = 56.dp
+    val CategoryGap = 8.dp
 
     val TitleFontSize = 26.sp
     val TitleLineHeight = 32.sp
@@ -39,8 +40,23 @@ internal object PocketHorizonLayoutMetrics {
     fun textScale(fontScale: Float): Float =
         fontScale.takeIf { it.isFinite() && it > 0f }?.coerceAtLeast(1f) ?: 1f
 
-    fun headerHeight(fontScale: Float): Dp =
+    fun statusHeight(fontScale: Float): Dp =
         max(MinimumHeaderHeight.value, 40f * textScale(fontScale)).dp
+
+    fun categoryHeight(fontScale: Float): Dp =
+        max(MinimumTouchTarget.value, 22f * textScale(fontScale) + 16f).dp
+
+    fun headerHeight(fontScale: Float): Dp =
+        statusHeight(fontScale) + CategoryGap + categoryHeight(fontScale)
+
+    /** A two-line Back label, two-line status banner, and one complete two-line song row. */
+    fun browserMinimumHeight(fontScale: Float): Dp {
+        val scale = textScale(fontScale)
+        val back = (44f * scale + 16f).dp
+        val status = (44f * scale + 16f).dp
+        val row = max(80f, 68f * scale + 28f).dp
+        return back + status + row
+    }
 
     /** Two title/artist lines, one album line, seek/time, and fixed touch targets; text is never scaled down. */
     fun detailsMinimumHeight(fontScale: Float): Dp {

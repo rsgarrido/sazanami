@@ -13,13 +13,13 @@ class PocketHorizonLayoutTest {
     @Test
     fun minimumReservesReadableMetadataArtworkHeaderAndRealTouchTargets() {
         val minimum = minimumPocketHorizonSize(1f)
-        assertEquals(DpSize(616.dp, 500.dp), minimum)
+        assertEquals(DpSize(616.dp, 556.dp), minimum)
         val layout = requireNotNull(resolvePocketHorizonLayout(minimum, 1f))
         assertTrue(layout.fitsMinimum)
         assertTrue(layout.isWide)
         assertEquals(144.dp, layout.artworkSize)
         assertEquals(336.dp, layout.detailsWidth)
-        assertEquals(56.dp, layout.headerHeight)
+        assertEquals(112.dp, layout.headerHeight)
         assertEquals(316.dp, layout.bodyMinHeight)
         assertEquals(layout.contentViewportSize.width, layout.artworkSize +
             PocketHorizonLayoutMetrics.ContentGap + layout.detailsWidth)
@@ -52,14 +52,14 @@ class PocketHorizonLayoutTest {
     fun largeTextIncreasesTheRealBudgetWithoutShrinkingTouchTargetsOrArtwork() {
         val normal = minimumPocketHorizonSize(1f)
         val large = minimumPocketHorizonSize(2f)
-        assertEquals(DpSize(952.dp, 680.dp), large)
+        assertEquals(DpSize(952.dp, 748.dp), large)
         assertTrue(large.width > normal.width)
         assertTrue(large.height > normal.height)
         val layout = requireNotNull(resolvePocketHorizonLayout(large, 2f))
         assertTrue(layout.fitsMinimum)
         assertEquals(144.dp, layout.artworkSize)
         assertEquals(672.dp, layout.detailsWidth)
-        assertEquals(80.dp, layout.headerHeight)
+        assertEquals(148.dp, layout.headerHeight)
         assertEquals(472.dp, layout.bodyMinHeight)
         assertContained(large, layout)
     }
@@ -97,6 +97,17 @@ class PocketHorizonLayoutTest {
             assertEquals(minimumPocketHorizonSize(1f), minimumPocketHorizonSize(scale))
             assertEquals(resolvePocketHorizonLayout(DpSize(1280.dp, 800.dp), 1f),
                 resolvePocketHorizonLayout(DpSize(1280.dp, 800.dp), scale))
+        }
+    }
+
+    @Test
+    fun browserFallbackBudgetsBackStatusAndAReadableTrackWithoutUnboundedLists() {
+        assertEquals(216.dp, PocketHorizonLayoutMetrics.browserMinimumHeight(1f))
+        assertEquals(372.dp, PocketHorizonLayoutMetrics.browserMinimumHeight(2f))
+        for (scale in listOf(1f, 2f)) {
+            val minimum = requireNotNull(resolvePocketHorizonLayout(minimumPocketHorizonSize(scale), scale))
+            assertTrue(minimum.bodyMinHeight >= PocketHorizonLayoutMetrics.browserMinimumHeight(scale))
+            assertTrue(PocketHorizonLayoutMetrics.categoryHeight(scale) >= 48.dp)
         }
     }
 

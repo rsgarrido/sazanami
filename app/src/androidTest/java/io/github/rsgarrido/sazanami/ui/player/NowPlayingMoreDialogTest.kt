@@ -3,7 +3,10 @@ package io.github.rsgarrido.sazanami.ui.player
 import android.net.Uri
 import android.content.res.Configuration
 import android.graphics.Rect
+import android.os.SystemClock
 import android.view.ContextThemeWrapper
+import android.view.InputDevice
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
@@ -37,12 +40,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.espresso.Espresso
-import androidx.test.espresso.action.CoordinatesProvider
-import androidx.test.espresso.action.GeneralClickAction
-import androidx.test.espresso.action.Press
-import androidx.test.espresso.action.Tap
 import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.isRoot
+import androidx.test.platform.app.InstrumentationRegistry
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.controller.SongRatingDialogState
@@ -142,44 +142,62 @@ class NowPlayingMoreDialogTest {
             }
         }
         composeRule.onNodeWithTag(NowPlayingMoreDialogTag).assertIsDisplayed()
-        Espresso.onView(isRoot()).inRoot(isDialog()).perform(GeneralClickAction(
-            Tap.SINGLE,
-            CoordinatesProvider { dialogDecor ->
-                val dialogPosition = IntArray(2)
-                dialogDecor.getLocationOnScreen(dialogPosition)
-                val dialogWindow = Rect(dialogPosition[0], dialogPosition[1],
-                    dialogPosition[0] + dialogDecor.width, dialogPosition[1] + dialogDecor.height)
-                val activityDecor = composeRule.activity.window.decorView
-                val activityPosition = IntArray(2)
-                activityDecor.getLocationOnScreen(activityPosition)
-                val activityViewport = Rect()
-                activityDecor.getWindowVisibleDisplayFrame(activityViewport)
-                assertTrue("Activity must have a visible viewport: $activityViewport", activityViewport.intersect(
-                    Rect(activityPosition[0], activityPosition[1],
-                        activityPosition[0] + activityDecor.width, activityPosition[1] + activityDecor.height)))
-                // Native outside handling can include window touch slop. Avoid that boundary too.
-                val exclusion = Rect(dialogWindow).apply {
-                    val slop = ViewConfiguration.get(dialogDecor.context).scaledWindowTouchSlop
-                    inset(-slop, -slop)
-                }
-                val outside = listOf(
-                    Rect(activityViewport.left, activityViewport.top, activityViewport.right, min(activityViewport.bottom, exclusion.top)),
-                    Rect(activityViewport.left, max(activityViewport.top, exclusion.bottom), activityViewport.right, activityViewport.bottom),
-                    Rect(activityViewport.left, activityViewport.top, min(activityViewport.right, exclusion.left), activityViewport.bottom),
-                    Rect(max(activityViewport.left, exclusion.right), activityViewport.top, activityViewport.right, activityViewport.bottom)
-                ).filter { it.width() > 0 && it.height() > 0 }
-                    .maxByOrNull { it.width().toLong() * it.height() }
-                    ?: throw AssertionError("No native outside region: dialog=$dialogWindow; " +
-                        "activity=$activityViewport; exclusion=$exclusion")
-                val x = outside.exactCenterX()
-                val y = outside.exactCenterY()
-                assertTrue("Outside tap must remain in the visible activity", activityViewport.contains(x.toInt(), y.toInt()))
-                assertFalse("Outside tap must leave the native window: $dialogWindow", dialogWindow.contains(x.toInt(), y.toInt()))
-                // GeneralClickAction consumes screen coordinates, not Compose-root coordinates.
-                floatArrayOf(x, y)
-            },
-            Press.FINGER
-        ))
+        lateinit var outsideTap: FloatArray
+        Espresso.onView(isRoot()).inRoot(isDialog()).check { view, noViewError ->
+            if (noViewError != null) throw noViewError
+            val dialogDecor = requireNotNull(view)
+            val dialogPosition = IntArray(2)
+            dialogDecor.getLocationOnScreen(dialogPosition)
+            val dialogWindow = Rect(dialogPosition[0], dialogPosition[1],
+                dialogPosition[0] + dialogDecor.width, dialogPosition[1] + dialogDecor.height)
+            val activityDecor = composeRule.activity.window.decorView
+            val activityPosition = IntArray(2)
+            activityDecor.getLocationOnScreen(activityPosition)
+            val activityViewport = Rect()
+            activityDecor.getWindowVisibleDisplayFrame(activityViewport)
+            assertTrue("Activity must have a visible viewport: $activityViewport", activityViewport.intersect(
+                Rect(activityPosition[0], activityPosition[1],
+                    activityPosition[0] + activityDecor.width, activityPosition[1] + activityDecor.height)))
+            // Native outside handling can include window touch slop. Avoid that boundary too.
+            val exclusion = Rect(dialogWindow).apply {
+                val slop = ViewConfiguration.get(dialogDecor.context).scaledWindowTouchSlop
+                inset(-slop, -slop)
+            }
+            val outside = listOf(
+                Rect(activityViewport.left, activityViewport.top, activityViewport.right, min(activityViewport.bottom, exclusion.top)),
+                Rect(activityViewport.left, max(activityViewport.top, exclusion.bottom), activityViewport.right, activityViewport.bottom),
+                Rect(activityViewport.left, activityViewport.top, min(activityViewport.right, exclusion.left), activityViewport.bottom),
+                Rect(max(activityViewport.left, exclusion.right), activityViewport.top, activityViewport.right, activityViewport.bottom)
+            ).filter { it.width() > 0 && it.height() > 0 }
+                .maxByOrNull { it.width().toLong() * it.height() }
+                ?: throw AssertionError("No native outside region: dialog=$dialogWindow; " +
+                    "activity=$activityViewport; exclusion=$exclusion")
+            val x = outside.exactCenterX()
+            val y = outside.exactCenterY()
+            assertTrue("Outside tap must remain in the visible activity", activityViewport.contains(x.toInt(), y.toInt()))
+            assertFalse("Outside tap must leave the native window: $dialogWindow", dialogWindow.contains(x.toInt(), y.toInt()))
+            assertFalse("Outside tap must also leave window touch slop: $exclusion", exclusion.contains(x.toInt(), y.toInt()))
+            outsideTap = floatArrayOf(x, y)
+        }
+        // Compose idleness does not finish WindowManager's entrance animation. On Android 16 the
+        // input dispatcher can discard Espresso's tap while that window is still translucent.
+        // This public UiAutomation overload synchronizes native window animations/input surfaces
+        // before DOWN and after UP. Inject on the instrumentation thread, never the UI thread.
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        val downTime = SystemClock.uptimeMillis()
+        fun inject(action: Int) {
+            val event = MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), action,
+                outsideTap[0], outsideTap[1], 0).apply { source = InputDevice.SOURCE_TOUCHSCREEN }
+            try {
+                assertTrue("Outside tap injection failed for action $action", automation.injectInputEvent(event, true))
+            } finally {
+                event.recycle()
+            }
+        }
+        inject(MotionEvent.ACTION_DOWN)
+        inject(MotionEvent.ACTION_UP)
+        // Wait for the actual callback state, not an arbitrary delay or a repeated tap.
+        composeRule.waitUntil(5_000) { !visible.value }
         composeRule.onNodeWithTag(NowPlayingMoreDialogTag).assertDoesNotExist()
         composeRule.onNodeWithTag("more-outside-player").assertIsDisplayed()
         composeRule.onNodeWithText(originalSong.title).assertIsDisplayed()
