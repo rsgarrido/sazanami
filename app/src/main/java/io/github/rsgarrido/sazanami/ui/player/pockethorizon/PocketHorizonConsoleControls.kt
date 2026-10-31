@@ -47,13 +47,13 @@ internal fun PocketHorizonControlWing(left: Boolean, enabled: Boolean, playbackE
         val previous = stringResource(R.string.horizon_control_previous_category)
         val next = stringResource(R.string.horizon_control_next_category)
         Box(Modifier.size(PocketHorizonLayoutMetrics.ControlCluster).testTag(if (left) "horizonDpad" else "horizonFaceButtons")
-            .background(style.bezel.copy(alpha = .5f), CircleShape), contentAlignment = Alignment.Center) {
+            .background(style.hardware.shade.copy(alpha = .5f), CircleShape), contentAlignment = Alignment.Center) {
             if (left) {
                 ConsoleButton("▲", up, actions && input.binding != null, style, Modifier.align(Alignment.TopCenter), "horizonUp") { input.binding?.move?.invoke(-1) }
                 ConsoleButton("▼", down, actions && input.binding != null, style, Modifier.align(Alignment.BottomCenter), "horizonDown") { input.binding?.move?.invoke(1) }
                 ConsoleButton("◀", previous, actions && navigation.category.ordinal > 0, style, Modifier.align(Alignment.CenterStart), "horizonLeft") { navigation.stepCategory(-1) }
                 ConsoleButton("▶", next, actions && navigation.category.ordinal < 3, style, Modifier.align(Alignment.CenterEnd), "horizonRight") { navigation.stepCategory(1) }
-                Box(Modifier.size(36.dp).background(style.bezel, RoundedCornerShape(4.dp)))
+                Box(Modifier.size(36.dp).background(style.hardware.shade, RoundedCornerShape(4.dp)))
             } else {
                 ConsoleButton("X", stringResource(R.string.horizon_control_play_pause), actions && playbackEnabled, style, Modifier.align(Alignment.TopCenter), "horizonX", action = onPlayPause)
                 ConsoleButton("A", stringResource(R.string.horizon_control_confirm), actions && input.binding?.canConfirm == true, style, Modifier.align(Alignment.CenterEnd), "horizonA") { input.binding?.confirm?.invoke() }
@@ -78,7 +78,7 @@ internal fun PocketHorizonSystemControls(enabled: Boolean, navigation: PocketHor
         Canvas(Modifier.size(48.dp, 16.dp)) {
             repeat(5) { index ->
                 val x = size.width * (index + 1) / 6f
-                drawLine(style.outline.copy(alpha = .5f), Offset(x, 0f), Offset(x, size.height), 2.dp.toPx())
+                drawLine(style.hardware.outline.copy(alpha = .5f), Offset(x, 0f), Offset(x, size.height), 2.dp.toPx())
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -120,7 +120,7 @@ private fun ConsoleButton(label: String, description: String, enabled: Boolean, 
     val shape = RoundedCornerShape(16.dp)
     val pressDescription = stringResource(if (down) R.string.horizon_shoulder_pressed else R.string.horizon_shoulder_resting)
     Box(modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp).testTag(tag)
-        .background(if (shoulder) androidx.compose.ui.graphics.Color.Transparent else style.bezel, shape)
+        .background(if (shoulder) androidx.compose.ui.graphics.Color.Transparent else style.hardware.shade, shape)
         .pointerInput(Unit) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
@@ -151,10 +151,10 @@ private fun ConsoleButton(label: String, description: String, enabled: Boolean, 
                 this.shape = shape
                 clip = true
             }.testTag(tag + "Plane")
-                .background(Brush.verticalGradient(listOf(if (down) style.accent else style.shellHighlight, style.bezel)))
-                .border(1.dp, if (down) style.accent else style.outline, shape))
+                .background(Brush.verticalGradient(listOf(if (down) style.hardware.pressed else style.hardware.controlHighlight, style.hardware.shade)))
+                .border(1.dp, if (down) style.hardware.pressed else style.hardware.outline, shape))
             Text(label, Modifier.padding(horizontal = 6.dp).clearAndSetSemantics {},
-                color = style.text, fontSize = if (label.length > 1) 10.sp else 16.sp,
+                color = style.hardware.ink, fontSize = if (label.length > 1) 10.sp else 16.sp,
                 lineHeight = if (label.length > 1) 16.sp else 20.sp, maxLines = 1)
         }
     }
@@ -190,7 +190,7 @@ private fun ConsoleAnalog(enabled: Boolean, input: PocketHorizonConsoleInput,
     }
     DisposableEffect(enabled) { onDispose { held = false; displacement = Offset.Zero } }
     Box(Modifier.size(80.dp).testTag("horizonAnalog").clip(CircleShape)
-        .background(Brush.radialGradient(listOf(style.shellHighlight, style.bezel))).border(2.dp, style.outline, CircleShape)
+        .background(Brush.radialGradient(listOf(style.hardware.controlHighlight, style.hardware.shade))).border(2.dp, style.hardware.outline, CircleShape)
         .semantics { contentDescription = label; if (!enabled) disabled() }
         .then(if (!enabled) Modifier else Modifier.pointerInput(enabled) {
             awaitEachGesture {
@@ -211,6 +211,6 @@ private fun ConsoleAnalog(enabled: Boolean, input: PocketHorizonConsoleInput,
         }), contentAlignment = Alignment.Center) {
         Box(Modifier.size(52.dp).testTag("horizonAnalogKnob").graphicsLayer {
             translationX = displacement.x * 14.dp.toPx(); translationY = displacement.y * 14.dp.toPx()
-        }.background(Brush.radialGradient(listOf(style.outline, style.shell)), CircleShape).border(1.dp, style.shellHighlight, CircleShape))
+        }.background(Brush.radialGradient(listOf(style.hardware.outline, style.hardware.shell)), CircleShape).border(1.dp, style.hardware.controlHighlight, CircleShape))
     }
 }

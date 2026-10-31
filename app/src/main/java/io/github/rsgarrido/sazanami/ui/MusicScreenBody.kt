@@ -1,5 +1,9 @@
 package io.github.rsgarrido.sazanami.ui
 
+import io.github.rsgarrido.sazanami.data.PocketHorizonAppearance
+import io.github.rsgarrido.sazanami.data.PocketHorizonConsoleFinish
+import io.github.rsgarrido.sazanami.data.PocketHorizonLcdPalette
+import io.github.rsgarrido.sazanami.data.PocketHorizonWaveTreatment
 import android.net.Uri
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
@@ -307,10 +311,15 @@ internal fun MusicScreenBody(
     selectedTabletLandscapeTheme: TabletLandscapeTheme = TabletLandscapeTheme.NORMAL_PLAYER,
     onTabletLandscapeThemeSelected: (TabletLandscapeTheme) -> Unit = {},
     pocketAdvanceAppearance: PocketAdvanceAppearance = PocketAdvanceAppearance.Default,
+    pocketHorizonAppearance: PocketHorizonAppearance = PocketHorizonAppearance.Default,
     onPocketAdvanceConsoleFinishSelected: (PocketAdvanceConsoleFinish) -> Unit = {},
+    onPocketHorizonConsoleFinishSelected: (PocketHorizonConsoleFinish) -> Unit = {},
     onPocketAdvanceLcdPaletteSelected: (PocketAdvanceLcdPalette) -> Unit = {},
+    onPocketHorizonLcdPaletteSelected: (PocketHorizonLcdPalette) -> Unit = {},
     onPocketAdvanceControlsFinishSelected: (PocketAdvanceControlsFinish) -> Unit = {},
+    onPocketHorizonWaveTreatmentSelected: (PocketHorizonWaveTreatment) -> Unit = {},
     onResetPocketAdvanceAppearance: () -> Unit = {},
+    onResetPocketHorizonAppearance: () -> Unit = {},
     onUpdatePlayerThemeTokenOverride: (PlayerTheme, PlayerThemeTokenField, Color) -> Unit,
     onResetPlayerThemeTokenOverrides: (PlayerTheme) -> Unit,
     selectedModernArtworkTransitionStyle: ModernArtworkTransitionStyle,
@@ -536,10 +545,15 @@ internal fun MusicScreenBody(
                 selectedTabletLandscapeTheme = selectedTabletLandscapeTheme,
                 onTabletLandscapeThemeSelected = onTabletLandscapeThemeSelected,
                 pocketAdvanceAppearance = pocketAdvanceAppearance,
+                pocketHorizonAppearance = pocketHorizonAppearance,
                 onPocketAdvanceConsoleFinishSelected = onPocketAdvanceConsoleFinishSelected,
+                onPocketHorizonConsoleFinishSelected = onPocketHorizonConsoleFinishSelected,
                 onPocketAdvanceLcdPaletteSelected = onPocketAdvanceLcdPaletteSelected,
+                onPocketHorizonLcdPaletteSelected = onPocketHorizonLcdPaletteSelected,
                 onPocketAdvanceControlsFinishSelected = onPocketAdvanceControlsFinishSelected,
+                onPocketHorizonWaveTreatmentSelected = onPocketHorizonWaveTreatmentSelected,
                 onResetPocketAdvanceAppearance = onResetPocketAdvanceAppearance,
+                onResetPocketHorizonAppearance = onResetPocketHorizonAppearance,
                 onUpdatePlayerThemeTokenOverride = onUpdatePlayerThemeTokenOverride,
                 onResetPlayerThemeTokenOverrides = onResetPlayerThemeTokenOverrides,
                 selectedModernArtworkTransitionStyle = selectedModernArtworkTransitionStyle,

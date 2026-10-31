@@ -186,7 +186,7 @@ internal fun prepareMusicPlayerPresentation(
             val measure = lyricsTransitionState.progress == 0f && !lyricsTransitionState.isDragging
             val mini = rememberPocketHorizonEndpointMeasurements(playerEndpointBounds, currentSong, measure)
             val expanded = rememberPocketHorizonEndpointMeasurements(playerEndpointBounds, currentSong, measure)
-            PocketHorizonRuntime(playerEndpointBounds, mini, expanded, pocketHorizonNavigationState, playerMorphState,
+            PocketHorizonRuntime(playerEndpointBounds, LocalPocketHorizonStyle.current, mini, expanded, pocketHorizonNavigationState, playerMorphState,
                 playbackState ?: PlaybackUiState(isConnected = true, currentSong = currentSong, isPlaying = isPlaying,
                     isShuffleEnabled = isShuffleEnabled, repeatMode = repeatMode),
                 libraryState ?: LibraryUiState(songs = songs, hasPublishedInitialLibraryState = isLibraryReady,

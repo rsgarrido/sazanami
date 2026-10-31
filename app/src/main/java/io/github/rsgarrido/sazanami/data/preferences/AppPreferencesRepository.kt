@@ -1,5 +1,9 @@
 package io.github.rsgarrido.sazanami.data.preferences
 
+import io.github.rsgarrido.sazanami.data.PocketHorizonAppearance
+import io.github.rsgarrido.sazanami.data.PocketHorizonConsoleFinish
+import io.github.rsgarrido.sazanami.data.PocketHorizonLcdPalette
+import io.github.rsgarrido.sazanami.data.PocketHorizonWaveTreatment
 import android.content.Context
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -97,6 +101,7 @@ data class AppPreferencesState(
     val selectedPlayerTheme: PlayerTheme = PlayerTheme.DEFAULT,
     val tabletLandscapeTheme: TabletLandscapeTheme = TabletLandscapeTheme.NORMAL_PLAYER,
     val pocketAdvanceAppearance: PocketAdvanceAppearance = PocketAdvanceAppearance.Default,
+    val pocketHorizonAppearance: PocketHorizonAppearance = PocketHorizonAppearance.Default,
     val playerThemeTokenOverrides: Map<PlayerTheme, PlayerThemeTokenOverrides> = emptyMap(),
     val modernArtworkTransitionStyle: ModernArtworkTransitionStyle =
         ModernArtworkTransitionStyle.SLIDE,
@@ -193,6 +198,24 @@ class AppPreferencesRepository private constructor(
         it.remove(Keys.pocketAdvanceConsoleFinish)
         it.remove(Keys.pocketAdvanceLcdPalette)
         it.remove(Keys.pocketAdvanceControlsFinish)
+    }
+
+    suspend fun setPocketHorizonConsoleFinish(finish: PocketHorizonConsoleFinish) = edit {
+        it[Keys.pocketHorizonConsoleFinish] = finish.id
+    }
+
+    suspend fun setPocketHorizonLcdPalette(palette: PocketHorizonLcdPalette) = edit {
+        it[Keys.pocketHorizonLcdPalette] = palette.id
+    }
+
+    suspend fun setPocketHorizonWaveTreatment(finish: PocketHorizonWaveTreatment) = edit {
+        it[Keys.pocketHorizonWaveTreatment] = finish.id
+    }
+
+    suspend fun resetPocketHorizonAppearance() = edit {
+        it.remove(Keys.pocketHorizonConsoleFinish)
+        it.remove(Keys.pocketHorizonLcdPalette)
+        it.remove(Keys.pocketHorizonWaveTreatment)
     }
 
     suspend fun setAppFont(appFont: AppFont) = edit {
@@ -652,8 +675,11 @@ class AppPreferencesRepository private constructor(
         preferences[Keys.selectedPlayerTheme] = restored.selectedPlayerTheme.id
         preferences[Keys.tabletLandscapeTheme] = restored.tabletLandscapeTheme.id
         preferences[Keys.pocketAdvanceConsoleFinish] = restored.pocketAdvanceAppearance.consoleFinish.id
+        preferences[Keys.pocketHorizonConsoleFinish] = restored.pocketHorizonAppearance.consoleFinish.id
         preferences[Keys.pocketAdvanceLcdPalette] = restored.pocketAdvanceAppearance.lcdPalette.id
+        preferences[Keys.pocketHorizonLcdPalette] = restored.pocketHorizonAppearance.lcdPalette.id
         preferences[Keys.pocketAdvanceControlsFinish] = restored.pocketAdvanceAppearance.controlsFinish.id
+        preferences[Keys.pocketHorizonWaveTreatment] = restored.pocketHorizonAppearance.waveTreatment.id
         preferences[Keys.modernArtworkTransitionStyle] =
             restored.modernArtworkTransitionStyle.storageValue
         preferences.writeRestoredModernAppearance(restored)
@@ -748,6 +774,11 @@ internal fun decodeAppPreferences(preferences: Preferences): AppPreferencesState
             consoleFinish = PocketAdvanceConsoleFinish.fromId(preferences[Keys.pocketAdvanceConsoleFinish]),
             lcdPalette = PocketAdvanceLcdPalette.fromId(preferences[Keys.pocketAdvanceLcdPalette]),
             controlsFinish = PocketAdvanceControlsFinish.fromId(preferences[Keys.pocketAdvanceControlsFinish])
+        ),
+        pocketHorizonAppearance = PocketHorizonAppearance(
+            consoleFinish = PocketHorizonConsoleFinish.fromId(preferences[Keys.pocketHorizonConsoleFinish]),
+            lcdPalette = PocketHorizonLcdPalette.fromId(preferences[Keys.pocketHorizonLcdPalette]),
+            waveTreatment = PocketHorizonWaveTreatment.fromId(preferences[Keys.pocketHorizonWaveTreatment])
         ),
         playerThemeTokenOverrides = PlayerTheme.entries.associateWith { emptyOverrides() }
             .mapValues { (theme, _) ->
@@ -1299,8 +1330,11 @@ private object Keys {
     val selectedPlayerTheme = stringPreferencesKey("selected_player_theme")
     val tabletLandscapeTheme = stringPreferencesKey("tablet_landscape_theme")
     val pocketAdvanceConsoleFinish = stringPreferencesKey("pocket_advance_console_finish")
+    val pocketHorizonConsoleFinish = stringPreferencesKey("pocket_horizon_console_finish")
     val pocketAdvanceLcdPalette = stringPreferencesKey("pocket_advance_lcd_palette")
+    val pocketHorizonLcdPalette = stringPreferencesKey("pocket_horizon_lcd_palette")
     val pocketAdvanceControlsFinish = stringPreferencesKey("pocket_advance_controls_finish")
+    val pocketHorizonWaveTreatment = stringPreferencesKey("pocket_horizon_wave_treatment")
     val modernArtworkTransitionStyle = stringPreferencesKey("artwork_transition_style")
     val modernLandscapeLayout = stringPreferencesKey("modern_landscape_layout")
     val activeModernAppearanceChoice = stringPreferencesKey("modern_active_appearance_choice")

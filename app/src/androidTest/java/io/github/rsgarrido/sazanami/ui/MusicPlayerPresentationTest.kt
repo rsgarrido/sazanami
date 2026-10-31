@@ -1,6 +1,10 @@
 package io.github.rsgarrido.sazanami.ui
 
 import io.github.rsgarrido.sazanami.ui.player.pockethorizon.*
+import io.github.rsgarrido.sazanami.data.PocketHorizonAppearance
+import io.github.rsgarrido.sazanami.data.PocketHorizonConsoleFinish
+import io.github.rsgarrido.sazanami.data.PocketHorizonLcdPalette
+import io.github.rsgarrido.sazanami.data.PocketHorizonWaveTreatment
 import android.net.Uri
 import android.view.KeyEvent
 import androidx.test.platform.app.InstrumentationRegistry
@@ -58,6 +62,8 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -3987,6 +3993,178 @@ class MusicPlayerPresentationTest {
         }
     }
 
+    @Test fun horizonAppearanceUpdatesKeepGeometryNavigationAndActiveInputLifetimes() {
+        // Observe Coil's supported loading boundary, not compiler/tooling remember-slot contents.
+        val originalLoader = coil.Coil.imageLoader(composeRule.activity)
+        val startedLoads = java.util.concurrent.atomic.AtomicInteger()
+        val completedLoads = java.util.concurrent.atomic.AtomicInteger()
+        val cancelledLoads = java.util.concurrent.atomic.AtomicInteger()
+        val requestedSizes = java.util.concurrent.CopyOnWriteArrayList<coil.size.Size>()
+        val loader = coil.ImageLoader.Builder(composeRule.activity)
+            .eventListenerFactory {
+                object : coil.EventListener {
+                    override fun onStart(request: coil.request.ImageRequest) { startedLoads.incrementAndGet() }
+                    override fun onSuccess(request: coil.request.ImageRequest, result: coil.request.SuccessResult) { completedLoads.incrementAndGet() }
+                    override fun onCancel(request: coil.request.ImageRequest) { cancelledLoads.incrementAndGet() }
+                }
+            }
+            .components {
+                add(object : coil.intercept.Interceptor {
+                    override suspend fun intercept(chain: coil.intercept.Interceptor.Chain): coil.request.ImageResult {
+                        requestedSizes += chain.size
+                        // A deterministic test drawable avoids external providers, decoding and IO.
+                        return coil.request.SuccessResult(android.graphics.drawable.ColorDrawable(android.graphics.Color.BLUE),
+                            chain.request, coil.decode.DataSource.MEMORY)
+                    }
+                })
+            }.build()
+        coil.Coil.setImageLoader(loader)
+        try {
+            val fixture = horizonFixture()
+            composeRule.setContent { fixture.Content() }
+            val compact = awaitHorizon(fixture)
+            composeRule.waitUntil(5_000) {
+                requestedSizes.contains(coil.size.Size(128, 128)) && requestedSizes.contains(coil.size.Size(1024, 1024)) &&
+                    completedLoads.get() == startedLoads.get()
+            }
+            val originalLoadCount = startedLoads.get()
+            assertTrue("The real compact and expanded artwork requests must reach Coil", originalLoadCount >= 2)
+            val custom = PocketHorizonAppearance(PocketHorizonConsoleFinish.SILVER,
+                PocketHorizonLcdPalette.WARM_AMBER, PocketHorizonWaveTreatment.OFF)
+            composeRule.runOnIdle { fixture.horizonAppearance.value = custom }
+            val recolored = awaitHorizon(fixture)
+            assertSame(compact.mini, recolored.mini); assertSame(compact.expanded, recolored.expanded)
+            val colors = PocketHorizonStyle.from(custom)
+            val expectedBackground = androidx.compose.ui.graphics.lerp(colors.displayTop, colors.displayBottom, .5f)
+            composeRule.waitUntil(5_000) {
+                // Above the padded content, the real compact endpoint paints only its LCD gradient.
+                val pixels = composeRule.onNodeWithTag("pocketHorizonMiniDisplay", useUnmergedTree = true)
+                    .captureToImage().toPixelMap()
+                val actual = pixels[pixels.width / 2, 1]
+                kotlin.math.abs(expectedBackground.red - actual.red) < .03f &&
+                    kotlin.math.abs(expectedBackground.green - actual.green) < .03f &&
+                    kotlin.math.abs(expectedBackground.blue - actual.blue) < .03f
+            }
+            assertEquals("A cosmetic update must not enqueue artwork again", originalLoadCount, startedLoads.get())
+            assertEquals(originalLoadCount, completedLoads.get())
+            assertEquals(0, cancelledLoads.get())
+            composeRule.onNodeWithTag("pocketHorizonMiniExpand").performClick()
+            val expanded = awaitHorizon(fixture)
+            composeRule.onNodeWithTag("pocketHorizonSeek").performTouchInput { down(center); moveBy(Offset(12f, 0f)) }
+            composeRule.runOnIdle { fixture.horizonAppearance.value = custom.copy(lcdPalette = PocketHorizonLcdPalette.EMERALD_TEAL) }
+            composeRule.onNodeWithTag("pocketHorizonSeek").performTouchInput { up() }
+            composeRule.runOnIdle { assertTrue(fixture.seeks.isNotEmpty()); assertTrue(fixture.calls.isEmpty()) }
+            composeRule.onNodeWithTag("pocketHorizonCategorySongs").performClick()
+            // Browsing also composes a hidden, disabled Now Playing measurement tree. The overlay
+            // merges the active analog's semantics; select its input-owning node explicitly.
+            val activeAnalog = hasTestTag("horizonAnalog") and isEnabled()
+            composeRule.onAllNodes(activeAnalog, useUnmergedTree = true).assertCountEquals(1)
+            val analog = composeRule.onNode(activeAnalog, useUnmergedTree = true).assertIsDisplayed()
+            analog.performTouchInput { down(center); moveTo(Offset(center.x, height - 1f)) }
+            composeRule.runOnIdle { fixture.horizonAppearance.value = custom.copy(consoleFinish = PocketHorizonConsoleFinish.DEEP_BURGUNDY) }
+            composeRule.onAllNodes(activeAnalog, useUnmergedTree = true).assertCountEquals(1)
+            analog.assertIsEnabled().performTouchInput { up() }
+            composeRule.runOnIdle { assertEquals(PocketHorizonCategory.Songs, fixture.horizonNavigation.category) }
+            composeRule.mainClock.autoAdvance = false
+            try {
+                composeRule.runOnIdle { fixture.morph.beginDragWithRange(200f); fixture.morph.updateProgressFromDrag(.6f) }
+                composeRule.mainClock.advanceTimeByFrame()
+                val before = awaitHorizon(fixture)
+                composeRule.runOnIdle { fixture.horizonAppearance.value = custom }
+                composeRule.mainClock.advanceTimeByFrame()
+                val after = awaitHorizon(fixture)
+                composeRule.runOnIdle {
+                    assertSame(before.mini, after.mini); assertSame(before.expanded, after.expanded)
+                    assertEquals(before.pair, after.pair)
+                    assertTrue(fixture.morph.isDragging); assertEquals(.6f, fixture.morph.progress, .001f)
+                    assertEquals(PocketHorizonCategory.Songs, fixture.horizonNavigation.category)
+                    assertTrue(fixture.calls.isEmpty()); assertTrue(fixture.songSelections.isEmpty())
+                    fixture.morph.cancelDrag()
+                }
+            } finally { composeRule.mainClock.autoAdvance = true }
+            val final = awaitHorizon(fixture)
+            assertSame(expanded.mini, final.mini)
+            assertSame(expanded.expanded, final.expanded)
+        } finally {
+            composeRule.mainClock.autoAdvance = true
+            coil.Coil.setImageLoader(originalLoader)
+            loader.shutdown()
+        }
+    }
+
+    @Test fun horizonAppearanceKeepsDetailOwnersAndPrimaryFallbackIndependent() {
+        val fixture = horizonFixture(PlayerPresentation.Expanded)
+        composeRule.setContent { fixture.Content() }
+        val originalSong = fixture.current.value
+        awaitHorizon(fixture)
+        val custom = PocketHorizonAppearance(PocketHorizonConsoleFinish.MIDNIGHT_BLUE,
+            PocketHorizonLcdPalette.WARM_AMBER, PocketHorizonWaveTreatment.SUBTLE)
+        composeRule.runOnIdle { fixture.horizonNavigation.openAlbum("/music") }
+        val album = awaitHorizon(fixture)
+        composeRule.runOnIdle { fixture.horizonAppearance.value = custom }
+        val changed = awaitHorizon(fixture)
+        composeRule.runOnIdle {
+            assertSame(album.mini, changed.mini); assertSame(album.expanded, changed.expanded)
+            assertEquals("/music", fixture.horizonNavigation.albumKey)
+            fixture.horizonNavigation.openArtist(io.github.rsgarrido.sazanami.data.artistIdentity(fixture.songs.first().artist).key)
+        }
+        val artistKey = composeRule.runOnIdle { fixture.horizonNavigation.artistKey }
+        val artist = awaitHorizon(fixture)
+        composeRule.runOnIdle { fixture.horizonAppearance.value = PocketHorizonAppearance.Default }
+        val reset = awaitHorizon(fixture)
+        composeRule.runOnIdle {
+            assertSame(artist.mini, reset.mini); assertSame(artist.expanded, reset.expanded)
+            assertEquals(artistKey, fixture.horizonNavigation.artistKey)
+            fixture.viewport.value = DpSize(900.dp, 1200.dp)
+        }
+        composeRule.runOnIdle {
+            assertEquals(PlayerPresentationIdentity.Existing(PlayerTheme.DEFAULT), fixture.resolvedIdentity)
+            fixture.horizonAppearance.value = custom
+        }
+        composeRule.runOnIdle {
+            assertEquals(PlayerPresentationIdentity.Existing(PlayerTheme.DEFAULT), fixture.resolvedIdentity)
+            assertEquals(originalSong, fixture.current.value)
+            assertTrue(fixture.calls.isEmpty()); assertTrue(fixture.seeks.isEmpty()); assertTrue(fixture.songSelections.isEmpty())
+            fixture.viewport.value = DpSize(1200.dp, 900.dp)
+        }
+        awaitHorizon(fixture)
+        composeRule.onNodeWithTag("pocketHorizonPlayPause").assertIsDisplayed()
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test fun horizonAppearanceDoesNotCancelARequestedMeasuredFocusReveal() {
+        val fixture = horizonFixture(PlayerPresentation.Expanded)
+        composeRule.setContent { fixture.Content() }
+        awaitHorizon(fixture)
+        composeRule.onNodeWithTag("pocketHorizonCategorySongs").performClick()
+        val before = awaitHorizon(fixture)
+        composeRule.mainClock.autoAdvance = false
+        try {
+            composeRule.onNodeWithTag("horizonDown").performClick()
+            composeRule.runOnIdle {
+                fixture.horizonAppearance.value = PocketHorizonAppearance(PocketHorizonConsoleFinish.SILVER,
+                    PocketHorizonLcdPalette.EMERALD_TEAL, PocketHorizonWaveTreatment.OFF)
+            }
+            val expected = fixture.songs[1].stableUiKey()
+            composeRule.waitUntil(5_000) {
+                composeRule.mainClock.advanceTimeByFrame()
+                composeRule.runOnIdle { fixture.horizonNavigation.focusedKey(PocketHorizonList.Songs) == expected } &&
+                    composeRule.onNodeWithTag("pocketHorizonSong:$expected", useUnmergedTree = true)
+                        .fetchSemanticsNode().config.getOrNull(SemanticsProperties.Selected) == true
+            }
+            fun actual(tag: String): Rect {
+                val c = composeRule.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().layoutInfo.coordinates
+                return Rect(c.localToRoot(Offset.Zero), androidx.compose.ui.geometry.Size(c.size.width.toFloat(), c.size.height.toFloat()))
+            }
+            val row = actual("pocketHorizonSong:$expected")
+            val viewport = actual("pocketHorizonLibraryList")
+            assertTrue(row.top >= viewport.top - 1f && row.bottom <= viewport.bottom + 1f)
+            val after = awaitHorizon(fixture)
+            assertSame(before.mini, after.mini); assertSame(before.expanded, after.expanded)
+            composeRule.runOnIdle { assertTrue(fixture.calls.isEmpty()); assertTrue(fixture.songSelections.isEmpty()) }
+        } finally { composeRule.mainClock.autoAdvance = true }
+    }
+
     @Test fun horizonMovingMetadataHasOneSharedTextOwnerAcrossReversalAndTrackReplacement() {
         val fixture = horizonFixture(PlayerPresentation.Expanded)
         composeRule.setContent { fixture.Content() }
@@ -4424,6 +4602,7 @@ class MusicPlayerPresentationTest {
         val next = mutableStateOf<Song?>(songs[2])
         val theme = mutableStateOf(PlayerTheme.DEFAULT)
         val nominatedTheme = mutableStateOf<PlayerTheme?>(null)
+        val horizonAppearance = mutableStateOf(PocketHorizonAppearance.Default)
         var observeHorizonGeometry = false
         val tabletLandscapeTheme = mutableStateOf(TabletLandscapeTheme.NORMAL_PLAYER)
         val advanceAppearance = mutableStateOf(PocketAdvanceAppearance.Default)
@@ -4635,7 +4814,9 @@ class MusicPlayerPresentationTest {
                         measurementIdentity = boundary.epoch
                     ) { measuredEndpoints ->
                         endpoints = measuredEndpoints
-                        player(measuredEndpoints)
+                        CompositionLocalProvider(LocalPocketHorizonStyle provides remember(horizonAppearance.value) { PocketHorizonStyle.from(horizonAppearance.value) }) {
+                            player(measuredEndpoints)
+                        }
                         if (observeDefaultMorphGeometry || observeAdvanceMorphGeometry || observeHorizonGeometry) {
                             playerComposition = currentComposer.compositionData
                         }

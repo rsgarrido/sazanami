@@ -508,4 +508,22 @@
     <string name="horizon_control_next_track">R · Pista siguiente</string>
     <string name="horizon_shoulder_pressed">Pulsado</string>
     <string name="horizon_shoulder_resting">Sin pulsar</string>
+
+    <string name="settings_customize_pocket_horizon">Personalizar tema horizontal</string>
+    <string name="settings_customize_pocket_horizon_summary">Pocket Horizon · Consola, LCD y fondo</string>
+    <string name="pocket_horizon_appearance_title">Apariencia de Pocket Horizon</string>
+    <string name="pocket_horizon_console_finish">Acabado de la consola</string>
+    <string name="pocket_horizon_lcd_palette">Paleta LCD</string>
+    <string name="pocket_horizon_wave_treatment">Ondas de fondo</string>
+    <string name="horizon_finish_graphite">Grafito</string>
+    <string name="horizon_finish_silver">Plata</string>
+    <string name="horizon_finish_midnight_blue">Azul medianoche</string>
+    <string name="horizon_finish_deep_burgundy">Borgoña oscuro</string>
+    <string name="horizon_lcd_blue_violet">Azul violeta</string>
+    <string name="horizon_lcd_emerald_teal">Esmeralda / Verde azulado</string>
+    <string name="horizon_lcd_warm_amber">Ámbar cálido</string>
+    <string name="horizon_wave_standard">Estándar</string>
+    <string name="horizon_wave_subtle">Sutiles</string>
+    <string name="horizon_wave_off">Desactivadas</string>
+    <string name="horizon_appearance_preview">Vista previa de la apariencia de Pocket Horizon</string>
 </resources>

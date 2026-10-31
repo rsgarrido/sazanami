@@ -22,6 +22,7 @@ import kotlin.math.abs
 /** An environment for the existing host branches; owns no controller, queue, clock or saved state. */
 internal class PocketHorizonRuntime(
     val owner: PlayerEndpointBounds,
+    val style: PocketHorizonStyle,
     val mini: PocketHorizonEndpointMeasurements,
     val expanded: PocketHorizonEndpointMeasurements,
     val navigation: PocketHorizonNavigationState,

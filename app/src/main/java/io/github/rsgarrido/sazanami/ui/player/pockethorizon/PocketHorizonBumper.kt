@@ -114,7 +114,7 @@ internal fun PocketHorizonBumperVisual(left: Boolean, pressed: Boolean, style: P
         val socket = pocketHorizonBumperCapPath(Size((size.width - 8.dp.toPx()).coerceAtLeast(0f),
             36.dp.toPx().coerceAtMost(size.height)), left).apply { translate(Offset(4.dp.toPx(), 0f)) }
         onDrawBehind {
-            drawPath(socket, style.bezel)
+            drawPath(socket, style.hardware.shade)
         }
     }) {
         Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp).height(PocketHorizonBumperMetrics.CapHeight)
@@ -127,20 +127,20 @@ internal fun PocketHorizonBumperVisual(left: Boolean, pressed: Boolean, style: P
             .testTag(tag + "Plane")
             .drawWithCache {
                 val face = PocketHorizonBumperMetrics.UpperFaceHeight.toPx()
-                val fill = Brush.verticalGradient(listOf(style.outline.copy(alpha = if (pressed) .72f else .9f),
-                    style.shellHighlight, style.bezel))
+                val fill = Brush.verticalGradient(listOf(style.hardware.outline.copy(alpha = if (pressed) .72f else .9f),
+                    style.hardware.controlHighlight, style.hardware.shade))
                 val contour = pocketHorizonBumperCapPath(size, left)
                 onDrawBehind {
                     drawRect(fill)
-                    drawRect(style.bezel.copy(alpha = .65f), Offset(0f, face),
+                    drawRect(style.hardware.shade.copy(alpha = .65f), Offset(0f, face),
                         Size(size.width, (size.height - face).coerceAtLeast(0f)))
-                    drawPath(contour, style.secondaryText.copy(alpha = if (pressed) .18f else .38f), style = Stroke(1.dp.toPx()))
-                    drawLine(style.shellHighlight, Offset(0f, face), Offset(size.width, face), 1.dp.toPx())
+                    drawPath(contour, style.hardware.mutedInk.copy(alpha = if (pressed) .18f else .38f), style = Stroke(1.dp.toPx()))
+                    drawLine(style.hardware.controlHighlight, Offset(0f, face), Offset(size.width, face), 1.dp.toPx())
                 }
             }) {
             Box(Modifier.fillMaxWidth().height(PocketHorizonBumperMetrics.UpperFaceHeight), contentAlignment = Alignment.Center) {
                 Text(if (left) "L" else "R", Modifier.clearAndSetSemantics {},
-                    color = style.text.copy(alpha = .85f), fontSize = 10.sp, lineHeight = 10.sp,
+                    color = style.hardware.bumperInk.copy(alpha = .85f), fontSize = 10.sp, lineHeight = 10.sp,
                     fontWeight = FontWeight.SemiBold,
                     style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)), maxLines = 1)
             }

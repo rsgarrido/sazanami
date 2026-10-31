@@ -100,7 +100,7 @@ fun MiniPlayerHost(
                     .then(if (!runtime.compactInput) Modifier.clearAndSetSemantics { } else Modifier),
                 inputEnabled = runtime.compactInput, playbackEnabled = runtime.playback.isConnected,
                 gestureEnabled = runtime.inputAllowed && (runtime.compactInput || runtime.player.isDragging),
-                expandGestureModifier = pocketHorizonMorphGesture(runtime), measurements = runtime.mini)
+                expandGestureModifier = pocketHorizonMorphGesture(runtime), measurements = runtime.mini, style = runtime.style)
             return
         }
         PlayerPresentationIdentity.PocketAdvance -> {

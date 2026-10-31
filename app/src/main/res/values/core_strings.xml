@@ -510,4 +510,23 @@
     <string name="horizon_control_next_track">R · Next track</string>
     <string name="horizon_shoulder_pressed">Pressed</string>
     <string name="horizon_shoulder_resting">Released</string>
+
+    <string name="settings_customize_pocket_horizon">Customize landscape theme</string>
+    <string name="settings_customize_pocket_horizon_summary">Pocket Horizon · Console, LCD &amp; background</string>
+    <string name="pocket_horizon_appearance_title">Pocket Horizon appearance</string>
+    <string name="pocket_horizon_console_finish">Console finish</string>
+    <string name="pocket_horizon_lcd_palette">LCD palette</string>
+    <string name="pocket_horizon_wave_treatment">Background waves</string>
+    <string name="horizon_finish_graphite">Graphite</string>
+    <string name="horizon_finish_silver">Silver</string>
+    <string name="horizon_finish_midnight_blue">Midnight blue</string>
+    <string name="horizon_finish_deep_burgundy">Deep burgundy</string>
+    <string name="horizon_lcd_blue_violet">Blue-violet</string>
+    <string name="horizon_lcd_emerald_teal">Emerald / Teal</string>
+    <string name="horizon_lcd_warm_amber">Warm amber</string>
+    <string name="horizon_wave_standard">Standard</string>
+    <string name="horizon_wave_subtle">Subtle</string>
+    <string name="horizon_wave_off">Off</string>
+    <string name="horizon_appearance_preview">Pocket Horizon appearance preview</string>
+
 </resources>

@@ -66,7 +66,7 @@ internal fun PocketHorizonPlayerMorph(runtime: PocketHorizonRuntime) {
     val p = runtime.player.progress
     if (p <= 0f || p >= 1f) return
     val geometry = pair.interpolate(p)
-    val style = PocketHorizonStyle.Default
+    val style = runtime.style
     val density = LocalDensity.current
     val wing = (geometry.display.left - geometry.surface.left).coerceAtLeast(0f)
     // Only the upper housing follows the bumper contour. The existing outer morph clip continues
@@ -187,14 +187,14 @@ internal fun PocketHorizonRuntimeExpanded(
     BackHandler(runtime.inputAllowed && runtime.player.shouldConsumeBack && (!stable || nowPlaying) && runtime.pair == null) {}
     val authority = LocalDirectSeekGestureEnvironment.current?.authority?.invoke()
     val seekAllowed = authority?.let { !it.enabled || it.allowed } ?: true
-    Box(Modifier.fillMaxSize().background(PocketHorizonStyle.Default.shell.copy(alpha = runtime.player.progress))) {
+    Box(Modifier.fillMaxSize().background(runtime.style.shell.copy(alpha = runtime.player.progress))) {
         // When browsing, this tree measures only Now Playing, never a hidden library list. It shares
         // the navigation owner but measurementOnly forbids its effects/Back handler from mutating it.
         if (!nowPlaying) {
             PocketHorizonExpandedPlayer(runtime.playback, runtime.progress, {}, {}, {}, {},
                 modifier = endpointModifier.graphicsLayer { alpha = 0f }.playerEndpointInput(false),
                 inputEnabled = false, navigationState = runtime.navigation, measurements = runtime.expanded,
-                measurementOnly = true, onOpenQueueHubClick = {}, onOpenMoreClick = {}, onOpenLyrics = {})
+                measurementOnly = true, style = runtime.style, onOpenQueueHubClick = {}, onOpenMoreClick = {}, onOpenLyrics = {})
         }
         PocketHorizonExpandedPlayer(runtime.playback, runtime.progress,
             { if (latest.value.expandedInput && latest.value.playback.isConnected) onPlayPause() },
@@ -210,7 +210,7 @@ internal fun PocketHorizonRuntimeExpanded(
                         if (latest.value.expandedInput && latest.value.pair != null) { onCollapse(); true } else false
                     })
                 } else Modifier),
-            inputEnabled = stable, seekEnabled = seekAllowed,
+            inputEnabled = stable, seekEnabled = seekAllowed, style = runtime.style,
             onOpenQueueHubClick = { if (latest.value.expandedInput) onQueue() },
             onOpenMoreClick = { if (latest.value.expandedInput) onMore() },
             onOpenLyrics = { if (latest.value.expandedInput) onLyrics() },

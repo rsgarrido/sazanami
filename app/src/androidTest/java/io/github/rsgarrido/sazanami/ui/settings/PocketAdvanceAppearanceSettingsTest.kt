@@ -77,6 +77,7 @@ class PocketAdvanceAppearanceSettingsTest {
         job = SupervisorJob()
         repository = AppPreferencesRepository.create(context, CoroutineScope(job + Dispatchers.IO), filename, emptyList())
         withTimeout(5_000) { repository.awaitLoadedState() }
+        repository.setTabletLandscapeTheme(TabletLandscapeTheme.POCKET_ADVANCE)
         repository.setSelectedPlayerTheme(PlayerTheme.CLASSIC_WHEEL)
         repository.setThemeTokenOverrides(PlayerTheme.CLASSIC_WHEEL, primaryColors)
         withTimeout(5_000) { repository.state.first {
@@ -91,7 +92,7 @@ class PocketAdvanceAppearanceSettingsTest {
     }
 
     @Test
-    fun disabledPocketAdvanceStillExposesAllCategoriesAndAccessibleOriginalSwatches() {
+    fun selectedPocketAdvanceExposesAllCategoriesWithoutAnActivePlayer() {
         compose.setContent { Content() }
         val row = compose.onNodeWithTag("pocketAdvanceAppearanceSetting").performScrollTo().assertIsDisplayed()
         row.assertTextContains(text(R.string.settings_customize_pocket_advance))
@@ -120,7 +121,7 @@ class PocketAdvanceAppearanceSettingsTest {
         compose.onNodeWithTag("pocketAdvanceControlsCurrent", useUnmergedTree = true)
             .assertTextEquals(text(PocketAdvanceControlsFinish.ORIGINAL_DARK.labelRes))
         compose.runOnIdle {
-            assertEquals(TabletLandscapeTheme.NORMAL_PLAYER, repository.state.value.tabletLandscapeTheme)
+            assertEquals(TabletLandscapeTheme.POCKET_ADVANCE, repository.state.value.tabletLandscapeTheme)
             assertEquals(PocketAdvanceAppearance.Default, repository.state.value.pocketAdvanceAppearance)
             assertTrue(otherRequests.isEmpty())
         }
@@ -154,7 +155,7 @@ class PocketAdvanceAppearanceSettingsTest {
             assertEquals(1, resets)
             assertEquals(PlayerTheme.CLASSIC_WHEEL, repository.state.value.selectedPlayerTheme)
             assertEquals(mapOf(PlayerTheme.CLASSIC_WHEEL to primaryColors), repository.state.value.playerThemeTokenOverrides)
-            assertEquals(TabletLandscapeTheme.NORMAL_PLAYER, repository.state.value.tabletLandscapeTheme)
+            assertEquals(TabletLandscapeTheme.POCKET_ADVANCE, repository.state.value.tabletLandscapeTheme)
             assertTrue(otherRequests.isEmpty())
         }
         compose.onNodeWithContentDescription(text(R.string.settings_customize_theme_colors))
@@ -170,14 +171,14 @@ class PocketAdvanceAppearanceSettingsTest {
         compose.runOnIdle {
             assertEquals(PlayerTheme.CLASSIC_WHEEL, repository.state.value.selectedPlayerTheme)
             assertEquals(mapOf(PlayerTheme.CLASSIC_WHEEL to primaryColors), repository.state.value.playerThemeTokenOverrides)
-            assertEquals(TabletLandscapeTheme.NORMAL_PLAYER, repository.state.value.tabletLandscapeTheme)
+            assertEquals(TabletLandscapeTheme.POCKET_ADVANCE, repository.state.value.tabletLandscapeTheme)
             assertEquals(PocketAdvanceAppearance.Default, repository.state.value.pocketAdvanceAppearance)
             assertTrue(otherRequests.isEmpty())
         }
     }
 
     @Test
-    fun savedAppearanceSurvivesDialogRecreationAndDismissalWithoutEnablingPocketAdvance() {
+    fun savedAppearanceSurvivesDialogRecreationAndDismissalWithoutChangingSelection() {
         val saved = PocketAdvanceAppearance(PocketAdvanceConsoleFinish.BERRY,
             PocketAdvanceLcdPalette.CLASSIC_GREEN, PocketAdvanceControlsFinish.DEEP_NAVY)
         runBlocking {
@@ -200,7 +201,7 @@ class PocketAdvanceAppearanceSettingsTest {
             assertTrue(mountedAppearances.isNotEmpty())
             assertTrue(mountedAppearances.all { it == saved })
             assertEquals(saved, repository.state.value.pocketAdvanceAppearance)
-            assertEquals(TabletLandscapeTheme.NORMAL_PLAYER, repository.state.value.tabletLandscapeTheme)
+            assertEquals(TabletLandscapeTheme.POCKET_ADVANCE, repository.state.value.tabletLandscapeTheme)
             assertTrue(consoleRequests.isEmpty()); assertTrue(lcdRequests.isEmpty()); assertTrue(controlsRequests.isEmpty())
             assertTrue(otherRequests.isEmpty()); assertEquals(0, resets)
         }

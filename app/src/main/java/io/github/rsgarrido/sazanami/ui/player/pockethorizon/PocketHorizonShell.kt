@@ -68,7 +68,7 @@ internal fun PocketHorizonShell(
             }
             Box(Modifier.matchParentSize().testTag("horizonFrontHousing").shadow(12.dp, shellShape)
                 .clip(shellShape)
-                .background(Brush.verticalGradient(listOf(style.shellHighlight, style.shell, style.bezel)))
+                .background(Brush.verticalGradient(listOf(style.hardware.highlight, style.hardware.shell, style.hardware.shade)))
                 .border(1.dp, style.shellHighlight, shellShape))
             Box(Modifier.fillMaxSize().padding(start = layout.bezelInset, end = layout.bezelInset, bottom = layout.bezelInset)) {
                 val displayDirection = LocalLayoutDirection.current
@@ -121,12 +121,12 @@ private fun PocketHorizonDisplay(
 internal fun PocketHorizonBackdrop(style: PocketHorizonStyle, modifier: Modifier = Modifier) {
     Box(modifier.drawWithCache {
         val base = Brush.verticalGradient(listOf(style.displayTop, style.displayBottom))
-        val glow = Brush.radialGradient(
-            listOf(style.horizon.copy(alpha = 0.50f), Color.Transparent),
+        val glow = if (style.waveIntensity == 0f) null else Brush.radialGradient(
+            listOf(style.horizon.copy(alpha = 0.50f * style.waveIntensity), Color.Transparent),
             center = Offset(size.width * 0.18f, size.height * 1.04f),
             radius = size.width.coerceAtLeast(1f) * 0.9f
         )
-        val horizon = Path().apply {
+        val horizon = if (style.waveIntensity == 0f) null else Path().apply {
             moveTo(0f, size.height * 0.78f)
             cubicTo(size.width * 0.34f, size.height * 0.50f,
                 size.width * 0.62f, size.height * 0.98f, size.width, size.height * 0.63f)
@@ -136,8 +136,8 @@ internal fun PocketHorizonBackdrop(style: PocketHorizonStyle, modifier: Modifier
         }
         onDrawBehind {
             drawRect(base)
-            drawRect(glow)
-            drawPath(horizon, style.horizon.copy(alpha = 0.12f))
+            if (glow != null) drawRect(glow)
+            if (horizon != null) drawPath(horizon, style.horizon.copy(alpha = 0.12f * style.waveIntensity))
         }
     })
 }

@@ -1,5 +1,9 @@
 package io.github.rsgarrido.sazanami.ui
 
+import io.github.rsgarrido.sazanami.data.PocketHorizonAppearance
+import io.github.rsgarrido.sazanami.data.PocketHorizonConsoleFinish
+import io.github.rsgarrido.sazanami.data.PocketHorizonLcdPalette
+import io.github.rsgarrido.sazanami.data.PocketHorizonWaveTreatment
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -288,10 +292,15 @@ internal fun MusicScreen(
     selectedTabletLandscapeTheme: TabletLandscapeTheme = TabletLandscapeTheme.NORMAL_PLAYER,
     onTabletLandscapeThemeSelected: (TabletLandscapeTheme) -> Unit = {},
     pocketAdvanceAppearance: PocketAdvanceAppearance = PocketAdvanceAppearance.Default,
+    pocketHorizonAppearance: PocketHorizonAppearance = PocketHorizonAppearance.Default,
     onPocketAdvanceConsoleFinishSelected: (PocketAdvanceConsoleFinish) -> Unit = {},
+    onPocketHorizonConsoleFinishSelected: (PocketHorizonConsoleFinish) -> Unit = {},
     onPocketAdvanceLcdPaletteSelected: (PocketAdvanceLcdPalette) -> Unit = {},
+    onPocketHorizonLcdPaletteSelected: (PocketHorizonLcdPalette) -> Unit = {},
     onPocketAdvanceControlsFinishSelected: (PocketAdvanceControlsFinish) -> Unit = {},
+    onPocketHorizonWaveTreatmentSelected: (PocketHorizonWaveTreatment) -> Unit = {},
     onResetPocketAdvanceAppearance: () -> Unit = {},
+    onResetPocketHorizonAppearance: () -> Unit = {},
     onUpdatePlayerThemeTokenOverride: (PlayerTheme, PlayerThemeTokenField, Color) -> Unit,
     onResetPlayerThemeTokenOverrides: (PlayerTheme) -> Unit,
     selectedModernArtworkTransitionStyle: ModernArtworkTransitionStyle,
@@ -341,6 +350,7 @@ internal fun MusicScreen(
         playerTheme = selectedPlayerTheme,
         tokens = selectedPlayerThemeTokens
     )
+    val horizonStyle = remember(pocketHorizonAppearance) { io.github.rsgarrido.sazanami.ui.player.pockethorizon.PocketHorizonStyle.from(pocketHorizonAppearance) }
     val advancePalette = remember(pocketAdvanceAppearance) { PocketAdvancePalette.from(pocketAdvanceAppearance) }
     val directStatusVisible = if (io.github.rsgarrido.sazanami.BuildConfig.DEBUG) {
         val direct by io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackBridge.state.collectAsState()
@@ -349,7 +359,8 @@ internal fun MusicScreen(
     // Resolve against the very same viewport that hosts both endpoints, including the USB banner.
     CompositionLocalProvider(
         LocalAppShellAccent provides appShellAccent,
-        LocalPocketAdvancePalette provides advancePalette
+        LocalPocketAdvancePalette provides advancePalette,
+        io.github.rsgarrido.sazanami.ui.player.pockethorizon.LocalPocketHorizonStyle provides horizonStyle
     ) {
     Column(modifier = modifier.fillMaxSize().appShellBackground()) {
         if (directStatusVisible) {
@@ -1224,10 +1235,15 @@ internal fun MusicScreen(
         selectedTabletLandscapeTheme = selectedTabletLandscapeTheme,
         onTabletLandscapeThemeSelected = onTabletLandscapeThemeSelected,
         pocketAdvanceAppearance = pocketAdvanceAppearance,
+        pocketHorizonAppearance = pocketHorizonAppearance,
         onPocketAdvanceConsoleFinishSelected = onPocketAdvanceConsoleFinishSelected,
+        onPocketHorizonConsoleFinishSelected = onPocketHorizonConsoleFinishSelected,
         onPocketAdvanceLcdPaletteSelected = onPocketAdvanceLcdPaletteSelected,
+        onPocketHorizonLcdPaletteSelected = onPocketHorizonLcdPaletteSelected,
         onPocketAdvanceControlsFinishSelected = onPocketAdvanceControlsFinishSelected,
+        onPocketHorizonWaveTreatmentSelected = onPocketHorizonWaveTreatmentSelected,
         onResetPocketAdvanceAppearance = onResetPocketAdvanceAppearance,
+        onResetPocketHorizonAppearance = onResetPocketHorizonAppearance,
         onUpdatePlayerThemeTokenOverride = onUpdatePlayerThemeTokenOverride,
         onResetPlayerThemeTokenOverrides = onResetPlayerThemeTokenOverrides,
         selectedModernArtworkTransitionStyle = selectedModernArtworkTransitionStyle,
