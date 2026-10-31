@@ -22,7 +22,7 @@ import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.encodeToStream
 
 object AppBackupJson {
-    const val CURRENT_SCHEMA_VERSION = 17
+    const val CURRENT_SCHEMA_VERSION = 18
     private const val OLDEST_SUPPORTED_SCHEMA_VERSION = 1
 
     private val json = Json {
@@ -114,6 +114,9 @@ object AppBackupJson {
         if (migrated.schemaVersion == 16) {
             migrated = migrateV16ToV17(migrated)
         }
+        if (migrated.schemaVersion == 17) {
+            migrated = migrated.copy(schemaVersion = 18, lyricsOverrides = emptyList())
+        }
         migrated = migrated.copy(
             preferences = migrated.preferences.copy(
                 crossfadeDurationMs = CrossfadePreferences.clampDurationMs(
@@ -128,6 +131,7 @@ object AppBackupJson {
         ListeningHistoryBackupValidator.validate(history)
         SongRatingBackupValidator.validate(migrated.songRatings, history)
         validateSmartPlaylists(migrated.playlists)
+        LyricsBackup.validate(migrated.lyricsOverrides)
         return migrated
     }
 
@@ -505,6 +509,7 @@ object AppBackupJson {
 }
 
 private fun AppBackup.sanitizedForExport(): AppBackup = copy(
+    lyricsOverrides = lyricsOverrides.also { LyricsBackup.validate(it) },
     canonicalListeningHistory = canonicalListeningHistory
         ?: BackupListeningHistoryV2(),
     preferences = preferences.copy(

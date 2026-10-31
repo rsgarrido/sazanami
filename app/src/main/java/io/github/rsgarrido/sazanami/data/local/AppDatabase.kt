@@ -32,13 +32,17 @@ import androidx.room.TypeConverters
         ArtistPictureAssignmentEntity::class,
         PlaybackQueueEntity::class,
         PlaybackQueueEntryEntity::class,
-        PlaybackQueueStateEntity::class
+        PlaybackQueueStateEntity::class,
+        LyricsOverrideEntity::class,
+        LyricsDraftEntity::class,
+        LyricsStorageEpochEntity::class
     ],
-    version = 20,
+    version = 21,
     exportSchema = true
 )
 @TypeConverters(ListeningHistoryTypeConverters::class, PlaybackQueueTypeConverters::class)
 abstract class AppDatabase : RoomDatabase() {
+    abstract fun lyricsDao(): LyricsDao
     abstract fun favoriteSongDao(): FavoriteSongDao
     abstract fun playlistDao(): PlaylistDao
     abstract fun songPlayStatsDao(): SongPlayStatsDao

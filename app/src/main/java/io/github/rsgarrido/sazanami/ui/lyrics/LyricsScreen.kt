@@ -46,6 +46,9 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.contentColorFor
@@ -190,6 +193,12 @@ fun LyricsScreen(
                 regionCloseEnabled = usesLayoutCloseRegion,
                 onBack = onBack,
                 onPlayPause = onPlayPause,
+                onEditLyrics = LocalLyricsEditor.current?.let { editor -> { editor.open(song, when (state) {
+                    is LyricsPlaybackUiState.Synced -> state.sourcedLyrics
+                    is LyricsPlaybackUiState.Unsynced -> state.sourcedLyrics
+                    else -> null
+                }) } },
+                hasLyrics = state is LyricsPlaybackUiState.Synced || state is LyricsPlaybackUiState.Unsynced,
                 colors = colors,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -323,6 +332,8 @@ private fun LyricsHeader(
     regionCloseEnabled: Boolean,
     onBack: () -> Unit,
     onPlayPause: () -> Unit,
+    onEditLyrics: (() -> Unit)?,
+    hasLyrics: Boolean,
     colors: LyricsColors?,
     modifier: Modifier = Modifier
 ) {
@@ -418,6 +429,18 @@ private fun LyricsHeader(
                 contentDescription = stringResource(if (playbackPlayPauseShowsPause(isPlaying)) R.string.lyrics_pause else R.string.lyrics_play),
                 tint = (colors?.foreground ?: Color.White)
             )
+        }
+        if (onEditLyrics != null) {
+            var menuOpen by remember { mutableStateOf(false) }
+            Box {
+                IconButton(onClick = { menuOpen = true }, enabled = interactive) {
+                    Icon(Icons.Default.MoreVert, stringResource(R.string.lyrics_editor_actions), tint = colors?.foreground ?: Color.White)
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(text = { Text(stringResource(if (hasLyrics) R.string.lyrics_editor_edit else R.string.lyrics_editor_create)) },
+                        onClick = { menuOpen = false; onEditLyrics() })
+                }
+            }
         }
     }
 }

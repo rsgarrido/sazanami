@@ -719,6 +719,8 @@ class MusicViewModel(
             _mediaAccessFailures.tryEmit(Unit)
         },
         onLibraryPublished = { songs ->
+            LocalLyricsServices.shared(appContext).overrides.updateLibrary(songs)
+            lyricsRepository.invalidate()
             val result = historyAutomaticReconciler.reconcile(songs)
             if (result.newlyLinked > 0) {
                 refreshOpenHistoryReconciliation()
@@ -726,6 +728,15 @@ class MusicViewModel(
         }
     )
     private val librarySelectionController = LibrarySelectionController()
+    val lyricsEditor = io.github.rsgarrido.sazanami.lyrics.LyricsEditorController(
+        storage = LocalLyricsServices.shared(appContext).overrides,
+        repository = lyricsRepository,
+        position = io.github.rsgarrido.sazanami.lyrics.LyricsPositionCapture(playbackController::captureLyricsPosition),
+        scope = viewModelScope,
+        playback = playbackController.uiState,
+        playPause = playbackController::togglePlayPause,
+        seek = ::seekTo
+    )
     val librarySelectionUiState = librarySelectionController.uiState
 
     private val playbackQueueUiController = PlaybackQueueUiController(
@@ -1458,6 +1469,9 @@ class MusicViewModel(
             }
             result.exceptionOrNull()?.let { failure ->
                 Log.e(BACKUP_RESTORE_LOG_TAG, "Backup restore failed", failure)
+            }
+            if (databaseCommitted) {
+                lyricsRepository.invalidate()
             }
             onRestored(result)
         }

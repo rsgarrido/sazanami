@@ -18,6 +18,7 @@ data class AppBackup(
     val listeningHistory: List<BackupListeningHistoryEntry> = emptyList(),
     val canonicalListeningHistory: BackupListeningHistoryV2? = null,
     val songRatings: BackupSongRatings = BackupSongRatings(),
+    val lyricsOverrides: List<BackupLyricsOverride> = emptyList(),
     val preferences: BackupPreferences = BackupPreferences(),
     val visualAssets: List<BackupVisualAsset> = emptyList(),
     @Transient val visualAssetPayloads: List<BackupVisualAssetPayload> = emptyList()

@@ -8,6 +8,20 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LyricsSourceResolutionTest {
+    @Test fun localPlainOverrideWinsOverAllTimedSourcesAndRemovalRestoresDiscovery() = runBlocking {
+        val fixture = fixture("[00:01]External", candidates = listOf(candidate("[00:01]Embedded")))
+        val source = LrcParser().parseSource("Intentional local plain lyrics")
+        fixture.local = LyricsLookupResult.Found(SourcedLyrics(LrcParser().project(source), LyricsSource.LocalOverride("saved"), source, "revision"))
+        val found = fixture.repository.findLyrics(song()) as LyricsLookupResult.Found
+        assertEquals(LyricsSource.LocalOverride("saved"), found.lyrics.source)
+        assertEquals(LyricsTiming.PLAIN, found.lyrics.timing)
+        assertEquals(0, fixture.embeddedReads)
+        fixture.local = null
+        fixture.repository.invalidate(LyricsInvalidation(song().trackKey))
+        val restored = fixture.repository.findLyrics(song()) as LyricsLookupResult.Found
+        assertTrue(restored.lyrics.source is LyricsSource.LocalSidecar)
+        assertEquals(LyricsTiming.LINE, restored.lyrics.timing)
+    }
     @Test fun approvedPrecedenceUsesSynchronizationBeforePlainTextAndKeepsExternalTimedFirst() = runBlocking {
         val cases = listOf(
             Triple("[00:01]External", "[00:01]<00:01>Embedded", "external"),
@@ -166,10 +180,11 @@ class LyricsSourceResolutionTest {
         val documents = FakeDocumentReader()
         var now = 0L
         var embeddedReads = 0
+        var local: LyricsLookupResult? = null
         var embeddedAction: suspend () -> EmbeddedLyricsReadResult = { EmbeddedLyricsReadResult() }
         val repository = DefaultLocalLyricsRepository(roots, index,
             LyricsIndexer(roots, tree, index, Dispatchers.Unconfined), documents, LrcParser(), Dispatchers.Unconfined,
-            EmbeddedLyricsReader { embeddedReads++; embeddedAction() }, { now })
+            EmbeddedLyricsReader { embeddedReads++; embeddedAction() }, { now }, localOverrides = LyricsOverrideReader { local })
     }
 
     private fun fixture(external: String? = null, candidates: List<EmbeddedLyricsCandidate> = emptyList(),

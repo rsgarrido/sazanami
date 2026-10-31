@@ -17,7 +17,7 @@ class TabletLandscapeThemeBackupTest {
             val encoded = AppBackupJson.encodeBackup(backup(preferences))
             assertTrue(encoded.contains("\"tabletLandscapeThemeId\":\"" + selection.id + "\""))
             val decoded = AppBackupJson.decodeBackup(encoded)
-            assertEquals(17, decoded.schemaVersion)
+            assertEquals(18, decoded.schemaVersion)
             assertEquals(selection.id, decoded.preferences.tabletLandscapeThemeId)
             assertEquals(preferences.selectedPlayerThemeId, decoded.preferences.selectedPlayerThemeId)
             assertEquals(preferences.playerThemeTokenOverrides, decoded.preferences.playerThemeTokenOverrides)
@@ -32,7 +32,7 @@ class TabletLandscapeThemeBackupTest {
                 .replace("\"tabletLandscapeThemeId\":\"normal_player\",", "")
             assertFalse(encoded.contains("tabletLandscapeThemeId"))
             val decoded = AppBackupJson.decodeBackup(encoded)
-            assertEquals(17, decoded.schemaVersion)
+            assertEquals(18, decoded.schemaVersion)
             assertEquals(TabletLandscapeTheme.NORMAL_PLAYER.id, decoded.preferences.tabletLandscapeThemeId)
             assertEquals(PlayerTheme.POCKET_CASSETTE.id, decoded.preferences.selectedPlayerThemeId)
         }

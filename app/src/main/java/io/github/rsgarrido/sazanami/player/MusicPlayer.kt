@@ -509,6 +509,23 @@ class MusicPlayer(private val context: Context) {
         return controller?.currentPosition?.toInt() ?: 0
     }
 
+    internal fun captureLyricsPosition(target: io.github.rsgarrido.sazanami.lyrics.SongLyricsIdentity): io.github.rsgarrido.sazanami.lyrics.LyricsPositionSnapshot {
+        val player = controller
+        val reference = player?.currentMediaItem?.listeningEvidence()?.reference
+        val expected = target.reference
+        if (reference == null || expected == null) return io.github.rsgarrido.sazanami.lyrics.LyricsPositionSnapshot(
+            target.trackKey, 0L, ready = false, confirmed = false)
+        val matches = expected.contentUri.isNotBlank() &&
+            reference.contentUri == expected.contentUri && reference.volumeName == expected.volumeName &&
+            reference.mediaStoreId == expected.mediaStoreId && reference.displayName == expected.displayName &&
+            reference.relativePath == expected.relativePath
+        return io.github.rsgarrido.sazanami.lyrics.LyricsPositionSnapshot(
+            if (matches) target.trackKey else null, player?.currentPosition ?: 0L,
+            ready = player?.let { it.isConnected && it.playbackState == Player.STATE_READY } == true,
+            confirmed = matches
+        )
+    }
+
     fun getDuration(): Int {
         if (IntegratedDirectPlaybackBridge.directSelected) return IntegratedDirectPlaybackBridge.state.value.durationMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         val playerDuration = controller?.duration ?: 0L

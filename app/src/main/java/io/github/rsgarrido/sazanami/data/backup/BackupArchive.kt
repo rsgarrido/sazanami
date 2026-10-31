@@ -9,6 +9,8 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
+class BackupSizeLimitException : IOException("Backup exceeds supported archive size limits.")
+
 object BackupArchive {
     private const val METADATA_ENTRY = "app_backup.json"
     private const val MAX_BACKUP_BYTES = 128L * 1024L * 1024L
@@ -16,9 +18,14 @@ object BackupArchive {
 
     fun write(backup: AppBackup, output: OutputStream) {
         val payloads = backup.visualAssetPayloads.associateBy { it.metadata }
+        val metadataBytes = AppBackupJson.encodeBackup(backup).toByteArray(Charsets.UTF_8)
+        if (metadataBytes.size > MAX_ENTRY_BYTES) throw BackupSizeLimitException()
+        val sizes = backup.visualAssetPayloads.flatMap { listOf(it.thumbnailBytes.size.toLong(), it.displayBytes.size.toLong()) }
+        if (sizes.any { it > MAX_ENTRY_BYTES } || sizes.sum() + metadataBytes.size > MAX_BACKUP_BYTES)
+            throw BackupSizeLimitException()
         ZipOutputStream(output.buffered()).use { zip ->
             zip.putNextEntry(ZipEntry(METADATA_ENTRY))
-            zip.write(AppBackupJson.encodeBackup(backup).toByteArray(Charsets.UTF_8))
+            zip.write(metadataBytes)
             zip.closeEntry()
 
             backup.visualAssets.forEach { metadata ->

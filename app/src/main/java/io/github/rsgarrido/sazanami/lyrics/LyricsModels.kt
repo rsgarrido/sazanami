@@ -67,6 +67,10 @@ data class LyricsMetadata(
 sealed interface LyricsSource {
     val stableId: String
 
+    data class LocalOverride(val id: String) : LyricsSource {
+        override val stableId: String = "local-lyrics:$id"
+    }
+
     data class LocalSidecar(
         val documentUri: String,
         val displayName: String

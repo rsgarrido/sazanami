@@ -2,6 +2,7 @@ package io.github.rsgarrido.sazanami.lyrics
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import io.github.rsgarrido.sazanami.data.local.DatabaseProvider
 
 class LocalLyricsServices private constructor(context: Context) {
     private val appContext = context.applicationContext
@@ -18,6 +19,7 @@ class LocalLyricsServices private constructor(context: Context) {
     )
 
     val folderAccess = AndroidLyricsFolderAccess(appContext.contentResolver)
+    val overrides = LyricsOverrideStore(DatabaseProvider.getDatabase(appContext))
     val repository: LocalLyricsRepository = DefaultLocalLyricsRepository(
         rootStore = rootStore,
         indexStore = indexStore,
@@ -25,7 +27,8 @@ class LocalLyricsServices private constructor(context: Context) {
         documentReader = AndroidLyricsDocumentReader(appContext.contentResolver),
         parser = LrcParser(),
         ioDispatcher = ioDispatcher,
-        embeddedReader = AndroidEmbeddedLyricsReader(appContext.contentResolver, ioDispatcher)
+        embeddedReader = AndroidEmbeddedLyricsReader(appContext.contentResolver, ioDispatcher),
+        localOverrides = overrides
     )
 
     companion object {

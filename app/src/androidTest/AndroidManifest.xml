@@ -5,5 +5,9 @@
             android:name="io.github.rsgarrido.sazanami.lyrics.LyricsFixtureProvider"
             android:authorities="io.github.rsgarrido.sazanami.test.lyrics"
             android:exported="true" />
+        <provider
+            android:name="io.github.rsgarrido.sazanami.lyrics.LyricsTransferFixtureProvider"
+            android:authorities="io.github.rsgarrido.sazanami.test.lyrics.transfer"
+            android:exported="true" />
     </application>
 </manifest>

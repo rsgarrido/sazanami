@@ -45,6 +45,7 @@ class AppBackupJsonTest {
             "listeningHistory",
             "canonicalListeningHistory",
             "songRatings",
+            "lyricsOverrides",
             "preferences",
             "visualAssets"
         ).forEach { key ->

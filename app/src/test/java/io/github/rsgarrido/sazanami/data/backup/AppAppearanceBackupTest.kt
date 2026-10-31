@@ -15,7 +15,7 @@ class AppAppearanceBackupTest {
                 BackupPreferences(appAppearance = appearance.storageValue)
             )
 
-            assertEquals(17, decoded.schemaVersion)
+            assertEquals(18, decoded.schemaVersion)
             assertEquals(appearance.storageValue, decoded.preferences.appAppearance)
             assertEquals(appearance, decoded.preferences.toAppAppearance())
         }
@@ -32,7 +32,7 @@ class AppAppearanceBackupTest {
 
         val decoded = AppBackupJson.decodeBackup(encodedV16)
 
-        assertEquals(17, decoded.schemaVersion)
+        assertEquals(18, decoded.schemaVersion)
         assertEquals("DARK", decoded.preferences.appAppearance)
         assertEquals(AppAppearance.DARK, decoded.preferences.toAppAppearance())
     }

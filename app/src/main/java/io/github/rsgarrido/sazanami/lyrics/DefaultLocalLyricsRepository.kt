@@ -19,7 +19,8 @@ class DefaultLocalLyricsRepository(
     private val parser: LrcParser,
     private val ioDispatcher: CoroutineDispatcher,
     private val embeddedReader: EmbeddedLyricsReader = EmbeddedLyricsReader { EmbeddedLyricsReadResult() },
-    cacheClockMs: () -> Long = { System.nanoTime() / 1_000_000L }
+    cacheClockMs: () -> Long = { System.nanoTime() / 1_000_000L },
+    private val localOverrides: LyricsOverrideReader = LyricsOverrideReader { null }
 ) : LocalLyricsRepository {
     override val roots = rootStore.roots
     private val refreshMutex = Mutex()
@@ -75,6 +76,13 @@ class DefaultLocalLyricsRepository(
                     val epoch = revision.get()
                     val key = LyricsResultCache.Key(song)
                     cache.get(key)?.let { return@withLock it }
+                    localOverrides.find(song)?.let { local ->
+                        if (revision.get() == epoch) {
+                            cache.put(key, local)
+                            return@withLock local
+                        }
+                        return@repeat
+                    }
                     val external = controlled("external") {
                         findLyrics(song, staleDocumentUri = null, mayRefreshStale = true)
                     }

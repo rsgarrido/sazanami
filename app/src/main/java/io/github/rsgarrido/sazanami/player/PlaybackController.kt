@@ -475,6 +475,15 @@ class PlaybackController(
     fun getCurrentPositionForLyrics(): Long =
         musicPlayer.getCurrentPosition().coerceAtLeast(0).toLong()
 
+    fun captureLyricsPosition(target: io.github.rsgarrido.sazanami.lyrics.SongLyricsIdentity): io.github.rsgarrido.sazanami.lyrics.LyricsPositionSnapshot {
+        // Direct exposes a numeric libraryId, not qualified evidence for the confirmed native
+        // source. Do not stamp it using a UI-selected item or an unconfirmed seek projection.
+        val direct = IntegratedDirectPlaybackBridge.state.value
+        if (direct.enabled || direct.switching != null) return io.github.rsgarrido.sazanami.lyrics.LyricsPositionSnapshot(
+            target.trackKey, 0L, ready = false, direct = true, confirmed = false)
+        return musicPlayer.captureLyricsPosition(target)
+    }
+
     fun getActiveQueueId(): String? = PlaybackQueueRuntimeBridge.getActiveQueueId()
 
     suspend fun beginBackupRestore() {

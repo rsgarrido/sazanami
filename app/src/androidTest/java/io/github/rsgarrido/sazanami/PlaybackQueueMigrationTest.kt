@@ -45,7 +45,8 @@ class PlaybackQueueMigrationTest {
         FrameworkSQLiteOpenHelperFactory().create(configuration).use { it.writableDatabase }
 
         val database = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .addMigrations(DatabaseProvider.MIGRATION_19_20)
+            .addMigrations(DatabaseProvider.MIGRATION_19_20,
+                DatabaseProvider.MIGRATION_20_21)
             .build()
         try {
             val sqlite = database.openHelper.writableDatabase
