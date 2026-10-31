@@ -15,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
@@ -23,12 +24,16 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -120,6 +125,106 @@ class PocketHorizonInteractionTest {
 
     private fun invoke(tag: String) = compose.onNodeWithTag(tag)
         .performSemanticsAction(SemanticsActions.OnClick) { it() }
+
+    @Test
+    fun shoulderButtonsForwardTheExistingCallbacksOnceAndRespectCapabilitiesAndGuideOwnership() {
+        content(optionalActions = true)
+        assertEquals(Role.Button, compose.onNodeWithTag("horizonL").fetchSemanticsNode().config[SemanticsProperties.Role])
+        assertEquals(listOf(compose.activity.getString(R.string.horizon_control_previous_track)),
+            compose.onNodeWithTag("horizonL").fetchSemanticsNode().config[SemanticsProperties.ContentDescription])
+        compose.onNodeWithTag("horizonL").assertIsEnabled().performClick()
+        compose.onNodeWithTag("horizonR").assertIsEnabled().performClick()
+        compose.runOnIdle { assertEquals(listOf("previous", "next"), actions); assertTrue(seeks.isEmpty()) }
+        val late = compose.onNodeWithTag("horizonL").fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+        compose.runOnIdle { previousEnabled = false; nextEnabled = false }
+        listOf("horizonL", "horizonR").forEach {
+            compose.onNodeWithTag(it).assertIsNotEnabled()
+            invoke(it)
+        }
+        compose.runOnIdle { late(); assertEquals(listOf("previous", "next"), actions) }
+        compose.runOnIdle { previousEnabled = true; nextEnabled = true }
+        compose.onNodeWithTag("horizonSelect").performClick()
+        listOf("horizonL", "horizonR").forEach { compose.onNodeWithTag(it).assertIsNotEnabled(); invoke(it) }
+        compose.onNodeWithTag("horizonB").performClick()
+        compose.onNodeWithTag("horizonL").assertIsEnabled()
+        for (unavailable in listOf(playback.copy(isConnected = false), playback.copy(currentSong = null))) {
+            compose.runOnIdle { playback = unavailable }
+            listOf("horizonL", "horizonR").forEach { compose.onNodeWithTag(it).assertIsNotEnabled(); invoke(it) }
+        }
+        compose.runOnIdle { assertEquals(listOf("previous", "next"), actions); assertTrue(seeks.isEmpty()) }
+    }
+
+    @Test
+    fun shoulderPlaneDepressesDownwardInsideAStableTargetAndRecentersAfterReleaseAndCancellation() {
+        content()
+        val expected = mutableListOf<String>()
+        for ((tag, command) in listOf("horizonL" to "previous", "horizonR" to "next")) {
+            fun bounds(suffix: String = "") = compose.onNodeWithTag(tag + suffix, useUnmergedTree = true)
+                .fetchSemanticsNode().boundsInRoot
+            fun finish() = compose.onNodeWithTag(tag).captureToImage().toPixelMap().let { pixels ->
+                // Sample the upper face, front facet, and continuous shell, away from the lettering.
+                listOf(8f, 24f, 40f).map { y ->
+                    pixels[(pixels.width * .32f).toInt(), (y * renderedDensity).toInt()]
+                }
+            }
+            fun visibleSeamPixels(): Int {
+                val pixels = compose.onNodeWithTag(tag).captureToImage().toPixelMap()
+                val x = (pixels.width * if (tag == "horizonL") .32f else .68f).toInt()
+                // Inspect actual rendered occlusion, not the bounds of an artificial seam rectangle.
+                // The dark front facet is exposed between the upper face and curved body edge.
+                return ((20f * renderedDensity).toInt() until (38f * renderedDensity).toInt()).count { y ->
+                    val color = pixels[x, y]
+                    color.red < .11f && color.green < .16f && color.blue < .23f
+                }
+            }
+            val hit = bounds()
+            val resting = bounds("Plane")
+            val housing = compose.onNodeWithTag("horizonFrontHousing", useUnmergedTree = true)
+                .fetchSemanticsNode().boundsInRoot
+            fun assertStationaryHousing() = assertEquals(housing,
+                compose.onNodeWithTag("horizonFrontHousing", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot)
+            val enabledFinish = finish()
+            val seamPixels = visibleSeamPixels()
+            assertTrue("A narrow front facet remains exposed above the shell", seamPixels > 0)
+            repeat(3) { press ->
+                // Both the exposed top edge and body-overlapped padding share a stable target.
+                compose.onNodeWithTag(tag).performTouchInput {
+                    down(Offset(centerX, if (press % 2 == 0) 1f else height - 1f))
+                }
+                compose.onNodeWithTag(tag).assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription,
+                    compose.activity.getString(R.string.horizon_shoulder_pressed)))
+                assertEquals(hit, bounds())
+                assertStationaryHousing()
+                assertEquals(resting.left, bounds("Plane").left, 0f)
+                assertEquals(resting.size, bounds("Plane").size)
+                assertEquals(4f * renderedDensity, bounds("Plane").top - resting.top, 1f)
+                assertTrue("The cap enters the fixed housing", bounds("Plane").bottom > resting.bottom)
+                val depressedSeamPixels = visibleSeamPixels()
+                assertTrue("The visible mechanical seam compresses", depressedSeamPixels < seamPixels)
+                assertEquals(4f * renderedDensity, (seamPixels - depressedSeamPixels).toFloat(), 1f)
+                compose.onNodeWithTag(tag).performTouchInput { up() }
+                expected += command
+                assertEquals(resting, bounds("Plane"))
+                assertEquals(seamPixels, visibleSeamPixels())
+                compose.runOnIdle { assertEquals(expected, actions) }
+            }
+            compose.runOnIdle { if (tag == "horizonL") previousEnabled = false else nextEnabled = false }
+            assertEquals("Unavailable hardware keeps its finish", enabledFinish, finish())
+            // Logical availability changes semantics, never the mechanical feedback or playback state.
+            compose.onNodeWithTag(tag).assertIsNotEnabled().performTouchInput { down(center) }
+            assertEquals(hit, bounds())
+            assertStationaryHousing()
+            assertEquals(4f * renderedDensity, bounds("Plane").top - resting.top, 1f)
+            assertTrue(visibleSeamPixels() < seamPixels)
+            compose.onNodeWithTag(tag).performTouchInput { cancel() }
+            assertEquals(resting, bounds("Plane"))
+            assertEquals(seamPixels, visibleSeamPixels())
+            compose.onNodeWithTag(tag).assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription,
+                compose.activity.getString(R.string.horizon_shoulder_resting)))
+            compose.onNodeWithTag(tag).performTouchInput { down(center); up() }
+            compose.runOnIdle { assertEquals(expected, actions) }
+        }
+    }
 
     @Test
     fun playbackAndSuppliedOptionalActionsForwardExactlyOnce() {
@@ -241,6 +346,7 @@ class PocketHorizonInteractionTest {
     @Test
     fun directTouchPreviewsAndCommitsOnlyItsFinalValueOnce() {
         content()
+        compose.onNodeWithTag("horizonWaveTrack", useUnmergedTree = true).assertExists()
         val slider = compose.onNodeWithTag("pocketHorizonSeek")
         slider.performTouchInput {
             down(Offset(width * .2f, centerY))

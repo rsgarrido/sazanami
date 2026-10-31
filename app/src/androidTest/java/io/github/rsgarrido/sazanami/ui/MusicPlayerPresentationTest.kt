@@ -1,7 +1,6 @@
 package io.github.rsgarrido.sazanami.ui
 
 import io.github.rsgarrido.sazanami.ui.player.pockethorizon.*
-import io.github.rsgarrido.sazanami.ui.player.pocketadvance.minimumPocketAdvanceSize
 import android.net.Uri
 import android.view.KeyEvent
 import androidx.test.platform.app.InstrumentationRegistry
@@ -9,6 +8,7 @@ import io.github.rsgarrido.sazanami.ui.state.LocalDirectSeekPreview
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.CompositionLocalProvider
@@ -48,6 +49,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -84,6 +86,7 @@ import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.controller.PlaybackQueueHubUiState
 import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.data.TabletLandscapeTheme
+import io.github.rsgarrido.sazanami.ui.settings.TabletLandscapeThemeSettings
 import io.github.rsgarrido.sazanami.data.PocketAdvanceAppearance
 import io.github.rsgarrido.sazanami.data.PocketAdvanceConsoleFinish
 import io.github.rsgarrido.sazanami.data.PocketAdvanceLcdPalette
@@ -3834,6 +3837,135 @@ class MusicPlayerPresentationTest {
     private fun Any.morphField(name: String): Any? =
         javaClass.getDeclaredField(name).apply { isAccessible = true }.get(this)
 
+    @Test fun settingsSelectionActivatesHorizonAndSwitchesBothDedicatedPairsWithoutChangingPlayback() {
+        val fixture = horizonFixture().apply {
+            tabletLandscapeTheme.value = TabletLandscapeTheme.NORMAL_PLAYER
+            theme.value = PlayerTheme.CLASSIC_WHEEL
+            primaryTokenOverrides.value = PlayerThemeTokenOverrides(shellColor = Color.Red, accentColor = Color.Green)
+            observeAdvanceMorphGeometry = true
+        }
+        val showSettings = mutableStateOf(true)
+        composeRule.setContent {
+            Box(Modifier.fillMaxSize()) {
+                fixture.Content()
+                if (showSettings.value) {
+                    MaterialTheme {
+                        Column(Modifier.align(Alignment.TopStart)) {
+                            TabletLandscapeThemeSettings(fixture.tabletLandscapeTheme.value) { selected ->
+                                fixture.tabletLandscapeTheme.value = selected
+                                showSettings.value = false
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        fun select(theme: TabletLandscapeTheme) {
+            composeRule.runOnIdle { showSettings.value = true }
+            composeRule.onNodeWithTag("tabletLandscapeThemeSetting").performClick()
+            composeRule.onNodeWithTag("tabletLandscapeThemeOption" + theme.name).performClick()
+        }
+        composeRule.runOnIdle {
+            assertEquals(PlayerPresentationIdentity.Existing(PlayerTheme.CLASSIC_WHEEL), fixture.resolvedIdentity)
+        }
+        val controller = fixture.morph
+        val song = fixture.current.value
+        val progress = fixture.progress.value
+        select(TabletLandscapeTheme.POCKET_HORIZON)
+        val first = awaitHorizon(fixture)
+        composeRule.onNodeWithTag("pocketHorizonMiniExpand").assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag("pocketHorizonPlayPause").assertIsDisplayed()
+        composeRule.runOnIdle { assertEquals(PlayerPresentation.Expanded, controller.settledPresentation) }
+        select(TabletLandscapeTheme.POCKET_ADVANCE)
+        awaitAdvanceSnapshot(fixture)
+        composeRule.runOnIdle {
+            assertEquals(PlayerPresentationIdentity.PocketAdvance, fixture.resolvedIdentity)
+            assertEquals(PlayerPresentation.Expanded, controller.settledPresentation)
+            assertNull(first.mini.geometry())
+            assertNull(first.expanded.geometry())
+        }
+        select(TabletLandscapeTheme.POCKET_HORIZON)
+        val returned = awaitHorizon(fixture)
+        composeRule.runOnIdle {
+            assertNotSame(first.mini, returned.mini)
+            assertNotSame(first.expanded, returned.expanded)
+        }
+        select(TabletLandscapeTheme.NORMAL_PLAYER)
+        composeRule.runOnIdle {
+            assertEquals(PlayerPresentationIdentity.Existing(PlayerTheme.CLASSIC_WHEEL), fixture.resolvedIdentity)
+            assertEquals(PlayerPresentation.Expanded, controller.settledPresentation)
+            assertNull(returned.expanded.geometry())
+        }
+        select(TabletLandscapeTheme.POCKET_HORIZON)
+        awaitHorizon(fixture)
+        composeRule.runOnIdle { controller.collapse() }
+        composeRule.onNodeWithTag("pocketHorizonMiniExpand").assertIsDisplayed()
+        select(TabletLandscapeTheme.NORMAL_PLAYER)
+        composeRule.runOnIdle {
+            assertEquals(PlayerPresentationIdentity.Existing(PlayerTheme.CLASSIC_WHEEL), fixture.resolvedIdentity)
+            assertTrue(controller.isCollapsedAndIdle)
+            assertSame(controller, fixture.morph)
+            assertEquals(song, fixture.current.value)
+            assertEquals(progress, fixture.progress.value)
+            assertEquals(Color.Red, fixture.primaryTokenOverrides.value.shellColor)
+            assertEquals(Color.Green, fixture.primaryTokenOverrides.value.accentColor)
+            assertTrue(fixture.calls.isEmpty()); assertTrue(fixture.seeks.isEmpty()); assertTrue(fixture.songSelections.isEmpty())
+            assertNull(returned.mini.geometry())
+        }
+    }
+
+    @Test fun restoredHorizonPreferenceReturnsFromPortraitAndPhoneFallbackWithFreshMeasurements() {
+        val loaded = decodeAppPreferences(mutablePreferencesOf(
+            stringPreferencesKey("selected_player_theme") to PlayerTheme.POCKET_CASSETTE.id,
+            stringPreferencesKey("tablet_landscape_theme") to "pocket_horizon"
+        ))
+        val fixture = horizonFixture(PlayerPresentation.Expanded).apply {
+            tabletLandscapeTheme.value = loaded.tabletLandscapeTheme
+            theme.value = loaded.selectedPlayerTheme
+            viewport.value = DpSize(900.dp, 1200.dp)
+        }
+        val restoration = StateRestorationTester(composeRule)
+        restoration.setContent { fixture.Content() }
+        composeRule.runOnIdle {
+            assertEquals(PlayerPresentationIdentity.Existing(PlayerTheme.POCKET_CASSETTE), fixture.resolvedIdentity)
+            assertEquals(PlayerPresentation.Expanded, fixture.morph.settledPresentation)
+            fixture.viewport.value = DpSize(1600.dp, 900.dp)
+        }
+        val old = awaitHorizon(fixture)
+        composeRule.onNodeWithTag("pocketHorizonCategorySongs").performClick()
+        restoration.emulateSavedInstanceStateRestore()
+        val recreated = awaitHorizon(fixture)
+        composeRule.runOnIdle {
+            assertNotSame(old.mini, recreated.mini)
+            assertNull(old.mini.geometry())
+            assertEquals(PocketHorizonCategory.Songs, fixture.horizonNavigation.category)
+            assertEquals(PlayerPresentation.Expanded, fixture.morph.settledPresentation)
+            fixture.deviceKind.value = PlayerDeviceKind.PHONE
+        }
+        composeRule.runOnIdle {
+            assertEquals(PlayerPresentationIdentity.Existing(PlayerTheme.POCKET_CASSETTE), fixture.resolvedIdentity)
+            assertEquals(TabletLandscapeTheme.POCKET_HORIZON, fixture.tabletLandscapeTheme.value)
+            assertEquals(PocketHorizonCategory.NowPlaying, fixture.horizonNavigation.category)
+            assertNull(recreated.expanded.geometry())
+            fixture.deviceKind.value = PlayerDeviceKind.TABLET
+        }
+        awaitHorizon(fixture)
+        // A window that fits ordinary text must fall back when Horizon's large-text budget cannot fit.
+        composeRule.runOnIdle { fixture.viewport.value = DpSize(1000.dp, 650.dp) }
+        val smaller = awaitHorizon(fixture)
+        composeRule.runOnIdle { fixture.fontScale.value = 2f }
+        composeRule.runOnIdle {
+            assertEquals(PlayerPresentationIdentity.Existing(PlayerTheme.POCKET_CASSETTE), fixture.resolvedIdentity)
+            assertNull(smaller.mini.geometry())
+            assertEquals(TabletLandscapeTheme.POCKET_HORIZON, fixture.tabletLandscapeTheme.value)
+            fixture.fontScale.value = 1f
+        }
+        awaitHorizon(fixture)
+        composeRule.runOnIdle {
+            assertTrue(fixture.calls.isEmpty()); assertTrue(fixture.seeks.isEmpty()); assertTrue(fixture.songSelections.isEmpty())
+        }
+    }
+
     @Test fun horizonRuntimeDispatchesMatchedEndpointsAndCanonicalPlaybackThroughTheProductionSlot() {
         val fixture = horizonFixture()
         composeRule.setContent { fixture.Content() }
@@ -3841,16 +3973,74 @@ class MusicPlayerPresentationTest {
         composeRule.onNodeWithTag("pocketHorizonMiniPlayPause").performClick()
         composeRule.onNodeWithTag("pocketHorizonMiniExpand").performClick()
         composeRule.runOnIdle { assertEquals(PlayerPresentation.Expanded, fixture.morph.settledPresentation) }
+        composeRule.onNodeWithTag("horizonL").performClick()
+        composeRule.onNodeWithTag("horizonR").performClick()
         composeRule.onNodeWithTag("pocketHorizonPlayPause").performClick()
         composeRule.onNodeWithTag("pocketHorizonCategorySongs").performClick()
         composeRule.onNodeWithTag("pocketHorizonSong:" + fixture.songs.first().stableUiKey()).performClick()
         composeRule.runOnIdle {
-            assertEquals(listOf("play-pause", "play-pause"), fixture.calls)
+            assertEquals(listOf("play-pause", "previous", "next", "play-pause"), fixture.calls)
             assertEquals(fixture.songs.first(), fixture.songSelections.single().first)
             assertEquals(fixture.songs, fixture.songSelections.single().second)
             assertEquals(fixture.songs[1], fixture.current.value)
             assertEquals(PocketHorizonCategory.NowPlaying, fixture.horizonNavigation.category)
         }
+    }
+
+    @Test fun horizonMovingMetadataHasOneSharedTextOwnerAcrossReversalAndTrackReplacement() {
+        val fixture = horizonFixture(PlayerPresentation.Expanded)
+        composeRule.setContent { fixture.Content() }
+        val original = awaitHorizon(fixture)
+        composeRule.mainClock.autoAdvance = false
+        try {
+            composeRule.runOnIdle { fixture.morph.beginDragWithRange(200f) }
+            for (progress in listOf(.75f, .4f, .65f)) {
+                composeRule.runOnIdle { fixture.morph.updateProgressFromDrag(progress) }
+                composeRule.mainClock.advanceTimeByFrame()
+                composeRule.onAllNodesWithTag("pocketHorizonMorphTitle", useUnmergedTree = true).assertCountEquals(1)
+                composeRule.onAllNodesWithTag("pocketHorizonMorphArtist", useUnmergedTree = true).assertCountEquals(1)
+                composeRule.onNodeWithTag("pocketHorizonMorphMiniTitle", useUnmergedTree = true).assertDoesNotExist()
+            }
+            val replacement = fixture.songs.first().copy(title = "Replacement title", artist = "Replacement artist")
+            composeRule.runOnIdle { fixture.current.value = replacement }
+            composeRule.mainClock.advanceTimeByFrame()
+            val incoming = awaitHorizon(fixture)
+            composeRule.runOnIdle {
+                assertNotSame(original.mini, incoming.mini)
+                assertNotSame(original.expanded, incoming.expanded)
+                assertNull(original.mini.geometry())
+                assertNull(original.expanded.geometry())
+                assertTrue(fixture.morph.isDragging)
+                assertEquals(.65f, fixture.morph.progress, .001f)
+            }
+            // Placement publishes a valid replacement pair after the composition that temporarily
+            // used the stable endpoint. With the clock paused, measurement readiness does not run
+            // the next composition that gives the shared renderer ownership again.
+            fun movingTextIsCurrent(tag: String, text: String): Boolean = composeRule
+                .onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().singleOrNull()
+                ?.config?.getOrNull(SemanticsProperties.Text)?.any { it.text == text } == true
+            composeRule.waitUntil(timeoutMillis = 5_000) {
+                // Yield to Android placement/drawing as well as driving Compose recomposition.
+                composeRule.mainClock.advanceTimeByFrame()
+                movingTextIsCurrent("pocketHorizonMorphTitle", replacement.title) &&
+                    movingTextIsCurrent("pocketHorizonMorphArtist", replacement.artist)
+            }
+            composeRule.onAllNodesWithTag("pocketHorizonMorphTitle", useUnmergedTree = true).assertCountEquals(1)
+            composeRule.onAllNodesWithTag("pocketHorizonMorphArtist", useUnmergedTree = true).assertCountEquals(1)
+            composeRule.onNodeWithTag("pocketHorizonMorphTitle", useUnmergedTree = true)
+                .assertTextContains(replacement.title)
+            composeRule.onNodeWithTag("pocketHorizonMorphArtist", useUnmergedTree = true)
+                .assertTextContains(replacement.artist)
+            composeRule.onNodeWithTag("pocketHorizonMorphMiniTitle", useUnmergedTree = true).assertDoesNotExist()
+            composeRule.runOnIdle {
+                assertTrue(fixture.morph.isDragging)
+                assertEquals(.65f, fixture.morph.progress, .001f)
+                assertTrue(fixture.calls.isEmpty())
+                fixture.morph.cancelDrag()
+            }
+        } finally { composeRule.mainClock.autoAdvance = true }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("pocketHorizonMorphTitle", useUnmergedTree = true).assertDoesNotExist()
     }
 
     @Test fun horizonPremeasurementSurvivesBrowsingAndReversalUntilAnAuthoritativeCollapse() {
@@ -3952,10 +4142,12 @@ class MusicPlayerPresentationTest {
         val old = awaitHorizon(fixture)
         val retiredAction = composeRule.onNodeWithTag("pocketHorizonPlayPause").fetchSemanticsNode()
             .config[SemanticsActions.OnClick].action!!
+        val retiredShoulder = composeRule.onNodeWithTag("horizonL").fetchSemanticsNode()
+            .config[SemanticsActions.OnClick].action!!
         composeRule.runOnIdle {
             fixture.horizonNavigation.openAlbum("/music")
             fixture.morph.beginDragWithRange(200f); fixture.morph.dragBy(70f)
-            fixture.controlledLandscapeIdentity.value = PlayerPresentationIdentity.PocketAdvance
+            fixture.tabletLandscapeTheme.value = TabletLandscapeTheme.POCKET_ADVANCE
         }
         composeRule.runOnIdle {
             assertEquals(PlayerPresentationIdentity.PocketAdvance, fixture.resolvedIdentity)
@@ -3964,12 +4156,13 @@ class MusicPlayerPresentationTest {
             assertEquals(PocketHorizonCategory.NowPlaying, fixture.horizonNavigation.category)
             assertNull(old.mini.geometry())
             retiredAction()
+            retiredShoulder()
             assertTrue(fixture.calls.isEmpty())
-            fixture.controlledLandscapeIdentity.value = PlayerPresentationIdentity.PocketHorizon
+            fixture.tabletLandscapeTheme.value = TabletLandscapeTheme.POCKET_HORIZON
         }
         awaitHorizon(fixture)
         val epoch = fixture.presentationEpoch
-        composeRule.runOnIdle { fixture.hostStartInset.value = 24.dp; fixture.fontScale.value = 2f }
+        composeRule.runOnIdle { fixture.hostStartInset.value = 24.dp; fixture.viewport.value = DpSize(1600.dp, 900.dp); fixture.fontScale.value = 2f }
         awaitHorizon(fixture)
         composeRule.runOnIdle {
             assertTrue(fixture.presentationEpoch > epoch)
@@ -3978,7 +4171,7 @@ class MusicPlayerPresentationTest {
         composeRule.runOnIdle {
             assertEquals(PlayerPresentationIdentity.Existing(fixture.theme.value), fixture.resolvedIdentity)
             assertFalse(fixture.morph.isDragging)
-            fixture.viewport.value = DpSize(1200.dp, 900.dp)
+            fixture.viewport.value = DpSize(1600.dp, 900.dp)
         }
         awaitHorizon(fixture)
     }
@@ -4117,7 +4310,7 @@ class MusicPlayerPresentationTest {
         viewport.value = DpSize(1200.dp, 900.dp)
         adaptiveDefaultLayout.value = false
         deviceKind.value = PlayerDeviceKind.TABLET
-        controlledLandscapeIdentity.value = PlayerPresentationIdentity.PocketHorizon
+        tabletLandscapeTheme.value = TabletLandscapeTheme.POCKET_HORIZON
         observeHorizonGeometry = true
     }
 
@@ -4231,7 +4424,6 @@ class MusicPlayerPresentationTest {
         val next = mutableStateOf<Song?>(songs[2])
         val theme = mutableStateOf(PlayerTheme.DEFAULT)
         val nominatedTheme = mutableStateOf<PlayerTheme?>(null)
-        val controlledLandscapeIdentity = mutableStateOf<PlayerPresentationIdentity?>(null)
         var observeHorizonGeometry = false
         val tabletLandscapeTheme = mutableStateOf(TabletLandscapeTheme.NORMAL_PLAYER)
         val advanceAppearance = mutableStateOf(PocketAdvanceAppearance.Default)
@@ -4313,7 +4505,7 @@ class MusicPlayerPresentationTest {
                             // Synthetic hosts have no system bars within their logical viewport.
                             Modifier.consumeWindowInsets(WindowInsets.systemBars)
                         } else Modifier)
-                        .then(if ((tabletLandscapeTheme.value == TabletLandscapeTheme.POCKET_ADVANCE || controlledLandscapeIdentity.value == PlayerPresentationIdentity.PocketHorizon) && viewport.value != null) {
+                        .then(if (tabletLandscapeTheme.value != TabletLandscapeTheme.NORMAL_PLAYER && viewport.value != null) {
                             Modifier.consumeWindowInsets(WindowInsets.systemBarsIgnoringVisibility.union(WindowInsets.displayCutout))
                         } else Modifier)
                 ) {
@@ -4330,11 +4522,7 @@ class MusicPlayerPresentationTest {
                         primaryThemeTokens = primaryTokens,
                         context = TabletLandscapePlayerContext(deviceKind.value, 800, DpSize(maxWidth, maxHeight)),
                         landscapeCandidate = tabletLandscapePlayerCandidate(tabletLandscapeTheme.value,
-                            primaryTokens, LocalDensity.current.fontScale) ?: controlledLandscapeIdentity.value?.let { identity ->
-                            TabletLandscapePlayerCandidate(ResolvedPlayerPresentation(identity, primaryTokens),
-                                if (identity == PlayerPresentationIdentity.PocketHorizon) minimumPocketHorizonSize(LocalDensity.current.fontScale)
-                                else minimumPocketAdvanceSize(LocalDensity.current.fontScale))
-                        } ?: nominatedTheme.value?.let { nominated ->
+                            primaryTokens, LocalDensity.current.fontScale) ?: nominatedTheme.value?.let { nominated ->
                             TabletLandscapePlayerCandidate(
                                 ResolvedPlayerPresentation(PlayerPresentationIdentity.Existing(nominated), nominated.defaultTokens()),
                                 DpSize(840.dp, 480.dp)

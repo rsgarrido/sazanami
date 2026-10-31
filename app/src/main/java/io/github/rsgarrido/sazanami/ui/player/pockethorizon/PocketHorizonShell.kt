@@ -7,8 +7,15 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -19,9 +26,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.LayoutDirection
 
 /** Consumes an already inset-adjusted, bounded host; it neither probes devices nor changes system bars. */
 @Composable
@@ -29,24 +38,62 @@ internal fun PocketHorizonShell(
     modifier: Modifier = Modifier,
     style: PocketHorizonStyle = PocketHorizonStyle.Default,
     measurements: PocketHorizonEndpointMeasurements? = null,
+    leftControls: @Composable () -> Unit = {},
+    rightControls: @Composable () -> Unit = {},
+    leftShoulder: @Composable () -> Unit = {},
+    rightShoulder: @Composable () -> Unit = {},
+    systemControls: @Composable () -> Unit = {},
     content: @Composable (PocketHorizonLayout) -> Unit
 ) {
     val fontScale = LocalDensity.current.fontScale
     BoxWithConstraints(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val layout = resolvePocketHorizonLayout(DpSize(maxWidth, maxHeight), fontScale)
             ?: return@BoxWithConstraints
-        val shellShape = RoundedCornerShape(32.dp)
+        val shellShape = PocketHorizonUpperHousingShape(layout.bezelInset + layout.controlWing)
         Box(
             Modifier.size(layout.shellSize.width, layout.shellSize.height)
                 .horizonAnchor(measurements, PocketHorizonAnchor.Surface)
                 .testTag("pocketHorizonShell")
-                .shadow(8.dp, shellShape)
+        ) {
+            // Rear caps and their unchanged touch targets sit behind the real front housing.
+            // The housing has no pointer input, so its visual overlap cannot swallow bumper taps.
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Row(Modifier.fillMaxSize().padding(horizontal = layout.bezelInset)) {
+                    Box(Modifier.width(layout.controlWing).height(layout.shoulderBandHeight + layout.bezelInset)
+                        .padding(start = 16.dp, end = 8.dp)) { leftShoulder() }
+                    Spacer(Modifier.weight(1f))
+                    Box(Modifier.width(layout.controlWing).height(layout.shoulderBandHeight + layout.bezelInset)
+                        .padding(start = 8.dp, end = 16.dp)) { rightShoulder() }
+                }
+            }
+            Box(Modifier.matchParentSize().testTag("horizonFrontHousing").shadow(12.dp, shellShape)
                 .clip(shellShape)
                 .background(Brush.verticalGradient(listOf(style.shellHighlight, style.shell, style.bezel)))
-                .border(1.dp, style.shellHighlight, shellShape)
-                .padding(layout.bezelInset)
-        ) {
-            PocketHorizonDisplay(layout, style, measurements) { content(layout) }
+                .border(1.dp, style.shellHighlight, shellShape))
+            Box(Modifier.fillMaxSize().padding(start = layout.bezelInset, end = layout.bezelInset, bottom = layout.bezelInset)) {
+                val displayDirection = LocalLayoutDirection.current
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    Row(Modifier.fillMaxSize()) {
+                        Column(Modifier.width(layout.controlWing).fillMaxHeight().testTag("horizonLeftWing")) {
+                            Spacer(Modifier.height(layout.shoulderBandHeight + layout.bezelInset))
+                            Box(Modifier.weight(1f)) { leftControls() }
+                        }
+                        // Restore the existing LCD/strip origin; only the caps use the top-edge space.
+                        Column(Modifier.weight(1f).fillMaxHeight().padding(top = layout.bezelInset)) {
+                            Box(Modifier.weight(1f)) {
+                                CompositionLocalProvider(LocalLayoutDirection provides displayDirection) {
+                                    PocketHorizonDisplay(layout, style, measurements) { content(layout) }
+                                }
+                            }
+                            Box(Modifier.height(layout.hardwareStripHeight).testTag("horizonHardwareStrip")) { systemControls() }
+                        }
+                        Column(Modifier.width(layout.controlWing).fillMaxHeight().testTag("horizonRightWing")) {
+                            Spacer(Modifier.height(layout.shoulderBandHeight + layout.bezelInset))
+                            Box(Modifier.weight(1f)) { rightControls() }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -62,7 +109,7 @@ private fun PocketHorizonDisplay(
     Box(
         Modifier.fillMaxSize().horizonAnchor(measurements, PocketHorizonAnchor.Display)
             .testTag("pocketHorizonDisplay").clip(shape)
-            .background(style.bezel).border(1.dp, style.outline.copy(alpha = 0.45f), shape)
+            .shadow(4.dp, shape, clip = false).background(style.bezel).border(2.dp, style.outline.copy(alpha = 0.45f), shape)
     ) {
         PocketHorizonBackdrop(style, Modifier.matchParentSize())
         Box(Modifier.fillMaxSize().padding(layout.displayPadding)) { content() }

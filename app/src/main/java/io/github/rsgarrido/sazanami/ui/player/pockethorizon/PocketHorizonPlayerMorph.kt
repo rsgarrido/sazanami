@@ -1,5 +1,7 @@
 package io.github.rsgarrido.sazanami.ui.player.pockethorizon
 
+import androidx.compose.ui.unit.sp
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -66,6 +68,11 @@ internal fun PocketHorizonPlayerMorph(runtime: PocketHorizonRuntime) {
     val geometry = pair.interpolate(p)
     val style = PocketHorizonStyle.Default
     val density = LocalDensity.current
+    val wing = (geometry.display.left - geometry.surface.left).coerceAtLeast(0f)
+    // Only the upper housing follows the bumper contour. The existing outer morph clip continues
+    // to own the other corners; neither endpoint reports these moving drawing coordinates.
+    val housingShape = PocketHorizonUpperHousingShape(with(density) { wing.toDp() },
+        shoulderScale = p, bottomCorner = 0.dp)
     fun Modifier.at(rect: Rect) = offset { IntOffset(rect.left.roundToInt(), rect.top.roundToInt()) }
         .requiredSize(with(density) { rect.width.toDp() }, with(density) { rect.height.toDp() })
     Box(Modifier.fillMaxSize().testTag("pocketHorizonMorph").drawWithContent {
@@ -75,20 +82,68 @@ internal fun PocketHorizonPlayerMorph(runtime: PocketHorizonRuntime) {
         }
         clipPath(path) { this@drawWithContent.drawContent() }
     }.clearAndSetSemantics {}) {
-        Box(Modifier.at(geometry.surface).clip(RoundedCornerShape((18f + 14f * p).dp))
+        // As at the real endpoint, draw caps first and let the continuous front body occlude them.
+        Canvas(Modifier.at(geometry.surface)) {
+            val capWidth = (wing - 40.dp.toPx() * p).coerceAtLeast(0f)
+            repeat(2) { index ->
+                val capLeft = if (index == 0) 28.dp.toPx() * p else size.width - 28.dp.toPx() * p - capWidth
+                val cap = pocketHorizonBumperCapPath(
+                    androidx.compose.ui.geometry.Size(capWidth, PocketHorizonBumperMetrics.CapHeight.toPx() * p), index == 0)
+                cap.translate(androidx.compose.ui.geometry.Offset(capLeft, PocketHorizonBumperMetrics.RestTop.toPx() * p))
+                drawPath(cap, style.shellHighlight.copy(alpha = p))
+            }
+        }
+        Box(Modifier.at(geometry.surface).clip(housingShape)
             .background(style.shell))
         PocketHorizonBackdrop(style, Modifier.at(geometry.display).clip(RoundedCornerShape((18f + 6f * p).dp)))
+        // Noninteractive hardware silhouettes emerge in the moving wings. The real endpoint owns
+        // controls only after settlement; these drawings add neither callbacks nor measurement reports.
+        Canvas(Modifier.at(geometry.surface)) {
+            val radius = 24.dp.toPx() * p
+            val centerY = size.height * .32f
+            val left = wing * .5f
+            val right = size.width - wing * .5f
+            val spacing = 48.dp.toPx() * p
+            val ink = style.shellHighlight.copy(alpha = p)
+            listOf(androidx.compose.ui.geometry.Offset(left, centerY - spacing),
+                androidx.compose.ui.geometry.Offset(left, centerY + spacing),
+                androidx.compose.ui.geometry.Offset(left - spacing, centerY),
+                androidx.compose.ui.geometry.Offset(left + spacing, centerY),
+                androidx.compose.ui.geometry.Offset(right, centerY - spacing),
+                androidx.compose.ui.geometry.Offset(right, centerY + spacing),
+                androidx.compose.ui.geometry.Offset(right - spacing, centerY),
+                androidx.compose.ui.geometry.Offset(right + spacing, centerY)).forEach { drawCircle(ink, radius, it) }
+            drawCircle(ink, 36.dp.toPx() * p, androidx.compose.ui.geometry.Offset(left, size.height * .67f))
+            // The lower strip and shoulders follow the measured LCD/surface separation, so the
+            // transition cannot retain the former full-height display or wing-mounted system keys.
+            val stripTop = geometry.display.bottom - geometry.surface.top
+            val stripHeight = (size.height - stripTop).coerceAtLeast(0f)
+            val keyWidth = 80.dp.toPx() * p
+            val keyHeight = 42.dp.toPx() * p
+            val displayRight = geometry.display.right - geometry.surface.left
+            repeat(2) { index ->
+                drawRoundRect(ink,
+                    androidx.compose.ui.geometry.Offset(displayRight - (index + 1) * (keyWidth + 8.dp.toPx() * p),
+                        stripTop + (stripHeight - keyHeight) / 2f),
+                    androidx.compose.ui.geometry.Size(keyWidth, keyHeight),
+                    androidx.compose.ui.geometry.CornerRadius(12.dp.toPx() * p))
+            }
+        }
         PocketHorizonArtwork(runtime.playback.currentSong, with(density) { geometry.artwork.width.toDp() },
             false, null, style, Modifier.at(geometry.artwork), tag = "pocketHorizonMorphArtwork")
         Box(Modifier.at(geometry.metadata).clipToBounds()) {
-            // Crossfade typography at one moving anchor; no second live player or callback owner.
-            PocketHorizonMiniMetadata(
-                runtime.playback.currentSong?.title?.takeIf(String::isNotBlank) ?: stringResource(R.string.player_unknown_title),
-                runtime.playback.currentSong?.artist?.takeIf(String::isNotBlank) ?: stringResource(R.string.player_unknown_artist),
-                resolvePocketHorizonMiniLayout(with(density) { pair.mini.surface.width.toDp() }, density.fontScale)?.showArtist == true,
-                style, Modifier.graphicsLayer { alpha = 1f - p }, tagPrefix = "pocketHorizonMorphMini")
-            PocketHorizonMetadata(runtime.playback.currentSong, style, null,
-                Modifier.graphicsLayer { alpha = p })
+            // One shared text tree owns moving metadata; alpha-crossfading unlike text layouts
+            // paints two baselines and creates doubled letters even when their alphas sum to one.
+            androidx.compose.foundation.layout.Column {
+                androidx.compose.material3.Text(runtime.playback.currentSong?.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.player_unknown_title),
+                    Modifier.testTag("pocketHorizonMorphTitle"), color = style.text,
+                    fontSize = (14f + 12f * p).sp, lineHeight = (20f + 12f * p).sp,
+                    maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                androidx.compose.material3.Text(runtime.playback.currentSong?.artist?.takeIf { it.isNotBlank() } ?: stringResource(R.string.player_unknown_artist),
+                    Modifier.testTag("pocketHorizonMorphArtist"), color = style.secondaryText,
+                    fontSize = (12f + 4f * p).sp, lineHeight = (16f + 8f * p).sp,
+                    maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            }
         }
         val pause = playbackPlayPauseShowsPause(runtime.playback.playPauseIntent ?: runtime.playback.isPlaying)
         Box(Modifier.at(geometry.playPause).background(style.accent, CircleShape), contentAlignment = androidx.compose.ui.Alignment.Center) {
@@ -132,7 +187,7 @@ internal fun PocketHorizonRuntimeExpanded(
     BackHandler(runtime.inputAllowed && runtime.player.shouldConsumeBack && (!stable || nowPlaying) && runtime.pair == null) {}
     val authority = LocalDirectSeekGestureEnvironment.current?.authority?.invoke()
     val seekAllowed = authority?.let { !it.enabled || it.allowed } ?: true
-    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().background(PocketHorizonStyle.Default.shell.copy(alpha = runtime.player.progress))) {
         // When browsing, this tree measures only Now Playing, never a hidden library list. It shares
         // the navigation owner but measurementOnly forbids its effects/Back handler from mutating it.
         if (!nowPlaying) {

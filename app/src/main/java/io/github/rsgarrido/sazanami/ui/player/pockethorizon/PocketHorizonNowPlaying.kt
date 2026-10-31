@@ -74,22 +74,29 @@ internal fun PocketHorizonNowPlaying(
         Column(Modifier.width(layout.detailsWidth)) {
             PocketHorizonMetadata(playbackState.currentSong, style, measurements)
             Spacer(Modifier.height(PocketHorizonLayoutMetrics.DetailsGap))
-            PocketHorizonProgress(progressState, playbackState.currentSong?.stableUiKey(), enabled && seekEnabled,
-                onSeekChange, style, Modifier.horizonAnchor(measurements, PocketHorizonAnchor.ProgressRegion))
-            Spacer(Modifier.height(PocketHorizonLayoutMetrics.DetailsGap))
             PocketHorizonTransport(playbackState.isPlaying, playbackState.playPauseIntent,
                 enabled, previousEnabled, nextEnabled,
                 onPlayPauseClick, onPreviousClick, onNextClick, style, measurements = measurements)
         }
     }
     if (layout.isWide) {
-        Row(modifier.fillMaxWidth().testTag("pocketHorizonNowPlaying"),
+        Column(modifier.fillMaxWidth().testTag("pocketHorizonNowPlaying"),
+            verticalArrangement = Arrangement.Center) {
+        Row(Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(PocketHorizonLayoutMetrics.ContentGap),
             verticalAlignment = Alignment.CenterVertically) { artwork(); details() }
+        Spacer(Modifier.height(PocketHorizonLayoutMetrics.DetailsGap))
+        PocketHorizonProgress(progressState, playbackState.currentSong?.stableUiKey(), enabled && seekEnabled,
+            onSeekChange, style, Modifier.horizonAnchor(measurements, PocketHorizonAnchor.ProgressRegion))
+        }
     } else {
         Column(modifier.fillMaxWidth().testTag("pocketHorizonNowPlaying"),
             verticalArrangement = Arrangement.spacedBy(PocketHorizonLayoutMetrics.ContentGap),
-            horizontalAlignment = Alignment.CenterHorizontally) { artwork(); details() }
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            artwork(); details()
+            PocketHorizonProgress(progressState, playbackState.currentSong?.stableUiKey(), enabled && seekEnabled,
+                onSeekChange, style, Modifier.horizonAnchor(measurements, PocketHorizonAnchor.ProgressRegion))
+        }
     }
 }
 

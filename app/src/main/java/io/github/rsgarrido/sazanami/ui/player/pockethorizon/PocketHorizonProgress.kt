@@ -1,6 +1,11 @@
 package io.github.rsgarrido.sazanami.ui.player.pockethorizon
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -137,9 +142,26 @@ private fun PocketHorizonSeek(
         enabled = enabled,
         interactionSource = interactions,
         colors = colors,
+        track = {
+            Canvas(Modifier.fillMaxWidth().height(32.dp).testTag("horizonWaveTrack")) {
+                val wave = Path()
+                for (sample in 0..96) {
+                    val x = size.width * sample / 96f
+                    val y = size.height / 2f + kotlin.math.sin(sample / 96f * kotlin.math.PI * 6).toFloat() * 5.dp.toPx()
+                    if (sample == 0) wave.moveTo(x, y) else wave.lineTo(x, y)
+                }
+                val stroke = Stroke(if (slider.isDragging) 3.dp.toPx() else 2.dp.toPx())
+                drawPath(wave, style.outline.copy(alpha = .55f), style = stroke)
+                val fraction = (slider.value / duration).coerceIn(0f, 1f)
+                clipRect(left = if (reverse) size.width * (1f - fraction) else 0f,
+                    right = if (reverse) size.width else size.width * fraction) {
+                    drawPath(wave, if (enabled) style.accent else style.outline, style = stroke)
+                }
+            }
+        },
         thumb = {
-            SliderDefaults.Thumb(interactionSource = interactions, colors = colors, enabled = enabled,
-                modifier = Modifier.onSizeChanged { thumbWidth = it.width })
+            Box(Modifier.size(12.dp, 24.dp).onSizeChanged { thumbWidth = it.width }
+                .background(if (enabled) style.accent else style.outline, RoundedCornerShape(6.dp)))
         },
         modifier = Modifier.fillMaxWidth().height(PocketHorizonLayoutMetrics.SeekTarget)
             .testTag("pocketHorizonSeek").then(input).semantics { contentDescription = label }

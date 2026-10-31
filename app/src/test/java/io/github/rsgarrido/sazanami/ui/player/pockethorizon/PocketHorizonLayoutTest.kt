@@ -13,21 +13,35 @@ class PocketHorizonLayoutTest {
     @Test
     fun minimumReservesReadableMetadataArtworkHeaderAndRealTouchTargets() {
         val minimum = minimumPocketHorizonSize(1f)
-        assertEquals(DpSize(616.dp, 556.dp), minimum)
+        assertEquals(DpSize(904.dp, 584.dp), minimum)
         val layout = requireNotNull(resolvePocketHorizonLayout(minimum, 1f))
         assertTrue(layout.fitsMinimum)
         assertTrue(layout.isWide)
         assertEquals(144.dp, layout.artworkSize)
         assertEquals(336.dp, layout.detailsWidth)
-        assertEquals(112.dp, layout.headerHeight)
-        assertEquals(316.dp, layout.bodyMinHeight)
+        assertEquals(104.dp, layout.headerHeight)
+        assertEquals(304.dp, layout.bodyMinHeight)
         assertEquals(layout.contentViewportSize.width, layout.artworkSize +
             PocketHorizonLayoutMetrics.ContentGap + layout.detailsWidth)
         assertEquals(layout.contentViewportSize.height,
             layout.headerHeight + PocketHorizonLayoutMetrics.HeaderGap + layout.bodyMinHeight)
         assertTrue(PocketHorizonLayoutMetrics.ControlHeight >= 48.dp)
         assertTrue(PocketHorizonLayoutMetrics.SeekTarget >= 48.dp)
+        assertTrue(layout.controlWing >= PocketHorizonLayoutMetrics.ControlCluster + 4.dp)
+        assertTrue(layout.shoulderBandHeight - 8.dp >= 48.dp)
+        assertTrue(layout.hardwareStripHeight >= 48.dp)
         assertContained(minimum, layout)
+    }
+
+    @Test
+    fun tabletLandscapeShapeHasAWideInsetLcdAndASeparateHardwareStrip() {
+        val layout = requireNotNull(resolvePocketHorizonLayout(DpSize(1280.dp, 800.dp), 1f))
+        assertTrue(layout.fitsMinimum)
+        assertEquals(DpSize(1240.dp, 620.dp), layout.shellSize)
+        assertEquals(DpSize(928.dp, 540.dp), layout.displaySize)
+        assertEquals(64.dp, layout.hardwareStripHeight)
+        assertTrue(layout.displaySize.width / layout.displaySize.height > 1.7f)
+        assertContained(DpSize(1280.dp, 800.dp), layout)
     }
 
     @Test
@@ -40,8 +54,10 @@ class PocketHorizonLayoutTest {
             assertTrue(layout.artworkSize in 144.dp..280.dp)
             assertTrue(layout.detailsWidth >= 336.dp)
             assertTrue(layout.artworkSize < layout.contentWidth / 2)
-            assertTrue(layout.displaySize.width > layout.shellSize.width * .9f)
-            assertTrue(layout.displaySize.height > layout.shellSize.height * .9f)
+            assertTrue(layout.displaySize.width > layout.shellSize.width * .5f)
+            assertTrue(layout.hardwareStripHeight >= PocketHorizonLayoutMetrics.MinimumTouchTarget)
+            assertTrue(layout.displaySize.height < layout.shellSize.height)
+            assertTrue(layout.displaySize.width > layout.displaySize.height)
             assertTrue(layout.headerHeight + PocketHorizonLayoutMetrics.HeaderGap +
                 layout.bodyMinHeight <= layout.contentViewportSize.height)
             assertContained(host, layout)
@@ -52,15 +68,15 @@ class PocketHorizonLayoutTest {
     fun largeTextIncreasesTheRealBudgetWithoutShrinkingTouchTargetsOrArtwork() {
         val normal = minimumPocketHorizonSize(1f)
         val large = minimumPocketHorizonSize(2f)
-        assertEquals(DpSize(952.dp, 748.dp), large)
+        assertEquals(DpSize(1240.dp, 752.dp), large)
         assertTrue(large.width > normal.width)
         assertTrue(large.height > normal.height)
         val layout = requireNotNull(resolvePocketHorizonLayout(large, 2f))
         assertTrue(layout.fitsMinimum)
         assertEquals(144.dp, layout.artworkSize)
         assertEquals(672.dp, layout.detailsWidth)
-        assertEquals(148.dp, layout.headerHeight)
-        assertEquals(472.dp, layout.bodyMinHeight)
+        assertEquals(116.dp, layout.headerHeight)
+        assertEquals(460.dp, layout.bodyMinHeight)
         assertContained(large, layout)
     }
 
@@ -120,9 +136,10 @@ class PocketHorizonLayoutTest {
         assertTrue(layout.contentViewportSize.width > 0.dp)
         assertTrue(layout.contentViewportSize.height > 0.dp)
         assertEquals(layout.shellSize.width.value,
-            layout.displaySize.width.value + layout.bezelInset.value * 2, tolerance)
+            layout.displaySize.width.value + layout.bezelInset.value * 2 +
+                layout.controlWing.value * 2, tolerance)
         assertEquals(layout.shellSize.height.value,
-            layout.displaySize.height.value + layout.bezelInset.value * 2, tolerance)
+            layout.displaySize.height.value + layout.bezelInset.value * 2 + layout.hardwareStripHeight.value, tolerance)
         assertEquals(layout.displaySize.width.value,
             layout.contentViewportSize.width.value + layout.displayPadding.value * 2, tolerance)
         assertEquals(layout.displaySize.height.value,

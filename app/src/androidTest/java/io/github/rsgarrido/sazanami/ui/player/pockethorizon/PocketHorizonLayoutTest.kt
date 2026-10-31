@@ -14,16 +14,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import io.github.rsgarrido.sazanami.R
@@ -45,6 +49,7 @@ class PocketHorizonLayoutTest {
         Uri.parse("content://media/external/audio/media/31"), "", "", null)
     private var viewport by mutableStateOf(DpSize(1000.dp, 640.dp))
     private var fontScale by mutableStateOf(1f)
+    private var layoutDirection by mutableStateOf(LayoutDirection.Ltr)
     private var playback by mutableStateOf(PlaybackUiState(isConnected = true, currentSong = song))
     private val progress = MutableStateFlow(PlaybackProgressUiState(currentPosition = 30_000, duration = 180_000))
     private var renderedDensity = 0.5f
@@ -60,7 +65,7 @@ class PocketHorizonLayoutTest {
                         density /= 2f
                     }
                     SideEffect { renderedDensity = density }
-                    CompositionLocalProvider(LocalDensity provides Density(density, fontScale)) {
+                    CompositionLocalProvider(LocalDensity provides Density(density, fontScale), LocalLayoutDirection provides layoutDirection) {
                         Box(Modifier.requiredSize(viewport.width, viewport.height).testTag("horizonTestHost")) {
                             PocketHorizonExpandedPlayer(
                                 playbackState = playback,
@@ -92,6 +97,55 @@ class PocketHorizonLayoutTest {
         val display = bounds("pocketHorizonDisplay")
         assertContains(host, shell, "shell")
         assertContains(shell, display, "display")
+        val strip = bounds("horizonHardwareStrip")
+        assertContains(shell, strip, "lower hardware strip")
+        assertEquals(display.left, strip.left, 1f)
+        assertEquals(display.right, strip.right, 1f)
+        assertEquals(display.bottom, strip.top, 1f)
+        listOf("horizonSelect", "horizonStart").forEach { tag ->
+            val target = bounds(tag)
+            assertContains(strip, target, tag)
+            assertTrue("$tag belongs below the right half of the LCD", target.left >= display.center.x - 1f)
+            assertFalse("$tag must not overlap the LCD", target.overlaps(display))
+        }
+        listOf("horizonL", "horizonR", "horizonSelect", "horizonStart").forEach { tag ->
+            val target = bounds(tag)
+            assertContains(shell, target, tag)
+            assertTrue("$tag touch width", target.width >= 48f * renderedDensity - 1f)
+            assertTrue("$tag touch height", target.height >= 48f * renderedDensity - 1f)
+        }
+        assertTrue(bounds("horizonL").right <= display.left + 1f)
+        assertTrue(bounds("horizonR").left >= display.right - 1f)
+        assertTrue(bounds("horizonL").bottom <= bounds("horizonDpad").top + 1f)
+        assertTrue(bounds("horizonR").bottom <= bounds("horizonFaceButtons").top + 1f)
+        listOf("horizonL", "horizonR").forEach { tag ->
+            val target = bounds(tag)
+            val cap = bounds(tag + "Plane")
+            val mount = bounds(tag + "Mount")
+            assertEquals("$tag mounts on the upper edge", shell.top, target.top, 1f)
+            assertContains(target, cap, "$tag cap")
+            assertContains(target, mount, "$tag recessed mount")
+            assertTrue("$tag has a broad, shallow cap", cap.width > cap.height * 3f)
+            assertTrue("$tag emerges above the LCD bezel", cap.top < display.top)
+        }
+        assertEquals("One continuous front body owns both bumper overlaps", shell, bounds("horizonFrontHousing"))
+        // Below the caps, the body must have the same finish across the former platform ends.
+        // This checks actual composition/drawing, beyond merely containing rectangular test bounds.
+        val pixels = compose.onNodeWithTag("pocketHorizonShell").captureToImage().toPixelMap()
+        val y = (44f * renderedDensity).toInt()
+        val wingEdge = bounds("pocketHorizonDisplay").left - shell.left
+        val innerX = (wingEdge - 4f * renderedDensity).toInt()
+        val bodyColor = pixels[innerX, y]
+        listOf("horizonL", "horizonR").forEach { tag ->
+            val target = bounds(tag)
+            listOf(.32f, .5f, .8f).forEach { fraction ->
+                val x = (target.left - shell.left + target.width * fraction).toInt()
+                val color = pixels[x, y]
+                assertEquals("$tag blends into the body (red)", bodyColor.red, color.red, .01f)
+                assertEquals("$tag blends into the body (green)", bodyColor.green, color.green, .01f)
+                assertEquals("$tag blends into the body (blue)", bodyColor.blue, color.blue, .01f)
+            }
+        }
         listOf("pocketHorizonStatus", "pocketHorizonArtwork", "pocketHorizonTitle",
             "pocketHorizonArtist", "pocketHorizonAlbum", "pocketHorizonPrevious",
             "pocketHorizonPlayPause", "pocketHorizonNext", "pocketHorizonSeek",
@@ -105,15 +159,28 @@ class PocketHorizonLayoutTest {
         val controls = bounds("pocketHorizonPlayPause")
         val seek = bounds("pocketHorizonSeek")
         val times = bounds("pocketHorizonTimes")
-        assertTrue("Artwork stays beside metadata", artwork.right <= title.left + 1f)
+        assertTrue("Artwork stays beside metadata", if (layoutDirection == LayoutDirection.Ltr)
+            artwork.right <= title.left + 1f else artwork.left >= title.right - 1f)
         assertTrue("Title and artist do not overlap", title.bottom <= artist.top + 1f)
         assertTrue("Artist and album do not overlap", artist.bottom <= album.top + 1f)
         assertTrue("Album and seek do not overlap", album.bottom <= seek.top + 1f)
         assertTrue("Seek and times do not overlap", seek.bottom <= times.top + 1f)
-        assertTrue("Times and transport do not overlap", times.bottom <= controls.top + 1f)
+        assertTrue("Transport remains above the full-display seek region", controls.bottom <= seek.top + 1f)
         assertTrue("Metadata and transport do not overlap", album.bottom <= controls.top + 1f)
         assertFalse("Transport and seek targets do not overlap", controls.overlaps(seek))
-        assertTrue("Display remains the dominant shell surface", display.width * display.height > shell.width * shell.height * .8f)
+        assertTrue("Display remains the dominant shell surface", display.width * display.height > shell.width * shell.height * .5f)
+    }
+
+    @Test
+    fun hardwareSidesAndRightHandSystemKeysStayFixedWhileLcdContentSupportsRtl() {
+        content()
+        assertSupportedContentFits()
+        val tags = listOf("horizonL", "horizonR", "horizonLPlane", "horizonRPlane",
+            "horizonLMount", "horizonRMount", "horizonFrontHousing", "horizonSelect", "horizonStart")
+        val original = tags.associateWith(::bounds)
+        compose.runOnIdle { layoutDirection = LayoutDirection.Rtl }
+        assertSupportedContentFits()
+        tags.forEach { assertEquals(original.getValue(it), bounds(it)) }
     }
 
     @Test

@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 
 /** Android Studio inspection without an activity, live theme registration, or fabricated track. */
 @Preview(name = "Pocket Horizon — empty", widthDp = 1024, heightDp = 640, showBackground = true)
-@Preview(name = "Pocket Horizon — large text", widthDp = 1000, heightDp = 720, fontScale = 2f)
+@Preview(name = "Pocket Horizon — large text", widthDp = 1280, heightDp = 800, fontScale = 2f)
 @Composable
 private fun PocketHorizonEmptyPreview() {
     val progress = remember { MutableStateFlow(PlaybackProgressUiState.Empty) }

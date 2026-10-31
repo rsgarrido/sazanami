@@ -8,23 +8,28 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.max
 import kotlin.math.min
 
-/** Content measurements shared by the shell and its future resolver budget. No device policy lives here. */
+/** Content measurements shared by the shell and its resolver budget. No device policy lives here. */
 internal object PocketHorizonLayoutMetrics {
     val OuterInset = 20.dp
     val BezelInset = 8.dp
-    val DisplayPadding = 24.dp
+    val ControlWing = 148.dp
+    val ControlCluster = 144.dp
+    val ShoulderBand = 56.dp
+    val HardwareStrip = 64.dp
+    val DisplayPadding = 20.dp
     val ContentGap = 32.dp
-    val HeaderGap = 24.dp
-    val MetadataGap = 8.dp
-    val DetailsGap = 16.dp
+    val HeaderGap = 16.dp
+    val MetadataGap = 6.dp
+    val DetailsGap = 12.dp
     val MinimumTouchTarget = 48.dp
     val ControlHeight = 64.dp
     val SeekTarget = 48.dp
     val MinimumArtwork = 144.dp
-    val MaximumArtwork = 280.dp
+    // Fits beside metadata + transport even at the compact single-scale LCD height.
+    val MaximumArtwork = 220.dp
     // Readable two-line metadata measure (21 artist-font ems), larger than the 192 dp transport row.
     val MinimumDetailsWidth = 336.dp
-    val MinimumHeaderHeight = 56.dp
+    val MinimumHeaderHeight = 48.dp
     val CategoryGap = 8.dp
 
     val TitleFontSize = 26.sp
@@ -35,13 +40,13 @@ internal object PocketHorizonLayoutMetrics {
     val AlbumLineHeight = 20.sp
     val TimeLineHeight = 24.sp
 
-    const val PreferredShellAspectRatio = 1.9f
+    const val PreferredShellAspectRatio = 2f
 
     fun textScale(fontScale: Float): Float =
         fontScale.takeIf { it.isFinite() && it > 0f }?.coerceAtLeast(1f) ?: 1f
 
     fun statusHeight(fontScale: Float): Dp =
-        max(MinimumHeaderHeight.value, 40f * textScale(fontScale)).dp
+        max(MinimumHeaderHeight.value, 24f * textScale(fontScale)).dp
 
     fun categoryHeight(fontScale: Float): Dp =
         max(MinimumTouchTarget.value, 22f * textScale(fontScale) + 16f).dp
@@ -81,6 +86,9 @@ internal data class PocketHorizonLayout(
     val outerInset: Dp,
     val bezelInset: Dp,
     val displayPadding: Dp,
+    val controlWing: Dp,
+    val shoulderBandHeight: Dp,
+    val hardwareStripHeight: Dp,
     val isWide: Boolean,
     val fitsMinimum: Boolean,
     val headerHeight: Dp,
@@ -88,14 +96,14 @@ internal data class PocketHorizonLayout(
     val minimumSize: DpSize
 )
 
-/** The same typography, spacing, artwork, and touch budgets used by the real shell. Not nominated yet. */
+/** The same typography, spacing, artwork, and touch budgets used by the real shell and nomination. */
 internal fun minimumPocketHorizonSize(fontScale: Float): DpSize {
     val metrics = PocketHorizonLayoutMetrics
     val frame = (metrics.OuterInset + metrics.BezelInset + metrics.DisplayPadding) * 2
     return DpSize(
-        frame + metrics.MinimumArtwork + metrics.ContentGap +
+        frame + metrics.ControlWing * 2 + metrics.MinimumArtwork + metrics.ContentGap +
             metrics.MinimumDetailsWidth * metrics.textScale(fontScale),
-        frame + metrics.headerHeight(fontScale) + metrics.HeaderGap +
+        frame + metrics.HardwareStrip + metrics.headerHeight(fontScale) + metrics.HeaderGap +
             metrics.detailsMinimumHeight(fontScale)
     )
 }
@@ -130,7 +138,11 @@ internal fun resolvePocketHorizonLayout(
 
     // Insets become shallower only for insufficient isolated hosts, so even tiny bounds stay valid.
     val bezel = min(metrics.BezelInset.value, min(shellWidth.value, shellHeight.value) / 8f).dp
-    val display = DpSize(shellWidth - bezel * 2, shellHeight - bezel * 2)
+    val wing = min(metrics.ControlWing.value, (shellWidth.value - bezel.value * 2) / 3f).dp
+    val innerHeight = shellHeight - bezel * 2
+    val strip = min(metrics.HardwareStrip.value, innerHeight.value / 4f).dp
+    val shoulderBand = min(metrics.ShoulderBand.value, innerHeight.value / 4f).dp
+    val display = DpSize(shellWidth - bezel * 2 - wing * 2, innerHeight - strip)
     val padding = min(metrics.DisplayPadding.value,
         min(display.width.value, display.height.value) / 8f).dp
     val viewport = DpSize(display.width - padding * 2, display.height - padding * 2)
@@ -157,6 +169,9 @@ internal fun resolvePocketHorizonLayout(
         outerInset = outer,
         bezelInset = bezel,
         displayPadding = padding,
+        controlWing = wing,
+        shoulderBandHeight = shoulderBand,
+        hardwareStripHeight = strip,
         isWide = fits,
         fitsMinimum = fits,
         headerHeight = metrics.headerHeight(fontScale),

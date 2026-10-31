@@ -11,7 +11,7 @@ enum class TabletLandscapeTheme(val id: String, @StringRes val labelRes: Int) {
 
     companion object {
         /** Only usable themes belong in Settings. Reserved IDs must still survive preference/backup reads. */
-        val selectableThemes: List<TabletLandscapeTheme> = listOf(NORMAL_PLAYER, POCKET_ADVANCE)
+        val selectableThemes: List<TabletLandscapeTheme> = listOf(NORMAL_PLAYER, POCKET_ADVANCE, POCKET_HORIZON)
 
         fun fromId(id: String?): TabletLandscapeTheme =
             entries.firstOrNull { it.id == id } ?: NORMAL_PLAYER

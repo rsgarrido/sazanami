@@ -14,21 +14,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PocketHorizonRuntimePolicyTest {
-    @Test fun realIdentityCanBeControlledByTestsButOrdinarySavedSelectionRemainsInactive() {
+    @Test fun ordinarySavedSelectionNominatesTheCompleteRuntimeWithExistingOverlayCapabilities() {
         val tokens = PlayerTheme.DEFAULT.defaultTokens()
         val context = TabletLandscapePlayerContext(PlayerDeviceKind.TABLET, 800, DpSize(1200.dp, 900.dp))
-        assertNull(tabletLandscapePlayerCandidate(TabletLandscapeTheme.POCKET_HORIZON, tokens, 1f))
-        assertFalse(TabletLandscapeTheme.selectableThemes.contains(TabletLandscapeTheme.POCKET_HORIZON))
-        assertEquals(PlayerPresentationIdentity.Existing(PlayerTheme.DEFAULT),
-            resolvePlayerPresentation(PlayerTheme.DEFAULT, tokens, context,
-                tabletLandscapePlayerCandidate(TabletLandscapeTheme.POCKET_HORIZON, tokens, 1f)).identity)
-        val controlled = TabletLandscapePlayerCandidate(ResolvedPlayerPresentation(PlayerPresentationIdentity.PocketHorizon, tokens),
-            minimumPocketHorizonSize(1f))
+        val candidate = requireNotNull(tabletLandscapePlayerCandidate(
+            TabletLandscapeTheme.fromId("pocket_horizon"), tokens, 1f))
+        assertTrue(TabletLandscapeTheme.selectableThemes.contains(TabletLandscapeTheme.POCKET_HORIZON))
+        assertEquals(minimumPocketHorizonSize(1f), candidate.minimumSize)
         assertEquals(PlayerPresentationIdentity.PocketHorizon,
-            resolvePlayerPresentation(PlayerTheme.DEFAULT, tokens, context, controlled).identity)
+            resolvePlayerPresentation(PlayerTheme.DEFAULT, tokens, context, candidate).identity)
         for (size in listOf(DpSize(600.dp, 500.dp), DpSize(900.dp, 1200.dp))) {
             assertEquals(PlayerPresentationIdentity.Existing(PlayerTheme.DEFAULT),
-                resolvePlayerPresentation(PlayerTheme.DEFAULT, tokens, context.copy(availableSize = size), controlled).identity)
+                resolvePlayerPresentation(PlayerTheme.DEFAULT, tokens, context.copy(availableSize = size), candidate).identity)
         }
         assertTrue(supportsNowPlayingMore(PlayerPresentationIdentity.PocketHorizon))
         assertTrue(supportsNowPlayingArtworkViewer(PlayerPresentationIdentity.PocketHorizon))

@@ -15,24 +15,30 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.test.swipe
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.LayoutDirection
@@ -72,6 +78,7 @@ class PocketHorizonLibraryNavigationTest {
     private val requests = mutableListOf<Pair<Song, List<Song>>>()
     private val progress = MutableStateFlow(PlaybackProgressUiState(currentPosition = 30_000, duration = 180_000))
     private var playPauseRequests = 0
+    private var queueRequests = 0
 
     @Composable
     private fun Content() {
@@ -96,7 +103,8 @@ class PocketHorizonLibraryNavigationTest {
                             seekEnabled = true,
                             libraryState = library,
                             onSongClick = if (selectionAvailable) ({ selected, context -> requests += selected to context }) else null,
-                            navigationState = navigation
+                            navigationState = navigation,
+                            onOpenQueueHubClick = { queueRequests++ }
                         )
                     }
                 }
@@ -105,6 +113,145 @@ class PocketHorizonLibraryNavigationTest {
     }
 
     private fun mount() = compose.setContent { Content() }
+
+    @Test fun consoleControlsBrowseConfirmBackToggleAndForwardPlaybackExactlyOnce() {
+        mount()
+        compose.onNodeWithTag("horizonX").performClick()
+        compose.onNodeWithTag("horizonY").performClick()
+        compose.onNodeWithTag("horizonStart").performClick()
+        category(PocketHorizonCategory.Songs).assertIsSelected()
+        compose.onNodeWithTag("horizonDown").performClick()
+        songNode(second).assertIsSelected()
+        compose.onNodeWithTag("horizonA").performClick()
+        compose.runOnIdle {
+            assertEquals(second, requests.single().first)
+            assertEquals(listOf(first, second, other), requests.single().second)
+            assertEquals(1, playPauseRequests)
+            assertEquals(1, queueRequests)
+        }
+        compose.onNodeWithTag("horizonStart").performClick()
+        compose.onNodeWithTag("horizonSelect").performClick()
+        compose.onNodeWithTag("horizonControlGuide").assertIsDisplayed()
+        compose.onNodeWithTag("horizonX").assertIsNotEnabled()
+        compose.onNodeWithTag("horizonB").performClick()
+        compose.onNodeWithTag("horizonControlGuide").assertDoesNotExist()
+        compose.onNodeWithTag("horizonRight").performClick()
+        category(PocketHorizonCategory.Albums).assertIsSelected()
+        compose.onNodeWithTag("horizonA").performClick()
+        compose.onNodeWithTag("pocketHorizonLibraryBack").assertIsDisplayed()
+        compose.onNodeWithTag("horizonB").performClick()
+        compose.onNodeWithTag("pocketHorizonLibraryBack").assertDoesNotExist()
+        val lateSelect = compose.onNodeWithTag("horizonSelect").fetchSemanticsNode()
+            .config[SemanticsActions.OnClick].action!!
+        compose.runOnIdle { inputEnabled = false }
+        listOf("horizonX", "horizonY", "horizonA", "horizonStart", "horizonSelect").forEach {
+            compose.onNodeWithTag(it).assertIsNotEnabled()
+        }
+        compose.runOnIdle {
+            lateSelect()
+            assertEquals(PocketHorizonCategory.Albums, navigation.category)
+            assertEquals(1, playPauseRequests); assertEquals(1, queueRequests)
+        }
+    }
+
+    @Test fun analogStrokeMovesFocusWithoutPlaybackAndConsoleWingsStayOutsideTheLcd() {
+        mount()
+        select(PocketHorizonCategory.Songs)
+        compose.onNodeWithTag("horizonAnalog").performTouchInput {
+            down(center); moveTo(center + androidx.compose.ui.geometry.Offset(1f, 1f)); cancel()
+        }
+        songNode(first).assertIsSelected()
+        compose.onNodeWithTag("horizonAnalog").performTouchInput {
+            swipe(center, androidx.compose.ui.geometry.Offset(center.x, height.toFloat() - 1f), 300)
+        }
+        // This stroke releases before hold-repeat starts. Verify the requested canonical focus
+        // actually commits after measured reveal, rather than checking only a row's fallback style.
+        awaitFocus(PocketHorizonList.Songs, second.stableUiKey())
+        compose.runOnIdle { assertTrue(requests.isEmpty()); assertEquals(0, playPauseRequests) }
+        listOf(LayoutDirection.Ltr, LayoutDirection.Rtl).forEach { layoutDirection ->
+            compose.runOnIdle { direction = layoutDirection }
+            val display = bounds("pocketHorizonDisplay")
+            assertTrue(bounds("horizonLeftWing").right <= display.left + 1f)
+            assertTrue(bounds("horizonRightWing").left >= display.right - 1f)
+            listOf("horizonUp", "horizonDown", "horizonLeft", "horizonRight", "horizonX", "horizonA", "horizonB", "horizonY").forEach { tag ->
+                val box = bounds(tag)
+                assertTrue(box.width >= 48f * renderedDensity - 1f)
+                assertTrue(box.height >= 48f * renderedDensity - 1f)
+            }
+        }
+    }
+    @Test fun focusMovesWithinVisibleRowsWithoutTopAlignmentAndStickMovesOnNowPlaying() {
+        mount()
+        // The knob's tag precedes graphicsLayer. Measure the inner content coordinates, which
+        // include that layer's physical translation, instead of the outer semantics bounds.
+        val rest = unclippedBounds("horizonAnalogKnob")
+        compose.onNodeWithTag("horizonAnalog").performTouchInput {
+            // Vertical movement has no navigation binding on Now Playing, but must still move
+            // the cap. A rightward stroke would also change the category to Songs.
+            down(center); moveTo(androidx.compose.ui.geometry.Offset(center.x, 1f))
+        }
+        val displaced = unclippedBounds("horizonAnalogKnob")
+        assertTrue("The analog cap moves upward without a browsing action", displaced.top < rest.top)
+        assertEquals(rest.left, displaced.left, 1f)
+        compose.runOnIdle { assertEquals(PocketHorizonCategory.NowPlaying, navigation.category) }
+        compose.onNodeWithTag("horizonAnalog").performTouchInput { up() }
+        assertEquals(rest, unclippedBounds("horizonAnalogKnob"))
+        select(PocketHorizonCategory.Songs)
+        val firstTop = bounds("pocketHorizonSong:" + first.stableUiKey()).top
+        compose.onNodeWithTag("horizonDown").performClick()
+        awaitFocus(PocketHorizonList.Songs, second.stableUiKey())
+        assertEquals(firstTop, bounds("pocketHorizonSong:" + first.stableUiKey()).top, 1f)
+        compose.onNodeWithTag("horizonUp").performClick()
+        awaitFocus(PocketHorizonList.Songs, first.stableUiKey())
+        compose.runOnIdle { assertTrue(requests.isEmpty()); assertEquals(0, playPauseRequests) }
+    }
+
+    @Test fun analogHoldKeepsFocusVisibleWithinItsRepeatLimitAndReleaseStopsNavigation() {
+        val tracks = (1..30).map { song(it.toLong(), "Track " + it.toString().padStart(2, '0'), "/repeat", "Repeat", "Artist", it) }
+        library = ready(tracks)
+        mount()
+        select(PocketHorizonCategory.Songs)
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.onNodeWithTag("horizonAnalog").performTouchInput {
+                down(center); moveTo(androidx.compose.ui.geometry.Offset(center.x, height.toFloat() - 1f))
+            }
+            // A request launches a measured reveal; focus is committed only after that job runs.
+            // runOnIdle alone cannot drive its pending Compose work with autoAdvance disabled.
+            awaitFocus(PocketHorizonList.Songs, tracks[1].stableUiKey())
+            repeat(25) {
+                compose.mainClock.advanceTimeBy(240)
+                compose.mainClock.advanceTimeByFrame()
+                awaitFocus(PocketHorizonList.Songs)
+            }
+            val stopped = compose.runOnIdle { requireNotNull(navigation.focusedKey(PocketHorizonList.Songs)) }
+            val accepted = tracks.indexOfFirst { it.stableUiKey() == stopped }
+            // Layout-gated repeats may be dropped on a busy frame, but must repeat, stay bounded,
+            // and never select a row before it has been fully revealed.
+            assertTrue(accepted in 2..24)
+            compose.mainClock.advanceTimeBy(2_000)
+            compose.runOnIdle { assertEquals(stopped, navigation.focusedKey(PocketHorizonList.Songs)) }
+            compose.onNodeWithTag("horizonAnalog").performTouchInput { up() }
+            compose.mainClock.advanceTimeBy(2_000)
+            compose.runOnIdle {
+                assertEquals(stopped, navigation.focusedKey(PocketHorizonList.Songs))
+                assertTrue(requests.isEmpty()); assertEquals(0, playPauseRequests)
+            }
+            // Release a fresh gesture before its repeat delay, independently of the exhausted
+            // hold above. Its first request must commit, but no delayed repeat may follow it.
+            compose.onNodeWithTag("horizonAnalog").performTouchInput {
+                down(center); moveTo(androidx.compose.ui.geometry.Offset(center.x, height.toFloat() - 1f)); up()
+            }
+            val released = tracks[accepted + 1].stableUiKey()
+            awaitFocus(PocketHorizonList.Songs, released)
+            compose.mainClock.advanceTimeBy(2_000)
+            compose.runOnIdle {
+                assertEquals(released, navigation.focusedKey(PocketHorizonList.Songs))
+                assertTrue(requests.isEmpty()); assertEquals(0, playPauseRequests)
+            }
+        } finally { compose.mainClock.autoAdvance = true }
+    }
+
     private fun category(category: PocketHorizonCategory) =
         compose.onNodeWithTag("pocketHorizonCategory" + category.name)
     private fun select(category: PocketHorizonCategory) = category(category).performClick()
@@ -115,6 +262,76 @@ class PocketHorizonLibraryNavigationTest {
     private fun message() = compose.onNodeWithTag("pocketHorizonLibraryMessage")
     private fun bounds(tag: String): Rect = compose.onNodeWithTag(tag, useUnmergedTree = true)
         .fetchSemanticsNode().boundsInRoot
+
+    @OptIn(ExperimentalTestApi::class)
+    private fun unclippedBounds(tag: String): Rect {
+        val coordinates = compose.onNodeWithTag(tag, useUnmergedTree = true)
+            .fetchSemanticsNode().layoutInfo.coordinates
+        return Rect(coordinates.positionInRoot(), Size(coordinates.size.width.toFloat(), coordinates.size.height.toFloat()))
+    }
+
+    private fun assertFocusedSongFullyVisible(key: String) {
+        val viewport = unclippedBounds("pocketHorizonLibraryList")
+        val row = unclippedBounds("pocketHorizonSong:$key")
+        compose.onNodeWithTag("pocketHorizonSong:$key").assertIsSelected()
+        // Clipped semantics bounds would hide precisely the defect this test must catch.
+        assertTrue("Focused row $row must start inside $viewport", row.top >= viewport.top - 1f)
+        assertTrue("Entire focused row $row must end inside $viewport", row.bottom <= viewport.bottom + 1f)
+    }
+
+    private fun awaitFocus(list: PocketHorizonList, key: String? = null) {
+        var committed: String? = null
+        compose.waitUntil(timeoutMillis = 5_000) {
+            // Reveal and selected-row composition are separate steps. Drive paused Compose work
+            // while also yielding to Android's actual lazy-list placement, with no guessed delay.
+            if (!compose.mainClock.autoAdvance) compose.mainClock.advanceTimeByFrame()
+            val focused = compose.runOnIdle { navigation.focusedKey(list) }
+            if (focused == null || (key != null && focused != key)) return@waitUntil false
+            val row = compose.onAllNodesWithTag("pocketHorizonSong:$focused", useUnmergedTree = true)
+                .fetchSemanticsNodes().singleOrNull()
+            if (row?.config?.getOrNull(SemanticsProperties.Selected) != true) return@waitUntil false
+            val viewport = unclippedBounds("pocketHorizonLibraryList")
+            val bounds = unclippedBounds("pocketHorizonSong:$focused")
+            val contained = bounds.top >= viewport.top - 1f && bounds.bottom <= viewport.bottom + 1f
+            if (contained) committed = focused
+            contained
+        }
+        assertFocusedSongFullyVisible(requireNotNull(committed))
+    }
+
+    @Test fun variableHeightRowsRemainFullyVisibleAtBothEdgesIncludingAlbumAndArtistDetails() {
+        val tracks = (1..18).map { index ->
+            song(index.toLong(), "Track " + index.toString().padStart(2, '0') +
+                if (index % 2 == 0) " long title ".repeat(16) else "", "/visibility", "Album", "Artist", index)
+        }
+        library = ready(tracks)
+        fontScale = 2f
+        viewport = minimumPocketHorizonSize(fontScale)
+        mount()
+        select(PocketHorizonCategory.Songs)
+        for (index in 1..14) {
+            compose.onNodeWithTag("horizonDown").performClick()
+            awaitFocus(PocketHorizonList.Songs, tracks[index].stableUiKey())
+        }
+        for (index in 13 downTo 0) {
+            compose.onNodeWithTag("horizonUp").performClick()
+            awaitFocus(PocketHorizonList.Songs, tracks[index].stableUiKey())
+        }
+        select(PocketHorizonCategory.Albums)
+        albumNode("/visibility").performClick()
+        for (index in 1..6) {
+            compose.onNodeWithTag("horizonDown").performClick()
+            awaitFocus(PocketHorizonList.AlbumTracks, tracks[index].stableUiKey())
+        }
+        compose.onNodeWithTag("horizonB").performClick()
+        select(PocketHorizonCategory.Artists)
+        artistNode("Artist").performClick()
+        for (index in 1..6) {
+            compose.onNodeWithTag("horizonDown").performClick()
+            awaitFocus(PocketHorizonList.ArtistTracks, tracks[index].stableUiKey())
+        }
+        compose.runOnIdle { assertTrue(requests.isEmpty()); assertEquals(0, playPauseRequests) }
+    }
 
     @Test
     fun fourCategoriesExposeSelectedAccessibleTabsAndHonorDisabledInput() {

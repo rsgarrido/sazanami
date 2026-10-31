@@ -5,6 +5,14 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -60,22 +68,30 @@ internal fun PocketHorizonCategoryNavigation(
                 PocketHorizonCategory.Albums -> R.string.pocket_horizon_category_albums
                 PocketHorizonCategory.Artists -> R.string.pocket_horizon_category_artists
             })
-            val shape = RoundedCornerShape(14.dp)
-            Text(label,
-                modifier = Modifier.height(height).bringIntoViewRequester(reveal)
+            val shape = RoundedCornerShape(2.dp)
+            Box(Modifier.height(height).bringIntoViewRequester(reveal)
                     .onPlaced { placedSize = it.size }
                     .testTag("pocketHorizonCategory" + category.name)
-                    .background(if (selected) style.accent else style.surface.copy(alpha = .60f), shape)
-                    .border(1.dp, if (selected) style.accent else style.outline.copy(alpha = .4f), shape)
+                    .background(if (selected) style.surface else androidx.compose.ui.graphics.Color.Transparent, shape)
+                    .border(if (selected) 2.dp else 0.dp, if (selected) style.accent else androidx.compose.ui.graphics.Color.Transparent, shape)
                     .selectable(selected, enabled = enabled, role = Role.Tab) {
                         if (enabled) navigationState.selectCategory(category)
-                    }.padding(horizontal = 16.dp, vertical = 8.dp),
-                color = if (selected) style.onAccent else style.text,
+                    }.padding(horizontal = 10.dp), contentAlignment = Alignment.Center) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(when(category) {
+                        PocketHorizonCategory.NowPlaying -> Icons.Filled.PlayArrow
+                        PocketHorizonCategory.Songs -> Icons.Filled.MusicNote
+                        PocketHorizonCategory.Albums -> Icons.Filled.Album
+                        PocketHorizonCategory.Artists -> Icons.Filled.Person
+                    }, null, Modifier.size(20.dp), tint = if (selected) style.accent else style.secondaryText)
+                Text(label, color = if (selected) style.accent else style.text,
                 style = TextStyle(fontFamily = FontFamily.SansSerif,
                     platformStyle = PlatformTextStyle(includeFontPadding = false)),
                 fontSize = 14.sp, lineHeight = 22.sp,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                 maxLines = 1)
+                }
+            }
         }
     }
 }

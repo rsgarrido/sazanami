@@ -12,11 +12,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.StateRestorationTester
@@ -60,6 +62,7 @@ class TabletLandscapeThemeSettingsTest {
     private lateinit var repository: AppPreferencesRepository
     private lateinit var job: Job
     private lateinit var file: File
+    private lateinit var filename: String
     private val landscapeRequests = mutableListOf<TabletLandscapeTheme>()
     private val primaryRequests = mutableListOf<PlayerTheme>()
     private val mountedSelections = mutableListOf<TabletLandscapeTheme>()
@@ -68,7 +71,7 @@ class TabletLandscapeThemeSettingsTest {
     @Before
     fun setUp() = runBlocking<Unit> {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val filename = "tablet_landscape_settings_" + System.nanoTime() + ".preferences_pb"
+        filename = "tablet_landscape_settings_" + System.nanoTime() + ".preferences_pb"
         file = context.preferencesDataStoreFile(filename)
         job = SupervisorJob()
         repository = AppPreferencesRepository.create(context, CoroutineScope(job + Dispatchers.IO), filename, emptyList())
@@ -87,7 +90,7 @@ class TabletLandscapeThemeSettingsTest {
     }
 
     @Test
-    fun normalSettingsExposeBothAccessibleChoicesAndPersistOnlyTheRequestedSelection() {
+    fun normalSettingsExposeAllThreeAccessibleChoicesInOrderAndPersistOnlyTheRequestedSelection() {
         compose.setContent { Content() }
         compose.onNodeWithText(text(R.string.settings_tablet_landscape_theme_summary)).performScrollTo().assertIsDisplayed()
         openChoices()
@@ -95,11 +98,23 @@ class TabletLandscapeThemeSettingsTest {
             useUnmergedTree = true).assertIsDisplayed()
         option(TabletLandscapeTheme.NORMAL_PLAYER).assertIsEnabled().assertIsSelected()
         option(TabletLandscapeTheme.POCKET_ADVANCE).assertIsEnabled().assertIsNotSelected()
-        option(TabletLandscapeTheme.POCKET_HORIZON).assertDoesNotExist()
-        assertEquals(Role.RadioButton, option(TabletLandscapeTheme.POCKET_ADVANCE).fetchSemanticsNode().config[SemanticsProperties.Role])
+        option(TabletLandscapeTheme.POCKET_HORIZON).assertIsEnabled().assertIsNotSelected()
+        val ordered = listOf(TabletLandscapeTheme.NORMAL_PLAYER, TabletLandscapeTheme.POCKET_ADVANCE,
+            TabletLandscapeTheme.POCKET_HORIZON)
+        val tops = ordered.map { theme ->
+            option(theme).assertTextContains(text(theme.labelRes))
+            val node = option(theme).fetchSemanticsNode()
+            assertEquals(Role.RadioButton, node.config[SemanticsProperties.Role])
+            node.boundsInRoot.top
+        }
+        assertTrue(tops.zipWithNext().all { (before, after) -> before < after })
         option(TabletLandscapeTheme.POCKET_ADVANCE).performClick()
         awaitSelection(TabletLandscapeTheme.POCKET_ADVANCE)
         compose.onNodeWithTag("tabletLandscapeThemeSetting").assertTextContains(text(R.string.tablet_landscape_theme_pocket_advance))
+        openChoices()
+        option(TabletLandscapeTheme.POCKET_HORIZON).performClick()
+        awaitSelection(TabletLandscapeTheme.POCKET_HORIZON)
+        compose.onNodeWithTag("tabletLandscapeThemeSetting").assertTextContains(text(R.string.tablet_landscape_theme_pocket_horizon))
         compose.runOnIdle {
             assertEquals(PlayerTheme.CLASSIC_WHEEL, repository.state.value.selectedPlayerTheme)
             assertEquals(colors, repository.state.value.playerThemeTokenOverrides[PlayerTheme.CLASSIC_WHEEL])
@@ -109,11 +124,12 @@ class TabletLandscapeThemeSettingsTest {
         compose.onNodeWithText(text(PlayerTheme.POCKET_CASSETTE.labelRes)).performClick()
         compose.waitUntil(5_000) { repository.state.value.selectedPlayerTheme == PlayerTheme.POCKET_CASSETTE }
         openChoices()
-        option(TabletLandscapeTheme.POCKET_ADVANCE).assertIsSelected()
+        option(TabletLandscapeTheme.POCKET_HORIZON).assertIsSelected()
         option(TabletLandscapeTheme.NORMAL_PLAYER).performClick()
         awaitSelection(TabletLandscapeTheme.NORMAL_PLAYER)
         compose.runOnIdle {
-            assertEquals(listOf(TabletLandscapeTheme.POCKET_ADVANCE, TabletLandscapeTheme.NORMAL_PLAYER), landscapeRequests)
+            assertEquals(listOf(TabletLandscapeTheme.POCKET_ADVANCE, TabletLandscapeTheme.POCKET_HORIZON,
+                TabletLandscapeTheme.NORMAL_PLAYER), landscapeRequests)
             assertEquals(listOf(PlayerTheme.POCKET_CASSETTE), primaryRequests)
             assertEquals(PlayerTheme.POCKET_CASSETTE, repository.state.value.selectedPlayerTheme)
             assertEquals(colors, repository.state.value.playerThemeTokenOverrides[PlayerTheme.CLASSIC_WHEEL])
@@ -145,19 +161,35 @@ class TabletLandscapeThemeSettingsTest {
     }
 
     @Test
-    fun restoredReservedChoiceShowsTheUsableFallbackWithoutExposingOrRewritingHorizon() {
+    fun restoredHorizonChoiceSurvivesRepositoryRestartAndRecreationWithoutChangingCustomization() {
         runBlocking {
             repository.setTabletLandscapeTheme(TabletLandscapeTheme.POCKET_HORIZON)
             withTimeout(5_000) { repository.state.first { it.tabletLandscapeTheme == TabletLandscapeTheme.POCKET_HORIZON } }
+            job.cancelAndJoin()
+            job = SupervisorJob()
+            repository = AppPreferencesRepository.create(ApplicationProvider.getApplicationContext<Context>(),
+                CoroutineScope(job + Dispatchers.IO), filename, emptyList())
+            assertEquals(TabletLandscapeTheme.POCKET_HORIZON, withTimeout(5_000) {
+                repository.awaitLoadedState()
+            }.tabletLandscapeTheme)
         }
-        compose.setContent { Content() }
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent { Content() }
         compose.onNodeWithTag("tabletLandscapeThemeSetting").performScrollTo()
-            .assertTextContains(text(R.string.tablet_landscape_theme_normal_player))
+            .assertTextContains(text(R.string.tablet_landscape_theme_pocket_horizon))
         openChoices()
-        option(TabletLandscapeTheme.POCKET_HORIZON).assertDoesNotExist()
-        option(TabletLandscapeTheme.NORMAL_PLAYER).assertIsSelected()
+        option(TabletLandscapeTheme.POCKET_HORIZON).assertIsSelected()
+        restoration.emulateSavedInstanceStateRestore()
+        option(TabletLandscapeTheme.POCKET_HORIZON).assertIsSelected()
+        option(TabletLandscapeTheme.NORMAL_PLAYER).assertIsNotSelected()
         option(TabletLandscapeTheme.POCKET_ADVANCE).assertIsNotSelected()
         compose.onNodeWithText(text(R.string.settings_close)).performClick()
+        // Horizon has only the selection action; Advance's real customization stays available.
+        compose.onAllNodes(hasText(text(R.string.tablet_landscape_theme_pocket_horizon), substring = true)
+            and hasClickAction()).assertCountEquals(1)
+        compose.onNodeWithTag("pocketAdvanceAppearanceSetting").performScrollTo().assertIsEnabled().performClick()
+        compose.onNodeWithTag("pocketAdvanceAppearanceOptions").assertIsDisplayed()
+        compose.onNodeWithText(text(R.string.settings_done)).performClick()
         compose.runOnIdle {
             assertEquals(TabletLandscapeTheme.POCKET_HORIZON, repository.state.value.tabletLandscapeTheme)
             assertTrue(landscapeRequests.isEmpty())
@@ -184,14 +216,14 @@ class TabletLandscapeThemeSettingsTest {
             assertTrue(english.getString(id).isNotBlank()); assertTrue(spanish.getString(id).isNotBlank())
             assertNotEquals(english.getString(id), spanish.getString(id))
         }
-        assertEquals("Pocket Advance works on supported tablets in landscape. Other layouts use your normal player theme.",
+        assertEquals("Pocket Advance and Pocket Horizon work on supported tablets in landscape. Other layouts use your normal player theme.",
             english.getString(R.string.settings_tablet_landscape_theme_summary))
-        assertEquals("Pocket Advance funciona en tabletas compatibles en horizontal. En los demás casos se usa el tema normal del reproductor.",
+        assertEquals("Pocket Advance y Pocket Horizon funcionan en tabletas compatibles en horizontal. En los demás casos se usa el tema normal del reproductor.",
             spanish.getString(R.string.settings_tablet_landscape_theme_summary))
         assertEquals("Use normal player", english.getString(R.string.tablet_landscape_theme_normal_player))
         assertEquals("Usar reproductor normal", spanish.getString(R.string.tablet_landscape_theme_normal_player))
         assertEquals("Pocket Advance", spanish.getString(R.string.tablet_landscape_theme_pocket_advance))
-        // Theme names are shared, non-translatable resources, including the reserved Horizon identity.
+        // Proper theme names are shared, non-translatable resources.
         assertEquals("Pocket Horizon", english.getString(R.string.tablet_landscape_theme_pocket_horizon))
         assertEquals("Pocket Horizon", spanish.getString(R.string.tablet_landscape_theme_pocket_horizon))
     }

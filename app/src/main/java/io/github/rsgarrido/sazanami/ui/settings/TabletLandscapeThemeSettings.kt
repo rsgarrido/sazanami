@@ -34,7 +34,7 @@ internal fun TabletLandscapeThemeSettings(
     onThemeSelected: (TabletLandscapeTheme) -> Unit
 ) {
     var showChoices by rememberSaveable { mutableStateOf(false) }
-    // Reflect the usable fallback for a reserved choice without rewriting its persisted identity.
+    // Settings reflects the saved choice; host eligibility never rewrites the user's selection.
     val displayedTheme = selectedTheme.takeIf { it in TabletLandscapeTheme.selectableThemes }
         ?: TabletLandscapeTheme.NORMAL_PLAYER
     val explanation = stringResource(R.string.settings_tablet_landscape_theme_summary)

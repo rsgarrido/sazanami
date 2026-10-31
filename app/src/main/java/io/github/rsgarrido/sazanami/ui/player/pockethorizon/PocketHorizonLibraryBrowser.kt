@@ -19,6 +19,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
@@ -27,6 +28,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.stableUiKey
@@ -84,6 +87,18 @@ internal fun PocketHorizonLibraryBrowser(
     val currentLibrary by rememberUpdatedState(library)
     val currentInputEnabled by rememberUpdatedState(inputEnabled)
     val currentSongClick by rememberUpdatedState(onSongClick)
+    val currentKeys by rememberUpdatedState(keys)
+    val consoleInput = LocalHorizonConsoleInput.current
+    val focusKey = navigationState.focusedKey(list)?.takeIf { it in rowKeys } ?: rowKeys.firstOrNull()
+    val activateRow: (String) -> Unit = { key ->
+        if (currentInputEnabled && navigationState.category == category &&
+            navigationState.albumKey == albumKey && category == PocketHorizonCategory.Albums) {
+            if (key in currentLibrary.albumByKey) navigationState.openAlbum(key)
+        } else if (currentInputEnabled && navigationState.category == category &&
+            navigationState.artistKey == artistKey && category == PocketHorizonCategory.Artists && !isDetail) {
+            if (key in currentLibrary.artistByKey) navigationState.openArtist(key)
+        }
+    }
     val activateSong: (String) -> Unit = activate@ { songKey ->
         if (!currentInputEnabled || navigationState.category != category) return@activate
         val callback = currentSongClick ?: return@activate
@@ -143,9 +158,49 @@ internal fun PocketHorizonLibraryBrowser(
                     key(list, albumKey, artistKey) {
                         val listState = rememberPocketHorizonListState(navigationState, list, keys,
                             library.isAuthoritative, albumKey ?: artistKey)
+                        val scope = rememberCoroutineScope()
+                        val movement = remember(listState) { mutableStateOf<Job?>(null) }
+                        fun currentContext(): Boolean = currentInputEnabled && navigationState.category == category && when (category) {
+                            PocketHorizonCategory.Albums -> navigationState.albumKey == albumKey
+                            PocketHorizonCategory.Artists -> navigationState.artistKey == artistKey
+                            PocketHorizonCategory.Songs -> true
+                            PocketHorizonCategory.NowPlaying -> false
+                        }
+                        val activate by rememberUpdatedState<(String) -> Unit> { key ->
+                            if (currentContext() && key in currentKeys) {
+                                movement.value?.cancel()
+                                navigationState.focus(list, key)
+                                if (list == PocketHorizonList.Albums || list == PocketHorizonList.Artists) activateRow(key)
+                                else activateSong(key)
+                            }
+                        }
+                        DisposableEffect(consoleInput, listState, rowKeys, inputEnabled, category, albumKey, artistKey, onSongClick != null) {
+                            val binding = if (!inputEnabled) null else PocketHorizonConsoleInput.Binding(
+                                move = { delta ->
+                                    // A held stick must not move the selection faster than placement
+                                    // can reveal it. Drop repeats while this one local move completes.
+                                    if (currentContext() && movement.value?.isActive != true) {
+                                        val index = rowKeys.indexOf(navigationState.focusedKey(list)).let { if (it < 0) 0 else it }
+                                        val target = rowKeys[(index + delta).coerceIn(0, rowKeys.lastIndex)]
+                                        movement.value = scope.launch {
+                                            if (listState.revealPocketHorizonItem(target, { currentKeys }, ::currentContext)) {
+                                                navigationState.focus(list, target)
+                                            }
+                                        }
+                                    }
+                                }, confirm = {
+                                    if (currentContext() && movement.value?.isActive != true) rowKeys.firstOrNull { it == navigationState.focusedKey(list) }
+                                        .let { it ?: rowKeys.firstOrNull() }?.let(activate)
+                                }, canConfirm = list == PocketHorizonList.Albums || list == PocketHorizonList.Artists || onSongClick != null)
+                            consoleInput?.binding = binding
+                            onDispose {
+                                movement.value?.cancel()
+                                if (consoleInput?.binding === binding) consoleInput?.binding = null
+                            }
+                        }
                         LazyColumn(state = listState, userScrollEnabled = inputEnabled,
                             modifier = Modifier.fillMaxWidth().weight(1f)
-                            .testTag("pocketHorizonLibraryList"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            .testTag("pocketHorizonLibraryList"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             summaryKey?.let { summary ->
                                 item(key = summary, contentType = "summary") {
                                     if (album != null) PocketHorizonAlbumSummary(album, style)
@@ -156,24 +211,24 @@ internal fun PocketHorizonLibraryBrowser(
                                 PocketHorizonList.Songs, PocketHorizonList.AlbumTracks, PocketHorizonList.ArtistTracks -> {
                                     items(context, key = Song::stableUiKey, contentType = { "song" }) { song ->
                                         val songKey = song.stableUiKey()
-                                        PocketHorizonSongRow(song, navigationState.selectedSongKey == songKey,
-                                            inputEnabled && onSongClick != null, { activateSong(songKey) }, style)
+                                        PocketHorizonSongRow(song, focusKey == songKey,
+                                            inputEnabled && onSongClick != null, { activate(songKey) }, style)
                                     }
                                 }
                                 PocketHorizonList.Albums -> {
                                     items(library.albums, key = { it.key }, contentType = { "album" }) { entry ->
                                         PocketHorizonAlbumRow(entry, inputEnabled, {
                                             if (currentInputEnabled && navigationState.category == PocketHorizonCategory.Albums &&
-                                                entry.key in currentLibrary.albumByKey) navigationState.openAlbum(entry.key)
-                                        }, style)
+                                                entry.key in currentLibrary.albumByKey) activate(entry.key)
+                                        }, style, selected = focusKey == entry.key)
                                     }
                                 }
                                 PocketHorizonList.Artists -> {
                                     items(library.artists, key = { it.key }, contentType = { "artist" }) { entry ->
                                         PocketHorizonArtistRow(entry, inputEnabled, {
                                             if (currentInputEnabled && navigationState.category == PocketHorizonCategory.Artists &&
-                                                entry.key in currentLibrary.artistByKey) navigationState.openArtist(entry.key)
-                                        }, style)
+                                                entry.key in currentLibrary.artistByKey) activate(entry.key)
+                                        }, style, selected = focusKey == entry.key)
                                     }
                                 }
                             }

@@ -98,11 +98,11 @@ private fun PocketHorizonButton(
     prominent: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val shape = if (prominent) CircleShape else RoundedCornerShape(16.dp)
+    val shape = if (prominent) CircleShape else RoundedCornerShape(4.dp)
     Box(
         modifier.size(if (prominent) PocketHorizonLayoutMetrics.ControlHeight else PocketHorizonLayoutMetrics.MinimumTouchTarget)
-            .testTag(tag).background(if (prominent && enabled) style.accent else style.surface.copy(alpha = 0.65f), shape)
-            .border(1.dp, style.outline.copy(alpha = 0.40f), shape)
+            .testTag(tag).background(if (prominent && enabled) style.accent else style.surface.copy(alpha = 0.18f), shape)
+            .border(1.dp, style.outline.copy(alpha = if (prominent) 0.40f else 0f), shape)
             .clickable(enabled = enabled, role = Role.Button, onClickLabel = label) { if (enabled) onClick() }
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center

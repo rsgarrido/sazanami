@@ -74,9 +74,9 @@ internal fun PocketHorizonSongRow(
 
 @Composable
 internal fun PocketHorizonAlbumRow(album: LibraryAlbumGroup, enabled: Boolean, onClick: () -> Unit,
-    style: PocketHorizonStyle) {
+    style: PocketHorizonStyle, selected: Boolean = false) {
     val title = pocketHorizonAlbumTitle(album)
-    PocketHorizonLibraryRow(title, pocketHorizonAlbumArtist(album), false, enabled,
+    PocketHorizonLibraryRow(title, pocketHorizonAlbumArtist(album), selected, enabled,
         stringResource(R.string.pocket_horizon_open_album, title), onClick,
         "pocketHorizonAlbum:" + album.key, style) {
         PocketHorizonLibraryArtwork(album.songs.firstOrNull { it.albumArtUri != null }
@@ -86,10 +86,10 @@ internal fun PocketHorizonAlbumRow(album: LibraryAlbumGroup, enabled: Boolean, o
 
 @Composable
 internal fun PocketHorizonArtistRow(artist: LibraryArtistGroup, enabled: Boolean, onClick: () -> Unit,
-    style: PocketHorizonStyle) {
+    style: PocketHorizonStyle, selected: Boolean = false) {
     val name = pocketHorizonArtistName(artist)
     PocketHorizonLibraryRow(name, pluralStringResource(R.plurals.song_count,
-        artist.songs.size, artist.songs.size), false, enabled,
+        artist.songs.size, artist.songs.size), selected, enabled,
         stringResource(R.string.pocket_horizon_open_artist, name), onClick,
         "pocketHorizonArtist:" + artist.key, style) {
         PocketHorizonArtistArtwork(artist, 56.dp)
@@ -108,12 +108,12 @@ private fun PocketHorizonLibraryRow(
     style: PocketHorizonStyle,
     artwork: @Composable () -> Unit
 ) {
-    val shape = RoundedCornerShape(14.dp)
-    Row(Modifier.fillMaxWidth().heightIn(min = 80.dp).testTag(tag).clip(shape)
+    val shape = RoundedCornerShape(3.dp)
+    Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).testTag(tag).clip(shape)
         .background(if (selected) style.surface else style.surface.copy(alpha = .45f))
-        .border(1.dp, if (selected) style.accent else style.outline.copy(alpha = .25f), shape)
+        .border(if (selected) 2.dp else 0.dp, if (selected) style.accent else style.surface, shape)
         .clickable(enabled = enabled, role = Role.Button, onClickLabel = actionLabel) { if (enabled) onClick() }
-        .semantics { this.selected = selected }.padding(12.dp),
+        .semantics { this.selected = selected }.padding(6.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
         artwork()
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {

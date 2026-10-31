@@ -39,6 +39,19 @@ internal class PocketHorizonNavigationState(
         private set
     var selectedSongKey by mutableStateOf<String?>(null)
         private set
+    var lastLibraryCategory by mutableStateOf(PocketHorizonCategory.Songs)
+        private set
+    var showControlGuide by mutableStateOf(false)
+    private val focusedKeys = mutableStateMapOf<PocketHorizonList, String>()
+    fun focusedKey(list: PocketHorizonList): String? = focusedKeys[list]
+    fun focus(list: PocketHorizonList, key: String) { focusedKeys[list] = key }
+    fun stepCategory(delta: Int) {
+        val categories = PocketHorizonCategory.entries
+        selectCategory(categories[(category.ordinal + delta).coerceIn(0, categories.lastIndex)])
+    }
+    fun toggleMusicBrowser() = selectCategory(
+        if (category == PocketHorizonCategory.NowPlaying) lastLibraryCategory else PocketHorizonCategory.NowPlaying)
+
 
     private val anchors = mutableStateMapOf<PocketHorizonList, PocketHorizonScrollAnchor>()
     // Owners keep same-group detail viewports useful after Back, without keeping unbounded history.
@@ -49,6 +62,7 @@ internal class PocketHorizonNavigationState(
 
     fun selectCategory(category: PocketHorizonCategory) {
         this.category = category
+        if (category != PocketHorizonCategory.NowPlaying) lastLibraryCategory = category
     }
 
     fun showNowPlaying() = selectCategory(PocketHorizonCategory.NowPlaying)
@@ -59,6 +73,7 @@ internal class PocketHorizonNavigationState(
         albumTracksOwnerKey = key
         albumKey = key
         category = PocketHorizonCategory.Albums
+        lastLibraryCategory = category
     }
 
     fun openArtist(key: String) {
@@ -66,6 +81,7 @@ internal class PocketHorizonNavigationState(
         artistTracksOwnerKey = key
         artistKey = key
         category = PocketHorizonCategory.Artists
+        lastLibraryCategory = category
     }
 
     fun selectSong(key: String?) {
@@ -167,6 +183,8 @@ internal class PocketHorizonNavigationState(
                         add(anchor.index)
                         add(anchor.offset)
                     }
+                    add(state.lastLibraryCategory.name)
+                    PocketHorizonList.entries.forEach { add(state.focusedKey(it)) }
                 }
             },
             restore = { saved ->
@@ -188,6 +206,13 @@ internal class PocketHorizonNavigationState(
                             updateAnchor(list, values.getOrNull(start) as? String,
                                 (values.getOrNull(start + 1) as? Int) ?: 0,
                                 (values.getOrNull(start + 2) as? Int) ?: 0)
+                        }
+                        val tail = 7 + PocketHorizonList.entries.size * 3
+                        lastLibraryCategory = PocketHorizonCategory.entries.firstOrNull {
+                            it != PocketHorizonCategory.NowPlaying && it.name == values.getOrNull(tail)
+                        } ?: category.takeIf { it != PocketHorizonCategory.NowPlaying } ?: PocketHorizonCategory.Songs
+                        PocketHorizonList.entries.forEachIndexed { index, list ->
+                            (values.getOrNull(tail + 1 + index) as? String)?.let { focus(list, it) }
                         }
                     }
                 }
