@@ -105,6 +105,7 @@ import io.github.rsgarrido.sazanami.lyrics.LyricsDocument
 import io.github.rsgarrido.sazanami.lyrics.LyricsPlaybackUiState
 import io.github.rsgarrido.sazanami.lyrics.LyricsScrollRequest
 import io.github.rsgarrido.sazanami.lyrics.LyricsUnavailableReason
+import io.github.rsgarrido.sazanami.lyrics.LyricsSourceIssue
 import io.github.rsgarrido.sazanami.lyrics.StaticLyricLine
 import io.github.rsgarrido.sazanami.lyrics.generateLyricsNameCandidates
 import io.github.rsgarrido.sazanami.lyrics.calculateLyricAnchorScrollDelta
@@ -800,6 +801,23 @@ private fun unavailableContent(
     song: Song,
     reason: LyricsUnavailableReason
 ): UnavailableContent = when (reason) {
+    is LyricsUnavailableReason.SourcesUnavailable -> {
+        val kinds = reason.issues.map { it.kind }.toSet()
+        val detail = when {
+            LyricsSourceIssue.Kind.AMBIGUOUS in kinds -> R.string.lyrics_sources_ambiguous
+            LyricsSourceIssue.Kind.PERMISSION_DENIED in kinds -> R.string.lyrics_sources_permission
+            LyricsSourceIssue.Kind.INPUT_LIMIT in kinds -> R.string.lyrics_sources_too_large
+            kinds.any { it in setOf(LyricsSourceIssue.Kind.READ_FAILURE, LyricsSourceIssue.Kind.METADATA_FAILURE,
+                LyricsSourceIssue.Kind.LOOKUP_FAILURE, LyricsSourceIssue.Kind.SCAN_FAILURE) } -> R.string.lyrics_sources_read_error
+            LyricsSourceIssue.Kind.INVALID_LYRICS in kinds -> R.string.lyrics_sources_invalid
+            LyricsSourceIssue.Kind.UNSUPPORTED_ACCESS in kinds -> R.string.lyrics_sources_access
+            LyricsSourceIssue.Kind.UNSUPPORTED_TIMING in kinds -> R.string.lyrics_sources_timing
+            LyricsSourceIssue.Kind.UNSUPPORTED_FORMAT in kinds -> R.string.lyrics_sources_format
+            else -> R.string.lyrics_sources_missing
+        }
+        UnavailableContent(R.string.lyrics_sources_unavailable, detail, canRescan = true,
+            candidates = reason.issues.flatMap { it.externalCandidates }.take(5))
+    }
     LyricsUnavailableReason.NoRootsConfigured -> UnavailableContent(
         titleRes = R.string.lyrics_no_folder,
         detailRes = R.string.lyrics_no_folder_detail,

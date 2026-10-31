@@ -224,4 +224,14 @@
         <item quantity="many">%1$d imágenes</item>
         <item quantity="other">%1$d imágenes</item>
     </plurals>
+    <string name="lyrics_sources_unavailable">Letra no disponible</string>
+    <string name="lyrics_sources_missing">No se encontró una letra externa ni integrada que se pueda mostrar.</string>
+    <string name="lyrics_sources_ambiguous">Hay varias versiones de la letra con la misma prioridad. Sazanami no puede elegir una de forma segura.</string>
+    <string name="lyrics_sources_permission">Se denegó el acceso a una fuente de letras. Revisa los permisos del archivo o de la carpeta.</string>
+    <string name="lyrics_sources_too_large">Una fuente de letras supera los límites de texto o metadatos admitidos.</string>
+    <string name="lyrics_sources_read_error">No se pudo leer una fuente de letras. Intenta actualizar o revisa el archivo de audio.</string>
+    <string name="lyrics_sources_invalid">La letra disponible no contiene texto ni marcas de tiempo utilizables.</string>
+    <string name="lyrics_sources_access">Este proveedor no ofrece el acceso con búsqueda al archivo necesario para leer la letra integrada.</string>
+    <string name="lyrics_sources_timing">Los metadatos sincronizados nativos todavía no son compatibles. Puedes usar LRC externo o texto LRC integrado.</string>
+    <string name="lyrics_sources_format">Este formato de audio no admite letras integradas en Sazanami. Puedes usar un archivo LRC externo.</string>
 </resources>

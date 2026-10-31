@@ -14,6 +14,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
@@ -31,6 +32,78 @@ class LyricsPlaybackControllerTest {
     @After
     fun tearDown() {
         scope.cancel()
+    }
+
+    @Test
+    fun sameNumericIdAcrossVolumesAndMetadataRevisionsTriggersFreshLookup() = runBlocking {
+        val repository = PlaybackLyricsRepository().apply { defaultResult = found(unsynced("Current")) }
+        val fixture = fixture(repository)
+        fixture.controller.setVisible(true)
+        val original = song(7).copy(volumeName = "primary")
+        fixture.playback.value = playback(original)
+        fixture.controller.awaitState<LyricsPlaybackUiState.Unsynced>()
+        fixture.playback.value = playback(original.copy(volumeName = "sd-card"))
+        fixture.controller.awaitState<LyricsPlaybackUiState.Unsynced> { it.song.volumeName == "sd-card" }
+        fixture.playback.value = playback(original.copy(volumeName = "sd-card", dateModifiedEpochSeconds = 123, title = "Updated"))
+        fixture.controller.awaitState<LyricsPlaybackUiState.Unsynced> { it.song.title == "Updated" }
+        assertEquals(3, repository.lookupCount.get())
+    }
+
+    @Test
+    fun sourceSnapshotSurvivesControllerAndTargetedInvalidationReloadsWithoutTicksReadingTags() = runBlocking {
+        val parser = LrcParser()
+        val source = parser.parseSource("[00:01]<00:01>Original")
+        val sourced = SourcedLyrics(parser.project(source), LyricsSource.Embedded("track", "USLT", "eng", "original"), source)
+        val repository = PlaybackLyricsRepository().apply { defaultResult = LyricsLookupResult.Found(sourced) }
+        val fixture = fixture(repository)
+        val target = song(1)
+        fixture.controller.setVisible(true)
+        fixture.playback.value = playback(target, isPlaying = true)
+        val state = fixture.controller.awaitState<LyricsPlaybackUiState.Synced>()
+        assertEquals(sourced, state.sourcedLyrics)
+        delay(40)
+        assertEquals(1, repository.lookupCount.get())
+        repository.changes.emit(LyricsInvalidation(trackKey = "different-track"))
+        assertEquals(1, repository.lookupCount.get())
+        repository.changes.emit(LyricsInvalidation(trackKey = target.toLyricsIdentity().trackKey))
+        fixture.controller.awaitState<LyricsPlaybackUiState.Synced>()
+        assertEquals(2, repository.lookupCount.get())
+    }
+
+    @Test
+    fun unexpectedLookupFailureLeavesLoadingAndRescanCanRecover() = runBlocking {
+        val repository = PlaybackLyricsRepository().apply { lookup = { throw IllegalStateException("index read failed") } }
+        val fixture = fixture(repository)
+        fixture.controller.setVisible(true)
+        fixture.playback.value = playback(song(1))
+        val failed = fixture.controller.awaitState<LyricsPlaybackUiState.Unavailable>()
+        assertTrue((failed.reason as LyricsUnavailableReason.SourcesUnavailable).issues.any {
+            it.kind == LyricsSourceIssue.Kind.LOOKUP_FAILURE
+        })
+        repository.lookup = { found(unsynced("Recovered")) }
+        fixture.controller.rescan()
+        assertEquals("Recovered", fixture.controller.awaitState<LyricsPlaybackUiState.Unsynced>().lyrics.lines.single().text)
+    }
+
+    @Test
+    fun cancelledSameIdLookupCannotPublishAfterNewVolumeEvenIfReaderIgnoresCancellation() = runBlocking {
+        val repository = PlaybackLyricsRepository().apply {
+            lookup = { identity ->
+                if (identity.volumeId == "primary") {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { delay(40) }
+                    found(unsynced("Old volume"))
+                } else found(unsynced("New volume"))
+            }
+        }
+        val fixture = fixture(repository)
+        fixture.controller.setVisible(true)
+        val original = song(8).copy(volumeName = "primary")
+        fixture.playback.value = playback(original)
+        fixture.controller.awaitState<LyricsPlaybackUiState.Loading>()
+        fixture.playback.value = playback(original.copy(volumeName = "sd-card"))
+        fixture.controller.awaitState<LyricsPlaybackUiState.Unsynced>()
+        delay(70)
+        assertEquals("New volume", (fixture.controller.uiState.value as LyricsPlaybackUiState.Unsynced).lyrics.lines.single().text)
     }
 
     @Test
@@ -434,6 +507,8 @@ class LyricsPlaybackControllerTest {
 
 private class PlaybackLyricsRepository : LocalLyricsRepository {
     override val roots: StateFlow<List<LyricsRoot>> = MutableStateFlow(emptyList())
+    val changes = MutableSharedFlow<LyricsInvalidation>(extraBufferCapacity = 8)
+    override val invalidations = changes
     val lookupCount = AtomicInteger()
     val refreshCount = AtomicInteger()
     var defaultResult: LyricsLookupResult = LyricsLookupResult.NotFound

@@ -13,12 +13,14 @@ sealed interface LyricsPlaybackUiState {
         val song: Song,
         val lyrics: LyricsDocument.Synced,
         val activeGroup: ActiveLyricGroup?,
-        val autoFollowEnabled: Boolean
+        val autoFollowEnabled: Boolean,
+        val sourcedLyrics: SourcedLyrics? = null
     ) : LyricsPlaybackUiState
 
     data class Unsynced(
         val song: Song,
-        val lyrics: LyricsDocument.Unsynced
+        val lyrics: LyricsDocument.Unsynced,
+        val sourcedLyrics: SourcedLyrics? = null
     ) : LyricsPlaybackUiState
 
     data class Unavailable(
@@ -36,4 +38,5 @@ sealed interface LyricsUnavailableReason {
     data class StaleFile(val documentUri: String) : LyricsUnavailableReason
     data class ReadError(val documentUri: String) : LyricsUnavailableReason
     data class InvalidLyrics(val documentUri: String) : LyricsUnavailableReason
+    data class SourcesUnavailable(val issues: List<LyricsSourceIssue>) : LyricsUnavailableReason
 }

@@ -199,4 +199,14 @@
     <plurals name="backup_history_entries"><item quantity="one">%1$d history entry</item><item quantity="other">%1$d history entries</item></plurals>
     <plurals name="backup_selected_folders"><item quantity="one">%1$d selected folder</item><item quantity="other">%1$d selected folders</item></plurals>
     <plurals name="backup_pictures"><item quantity="one">%1$d picture</item><item quantity="other">%1$d pictures</item></plurals>
+    <string name="lyrics_sources_unavailable">Lyrics unavailable</string>
+    <string name="lyrics_sources_missing">No usable external or embedded lyrics were found.</string>
+    <string name="lyrics_sources_ambiguous">Several equally preferred lyrics versions are available. Sazanami cannot safely choose one.</string>
+    <string name="lyrics_sources_permission">Access to a lyrics source was denied. Check file or folder permissions.</string>
+    <string name="lyrics_sources_too_large">A lyrics source exceeds the supported text or metadata limits.</string>
+    <string name="lyrics_sources_read_error">A lyrics source could not be read. Try refreshing or check the audio file.</string>
+    <string name="lyrics_sources_invalid">The available lyrics do not contain usable text or timestamps.</string>
+    <string name="lyrics_sources_access">This provider does not offer the seekable file access needed to read embedded lyrics.</string>
+    <string name="lyrics_sources_timing">Native synchronized metadata is not supported yet. External LRC and embedded LRC text remain supported.</string>
+    <string name="lyrics_sources_format">Embedded lyrics are not supported for this audio format. You can still use an external LRC file.</string>
 </resources>

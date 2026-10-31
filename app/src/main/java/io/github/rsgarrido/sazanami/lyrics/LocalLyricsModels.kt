@@ -2,6 +2,9 @@ package io.github.rsgarrido.sazanami.lyrics
 
 import java.util.Locale
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import io.github.rsgarrido.sazanami.data.SongReference
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -64,7 +67,10 @@ data class SongLyricsIdentity(
     val albumArtist: String = "",
     val relativeDirectory: String,
     val fallbackDirectory: String,
-    val volumeId: String?
+    val volumeId: String?,
+    val audioFilePath: String = "",
+    val trackKey: String = "",
+    val reference: SongReference? = null
 )
 
 enum class LyricsNameCandidateSource {
@@ -107,13 +113,17 @@ sealed interface LyricsLookupResult {
     data class StaleFile(val documentUri: String) : LyricsLookupResult
     data class ReadError(val documentUri: String) : LyricsLookupResult
     data class InvalidLyrics(val documentUri: String) : LyricsLookupResult
+    data class Unavailable(val issues: List<LyricsSourceIssue>) : LyricsLookupResult
 }
+
+data class LyricsInvalidation(val trackKey: String? = null, val sourceId: String? = null)
 
 sealed interface LyricsDocumentReadResult {
     data class Success(val bytes: ByteArray) : LyricsDocumentReadResult
     data object Missing : LyricsDocumentReadResult
     data object PermissionLost : LyricsDocumentReadResult
     data object Failed : LyricsDocumentReadResult
+    data object TooLarge : LyricsDocumentReadResult
 }
 
 interface LyricsTreeDataSource {
@@ -138,6 +148,9 @@ interface LyricsDocumentReader {
 
 interface LocalLyricsRepository {
     val roots: StateFlow<List<LyricsRoot>>
+    val invalidations: Flow<LyricsInvalidation> get() = emptyFlow()
+    /** Evict before publishing so an editor-triggered reload cannot see old content. */
+    suspend fun invalidate(change: LyricsInvalidation = LyricsInvalidation()) = Unit
     suspend fun loadCachedIndexSummary(): LyricsIndexSummary?
     suspend fun addRoot(root: LyricsRoot): LyricsIndexResult
     suspend fun removeRoot(rootUri: String): LyricsIndexResult

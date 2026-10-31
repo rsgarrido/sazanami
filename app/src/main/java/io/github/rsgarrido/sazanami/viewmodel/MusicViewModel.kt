@@ -92,6 +92,8 @@ import io.github.rsgarrido.sazanami.data.importing.spotify.SpotifyListeningHisto
 import io.github.rsgarrido.sazanami.BuildConfig
 import io.github.rsgarrido.sazanami.lyrics.LocalLyricsServices
 import io.github.rsgarrido.sazanami.lyrics.LyricsPlaybackController
+import io.github.rsgarrido.sazanami.lyrics.LyricsInvalidation
+import io.github.rsgarrido.sazanami.lyrics.toLyricsIdentity
 import io.github.rsgarrido.sazanami.lyrics.LyricsPositionSource
 import io.github.rsgarrido.sazanami.data.playlistfile.M3uExportResult
 import io.github.rsgarrido.sazanami.data.playlistfile.PlaylistImportResult
@@ -686,8 +688,9 @@ class MusicViewModel(
         context = appContext,
         coroutineScope = viewModelScope
     )
+    private val lyricsRepository = LocalLyricsServices.shared(appContext).repository
     private val lyricsPlaybackController = LyricsPlaybackController(
-        repository = LocalLyricsServices.shared(appContext).repository,
+        repository = lyricsRepository,
         playbackState = playbackController.uiState,
         positionSource = LyricsPositionSource(
             playbackController::getCurrentPositionForLyrics
@@ -1508,6 +1511,11 @@ class MusicViewModel(
         originalSong: Song,
         editedTags: EditableSongTags
     ) {
+        // A same-size tag edit can share MediaStore's one-second modification timestamp.
+        // Explicitly invalidate the affected lyric source, independently of the library refresh.
+        viewModelScope.launch {
+            lyricsRepository.invalidate(LyricsInvalidation(trackKey = originalSong.toLyricsIdentity().trackKey))
+        }
         libraryController.refreshSongsAfterTagEdit(
             originalSong = originalSong,
             editedTags = editedTags
@@ -1517,6 +1525,9 @@ class MusicViewModel(
     private suspend fun refreshBatchMetadataLibrary(
         songs: List<Song>
     ): BatchPostWriteStageResult {
+        songs.distinctBy { it.membershipKey() }.forEach { song ->
+            lyricsRepository.invalidate(LyricsInvalidation(trackKey = song.toLyricsIdentity().trackKey))
+        }
         val refreshed = try {
             withContext(Dispatchers.IO) {
                 songs.distinctBy { it.membershipKey() }.map { song ->

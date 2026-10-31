@@ -20,6 +20,15 @@ internal object MetadataTagIO {
         AudioFileIO.read(file).tag
     }
 
+    fun readTag(file: File, extension: String): Tag? = if (
+        extension.toAudioMetadataFormat() == AudioMetadataFormat.MP4
+    ) {
+        readMp4Tag(file)
+    } else {
+        // Explicit extension also supports read-only /proc/self/fd paths without a suffix.
+        AudioFileIO.readAs(file, extension.lowercase(java.util.Locale.ROOT)).tag
+    }
+
     fun openForWrite(file: File): MetadataTagWriteTarget {
         if (file.isMp4FamilyMetadataFile()) {
             val tag = readMp4Tag(file)

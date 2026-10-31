@@ -24,7 +24,8 @@ class LocalLyricsServices private constructor(context: Context) {
         indexer = indexer,
         documentReader = AndroidLyricsDocumentReader(appContext.contentResolver),
         parser = LrcParser(),
-        ioDispatcher = ioDispatcher
+        ioDispatcher = ioDispatcher,
+        embeddedReader = AndroidEmbeddedLyricsReader(appContext.contentResolver, ioDispatcher)
     )
 
     companion object {

@@ -44,6 +44,8 @@ android {
         buildConfig = true
         compose = true
     }
+    // One set of synthetic metadata-container fixtures for JVM and device reader tests.
+    sourceSets.getByName("androidTest").assets.srcDir("src/test/resources/lyrics")
 }
 
 kotlin {

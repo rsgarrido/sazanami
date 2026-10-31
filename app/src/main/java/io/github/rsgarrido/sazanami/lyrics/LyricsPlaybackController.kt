@@ -9,6 +9,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
+import kotlin.coroutines.coroutineContext
 
 fun interface LyricsPositionSource {
     fun currentPositionMs(): Long
@@ -29,6 +31,8 @@ class LyricsPlaybackController(
     val uiState: StateFlow<LyricsPlaybackUiState> = _uiState
 
     private var currentSong: Song? = null
+    private var currentIdentity: SongLyricsIdentity? = null
+    private var lookupGeneration = 0L
     private var currentContent: Content = Content.None
     private var isVisible = false
     private var isPlaying = playbackState.value.isPlaying
@@ -40,13 +44,21 @@ class LyricsPlaybackController(
     init {
         scope.launch {
             playbackState.collect { state ->
-                if (currentSong?.id != state.currentSong?.id) {
+                if (currentIdentity != state.currentSong?.toLyricsIdentity()) {
                     onSongChanged(state.currentSong)
                 }
                 if (isPlaying != state.isPlaying) {
                     isPlaying = state.isPlaying
                     updatePositionNow()
                     updateTicker()
+                }
+            }
+        }
+        scope.launch {
+            repository.invalidations.collect { change ->
+                val identity = currentIdentity ?: return@collect
+                if (change.trackKey == null || change.trackKey == identity.trackKey) {
+                    startLookup(currentSong, refreshIndex = false)
                 }
             }
         }
@@ -103,6 +115,7 @@ class LyricsPlaybackController(
 
     private fun onSongChanged(song: Song?) {
         currentSong = song
+        currentIdentity = song?.toLyricsIdentity()
         currentContent = if (song == null) Content.None else Content.Loading
         autoFollowEnabled = true
         pendingSeek = null
@@ -113,21 +126,40 @@ class LyricsPlaybackController(
 
     private fun startLookup(song: Song?, refreshIndex: Boolean) {
         lookupJob?.cancel()
+        val generation = ++lookupGeneration
+        val identity = currentIdentity
         if (song == null) return
         currentContent = Content.Loading
         publish()
         updateTicker()
         lookupJob = scope.launch {
             try {
-                if (refreshIndex) repository.refreshIndex()
-                val result = repository.findLyrics(song.toLyricsIdentity())
-                if (currentSong?.id != song.id) return@launch
+                if (refreshIndex) {
+                    repository.refreshIndex()
+                }
+                val result = repository.findLyrics(requireNotNull(identity))
+                coroutineContext.ensureActive()
+                if (lookupGeneration != generation || currentIdentity != identity) return@launch
                 currentContent = result.toContent()
                 publish()
                 updatePositionNow()
                 updateTicker()
             } catch (cancellation: CancellationException) {
                 throw cancellation
+            } catch (_: Exception) {
+                if (lookupGeneration == generation && currentIdentity == identity) {
+                    currentContent = unavailable(LyricsUnavailableReason.SourcesUnavailable(listOf(
+                        LyricsSourceIssue(identity?.trackKey.orEmpty(), LyricsSourceIssue.Kind.LOOKUP_FAILURE))))
+                    publish()
+                    updateTicker()
+                }
+            } catch (_: LinkageError) {
+                if (lookupGeneration == generation && currentIdentity == identity) {
+                    currentContent = unavailable(LyricsUnavailableReason.SourcesUnavailable(listOf(
+                        LyricsSourceIssue(identity?.trackKey.orEmpty(), LyricsSourceIssue.Kind.METADATA_FAILURE))))
+                    publish()
+                    updateTicker()
+                }
             }
         }
     }
@@ -197,11 +229,13 @@ class LyricsPlaybackController(
                     song = content.song,
                     lyrics = content.document,
                     activeGroup = content.activeGroup,
-                    autoFollowEnabled = autoFollowEnabled
+                    autoFollowEnabled = autoFollowEnabled,
+                    sourcedLyrics = content.sourcedLyrics
                 )
                 is Content.Unsynced -> LyricsPlaybackUiState.Unsynced(
                     song = content.song,
-                    lyrics = content.document
+                    lyrics = content.document,
+                    sourcedLyrics = content.sourcedLyrics
                 )
                 is Content.Unavailable -> LyricsPlaybackUiState.Unavailable(
                     song = content.song,
@@ -215,11 +249,13 @@ class LyricsPlaybackController(
         is LyricsLookupResult.Found -> when (val document = lyrics.document) {
             is LyricsDocument.Synced -> Content.Synced(
                 song = requireNotNull(currentSong),
-                document = document
+                document = document,
+                sourcedLyrics = lyrics
             )
             is LyricsDocument.Unsynced -> Content.Unsynced(
                 song = requireNotNull(currentSong),
-                document = document
+                document = document,
+                sourcedLyrics = lyrics
             )
         }
         LyricsLookupResult.NoRootsConfigured -> unavailable(
@@ -244,6 +280,7 @@ class LyricsPlaybackController(
         is LyricsLookupResult.InvalidLyrics -> unavailable(
             LyricsUnavailableReason.InvalidLyrics(documentUri)
         )
+        is LyricsLookupResult.Unavailable -> unavailable(LyricsUnavailableReason.SourcesUnavailable(issues))
     }
 
     private fun unavailable(reason: LyricsUnavailableReason): Content =
@@ -255,11 +292,13 @@ class LyricsPlaybackController(
         data class Synced(
             val song: Song,
             val document: LyricsDocument.Synced,
+            val sourcedLyrics: SourcedLyrics,
             val activeGroup: ActiveLyricGroup? = null
         ) : Content
         data class Unsynced(
             val song: Song,
-            val document: LyricsDocument.Unsynced
+            val document: LyricsDocument.Unsynced,
+            val sourcedLyrics: SourcedLyrics
         ) : Content
         data class Unavailable(
             val song: Song,

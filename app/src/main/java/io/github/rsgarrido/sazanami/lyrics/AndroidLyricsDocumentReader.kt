@@ -25,7 +25,7 @@ class AndroidLyricsDocumentReader(
                     val read = input.read(buffer)
                     if (read < 0) break
                     if (output.size() + read > maximumBytes) {
-                        return LyricsDocumentReadResult.Failed
+                        return LyricsDocumentReadResult.TooLarge
                     }
                     output.write(buffer, 0, read)
                 }
@@ -44,6 +44,6 @@ class AndroidLyricsDocumentReader(
     }
 
     companion object {
-        const val DEFAULT_MAXIMUM_BYTES = 2 * 1024 * 1024
+        const val DEFAULT_MAXIMUM_BYTES = LyricsLimits.SOURCE_BYTES
     }
 }
