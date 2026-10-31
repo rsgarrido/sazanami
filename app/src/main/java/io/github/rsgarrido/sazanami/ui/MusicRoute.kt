@@ -420,6 +420,8 @@ internal fun MusicRoute(
             LocalPlaybackPlayPauseIntent provides playbackUiState.playPauseIntent,
             LocalPlaybackStatus provides playbackStatus) {
         MusicScreen(
+            playbackState = playbackUiState,
+            libraryState = libraryUiState,
             songs = libraryUiState.songs,
             recentlyPlayedSongs = libraryUiState.recentlyPlayedSongs,
             recentlyAddedLibrarySongs = libraryUiState.recentlyAddedSongs,
@@ -683,10 +685,15 @@ internal fun MusicRoute(
             selectedTabletLandscapeTheme = playerAppearanceUiState.tabletLandscapeTheme,
             onTabletLandscapeThemeSelected = musicViewModel::selectTabletLandscapeTheme,
             pocketAdvanceAppearance = playerAppearanceUiState.pocketAdvanceAppearance,
+            pocketHorizonAppearance = playerAppearanceUiState.pocketHorizonAppearance,
             onPocketAdvanceConsoleFinishSelected = musicViewModel::selectPocketAdvanceConsoleFinish,
+            onPocketHorizonConsoleFinishSelected = musicViewModel::selectPocketHorizonConsoleFinish,
             onPocketAdvanceLcdPaletteSelected = musicViewModel::selectPocketAdvanceLcdPalette,
+            onPocketHorizonLcdPaletteSelected = musicViewModel::selectPocketHorizonLcdPalette,
             onPocketAdvanceControlsFinishSelected = musicViewModel::selectPocketAdvanceControlsFinish,
+            onPocketHorizonWaveTreatmentSelected = musicViewModel::selectPocketHorizonWaveTreatment,
             onResetPocketAdvanceAppearance = musicViewModel::resetPocketAdvanceAppearance,
+            onResetPocketHorizonAppearance = musicViewModel::resetPocketHorizonAppearance,
             onUpdatePlayerThemeTokenOverride = musicViewModel::updatePlayerThemeTokenOverride,
             onResetPlayerThemeTokenOverrides = musicViewModel::resetPlayerThemeTokenOverrides,
             selectedModernArtworkTransitionStyle =

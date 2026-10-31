@@ -1,6 +1,8 @@
 package io.github.rsgarrido.sazanami
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
 import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -15,6 +17,13 @@ import io.github.rsgarrido.sazanami.data.backup.BackupRepository
 import io.github.rsgarrido.sazanami.data.local.AppDatabase
 import io.github.rsgarrido.sazanami.data.preferences.AppPreferencesRepository
 import io.github.rsgarrido.sazanami.ui.player.theme.PlayerThemeTokenOverrides
+import io.github.rsgarrido.sazanami.ui.player.theme.applyOverrides
+import io.github.rsgarrido.sazanami.ui.player.theme.defaultTokens
+import io.github.rsgarrido.sazanami.ui.player.PlayerDeviceKind
+import io.github.rsgarrido.sazanami.ui.player.PlayerPresentationIdentity
+import io.github.rsgarrido.sazanami.ui.player.TabletLandscapePlayerContext
+import io.github.rsgarrido.sazanami.ui.player.resolvePlayerPresentation
+import io.github.rsgarrido.sazanami.ui.player.tabletLandscapePlayerCandidate
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +36,7 @@ import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -90,6 +100,17 @@ class TabletLandscapeThemeBackupTest {
                     it.playerThemeTokenOverrides[PlayerTheme.CLASSIC_WHEEL] == colors
             } }
             assertEquals(mapOf(PlayerTheme.CLASSIC_WHEEL to colors), restored.playerThemeTokenOverrides)
+            val tokens = restored.selectedPlayerTheme.defaultTokens().applyOverrides(colors)
+            val resolved = resolvePlayerPresentation(restored.selectedPlayerTheme, tokens,
+                TabletLandscapePlayerContext(PlayerDeviceKind.TABLET, 800, DpSize(1200.dp, 900.dp)),
+                tabletLandscapePlayerCandidate(restored.tabletLandscapeTheme, tokens, 1f))
+            val expected = when (selection) {
+                TabletLandscapeTheme.NORMAL_PLAYER -> PlayerPresentationIdentity.Existing(PlayerTheme.CLASSIC_WHEEL)
+                TabletLandscapeTheme.POCKET_ADVANCE -> PlayerPresentationIdentity.PocketAdvance
+                TabletLandscapeTheme.POCKET_HORIZON -> PlayerPresentationIdentity.PocketHorizon
+            }
+            assertEquals(expected, resolved.identity)
+            assertSame(tokens, resolved.tokens)
         }
     }
 

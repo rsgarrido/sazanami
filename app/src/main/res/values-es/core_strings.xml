@@ -107,7 +107,7 @@
     <string name="settings_choose_player_theme">Elegir tema del reproductor</string>
     <string name="settings_tablet_landscape_theme">Tema para tabletas en horizontal</string>
     <string name="settings_choose_tablet_landscape_theme">Elegir tema para tabletas en horizontal</string>
-    <string name="settings_tablet_landscape_theme_summary">Pocket Advance funciona en tabletas compatibles en horizontal. En los demás casos se usa el tema normal del reproductor.</string>
+    <string name="settings_tablet_landscape_theme_summary">Pocket Advance y Pocket Horizon funcionan en tabletas compatibles en horizontal. En los demás casos se usa el tema normal del reproductor.</string>
     <string name="tablet_landscape_theme_normal_player">Usar reproductor normal</string>
     <string name="settings_customize_pocket_advance">Personalizar tema horizontal</string>
     <string name="settings_customize_pocket_advance_summary">Pocket Advance · Consola, LCD y controles</string>
@@ -490,4 +490,40 @@
     <string name="library_album_mixed_quality">Calidad mixta</string>
     <string name="queue_add_playlist_failed">No se pudo agregar la lista de reproducción a la cola</string>
     <string name="library_selection_source">Selección</string>
+
+    <string name="horizon_control_up">Mover selección hacia arriba</string>
+    <string name="horizon_control_down">Mover selección hacia abajo</string>
+    <string name="horizon_control_previous_category">Categoría anterior</string>
+    <string name="horizon_control_next_category">Categoría siguiente</string>
+    <string name="horizon_control_play_pause">Reproducir o pausar</string>
+    <string name="horizon_control_confirm">Abrir elemento seleccionado</string>
+    <string name="horizon_control_back">Volver</string>
+    <string name="horizon_control_queue">Abrir cola</string>
+    <string name="horizon_control_select">SELECT: abrir o cerrar guía de controles</string>
+    <string name="horizon_control_start">START: reproducción actual o biblioteca</string>
+    <string name="horizon_control_analog">Mueve la palanca en cualquier dirección; mantenla para repetir la navegación. También puedes usar los botones de dirección.</string>
+    <string name="horizon_guide_title">Controles</string>
+    <string name="horizon_guide_body">A · Abrir selección\nB · Volver / cerrar guía\nX · Reproducir / pausar    Y · Cola\nL / R · Pista anterior / siguiente\nSTART · Reproducción actual / última biblioteca\nSELECT · Cerrar guía\nPalanca · Mover selección verticalmente; cambiar categorías horizontalmente. Mantener para repetir.</string>
+    <string name="horizon_control_previous_track">L · Pista anterior</string>
+    <string name="horizon_control_next_track">R · Pista siguiente</string>
+    <string name="horizon_shoulder_pressed">Pulsado</string>
+    <string name="horizon_shoulder_resting">Sin pulsar</string>
+
+    <string name="settings_customize_pocket_horizon">Personalizar tema horizontal</string>
+    <string name="settings_customize_pocket_horizon_summary">Pocket Horizon · Consola, LCD y fondo</string>
+    <string name="pocket_horizon_appearance_title">Apariencia de Pocket Horizon</string>
+    <string name="pocket_horizon_console_finish">Acabado de la consola</string>
+    <string name="pocket_horizon_lcd_palette">Paleta LCD</string>
+    <string name="pocket_horizon_wave_treatment">Ondas de fondo</string>
+    <string name="horizon_finish_graphite">Grafito</string>
+    <string name="horizon_finish_silver">Plata</string>
+    <string name="horizon_finish_midnight_blue">Azul medianoche</string>
+    <string name="horizon_finish_deep_burgundy">Borgoña oscuro</string>
+    <string name="horizon_lcd_blue_violet">Azul violeta</string>
+    <string name="horizon_lcd_emerald_teal">Esmeralda / Verde azulado</string>
+    <string name="horizon_lcd_warm_amber">Ámbar cálido</string>
+    <string name="horizon_wave_standard">Estándar</string>
+    <string name="horizon_wave_subtle">Sutiles</string>
+    <string name="horizon_wave_off">Desactivadas</string>
+    <string name="horizon_appearance_preview">Vista previa de la apariencia de Pocket Horizon</string>
 </resources>

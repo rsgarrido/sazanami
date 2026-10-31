@@ -27,6 +27,7 @@ import io.github.rsgarrido.sazanami.ui.player.ExpandedPlayerThemeHost
 import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsTransitionState
 import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsGestureRegion
 import io.github.rsgarrido.sazanami.ui.player.PlayerMorphState
+import io.github.rsgarrido.sazanami.ui.player.isDedicatedLandscape
 import io.github.rsgarrido.sazanami.ui.player.PlayerEndpointBounds
 import io.github.rsgarrido.sazanami.ui.player.PlayerPresentationIdentity
 import io.github.rsgarrido.sazanami.ui.player.ResolvedPlayerPresentation
@@ -154,8 +155,8 @@ fun MusicScreenOverlays(
         )
     )
 
-    val premeasurePocketAdvance = playerPresentation.identity == PlayerPresentationIdentity.PocketAdvance
-    if ((isPlayerExpanded || premeasurePocketAdvance) && currentSong != null) {
+    val premeasureDedicatedPlayer = playerPresentation.identity.isDedicatedLandscape
+    if ((isPlayerExpanded || premeasureDedicatedPlayer) && currentSong != null) {
         val activeQueueCard = playbackQueueHubUiState.queues.firstOrNull { queue -> queue.isActive }
         val activeQueueSongs = playbackQueueHubUiState.activeEntries
             .mapNotNull { entry -> entry.song }
@@ -179,7 +180,7 @@ fun MusicScreenOverlays(
                 .fillMaxSize()
                 // Alpha/disabled clickable nodes alone still participate in pointer hit testing.
                 // Keep the warm, measured endpoint behind the real app and mini while collapsed.
-                .zIndex(if (premeasurePocketAdvance && !isPlayerExpanded) -1f else 0f)
+                .zIndex(if (premeasureDedicatedPlayer && !isPlayerExpanded) -1f else 0f)
                 .graphicsLayer {
                     val progress = lyricsTransitionState.progress
                     translationY = -56.dp.toPx() * progress
@@ -331,8 +332,8 @@ internal fun shouldUseImmersivePlayerSystemBars(
     is PlayerPresentationIdentity.Existing -> shouldUseImmersivePlayerSystemBars(
         presentation.theme, isPlayerExpanded, isLyricsVisible
     )
-    // Advance keeps visibility-independent inset measurements while the existing controller hides bars.
-    PlayerPresentationIdentity.PocketAdvance -> isPlayerExpanded && !isLyricsVisible
+    // Dedicated landscape players keep visibility-independent inset measurements while the existing controller hides bars.
+    PlayerPresentationIdentity.PocketAdvance, PlayerPresentationIdentity.PocketHorizon -> isPlayerExpanded && !isLyricsVisible
 }
 
 internal fun shouldUseImmersivePlayerSystemBars(

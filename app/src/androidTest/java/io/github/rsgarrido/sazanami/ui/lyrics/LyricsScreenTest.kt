@@ -233,8 +233,8 @@ class LyricsScreenTest {
         )
 
         tapUnderlyingControl()
-        composeRule.onNodeWithText("Rescan").performClick()
-        composeRule.onNodeWithText("Local Lyrics settings").performClick()
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.lyrics_rescan)).performClick()
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.lyrics_settings)).performClick()
 
         composeRule.runOnIdle {
             assertEquals(0, underlyingClicks)

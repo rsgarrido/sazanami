@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pocket_horizon_category_now_playing">Now Playing</string>
+    <string name="pocket_horizon_category_songs">Songs</string>
+    <string name="pocket_horizon_category_albums">Albums</string>
+    <string name="pocket_horizon_category_artists">Artists</string>
+    <string name="pocket_horizon_library_loading">Loading library…</string>
+    <string name="pocket_horizon_library_refreshing">Refreshing library…</string>
+    <string name="pocket_horizon_library_error">Library unavailable. Your browsing position is saved.</string>
+    <string name="pocket_horizon_library_no_songs">No songs in your library.</string>
+    <string name="pocket_horizon_library_no_albums">No albums in your library.</string>
+    <string name="pocket_horizon_library_no_artists">No artists in your library.</string>
+    <string name="pocket_horizon_library_detail_unavailable">This selection is temporarily unavailable.</string>
+    <string name="pocket_horizon_library_no_tracks">No tracks available.</string>
+    <string name="pocket_horizon_back_albums">Back to Albums</string>
+    <string name="pocket_horizon_back_artists">Back to Artists</string>
+    <string name="pocket_horizon_play_song">Play %1$s</string>
+    <string name="pocket_horizon_open_album">Open album %1$s</string>
+    <string name="pocket_horizon_open_artist">Open artist %1$s</string>
+</resources>

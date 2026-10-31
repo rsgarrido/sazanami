@@ -1,5 +1,9 @@
 package io.github.rsgarrido.sazanami.viewmodel
 
+import io.github.rsgarrido.sazanami.data.PocketHorizonAppearance
+import io.github.rsgarrido.sazanami.data.PocketHorizonConsoleFinish
+import io.github.rsgarrido.sazanami.data.PocketHorizonLcdPalette
+import io.github.rsgarrido.sazanami.data.PocketHorizonWaveTreatment
 import android.app.Application
 import android.net.Uri
 import android.util.Log
@@ -324,6 +328,7 @@ class MusicViewModel(
             selectedTheme = selectedTheme,
             tabletLandscapeTheme = preferences.tabletLandscapeTheme,
             pocketAdvanceAppearance = preferences.pocketAdvanceAppearance,
+            pocketHorizonAppearance = preferences.pocketHorizonAppearance,
             themeTokens = selectedTheme.defaultTokens().applyOverrides(overrides),
             modernArtworkTransitionStyle = preferences.modernArtworkTransitionStyle,
             modernPlayerAppearance = preferences.modernPlayerAppearance,
@@ -422,6 +427,22 @@ class MusicViewModel(
 
     fun resetPocketAdvanceAppearance() {
         viewModelScope.launch { appPreferencesRepository.resetPocketAdvanceAppearance() }
+    }
+
+    fun selectPocketHorizonConsoleFinish(finish: PocketHorizonConsoleFinish) {
+        viewModelScope.launch { appPreferencesRepository.setPocketHorizonConsoleFinish(finish) }
+    }
+
+    fun selectPocketHorizonLcdPalette(palette: PocketHorizonLcdPalette) {
+        viewModelScope.launch { appPreferencesRepository.setPocketHorizonLcdPalette(palette) }
+    }
+
+    fun selectPocketHorizonWaveTreatment(finish: PocketHorizonWaveTreatment) {
+        viewModelScope.launch { appPreferencesRepository.setPocketHorizonWaveTreatment(finish) }
+    }
+
+    fun resetPocketHorizonAppearance() {
+        viewModelScope.launch { appPreferencesRepository.resetPocketHorizonAppearance() }
     }
 
     fun selectAppFont(appFont: AppFont) {

@@ -1,5 +1,9 @@
 package io.github.rsgarrido.sazanami.ui.settings
 
+import io.github.rsgarrido.sazanami.data.PocketHorizonAppearance
+import io.github.rsgarrido.sazanami.data.PocketHorizonConsoleFinish
+import io.github.rsgarrido.sazanami.data.PocketHorizonLcdPalette
+import io.github.rsgarrido.sazanami.data.PocketHorizonWaveTreatment
 import androidx.compose.foundation.background
 import android.content.Context
 import androidx.compose.foundation.clickable
@@ -114,10 +118,15 @@ fun SettingsScreen(
     selectedTabletLandscapeTheme: TabletLandscapeTheme = TabletLandscapeTheme.NORMAL_PLAYER,
     onTabletLandscapeThemeSelected: (TabletLandscapeTheme) -> Unit = {},
     pocketAdvanceAppearance: PocketAdvanceAppearance = PocketAdvanceAppearance.Default,
+    pocketHorizonAppearance: PocketHorizonAppearance = PocketHorizonAppearance.Default,
     onPocketAdvanceConsoleFinishSelected: (PocketAdvanceConsoleFinish) -> Unit = {},
+    onPocketHorizonConsoleFinishSelected: (PocketHorizonConsoleFinish) -> Unit = {},
     onPocketAdvanceLcdPaletteSelected: (PocketAdvanceLcdPalette) -> Unit = {},
+    onPocketHorizonLcdPaletteSelected: (PocketHorizonLcdPalette) -> Unit = {},
     onPocketAdvanceControlsFinishSelected: (PocketAdvanceControlsFinish) -> Unit = {},
+    onPocketHorizonWaveTreatmentSelected: (PocketHorizonWaveTreatment) -> Unit = {},
     onResetPocketAdvanceAppearance: () -> Unit = {},
+    onResetPocketHorizonAppearance: () -> Unit = {},
     onUpdatePlayerThemeTokenOverride: (PlayerTheme, PlayerThemeTokenField, Color) -> Unit,
     onResetPlayerThemeTokenOverrides: (PlayerTheme) -> Unit,
     selectedModernArtworkTransitionStyle: ModernArtworkTransitionStyle,
@@ -505,10 +514,22 @@ fun SettingsScreen(
 
             TabletLandscapeThemeSettings(selectedTabletLandscapeTheme, onTabletLandscapeThemeSelected)
 
-            SettingsDivider()
-
-            PocketAdvanceAppearanceSettings(pocketAdvanceAppearance, onPocketAdvanceConsoleFinishSelected,
-                onPocketAdvanceLcdPaletteSelected, onPocketAdvanceControlsFinishSelected, onResetPocketAdvanceAppearance)
+            // The saved preference owns this row, even when the player currently falls back.
+            if (selectedTabletLandscapeTheme != TabletLandscapeTheme.NORMAL_PLAYER) {
+                SettingsDivider()
+                // Discard open-dialog state on a theme change; restore it only for the same owner.
+                androidx.compose.runtime.key(selectedTabletLandscapeTheme.id) {
+                    when (selectedTabletLandscapeTheme) {
+                        TabletLandscapeTheme.POCKET_ADVANCE -> PocketAdvanceAppearanceSettings(
+                            pocketAdvanceAppearance, onPocketAdvanceConsoleFinishSelected,
+                            onPocketAdvanceLcdPaletteSelected, onPocketAdvanceControlsFinishSelected, onResetPocketAdvanceAppearance)
+                        TabletLandscapeTheme.POCKET_HORIZON -> PocketHorizonAppearanceSettings(
+                            pocketHorizonAppearance, onPocketHorizonConsoleFinishSelected,
+                            onPocketHorizonLcdPaletteSelected, onPocketHorizonWaveTreatmentSelected, onResetPocketHorizonAppearance)
+                        TabletLandscapeTheme.NORMAL_PLAYER -> Unit
+                    }
+                }
+            }
 
             if (selectedPlayerTheme == PlayerTheme.DEFAULT) {
                 SettingsDivider()

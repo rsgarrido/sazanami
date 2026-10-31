@@ -2,6 +2,9 @@ package io.github.rsgarrido.sazanami.ui.player
 
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import io.github.rsgarrido.sazanami.data.PlayerTheme
+import io.github.rsgarrido.sazanami.data.TabletLandscapeTheme
+import io.github.rsgarrido.sazanami.ui.player.theme.defaultTokens
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -89,6 +92,33 @@ class TabletLandscapePlayerEnvironmentTest {
         assertFalse(eligible(DpSize(800.dp, 1200.dp)))
         assertFalse(eligible(DpSize(839.dp, 600.dp)))
         assertFalse(eligible(DpSize(1000.dp, 479.dp)))
+    }
+
+    @Test
+    fun savedHorizonNominationUsesTheExistingClassifierWithoutRelaxingAnyExclusion() {
+        val primary = PlayerTheme.CLASSIC_WHEEL
+        val tokens = primary.defaultTokens()
+        val candidate = requireNotNull(tabletLandscapePlayerCandidate(
+            TabletLandscapeTheme.fromId("pocket_horizon"), tokens, 1f))
+        val excluded = listOf(
+            tablet.copy(configurationSmallestWidthDp = 599),
+            tablet.copy(maximumWindowSmallestWidthDp = 599),
+            tablet.copy(hasActivity = false),
+            tablet.copy(isNormalUiMode = false),
+            tablet.copy(hasHingeAngleSensor = true),
+            tablet.copy(hasPcFeature = true),
+            tablet.copy(isDefaultDisplay = false),
+            tablet.copy(isInMultiWindowMode = true),
+            tablet.copy(isInPictureInPictureMode = true))
+        (listOf(tablet, tablet.copy(configurationSmallestWidthDp = 600,
+            maximumWindowSmallestWidthDp = 600)) + excluded).forEach { snapshot ->
+            val environment = classify(snapshot)
+            val resolved = resolvePlayerPresentation(primary, tokens,
+                TabletLandscapePlayerContext(environment.deviceKind, environment.smallestScreenWidthDp,
+                    DpSize(1200.dp, 900.dp)), candidate)
+            assertEquals(if (snapshot in excluded) PlayerPresentationIdentity.Existing(primary)
+                else PlayerPresentationIdentity.PocketHorizon, resolved.identity)
+        }
     }
 
     private fun classify(snapshot: TabletLandscapePlatformSnapshot) =

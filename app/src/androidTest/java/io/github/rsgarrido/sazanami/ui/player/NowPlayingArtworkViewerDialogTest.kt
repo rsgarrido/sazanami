@@ -2,6 +2,7 @@ package io.github.rsgarrido.sazanami.ui.player
 
 import android.net.Uri
 import android.util.Log
+import android.view.KeyEvent
 import android.view.View
 import android.view.Window
 import androidx.core.view.WindowCompat
@@ -30,7 +31,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.test.espresso.Espresso
+import androidx.test.platform.app.InstrumentationRegistry
 import coil.request.ImageRequest
 import coil.size.Scale
 import io.github.rsgarrido.sazanami.R
@@ -45,6 +46,7 @@ class NowPlayingArtworkViewerDialogTest {
     @get:Rule val composeRule = createAndroidComposeRule<ComponentActivity>()
     private var playerClicks = 0
     private var playerBacks = 0
+    private var viewerDismissals = 0
     private val visible = mutableStateOf(true)
     private val status = mutableStateOf(ArtworkViewerLoadStatus.READY)
     private val tilt = ArtworkViewerTiltState()
@@ -62,7 +64,10 @@ class NowPlayingArtworkViewerDialogTest {
                 hostIsImmersive?.value?.let { ImmersiveSystemBarsEffect(isImmersive = it) }
                 BackHandler { playerBacks++ }
                 Box(Modifier.fillMaxSize().clickable { playerClicks++ })
-                if (visible.value) NowPlayingArtworkViewerDialog(request, { visible.value = false }, motion, tilt,
+                if (visible.value) NowPlayingArtworkViewerDialog(request, {
+                    viewerDismissals++
+                    visible.value = false
+                }, motion, tilt,
                     imageContent = { _, modifier, description, onStatus ->
                         val view = LocalView.current
                         Box(modifier.background(Color.Blue).semantics { contentDescription = description })
@@ -96,9 +101,30 @@ class NowPlayingArtworkViewerDialogTest {
 
     @Test fun backClosesBeforeTheUnderlyingPlayerBackHandler() {
         content()
-        Espresso.pressBack()
+        composeRule.onNodeWithTag(ArtworkViewerDialogTag).assertIsDisplayed()
+        // The native dialog owns focus. Espresso.pressBack() can select the activity root while
+        // the dialog is opening, then time out waiting for that intentionally unfocused root.
+        composeRule.waitUntil(5_000) {
+            composeRule.runOnUiThread {
+                currentViewerWindow()?.decorView?.hasWindowFocus() == true
+            }
+        }
+        composeRule.runOnIdle {
+            assertFalse(composeRule.activity.window.decorView.hasWindowFocus())
+            assertEquals(0, viewerDismissals)
+            assertEquals(0, playerBacks)
+        }
+        // Send one real system Back DOWN/UP pair to the focused window from the test thread.
+        // This bypasses Espresso root selection, not the dialog's native Back dispatcher.
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        // Production keeps the modal mounted until its closing animation calls onDismiss.
+        composeRule.waitUntil(5_000) { !visible.value }
         composeRule.onNodeWithTag(ArtworkViewerDialogTag).assertDoesNotExist()
-        composeRule.runOnIdle { assertEquals(0, playerBacks) }
+        composeRule.runOnIdle {
+            assertEquals(1, viewerDismissals)
+            assertEquals(0, playerBacks)
+            assertEquals(0, playerClicks)
+        }
     }
 
     @Test fun dialogPreservesVisibleOrHiddenBarsAndDismissalLeavesThePlayerPresentationIntact() {

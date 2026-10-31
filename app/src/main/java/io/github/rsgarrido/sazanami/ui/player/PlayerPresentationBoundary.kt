@@ -24,20 +24,19 @@ internal fun requiresPlayerPresentationBoundary(
     previousIdentity: PlayerPresentationIdentity,
     nextIdentity: PlayerPresentationIdentity,
     viewportChanged: Boolean
-): Boolean = (previousIdentity == PlayerPresentationIdentity.PocketAdvance ||
-    nextIdentity == PlayerPresentationIdentity.PocketAdvance) &&
+): Boolean = (previousIdentity.isDedicatedLandscape || nextIdentity.isDedicatedLandscape) &&
     (previousIdentity != nextIdentity || viewportChanged)
 
 internal data class PlayerPresentationBoundary(
     val presentation: ResolvedPlayerPresentation,
-    /** Replaces measurement/pointer lifetimes only at an Advance boundary. */
+    /** Replaces measurement/pointer lifetimes at a dedicated landscape boundary. */
     val epoch: Long,
     val inputEnabled: Boolean
 )
 
 /**
  * Keep one outgoing pair until its controller is settled, then publish one incoming pair. This is
- * deliberately limited to the new presentation: existing-to-existing switching retains its policy.
+ * limited to dedicated landscape presentations: existing-to-existing switching retains its policy.
  * Activity recreation restores the shared controller's saved endpoint and starts fresh geometry.
  */
 @Composable
@@ -69,3 +68,6 @@ internal fun rememberPlayerPresentationBoundary(
         inputEnabled = !switching
     )
 }
+
+internal val PlayerPresentationIdentity.isDedicatedLandscape: Boolean
+    get() = this == PlayerPresentationIdentity.PocketAdvance || this == PlayerPresentationIdentity.PocketHorizon

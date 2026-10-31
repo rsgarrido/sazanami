@@ -107,9 +107,10 @@
     <string name="settings_choose_player_theme">Choose player theme</string>
     <string name="settings_tablet_landscape_theme">Tablet Landscape Theme</string>
     <string name="settings_choose_tablet_landscape_theme">Choose tablet landscape theme</string>
-    <string name="settings_tablet_landscape_theme_summary">Pocket Advance works on supported tablets in landscape. Other layouts use your normal player theme.</string>
+    <string name="settings_tablet_landscape_theme_summary">Pocket Advance and Pocket Horizon work on supported tablets in landscape. Other layouts use your normal player theme.</string>
     <string name="tablet_landscape_theme_normal_player">Use normal player</string>
     <string name="tablet_landscape_theme_pocket_advance" translatable="false">Pocket Advance</string>
+    <string name="tablet_landscape_theme_pocket_horizon" translatable="false">Pocket Horizon</string>
     <string name="settings_customize_pocket_advance">Customize landscape theme</string>
     <string name="settings_customize_pocket_advance_summary">Pocket Advance · Console, LCD &amp; controls</string>
     <string name="pocket_advance_appearance_title">Pocket Advance appearance</string>
@@ -491,4 +492,41 @@
     <string name="library_album_mixed_quality">Mixed quality</string>
     <string name="queue_add_playlist_failed">Unable to add playlist to queue</string>
     <string name="library_selection_source">Selection</string>
+
+    <string name="horizon_control_up">Move focus up</string>
+    <string name="horizon_control_down">Move focus down</string>
+    <string name="horizon_control_previous_category">Previous category</string>
+    <string name="horizon_control_next_category">Next category</string>
+    <string name="horizon_control_play_pause">Play or pause</string>
+    <string name="horizon_control_confirm">Open focused item</string>
+    <string name="horizon_control_back">Back</string>
+    <string name="horizon_control_queue">Open queue</string>
+    <string name="horizon_control_select">SELECT: open or close control guide</string>
+    <string name="horizon_control_start">START: Now Playing or library</string>
+    <string name="horizon_control_analog">Move stick in any direction; hold to repeat navigation. Directional buttons provide an accessible alternative.</string>
+    <string name="horizon_guide_title">Controls</string>
+    <string name="horizon_guide_body">A · Open selection\nB · Back / close guide\nX · Play / pause    Y · Queue\nL / R · Previous / next track\nSTART · Now Playing / last library\nSELECT · Close guide\nStick · Move focus vertically; switch categories horizontally. Hold to repeat.</string>
+    <string name="horizon_control_previous_track">L · Previous track</string>
+    <string name="horizon_control_next_track">R · Next track</string>
+    <string name="horizon_shoulder_pressed">Pressed</string>
+    <string name="horizon_shoulder_resting">Released</string>
+
+    <string name="settings_customize_pocket_horizon">Customize landscape theme</string>
+    <string name="settings_customize_pocket_horizon_summary">Pocket Horizon · Console, LCD &amp; background</string>
+    <string name="pocket_horizon_appearance_title">Pocket Horizon appearance</string>
+    <string name="pocket_horizon_console_finish">Console finish</string>
+    <string name="pocket_horizon_lcd_palette">LCD palette</string>
+    <string name="pocket_horizon_wave_treatment">Background waves</string>
+    <string name="horizon_finish_graphite">Graphite</string>
+    <string name="horizon_finish_silver">Silver</string>
+    <string name="horizon_finish_midnight_blue">Midnight blue</string>
+    <string name="horizon_finish_deep_burgundy">Deep burgundy</string>
+    <string name="horizon_lcd_blue_violet">Blue-violet</string>
+    <string name="horizon_lcd_emerald_teal">Emerald / Teal</string>
+    <string name="horizon_lcd_warm_amber">Warm amber</string>
+    <string name="horizon_wave_standard">Standard</string>
+    <string name="horizon_wave_subtle">Subtle</string>
+    <string name="horizon_wave_off">Off</string>
+    <string name="horizon_appearance_preview">Pocket Horizon appearance preview</string>
+
 </resources>

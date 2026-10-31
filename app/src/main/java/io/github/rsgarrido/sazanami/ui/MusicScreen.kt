@@ -1,5 +1,9 @@
 package io.github.rsgarrido.sazanami.ui
 
+import io.github.rsgarrido.sazanami.data.PocketHorizonAppearance
+import io.github.rsgarrido.sazanami.data.PocketHorizonConsoleFinish
+import io.github.rsgarrido.sazanami.data.PocketHorizonLcdPalette
+import io.github.rsgarrido.sazanami.data.PocketHorizonWaveTreatment
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -109,6 +113,9 @@ import io.github.rsgarrido.sazanami.ui.player.modern.ModernAppearanceChoice
 import io.github.rsgarrido.sazanami.ui.theme.SazanamiAccent
 import io.github.rsgarrido.sazanami.ui.player.rememberPlayerLyricsTransitionState
 import io.github.rsgarrido.sazanami.ui.player.modern.defaultPlayerLayout
+import io.github.rsgarrido.sazanami.ui.player.pockethorizon.rememberPocketHorizonNavigationState
+import io.github.rsgarrido.sazanami.ui.state.PlaybackUiState
+import io.github.rsgarrido.sazanami.ui.state.LibraryUiState
 import io.github.rsgarrido.sazanami.ui.player.PlayerMorphHost
 import io.github.rsgarrido.sazanami.ui.player.PlayerPresentationIdentity
 import io.github.rsgarrido.sazanami.ui.player.resolvePlayerPresentation
@@ -285,10 +292,15 @@ internal fun MusicScreen(
     selectedTabletLandscapeTheme: TabletLandscapeTheme = TabletLandscapeTheme.NORMAL_PLAYER,
     onTabletLandscapeThemeSelected: (TabletLandscapeTheme) -> Unit = {},
     pocketAdvanceAppearance: PocketAdvanceAppearance = PocketAdvanceAppearance.Default,
+    pocketHorizonAppearance: PocketHorizonAppearance = PocketHorizonAppearance.Default,
     onPocketAdvanceConsoleFinishSelected: (PocketAdvanceConsoleFinish) -> Unit = {},
+    onPocketHorizonConsoleFinishSelected: (PocketHorizonConsoleFinish) -> Unit = {},
     onPocketAdvanceLcdPaletteSelected: (PocketAdvanceLcdPalette) -> Unit = {},
+    onPocketHorizonLcdPaletteSelected: (PocketHorizonLcdPalette) -> Unit = {},
     onPocketAdvanceControlsFinishSelected: (PocketAdvanceControlsFinish) -> Unit = {},
+    onPocketHorizonWaveTreatmentSelected: (PocketHorizonWaveTreatment) -> Unit = {},
     onResetPocketAdvanceAppearance: () -> Unit = {},
+    onResetPocketHorizonAppearance: () -> Unit = {},
     onUpdatePlayerThemeTokenOverride: (PlayerTheme, PlayerThemeTokenField, Color) -> Unit,
     onResetPlayerThemeTokenOverrides: (PlayerTheme) -> Unit,
     selectedModernArtworkTransitionStyle: ModernArtworkTransitionStyle,
@@ -330,12 +342,15 @@ internal fun MusicScreen(
     spotifyImportUiState: SpotifyImportUiState,
     reconciliationUiState: ListeningHistoryReconciliationUiState,
     reconciliationActions: ListeningHistoryReconciliationUiActions,
-    spotifyImportActions: SpotifyImportUiActions
+    spotifyImportActions: SpotifyImportUiActions,
+    playbackState: PlaybackUiState? = null,
+    libraryState: LibraryUiState? = null
 ) {
     val appShellAccent = rememberAppShellAccent(
         playerTheme = selectedPlayerTheme,
         tokens = selectedPlayerThemeTokens
     )
+    val horizonStyle = remember(pocketHorizonAppearance) { io.github.rsgarrido.sazanami.ui.player.pockethorizon.PocketHorizonStyle.from(pocketHorizonAppearance) }
     val advancePalette = remember(pocketAdvanceAppearance) { PocketAdvancePalette.from(pocketAdvanceAppearance) }
     val directStatusVisible = if (io.github.rsgarrido.sazanami.BuildConfig.DEBUG) {
         val direct by io.github.rsgarrido.sazanami.player.IntegratedDirectPlaybackBridge.state.collectAsState()
@@ -344,7 +359,8 @@ internal fun MusicScreen(
     // Resolve against the very same viewport that hosts both endpoints, including the USB banner.
     CompositionLocalProvider(
         LocalAppShellAccent provides appShellAccent,
-        LocalPocketAdvancePalette provides advancePalette
+        LocalPocketAdvancePalette provides advancePalette,
+        io.github.rsgarrido.sazanami.ui.player.pockethorizon.LocalPocketHorizonStyle provides horizonStyle
     ) {
     Column(modifier = modifier.fillMaxSize().appShellBackground()) {
         if (directStatusVisible) {
@@ -367,6 +383,7 @@ internal fun MusicScreen(
     val librarySelectionHeaderState = remember { LibrarySelectionHeaderState() }
     val navigationState = rememberMusicNavigationState()
     val pocketAdvanceNavigationState = rememberPocketAdvanceNavigationState()
+    val pocketHorizonNavigationState = rememberPocketHorizonNavigationState()
     var mainDestination by navigationState.mainDestination
     var selectedLibraryTab by navigationState.selectedLibraryTab
     var playbackLaunchContext by navigationState.playbackLaunchContext
@@ -448,7 +465,7 @@ internal fun MusicScreen(
     var isDiscardTagChangesDialogVisible by remember { mutableStateOf(false) }
     var selectedArtworkUriForTagEdit by remember { mutableStateOf<Uri?>(null) }
 
-    val playerEnvironment = if (selectedTabletLandscapeTheme == TabletLandscapeTheme.POCKET_ADVANCE)
+    val playerEnvironment = if (selectedTabletLandscapeTheme != TabletLandscapeTheme.NORMAL_PLAYER)
         rememberTabletLandscapePlayerEnvironment() else null
     val playerDensity = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
@@ -1218,10 +1235,15 @@ internal fun MusicScreen(
         selectedTabletLandscapeTheme = selectedTabletLandscapeTheme,
         onTabletLandscapeThemeSelected = onTabletLandscapeThemeSelected,
         pocketAdvanceAppearance = pocketAdvanceAppearance,
+        pocketHorizonAppearance = pocketHorizonAppearance,
         onPocketAdvanceConsoleFinishSelected = onPocketAdvanceConsoleFinishSelected,
+        onPocketHorizonConsoleFinishSelected = onPocketHorizonConsoleFinishSelected,
         onPocketAdvanceLcdPaletteSelected = onPocketAdvanceLcdPaletteSelected,
+        onPocketHorizonLcdPaletteSelected = onPocketHorizonLcdPaletteSelected,
         onPocketAdvanceControlsFinishSelected = onPocketAdvanceControlsFinishSelected,
+        onPocketHorizonWaveTreatmentSelected = onPocketHorizonWaveTreatmentSelected,
         onResetPocketAdvanceAppearance = onResetPocketAdvanceAppearance,
+        onResetPocketHorizonAppearance = onResetPocketHorizonAppearance,
         onUpdatePlayerThemeTokenOverride = onUpdatePlayerThemeTokenOverride,
         onResetPlayerThemeTokenOverrides = onResetPlayerThemeTokenOverrides,
         selectedModernArtworkTransitionStyle = selectedModernArtworkTransitionStyle,
@@ -1406,7 +1428,8 @@ internal fun MusicScreen(
                     miniPlayerVisible = shouldShowBottomMiniPlayer,
                     selectionActive = isLibrarySelectionActive,
                     sleepTimerActive = isSleepTimerActive
-                )
+                ) + if (resolvedPlayerPresentation.identity == PlayerPresentationIdentity.PocketHorizon && shouldShowBottomMiniPlayer)
+                    io.github.rsgarrido.sazanami.ui.player.pockethorizon.pocketHorizonMiniExtraHeight(playerDensity.fontScale) else 0.dp
                 val playerPresentation = prepareMusicPlayerPresentation(
                     songs = songs,
                     currentSong = currentSong,
@@ -1436,6 +1459,10 @@ internal fun MusicScreen(
                     sleepTimerDisplayText = sleepTimerDisplayText,
                     playerPresentation = resolvedPlayerPresentation,
                     pocketAdvanceNavigationState = pocketAdvanceNavigationState,
+                    pocketHorizonNavigationState = pocketHorizonNavigationState,
+                    playbackState = playbackState,
+                    libraryState = libraryState,
+                    songSortState = selectedSongSortState,
                     isLibraryReady = !isLibraryLoading && !isLibraryRefreshing && libraryErrorMessage == null,
                     artistSortState = selectedArtistSortState,
                     albumSortState = selectedAlbumSortState,

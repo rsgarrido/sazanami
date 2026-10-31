@@ -1,5 +1,6 @@
 package io.github.rsgarrido.sazanami.ui.state
 
+import io.github.rsgarrido.sazanami.data.PocketHorizonAppearance
 import io.github.rsgarrido.sazanami.data.PlayerTheme
 import io.github.rsgarrido.sazanami.data.TabletLandscapeTheme
 import io.github.rsgarrido.sazanami.data.PocketAdvanceAppearance
@@ -21,6 +22,7 @@ data class PlayerAppearanceUiState(
     val selectedTheme: PlayerTheme = PlayerTheme.DEFAULT,
     val tabletLandscapeTheme: TabletLandscapeTheme = TabletLandscapeTheme.NORMAL_PLAYER,
     val pocketAdvanceAppearance: PocketAdvanceAppearance = PocketAdvanceAppearance.Default,
+    val pocketHorizonAppearance: PocketHorizonAppearance = PocketHorizonAppearance.Default,
     val themeTokens: PlayerThemeTokens = PlayerTheme.DEFAULT.defaultTokens(),
     val modernArtworkTransitionStyle: ModernArtworkTransitionStyle =
         ModernArtworkTransitionStyle.SLIDE,

@@ -1,5 +1,9 @@
 package io.github.rsgarrido.sazanami.data.backup
 
+import io.github.rsgarrido.sazanami.data.PocketHorizonAppearance
+import io.github.rsgarrido.sazanami.data.PocketHorizonConsoleFinish
+import io.github.rsgarrido.sazanami.data.PocketHorizonLcdPalette
+import io.github.rsgarrido.sazanami.data.PocketHorizonWaveTreatment
 import android.content.Context
 import android.net.Uri
 import android.util.Log
@@ -123,8 +127,11 @@ class BackupRepository(
                 selectedPlayerThemeId = appPreferences.selectedPlayerTheme.id,
                 tabletLandscapeThemeId = appPreferences.tabletLandscapeTheme.id,
                 pocketAdvanceConsoleFinishId = appPreferences.pocketAdvanceAppearance.consoleFinish.id,
+                pocketHorizonConsoleFinishId = appPreferences.pocketHorizonAppearance.consoleFinish.id,
                 pocketAdvanceLcdPaletteId = appPreferences.pocketAdvanceAppearance.lcdPalette.id,
+                pocketHorizonLcdPaletteId = appPreferences.pocketHorizonAppearance.lcdPalette.id,
                 pocketAdvanceControlsFinishId = appPreferences.pocketAdvanceAppearance.controlsFinish.id,
+                pocketHorizonWaveTreatmentId = appPreferences.pocketHorizonAppearance.waveTreatment.id,
                 replayGainMode = appPreferences.replayGainMode.name,
                 audioOffloadPreference = appPreferences.audioOffloadPreference.name,
                 smoothPlayPauseEnabled = appPreferences.smoothPlayPauseEnabled,
@@ -460,6 +467,7 @@ class BackupRepository(
                 selectedPlayerTheme = PlayerTheme.fromId(preferences.selectedPlayerThemeId),
                 tabletLandscapeTheme = TabletLandscapeTheme.fromId(preferences.tabletLandscapeThemeId),
                 pocketAdvanceAppearance = preferences.toPocketAdvanceAppearance(),
+                pocketHorizonAppearance = preferences.toPocketHorizonAppearance(),
                 playerThemeTokenOverrides = overrides,
                 modernArtworkTransitionStyle = ModernArtworkTransitionStyle.fromStorageValue(
                     preferences.modernArtworkTransitionStyle
@@ -532,6 +540,12 @@ internal fun BackupPreferences.toPocketAdvanceAppearance(): PocketAdvanceAppeara
     consoleFinish = PocketAdvanceConsoleFinish.fromId(pocketAdvanceConsoleFinishId),
     lcdPalette = PocketAdvanceLcdPalette.fromId(pocketAdvanceLcdPaletteId),
     controlsFinish = PocketAdvanceControlsFinish.fromId(pocketAdvanceControlsFinishId)
+)
+
+internal fun BackupPreferences.toPocketHorizonAppearance(): PocketHorizonAppearance = PocketHorizonAppearance(
+    consoleFinish = PocketHorizonConsoleFinish.fromId(pocketHorizonConsoleFinishId),
+    lcdPalette = PocketHorizonLcdPalette.fromId(pocketHorizonLcdPaletteId),
+    waveTreatment = PocketHorizonWaveTreatment.fromId(pocketHorizonWaveTreatmentId)
 )
 
 internal fun BackupPreferences.toAppAppearance(): AppAppearance =

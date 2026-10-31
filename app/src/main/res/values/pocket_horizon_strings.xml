@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pocket_horizon_no_track">No track loaded</string>
+    <string name="pocket_horizon_no_track_hint">Choose a track from your library to begin.</string>
+    <string name="pocket_horizon_disconnected">Playback unavailable</string>
+    <string name="pocket_horizon_playing">Playing</string>
+    <string name="pocket_horizon_paused">Paused</string>
+    <string name="pocket_horizon_time_unavailable" translatable="false">—:—</string>
+    <string name="pocket_horizon_seek_unavailable">Seeking unavailable</string>
+</resources>

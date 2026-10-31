@@ -1,5 +1,6 @@
 package io.github.rsgarrido.sazanami.data.backup
 
+import io.github.rsgarrido.sazanami.data.PocketHorizonAppearance
 import io.github.rsgarrido.sazanami.data.preferences.AppAppearance
 import io.github.rsgarrido.sazanami.data.TabletLandscapeTheme
 import io.github.rsgarrido.sazanami.data.PocketAdvanceAppearance
@@ -46,8 +47,11 @@ data class BackupPreferences(
     val selectedPlayerThemeId: String = "",
     val tabletLandscapeThemeId: String = TabletLandscapeTheme.NORMAL_PLAYER.id,
     val pocketAdvanceConsoleFinishId: String = PocketAdvanceAppearance.Default.consoleFinish.id,
+    val pocketHorizonConsoleFinishId: String = PocketHorizonAppearance.Default.consoleFinish.id,
     val pocketAdvanceLcdPaletteId: String = PocketAdvanceAppearance.Default.lcdPalette.id,
+    val pocketHorizonLcdPaletteId: String = PocketHorizonAppearance.Default.lcdPalette.id,
     val pocketAdvanceControlsFinishId: String = PocketAdvanceAppearance.Default.controlsFinish.id,
+    val pocketHorizonWaveTreatmentId: String = PocketHorizonAppearance.Default.waveTreatment.id,
     val replayGainMode: String = "",
     val audioOffloadPreference: String = "",
     val smoothPlayPauseEnabled: Boolean = true,
