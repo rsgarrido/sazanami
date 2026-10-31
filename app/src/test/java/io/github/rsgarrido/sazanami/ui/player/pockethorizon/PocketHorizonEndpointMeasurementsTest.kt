@@ -35,6 +35,7 @@ class PocketHorizonEndpointMeasurementsTest {
         val owner = newOwner()
         val mini = endpoint(owner)
         val expanded = endpoint(owner, true)
+        assertNull(resolvePocketHorizonEndpointPair(owner, mini, mini))
         val pair = requireNotNull(resolvePocketHorizonEndpointPair(owner, mini, expanded))
         assertEquals(requireNotNull(mini.geometry()).artwork.translate(-50f, -80f), pair.mini.artwork)
         assertEquals(requireNotNull(expanded.geometry()).surface.translate(-50f, -80f), pair.expanded.surface)

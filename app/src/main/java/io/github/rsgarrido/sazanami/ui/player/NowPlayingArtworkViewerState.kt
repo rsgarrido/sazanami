@@ -24,7 +24,7 @@ internal class NowPlayingArtworkViewerRequest(val song: Song, val artworkUri: Ur
 
 internal fun supportsNowPlayingArtworkViewer(presentation: PlayerPresentationIdentity): Boolean = when (presentation) {
     is PlayerPresentationIdentity.Existing -> supportsNowPlayingArtworkViewer(presentation.theme)
-    PlayerPresentationIdentity.PocketAdvance -> true
+    PlayerPresentationIdentity.PocketAdvance, PlayerPresentationIdentity.PocketHorizon -> true
 }
 
 internal fun supportsNowPlayingArtworkViewer(theme: PlayerTheme): Boolean = when (theme) {

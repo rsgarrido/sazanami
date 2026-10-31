@@ -15,16 +15,24 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import io.github.rsgarrido.sazanami.ui.player.pockethorizon.*
+import io.github.rsgarrido.sazanami.ui.state.PlaybackUiState
+import io.github.rsgarrido.sazanami.ui.state.LibraryUiState
+import io.github.rsgarrido.sazanami.ui.player.isDedicatedLandscape
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
@@ -158,14 +166,37 @@ internal fun prepareMusicPlayerPresentation(
     isLibraryReady: Boolean = true,
     artistSortState: LibrarySortState = LibrarySortState(LibrarySortOption.NAME, LibrarySortDirection.ASCENDING),
     albumSortState: LibrarySortState = LibrarySortState(LibrarySortOption.TITLE, LibrarySortDirection.ASCENDING),
+    playbackState: PlaybackUiState? = null,
+    libraryState: LibraryUiState? = null,
+    songSortState: LibrarySortState = LibrarySortState(LibrarySortOption.TITLE, LibrarySortDirection.ASCENDING),
+    pocketHorizonNavigationState: PocketHorizonNavigationState = rememberPocketHorizonNavigationState(),
 ): @Composable BoxScope.(PlayerEndpointBounds) -> Unit {
     PocketAdvanceNavigationLifecycleEffect(pocketAdvanceNavigationState, playerMorphState, playerPresentation.identity)
+    PocketHorizonNavigationLifecycleEffect(pocketHorizonNavigationState, playerMorphState,
+        playerPresentation.identity == PlayerPresentationIdentity.PocketHorizon)
     // Existing choreography stays theme-local. Both endpoints below receive this same resolution.
     val selectedPlayerTheme = when (val identity = playerPresentation.identity) {
         is PlayerPresentationIdentity.Existing -> identity.theme
-        PlayerPresentationIdentity.PocketAdvance -> null
+        PlayerPresentationIdentity.PocketAdvance, PlayerPresentationIdentity.PocketHorizon -> null
     }
     return { playerEndpointBounds ->
+        val horizon = if (playerPresentation.identity == PlayerPresentationIdentity.PocketHorizon) {
+            val lifetime = remember(playerEndpointBounds, playerPresentationEpoch) { mutableStateOf(true) }
+            DisposableEffect(lifetime) { onDispose { lifetime.value = false } }
+            val measure = lyricsTransitionState.progress == 0f && !lyricsTransitionState.isDragging
+            val mini = rememberPocketHorizonEndpointMeasurements(playerEndpointBounds, currentSong, measure)
+            val expanded = rememberPocketHorizonEndpointMeasurements(playerEndpointBounds, currentSong, measure)
+            PocketHorizonRuntime(playerEndpointBounds, mini, expanded, pocketHorizonNavigationState, playerMorphState,
+                playbackState ?: PlaybackUiState(isConnected = true, currentSong = currentSong, isPlaying = isPlaying,
+                    isShuffleEnabled = isShuffleEnabled, repeatMode = repeatMode),
+                libraryState ?: LibraryUiState(songs = songs, hasPublishedInitialLibraryState = isLibraryReady,
+                    isRefreshing = !isLibraryReady), playbackProgressUiState, songSortState, albumSortState, artistSortState,
+                hostInputAllowed = playerPresentationInputEnabled && !isLyricsVisible && !lyricsTransitionState.lyricsOwnsInput &&
+                    !isQueueHubVisible && !isExpandedUpNextSheetVisible && !isNowPlayingMorePresented &&
+                    !isArtworkViewerVisible && !isSleepTimerDialogVisible && !isCreatePlaylistDialogVisible &&
+                    !hasPendingPlaylistAdd && !hasPendingBulkPlaylistAdd, lifetime = lifetime)
+        } else null
+        CompositionLocalProvider(LocalPocketHorizonRuntime provides horizon) {
         val defaultMorphBounds = rememberMusicPlayerDefaultMorphBounds(playerEndpointBounds)
         val classicMorphBounds = rememberMusicPlayerClassicMorphBounds(playerPresentationEpoch)
         val classicWheelMenuState = rememberMusicPlayerClassicWheelMenuState(
@@ -395,12 +426,14 @@ internal fun prepareMusicPlayerPresentation(
                         right = shellLayout.contentRight,
                         bottom = shellLayout.insets.bottom + shellLayout.miniPlayerBottomGap
                     )
-                } else if (playerPresentation.identity == PlayerPresentationIdentity.PocketAdvance) {
-                    // Advance can fit below the rail breakpoint. Keep its mini anchor fixed
+                } else if (playerPresentation.identity.isDedicatedLandscape) {
+                    // Dedicated landscape players can fit below the rail breakpoint. Keep its mini anchor fixed
                     // while immersive bars hide/show, just as the rail already does.
                     @OptIn(ExperimentalLayoutApi::class)
                     val stableNavigationBars = WindowInsets.navigationBarsIgnoringVisibility
-                    Modifier.windowInsetsPadding(stableNavigationBars).padding(bottom = AppBottomNavigationHeight)
+                    val stableInsets = if (playerPresentation.identity == PlayerPresentationIdentity.PocketHorizon)
+                        stableNavigationBars.union(WindowInsets.displayCutout) else stableNavigationBars
+                    Modifier.windowInsetsPadding(stableInsets).padding(bottom = AppBottomNavigationHeight)
                 } else {
                     Modifier.navigationBarsPadding().padding(bottom = AppBottomNavigationHeight)
                 }
@@ -467,8 +500,7 @@ internal fun prepareMusicPlayerPresentation(
                         modifier = Modifier.playerEndpointInput(
                             playerPresentationInputEnabled &&
                                 (playerMorphState.isCollapsedAndIdle ||
-                                    (playerPresentation.identity == PlayerPresentationIdentity.PocketAdvance &&
-                                        playerMorphState.isDragging))
+                                    (playerPresentation.identity.isDedicatedLandscape && playerMorphState.isDragging))
                         )
                     )
                 }
@@ -549,6 +581,7 @@ internal fun prepareMusicPlayerPresentation(
                 isArtworkViewerVisible = isArtworkViewerVisible
             )
             transientOverlayContent()
+        }
         }
     }
 }

@@ -1,6 +1,10 @@
 package io.github.rsgarrido.sazanami.ui.player.mini
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import io.github.rsgarrido.sazanami.ui.player.pockethorizon.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
@@ -83,6 +87,22 @@ fun MiniPlayerHost(
     }
     val playerTheme = when (val identity = playerPresentation.identity) {
         is PlayerPresentationIdentity.Existing -> identity.theme
+        PlayerPresentationIdentity.PocketHorizon -> {
+            val runtime = requireNotNull(LocalPocketHorizonRuntime.current)
+            val latest = rememberUpdatedState(runtime)
+            val actions = rememberUpdatedState(callbacks)
+            PocketHorizonMiniPlayer(state, callbacks.copy(
+                onExpandClick = { latest.value.expand(actions.value.onExpandClick) },
+                onPlayPauseClick = { if (latest.value.compactInput && latest.value.playback.isConnected) actions.value.onPlayPauseClick() },
+                onPreviousClick = { if (latest.value.compactInput && latest.value.playback.isConnected) actions.value.onPreviousClick() },
+                onNextClick = { if (latest.value.compactInput && latest.value.playback.isConnected) actions.value.onNextClick() }),
+                modifier = measuredModifier.graphicsLayer { alpha = if (runtime.player.progress == 0f) 1f else 0f }
+                    .then(if (!runtime.compactInput) Modifier.clearAndSetSemantics { } else Modifier),
+                inputEnabled = runtime.compactInput, playbackEnabled = runtime.playback.isConnected,
+                gestureEnabled = runtime.inputAllowed && (runtime.compactInput || runtime.player.isDragging),
+                expandGestureModifier = pocketHorizonMorphGesture(runtime), measurements = runtime.mini)
+            return
+        }
         PlayerPresentationIdentity.PocketAdvance -> {
             PocketAdvanceMiniPlayer(
                 state = state,

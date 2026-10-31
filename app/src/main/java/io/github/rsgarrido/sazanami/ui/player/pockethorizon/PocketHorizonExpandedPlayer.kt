@@ -74,16 +74,21 @@ internal fun PocketHorizonExpandedPlayer(
     onSongClick: ((Song, List<Song>) -> Unit)? = null,
     navigationState: PocketHorizonNavigationState = rememberPocketHorizonNavigationState(),
     measurements: PocketHorizonEndpointMeasurements? = null,
-    collapseGestureModifier: Modifier = Modifier
+    collapseGestureModifier: Modifier = Modifier,
+    measurementOnly: Boolean = false,
+    gestureEnabled: Boolean = inputEnabled
 ) {
     val enabled = inputEnabled && playbackState.isConnected && playbackState.currentSong != null
-    val library = rememberPocketHorizonLibrary(libraryState, songSortState, albumSortState, artistSortState)
-    LaunchedEffect(navigationState, library.albumKeys, library.artistKeys, library.songKeys, library.isAuthoritative) {
-        navigationState.reconcileLibrary(library.albumByKey.keys, library.artistByKey.keys,
-            library.isAuthoritative, library.songByKey.keys)
+    val showNowPlaying = measurementOnly || navigationState.category == PocketHorizonCategory.NowPlaying
+    val library = if (measurementOnly) null else rememberPocketHorizonLibrary(libraryState, songSortState, albumSortState, artistSortState)
+    if (library != null) {
+        LaunchedEffect(navigationState, library.albumKeys, library.artistKeys, library.songKeys, library.isAuthoritative) {
+            navigationState.reconcileLibrary(library.albumByKey.keys, library.artistByKey.keys,
+                library.isAuthoritative, library.songByKey.keys)
+        }
     }
-    // Local Back policy only; a future presentation host must supply endpoint/overlay input eligibility.
-    BackHandler(inputEnabled && navigationState.category != PocketHorizonCategory.NowPlaying) {
+    // Detail Back is local; the presentation host supplies endpoint/overlay input eligibility.
+    BackHandler(!measurementOnly && inputEnabled && navigationState.category != PocketHorizonCategory.NowPlaying) {
         navigationState.back()
     }
     val selectSong: ((Song, List<Song>) -> Unit)? = onSongClick?.let { action ->
@@ -99,12 +104,12 @@ internal fun PocketHorizonExpandedPlayer(
     val fontScale = LocalDensity.current.fontScale
     val contentKey = pocketHorizonMeasurementKey(playbackState.currentSong, LocalLayoutDirection.current)
     val reports = measurements?.takeIf { it.contentKey == contentKey &&
-        navigationState.category == PocketHorizonCategory.NowPlaying }
+        showNowPlaying }
     DisposableEffect(measurements, contentKey, reports) { onDispose { measurements?.clear() } }
     PocketHorizonShell(modifier, style, reports) { layout ->
         // The plane has a finite height even inside the extreme-small-host scroll fallback. Lazy
         // browsing never inherits the unbounded constraints of Now Playing's own vertical scroll.
-        val minimumBody = if (navigationState.category == PocketHorizonCategory.NowPlaying)
+        val minimumBody = if (showNowPlaying)
             PocketHorizonLayoutMetrics.MinimumTouchTarget else PocketHorizonLayoutMetrics.browserMinimumHeight(fontScale)
         val planeHeight = maxOf(layout.contentViewportSize.height,
             layout.headerHeight + PocketHorizonLayoutMetrics.HeaderGap + minimumBody)
@@ -119,20 +124,21 @@ internal fun PocketHorizonExpandedPlayer(
                     // Future collapse gestures have a dedicated header region, separate from tabs,
                     // artwork, seeking, actions and lazy-list scrolling. No recognizer is installed here.
                     Box(Modifier.weight(1f).heightIn(min = PocketHorizonLayoutMetrics.MinimumTouchTarget)
+                        .testTag("pocketHorizonCollapseRegion")
                         .horizonAnchor(reports, PocketHorizonAnchor.GestureRegion)
-                        .then(if (inputEnabled) collapseGestureModifier else Modifier),
+                        .then(if (gestureEnabled) collapseGestureModifier else Modifier),
                         contentAlignment = Alignment.CenterStart) {
                         PocketHorizonStatus(playbackState, style, Modifier.fillMaxWidth())
                     }
                     actions()
                 }
                 Spacer(Modifier.height(PocketHorizonLayoutMetrics.CategoryGap))
-                PocketHorizonCategoryNavigation(navigationState, inputEnabled, style, Modifier.fillMaxWidth())
+                PocketHorizonCategoryNavigation(navigationState, inputEnabled && !measurementOnly, style, Modifier.fillMaxWidth())
                 Spacer(Modifier.height(PocketHorizonLayoutMetrics.HeaderGap))
                 val bodyHeight = maxOf(layout.bodyMinHeight,
                     planeHeight - layout.headerHeight - PocketHorizonLayoutMetrics.HeaderGap)
                 Box(Modifier.fillMaxWidth().weight(1f).testTag("pocketHorizonCategoryBody")) {
-                    if (navigationState.category == PocketHorizonCategory.NowPlaying) {
+                    if (showNowPlaying) {
                         Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                             PocketHorizonNowPlaying(
                                 playbackState = playbackState,
@@ -153,7 +159,7 @@ internal fun PocketHorizonExpandedPlayer(
                             )
                         }
                     } else {
-                        PocketHorizonLibraryBrowser(library, libraryState, navigationState, inputEnabled,
+                        PocketHorizonLibraryBrowser(requireNotNull(library), libraryState, navigationState, inputEnabled,
                             selectSong, style, Modifier.fillMaxSize())
                     }
                 }

@@ -94,11 +94,12 @@ internal fun PocketHorizonNowPlaying(
 }
 
 @Composable
-private fun PocketHorizonMetadata(song: Song?, style: PocketHorizonStyle, measurements: PocketHorizonEndpointMeasurements?) {
+internal fun PocketHorizonMetadata(song: Song?, style: PocketHorizonStyle, measurements: PocketHorizonEndpointMeasurements?,
+    modifier: Modifier = Modifier) {
     val metrics = PocketHorizonLayoutMetrics
     val typography = TextStyle(fontFamily = FontFamily.SansSerif,
         platformStyle = PlatformTextStyle(includeFontPadding = false))
-    Column(Modifier.fillMaxWidth().horizonAnchor(measurements, PocketHorizonAnchor.Metadata),
+    Column(modifier.fillMaxWidth().horizonAnchor(measurements, PocketHorizonAnchor.Metadata),
         verticalArrangement = Arrangement.spacedBy(metrics.MetadataGap)) {
         Text(song?.title?.takeIf { it.isNotBlank() }
             ?: stringResource(if (song == null) R.string.pocket_horizon_no_track else R.string.library_song_unknown_title),

@@ -17,6 +17,9 @@ sealed interface PlayerPresentationIdentity {
 
     @Immutable
     data object PocketAdvance : PlayerPresentationIdentity
+
+    @Immutable
+    data object PocketHorizon : PlayerPresentationIdentity
 }
 
 /** One value is forwarded to both endpoints and their morph dispatcher; neither resolves again. */

@@ -43,3 +43,8 @@ internal fun resolvePocketHorizonMiniLayout(
         surfaceHeight = surfaceHeight
     )
 }
+
+/** Keep MusicScreen's library clearance sufficient when a real title needs extra compact height. */
+internal fun pocketHorizonMiniExtraHeight(fontScale: Float): Dp =
+    (20f * PocketHorizonLayoutMetrics.textScale(fontScale) + PocketHorizonMiniMetrics.Padding.value * 2 -
+        PocketHorizonMiniMetrics.SurfaceHeight.value).coerceAtLeast(0f).dp

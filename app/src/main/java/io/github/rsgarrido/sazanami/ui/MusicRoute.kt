@@ -420,6 +420,8 @@ internal fun MusicRoute(
             LocalPlaybackPlayPauseIntent provides playbackUiState.playPauseIntent,
             LocalPlaybackStatus provides playbackStatus) {
         MusicScreen(
+            playbackState = playbackUiState,
+            libraryState = libraryUiState,
             songs = libraryUiState.songs,
             recentlyPlayedSongs = libraryUiState.recentlyPlayedSongs,
             recentlyAddedLibrarySongs = libraryUiState.recentlyAddedSongs,

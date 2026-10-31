@@ -1,5 +1,6 @@
 package io.github.rsgarrido.sazanami.ui.player
 
+import io.github.rsgarrido.sazanami.ui.player.pockethorizon.*
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -169,6 +170,12 @@ fun ExpandedPlayerThemeHost(
 ) {
     val selectedPlayerTheme = when (val identity = playerPresentation.identity) {
         is PlayerPresentationIdentity.Existing -> identity.theme
+        PlayerPresentationIdentity.PocketHorizon -> {
+            PocketHorizonRuntimeExpanded(requireNotNull(LocalPocketHorizonRuntime.current),
+                onPlayPauseClick, onPreviousClick, onNextClick, onSeekChange, onCollapseClick,
+                onOpenQueueHubClick, onOpenMoreClick, lyricsTransitionState::openLyrics, onViewArtwork, onSongClick)
+            return
+        }
         PlayerPresentationIdentity.PocketAdvance -> {
             val openLyricsLabel = stringResource(R.string.player_open_lyrics)
             val browserVisible = shouldShowPocketAdvanceBrowser(pocketAdvanceNavigationState, playerMorphState)

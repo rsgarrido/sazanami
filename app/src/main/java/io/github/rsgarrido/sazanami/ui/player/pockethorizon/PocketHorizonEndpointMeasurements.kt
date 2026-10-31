@@ -117,7 +117,7 @@ internal fun resolvePocketHorizonEndpointPair(
     expanded: PocketHorizonEndpointMeasurements
 ): PocketHorizonEndpointPair? {
     val frame = owner.layoutFrame ?: return null
-    if (mini.owner !== owner || expanded.owner !== owner || mini.frame != frame || expanded.frame != frame ||
+    if (mini === expanded || mini.owner !== owner || expanded.owner !== owner || mini.frame != frame || expanded.frame != frame ||
         mini.contentKey != expanded.contentKey) return null
     val miniHost = (owner.mini as? PlayerBoundsMeasurement.Measured)?.bounds ?: return null
     val expandedHost = (owner.expanded as? PlayerBoundsMeasurement.Measured)?.bounds ?: return null

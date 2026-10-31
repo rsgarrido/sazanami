@@ -11,7 +11,7 @@ internal fun tabletLandscapePlayerCandidate(
     fontScale: Float
 ): TabletLandscapePlayerCandidate? = when (theme) {
     TabletLandscapeTheme.NORMAL_PLAYER -> null
-    // Reserve the durable choice without a renderer, size budget, or presentation identity.
+    // Runtime dispatch exists, but ordinary nomination stays disabled until activation validation.
     // Even a restored/development preference must keep using the complete primary player pair.
     TabletLandscapeTheme.POCKET_HORIZON -> null
     TabletLandscapeTheme.POCKET_ADVANCE -> TabletLandscapePlayerCandidate(

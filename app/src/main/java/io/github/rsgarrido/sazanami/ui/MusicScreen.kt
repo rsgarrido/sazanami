@@ -109,6 +109,9 @@ import io.github.rsgarrido.sazanami.ui.player.modern.ModernAppearanceChoice
 import io.github.rsgarrido.sazanami.ui.theme.SazanamiAccent
 import io.github.rsgarrido.sazanami.ui.player.rememberPlayerLyricsTransitionState
 import io.github.rsgarrido.sazanami.ui.player.modern.defaultPlayerLayout
+import io.github.rsgarrido.sazanami.ui.player.pockethorizon.rememberPocketHorizonNavigationState
+import io.github.rsgarrido.sazanami.ui.state.PlaybackUiState
+import io.github.rsgarrido.sazanami.ui.state.LibraryUiState
 import io.github.rsgarrido.sazanami.ui.player.PlayerMorphHost
 import io.github.rsgarrido.sazanami.ui.player.PlayerPresentationIdentity
 import io.github.rsgarrido.sazanami.ui.player.resolvePlayerPresentation
@@ -330,7 +333,9 @@ internal fun MusicScreen(
     spotifyImportUiState: SpotifyImportUiState,
     reconciliationUiState: ListeningHistoryReconciliationUiState,
     reconciliationActions: ListeningHistoryReconciliationUiActions,
-    spotifyImportActions: SpotifyImportUiActions
+    spotifyImportActions: SpotifyImportUiActions,
+    playbackState: PlaybackUiState? = null,
+    libraryState: LibraryUiState? = null
 ) {
     val appShellAccent = rememberAppShellAccent(
         playerTheme = selectedPlayerTheme,
@@ -367,6 +372,7 @@ internal fun MusicScreen(
     val librarySelectionHeaderState = remember { LibrarySelectionHeaderState() }
     val navigationState = rememberMusicNavigationState()
     val pocketAdvanceNavigationState = rememberPocketAdvanceNavigationState()
+    val pocketHorizonNavigationState = rememberPocketHorizonNavigationState()
     var mainDestination by navigationState.mainDestination
     var selectedLibraryTab by navigationState.selectedLibraryTab
     var playbackLaunchContext by navigationState.playbackLaunchContext
@@ -448,7 +454,7 @@ internal fun MusicScreen(
     var isDiscardTagChangesDialogVisible by remember { mutableStateOf(false) }
     var selectedArtworkUriForTagEdit by remember { mutableStateOf<Uri?>(null) }
 
-    val playerEnvironment = if (selectedTabletLandscapeTheme == TabletLandscapeTheme.POCKET_ADVANCE)
+    val playerEnvironment = if (selectedTabletLandscapeTheme != TabletLandscapeTheme.NORMAL_PLAYER)
         rememberTabletLandscapePlayerEnvironment() else null
     val playerDensity = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
@@ -1406,7 +1412,8 @@ internal fun MusicScreen(
                     miniPlayerVisible = shouldShowBottomMiniPlayer,
                     selectionActive = isLibrarySelectionActive,
                     sleepTimerActive = isSleepTimerActive
-                )
+                ) + if (resolvedPlayerPresentation.identity == PlayerPresentationIdentity.PocketHorizon && shouldShowBottomMiniPlayer)
+                    io.github.rsgarrido.sazanami.ui.player.pockethorizon.pocketHorizonMiniExtraHeight(playerDensity.fontScale) else 0.dp
                 val playerPresentation = prepareMusicPlayerPresentation(
                     songs = songs,
                     currentSong = currentSong,
@@ -1436,6 +1443,10 @@ internal fun MusicScreen(
                     sleepTimerDisplayText = sleepTimerDisplayText,
                     playerPresentation = resolvedPlayerPresentation,
                     pocketAdvanceNavigationState = pocketAdvanceNavigationState,
+                    pocketHorizonNavigationState = pocketHorizonNavigationState,
+                    playbackState = playbackState,
+                    libraryState = libraryState,
+                    songSortState = selectedSongSortState,
                     isLibraryReady = !isLibraryLoading && !isLibraryRefreshing && libraryErrorMessage == null,
                     artistSortState = selectedArtistSortState,
                     albumSortState = selectedAlbumSortState,

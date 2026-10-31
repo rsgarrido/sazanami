@@ -64,6 +64,7 @@ internal fun PocketHorizonMiniPlayer(
     callbacks: MiniPlayerCallbacks,
     modifier: Modifier = Modifier,
     inputEnabled: Boolean = true,
+    gestureEnabled: Boolean = inputEnabled,
     playbackEnabled: Boolean = true,
     previousEnabled: Boolean = true,
     nextEnabled: Boolean = true,
@@ -75,7 +76,7 @@ internal fun PocketHorizonMiniPlayer(
     val reports = measurements?.takeIf { it.contentKey == contentKey }
     DisposableEffect(measurements, contentKey) { onDispose { measurements?.clear() } }
     // A changed input lifetime removes in-flight clicks/host gestures before controls can fire.
-    key(inputEnabled, playbackEnabled, reports) {
+    key(reports) {
         BoxWithConstraints(modifier.fillMaxWidth()
             .padding(horizontal = PocketHorizonMiniMetrics.HorizontalMargin,
                 vertical = PocketHorizonMiniMetrics.VerticalMargin)) {
@@ -102,7 +103,7 @@ internal fun PocketHorizonMiniPlayer(
                     Row(Modifier.weight(1f).height(layout.contentHeight)
                         .horizonAnchor(reports, PocketHorizonAnchor.GestureRegion)
                         .testTag("pocketHorizonMiniExpand")
-                        .then(if (inputEnabled) expandGestureModifier else Modifier)
+                        .then(if (gestureEnabled) expandGestureModifier else Modifier)
                         .clickable(enabled = inputEnabled, role = Role.Button,
                             onClickLabel = stringResource(R.string.player_open_for, title)) {
                             if (inputEnabled) callbacks.onExpandClick()
@@ -111,18 +112,9 @@ internal fun PocketHorizonMiniPlayer(
                         PocketHorizonArtwork(state.currentSong, PocketHorizonMiniMetrics.Artwork, false, null, style,
                             modifier = Modifier.horizonAnchor(reports, PocketHorizonAnchor.Artwork),
                             requestSize = 128, tag = "pocketHorizonMiniArtwork")
-                        val typography = TextStyle(fontFamily = FontFamily.SansSerif,
-                            platformStyle = PlatformTextStyle(includeFontPadding = false))
-                        Column(Modifier.weight(1f).testTag("pocketHorizonMiniMetadata")
-                            .horizonAnchor(reports, PocketHorizonAnchor.Metadata),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(title, Modifier.testTag("pocketHorizonMiniTitle"), color = style.text,
-                                style = typography, fontSize = 14.sp, lineHeight = 20.sp,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            if (layout.showArtist) Text(artist, Modifier.testTag("pocketHorizonMiniArtist"),
-                                color = style.secondaryText, style = typography, fontSize = 12.sp, lineHeight = 16.sp,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
+                        PocketHorizonMiniMetadata(title, artist, layout.showArtist, style,
+                            Modifier.weight(1f).testTag("pocketHorizonMiniMetadata")
+                                .horizonAnchor(reports, PocketHorizonAnchor.Metadata))
                     }
                     if (layout.showTrackButtons) MiniAction(Icons.Filled.SkipPrevious,
                         stringResource(R.string.player_previous_song), inputEnabled && playbackEnabled && previousEnabled,
@@ -152,6 +144,23 @@ internal fun PocketHorizonMiniPlayer(
                 }
             }
         }
+    }
+}
+
+@Composable
+internal fun PocketHorizonMiniMetadata(
+    title: String, artist: String, showArtist: Boolean, style: PocketHorizonStyle,
+    modifier: Modifier = Modifier, tagPrefix: String = "pocketHorizonMini"
+) {
+    val typography = TextStyle(fontFamily = FontFamily.SansSerif,
+        platformStyle = PlatformTextStyle(includeFontPadding = false))
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(title, Modifier.testTag(tagPrefix + "Title"), color = style.text,
+            style = typography, fontSize = 14.sp, lineHeight = 20.sp,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (showArtist) Text(artist, Modifier.testTag(tagPrefix + "Artist"), color = style.secondaryText,
+            style = typography, fontSize = 12.sp, lineHeight = 16.sp,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

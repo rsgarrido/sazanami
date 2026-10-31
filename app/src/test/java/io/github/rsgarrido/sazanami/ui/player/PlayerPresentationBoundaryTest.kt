@@ -8,6 +8,19 @@ import org.junit.Test
 class PlayerPresentationBoundaryTest {
     private val advance = PlayerPresentationIdentity.PocketAdvance
 
+    @Test fun horizonUsesTheDedicatedBoundaryWithoutChangingExistingToExistingPolicy() {
+        val horizon = PlayerPresentationIdentity.PocketHorizon
+        PlayerTheme.entries.forEach {
+            val primary = PlayerPresentationIdentity.Existing(it)
+            assertTrue(requiresPlayerPresentationBoundary(primary, horizon, false))
+            assertTrue(requiresPlayerPresentationBoundary(horizon, primary, false))
+        }
+        assertTrue(requiresPlayerPresentationBoundary(advance, horizon, false))
+        assertTrue(requiresPlayerPresentationBoundary(horizon, advance, false))
+        assertTrue(requiresPlayerPresentationBoundary(horizon, horizon, true))
+        assertFalse(requiresPlayerPresentationBoundary(horizon, horizon, false))
+    }
+
     @Test
     fun existingThemeChangesAndResizesRetainTheirOriginalTransitionPolicy() {
         PlayerTheme.entries.forEach { previous ->
