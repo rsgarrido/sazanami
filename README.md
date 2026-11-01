@@ -32,12 +32,15 @@ Sazanami is a local Android music player built for people who own and manage the
 
 It combines a modern music library with deeply customizable player interfaces, nostalgic hardware-inspired themes, multiple persistent queues, Smart Playlists, real file-tag editing, listening statistics, local lyrics, audio tools, Android Auto, and home-screen widgets.
 
+Adaptive layouts make better use of supported tablets and larger screens, with two additional player themes for compatible tablets in landscape. Offline lyrics include embedded lyrics, Enhanced LRC, and a built-in editor.
+
 Sazanami is designed around local playback and privacy. Your music library does not require a streaming service or an account, and Sazanami does not track or sell your listening data.
 
 ## Highlights
 
 - **Your local music library** — Browse songs, albums, artists, playlists, folders, and genres with sorting, filtering, ratings, favorites, search, and recently played/added views.
-- **Six player experiences** — Choose between the customizable Sazanami Default player and five retro-inspired interfaces. Save your Default-player setup as My Player.
+- **Six standard player experiences, plus two tablet-landscape themes** — Choose between the customizable Sazanami Default player and five retro-inspired interfaces, with Pocket Advance and Pocket Horizon for supported tablets in landscape. Save your Default-player setup as My Player.
+- **Adaptive layouts** — Navigation, library views, and supporting screens make better use of supported tablets and larger displays, with expanded-player landscape arrangements where supported.
 - **English and Spanish** — Use the app in English or neutral Latin American Spanish, with a language choice independent of your device language.
 - **Multiple persistent queues** — Create, rename, switch between, preview, and reorder separate playback queues without losing your place.
 - **Manual and Smart Playlists** — Build traditional playlists or create rule-based collections using metadata, ratings, listening history, dates, play counts, and more.
@@ -45,13 +48,15 @@ Sazanami is designed around local playback and privacy. Your music library does 
 - **Advanced audio tools** — Graphic and parametric equalization, ReplayGain, crossfade, album-transition preservation, audio offload, waveform seeking, and a sleep timer.
 - **Experimental USB Direct playback** — Play supported FLAC files through compatible USB DACs using a native output path, with an explicit opt-in and standard Android audio as the fallback.
 - **Listening statistics** — Explore listening time, play counts, trends, top tracks, artists, and albums across configurable time ranges.
-- **Local lyrics** — Use your own `.lrc` files with synchronized line-by-line playback.
+- **Offline lyrics and editor** — Read external `.lrc` files or supported embedded lyrics, from plain text to line synchronization and Enhanced LRC karaoke highlighting. Create and refine lyrics with the built-in editor.
 - **Android integration** — Background playback, notification and lock-screen controls, Bluetooth/media buttons, Android Auto, and resizable home-screen widgets.
 - **Backup and restore** — Export and restore supported Sazanami library data, history, ratings, playlists, preferences, and other app state.
 
 ## Player Themes
 
-Sazanami includes six expanded-player designs built on the same playback system. Each has its own mini player, interactions, visual identity, and transition into the full player.
+Sazanami includes six standard expanded-player designs built on the same playback system. Each standard theme has its own mini player, interactions, visual identity, and transition into the full player.
+
+Pocket Advance and Pocket Horizon provide two additional player experiences for supported tablet-landscape configurations.
 
 <table>
   <tr>
@@ -103,6 +108,54 @@ Retro themes also provide their own configurable color schemes.
 </p>
 
 Player transitions are interactive rather than simple screen changes. Artwork and selected interface elements move between the mini player and expanded player as you drag.
+
+### Adaptive tablet and landscape layouts
+
+On supported tablets and larger screens, adaptive navigation and content layouts give your music more room. A side navigation rail, improved library arrangements, and layouts adapted for Home, search, Queue Hub, and lyrics make better use of the available display.
+
+The Sazanami Default expanded player offers **Balanced**, with artwork beside playback information and controls, and **Wide Waveform**, with a dedicated wider waveform and progress area, when there is enough room. Available arrangements depend on screen space and text size. Landscape availability also depends on your device and Android version; it is not supported universally on phones or tablets.
+
+### Tablet-landscape themes
+
+**Pocket Advance** and **Pocket Horizon** are separate choices under **Tablet Landscape Theme**. They require a supported tablet in full-screen landscape with enough room for the interface. Phone, split-screen/multi-window, foldable, and desktop/external-display configurations are not supported for these themes. Other configurations use your normally selected player theme.
+
+#### Pocket Advance
+
+A handheld-inspired console interface with an interactive D-pad and playback controls, integrated Songs, Albums, and Artists browsing, and customizable console, LCD, and control colors.
+
+<p align="center">
+  <img src="docs/assets/readme/themes/pocket-advance-landscape.webp" width="800" alt="Pocket Advance player on a tablet in landscape, with album artwork, track information, and console controls"><br>
+  <em>Pocket Advance — handheld-inspired playback on supported tablets in landscape.</em>
+</p>
+
+#### Pocket Horizon
+
+A widescreen handheld-inspired interface with an interactive D-pad, analog stick, face buttons, and shoulder controls. Browse your music, follow playback with a waveform-inspired progress display, and customize console finishes, LCD palettes, and background wave effects.
+
+<p align="center">
+  <img src="docs/assets/readme/themes/pocket-horizon-landscape.webp" width="800" alt="Pocket Horizon player on a tablet in landscape, with music browsing tabs, playback controls, and a waveform-inspired progress bar"><br>
+  <em>Pocket Horizon — widescreen browsing and playback on supported tablets in landscape.</em>
+</p>
+
+## Lyrics
+
+Lyrics 2.0 brings your own lyrics into the listening experience, entirely offline.
+
+### Sources and formats
+
+Use external `.lrc` files from your selected lyrics folders or read embedded lyrics from supported audio metadata. Sazanami displays plain-text unsynchronized lyrics, follows line-synchronized lyrics, and highlights individual words or segments when reliable Enhanced LRC timing is available. Embedded synchronization requires LRC-formatted text in a supported lyrics field.
+
+### Built-in lyrics editor
+
+Create or refine lyrics in **Plain Text**, **Synchronize**, or **Raw LRC** mode. Listen while stamping line timestamps, replay a line, and adjust its timing to improve synchronization.
+
+Import local lyrics documents and export the current content as `.txt` or `.lrc`, depending on its timing. Recover unfinished drafts and include saved lyrics edits in Sazanami backups; drafts are not included in backups.
+
+**Saving keeps your edits locally in Sazanami.** Reading embedded lyrics does not mean edits are written back to audio metadata, and saving does not overwrite original external LRC files. Export is a separate action to a destination you choose; it does not save edits in the app.
+
+<p align="center">
+  <img src="docs/assets/readme/screens/lyrics-editor.webp" width="360" alt="Sazanami lyrics editor in Synchronize mode, showing line timestamps and playback-assisted timing controls">
+</p>
 
 ## Explore Sazanami
 
@@ -213,6 +266,7 @@ Sazanami intentionally focuses on local music ownership rather than turning your
 
 - Songs, Albums, Artists, Playlists, Folders, and Genres
 - List and grid views
+- Adaptive navigation and content layouts for supported tablets and larger screens
 - Library sorting and filtering
 - Favorites
 - 1–5 star ratings
@@ -286,16 +340,23 @@ Sazanami intentionally focuses on local music ownership rather than turning your
 - ReplayGain
 - Waveform seeking
 - Experimental USB Direct FLAC playback with compatible DACs
-- Local `.lrc` lyrics
-- Synced line-by-line lyrics
+- External `.lrc` files and embedded lyrics in supported audio metadata
+- Plain-text unsynchronized and line-synchronized lyrics
+- Enhanced LRC word- or segment-level karaoke highlighting
 - Lyrics folder scanning
+- Built-in lyrics editor: Plain Text, Synchronize, and Raw LRC
+- Playback-assisted line timestamp editing
+- Local lyrics import/export and draft recovery
+- Saved lyrics edits stored in Sazanami and included in app backups
 
 </details>
 
 <details>
 <summary><strong>Personalization</strong></summary>
 
-- Six player themes
+- Six standard player themes, plus Pocket Advance and Pocket Horizon for supported tablets in landscape
+- Separate tablet-landscape theme selection and appearance customization
+- Balanced and Wide Waveform layouts for the Default player where supported
 - Four built-in Default-player presets
 - Saved custom Default-player configuration: My Player
 - System / Light / Dark app appearance
@@ -411,8 +472,6 @@ On Windows:
 ## Documentation
 
 Additional technical documentation will be added under [`docs/`](docs/).
-
-The repository also maintains internal architecture/status documentation used during development and technical audits.
 
 ## Feedback and Issues
 

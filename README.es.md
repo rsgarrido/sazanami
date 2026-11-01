@@ -32,12 +32,15 @@ Sazanami es un reproductor de música local para Android, pensado para quienes p
 
 Combina una biblioteca musical moderna con interfaces de reproducción muy personalizables, temas nostálgicos inspirados en equipos de audio, múltiples colas persistentes, listas inteligentes, edición directa de etiquetas en los archivos, estadísticas de escucha, letras locales, herramientas de audio, Android Auto y widgets para la pantalla de inicio.
 
+Los diseños adaptables aprovechan mejor las tabletas y pantallas grandes compatibles, con dos temas adicionales para tabletas compatibles en horizontal. Las letras sin conexión incluyen letras integradas en los archivos, Enhanced LRC y un editor incorporado.
+
 Sazanami está diseñado en torno a la reproducción local y la privacidad. Tu biblioteca musical no requiere un servicio de streaming ni una cuenta, y Sazanami no rastrea ni vende tus datos de escucha.
 
 ## Características destacadas
 
 - **Tu biblioteca musical local** — Explora canciones, álbumes, artistas, listas de reproducción, carpetas y géneros, con opciones de orden y filtrado, calificaciones, favoritos, búsqueda y vistas de música reproducida o agregada recientemente.
-- **Seis experiencias de reproducción** — Elige entre el reproductor personalizable Predeterminado de Sazanami y cinco interfaces de inspiración retro. Guarda tu configuración del reproductor predeterminado como Mi reproductor.
+- **Seis experiencias de reproducción estándar y dos temas para tabletas en horizontal** — Elige entre el reproductor personalizable Predeterminado de Sazanami y cinco interfaces de inspiración retro, además de Pocket Advance y Pocket Horizon para tabletas compatibles en horizontal. Guarda tu configuración del reproductor predeterminado como Mi reproductor.
+- **Diseños adaptables** — La navegación, las vistas de la biblioteca y las pantallas complementarias aprovechan mejor las tabletas y pantallas grandes compatibles, con distribuciones horizontales del reproductor ampliado donde se admiten.
 - **Inglés y español** — Usa la aplicación en inglés o en español latinoamericano neutro, con una elección de idioma independiente del idioma de tu dispositivo.
 - **Múltiples colas persistentes** — Crea y renombra colas de reproducción independientes, cambia entre ellas, consulta vistas previas y reordénalas sin perder tu posición.
 - **Listas de reproducción manuales e inteligentes** — Crea listas tradicionales o colecciones basadas en reglas que usan metadatos, calificaciones, historial de escucha, fechas, conteos de reproducciones y más.
@@ -45,13 +48,15 @@ Sazanami está diseñado en torno a la reproducción local y la privacidad. Tu b
 - **Herramientas avanzadas de audio** — Ecualización gráfica y paramétrica, ReplayGain, transición entre canciones, conservación de las transiciones del álbum, procesamiento de audio por hardware, navegación por la forma de onda y temporizador de apagado.
 - **Reproducción experimental USB Direct** — Reproduce archivos FLAC compatibles mediante una salida USB nativa con determinados DAC USB, previa activación explícita y con el audio estándar de Android como alternativa.
 - **Estadísticas de escucha** — Explora el tiempo de escucha, los conteos de reproducciones, las tendencias y las canciones, artistas y álbumes más escuchados en intervalos de tiempo configurables.
-- **Letras locales** — Usa tus propios archivos `.lrc` con reproducción sincronizada línea por línea.
+- **Letras sin conexión y editor** — Lee archivos `.lrc` externos o letras integradas compatibles, desde texto sin sincronizar hasta letras sincronizadas por línea y resaltado de karaoke con Enhanced LRC. Crea y ajusta letras con el editor incorporado.
 - **Integración con Android** — Reproducción en segundo plano, controles en notificaciones y en la pantalla de bloqueo, botones de Bluetooth y multimedia, Android Auto y widgets de tamaño ajustable para la pantalla de inicio.
 - **Copia de seguridad y restauración** — Exporta y restaura los datos compatibles de Sazanami, como la biblioteca, el historial, las calificaciones, las listas de reproducción, las preferencias y otros datos de la aplicación.
 
 ## Temas del reproductor
 
-Sazanami incluye seis diseños de reproductor ampliado que comparten el mismo sistema de reproducción. Cada uno tiene su propio minirreproductor, interacciones, identidad visual y transición al reproductor completo.
+Sazanami incluye seis diseños estándar de reproductor ampliado que comparten el mismo sistema de reproducción. Cada tema estándar tiene su propio minirreproductor, interacciones, identidad visual y transición al reproductor completo.
+
+Pocket Advance y Pocket Horizon ofrecen dos experiencias de reproducción adicionales para tabletas compatibles en horizontal.
 
 <table>
   <tr>
@@ -103,6 +108,54 @@ Los temas retro también ofrecen sus propias combinaciones de colores configurab
 </p>
 
 Las transiciones del reproductor son interactivas, más allá de un simple cambio de pantalla. Al arrastrar, la portada y algunos elementos de la interfaz se desplazan entre el minirreproductor y el reproductor ampliado.
+
+### Diseños adaptables para tabletas y pantallas en horizontal
+
+En tabletas y pantallas grandes compatibles, la navegación y los diseños adaptables dan más espacio a tu música. Una barra de navegación lateral, una mejor distribución de la biblioteca y diseños adaptados para Inicio, la búsqueda, el Centro de colas y las letras aprovechan mejor la pantalla disponible.
+
+El reproductor ampliado Predeterminado de Sazanami ofrece **Equilibrada**, con la portada junto a la información y los controles de reproducción, y **Forma de onda amplia**, con un área más ancha dedicada a la forma de onda y el progreso, cuando hay espacio suficiente. Las distribuciones disponibles dependen del espacio en pantalla y del tamaño del texto. La disponibilidad de la orientación horizontal también depende del dispositivo y la versión de Android; no se admite en todos los teléfonos ni en todas las tabletas.
+
+### Temas para tabletas en horizontal
+
+**Pocket Advance** y **Pocket Horizon** se eligen por separado en **Tema para tabletas en horizontal**. Requieren una tableta compatible en horizontal y a pantalla completa, con espacio suficiente para la interfaz. Estos temas no admiten teléfonos, pantalla dividida o múltiples ventanas, dispositivos plegables ni configuraciones de escritorio o pantallas externas. En las demás configuraciones se usa el tema normal que hayas elegido para el reproductor.
+
+#### Pocket Advance
+
+Una interfaz de consola inspirada en dispositivos de mano, con cruceta y controles de reproducción interactivos, exploración integrada de Canciones, Álbumes y Artistas, y colores personalizables para la consola, la pantalla LCD y los controles.
+
+<p align="center">
+  <img src="docs/assets/readme/themes/pocket-advance-landscape.webp" width="800" alt="Reproductor Pocket Advance en una tableta en horizontal, con portada del álbum, información de la canción y controles de consola"><br>
+  <em>Pocket Advance — reproducción inspirada en dispositivos de mano para tabletas compatibles en horizontal.</em>
+</p>
+
+#### Pocket Horizon
+
+Una interfaz panorámica inspirada en dispositivos de mano, con cruceta, palanca analógica, botones frontales y botones superiores interactivos. Explora tu música, sigue la reproducción con un indicador de progreso inspirado en una forma de onda y personaliza los acabados de la consola, las paletas de la pantalla LCD y los efectos de ondas del fondo.
+
+<p align="center">
+  <img src="docs/assets/readme/themes/pocket-horizon-landscape.webp" width="800" alt="Reproductor Pocket Horizon en una tableta en horizontal, con pestañas para explorar música, controles de reproducción y una barra de progreso inspirada en una forma de onda"><br>
+  <em>Pocket Horizon — exploración y reproducción panorámicas para tabletas compatibles en horizontal.</em>
+</p>
+
+## Letras
+
+Letras 2.0 integra tus propias letras en la experiencia de escucha, completamente sin conexión.
+
+### Fuentes y formatos
+
+Usa archivos `.lrc` externos de las carpetas de letras que elijas o lee letras integradas en los metadatos de audio compatibles. Sazanami muestra letras de texto sin sincronizar, sigue las letras sincronizadas por línea y resalta palabras o segmentos cuando hay tiempos fiables de Enhanced LRC. La sincronización de letras integradas requiere texto en formato LRC en un campo de letras compatible.
+
+### Editor de letras incorporado
+
+Crea o ajusta letras en los modos **Texto sin sincronizar**, **Sincronizar** o **LRC sin formato**. Escucha la canción mientras marcas los tiempos de cada línea, vuelve a reproducir una línea y ajusta sus tiempos para mejorar la sincronización.
+
+Importa documentos locales de letras y exporta el contenido actual como `.txt` o `.lrc`, según tenga tiempos de sincronización. Recupera borradores pendientes e incluye las ediciones de letras guardadas en las copias de seguridad de Sazanami; los borradores no se incluyen en las copias de seguridad.
+
+**Al guardar, tus ediciones se almacenan localmente en Sazanami.** Leer letras integradas no significa que las ediciones se escriban en los metadatos de audio, y guardar no sobrescribe los archivos LRC externos originales. Exportar es una acción independiente hacia un destino que tú eliges; no guarda las ediciones en la aplicación.
+
+<p align="center">
+  <img src="docs/assets/readme/screens/lyrics-editor.webp" width="360" alt="Editor de letras de Sazanami en modo Sincronizar, con tiempos por línea y controles para ajustar la sincronización durante la reproducción">
+</p>
 
 ## Explora Sazanami
 
@@ -213,6 +266,7 @@ Sazanami se centra intencionalmente en la música local que te pertenece, en lug
 
 - Canciones, Álbumes, Artistas, Listas de reproducción, Carpetas y Géneros
 - Vistas de lista y cuadrícula
+- Navegación y diseños adaptables para tabletas y pantallas grandes compatibles
 - Orden y filtrado de la biblioteca
 - Favoritos
 - Calificaciones de 1–5 estrellas
@@ -286,16 +340,23 @@ Sazanami se centra intencionalmente en la música local que te pertenece, en lug
 - ReplayGain
 - Navegación por la forma de onda
 - Reproducción experimental USB Direct de archivos FLAC con DAC compatibles
-- Letras locales en archivos `.lrc`
-- Letras sincronizadas línea por línea
+- Archivos `.lrc` externos y letras integradas en metadatos de audio compatibles
+- Letras de texto sin sincronizar y letras sincronizadas por línea
+- Resaltado de karaoke por palabra o segmento con Enhanced LRC
 - Búsqueda de letras en carpetas
+- Editor de letras incorporado: Texto sin sincronizar, Sincronizar y LRC sin formato
+- Edición de tiempos por línea durante la reproducción
+- Importación y exportación local de letras y recuperación de borradores
+- Ediciones de letras guardadas en Sazanami e incluidas en las copias de seguridad de la aplicación
 
 </details>
 
 <details>
 <summary><strong>Personalización</strong></summary>
 
-- Seis temas del reproductor
+- Seis temas estándar del reproductor, además de Pocket Advance y Pocket Horizon para tabletas compatibles en horizontal
+- Selección y personalización de apariencia independientes para los temas de tabletas en horizontal
+- Distribuciones Equilibrada y Forma de onda amplia para el reproductor predeterminado donde se admiten
 - Cuatro estilos predefinidos incluidos para el reproductor predeterminado
 - Configuración personalizada guardada del reproductor predeterminado: Mi reproductor
 - Apariencia de la aplicación: Sistema / Claro / Oscuro
@@ -411,8 +472,6 @@ En Windows:
 ## Documentación
 
 Se agregará documentación técnica adicional en [`docs/`](docs/).
-
-El repositorio también mantiene documentación interna sobre la arquitectura y el estado del proyecto, utilizada durante el desarrollo y las auditorías técnicas.
 
 ## Comentarios y problemas
 
