@@ -1,6 +1,11 @@
 package io.github.rsgarrido.sazanami.lyrics
 
 import io.github.rsgarrido.sazanami.data.Song
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+private val EmptyKaraokeState = MutableStateFlow(emptyList<KaraokeLineState>()).asStateFlow()
 
 sealed interface LyricsPlaybackUiState {
     data object Hidden : LyricsPlaybackUiState
@@ -14,7 +19,10 @@ sealed interface LyricsPlaybackUiState {
         val lyrics: LyricsDocument.Synced,
         val activeGroup: ActiveLyricGroup?,
         val autoFollowEnabled: Boolean,
-        val sourcedLyrics: SourcedLyrics? = null
+        val sourcedLyrics: SourcedLyrics? = null,
+        // Word boundaries must not invalidate the player route that collects structural lyrics.
+        val karaoke: StateFlow<List<KaraokeLineState>> = EmptyKaraokeState,
+        val followRequestId: Long = 0L
     ) : LyricsPlaybackUiState
 
     data class Unsynced(

@@ -23,6 +23,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertSame
 import org.junit.Test
 import org.mockito.Mockito.mock
 
@@ -32,6 +33,189 @@ class LyricsPlaybackControllerTest {
     @After
     fun tearDown() {
         scope.cancel()
+    }
+
+    @Test fun returnPublishesImmediatelyWhilePausedOnTheSameWordAndCue() = runBlocking {
+        val repository = PlaybackLyricsRepository().apply {
+            defaultResult = found(LrcParser().parse("[00:01]<00:01>Long <00:08>line"))
+        }
+        val fixture = fixture(repository, position = { 1500 })
+        fixture.playback.value = playback(song(1), isPlaying = false)
+        fixture.controller.setVisible(true)
+        val initial = fixture.controller.awaitState<LyricsPlaybackUiState.Synced>()
+        val initialWords = initial.karaoke.value
+        fixture.controller.suspendAutoFollow()
+        assertFalse((fixture.controller.uiState.value as LyricsPlaybackUiState.Synced).autoFollowEnabled)
+        fixture.controller.returnToCurrentLine()
+        // No ticker, next cue, next word, delay or await is needed to observe acceptance.
+        val returned = fixture.controller.uiState.value as LyricsPlaybackUiState.Synced
+        assertTrue(returned.autoFollowEnabled)
+        assertEquals(initial.activeGroup, returned.activeGroup)
+        assertEquals(initialWords, returned.karaoke.value)
+        assertTrue(returned.followRequestId > initial.followRequestId)
+        fixture.controller.returnToCurrentLine()
+        assertTrue((fixture.controller.uiState.value as LyricsPlaybackUiState.Synced).followRequestId > returned.followRequestId)
+        fixture.controller.suspendAutoFollow()
+        assertFalse((fixture.controller.uiState.value as LyricsPlaybackUiState.Synced).autoFollowEnabled)
+    }
+
+    @Test fun directWordsPublishOnlyAtConfirmedBoundariesIncludingPausedAndRejectedSeeks() = runBlocking {
+        val repository = PlaybackLyricsRepository().apply {
+            defaultResult = found(LrcParser().parse("[00:01]<00:01>First <00:01.4>next <00:01.75>last\n[00:05]Other"))
+        }
+        val progress = MutableStateFlow(PlaybackProgressUiState(currentPosition = 1000, isDirect = true))
+        var reads = 0
+        val fixture = fixture(repository, position = { reads++; 0 }, authoritativeProgress = progress)
+        fixture.playback.value = playback(song(1), isPlaying = false)
+        fixture.controller.setVisible(true)
+        val first = fixture.controller.awaitState<LyricsPlaybackUiState.Synced>()
+        val firstWords = first.karaoke.value
+        assertEquals(listOf(KaraokeLineState(0, 1000)), firstWords)
+        progress.value = progress.value.copy(currentPosition = 1399)
+        assertSame(first, fixture.controller.uiState.value)
+        assertSame(firstWords, first.karaoke.value)
+        progress.value = progress.value.copy(currentPosition = 1400)
+        val middle = fixture.controller.uiState.value as LyricsPlaybackUiState.Synced
+        val middleWords = middle.karaoke.value
+        assertSame("Word boundaries must not invalidate structural player collectors", first, middle)
+        assertEquals(first.activeGroup, middle.activeGroup)
+        assertEquals(listOf(KaraokeLineState(0, 1400)), middle.karaoke.value)
+        progress.value = progress.value.copy(isSeeking = true)
+        fixture.controller.onSeek(5000)
+        progress.value = progress.value.copy(currentPosition = 5000) // An unconfirmed destination.
+        assertSame(middle, fixture.controller.uiState.value)
+        fixture.controller.returnToCurrentLine()
+        assertTrue((fixture.controller.uiState.value as LyricsPlaybackUiState.Synced).autoFollowEnabled)
+        assertEquals(middleWords, (fixture.controller.uiState.value as LyricsPlaybackUiState.Synced).karaoke.value)
+        progress.value = progress.value.copy(currentPosition = 1400, isSeeking = false) // Rejected/failed.
+        assertEquals(middleWords, (fixture.controller.uiState.value as LyricsPlaybackUiState.Synced).karaoke.value)
+        progress.value = progress.value.copy(currentPosition = 1750)
+        assertEquals(listOf(KaraokeLineState(0, 1750)), (fixture.controller.uiState.value as LyricsPlaybackUiState.Synced).karaoke.value)
+        progress.value = progress.value.copy(currentPosition = 1000)
+        assertEquals(firstWords, (fixture.controller.uiState.value as LyricsPlaybackUiState.Synced).karaoke.value)
+        progress.value = progress.value.copy(currentPosition = 0) // Repeat/restart.
+        val restart = fixture.controller.uiState.value as LyricsPlaybackUiState.Synced
+        assertNull(restart.activeGroup)
+        assertTrue(restart.karaoke.value.isEmpty())
+        progress.value = progress.value.copy(currentPosition = 1000)
+        assertEquals(firstWords, (fixture.controller.uiState.value as LyricsPlaybackUiState.Synced).karaoke.value)
+        assertEquals(0, reads)
+        assertEquals(1, repository.lookupCount.get())
+    }
+
+    @Test fun sourceReplacementOffsetsAndTrackChangesCannotRetainOldWordStates() = runBlocking {
+        val parser = LrcParser()
+        fun enhanced(offset: Int, text: String): LyricsLookupResult {
+            val source = parser.parseSource("[offset:$offset]\n[00:01]<00:01>$text <00:02>ending")
+            return LyricsLookupResult.Found(SourcedLyrics(parser.project(source), LyricsSource.LocalOverride("saved"), source))
+        }
+        val repository = PlaybackLyricsRepository().apply { defaultResult = enhanced(0, "Original") }
+        val progress = MutableStateFlow(PlaybackProgressUiState(currentPosition = 2200, isDirect = true))
+        val fixture = fixture(repository, authoritativeProgress = progress)
+        val targetSong = song(1)
+        fixture.playback.value = playback(targetSong)
+        fixture.controller.setVisible(true)
+        val original = fixture.controller.awaitState<LyricsPlaybackUiState.Synced>()
+        val originalWords = original.karaoke.value
+        assertEquals(2000L, originalWords.single().activeTimestampMs)
+        repository.defaultResult = enhanced(500, "Replacement")
+        repository.changes.emit(LyricsInvalidation(trackKey = targetSong.toLyricsIdentity().trackKey))
+        val replacement = fixture.controller.awaitState<LyricsPlaybackUiState.Synced> { it.activeGroup?.lines == listOf("Replacement ending") }
+        assertEquals(1500L, replacement.karaoke.value.single().activeTimestampMs)
+        progress.value = progress.value.copy(isSeeking = true)
+        fixture.playback.value = playback(targetSong.copy(volumeName = "another-volume"))
+        val next = fixture.controller.awaitState<LyricsPlaybackUiState.Synced> { it.song.volumeName == "another-volume" }
+        assertNull(next.activeGroup)
+        assertTrue(next.karaoke.value.isEmpty())
+        progress.value = progress.value.copy(currentPosition = 2500, isSeeking = false)
+        assertEquals(2500L, (fixture.controller.uiState.value as LyricsPlaybackUiState.Synced).karaoke.value.single().activeTimestampMs)
+        fixture.playback.value = playback(song(2))
+        assertEquals(2L, fixture.controller.awaitState<LyricsPlaybackUiState.Synced>().song.id)
+        assertEquals(originalWords, original.karaoke.value)
+    }
+
+    @Test fun androidWordsUseTheExistingVisibleTickerAndPauseResumePositionSampling() = runBlocking {
+        var position = 1000L
+        // Reuse one qualified track: song() creates a fresh mock Uri on each call.
+        val targetSong = song(1)
+        val repository = PlaybackLyricsRepository().apply {
+            defaultResult = found(LrcParser().parse("[00:01]<00:01>One <00:02>two"))
+        }
+        val fixture = fixture(repository, position = { position })
+        fixture.playback.value = playback(targetSong, isPlaying = true)
+        fixture.controller.setVisible(true)
+        val initial = fixture.controller.awaitState<LyricsPlaybackUiState.Synced> { it.karaoke.value.singleOrNull()?.activeTimestampMs == 1000L }
+        position = 2000
+        fixture.controller.awaitState<LyricsPlaybackUiState.Synced> { it.karaoke.value.singleOrNull()?.activeTimestampMs == 2000L }
+        fixture.playback.value = playback(targetSong, isPlaying = false)
+        val paused = fixture.controller.uiState.value as LyricsPlaybackUiState.Synced
+        assertSame("Pausing the same track must retain its loaded word-progress flow", initial.karaoke, paused.karaoke)
+        val pausedWords = paused.karaoke.value
+        fixture.controller.returnToCurrentLine()
+        assertEquals(pausedWords,
+            (fixture.controller.uiState.value as LyricsPlaybackUiState.Synced).karaoke.value)
+        position = 1100
+        fixture.playback.value = playback(targetSong, isPlaying = true)
+        assertSame("Resuming the same track must retain its loaded word-progress flow", initial.karaoke,
+            (fixture.controller.uiState.value as LyricsPlaybackUiState.Synced).karaoke)
+        assertEquals(1000L, (fixture.controller.uiState.value as LyricsPlaybackUiState.Synced).karaoke.value.single().activeTimestampMs)
+        assertEquals(1, repository.lookupCount.get())
+    }
+
+    @Test fun simultaneousLinesResolveIndependentlyAndInvalidTimingIsLineOnly() = runBlocking {
+        val repository = PlaybackLyricsRepository().apply {
+            defaultResult = found(LrcParser().parse("[00:01]<00:01>A<00:02>B\n[00:01]<00:01.5>C\n[00:01]<00:02>D<00:01>E"))
+        }
+        val fixture = fixture(repository, position = { 1000 })
+        fixture.playback.value = playback(song(1))
+        fixture.controller.setVisible(true)
+        val state = fixture.controller.awaitState<LyricsPlaybackUiState.Synced>()
+        assertEquals(listOf("AB", "C", "DE"), state.activeGroup?.lines)
+        assertEquals(listOf(KaraokeLineState(0, 1000), KaraokeLineState(1, null)), state.karaoke.value)
+    }
+
+    @Test fun pausedAndroidSubWordSeekUsesReportedPositionWithoutCoarseTargetTolerance() = runBlocking {
+        var reported = 1390L
+        val progress = MutableStateFlow(PlaybackProgressUiState(currentPosition = 1390))
+        val repository = PlaybackLyricsRepository().apply {
+            defaultResult = found(LrcParser().parse("[00:01]<00:01>One<00:01.4>two"))
+        }
+        val fixture = fixture(repository, position = { reported }, authoritativeProgress = progress)
+        fixture.playback.value = playback(song(1), isPlaying = false)
+        fixture.controller.setVisible(true)
+        val initialWords = fixture.controller.awaitState<LyricsPlaybackUiState.Synced>().karaoke.value
+        fixture.controller.onSeek(1410)
+        assertEquals(initialWords, (fixture.controller.uiState.value as LyricsPlaybackUiState.Synced).karaoke.value)
+        // The projected request itself is not the reported Media3 playhead.
+        progress.value = progress.value.copy(currentPosition = 1410)
+        assertEquals(initialWords, (fixture.controller.uiState.value as LyricsPlaybackUiState.Synced).karaoke.value)
+        reported = 1410
+        fixture.controller.awaitState<LyricsPlaybackUiState.Synced> { it.karaoke.value.singleOrNull()?.activeTimestampMs == 1400L }
+        reported = 1390
+        progress.value = progress.value.copy(currentPosition = 1390)
+        assertEquals(initialWords, (fixture.controller.uiState.value as LyricsPlaybackUiState.Synced).karaoke.value)
+        assertFalse(fixture.playback.value.isPlaying)
+    }
+
+    @Test fun returnAlsoPublishesBeforeFirstCueDuringInstrumentalAndOnLastCue() = runBlocking {
+        var position = 0L
+        val repository = PlaybackLyricsRepository().apply {
+            defaultResult = found(LrcParser().parse("[00:01]First\n[00:02]\n[00:03]Last"))
+        }
+        val fixture = fixture(repository, position = { position })
+        fixture.playback.value = playback(song(1))
+        fixture.controller.setVisible(true)
+        for (time in listOf(0L, 2000L, 5000L)) {
+            position = time
+            fixture.controller.onSeek(time)
+            fixture.controller.suspendAutoFollow()
+            val before = fixture.controller.uiState.value as LyricsPlaybackUiState.Synced
+            fixture.controller.returnToCurrentLine()
+            val after = fixture.controller.uiState.value as LyricsPlaybackUiState.Synced
+            assertTrue(after.autoFollowEnabled)
+            assertEquals(before.activeGroup, after.activeGroup)
+            assertTrue(after.followRequestId > before.followRequestId)
+        }
     }
 
     @Test
@@ -158,12 +342,13 @@ class LyricsPlaybackControllerTest {
     }
 
     @Test
-    fun activeDirectProgressAndAndroidOptimisticSeekingRetainTheirOwnSemantics() = runBlocking {
+    fun activeDirectProgressAndAndroidSeeksUseTheirReportedPositions() = runBlocking {
         val repository = PlaybackLyricsRepository().apply {
             defaultResult = found(LyricsDocument.Synced(listOf(cue(1_000, "First"), cue(5_000, "Second"))))
         }
         val progress = MutableStateFlow(PlaybackProgressUiState(currentPosition = 1000, isDirect = true))
-        val fixture = fixture(repository, position = { 1000L }, authoritativeProgress = progress)
+        var reportedPosition = 1000L
+        val fixture = fixture(repository, position = { reportedPosition }, authoritativeProgress = progress)
         fixture.playback.value = playback(song(1), isPlaying = true)
         fixture.controller.setVisible(true)
         fixture.controller.awaitState<LyricsPlaybackUiState.Synced> { it.activeGroup?.lines == listOf("First") }
@@ -173,6 +358,9 @@ class LyricsPlaybackControllerTest {
         fixture.playback.value = playback(song(1), isPlaying = false)
         progress.value = progress.value.copy(isDirect = false, currentPosition = 1000)
         fixture.controller.onSeek(5_000)
+        assertEquals(listOf("First"), (fixture.controller.uiState.value as LyricsPlaybackUiState.Synced).activeGroup?.lines)
+        reportedPosition = 5000
+        progress.value = progress.value.copy(currentPosition = 5000)
         assertEquals(listOf("Second"), (fixture.controller.uiState.value as LyricsPlaybackUiState.Synced).activeGroup?.lines)
     }
 
@@ -336,11 +524,13 @@ class LyricsPlaybackControllerTest {
         val repository = PlaybackLyricsRepository().apply {
             defaultResult = found(document)
         }
-        val fixture = fixture(repository)
+        var reportedPosition = 0L
+        val fixture = fixture(repository, position = { reportedPosition })
         fixture.controller.setVisible(true)
         fixture.playback.value = playback(song(1))
         fixture.controller.awaitState<LyricsPlaybackUiState.Synced>()
 
+        reportedPosition = 1500
         fixture.controller.onSeek(1_500)
         assertEquals(
             listOf("First"),
@@ -348,6 +538,7 @@ class LyricsPlaybackControllerTest {
                 .activeGroup?.lines
         )
 
+        reportedPosition = 2500
         fixture.controller.onSeek(2_500)
         assertNull(
             (fixture.controller.uiState.value as LyricsPlaybackUiState.Synced).activeGroup
@@ -367,17 +558,20 @@ class LyricsPlaybackControllerTest {
                 )
             )
         }
-        val fixture = fixture(repository)
+        var reportedPosition = 0L
+        val fixture = fixture(repository, position = { reportedPosition })
         fixture.controller.setVisible(true)
         fixture.playback.value = playback(song(1))
         fixture.controller.awaitState<LyricsPlaybackUiState.Synced>()
 
+        reportedPosition = 2500
         fixture.controller.onSeek(2_500)
         assertEquals(
             listOf("Second A", "Second B"),
             (fixture.controller.uiState.value as LyricsPlaybackUiState.Synced)
                 .activeGroup?.lines
         )
+        reportedPosition = 1200
         fixture.controller.onSeek(1_200)
         assertEquals(
             listOf("First"),
@@ -387,7 +581,7 @@ class LyricsPlaybackControllerTest {
     }
 
     @Test
-    fun optimisticSeekIsNotOverwrittenByStalePreSeekTicks() = runBlocking {
+    fun seekRequestCannotOverrideReportedPositionAndConfirmedTicksStillAdvance() = runBlocking {
         var now = 0L
         var reportedPosition = 1_100L
         val repository = PlaybackLyricsRepository().apply {
@@ -408,19 +602,20 @@ class LyricsPlaybackControllerTest {
 
         fixture.controller.onSeek(5_000)
         assertEquals(
-            listOf("Future"),
+            listOf("First"),
             (fixture.controller.uiState.value as LyricsPlaybackUiState.Synced)
                 .activeGroup?.lines
         )
-        delay(30)
+        now = 1000L // An expired/rejected request still cannot invent the destination.
+        fixture.controller.returnToCurrentLine()
         assertEquals(
-            listOf("Future"),
+            listOf("First"),
             (fixture.controller.uiState.value as LyricsPlaybackUiState.Synced)
                 .activeGroup?.lines
         )
 
         reportedPosition = 5_050L
-        delay(20)
+        fixture.controller.awaitState<LyricsPlaybackUiState.Synced> { it.activeGroup?.lines == listOf("Future") }
         assertEquals(
             listOf("Future"),
             (fixture.controller.uiState.value as LyricsPlaybackUiState.Synced)

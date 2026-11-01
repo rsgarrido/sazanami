@@ -11,6 +11,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.ui.lyrics.LyricsScreen
@@ -129,6 +133,18 @@ class EmbeddedLyricsIntegrationTest {
         assertEquals(LyricsTiming.WORD, state.sourcedLyrics?.timing)
         assertEquals(listOf("Paper lanterns"), state.activeGroup?.lines)
         assertTrue(details("Expected embedded screen source; actual: ${state.sourcedLyrics}"), state.sourcedLyrics?.source is LyricsSource.Embedded)
+        assertTrue(details("Expected karaoke state from actual embedded metadata: $state"), state.karaoke.value.isNotEmpty())
+        val layouts = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithText("Paper lanterns").performSemanticsAction(SemanticsActions.GetTextLayoutResult) { assertTrue(it(layouts)) }
+        assertEquals("Paper lanterns", layouts.single().layoutInput.text.text)
+        assertTrue("Actual embedded Enhanced LRC reaches the shared span renderer",
+            layouts.single().layoutInput.text.spanStyles.isNotEmpty())
+        val word = state.karaoke.value.first()
+        val visibleActiveSegment = state.lyrics.cues[word.cueIndex].segments.any {
+            it.startChar < it.endCharExclusive && it.timestampMs == word.activeTimestampMs
+        }
+        assertEquals("Embedded rendering agrees with its normalized timing", visibleActiveSegment,
+            layouts.single().layoutInput.text.spanStyles.any { it.item.textDecoration == TextDecoration.Underline })
         compose.runOnUiThread { playback.value = PlaybackUiState(currentSong = null) }
         compose.waitUntil(5_000) { controller.uiState.value is LyricsPlaybackUiState.Hidden }
     }

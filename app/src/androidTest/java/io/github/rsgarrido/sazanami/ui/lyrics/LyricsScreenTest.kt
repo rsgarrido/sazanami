@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.Modifier
@@ -15,6 +16,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -89,7 +91,7 @@ class LyricsScreenTest {
                 LyricCue(2_000, LyricCueContent.Text("Second line"))
             )
         )
-        setContent(
+        val published = setContent(
             LyricsPlaybackUiState.Synced(
                 song = song(),
                 lyrics = document,
@@ -103,6 +105,13 @@ class LyricsScreenTest {
             .assertIsSelected()
             .assertHasClickAction()
         composeRule.onNodeWithText("Second line").performClick()
+        // A request alone cannot acknowledge a seek. The owner publishes accepted progress.
+        composeRule.onNodeWithText("First line").assertIsSelected()
+        composeRule.onNodeWithText("Second line").assertIsNotSelected()
+        composeRule.runOnIdle {
+            published.value = (published.value as LyricsPlaybackUiState.Synced).copy(
+                activeGroup = ActiveLyricGroup(2_000, listOf("Second line")))
+        }
         composeRule.onNodeWithText("Second line").assertIsSelected()
         composeRule.runOnIdle { assertEquals(2_000, seekPosition) }
     }
@@ -357,14 +366,15 @@ class LyricsScreenTest {
         onReturn: () -> Unit = {},
         playPauseIntent: Boolean? = null,
         playbackStatus: String? = null
-    ) {
+    ): MutableState<LyricsPlaybackUiState> {
+        val published = mutableStateOf(state)
         composeRule.setContent {
             MaterialTheme {
                 CompositionLocalProvider(LocalPlaybackPlayPauseIntent provides playPauseIntent,
                     LocalPlaybackStatus provides playbackStatus) {
                     val transitionState = rememberPlayerLyricsTransitionState(true) {}
                     LyricsScreen(
-                        state = state,
+                        state = published.value,
                         isPlaying = false,
                         transitionState = transitionState,
                         interactive = true,
@@ -372,13 +382,19 @@ class LyricsScreenTest {
                         onPlayPause = onPlayPause,
                         onSeek = onSeek,
                         onSuspendAutoFollow = {},
-                        onReturnToCurrentLine = onReturn,
+                        onReturnToCurrentLine = {
+                            onReturn()
+                            (published.value as? LyricsPlaybackUiState.Synced)?.let {
+                                published.value = it.copy(autoFollowEnabled = true, followRequestId = it.followRequestId + 1)
+                            }
+                        },
                         onRescan = {},
                         onOpenSettings = {}
                     )
                 }
             }
         }
+        return published
     }
 
     private fun assertSparseStateBlocksUnderlying(state: LyricsPlaybackUiState) {

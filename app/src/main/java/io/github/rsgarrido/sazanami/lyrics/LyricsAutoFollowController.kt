@@ -27,7 +27,13 @@ class LyricsAutoFollowController(
         itemIndex: Int?,
         anchorRevision: Any? = Unit
     ): LyricsScrollRequest? {
-        if (!isEnabled || itemIndex == null) return null
+        if (!isEnabled) return null
+        if (itemIndex == null) {
+            // A gap/restart can later reactivate the same numeric item. It needs a fresh anchor.
+            lastRequestedIndex = null
+            lastAnchorRevision = null
+            return null
+        }
         if (itemIndex == lastRequestedIndex && anchorRevision == lastAnchorRevision) return null
         val previous = lastRequestedIndex
         lastRequestedIndex = itemIndex
@@ -40,7 +46,11 @@ class LyricsAutoFollowController(
 
     fun returnToCurrent(itemIndex: Int?): LyricsScrollRequest? {
         isEnabled = true
-        if (itemIndex == null) return null
+        if (itemIndex == null) {
+            lastRequestedIndex = null
+            lastAnchorRevision = null
+            return null
+        }
         lastRequestedIndex = itemIndex
         return LyricsScrollRequest(itemIndex = itemIndex, animate = true)
     }

@@ -7,6 +7,29 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LyricsAutoFollowControllerTest {
+    @Test fun instrumentalGapAndReturnWithoutActiveCueAllowSameIndexToAnchorAgain() {
+        val controller = LyricsAutoFollowController()
+        controller.onActiveItemChanged(0, "layout")
+        assertNull(controller.onActiveItemChanged(null, "layout"))
+        assertEquals(LyricsScrollRequest(0, false), controller.onActiveItemChanged(0, "layout"))
+        controller.onUserScroll()
+        assertNull(controller.returnToCurrent(null))
+        assertTrue(controller.isEnabled)
+        assertEquals(LyricsScrollRequest(0, false), controller.onActiveItemChanged(0, "layout"))
+    }
+    @Test fun returnOnUnchangedCueDoesNotRepeatScrollAndAllowsNextManualAndLineChange() {
+        val controller = LyricsAutoFollowController()
+        controller.onActiveItemChanged(4, "layout")
+        controller.onUserScroll()
+        assertEquals(LyricsScrollRequest(4, true), controller.returnToCurrent(4))
+        assertTrue(controller.isEnabled)
+        assertNull(controller.onActiveItemChanged(4, "layout"))
+        assertEquals(LyricsScrollRequest(5, true), controller.onActiveItemChanged(5, "layout"))
+        controller.onUserScroll()
+        assertFalse(controller.isEnabled)
+        assertNull(controller.onActiveItemChanged(6, "layout"))
+        assertEquals(LyricsScrollRequest(6, true), controller.returnToCurrent(6))
+    }
     @Test
     fun firstActiveLineUsesImmediateAnchorPositioning() {
         val controller = LyricsAutoFollowController()
