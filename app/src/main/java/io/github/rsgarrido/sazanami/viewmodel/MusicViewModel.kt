@@ -735,7 +735,8 @@ class MusicViewModel(
         scope = viewModelScope,
         playback = playbackController.uiState,
         playPause = playbackController::togglePlayPause,
-        seek = ::seekTo
+        seek = ::seekTo,
+        progress = playbackController.progressState
     )
     val librarySelectionUiState = librarySelectionController.uiState
 

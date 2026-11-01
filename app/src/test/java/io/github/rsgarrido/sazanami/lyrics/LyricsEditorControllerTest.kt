@@ -4,6 +4,7 @@ import android.net.Uri
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.local.*
 import io.github.rsgarrido.sazanami.ui.state.PlaybackUiState
+import io.github.rsgarrido.sazanami.ui.state.PlaybackProgressUiState
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -340,19 +341,101 @@ class LyricsEditorControllerTest {
         assertEquals(900L, stamped.timestamps.single().timestampMs)
     }
 
+    @Test fun modeRestrictionExplainsOrdinaryTimingWithoutRequiringRawForLineEdits() = runBlocking {
+        val f = Fixture()
+        f.controller.open(f.song)
+        f.controller.setText("[00:01.000]First\n[00:02.000]Second")
+        f.controller.setMode(LyricsEditorMode.STRUCTURED)
+        val bytes = f.controller.state.value.source!!.serializeUnchanged()
+        f.controller.setMode(LyricsEditorMode.PLAIN)
+        assertEquals(LyricsEditorMode.STRUCTURED, f.controller.state.value.mode)
+        assertEquals(LyricsEditingRestriction.PLAIN_TIMING, f.controller.state.value.restriction)
+        assertArrayEquals(bytes, f.controller.state.value.source!!.serializeUnchanged())
+        f.controller.editRow(f.controller.state.value.source!!.lines.first().id)
+        assertNotNull(f.controller.state.value.rowId)
+        f.controller.cancelRow()
+        f.controller.setMode(LyricsEditorMode.RAW)
+        assertNull(f.controller.state.value.error)
+        assertArrayEquals(bytes, f.controller.state.value.source!!.serializeUnchanged())
+    }
+
+    @Test fun repeatedTimesAndMultilineRowFailuresKeepSourceAndExplainSpecificRestriction() = runBlocking {
+        val f = Fixture()
+        f.controller.open(f.song)
+        f.controller.setText("[00:01][00:02]Repeated\nSecond")
+        f.controller.setMode(LyricsEditorMode.STRUCTURED)
+        val bytes = f.controller.state.value.source!!.serializeUnchanged()
+        f.controller.stamp()
+        assertEquals(LyricsEditError.RAW_REQUIRED, f.controller.state.value.error)
+        assertEquals(LyricsEditingRestriction.REPEATED_TIMES, f.controller.state.value.restriction)
+        assertArrayEquals(bytes, f.controller.state.value.source!!.serializeUnchanged())
+        f.controller.editRow(f.controller.state.value.source!!.lines.first().id)
+        f.controller.setRowText("Two\nlines")
+        f.controller.applyRow()
+        assertEquals(LyricsEditingRestriction.MULTILINE_ROW, f.controller.state.value.restriction)
+        assertArrayEquals(bytes, f.controller.state.value.source!!.serializeUnchanged())
+    }
+
+    @Test fun sourceTagsStayProtectedWhileOrdinaryRowsRemainEditable() = runBlocking {
+        val f = Fixture()
+        f.controller.open(f.song)
+        f.controller.setText("[ar:Synthetic artist]\n[00:01]Lyric")
+        f.controller.setMode(LyricsEditorMode.STRUCTURED)
+        val source = f.controller.state.value.source!!
+        f.controller.setMode(LyricsEditorMode.PLAIN)
+        assertEquals(LyricsEditingRestriction.PLAIN_SOURCE, f.controller.state.value.restriction)
+        f.controller.editRow(source.lines.first().id)
+        assertEquals(LyricsEditingRestriction.SOURCE_ROW, f.controller.state.value.restriction)
+        assertNull(f.controller.state.value.rowId)
+        assertSame(source, f.controller.state.value.source)
+        f.controller.editRow(source.lines.last().id)
+        assertNotNull(f.controller.state.value.rowId)
+        assertNull(f.controller.state.value.error)
+    }
+
+    @Test fun backendPresentationDoesNotMoveSelectionOrChangeCapturedPositionRules() = runBlocking {
+        val f = Fixture()
+        f.controller.open(f.song)
+        f.controller.setText("First\nLast")
+        f.controller.setMode(LyricsEditorMode.STRUCTURED)
+        f.controller.select(1)
+        val source = f.controller.state.value.source!!
+        f.progress.value = PlaybackProgressUiState(isDirect = true, currentPosition = 9876)
+        f.playback.value = PlaybackUiState(currentSong = f.song, isPlaying = true)
+        assertTrue(f.controller.state.value.isDirectPlayback)
+        assertTrue(f.controller.state.value.isPlaying)
+        assertEquals(1, f.controller.state.value.selectedLine)
+        assertSame(source, f.controller.state.value.source)
+        f.progress.value = f.progress.value.copy(currentPosition = 9999)
+        assertSame(source, f.controller.state.value.source)
+        f.controller.skip()
+        assertEquals(1, f.controller.state.value.selectedLine)
+        f.controller.stamp()
+        assertEquals(LyricsEditError.POSITION_UNAVAILABLE, f.controller.state.value.error)
+        assertSame(source, f.controller.state.value.source)
+        f.progress.value = PlaybackProgressUiState()
+        f.controller.stamp()
+        assertEquals(1000L, f.controller.state.value.source!!.lines.last().timestamps.single().timestampMs)
+        assertEquals(1, f.controller.state.value.selectedLine)
+        f.controller.undo()
+        assertArrayEquals(source.serializeUnchanged(), f.controller.state.value.source!!.serializeUnchanged())
+    }
+
     private inner class Fixture(initial: String? = null) {
         val uri = mock(Uri::class.java).also { doReturn("content://media/primary/audio/1").`when`(it).toString() }
         val song = Song(1, "Synthetic", "Author", "Album", 1, 10_000, uri, "", "", null,
             volumeName = "primary", displayName = "track.mp3", relativePath = "Music/")
         val storage = MemoryPersistence(song.toLyricsIdentity(), initial)
         val playback = MutableStateFlow(PlaybackUiState(currentSong = song))
+        val progress = MutableStateFlow(PlaybackProgressUiState())
         val repository = EditorRepository(storage)
         var positionMs = 1000L
         var playPauseCalls = 0
         var seekCalls = 0
         fun newController() = LyricsEditorController(storage, repository,
-            LyricsPositionCapture { LyricsPositionSnapshot(it.trackKey, positionMs, true) }, scope, playback,
-            { playPauseCalls++ }, { seekCalls++ }, Dispatchers.Unconfined)
+            LyricsPositionCapture { LyricsPositionSnapshot(it.trackKey, positionMs, ready = !progress.value.isDirect,
+                direct = progress.value.isDirect, confirmed = !progress.value.isDirect) }, scope, playback,
+            { playPauseCalls++ }, { seekCalls++ }, Dispatchers.Unconfined, progress)
         val controller = newController()
     }
 }

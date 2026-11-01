@@ -273,7 +273,7 @@
     <string name="lyrics_editor_bad_encoding">Unsupported or invalid text encoding. Use valid UTF-8 or UTF-16 text. Your current work is unchanged.</string>
     <string name="lyrics_editor_bad_time">Invalid timestamp. Use nonnegative mm:ss.xxx with seconds from 00 to 59; the value must not overflow.</string>
     <string name="lyrics_editor_bad_offset">Invalid offset. Enter a signed integer in milliseconds within the supported range.</string>
-    <string name="lyrics_editor_raw_required">This content needs Raw LRC editing. Original metadata, repeated timestamps and word markers have been retained.</string>
+    <string name="lyrics_editor_raw_required">This source construct cannot be changed safely here. Use Raw LRC for this edit; other lyric rows remain editable.</string>
     <string name="lyrics_editor_storage_error">Could not store the lyrics or draft. The previous saved version and current editor content are retained. Check available storage and retry.</string>
     <string name="lyrics_editor_target_missing">The original track cannot be verified in the current library. Your draft is retained; rescan the library or export your work.</string>
     <string name="lyrics_editor_target_ambiguous">More than one track or override matches. No saved lyrics were replaced. Export this draft while resolving the library ambiguity.</string>
@@ -305,4 +305,28 @@
     <string name="lyrics_editor_done">Done</string>
     <string name="lyrics_editor_row_unsaved">Unapplied line changes</string>
     <string name="lyrics_editor_row_unsaved_detail">Apply this line to the draft, discard these line changes, or keep editing. Saving the complete draft is a separate action.</string>
+    <string name="lyrics_editor_save_short">Save</string>
+    <string name="lyrics_editor_more">More editor actions</string>
+    <string name="lyrics_editor_save_info">About local saves</string>
+    <string name="lyrics_editor_details">Details</string>
+    <string name="lyrics_editor_source_details">Source details and preview</string>
+    <string name="lyrics_editor_export_status">Exported · details</string>
+    <string name="lyrics_editor_timing_summary">Timing adjustment: %1$s ms</string>
+    <string name="lyrics_editor_row_actions">Actions for line %1$d</string>
+    <string name="lyrics_editor_selected_line">Line %1$d · %2$s</string>
+    <string name="lyrics_editor_stamp_short">Stamp</string>
+    <string name="lyrics_editor_restamp">Restamp</string>
+    <string name="lyrics_editor_pause">Pause</string>
+    <string name="lyrics_editor_resume">Resume</string>
+    <string name="lyrics_editor_replay_short">Replay</string>
+    <string name="lyrics_editor_skip_short">Skip</string>
+    <string name="lyrics_editor_delete_detail">Remove this line from the current draft? You can undo this change before saving.</string>
+    <string name="lyrics_editor_delete_confirm">Delete line</string>
+    <string name="lyrics_editor_direct_unavailable">USB Direct: stamping unavailable · details</string>
+    <string name="lyrics_editor_direct_detail">USB Direct does not provide a confirmed position for editor stamping or replay. Switch to Android playback to synchronize. Lyric display and manual editing remain available.</string>
+    <string name="lyrics_editor_plain_timing">This document has timing. Use Synchronize to edit lines or Raw LRC to edit source text. Plain text mode is for untimed lyrics.</string>
+    <string name="lyrics_editor_plain_source">This document contains source tags. Edit lyric rows in Synchronize, or the tags in Raw LRC. Plain text mode is for text without tags.</string>
+    <string name="lyrics_editor_repeated_times">This line has several timestamps. Use Edit to adjust them individually; stamping would replace them with one time.</string>
+    <string name="lyrics_editor_multiline_row">A line edit must contain one line. Use Raw LRC to insert line breaks without losing source syntax.</string>
+    <string name="lyrics_editor_more_times">%1$s (+%2$d more)</string>
 </resources>

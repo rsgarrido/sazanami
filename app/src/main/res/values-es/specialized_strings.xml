@@ -298,7 +298,7 @@
     <string name="lyrics_editor_bad_encoding">Codificación no válida o incompatible. Usa texto UTF-8 o UTF-16 válido. El trabajo actual no ha cambiado.</string>
     <string name="lyrics_editor_bad_time">Marca de tiempo no válida. Usa mm:ss.xxx no negativo, segundos de 00 a 59 y un valor dentro del rango permitido.</string>
     <string name="lyrics_editor_bad_offset">Desfase no válido. Escribe un entero con signo en milisegundos dentro del rango permitido.</string>
-    <string name="lyrics_editor_raw_required">Este contenido requiere LRC sin formato. Se han conservado los metadatos, las marcas repetidas y los tiempos por palabra.</string>
+    <string name="lyrics_editor_raw_required">Esta sintaxis de origen no se puede cambiar de forma segura aquí. Usa LRC sin procesar para esta edición; las demás líneas siguen siendo editables.</string>
     <string name="lyrics_editor_storage_error">No se pudieron guardar las letras o el borrador. Se conservan la versión anterior y el contenido del editor. Revisa el espacio disponible y vuelve a intentar.</string>
     <string name="lyrics_editor_target_missing">No se puede verificar la pista original en la biblioteca actual. Se conserva el borrador; vuelve a explorar la biblioteca o exporta el trabajo.</string>
     <string name="lyrics_editor_target_ambiguous">Coincide más de una pista o versión. No se han reemplazado letras guardadas. Exporta el borrador mientras resuelves la ambigüedad de la biblioteca.</string>
@@ -330,4 +330,28 @@
     <string name="lyrics_editor_done">Listo</string>
     <string name="lyrics_editor_row_unsaved">Cambios de línea sin aplicar</string>
     <string name="lyrics_editor_row_unsaved_detail">Aplica esta línea al borrador, descarta estos cambios de línea o sigue editando. Guardar el borrador completo es una acción separada.</string>
+    <string name="lyrics_editor_save_short">Guardar</string>
+    <string name="lyrics_editor_more">Más acciones del editor</string>
+    <string name="lyrics_editor_save_info">Acerca del guardado local</string>
+    <string name="lyrics_editor_details">Detalles</string>
+    <string name="lyrics_editor_source_details">Detalles de la fuente y vista previa</string>
+    <string name="lyrics_editor_export_status">Exportado · detalles</string>
+    <string name="lyrics_editor_timing_summary">Ajuste de tiempo: %1$s ms</string>
+    <string name="lyrics_editor_row_actions">Acciones de la línea %1$d</string>
+    <string name="lyrics_editor_selected_line">Línea %1$d · %2$s</string>
+    <string name="lyrics_editor_stamp_short">Marcar</string>
+    <string name="lyrics_editor_restamp">Volver a marcar</string>
+    <string name="lyrics_editor_pause">Pausar</string>
+    <string name="lyrics_editor_resume">Reanudar</string>
+    <string name="lyrics_editor_replay_short">Repetir</string>
+    <string name="lyrics_editor_skip_short">Saltar</string>
+    <string name="lyrics_editor_delete_detail">¿Eliminar esta línea del borrador actual? Puedes deshacer este cambio antes de guardar.</string>
+    <string name="lyrics_editor_delete_confirm">Eliminar línea</string>
+    <string name="lyrics_editor_direct_unavailable">USB Direct: marcado no disponible · detalles</string>
+    <string name="lyrics_editor_direct_detail">USB Direct no proporciona una posición confirmada para marcar o repetir desde el editor. Cambia a la reproducción de Android para sincronizar. La visualización de letras y la edición manual siguen disponibles.</string>
+    <string name="lyrics_editor_plain_timing">Este documento tiene tiempos. Usa Sincronizar para editar líneas o LRC sin procesar para editar el texto fuente. El modo Texto sin formato es para letras sin tiempos.</string>
+    <string name="lyrics_editor_plain_source">Este documento contiene etiquetas de origen. Edita las líneas de letra en Sincronizar o las etiquetas en LRC sin procesar. El modo Texto sin formato es para texto sin etiquetas.</string>
+    <string name="lyrics_editor_repeated_times">Esta línea tiene varios tiempos. Usa Editar para ajustarlos individualmente; marcar los reemplazaría por un solo tiempo.</string>
+    <string name="lyrics_editor_multiline_row">La edición de una línea debe contener una sola línea. Usa LRC sin procesar para insertar saltos de línea sin perder la sintaxis original.</string>
+    <string name="lyrics_editor_more_times">%1$s (+%2$d más)</string>
 </resources>

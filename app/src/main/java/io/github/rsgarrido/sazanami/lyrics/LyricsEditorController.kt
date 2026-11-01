@@ -3,17 +3,22 @@ package io.github.rsgarrido.sazanami.lyrics
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.data.local.LyricsDraftEntity
 import io.github.rsgarrido.sazanami.ui.state.PlaybackUiState
+import io.github.rsgarrido.sazanami.ui.state.PlaybackProgressUiState
 import java.util.UUID
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 
 enum class LyricsEditorConfirmation { LEAVE, IMPORT, REMOVE, WORD_TIMINGS }
+/** Explanation of an existing source-safety restriction; never persisted in a draft. */
+enum class LyricsEditingRestriction { PLAIN_TIMING, PLAIN_SOURCE, SOURCE_ROW, REPEATED_TIMES, MULTILINE_ROW }
 data class LyricsDraftSummary(val key: String, val title: String?, val updatedAt: Long)
 
 data class LyricsEditorUiState(
@@ -29,12 +34,15 @@ data class LyricsEditorUiState(
     val busy: Boolean = false,
     val parsing: Boolean = false,
     val error: LyricsEditError? = null,
+    val restriction: LyricsEditingRestriction? = null,
     val confirmation: LyricsEditorConfirmation? = null,
     val recovery: LyricsDraftEntity? = null,
     val rowId: String? = null,
     val rowText: String = "",
     val rowTimes: String = "",
     val activeTrackKey: String? = null,
+    val isPlaying: Boolean = false,
+    val isDirectPlayback: Boolean = false,
     val previewPosition: Long? = null,
     val exported: Boolean = false,
     val saved: Boolean = false,
@@ -59,7 +67,8 @@ class LyricsEditorController(
     playback: StateFlow<PlaybackUiState>,
     val playPause: () -> Unit,
     private val seek: (Int) -> Unit,
-    private val worker: CoroutineDispatcher = Dispatchers.Default
+    private val worker: CoroutineDispatcher = Dispatchers.Default,
+    progress: StateFlow<PlaybackProgressUiState>? = null
 ) {
     private val parser = LrcParser()
     private val editor = LyricsDocumentEditor(parser)
@@ -80,7 +89,13 @@ class LyricsEditorController(
 
     init {
         scope.launch {
-            playback.collect { mutable.value = mutable.value.copy(activeTrackKey = it.currentSong?.toLyricsIdentity()?.trackKey) }
+            playback.collect { mutable.value = mutable.value.copy(activeTrackKey = it.currentSong?.toLyricsIdentity()?.trackKey, isPlaying = it.isPlaying) }
+        }
+        // Observe backend changes only. Playback ticks do not drive editor selection or scrolling.
+        if (progress != null) scope.launch {
+            progress.map { it.isDirect }.distinctUntilChanged().collect {
+                mutable.value = mutable.value.copy(isDirectPlayback = it)
+            }
         }
         scope.launch {
             try {
@@ -97,7 +112,8 @@ class LyricsEditorController(
     fun open(song: Song, initial: SourcedLyrics? = null) {
         if (state.value.visible) return
         val target = song.toLyricsIdentity()
-        val session = LyricsEditorUiState(song = song, target = target, busy = true, activeTrackKey = state.value.activeTrackKey)
+        val session = LyricsEditorUiState(song = song, target = target, busy = true, activeTrackKey = state.value.activeTrackKey,
+            isPlaying = state.value.isPlaying, isDirectPlayback = state.value.isDirectPlayback)
         mutable.value = session
         scope.launch {
             try {
@@ -183,7 +199,9 @@ class LyricsEditorController(
             report(LyricsEditError.ENCODING); return
         }
         if (mode == LyricsEditorMode.PLAIN && (source.lines.any { it.kind != LyricsSourceLineKind.TEXT } || source.metadata.offsetMs != 0L)) {
-            mutable.value = state.value.copy(error = LyricsEditError.RAW_REQUIRED)
+            mutable.value = state.value.copy(error = LyricsEditError.RAW_REQUIRED, restriction =
+                if (source.lines.any { it.kind == LyricsSourceLineKind.METADATA || it.kind == LyricsSourceLineKind.UNSUPPORTED })
+                    LyricsEditingRestriction.PLAIN_SOURCE else LyricsEditingRestriction.PLAIN_TIMING)
             return
         }
         mutable.value = state.value.copy(mode = mode, error = null)
@@ -226,7 +244,10 @@ class LyricsEditorController(
     fun editRow(id: String) {
         if (state.value.busy || state.value.parsing) return
         val row = state.value.source?.lines?.singleOrNull { it.id == id } ?: return
-        if (!editor.editable(row)) { report(LyricsEditError.RAW_REQUIRED); return }
+        if (!editor.editable(row)) {
+            mutable.value = state.value.copy(error = LyricsEditError.RAW_REQUIRED, restriction = LyricsEditingRestriction.SOURCE_ROW)
+            return
+        }
         mutable.value = state.value.copy(rowId = id, rowText = row.displayedText,
             selectedLine = state.value.source!!.lines.indexOfFirst { it.id == id },
             rowTimes = row.timestamps.joinToString(", ") { LyricsDocumentEditor.formatTime(it.timestampMs) }, error = null)
@@ -254,7 +275,9 @@ class LyricsEditorController(
     fun keepRowEditing() { mutable.value = state.value.copy(rowCloseConfirmation = false) }
     fun applyRow(removeWordTimings: Boolean = false) {
         val snapshot = state.value
-        mutate(closeRow = true) { source -> editor.changeRow(source, requireNotNull(snapshot.rowId), snapshot.rowText, snapshot.rowTimes, removeWordTimings) }
+        val restriction = if ('\n' in snapshot.rowText || '\r' in snapshot.rowText)
+            LyricsEditingRestriction.MULTILINE_ROW else LyricsEditingRestriction.SOURCE_ROW
+        mutate(closeRow = true, restriction = restriction) { source -> editor.changeRow(source, requireNotNull(snapshot.rowId), snapshot.rowText, snapshot.rowTimes, removeWordTimings) }
     }
     fun insert() = mutate { source -> editor.insert(source, source.lines.getOrNull(state.value.selectedLine)?.id) }
     fun removeLine(id: String) = mutate { editor.remove(it, id) }
@@ -273,7 +296,8 @@ class LyricsEditorController(
             // Capture before launching/parsing so coroutine scheduling cannot move the timestamp.
             val captured = position.capture(target).positionFor(target.trackKey)
             val row = snapshot.source?.lines?.getOrNull(snapshot.selectedLine) ?: return
-            mutate(advanceLine = true) { source -> editor.stamp(source, row.id, captured) }
+            val restriction = if (editor.editable(row)) LyricsEditingRestriction.REPEATED_TIMES else LyricsEditingRestriction.SOURCE_ROW
+            mutate(advanceLine = true, restriction = restriction) { source -> editor.stamp(source, row.id, captured) }
         } catch (failure: LyricsEditException) { report(failure.reason) }
           catch (_: Exception) { report(LyricsEditError.POSITION_UNAVAILABLE) }
     }
@@ -353,7 +377,8 @@ class LyricsEditorController(
         checkpointJob?.cancel()
         undo.clear()
         pendingImport = null
-        mutable.value = LyricsEditorUiState(activeTrackKey = state.value.activeTrackKey)
+        mutable.value = LyricsEditorUiState(activeTrackKey = state.value.activeTrackKey,
+            isPlaying = state.value.isPlaying, isDirectPlayback = state.value.isDirectPlayback)
     }
 
     fun save(closeAfter: Boolean = false) {
@@ -448,7 +473,7 @@ class LyricsEditorController(
         }
     }
     fun exported(name: String? = null) { mutable.value = state.value.copy(exported = true, exportedName = name, error = null) }
-    fun report(error: LyricsEditError) { mutable.value = state.value.copy(error = error) }
+    fun report(error: LyricsEditError) { mutable.value = state.value.copy(error = error, restriction = null) }
     fun onRestore() { if (state.value.visible) { report(LyricsEditError.RESTORE_CONFLICT); flushDraft() } }
     fun flushDraft() {
         if (!state.value.visible || state.value.busy) return
@@ -460,7 +485,8 @@ class LyricsEditorController(
         }
     }
 
-    private fun mutate(closeRow: Boolean = false, advanceLine: Boolean = false, action: (LyricsSourceDocument) -> LyricsSourceDocument) = operation {
+    private fun mutate(closeRow: Boolean = false, advanceLine: Boolean = false, restriction: LyricsEditingRestriction? = null,
+        action: (LyricsSourceDocument) -> LyricsSourceDocument) = operation(restriction) {
         val selected = state.value.selectedLine
         val source = state.value.source ?: return@operation
         if (state.value.text != source.originalText) throw LyricsEditException(state.value.error ?: LyricsEditError.IMPORT_FORMAT)
@@ -518,14 +544,16 @@ class LyricsEditorController(
             rowIds = if (snapshot.text == source.originalText) source.lines.map { it.id } else emptyList(),
             pendingRowId = snapshot.rowId, pendingText = snapshot.rowText, pendingTimes = snapshot.rowTimes))
     }
-    private fun operation(action: suspend () -> Unit) {
+    private fun operation(restriction: LyricsEditingRestriction? = null, action: suspend () -> Unit) {
         if (!state.value.visible || state.value.busy || state.value.parsing) return
         mutable.value = state.value.copy(busy = true, error = null)
         scope.launch {
             try { action() }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) {
-                mutable.value = state.value.copy(error = reason(failure), confirmation = if (reason(failure) == LyricsEditError.WORD_TIMING_CHOICE) LyricsEditorConfirmation.WORD_TIMINGS else state.value.confirmation)
+                mutable.value = state.value.copy(error = reason(failure),
+                    restriction = if (reason(failure) == LyricsEditError.RAW_REQUIRED) restriction else null,
+                    confirmation = if (reason(failure) == LyricsEditError.WORD_TIMING_CHOICE) LyricsEditorConfirmation.WORD_TIMINGS else state.value.confirmation)
             } finally { mutable.value = state.value.copy(busy = false) }
         }
     }
