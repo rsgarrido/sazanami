@@ -1,6 +1,8 @@
 package io.github.rsgarrido.sazanami.lyrics
 
 import io.github.rsgarrido.sazanami.data.Song
+import io.github.rsgarrido.sazanami.data.songIdentity
+import io.github.rsgarrido.sazanami.data.toSongReference
 
 fun Song.toLyricsIdentity(): SongLyricsIdentity {
     val fileName = displayName.ifBlank {
@@ -15,6 +17,10 @@ fun Song.toLyricsIdentity(): SongLyricsIdentity {
         fallbackDirectory = folderPath.ifBlank {
             filePath.substringBeforeLast('/', "").substringBeforeLast('\\', "")
         },
-        volumeId = volumeName
+        volumeId = volumeName,
+        audioFilePath = filePath,
+        trackKey = lyricsIdentity(songIdentity().localKey.orEmpty(),
+            songIdentity().sourceKey.orEmpty(), uri.toString(), filePath),
+        reference = toSongReference()
     )
 }

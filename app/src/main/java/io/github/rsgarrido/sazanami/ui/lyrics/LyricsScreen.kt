@@ -46,6 +46,9 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.contentColorFor
@@ -58,10 +61,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.key
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -84,7 +88,11 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.text
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -98,6 +106,8 @@ import coil.compose.AsyncImage
 import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.data.Song
 import io.github.rsgarrido.sazanami.lyrics.LyricCueContent
+import io.github.rsgarrido.sazanami.lyrics.KaraokeLineState
+import io.github.rsgarrido.sazanami.lyrics.KaraokeResolver
 import io.github.rsgarrido.sazanami.lyrics.LyricAnchorGeometry
 import io.github.rsgarrido.sazanami.lyrics.LyricsAutoFollowController
 import io.github.rsgarrido.sazanami.lyrics.LyricsCandidate
@@ -105,6 +115,7 @@ import io.github.rsgarrido.sazanami.lyrics.LyricsDocument
 import io.github.rsgarrido.sazanami.lyrics.LyricsPlaybackUiState
 import io.github.rsgarrido.sazanami.lyrics.LyricsScrollRequest
 import io.github.rsgarrido.sazanami.lyrics.LyricsUnavailableReason
+import io.github.rsgarrido.sazanami.lyrics.LyricsSourceIssue
 import io.github.rsgarrido.sazanami.lyrics.StaticLyricLine
 import io.github.rsgarrido.sazanami.lyrics.generateLyricsNameCandidates
 import io.github.rsgarrido.sazanami.lyrics.calculateLyricAnchorScrollDelta
@@ -112,7 +123,8 @@ import io.github.rsgarrido.sazanami.lyrics.toLyricsIdentity
 import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsTransitionState
 import io.github.rsgarrido.sazanami.ui.player.PlayerLyricsGestureRegion
 import io.github.rsgarrido.sazanami.ui.readableContentWidth
-import kotlinx.coroutines.launch
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.abs
 
 const val LyricsScreenTag = "lyrics_screen"
@@ -189,6 +201,12 @@ fun LyricsScreen(
                 regionCloseEnabled = usesLayoutCloseRegion,
                 onBack = onBack,
                 onPlayPause = onPlayPause,
+                onEditLyrics = LocalLyricsEditor.current?.let { editor -> { editor.open(song, when (state) {
+                    is LyricsPlaybackUiState.Synced -> state.sourcedLyrics
+                    is LyricsPlaybackUiState.Unsynced -> state.sourcedLyrics
+                    else -> null
+                }) } },
+                hasLyrics = state is LyricsPlaybackUiState.Synced || state is LyricsPlaybackUiState.Unsynced,
                 colors = colors,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -203,14 +221,17 @@ fun LyricsScreen(
             ) {
                 when (state) {
                     is LyricsPlaybackUiState.Loading -> LyricsLoading(colors)
-                    is LyricsPlaybackUiState.Synced -> SyncedLyricsList(
-                        state = state,
-                        onSeek = onSeek,
-                        onSuspendAutoFollow = onSuspendAutoFollow,
-                        onReturnToCurrentLine = onReturnToCurrentLine,
-                        interactive = interactive,
-                        colors = colors
-                    )
+                    is LyricsPlaybackUiState.Synced -> key(state.song.toLyricsIdentity(), state.lyrics,
+                        state.sourcedLyrics?.source?.stableId, state.sourcedLyrics?.revision) {
+                        SyncedLyricsList(
+                            state = state,
+                            onSeek = onSeek,
+                            onSuspendAutoFollow = onSuspendAutoFollow,
+                            onReturnToCurrentLine = onReturnToCurrentLine,
+                            interactive = interactive,
+                            colors = colors
+                        )
+                    }
                     is LyricsPlaybackUiState.Unsynced -> UnsyncedLyricsList(state.lyrics, colors)
                     is LyricsPlaybackUiState.Unavailable -> LyricsUnavailable(
                         song = state.song,
@@ -322,6 +343,8 @@ private fun LyricsHeader(
     regionCloseEnabled: Boolean,
     onBack: () -> Unit,
     onPlayPause: () -> Unit,
+    onEditLyrics: (() -> Unit)?,
+    hasLyrics: Boolean,
     colors: LyricsColors?,
     modifier: Modifier = Modifier
 ) {
@@ -418,6 +441,18 @@ private fun LyricsHeader(
                 tint = (colors?.foreground ?: Color.White)
             )
         }
+        if (onEditLyrics != null) {
+            var menuOpen by remember { mutableStateOf(false) }
+            Box {
+                IconButton(onClick = { menuOpen = true }, enabled = interactive) {
+                    Icon(Icons.Default.MoreVert, stringResource(R.string.lyrics_editor_actions), tint = colors?.foreground ?: Color.White)
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(text = { Text(stringResource(if (hasLyrics) R.string.lyrics_editor_edit else R.string.lyrics_editor_create)) },
+                        onClick = { menuOpen = false; onEditLyrics() })
+                }
+            }
+        }
     }
 }
 
@@ -462,16 +497,12 @@ private fun SyncedLyricsList(
     colors: LyricsColors?
 ) {
     val groups = remember(state.lyrics) { state.lyrics.toDisplayGroups() }
-    var optimisticTimestamp by remember(state.song.id, state.lyrics) {
-        mutableStateOf<Long?>(null)
-    }
-    val displayedActiveTimestamp = optimisticTimestamp ?: state.activeGroup?.timestampMs
-    val activeIndex = groups.indexOfFirst {
-        it.timestampMs == displayedActiveTimestamp
-    }.takeIf { it >= 0 }
+    val groupIndices = remember(groups) { groups.mapIndexed { index, group -> group.timestampMs to index }.toMap() }
+    val displayedActiveTimestamp = state.activeGroup?.timestampMs
+    val activeIndex = displayedActiveTimestamp?.let { groupIndices[it] }
     val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
     val followController = remember { LyricsAutoFollowController() }
+    var handledFollowRequest by remember { mutableLongStateOf(state.followRequestId) }
     var viewportHeight by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
     val anchorTolerancePx = with(density) { 6.dp.toPx() }
@@ -494,22 +525,21 @@ private fun SyncedLyricsList(
         }
     }
 
-    LaunchedEffect(state.song.id) {
-        followController.onTrackChanged()
-    }
-    LaunchedEffect(state.activeGroup?.timestampMs) {
-        if (state.activeGroup?.timestampMs != null) optimisticTimestamp = null
-    }
     val anchorRevision = remember(viewportHeight, groups) {
         viewportHeight to groups.map { it.timestampMs }
     }
-    LaunchedEffect(activeIndex, state.autoFollowEnabled, anchorRevision) {
+    LaunchedEffect(activeIndex, state.autoFollowEnabled, state.followRequestId, anchorRevision) {
+        val explicitReturn = handledFollowRequest != state.followRequestId
+        handledFollowRequest = state.followRequestId
         if (!state.autoFollowEnabled) {
             followController.onUserScroll()
             return@LaunchedEffect
         }
-        followController.onActiveItemChanged(activeIndex, anchorRevision)?.let { request ->
-            listState.anchorItem(request, anchorTolerancePx)
+        val request = if (explicitReturn || !followController.isEnabled)
+            followController.returnToCurrent(activeIndex)
+        else followController.onActiveItemChanged(activeIndex, anchorRevision)
+        request?.let {
+            listState.anchorItem(it, anchorTolerancePx)
         }
     }
 
@@ -538,17 +568,12 @@ private fun SyncedLyricsList(
                     group = group,
                     isActive = isActive,
                     isPast = isPast,
+                    karaoke = if (isActive) state.karaoke else null,
                     enabled = interactive,
-                    onClick = {
-                        optimisticTimestamp = group.timestampMs
+                    onClick = remember(group.timestampMs, onSeek, onReturnToCurrentLine) { {
                         onSeek(group.timestampMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
                         onReturnToCurrentLine()
-                        followController.returnToCurrent(index)?.let { request ->
-                            scope.launch {
-                                listState.anchorItem(request, anchorTolerancePx)
-                            }
-                        }
-                    }
+                    } }
                 )
             }
         }
@@ -556,14 +581,7 @@ private fun SyncedLyricsList(
         BoxScopeSyncedReturnAction(
             colors = colors,
             visible = !state.autoFollowEnabled,
-            onClick = {
-                onReturnToCurrentLine()
-                followController.returnToCurrent(activeIndex)?.let { request ->
-                    scope.launch {
-                        listState.anchorItem(request, anchorTolerancePx)
-                    }
-                }
-            }
+            onClick = onReturnToCurrentLine
         )
     }
 }
@@ -573,6 +591,7 @@ private fun SyncedLyricRow(
     group: LyricsDisplayGroup,
     isActive: Boolean,
     isPast: Boolean,
+    karaoke: StateFlow<List<KaraokeLineState>>?,
     enabled: Boolean,
     onClick: () -> Unit,
     colors: LyricsColors?
@@ -580,7 +599,17 @@ private fun SyncedLyricRow(
     val currentLyricDescription = stringResource(R.string.lyrics_current_lyric)
     val seekDescription = stringResource(R.string.lyrics_seek_to_lyric)
     val lyricActionDescription = stringResource(R.string.lyrics_line_seek_description,
-        group.lines.joinToString(" "))
+        group.lines.joinToString(" ") { it.text })
+    val foreground = colors?.foreground ?: Color.White
+    val accent = colors?.foreground ?: MaterialTheme.colorScheme.primary
+    val wordStyles = remember(foreground, accent) { KaraokeTextStyles(
+        // Constant font metrics prevent word transitions from changing wrapping or row height.
+        upcoming = SpanStyle(color = foreground.copy(alpha = 0.62f), fontWeight = FontWeight.SemiBold, textDecoration = TextDecoration.None),
+        completed = SpanStyle(color = foreground.copy(alpha = 0.88f), fontWeight = FontWeight.SemiBold, textDecoration = TextDecoration.None),
+        active = SpanStyle(color = accent, fontWeight = FontWeight.SemiBold, textDecoration = TextDecoration.Underline)
+    ) }
+    val wordProgress = if (karaoke != null) karaoke.collectAsStateWithLifecycle().value else emptyList()
+    val displayedText = remember(group, wordProgress, wordStyles) { buildKaraokeText(group.lines, wordProgress, wordStyles) }
     val color by animateColorAsState(
         targetValue = when {
             isActive -> (colors?.foreground ?: Color.White)
@@ -590,7 +619,7 @@ private fun SyncedLyricRow(
         label = stringResource(R.string.lyrics_emphasis)
     )
     Text(
-        text = group.lines.joinToString("\n"),
+        text = displayedText,
         color = color,
         fontSize = if (isActive) 24.sp else 20.sp,
         lineHeight = if (isActive) 32.sp else 29.sp,
@@ -604,6 +633,9 @@ private fun SyncedLyricRow(
                 onClick = onClick
             )
             .semantics {
+                // Keep accessibility text stable across styling-only word updates. No live region
+                // or per-word nodes; the rendered AnnotatedString remains available to text layout.
+                text = AnnotatedString(group.text)
                 role = Role.Button
                 selected = isActive
                 if (isActive) stateDescription = currentLyricDescription
@@ -736,17 +768,21 @@ private fun LyricsUnavailable(
 private data class LyricsDisplayGroup(
     val timestampMs: Long,
     val firstCueIndex: Int,
-    val lines: List<String>
-)
+    val lines: List<KaraokeTextLine>
+) {
+    val text = lines.joinToString("\n") { it.text }
+}
 
 private fun LyricsDocument.Synced.toDisplayGroups(): List<LyricsDisplayGroup> =
     cues.withIndex()
         .groupBy { it.value.timestampMs }
         .mapNotNull { (timestamp, indexedCues) ->
             val lines = indexedCues.mapNotNull { indexed ->
-                (indexed.value.content as? LyricCueContent.Text)?.text
+                (indexed.value.content as? LyricCueContent.Text)?.text?.let {
+                    KaraokeTextLine(indexed.index, it, KaraokeResolver.prepare(indexed.value))
+                }
             }
-            lines.takeIf(List<String>::isNotEmpty)?.let {
+            lines.takeIf { it.isNotEmpty() }?.let {
                 LyricsDisplayGroup(timestamp, indexedCues.first().index, it)
             }
         }
@@ -800,6 +836,23 @@ private fun unavailableContent(
     song: Song,
     reason: LyricsUnavailableReason
 ): UnavailableContent = when (reason) {
+    is LyricsUnavailableReason.SourcesUnavailable -> {
+        val kinds = reason.issues.map { it.kind }.toSet()
+        val detail = when {
+            LyricsSourceIssue.Kind.AMBIGUOUS in kinds -> R.string.lyrics_sources_ambiguous
+            LyricsSourceIssue.Kind.PERMISSION_DENIED in kinds -> R.string.lyrics_sources_permission
+            LyricsSourceIssue.Kind.INPUT_LIMIT in kinds -> R.string.lyrics_sources_too_large
+            kinds.any { it in setOf(LyricsSourceIssue.Kind.READ_FAILURE, LyricsSourceIssue.Kind.METADATA_FAILURE,
+                LyricsSourceIssue.Kind.LOOKUP_FAILURE, LyricsSourceIssue.Kind.SCAN_FAILURE) } -> R.string.lyrics_sources_read_error
+            LyricsSourceIssue.Kind.INVALID_LYRICS in kinds -> R.string.lyrics_sources_invalid
+            LyricsSourceIssue.Kind.UNSUPPORTED_ACCESS in kinds -> R.string.lyrics_sources_access
+            LyricsSourceIssue.Kind.UNSUPPORTED_TIMING in kinds -> R.string.lyrics_sources_timing
+            LyricsSourceIssue.Kind.UNSUPPORTED_FORMAT in kinds -> R.string.lyrics_sources_format
+            else -> R.string.lyrics_sources_missing
+        }
+        UnavailableContent(R.string.lyrics_sources_unavailable, detail, canRescan = true,
+            candidates = reason.issues.flatMap { it.externalCandidates }.take(5))
+    }
     LyricsUnavailableReason.NoRootsConfigured -> UnavailableContent(
         titleRes = R.string.lyrics_no_folder,
         detailRes = R.string.lyrics_no_folder_detail,

@@ -19,7 +19,7 @@ class AllDatabaseMigrationsTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val migrations = allMigrations()
 
-        for (startVersion in 1..19) {
+        for (startVersion in 1..20) {
             val databaseName = "all-migrations-$startVersion-${System.nanoTime()}.db"
             val configuration = SupportSQLiteOpenHelper.Configuration.builder(context)
                 .name(databaseName)
@@ -28,6 +28,7 @@ class AllDatabaseMigrationsTest {
                         db.execSQL(
                             "CREATE TABLE `database_marker` (`id` INTEGER NOT NULL, `name` TEXT NOT NULL, PRIMARY KEY(`id`))"
                         )
+                        db.execSQL("INSERT INTO database_marker (id, name) VALUES (1, 'preserve-existing-data')")
                         migrations.filter { it.endVersion <= startVersion }.forEach { migration ->
                             migration.migrate(db)
                         }
@@ -50,6 +51,15 @@ class AllDatabaseMigrationsTest {
             try {
                 database.openHelper.writableDatabase
                 assertTrue(database.isOpen)
+                assertTrue(database.openHelper.writableDatabase.query(
+                    "SELECT name FROM database_marker WHERE id = 1 AND name = 'preserve-existing-data'"
+                ).use { it.moveToFirst() })
+                assertTrue(database.openHelper.writableDatabase.query(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'lyrics_overrides'"
+                ).use { it.moveToFirst() })
+                assertTrue(database.openHelper.writableDatabase.query(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'lyrics_drafts'"
+                ).use { it.moveToFirst() })
                 assertTrue(database.openHelper.writableDatabase.query(
                     "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'smart_playlist_definitions'"
                 ).use { it.moveToFirst() })
@@ -104,6 +114,7 @@ class AllDatabaseMigrationsTest {
         DatabaseProvider.MIGRATION_16_17,
         DatabaseProvider.MIGRATION_17_18,
         DatabaseProvider.MIGRATION_18_19,
-        DatabaseProvider.MIGRATION_19_20
+        DatabaseProvider.MIGRATION_19_20,
+                DatabaseProvider.MIGRATION_20_21
     )
 }

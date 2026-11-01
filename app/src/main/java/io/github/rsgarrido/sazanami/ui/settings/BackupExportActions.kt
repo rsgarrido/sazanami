@@ -10,6 +10,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalResources
 import io.github.rsgarrido.sazanami.R
 import io.github.rsgarrido.sazanami.data.backup.BackupExportResult
+import io.github.rsgarrido.sazanami.data.backup.BackupSizeLimitException
 import java.time.LocalDate
 import kotlinx.coroutines.launch
 
@@ -44,8 +45,8 @@ fun rememberBackupExportActions(
                     onSuccess = { exportResult ->
                         showMessage(resources.backupExportSuccessMessage(exportResult))
                     },
-                    onFailure = {
-                        showMessage(resources.getString(R.string.backup_export_failure))
+                    onFailure = { failure ->
+                        showMessage(resources.getString(if (failure is BackupSizeLimitException) R.string.lyrics_backup_limit else R.string.backup_export_failure))
                     }
                 )
             }

@@ -36,6 +36,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.CompositionLocalProvider
+import io.github.rsgarrido.sazanami.ui.lyrics.LocalLyricsEditor
+import io.github.rsgarrido.sazanami.ui.lyrics.LyricsEditorHost
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -294,7 +296,8 @@ class MainActivity : ComponentActivity() {
 
                 CompositionLocalProvider(
                     LocalContentColor provides MaterialTheme.colorScheme.onBackground,
-                    LocalSystemBarSurfaceSetter provides setSystemBarSurface
+                    LocalSystemBarSurfaceSetter provides setSystemBarSurface,
+                    LocalLyricsEditor provides musicViewModel.lyricsEditor
                 ) {
                     Box(
                         modifier = Modifier
@@ -315,6 +318,7 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.fillMaxSize()
                         )
 
+                        LyricsEditorHost(musicViewModel.lyricsEditor)
                         SnackbarHost(
                             hostState = snackbarHostState,
                             modifier = Modifier

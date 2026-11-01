@@ -25,7 +25,7 @@ class PocketHorizonAppearanceBackupTest {
             pocketHorizonWaveTreatmentId = custom.waveTreatment.id,
             playerThemeTokenOverrides = mapOf("classic_wheel" to BackupPlayerThemeTokenOverrides(shellArgb = 0xFF123456)))
         val decoded = AppBackupJson.decodeBackup(AppBackupJson.encodeBackup(backup(source)))
-        assertEquals(17, decoded.schemaVersion)
+        assertEquals(18, decoded.schemaVersion)
         assertEquals(source.pocketHorizonConsoleFinishId, decoded.preferences.pocketHorizonConsoleFinishId)
         assertEquals(source.pocketHorizonLcdPaletteId, decoded.preferences.pocketHorizonLcdPaletteId)
         assertEquals(source.pocketHorizonWaveTreatmentId, decoded.preferences.pocketHorizonWaveTreatmentId)

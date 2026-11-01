@@ -41,7 +41,8 @@ object DatabaseProvider {
                     MIGRATION_16_17,
                     MIGRATION_17_18,
                     MIGRATION_18_19,
-                    MIGRATION_19_20
+                    MIGRATION_19_20,
+                    MIGRATION_20_21
                 )
                 .addCallback(object : RoomDatabase.Callback() {
                     override fun onOpen(db: SupportSQLiteDatabase) {
@@ -54,6 +55,8 @@ object DatabaseProvider {
                 }
         }
     }
+
+    val MIGRATION_20_21 = LYRICS_MIGRATION_20_21
 
     val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {

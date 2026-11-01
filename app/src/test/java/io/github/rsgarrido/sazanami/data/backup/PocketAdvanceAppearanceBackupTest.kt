@@ -25,7 +25,7 @@ class PocketAdvanceAppearanceBackupTest {
             pocketAdvanceControlsFinishId = custom.controlsFinish.id,
             playerThemeTokenOverrides = mapOf("classic_wheel" to BackupPlayerThemeTokenOverrides(shellArgb = 0xFF123456)))
         val decoded = AppBackupJson.decodeBackup(AppBackupJson.encodeBackup(backup(source)))
-        assertEquals(17, decoded.schemaVersion)
+        assertEquals(18, decoded.schemaVersion)
         assertEquals(source.pocketAdvanceConsoleFinishId, decoded.preferences.pocketAdvanceConsoleFinishId)
         assertEquals(source.pocketAdvanceLcdPaletteId, decoded.preferences.pocketAdvanceLcdPaletteId)
         assertEquals(source.pocketAdvanceControlsFinishId, decoded.preferences.pocketAdvanceControlsFinishId)

@@ -84,6 +84,12 @@ class LyricsAdaptiveLayoutTest {
         }
 
         composeRule.onNodeWithText(line(9)).performClick()
+        composeRule.onNodeWithText(line(8)).assertIsSelected()
+        composeRule.runOnIdle {
+            // The test owner acknowledges the seek; the screen no longer invents acceptance.
+            fixture.state.value = (fixture.state.value as LyricsPlaybackUiState.Synced).copy(
+                activeGroup = ActiveLyricGroup(9_000, listOf(line(9))), autoFollowEnabled = true, followRequestId = 1)
+        }
         composeRule.onNodeWithText(line(9)).assertIsSelected()
         composeRule.onNodeWithTag(LyricsPlayPauseTag).performClick()
         composeRule.onNodeWithTag(LyricsBackTag).performClick()

@@ -117,6 +117,7 @@ class BackupRepository(
             listeningHistory = emptyList(),
             canonicalListeningHistory = canonical.history,
             songRatings = canonical.ratings,
+            lyricsOverrides = appDatabase.withTransaction { LyricsBackup.export(appDatabase.lyricsDao().overrides()) },
             preferences = BackupPreferences(
                 folderSelectionMode = appPreferences.folderSelectionMode.name,
                 selectedLibraryFolders = appPreferences.selectedLibraryFolders
@@ -215,7 +216,9 @@ class BackupRepository(
                 )
 
                 val previousArtistPictures = artistPictureRepository.getAll()
+                val validatedLyrics = LyricsBackup.validate(backup.lyricsOverrides)
                 val restoredPlaylistIds = appDatabase.withTransaction {
+                    LyricsBackup.restoreWithinTransaction(appDatabase, validatedLyrics)
                     appDatabase.playbackQueueDao().deleteQueueStateForBackupRestore()
                     appDatabase.playbackQueueDao().deleteAllQueuesForBackupRestore()
                     val restoredIdentityIds =
@@ -256,7 +259,8 @@ class BackupRepository(
                     playlistSongCount = summary.playlistSongCount,
                     listeningHistoryCount = summary.listeningHistoryCount,
                     selectedFolderCount = summary.selectedFolderCount,
-                    visualAssetCount = restoredVisualAssets.count
+                    visualAssetCount = restoredVisualAssets.count,
+                    lyricsOverrideCount = validatedLyrics.size
                 )
         }
 
@@ -736,7 +740,8 @@ data class BackupExportResult(
     val playlistCount: Int,
     val playlistSongCount: Int,
     val listeningHistoryCount: Int,
-    val visualAssetCount: Int = 0
+    val visualAssetCount: Int = 0,
+    val lyricsOverrideCount: Int = 0
 )
 
 data class BackupRestoreSummary(
@@ -745,7 +750,8 @@ data class BackupRestoreSummary(
     val playlistSongCount: Int,
     val listeningHistoryCount: Int,
     val selectedFolderCount: Int,
-    val visualAssetCount: Int = 0
+    val visualAssetCount: Int = 0,
+    val lyricsOverrideCount: Int = 0
 )
 
 data class BackupRestoreResult(
@@ -754,7 +760,8 @@ data class BackupRestoreResult(
     val playlistSongCount: Int,
     val listeningHistoryCount: Int,
     val selectedFolderCount: Int,
-    val visualAssetCount: Int = 0
+    val visualAssetCount: Int = 0,
+    val lyricsOverrideCount: Int = 0
 )
 
 internal fun AppBackup.toBackupExportResult(): BackupExportResult {
@@ -764,7 +771,8 @@ internal fun AppBackup.toBackupExportResult(): BackupExportResult {
         playlistSongCount = playlists.sumOf { playlist -> playlist.songs.size },
         listeningHistoryCount = requiredCanonicalListeningHistory()
             .summary.identityCount.toDisplayCount(),
-        visualAssetCount = visualAssetPayloads.size
+        visualAssetCount = visualAssetPayloads.size,
+        lyricsOverrideCount = lyricsOverrides.size
     )
 }
 
@@ -776,7 +784,8 @@ internal fun AppBackup.toBackupRestoreSummary(): BackupRestoreSummary {
         listeningHistoryCount = requiredCanonicalListeningHistory()
             .summary.identityCount.toDisplayCount(),
         selectedFolderCount = preferences.selectedLibraryFolders.size,
-        visualAssetCount = visualAssetPayloads.size
+        visualAssetCount = visualAssetPayloads.size,
+        lyricsOverrideCount = lyricsOverrides.size
     )
 }
 
